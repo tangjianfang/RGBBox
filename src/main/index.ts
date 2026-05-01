@@ -30,6 +30,7 @@ function createMainWindow(): void {
     title: 'RGBBox',
     backgroundColor: '#0f1418',
     show: false,
+    icon: join(__dirname, '../../build/icon.ico'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
