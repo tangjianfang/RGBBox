@@ -1,12 +1,17 @@
 /**
- * Generates build/icon.png (512×512) and build/icon.ico (256×256 PNG-in-ICO)
- * Design: three vivid RGB rounded-rectangle blocks on dark background.
- * No external dependencies — uses only Node.js built-in zlib and fs.
+ * Generates build/icon.png (512×512 RGBA) and build/icon.ico (256×256 PNG-in-ICO)
+ *
+ * Design: A rounded square filled with three organic, irregular RGB regions.
+ * Algorithm: Voronoi decomposition with multi-octave sine turbulence applied to
+ * the distance metric, giving each boundary a fluid, paint-pour character.
+ * A thin dark seam separates the regions for visual clarity.
+ *
+ * No external dependencies — pure Node.js (zlib + fs).
  */
 import zlib from 'zlib'
 import fs from 'fs'
 
-// ── CRC32 for PNG chunks ──────────────────────────────────────────────────────
+// ── CRC32 ─────────────────────────────────────────────────────────────────────
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256)
   for (let i = 0; i < 256; i++) {
@@ -30,59 +35,96 @@ function pngChunk(type, data) {
   return Buffer.concat([lenBuf, t, data, crcBuf])
 }
 
-// ── Rounded rectangle hit-test ────────────────────────────────────────────────
-function inRoundedRect(px, py, rx, ry, rw, rh, r) {
-  if (px < rx || px >= rx + rw || py < ry || py >= ry + rh) return false
-  if (px < rx + r && py < ry + r) return (px - rx - r) ** 2 + (py - ry - r) ** 2 <= r * r
-  if (px >= rx + rw - r && py < ry + r) return (px - rx - rw + r) ** 2 + (py - ry - r) ** 2 <= r * r
-  if (px < rx + r && py >= ry + rh - r) return (px - rx - r) ** 2 + (py - ry - rh + r) ** 2 <= r * r
-  if (px >= rx + rw - r && py >= ry + rh - r) return (px - rx - rw + r) ** 2 + (py - ry - rh + r) ** 2 <= r * r
+// ── Multi-octave sine turbulence ──────────────────────────────────────────────
+function noiseOctave(x, y, freq, ox, oy) {
+  return Math.sin(x * freq + ox) * Math.cos(y * freq * 1.31 + oy)
+}
+
+function turbulence(x, y) {
+  return (
+    noiseOctave(x, y,  3.7,  0.00,  0.00) * 0.500 +
+    noiseOctave(x, y,  7.9,  1.30,  2.10) * 0.250 +
+    noiseOctave(x, y, 15.3,  2.70,  4.30) * 0.125 +
+    noiseOctave(x, y, 31.1,  5.10,  8.70) * 0.0625
+  )
+}
+
+// ── Voronoi distance with turbulence warp ─────────────────────────────────────
+const WARP = 0.34
+
+function perturbedDist(px, py, sx, sy) {
+  const wx = turbulence(px + 0.13, py + 0.71)
+  const wy = turbulence(px + 0.89, py + 0.37)
+  const dx = (px - sx) + wx * WARP
+  const dy = (py - sy) + wy * WARP * 0.85
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+// ── Rounded-square mask (iOS-style) ───────────────────────────────────────────
+const CORNER_R = 0.22
+
+function inRoundedSquare(px, py, size) {
+  const r = CORNER_R
+  const nx = px / size, ny = py / size
+  if (nx < r && ny < r) return (nx - r) ** 2 + (ny - r) ** 2 <= r * r
+  if (nx > 1 - r && ny < r) return (nx - (1 - r)) ** 2 + (ny - r) ** 2 <= r * r
+  if (nx < r && ny > 1 - r) return (nx - r) ** 2 + (ny - (1 - r)) ** 2 <= r * r
+  if (nx > 1 - r && ny > 1 - r) return (nx - (1 - r)) ** 2 + (ny - (1 - r)) ** 2 <= r * r
   return true
 }
 
-// ── PNG generator ─────────────────────────────────────────────────────────────
+// ── Three RGB seeds in a balanced triangle arrangement ────────────────────────
+const SEEDS = [
+  { nx: 0.27, ny: 0.26, r: 0xff, g: 0x1a, b: 0x3a },  // vivid red   – top-left
+  { nx: 0.73, ny: 0.30, r: 0x00, g: 0xff, b: 0x55 },  // vivid green – top-right
+  { nx: 0.50, ny: 0.74, r: 0x11, g: 0x77, b: 0xff },  // vivid blue  – bottom
+]
+
+const SEAM = 0.022  // seam half-width in normalised units
+
+// ── PNG generator (RGBA) ──────────────────────────────────────────────────────
 function generatePng(size) {
-  // Background: #0f1418
-  const pixels = Buffer.alloc(size * size * 3)
-  for (let i = 0; i < pixels.length; i += 3) {
-    pixels[i] = 0x0f; pixels[i + 1] = 0x14; pixels[i + 2] = 0x18
-  }
+  const CH = 4
+  const pixels = Buffer.alloc(size * size * CH, 0)
 
-  // Three equal blocks arranged horizontally, square proportions
-  const margin = Math.round(size * 0.1)
-  const gap = Math.round(size * 0.05)
-  const blockW = Math.round((size - margin * 2 - gap * 2) / 3)
-  const blockH = blockW  // square
-  const blockY = Math.round((size - blockH) / 2)  // vertically centred
-  const radius = Math.round(blockW * 0.18)
+  for (let py = 0; py < size; py++) {
+    for (let px = 0; px < size; px++) {
+      if (!inRoundedSquare(px, py, size)) continue
 
-  const blocks = [
-    { x: margin,                     color: [0xff, 0x22, 0x44] },  // R – vivid red
-    { x: margin + blockW + gap,      color: [0x11, 0xff, 0x66] },  // G – vivid green
-    { x: margin + (blockW + gap) * 2, color: [0x22, 0x88, 0xff] }  // B – vivid blue
-  ]
+      const nx = px / size
+      const ny = py / size
 
-  for (const block of blocks) {
-    for (let y = blockY; y < blockY + blockH; y++) {
-      for (let x = block.x; x < block.x + blockW; x++) {
-        if (!inRoundedRect(x, y, block.x, blockY, blockW, blockH, radius)) continue
-        const i = (y * size + x) * 3
-        pixels[i] = block.color[0]; pixels[i + 1] = block.color[1]; pixels[i + 2] = block.color[2]
-      }
+      const dists = SEEDS.map((s) => perturbedDist(nx, ny, s.nx, s.ny))
+      const sorted = [...dists].sort((a, b) => a - b)
+      const d1 = sorted[0], d2 = sorted[1]
+
+      const idx = dists.indexOf(d1)
+      const seed = SEEDS[idx]
+
+      // Dark seam at region boundaries
+      const seam = Math.max(0, 1 - (d2 - d1) / SEAM)
+      const seamBlend = Math.pow(seam, 1.4)
+
+      const r = Math.round(seed.r * (1 - seamBlend * 0.90))
+      const g = Math.round(seed.g * (1 - seamBlend * 0.90))
+      const b = Math.round(seed.b * (1 - seamBlend * 0.90))
+
+      const i = (py * size + px) * CH
+      pixels[i] = r; pixels[i + 1] = g; pixels[i + 2] = b; pixels[i + 3] = 255
     }
   }
 
-  // Build scanlines (filter byte 0 per row)
-  const scanlines = Buffer.alloc(size * (size * 3 + 1))
+  const rowBytes = size * CH + 1
+  const scanlines = Buffer.alloc(size * rowBytes)
   for (let y = 0; y < size; y++) {
-    scanlines[y * (size * 3 + 1)] = 0
-    pixels.copy(scanlines, y * (size * 3 + 1) + 1, y * size * 3, (y + 1) * size * 3)
+    scanlines[y * rowBytes] = 0
+    pixels.copy(scanlines, y * rowBytes + 1, y * size * CH, (y + 1) * size * CH)
   }
   const compressed = zlib.deflateSync(scanlines, { level: 9 })
 
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4)
-  ihdr[8] = 8; ihdr[9] = 2  // 8-bit RGB, no alpha
+  ihdr[8] = 8; ihdr[9] = 6  // RGBA
 
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -92,7 +134,7 @@ function generatePng(size) {
   ])
 }
 
-// ── ICO wrapper (embeds a PNG directly — supported on Vista+) ─────────────────
+// ── ICO wrapper (PNG-in-ICO, Vista+) ─────────────────────────────────────────
 function pngToIco(pngBuf) {
   const header = Buffer.alloc(6)
   header.writeUInt16LE(0, 0)  // reserved
@@ -100,12 +142,12 @@ function pngToIco(pngBuf) {
   header.writeUInt16LE(1, 4)  // 1 image
 
   const entry = Buffer.alloc(16)
-  entry[0] = 0; entry[1] = 0          // width/height = 0 → means 256
-  entry[2] = 0; entry[3] = 0          // colorCount, reserved
-  entry.writeUInt16LE(1, 4)           // planes
-  entry.writeUInt16LE(32, 6)          // bit count
+  entry[0] = 0; entry[1] = 0        // 0 means 256 for both w/h
+  entry[2] = 0; entry[3] = 0
+  entry.writeUInt16LE(1, 4)
+  entry.writeUInt16LE(32, 6)
   entry.writeUInt32LE(pngBuf.length, 8)
-  entry.writeUInt32LE(6 + 16, 12)     // image offset
+  entry.writeUInt32LE(6 + 16, 12)
 
   return Buffer.concat([header, entry, pngBuf])
 }
@@ -115,7 +157,7 @@ fs.mkdirSync('build', { recursive: true })
 
 const png512 = generatePng(512)
 fs.writeFileSync('build/icon.png', png512)
-console.log('✓ build/icon.png  (512×512)')
+console.log('✓ build/icon.png  (512×512 RGBA – Voronoi+turbulence)')
 
 const png256 = generatePng(256)
 fs.writeFileSync('build/icon.ico', pngToIco(png256))
