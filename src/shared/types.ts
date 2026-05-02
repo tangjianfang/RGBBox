@@ -103,6 +103,12 @@ export interface EngineStatus {
   output: 'virtual-preview' | 'openrgb' | 'disabled'
 }
 
+export interface ProfileMeta {
+  id: string
+  name: string
+  savedAt: string
+}
+
 export interface PresetDefinition {
   kind: EffectKind
   label: string

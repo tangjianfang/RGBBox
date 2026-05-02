@@ -10,8 +10,8 @@ export const effectPresets: PresetDefinition[] = [
   {
     kind: 'static',
     label: 'Static',
-    description: 'All zones hold a single calibrated color.',
-    defaults: { color: '#37d5ff' }
+    description: 'All zones hold a single calibrated color. Optionally render dot-matrix text.',
+    defaults: { color: '#37d5ff', text: '', textColor: '#ffffff', textX: 0.5, textY: 0.5, textScale: 1 }
   },
   {
     kind: 'breathing',

@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, Menu, powerSaveBlocker, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, powerSaveBlocker, shell } from 'electron'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AudioInput } from '../engine/previewEngine'
 import { renderPreviewFrame } from '../engine/previewEngine'
@@ -7,7 +8,7 @@ import { ipcChannels } from '../shared/ipc'
 import type { EngineStatus, Profile, RgbFrame } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
 import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, pushFrameToOverlays } from './overlayManager'
-import { loadProfile, saveProfile } from './profileStore'
+import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame } from './screenCapture'
 
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL)
@@ -124,6 +125,36 @@ function registerIpc(): void {
   })
   ipcMain.handle(ipcChannels.getOverlayDisplayIds, () => {
     return getOverlayDisplayIds()
+  })
+
+  // Named profile management
+  ipcMain.handle(ipcChannels.listProfiles, () => listProfiles())
+  ipcMain.handle(ipcChannels.loadProfileById, (_event, id: string) => loadProfileById(id))
+  ipcMain.handle(ipcChannels.saveProfileAs, (_event, profile: Profile) => saveProfileAs(profile))
+  ipcMain.handle(ipcChannels.deleteProfile, (_event, id: string) => deleteProfile(id))
+  ipcMain.handle(ipcChannels.exportProfileDialog, async (_event, profile: Profile) => {
+    const result = await dialog.showSaveDialog({
+      title: 'Export Profile',
+      defaultPath: `${profile.name.replace(/[^a-zA-Z0-9_\- ]/g, '_')}.json`,
+      filters: [{ name: 'JSON Profile', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) return false
+    await writeFile(result.filePath, JSON.stringify(profile, null, 2), 'utf-8')
+    return true
+  })
+  ipcMain.handle(ipcChannels.importProfileDialog, async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import Profile',
+      filters: [{ name: 'JSON Profile', extensions: ['json'] }],
+      properties: ['openFile']
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    try {
+      const raw = await readFile(result.filePaths[0], 'utf-8')
+      return JSON.parse(raw) as Profile
+    } catch {
+      return null
+    }
   })
 
   // Overlay context menu (called from overlay renderer)

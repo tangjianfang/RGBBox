@@ -17,7 +17,14 @@ export const ipcChannels = {
   overlayEffectChanged: 'rgbbox:overlay:effect-changed',
   // Power save blocker
   setPowerSaveBlock: 'rgbbox:system:set-power-save-block',
-  getPowerSaveBlock: 'rgbbox:system:get-power-save-block'
+  getPowerSaveBlock: 'rgbbox:system:get-power-save-block',
+  // Named profile management
+  listProfiles: 'rgbbox:profiles:list',
+  loadProfileById: 'rgbbox:profiles:load',
+  saveProfileAs: 'rgbbox:profiles:save-as',
+  deleteProfile: 'rgbbox:profiles:delete',
+  exportProfileDialog: 'rgbbox:profiles:export-dialog',
+  importProfileDialog: 'rgbbox:profiles:import-dialog',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

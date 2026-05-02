@@ -1,5 +1,6 @@
 import type { EffectLayer, RgbColor } from '../shared/types'
 import { adjustSaturationAndContrast, clampUnit, hexToRgb, hslToRgb, lerpColor } from './color'
+import { getTextMask } from './textRenderer'
 
 export interface EffectContext {
   x: number
@@ -29,8 +30,19 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
 
     // ── Classic ──────────────────────────────────────────────────────────────
 
-    case 'static':
-      return hexToRgb(String(layer.parameters.color ?? '#ffffff'))
+    case 'static': {
+      const text = String(layer.parameters.text ?? '')
+      const bgColor = hexToRgb(String(layer.parameters.color ?? '#ffffff'))
+      if (text.trim()) {
+        const textX = Number(layer.parameters.textX ?? 0.5)
+        const textY = Number(layer.parameters.textY ?? 0.5)
+        const textScale = Number(layer.parameters.textScale ?? 1)
+        const textColor = hexToRgb(String(layer.parameters.textColor ?? '#ffffff'))
+        const mask = getTextMask(text, context.columns, context.rows, textX, textY, textScale)
+        return mask[context.y * context.columns + context.x] ? textColor : bgColor
+      }
+      return bgColor
+    }
 
     case 'breathing': {
       const speed = Number(layer.parameters.speed ?? 0.45)
