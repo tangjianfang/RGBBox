@@ -12,6 +12,7 @@ export interface EffectContext {
   _audioMid?: number
   _audioHigh?: number
   _audioBeat?: number
+  _audioFreqBands?: number[]
   _screenPixel?: { r: number; g: number; b: number }
   _textMask?: boolean[]
 }
@@ -293,22 +294,32 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
     }
 
     case 'audio-equalizer': {
-      const bass = Number(context._audioBass ?? 0)
-      const mid = Number(context._audioMid ?? 0)
-      const high = Number(context._audioHigh ?? 0)
       const sensitivity = Number(layer.parameters.sensitivity ?? 1.0)
       const colorLow  = hexToRgb(String(layer.parameters.colorLow  ?? '#00ff44'))
       const colorHigh = hexToRgb(String(layer.parameters.colorHigh ?? '#ff2200'))
 
-      const colFraction = context.x / Math.max(1, context.columns - 1)
       let bandLevel: number
-
-      if (colFraction < 0.33) {
-        bandLevel = bass + (mid - bass) * (colFraction / 0.33)
-      } else if (colFraction < 0.67) {
-        bandLevel = mid
+      const freqBands = context._audioFreqBands
+      if (freqBands && freqBands.length > 0) {
+        // Map column to the log-spaced frequency band (with linear interpolation)
+        const t = context.x / Math.max(1, context.columns - 1)
+        const bandIdxF = t * (freqBands.length - 1)
+        const lo = Math.floor(bandIdxF)
+        const hi = Math.min(freqBands.length - 1, lo + 1)
+        bandLevel = freqBands[lo] * (1 - (bandIdxF - lo)) + freqBands[hi] * (bandIdxF - lo)
       } else {
-        bandLevel = mid + (high - mid) * ((colFraction - 0.67) / 0.33)
+        // Fallback to 3-band averages when no FFT data available
+        const bass = Number(context._audioBass ?? 0)
+        const mid = Number(context._audioMid ?? 0)
+        const high = Number(context._audioHigh ?? 0)
+        const colFraction = context.x / Math.max(1, context.columns - 1)
+        if (colFraction < 0.33) {
+          bandLevel = bass + (mid - bass) * (colFraction / 0.33)
+        } else if (colFraction < 0.67) {
+          bandLevel = mid
+        } else {
+          bandLevel = mid + (high - mid) * ((colFraction - 0.67) / 0.33)
+        }
       }
 
       const heightFraction = 1 - context.y / Math.max(1, context.rows - 1)

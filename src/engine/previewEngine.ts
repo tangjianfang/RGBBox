@@ -8,6 +8,7 @@ export interface AudioInput {
   mid: number
   high: number
   beat: number
+  freqBands?: number[]  // 32 log-spaced bands 20 Hz – 20 kHz, each 0..1
 }
 
 export function renderPreviewFrame(
@@ -43,6 +44,7 @@ export function renderPreviewFrame(
         _audioMid: audio?.mid,
         _audioHigh: audio?.high,
         _audioBeat: audio?.beat,
+        _audioFreqBands: audio?.freqBands,
         _screenPixel: screenPixel
       }
 

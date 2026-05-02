@@ -7,6 +7,7 @@ export interface AudioInput {
   mid: number
   high: number
   beat: number
+  freqBands?: number[]  // 32 log-spaced bands 20 Hz – 20 kHz, each 0..1
 }
 
 const api = {

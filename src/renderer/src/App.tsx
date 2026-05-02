@@ -157,7 +157,7 @@ export function App(): JSX.Element {
 
     const tick = () => {
       const audioInput = audio.active
-        ? { bass: audio.bass, mid: audio.mid, high: audio.high, beat: audio.beat }
+        ? { bass: audio.bass, mid: audio.mid, high: audio.high, beat: audio.beat, freqBands: audio.freqBands }
         : undefined
 
       // Pre-compute text masks for static layers using Canvas API (supports CJK)
