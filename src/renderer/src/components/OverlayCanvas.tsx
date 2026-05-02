@@ -28,8 +28,10 @@ function drawFrame(canvas: HTMLCanvasElement, frame: RgbFrame): void {
 
   ctx.clearRect(0, 0, w, h)
 
-  for (let i = 0; i < pixels.length; i++) {
-    const px = pixels[i]
+  for (let i = 0; i < columns * rows; i++) {
+    const r = pixels[i * 3]
+    const g = pixels[i * 3 + 1]
+    const b = pixels[i * 3 + 2]
     const col = i % columns
     const row = Math.floor(i / columns)
     const rx = offsetX + col * cellSize + gap / 2
@@ -37,7 +39,7 @@ function drawFrame(canvas: HTMLCanvasElement, frame: RgbFrame): void {
     const rw = cellSize - gap
     const rh = cellSize - gap
 
-    ctx.fillStyle = `rgb(${px.r},${px.g},${px.b})`
+    ctx.fillStyle = `rgb(${r},${g},${b})`
     ctx.fillRect(rx, ry, rw, rh)
   }
 }

@@ -66,7 +66,8 @@ export interface RgbColor {
 export interface RgbFrame {
   columns: number
   rows: number
-  pixels: RgbColor[]
+  /** Flat RGB triplets: pixel i → [i*3]=R, [i*3+1]=G, [i*3+2]=B. Length = columns*rows*3. */
+  pixels: number[]
   generatedAt: number
 }
 

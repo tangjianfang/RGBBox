@@ -709,6 +709,37 @@ select:focus {
   padding: 0 4px;
 }
 
+/* Aspect-ratio lock row sits between columns and rows sliders */
+.aspect-lock-row {
+  display: flex;
+  justify-content: center;
+  margin: -6px 0;
+}
+
+.aspect-lock-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid #243841;
+  border-radius: 4px;
+  color: #5e8091;
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  gap: 4px;
+  padding: 2px 8px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.aspect-lock-btn:hover {
+  border-color: #46c6a8;
+  color: #c5f0e4;
+}
+
+.aspect-lock-btn.locked {
+  border-color: #46c6a8;
+  color: #46c6a8;
+}
+
 .audio-meter {
   background: linear-gradient(to top, #36c887 calc(var(--level, 0) * 100%), #1a3028 0);
   border-radius: 3px;

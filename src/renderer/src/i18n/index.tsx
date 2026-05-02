@@ -72,6 +72,7 @@ const EN = {
   'sampling.brightness': 'Brightness',
   'sampling.fps': 'FPS',
   'sampling.perfGuard': 'Performance guard',
+  'sampling.aspectLock': 'Lock ratio',
   // Effects view
   'effects.library': 'Effect Library',
   'effects.eyebrow': '18 built-in effects — click to apply to selected layer',
@@ -202,6 +203,7 @@ const ZH: TranslationTable = {
   'sampling.brightness': '亮度',
   'sampling.fps': '帧率',
   'sampling.perfGuard': '性能守护',
+  'sampling.aspectLock': '锁定比例',
   'effects.library': '效果库',
   'effects.eyebrow': '18 种内置效果 — 点击应用到选中图层',
   'effects.classic': '经典',

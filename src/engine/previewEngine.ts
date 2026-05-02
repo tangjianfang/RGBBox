@@ -22,16 +22,17 @@ export function renderPreviewFrame(
   const columns = Math.max(1, Math.floor(profile.sampling.columns))
   const rows = Math.max(1, Math.floor(profile.sampling.rows))
   const scene = profile.scenes.find((candidate) => candidate.id === profile.activeSceneId) ?? profile.scenes[0]
-  const pixels: RgbColor[] = []
+  const pixels: number[] = []
 
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < columns; x += 1) {
       let color: RgbColor = { r: 0, g: 0, b: 0 }
 
       const pixelIndex = y * columns + x
+      const p3 = pixelIndex * 3
       const screenPixel =
         screenSample?.columns === columns && screenSample.rows === rows
-          ? screenSample.pixels[pixelIndex]
+          ? { r: screenSample.pixels[p3], g: screenSample.pixels[p3 + 1], b: screenSample.pixels[p3 + 2] } as RgbColor
           : undefined
 
       const baseContext: EffectContext = {
@@ -63,10 +64,14 @@ export function renderPreviewFrame(
 
       const brightColor = applyBrightness(color, profile.sampling.brightnessLimit)
       const limitedColor = adjustSaturationAndContrast(brightColor, profile.sampling.saturationBoost, 1.0)
-      const previousColor = previousFrame?.columns === columns && previousFrame.rows === rows ? previousFrame.pixels[pixels.length] : undefined
+      const previousColor =
+        previousFrame?.columns === columns && previousFrame.rows === rows
+          ? { r: previousFrame.pixels[p3], g: previousFrame.pixels[p3 + 1], b: previousFrame.pixels[p3 + 2] } as RgbColor
+          : undefined
       const smoothing = profile.sampling.usePerformanceGuard ? clampUnit(profile.sampling.smoothing) : 0
 
-      pixels.push(previousColor ? lerpColor(limitedColor, previousColor, smoothing) : limitedColor)
+      const finalColor = previousColor ? lerpColor(limitedColor, previousColor, smoothing) : limitedColor
+      pixels.push(finalColor.r | 0, finalColor.g | 0, finalColor.b | 0)
     }
   }
 

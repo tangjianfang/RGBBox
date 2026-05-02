@@ -1,5 +1,5 @@
 import { desktopCapturer, screen } from 'electron'
-import type { RgbColor, RgbFrame } from '../shared/types'
+import type { RgbFrame } from '../shared/types'
 
 /**
  * Capture a display's screen content and downsample it to the requested grid size.
@@ -44,7 +44,7 @@ export async function captureScreenFrame(
 
     // getBitmap() → raw BGRA Buffer. Cast because Electron typedefs may mark it void.
     const bitmap = thumb.getBitmap() as unknown as Buffer
-    const pixels: RgbColor[] = []
+    const pixels: number[] = []
 
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < columns; x++) {
@@ -52,11 +52,11 @@ export async function captureScreenFrame(
         const py = Math.min(size.height - 1, Math.floor((y + 0.5) * size.height / rows))
         const idx = (py * size.width + px) * 4
 
-        pixels.push({
-          r: bitmap[idx + 2], // BGRA layout
-          g: bitmap[idx + 1],
-          b: bitmap[idx + 0]
-        })
+        pixels.push(
+          bitmap[idx + 2], // R (BGRA layout)
+          bitmap[idx + 1], // G
+          bitmap[idx + 0]  // B
+        )
       }
     }
 

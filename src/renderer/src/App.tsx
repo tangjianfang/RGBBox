@@ -1,4 +1,4 @@
-import { Activity, Download, FilePlus, Gauge, Languages, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Sparkles, Trash2, Upload } from 'lucide-react'
+import { Activity, Download, FilePlus, Gauge, Languages, Link2, Link2Off, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Sparkles, Trash2, Upload } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, EngineStatus, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
@@ -229,6 +229,42 @@ export function App(): JSX.Element {
   const setSamplingValue = useCallback((key: keyof Profile['sampling'], value: number | boolean) => {
     setProfile((cur) => cur ? { ...cur, sampling: { ...cur.sampling, [key]: value } } : cur)
   }, [])
+
+  const [aspectLocked, setAspectLocked] = useState(() => localStorage.getItem('rgbbox:aspectLock') === '1')
+  const aspectRatioRef = useRef<number>(16 / 9)
+
+  const toggleAspectLock = useCallback(() => {
+    setAspectLocked((locked) => {
+      const next = !locked
+      if (next) {
+        // capture current ratio at the moment of locking
+        setProfile((cur) => {
+          if (cur) aspectRatioRef.current = cur.sampling.columns / cur.sampling.rows
+          return cur
+        })
+      }
+      localStorage.setItem('rgbbox:aspectLock', next ? '1' : '0')
+      return next
+    })
+  }, [])
+
+  const setColumns = useCallback((cols: number) => {
+    setProfile((cur) => {
+      if (!cur) return cur
+      const newCols = Math.max(1, Math.min(320, cols))
+      const newRows = aspectLocked ? Math.max(1, Math.min(180, Math.round(newCols / aspectRatioRef.current))) : cur.sampling.rows
+      return { ...cur, sampling: { ...cur.sampling, columns: newCols, rows: newRows } }
+    })
+  }, [aspectLocked])
+
+  const setRows = useCallback((rows: number) => {
+    setProfile((cur) => {
+      if (!cur) return cur
+      const newRows = Math.max(1, Math.min(180, rows))
+      const newCols = aspectLocked ? Math.max(1, Math.min(320, Math.round(newRows * aspectRatioRef.current))) : cur.sampling.columns
+      return { ...cur, sampling: { ...cur.sampling, columns: newCols, rows: newRows } }
+    })
+  }, [aspectLocked])
 
   const selectEffect = useCallback((kind: EffectKind) => {
     const preset = effectPresets.find((p) => p.kind === kind)
@@ -759,13 +795,24 @@ export function App(): JSX.Element {
                     <label className="control-line">
                       <span>{t('sampling.columns')}</span>
                       <input min={1} max={320} type="range" value={profile.sampling.columns}
-                        onChange={(e) => setSamplingValue('columns', Number(e.target.value))} />
+                        onChange={(e) => setColumns(Number(e.target.value))} />
                       <strong>{profile.sampling.columns}</strong>
                     </label>
+                    <div className="aspect-lock-row">
+                      <button
+                        className={`aspect-lock-btn${aspectLocked ? ' locked' : ''}`}
+                        title={t('sampling.aspectLock')}
+                        onClick={toggleAspectLock}
+                        type="button"
+                      >
+                        {aspectLocked ? <Link2 size={12} /> : <Link2Off size={12} />}
+                        <span>{t('sampling.aspectLock')}</span>
+                      </button>
+                    </div>
                     <label className="control-line">
                       <span>{t('sampling.rows')}</span>
                       <input min={1} max={180} type="range" value={profile.sampling.rows}
-                        onChange={(e) => setSamplingValue('rows', Number(e.target.value))} />
+                        onChange={(e) => setRows(Number(e.target.value))} />
                       <strong>{profile.sampling.rows}</strong>
                     </label>
                     <label className="control-line">
