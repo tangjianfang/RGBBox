@@ -20,6 +20,14 @@ const api = {
   renderPreviewFrame: (profile: Profile, audio?: AudioInput, textMasks?: Record<string, boolean[]>): Promise<RgbFrame> =>
     ipcRenderer.invoke(ipcChannels.renderPreviewFrame, profile, audio, textMasks),
 
+  // Capture screen pixels only (no render) — used when engine runs in renderer worker
+  captureScreenSample: (columns: number, rows: number, hasOverlays: boolean): Promise<RgbFrame | null> =>
+    ipcRenderer.invoke(ipcChannels.captureScreenSample, columns, rows, hasOverlays),
+
+  // Push a rendered frame to any open overlay windows (fire-and-forget)
+  pushFrameToOverlays: (frame: RgbFrame): void =>
+    ipcRenderer.send(ipcChannels.overlayPushFrame, frame),
+
   // Multi-display overlay
   openOverlay: (displayId: number): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.openOverlay, displayId),

@@ -7,7 +7,7 @@ import { DisplayMap } from './components/DisplayMap'
 import { EffectsView } from './components/EffectsView'
 import { PreviewGrid } from './components/PreviewGrid'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
-import { computeTextMask } from './canvasTextMask'
+import type { WorkerInput } from './workers/previewEngineWorker'
 
 type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics'
 
@@ -105,6 +105,25 @@ export function App(): JSX.Element {
   const [powerSaveBlock, setPowerSaveBlock] = useState(false)
   const audio = useAudioAnalyzer(audioEnabled, audioDeviceId)
 
+  // ── Engine Worker ─────────────────────────────────────────────────────────
+  // Created once; the render loop sends work to it and receives frames via
+  // postMessage/onmessage instead of going through IPC.
+  const workerRef = useRef<Worker | null>(null)
+  const overlayIdsRef = useRef<number[]>(overlayDisplayIds)
+  overlayIdsRef.current = overlayDisplayIds
+
+  useEffect(() => {
+    const worker = new Worker(
+      new URL('./workers/previewEngineWorker.ts', import.meta.url),
+      { type: 'module' }
+    )
+    workerRef.current = worker
+    return () => {
+      worker.terminate()
+      workerRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
     Promise.all([
       window.rgbbox.getDefaultProfile(),
@@ -171,48 +190,66 @@ export function App(): JSX.Element {
   }, [profile])
 
   useEffect(() => {
-    if (!profile || !status.running) return undefined
+    if (!profile || !status.running || !workerRef.current) return undefined
 
     let cancelled = false
     const intervalMs = Math.max(16, Math.floor(1000 / profile.sampling.fps))
     let timerId: number | null = null
+    const worker = workerRef.current
+    const scene = profile.scenes.find((s) => s.id === profile.activeSceneId) ?? profile.scenes[0]
 
-    const tick = () => {
+    const tick = async (): Promise<void> => {
+      if (cancelled) return
+
       const audioInput = audio.active
         ? { bass: audio.bass, mid: audio.mid, high: audio.high, beat: audio.beat, freqBands: audio.freqBands }
         : undefined
 
-      // Pre-compute text masks for static layers using Canvas API (supports CJK)
-      const scene = profile.scenes.find((s) => s.id === profile.activeSceneId) ?? profile.scenes[0]
-      const textMasks: Record<string, boolean[]> = {}
-      for (const layer of scene.layers) {
-        if (layer.enabled && layer.kind === 'static') {
-          const text = String(layer.parameters.text ?? '')
-          if (text.trim()) {
-            textMasks[layer.id] = computeTextMask(
-              text,
-              profile.sampling.columns,
-              profile.sampling.rows,
-              Number(layer.parameters.textX ?? 0.5),
-              Number(layer.parameters.textY ?? 0.5),
-              Number(layer.parameters.textScale ?? 1),
-              Number(layer.parameters.textWeight ?? 400)
-            )
-          }
-        }
+      // Screen capture is only needed for screen-ambient effect and when no overlays are active
+      const needsCapture =
+        overlayIdsRef.current.length === 0 &&
+        scene.layers.some((l) => l.enabled && l.kind === 'screen-ambient')
+
+      let screenSample: RgbFrame | undefined
+      if (needsCapture) {
+        const captured = await window.rgbbox.captureScreenSample(
+          profile.sampling.columns,
+          profile.sampling.rows,
+          false  // hasOverlays already checked above
+        )
+        screenSample = captured ?? undefined
       }
 
-      window.rgbbox.renderPreviewFrame(profile, audioInput, textMasks).then((nextFrame) => {
-        if (!cancelled) {
-          setFrame(nextFrame)
-          // Schedule next tick only after current IPC call completes
-          timerId = window.setTimeout(tick, intervalMs)
-        }
-      })
+      if (cancelled) return
+
+      // Send to worker; transfer screen sample buffer (zero-copy) if present
+      const msg: WorkerInput = { profile, audioInput, screenSample }
+      if (screenSample) {
+        worker.postMessage(msg, [screenSample.pixels.buffer])
+      } else {
+        worker.postMessage(msg)
+      }
     }
 
-    tick()
-    return () => { cancelled = true; if (timerId !== null) window.clearTimeout(timerId) }
+    const onWorkerMessage = (e: MessageEvent<RgbFrame>): void => {
+      if (cancelled) return
+      const frame = e.data
+      setFrame(frame)
+      // Push to any open overlay windows (fire-and-forget, not awaited)
+      if (overlayIdsRef.current.length > 0) {
+        window.rgbbox.pushFrameToOverlays(frame)
+      }
+      timerId = window.setTimeout(tick, intervalMs)
+    }
+
+    worker.addEventListener('message', onWorkerMessage)
+    void tick()
+
+    return () => {
+      cancelled = true
+      if (timerId !== null) window.clearTimeout(timerId)
+      worker.removeEventListener('message', onWorkerMessage)
+    }
   }, [profile, status.running, audio])
 
   const scene = useMemo(() => (profile ? activeScene(profile) : null), [profile])

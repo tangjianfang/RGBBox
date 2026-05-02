@@ -6,6 +6,10 @@ export const ipcChannels = {
   getEngineStatus: 'rgbbox:engine:get-status',
   setEngineRunning: 'rgbbox:engine:set-running',
   renderPreviewFrame: 'rgbbox:engine:render-preview-frame',
+  // Capture only the screen sample (no render); used when engine runs in renderer worker
+  captureScreenSample: 'rgbbox:engine:capture-screen-sample',
+  // Renderer → main: push a rendered frame to any open overlay windows (fire-and-forget)
+  overlayPushFrame: 'rgbbox:overlay:push-frame',
   // Multi-display overlay
   openOverlay: 'rgbbox:overlay:open',
   closeOverlay: 'rgbbox:overlay:close',

@@ -1,8 +1,6 @@
 import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, powerSaveBlocker, shell } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { AudioInput } from '../engine/previewEngine'
-import { renderPreviewFrame } from '../engine/previewEngine'
 import { defaultProfile } from '../shared/defaultProfile'
 import { ipcChannels } from '../shared/ipc'
 import type { EngineStatus, Profile, RgbFrame } from '../shared/types'
@@ -14,7 +12,6 @@ import { captureScreenFrame } from './screenCapture'
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL)
 
 let mainWindow: BrowserWindow | null = null
-let lastPreviewFrame: RgbFrame | undefined
 let powerSaveBlockerId: number | null = null
 let engineStatus: EngineStatus = {
   running: true,
@@ -80,38 +77,19 @@ function registerIpc(): void {
     engineStatus = { ...engineStatus, running }
     return engineStatus
   })
-  ipcMain.handle(ipcChannels.renderPreviewFrame, async (_event, profile: Profile, audio?: AudioInput, textMasks?: Record<string, boolean[]>) => {
-    // Detect if any enabled layer needs real screen capture.
-    // Skip capture when overlays are active: the overlay covers the display,
-    // so capturing would read back the overlay itself and create a feedback loop.
-    const scene = profile.scenes.find((s) => s.id === profile.activeSceneId) ?? profile.scenes[0]
-    const hasOverlays = getOverlayDisplayIds().length > 0
-    const needsCapture =
-      !hasOverlays &&
-      scene.layers.some((l) => l.enabled && l.kind === 'screen-ambient')
+  ipcMain.handle(ipcChannels.captureScreenSample, async (_event, columns: number, rows: number, hasOverlays: boolean) => {
+    if (hasOverlays) return null  // avoid feedback loop when overlays are active
+    const topology = getDisplayTopology()
+    const primaryDisplay = topology.displays.find((d) => d.primary) ?? topology.displays[0]
+    if (!primaryDisplay) return null
+    const captured = await captureScreenFrame(primaryDisplay.id, columns, rows)
+    return captured ?? null
+  })
 
-    let screenSample: RgbFrame | undefined
-    if (needsCapture) {
-      const topology = getDisplayTopology()
-      const primaryDisplay = topology.displays.find((d) => d.primary) ?? topology.displays[0]
-      if (primaryDisplay) {
-        const captured = await captureScreenFrame(primaryDisplay.id, profile.sampling.columns, profile.sampling.rows)
-        screenSample = captured ?? undefined
-      }
-    }
-
-    const frame = renderPreviewFrame(profile, undefined, lastPreviewFrame, audio, screenSample, textMasks)
-    lastPreviewFrame = frame
-    engineStatus = {
-      ...engineStatus,
-      fps: profile.sampling.fps,
-      lastFrameAt: frame.generatedAt
-    }
-
-    // Push to any open overlay windows
+  // Renderer → main: push a rendered frame to open overlay windows (fire-and-forget)
+  ipcMain.on(ipcChannels.overlayPushFrame, (_event, frame: RgbFrame) => {
     pushFrameToOverlays(frame)
-
-    return frame
+    engineStatus = { ...engineStatus, fps: frame.columns > 0 ? engineStatus.fps : engineStatus.fps, lastFrameAt: frame.generatedAt }
   })
 
   // Notify main renderer when an overlay is closed externally (e.g. double-click close)
@@ -121,8 +99,6 @@ function registerIpc(): void {
 
   // Overlay management
   ipcMain.handle(ipcChannels.openOverlay, (_event, displayId: number) => {
-    // Discard the smoothing history so the first overlay frame is fresh (not lerped from old screen captures)
-    lastPreviewFrame = undefined
     return openOverlay(displayId, isDevelopment, process.env.ELECTRON_RENDERER_URL)
   })
   ipcMain.handle(ipcChannels.closeOverlay, (_event, displayId: number) => {

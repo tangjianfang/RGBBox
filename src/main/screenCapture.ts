@@ -44,19 +44,17 @@ export async function captureScreenFrame(
 
     // getBitmap() → raw BGRA Buffer. Cast because Electron typedefs may mark it void.
     const bitmap = thumb.getBitmap() as unknown as Buffer
-    const pixels: number[] = []
+    const pixels = new Uint8ClampedArray(columns * rows * 3)
 
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < columns; x++) {
         const px = Math.min(size.width - 1, Math.floor((x + 0.5) * size.width / columns))
         const py = Math.min(size.height - 1, Math.floor((y + 0.5) * size.height / rows))
         const idx = (py * size.width + px) * 4
-
-        pixels.push(
-          bitmap[idx + 2], // R (BGRA layout)
-          bitmap[idx + 1], // G
-          bitmap[idx + 0]  // B
-        )
+        const p3 = (y * columns + x) * 3
+        pixels[p3]     = bitmap[idx + 2] // R (BGRA layout)
+        pixels[p3 + 1] = bitmap[idx + 1] // G
+        pixels[p3 + 2] = bitmap[idx + 0] // B
       }
     }
 

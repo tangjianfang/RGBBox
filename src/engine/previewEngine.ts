@@ -22,7 +22,7 @@ export function renderPreviewFrame(
   const columns = Math.max(1, Math.floor(profile.sampling.columns))
   const rows = Math.max(1, Math.floor(profile.sampling.rows))
   const scene = profile.scenes.find((candidate) => candidate.id === profile.activeSceneId) ?? profile.scenes[0]
-  const pixels: number[] = []
+  const pixels = new Uint8ClampedArray(columns * rows * 3)
 
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < columns; x += 1) {
@@ -71,7 +71,9 @@ export function renderPreviewFrame(
       const smoothing = profile.sampling.usePerformanceGuard ? clampUnit(profile.sampling.smoothing) : 0
 
       const finalColor = previousColor ? lerpColor(limitedColor, previousColor, smoothing) : limitedColor
-      pixels.push(finalColor.r | 0, finalColor.g | 0, finalColor.b | 0)
+      pixels[p3]     = finalColor.r
+      pixels[p3 + 1] = finalColor.g
+      pixels[p3 + 2] = finalColor.b
     }
   }
 
