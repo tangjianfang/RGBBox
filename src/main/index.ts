@@ -5,7 +5,7 @@ import { defaultProfile } from '../shared/defaultProfile'
 import { ipcChannels } from '../shared/ipc'
 import type { EngineStatus, Profile, RgbFrame } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
-import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, pushFrameToOverlays, setOverlayClosedCallback } from './overlayManager'
+import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, pushFrameToDisplay, pushFrameToOverlays, setOverlayClosedCallback } from './overlayManager'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame } from './screenCapture'
 
@@ -90,6 +90,11 @@ function registerIpc(): void {
   ipcMain.on(ipcChannels.overlayPushFrame, (_event, frame: RgbFrame) => {
     pushFrameToOverlays(frame)
     engineStatus = { ...engineStatus, fps: frame.columns > 0 ? engineStatus.fps : engineStatus.fps, lastFrameAt: frame.generatedAt }
+  })
+
+  // Renderer → main: push a rendered frame to ONE specific display overlay (linked-display mode)
+  ipcMain.on(ipcChannels.overlayPushFrameForDisplay, (_event, displayId: number, frame: RgbFrame) => {
+    pushFrameToDisplay(displayId, frame)
   })
 
   // Notify main renderer when an overlay is closed externally (e.g. double-click close)

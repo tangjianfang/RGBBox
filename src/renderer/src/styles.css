@@ -740,6 +740,19 @@ select:focus {
   color: #46c6a8;
 }
 
+/* Linked-display toggle row, shown below the DisplayMap */
+.linked-display-row {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.linked-hint {
+  color: #5e8091;
+  font-size: 11px;
+}
+
 .audio-meter {
   background: linear-gradient(to top, #36c887 calc(var(--level, 0) * 100%), #1a3028 0);
   border-radius: 3px;

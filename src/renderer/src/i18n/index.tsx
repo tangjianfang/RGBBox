@@ -122,6 +122,10 @@ const EN = {
   'param.textColor': 'Text Color',
   'param.bgColor': 'Background',
   'param.textPlaceholder': 'Enter display text…',
+  'param.angle': 'Direction',
+  // Scene
+  'scene.linkedDisplays': 'Link displays',
+  'scene.linkedDisplays.hint': 'Effects span across all monitors using their physical layout',
   // Effect kind labels
   'effect.screen-ambient': 'Screen Ambient',
   'effect.static': 'Static',
@@ -248,6 +252,10 @@ const ZH: TranslationTable = {
   'param.textColor': '文字颜色',
   'param.bgColor': '背景色',
   'param.textPlaceholder': '输入显示文本…',
+  'param.angle': '方向',
+  // 场景
+  'scene.linkedDisplays': '联动显示器',
+  'scene.linkedDisplays.hint': '效果根据屏幕物理布局跨显示器连续展示',
   // Effect kind labels
   'effect.screen-ambient': '屏幕采样',
   'effect.static': '静态色',

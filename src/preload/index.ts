@@ -28,6 +28,10 @@ const api = {
   pushFrameToOverlays: (frame: RgbFrame): void =>
     ipcRenderer.send(ipcChannels.overlayPushFrame, frame),
 
+  // Push a rendered frame to ONE specific display overlay (linked-display mode)
+  pushFrameToDisplay: (displayId: number, frame: RgbFrame): void =>
+    ipcRenderer.send(ipcChannels.overlayPushFrameForDisplay, displayId, frame),
+
   // Multi-display overlay
   openOverlay: (displayId: number): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.openOverlay, displayId),

@@ -10,6 +10,8 @@ export const ipcChannels = {
   captureScreenSample: 'rgbbox:engine:capture-screen-sample',
   // Renderer → main: push a rendered frame to any open overlay windows (fire-and-forget)
   overlayPushFrame: 'rgbbox:overlay:push-frame',
+  // Renderer → main: push a rendered frame to ONE specific display overlay (for linked-display mode)
+  overlayPushFrameForDisplay: 'rgbbox:overlay:push-frame-for-display',
   // Multi-display overlay
   openOverlay: 'rgbbox:overlay:open',
   closeOverlay: 'rgbbox:overlay:close',

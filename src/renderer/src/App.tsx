@@ -24,6 +24,7 @@ const PARAM_META: Record<string, { labelKey: string; min: number; max: number; s
   tail:        { labelKey: 'Tail',        min: 0.05, max: 0.95, step: 0.05 },
   hueShift:    { labelKey: 'Hue Shift',   min: -180, max: 180,  step: 5,    unit: '°' },
   sensitivity: { labelKey: 'Sensitivity', min: 0.2,  max: 3,    step: 0.1,  unit: '×' },
+  angle:       { labelKey: 'param.angle', min: 0,    max: 360,  step: 5,    unit: '°' },
   // Static text params
   textX:       { labelKey: 'param.textX',    min: 0,   max: 1,   step: 0.05 },
   textY:       { labelKey: 'param.textY',    min: 0,   max: 1,   step: 0.05 },
@@ -50,6 +51,41 @@ function updateLayer(profile: Profile, layerId: string, patch: Partial<EffectLay
       s.id !== sceneId ? s : { ...s, layers: s.layers.map((l) => (l.id === layerId ? { ...l, ...patch } : l)) }
     )
   }
+}
+
+/**
+ * Extract the sub-region of a virtual-canvas frame that corresponds to a given display's
+ * physical position in the virtual desktop. Used in linked-display mode so each overlay
+ * only shows its own portion of the full virtual canvas.
+ */
+function extractSubFrame(
+  virtualFrame: RgbFrame,
+  displayId: number,
+  topology: DisplayTopology
+): RgbFrame | null {
+  const display = topology.displays.find((d) => d.id === displayId)
+  if (!display) return null
+  const vb = topology.virtualBounds
+  if (vb.width === 0 || vb.height === 0) return null
+
+  const offsetX = Math.round((display.bounds.x - vb.x) / vb.width * virtualFrame.columns)
+  const offsetY = Math.round((display.bounds.y - vb.y) / vb.height * virtualFrame.rows)
+  const dispCols = Math.round(display.bounds.width / vb.width * virtualFrame.columns)
+  const dispRows = Math.round(display.bounds.height / vb.height * virtualFrame.rows)
+
+  if (dispCols <= 0 || dispRows <= 0) return null
+
+  const pixels = new Uint8ClampedArray(dispCols * dispRows * 3)
+  for (let y = 0; y < dispRows; y++) {
+    for (let x = 0; x < dispCols; x++) {
+      const srcI = ((offsetY + y) * virtualFrame.columns + Math.min(virtualFrame.columns - 1, offsetX + x)) * 3
+      const dstI = (y * dispCols + x) * 3
+      pixels[dstI]     = virtualFrame.pixels[srcI]
+      pixels[dstI + 1] = virtualFrame.pixels[srcI + 1]
+      pixels[dstI + 2] = virtualFrame.pixels[srcI + 2]
+    }
+  }
+  return { columns: dispCols, rows: dispRows, pixels, generatedAt: virtualFrame.generatedAt }
 }
 
 let _layerCounter = 100
@@ -111,6 +147,8 @@ export function App(): JSX.Element {
   const workerRef = useRef<Worker | null>(null)
   const overlayIdsRef = useRef<number[]>(overlayDisplayIds)
   overlayIdsRef.current = overlayDisplayIds
+  const topologyRef = useRef<DisplayTopology | null>(topology)
+  topologyRef.current = topology
 
   useEffect(() => {
     const worker = new Worker(
@@ -237,7 +275,16 @@ export function App(): JSX.Element {
       setFrame(frame)
       // Push to any open overlay windows (fire-and-forget, not awaited)
       if (overlayIdsRef.current.length > 0) {
-        window.rgbbox.pushFrameToOverlays(frame)
+        const topo = topologyRef.current
+        if (scene.linkedDisplays && topo && topo.displays.length > 1) {
+          // Linked-display mode: each overlay gets only its sub-region of the virtual canvas
+          for (const displayId of overlayIdsRef.current) {
+            const subFrame = extractSubFrame(frame, displayId, topo)
+            if (subFrame) window.rgbbox.pushFrameToDisplay(displayId, subFrame)
+          }
+        } else {
+          window.rgbbox.pushFrameToOverlays(frame)
+        }
       }
       timerId = window.setTimeout(tick, intervalMs)
     }
@@ -322,6 +369,19 @@ export function App(): JSX.Element {
     setProfile((cur) => cur ? updateLayer(cur, layerId, {
       enabled: !activeScene(cur).layers.find((l) => l.id === layerId)?.enabled
     }) : cur)
+  }, [])
+
+  const toggleLinkedDisplays = useCallback(() => {
+    setProfile((cur) => {
+      if (!cur) return cur
+      const sceneId = (cur.scenes.find((s) => s.id === cur.activeSceneId) ?? cur.scenes[0]).id
+      return {
+        ...cur,
+        scenes: cur.scenes.map((s) =>
+          s.id !== sceneId ? s : { ...s, linkedDisplays: !s.linkedDisplays }
+        )
+      }
+    })
   }, [])
 
   const addLayer = useCallback((kind: EffectKind) => {
@@ -817,6 +877,38 @@ export function App(): JSX.Element {
                     <span className="chip">{topology.platform}</span>
                   </div>
                   <DisplayMap topology={topology} overlayDisplayIds={overlayDisplayIds} onToggleOverlay={handleToggleOverlay} />
+                  {topology.displays.length > 1 && (
+                    <div className="linked-display-row">
+                      <button
+                        className={`aspect-lock-btn${scene?.linkedDisplays ? ' locked' : ''}`}
+                        title={t('scene.linkedDisplays.hint')}
+                        onClick={toggleLinkedDisplays}
+                        type="button"
+                      >
+                        <Link2 size={12} />
+                        <span>{t('scene.linkedDisplays')}</span>
+                      </button>
+                      {scene?.linkedDisplays && (
+                        <span className="linked-hint">{t('scene.linkedDisplays.hint')}</span>
+                      )}
+                    </div>
+                  )}
+                  {topology.displays.length > 1 && (
+                    <div className="linked-display-row">
+                      <button
+                        className={`aspect-lock-btn${scene?.linkedDisplays ? ' locked' : ''}`}
+                        title={t('scene.linkedDisplays.hint')}
+                        onClick={toggleLinkedDisplays}
+                        type="button"
+                      >
+                        <Link2 size={12} />
+                        <span>{t('scene.linkedDisplays')}</span>
+                      </button>
+                      {scene?.linkedDisplays && (
+                        <span className="linked-hint">{t('scene.linkedDisplays.hint')}</span>
+                      )}
+                    </div>
+                  )}
                 </section>
 
                 {/* Sampling settings — spans both columns */}

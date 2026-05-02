@@ -27,6 +27,21 @@ function hash2(x: number, y: number): number {
   return hash(x * 127.1 + y * 311.7)
 }
 
+/**
+ * Returns a 0..1 coordinate projected along the given direction angle (degrees, 0 = right, 90 = down).
+ * Accounts for aspect ratio so that angle 45° looks visually diagonal regardless of grid shape.
+ */
+function dirT(ctx: EffectContext, angleDeg: number): number {
+  const rad = (angleDeg * Math.PI) / 180
+  // Normalize to -0.5..0.5, aspect-correct so 45° is visually diagonal
+  const aspect = ctx.columns / Math.max(1, ctx.rows)
+  const nx = (ctx.x / Math.max(1, ctx.columns - 1) - 0.5) * aspect
+  const ny = ctx.y / Math.max(1, ctx.rows - 1) - 0.5
+  // Project and normalize by the aspect-corrected half-diagonal so full range ≈ 0..1
+  const halfDiag = Math.max(0.5 * aspect * Math.abs(Math.cos(rad)) + 0.5 * Math.abs(Math.sin(rad)), 0.0001)
+  return (nx * Math.cos(rad) + ny * Math.sin(rad)) / halfDiag * 0.5 + 0.5
+}
+
 export function renderEffectPixel(layer: EffectLayer, context: EffectContext): RgbColor {
   switch (layer.kind) {
 
@@ -58,7 +73,8 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const speed = Number(layer.parameters.speed ?? 0.35)
       const spread = Number(layer.parameters.spread ?? 1.2)
       const hueShift = Number(layer.parameters.hueShift ?? 0)
-      const hue = ((context.x / Math.max(1, context.columns - 1)) * 300 * spread + context.now * speed * 120 + hueShift) % 360
+      const angle = Number(layer.parameters.angle ?? 0)
+      const hue = (dirT(context, angle) * 300 * spread + context.now * speed * 120 + hueShift) % 360
 
       return hslToRgb(hue, 0.88, 0.54)
     }
@@ -67,7 +83,8 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const speed = Number(layer.parameters.speed ?? 0.5)
       const width = Number(layer.parameters.width ?? 0.35)
       const color = hexToRgb(String(layer.parameters.color ?? '#00ccff'))
-      const wave = Math.sin((context.x / context.columns + context.y / context.rows + context.now * speed) * Math.PI * 2)
+      const angle = Number(layer.parameters.angle ?? 45)
+      const wave = Math.sin((dirT(context, angle) + context.now * speed) * Math.PI * 2)
       // only the positive half of the wave is bright; width scales peak brightness
       const brightness = clampUnit(0.04 + Math.max(0, wave) * width * 2.7)
 
@@ -81,7 +98,8 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
     case 'zone-gradient': {
       const from = hexToRgb(String(layer.parameters.from ?? '#2cff9a'))
       const to = hexToRgb(String(layer.parameters.to ?? '#ffcf40'))
-      const ratio = (context.x + context.y) / Math.max(1, context.columns + context.rows - 2)
+      const angle = Number(layer.parameters.angle ?? 45)
+      const ratio = clampUnit(dirT(context, angle))
 
       return {
         r: from.r * (1 - ratio) + to.r * ratio,
@@ -180,10 +198,11 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const speed = Number(layer.parameters.speed ?? 0.45)
       const tail = Number(layer.parameters.tail ?? 0.35)
       const color = hexToRgb(String(layer.parameters.color ?? '#ffffff'))
+      const angle = Number(layer.parameters.angle ?? 0)
 
       const headPos = (context.now * speed) % 1
-      const axisPos = context.x / Math.max(1, context.columns - 1)
-      const crossPos = context.y / Math.max(1, context.rows - 1)
+      const axisPos = dirT(context, angle)
+      const crossPos = dirT(context, (angle + 90) % 360)
 
       const behind = (axisPos - headPos + 1) % 1
       const tailFall = behind < tail ? Math.exp(-behind * 6 / tail) : 0

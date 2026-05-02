@@ -86,6 +86,8 @@ export interface Scene {
   name: string
   displayIds: number[]
   layers: EffectLayer[]
+  /** When true, effects span across all monitors using the physical display layout as a virtual canvas. */
+  linkedDisplays?: boolean
 }
 
 export interface Profile {

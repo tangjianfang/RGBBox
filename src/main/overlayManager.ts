@@ -110,3 +110,10 @@ export function pushFrameToOverlays(frame: RgbFrame): void {
     }
   }
 }
+
+export function pushFrameToDisplay(displayId: number, frame: RgbFrame): void {
+  const win = overlayWindows.get(displayId)
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('overlay:frame', frame)
+  }
+}

@@ -23,19 +23,19 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'rainbow',
     label: 'Rainbow',
     description: 'Full-spectrum gradient sweeps across the canvas.',
-    defaults: { speed: 0.35, spread: 1.2, hueShift: 0 }
+    defaults: { speed: 0.35, spread: 1.2, hueShift: 0, angle: 0 }
   },
   {
     kind: 'wave',
     label: 'Wave',
     description: 'Directional color wave with adjustable width.',
-    defaults: { speed: 0.5, width: 0.35, color: '#00ccff' }
+    defaults: { speed: 0.5, width: 0.35, color: '#00ccff', angle: 45 }
   },
   {
     kind: 'zone-gradient',
     label: 'Gradient',
     description: 'Blends two anchor colors across the grid.',
-    defaults: { from: '#2cff9a', to: '#ffcf40' }
+    defaults: { from: '#2cff9a', to: '#ffcf40', angle: 45 }
   },
   {
     kind: 'fire',
@@ -65,7 +65,7 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'comet',
     label: 'Comet',
     description: 'Bright streak races across the grid with a glowing tail.',
-    defaults: { speed: 0.45, tail: 0.35, color: '#ffffff' }
+    defaults: { speed: 0.45, tail: 0.35, color: '#ffffff', angle: 0 }
   },
   {
     kind: 'lightning',
