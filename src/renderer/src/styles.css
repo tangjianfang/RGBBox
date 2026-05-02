@@ -1064,6 +1064,12 @@ select:focus {
   margin: 3px 6px;
 }
 
+/* Inline name edit input */
+.profile-edit-input {
+  flex: 1;
+  min-width: 0;
+}
+
 .lang-toggle-btn {
   align-items: center;
   background: transparent;

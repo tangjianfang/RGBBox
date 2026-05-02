@@ -61,7 +61,10 @@ export function App(): JSX.Element {
   const [version, setVersion] = useState('0.1.0')
   const [savedProfiles, setSavedProfiles] = useState<ProfileMeta[]>([])
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [profileEditMode, setProfileEditMode] = useState<'new' | 'rename' | null>(null)
+  const [profileEditName, setProfileEditName] = useState('')
   const profileMenuRef = useRef<HTMLDivElement | null>(null)
+  const editInputRef = useRef<HTMLInputElement | null>(null)
 
   const refreshProfiles = useCallback(() => {
     window.rgbbox.listProfiles().then(setSavedProfiles)
@@ -250,29 +253,40 @@ export function App(): JSX.Element {
   }, [selectEffect])
 
   // ── Profile menu actions ─────────────────────────────────────────────────
-  const handleProfileNew = useCallback(async () => {
+  const handleProfileNew = useCallback(() => {
     setProfileMenuOpen(false)
-    const name = window.prompt(t('profile.namePlaceholder'), t('profile.new'))
-    if (!name) return
-    const newId = `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
-    const newProfile: Profile = { ...defaultProfile, id: newId, name: name.trim() }
-    await window.rgbbox.saveProfileAs(newProfile)
-    setProfile(newProfile)
-    refreshProfiles()
-  }, [t, refreshProfiles])
+    setProfileEditName('')
+    setProfileEditMode('new')
+    window.setTimeout(() => editInputRef.current?.focus(), 30)
+  }, [])
 
-  const handleProfileRename = useCallback(async () => {
+  const handleProfileRename = useCallback(() => {
     if (!profile) return
     setProfileMenuOpen(false)
-    const newName = window.prompt(t('profile.namePlaceholder'), profile.name)
-    if (!newName || newName.trim() === profile.name) return
-    const renamed: Profile = { ...profile, name: newName.trim() }
-    if (savedProfiles.find((p) => p.id === profile.id)) {
-      await window.rgbbox.saveProfileAs(renamed)
+    setProfileEditName(profile.name)
+    setProfileEditMode('rename')
+    window.setTimeout(() => editInputRef.current?.focus(), 30)
+  }, [profile])
+
+  const handleProfileEditConfirm = useCallback(async () => {
+    const name = profileEditName.trim()
+    if (!name) { setProfileEditMode(null); return }
+    if (profileEditMode === 'new') {
+      const newId = `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+      const newProfile: Profile = { ...defaultProfile, id: newId, name }
+      await window.rgbbox.saveProfileAs(newProfile)
+      setProfile(newProfile)
       refreshProfiles()
+    } else if (profileEditMode === 'rename' && profile) {
+      const renamed: Profile = { ...profile, name }
+      if (savedProfiles.find((p) => p.id === profile.id)) {
+        await window.rgbbox.saveProfileAs(renamed)
+        refreshProfiles()
+      }
+      setProfile(renamed)
     }
-    setProfile(renamed)
-  }, [profile, savedProfiles, t, refreshProfiles])
+    setProfileEditMode(null)
+  }, [profileEditMode, profileEditName, profile, savedProfiles, refreshProfiles])
 
   const handleProfileDelete = useCallback(async () => {
     if (!profile) return
@@ -381,22 +395,41 @@ export function App(): JSX.Element {
         <div className="sidebar-footer">
           <div className="profile-selector-row">
             <Users size={14} className="profile-selector-icon" />
-            <select
-              className="profile-select"
-              value={savedProfiles.find((p) => p.id === profile.id)?.id ?? ''}
-              onChange={async (e) => {
-                if (!e.target.value) return
-                const loaded = await window.rgbbox.loadProfileById(e.target.value)
-                if (loaded) setProfile(loaded)
-              }}
-            >
-              {!savedProfiles.find((p) => p.id === profile.id) && (
-                <option value="">{profile.name}</option>
-              )}
-              {savedProfiles.map((meta) => (
-                <option key={meta.id} value={meta.id}>{meta.name}</option>
-              ))}
-            </select>
+            {profileEditMode ? (
+              <>
+                <input
+                  ref={editInputRef}
+                  className="profile-select profile-edit-input"
+                  type="text"
+                  value={profileEditName}
+                  placeholder={t('profile.namePlaceholder')}
+                  onChange={(e) => setProfileEditName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleProfileEditConfirm()
+                    if (e.key === 'Escape') setProfileEditMode(null)
+                  }}
+                />
+                <button className="icon-button small" type="button" onClick={handleProfileEditConfirm} title="OK">✓</button>
+                <button className="icon-button small" type="button" onClick={() => setProfileEditMode(null)} title="Cancel">✕</button>
+              </>
+            ) : (
+              <>
+                <select
+                  className="profile-select"
+                  value={savedProfiles.find((p) => p.id === profile.id)?.id ?? ''}
+                  onChange={async (e) => {
+                    if (!e.target.value) return
+                    const loaded = await window.rgbbox.loadProfileById(e.target.value)
+                    if (loaded) setProfile(loaded)
+                  }}
+                >
+                  {!savedProfiles.find((p) => p.id === profile.id) && (
+                    <option value="">{profile.name}</option>
+                  )}
+                  {savedProfiles.map((meta) => (
+                    <option key={meta.id} value={meta.id}>{meta.name}</option>
+                  ))}
+                </select>
             <div className="profile-menu-anchor" ref={profileMenuRef}>
               <button
                 className="icon-button small"
@@ -429,6 +462,8 @@ export function App(): JSX.Element {
                 </div>
               )}
             </div>
+              </>
+            )}
           </div>
           <button
             className="lang-toggle-btn"
