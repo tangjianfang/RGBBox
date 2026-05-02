@@ -29,11 +29,18 @@ export function ProfileManager({ currentProfile, onLoad, onClose }: ProfileManag
   useEffect(() => { refreshList() }, [refreshList])
 
   const handleSave = useCallback(async () => {
-    const profile: Profile = { ...currentProfile, name: profileName.trim() || currentProfile.name }
+    const trimmedName = profileName.trim() || currentProfile.name
+    // Only reuse the existing id if this profile is already a saved slot;
+    // otherwise generate a fresh id so each "Save" creates a new entry.
+    const existsInList = profiles.some((p) => p.id === currentProfile.id)
+    const newId = existsInList
+      ? currentProfile.id
+      : `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+    const profile: Profile = { ...currentProfile, id: newId, name: trimmedName }
     await window.rgbbox.saveProfileAs(profile)
     refreshList()
     flash(t('profile.saveCurrent'))
-  }, [currentProfile, profileName, refreshList, t])
+  }, [currentProfile, profileName, profiles, refreshList, t])
 
   const handleLoad = useCallback(async (id: string) => {
     const loaded = await window.rgbbox.loadProfileById(id)
