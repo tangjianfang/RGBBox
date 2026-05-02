@@ -1,4 +1,4 @@
-import { Activity, Download, FilePlus, Gauge, Languages, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Sparkles, Trash2, Upload, Users } from 'lucide-react'
+import { Activity, Download, FilePlus, Gauge, Languages, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Sparkles, Trash2, Upload } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, EngineStatus, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
@@ -393,78 +393,6 @@ export function App(): JSX.Element {
         </label>
 
         <div className="sidebar-footer">
-          <div className="profile-selector-row">
-            <Users size={14} className="profile-selector-icon" />
-            {profileEditMode ? (
-              <>
-                <input
-                  ref={editInputRef}
-                  className="profile-select profile-edit-input"
-                  type="text"
-                  value={profileEditName}
-                  placeholder={t('profile.namePlaceholder')}
-                  onChange={(e) => setProfileEditName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleProfileEditConfirm()
-                    if (e.key === 'Escape') setProfileEditMode(null)
-                  }}
-                />
-                <button className="icon-button small" type="button" onClick={handleProfileEditConfirm} title="OK">✓</button>
-                <button className="icon-button small" type="button" onClick={() => setProfileEditMode(null)} title="Cancel">✕</button>
-              </>
-            ) : (
-              <>
-                <select
-                  className="profile-select"
-                  value={savedProfiles.find((p) => p.id === profile.id)?.id ?? ''}
-                  onChange={async (e) => {
-                    if (!e.target.value) return
-                    const loaded = await window.rgbbox.loadProfileById(e.target.value)
-                    if (loaded) setProfile(loaded)
-                  }}
-                >
-                  {!savedProfiles.find((p) => p.id === profile.id) && (
-                    <option value="">{profile.name}</option>
-                  )}
-                  {savedProfiles.map((meta) => (
-                    <option key={meta.id} value={meta.id}>{meta.name}</option>
-                  ))}
-                </select>
-            <div className="profile-menu-anchor" ref={profileMenuRef}>
-              <button
-                className="icon-button small"
-                type="button"
-                onClick={() => setProfileMenuOpen((v) => !v)}
-                title={t('profile.label')}
-              >
-                <MoreVertical size={13} />
-              </button>
-              {profileMenuOpen && (
-                <div className="profile-menu">
-                  <button className="profile-menu-item" type="button" onClick={handleProfileNew}>
-                    <FilePlus size={12} /> {t('profile.new')}
-                  </button>
-                  <button className="profile-menu-item" type="button" onClick={handleProfileRename}>
-                    <Pencil size={12} /> {t('profile.rename')}
-                  </button>
-                  {savedProfiles.find((p) => p.id === profile.id) && (
-                    <button className="profile-menu-item danger" type="button" onClick={handleProfileDelete}>
-                      <Trash2 size={12} /> {t('profile.delete')}
-                    </button>
-                  )}
-                  <div className="profile-menu-divider" />
-                  <button className="profile-menu-item" type="button" onClick={handleProfileImport}>
-                    <Upload size={12} /> {t('profile.import')}
-                  </button>
-                  <button className="profile-menu-item" type="button" onClick={handleProfileExport}>
-                    <Download size={12} /> {t('profile.export')}
-                  </button>
-                </div>
-              )}
-            </div>
-              </>
-            )}
-          </div>
           <button
             className="lang-toggle-btn"
             type="button"
@@ -483,6 +411,80 @@ export function App(): JSX.Element {
 
             {/* ── Left FX sidebar ──────────────────────────────────────── */}
             <aside className="fx-sidebar">
+
+              {/* Profile bar */}
+              <div className="fx-profile-bar">
+                {profileEditMode ? (
+                  <>
+                    <input
+                      ref={editInputRef}
+                      className="profile-select profile-edit-input"
+                      type="text"
+                      value={profileEditName}
+                      placeholder={t('profile.namePlaceholder')}
+                      onChange={(e) => setProfileEditName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleProfileEditConfirm()
+                        if (e.key === 'Escape') setProfileEditMode(null)
+                      }}
+                    />
+                    <button className="icon-button small" type="button" onClick={handleProfileEditConfirm} title="OK">✓</button>
+                    <button className="icon-button small" type="button" onClick={() => setProfileEditMode(null)} title="Cancel">✕</button>
+                  </>
+                ) : (
+                  <>
+                    <select
+                      className="profile-select"
+                      value={savedProfiles.find((p) => p.id === profile.id)?.id ?? ''}
+                      onChange={async (e) => {
+                        if (!e.target.value) return
+                        const loaded = await window.rgbbox.loadProfileById(e.target.value)
+                        if (loaded) setProfile(loaded)
+                      }}
+                    >
+                      {!savedProfiles.find((p) => p.id === profile.id) && (
+                        <option value="">{profile.name}</option>
+                      )}
+                      {savedProfiles.map((meta) => (
+                        <option key={meta.id} value={meta.id}>{meta.name}</option>
+                      ))}
+                    </select>
+                    <div className="profile-menu-anchor" ref={profileMenuRef}>
+                      <button
+                        className="icon-button small"
+                        type="button"
+                        onClick={() => setProfileMenuOpen((v) => !v)}
+                        title={t('profile.label')}
+                      >
+                        <MoreVertical size={13} />
+                      </button>
+                      {profileMenuOpen && (
+                        <div className="profile-menu">
+                          <button className="profile-menu-item" type="button" onClick={handleProfileNew}>
+                            <FilePlus size={12} /> {t('profile.new')}
+                          </button>
+                          <button className="profile-menu-item" type="button" onClick={handleProfileRename}>
+                            <Pencil size={12} /> {t('profile.rename')}
+                          </button>
+                          {savedProfiles.find((p) => p.id === profile.id) && (
+                            <button className="profile-menu-item danger" type="button" onClick={handleProfileDelete}>
+                              <Trash2 size={12} /> {t('profile.delete')}
+                            </button>
+                          )}
+                          <div className="profile-menu-divider" />
+                          <button className="profile-menu-item" type="button" onClick={handleProfileImport}>
+                            <Upload size={12} /> {t('profile.import')}
+                          </button>
+                          <button className="profile-menu-item" type="button" onClick={handleProfileExport}>
+                            <Download size={12} /> {t('profile.export')}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+
               <div className="fx-sidebar-header">
                 <span className="fx-section-title">{t('fx.layers')}</span>
                 <button
@@ -501,11 +503,12 @@ export function App(): JSX.Element {
                     className={`layer-row ${selectedLayer?.id === layer.id ? 'selected' : ''}`}
                     key={layer.id}
                   >
-                    <button
-                      className={`layer-enable-dot ${layer.enabled ? 'on' : 'off'}`}
-                      type="button"
+                    <input
+                      className="layer-checkbox"
+                      type="checkbox"
+                      checked={layer.enabled}
+                      onChange={() => toggleLayerEnabled(layer.id)}
                       title={layer.enabled ? t('layer.enable') : t('layer.disable')}
-                      onClick={() => toggleLayerEnabled(layer.id)}
                       aria-label="Toggle layer"
                     />
                     <button
