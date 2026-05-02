@@ -7,7 +7,7 @@ import { defaultProfile } from '../shared/defaultProfile'
 import { ipcChannels } from '../shared/ipc'
 import type { EngineStatus, Profile, RgbFrame } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
-import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, pushFrameToOverlays } from './overlayManager'
+import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, pushFrameToOverlays, setOverlayClosedCallback } from './overlayManager'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame } from './screenCapture'
 
@@ -112,6 +112,11 @@ function registerIpc(): void {
     pushFrameToOverlays(frame)
 
     return frame
+  })
+
+  // Notify main renderer when an overlay is closed externally (e.g. double-click close)
+  setOverlayClosedCallback((displayId) => {
+    mainWindow?.webContents.send(ipcChannels.overlayClosed, displayId)
   })
 
   // Overlay management

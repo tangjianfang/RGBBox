@@ -12,6 +12,8 @@ export const ipcChannels = {
   getOverlayDisplayIds: 'rgbbox:overlay:get-ids',
   // Overlay push channel (main → renderer, not invokable)
   overlayFrame: 'overlay:frame',
+  // Overlay closed by user (main → renderer push)
+  overlayClosed: 'rgbbox:overlay:closed',
   // Overlay context menu & effect switch
   overlayShowContextMenu: 'rgbbox:overlay:show-context-menu',
   overlayEffectChanged: 'rgbbox:overlay:effect-changed',

@@ -12,6 +12,12 @@ import type { RgbFrame } from '../shared/types'
 
 const overlayWindows = new Map<number, BrowserWindow>()
 
+let onClosedCallback: ((displayId: number) => void) | null = null
+
+export function setOverlayClosedCallback(cb: (displayId: number) => void): void {
+  onClosedCallback = cb
+}
+
 export function getOverlayDisplayIds(): number[] {
   return [...overlayWindows.keys()]
 }
@@ -78,6 +84,7 @@ export function openOverlay(
 
   win.on('closed', () => {
     overlayWindows.delete(displayId)
+    onClosedCallback?.(displayId)
   })
 
   return true

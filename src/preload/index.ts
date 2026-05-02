@@ -33,6 +33,12 @@ const api = {
     return () => ipcRenderer.off(ipcChannels.overlayFrame, handler)
   },
 
+  onOverlayClosed: (callback: (displayId: number) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, displayId: number): void => callback(displayId)
+    ipcRenderer.on(ipcChannels.overlayClosed, handler)
+    return () => ipcRenderer.off(ipcChannels.overlayClosed, handler)
+  },
+
   showOverlayContextMenu: (
     displayId: number,
     effects: Array<{ kind: string; label: string }>

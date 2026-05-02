@@ -274,6 +274,13 @@ export function App(): JSX.Element {
     })
   }, [selectEffect])
 
+  // Sync overlay state when user closes an overlay window directly
+  useEffect(() => {
+    return window.rgbbox.onOverlayClosed((displayId) => {
+      setOverlayDisplayIds((prev) => prev.filter((id) => id !== displayId))
+    })
+  }, [])
+
   // ── Profile menu actions ─────────────────────────────────────────────────
   const handleProfileNew = useCallback(() => {
     setProfileMenuOpen(false)
@@ -464,6 +471,7 @@ export function App(): JSX.Element {
                         if (loaded) setProfile(loaded)
                       }}
                     >
+                      <option value="" disabled>{t('profile.label')}</option>
                       {!savedProfiles.find((p) => p.id === profile.id) && (
                         <option value="">{profile.name}</option>
                       )}
