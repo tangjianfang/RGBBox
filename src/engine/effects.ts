@@ -13,6 +13,7 @@ export interface EffectContext {
   _audioHigh?: number
   _audioBeat?: number
   _screenPixel?: { r: number; g: number; b: number }
+  _textMask?: boolean[]
 }
 
 // Deterministic hash for stable per-pixel randomness
@@ -38,7 +39,7 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const textY = Number(layer.parameters.textY ?? 0.5)
         const textScale = Number(layer.parameters.textScale ?? 1)
         const textColor = hexToRgb(String(layer.parameters.textColor ?? '#ffffff'))
-        const mask = getTextMask(text, context.columns, context.rows, textX, textY, textScale)
+        const mask = context._textMask ?? getTextMask(text, context.columns, context.rows, textX, textY, textScale)
         return mask[context.y * context.columns + context.x] ? textColor : bgColor
       }
       return bgColor

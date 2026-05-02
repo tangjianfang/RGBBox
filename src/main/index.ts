@@ -80,7 +80,7 @@ function registerIpc(): void {
     engineStatus = { ...engineStatus, running }
     return engineStatus
   })
-  ipcMain.handle(ipcChannels.renderPreviewFrame, async (_event, profile: Profile, audio?: AudioInput) => {
+  ipcMain.handle(ipcChannels.renderPreviewFrame, async (_event, profile: Profile, audio?: AudioInput, textMasks?: Record<string, boolean[]>) => {
     // Detect if any enabled layer needs real screen capture.
     // Skip capture when overlays are active: the overlay covers the display,
     // so capturing would read back the overlay itself and create a feedback loop.
@@ -100,7 +100,7 @@ function registerIpc(): void {
       }
     }
 
-    const frame = renderPreviewFrame(profile, undefined, lastPreviewFrame, audio, screenSample)
+    const frame = renderPreviewFrame(profile, undefined, lastPreviewFrame, audio, screenSample, textMasks)
     lastPreviewFrame = frame
     engineStatus = {
       ...engineStatus,

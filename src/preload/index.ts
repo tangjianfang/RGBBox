@@ -16,8 +16,8 @@ const api = {
   saveProfile: (profile: Profile): Promise<Profile> => ipcRenderer.invoke(ipcChannels.saveProfile, profile),
   getEngineStatus: (): Promise<EngineStatus> => ipcRenderer.invoke(ipcChannels.getEngineStatus),
   setEngineRunning: (running: boolean): Promise<EngineStatus> => ipcRenderer.invoke(ipcChannels.setEngineRunning, running),
-  renderPreviewFrame: (profile: Profile, audio?: AudioInput): Promise<RgbFrame> =>
-    ipcRenderer.invoke(ipcChannels.renderPreviewFrame, profile, audio),
+  renderPreviewFrame: (profile: Profile, audio?: AudioInput, textMasks?: Record<string, boolean[]>): Promise<RgbFrame> =>
+    ipcRenderer.invoke(ipcChannels.renderPreviewFrame, profile, audio, textMasks),
 
   // Multi-display overlay
   openOverlay: (displayId: number): Promise<boolean> =>

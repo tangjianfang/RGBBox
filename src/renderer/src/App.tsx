@@ -7,6 +7,7 @@ import { DisplayMap } from './components/DisplayMap'
 import { EffectsView } from './components/EffectsView'
 import { PreviewGrid } from './components/PreviewGrid'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
+import { computeTextMask } from './canvasTextMask'
 
 type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics'
 
@@ -158,7 +159,26 @@ export function App(): JSX.Element {
         ? { bass: audio.bass, mid: audio.mid, high: audio.high, beat: audio.beat }
         : undefined
 
-      window.rgbbox.renderPreviewFrame(profile, audioInput).then((nextFrame) => {
+      // Pre-compute text masks for static layers using Canvas API (supports CJK)
+      const scene = profile.scenes.find((s) => s.id === profile.activeSceneId) ?? profile.scenes[0]
+      const textMasks: Record<string, boolean[]> = {}
+      for (const layer of scene.layers) {
+        if (layer.enabled && layer.kind === 'static') {
+          const text = String(layer.parameters.text ?? '')
+          if (text.trim()) {
+            textMasks[layer.id] = computeTextMask(
+              text,
+              profile.sampling.columns,
+              profile.sampling.rows,
+              Number(layer.parameters.textX ?? 0.5),
+              Number(layer.parameters.textY ?? 0.5),
+              Number(layer.parameters.textScale ?? 1)
+            )
+          }
+        }
+      }
+
+      window.rgbbox.renderPreviewFrame(profile, audioInput, textMasks).then((nextFrame) => {
         if (!cancelled) {
           setFrame(nextFrame)
           // Schedule next tick only after current IPC call completes

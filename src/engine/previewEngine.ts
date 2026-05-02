@@ -15,7 +15,8 @@ export function renderPreviewFrame(
   now = performance.now() / 1000,
   previousFrame?: RgbFrame,
   audio?: AudioInput,
-  screenSample?: RgbFrame
+  screenSample?: RgbFrame,
+  textMasks?: Record<string, boolean[]>
 ): RgbFrame {
   const columns = Math.max(1, Math.floor(profile.sampling.columns))
   const rows = Math.max(1, Math.floor(profile.sampling.rows))
@@ -50,7 +51,11 @@ export function renderPreviewFrame(
           continue
         }
 
-        const overlay = renderEffectPixel(layer, baseContext)
+        const ctx: EffectContext = textMasks?.[layer.id]
+          ? { ...baseContext, _textMask: textMasks[layer.id] }
+          : baseContext
+
+        const overlay = renderEffectPixel(layer, ctx)
         color = mixColors(color, overlay, layer.opacity, layer.blendMode)
       }
 
