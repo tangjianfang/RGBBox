@@ -684,6 +684,24 @@ select:focus {
   color: #c5f0e4;
 }
 
+.audio-device-select {
+  background: #0f1418;
+  border: 1px solid #26343c;
+  border-radius: 6px;
+  color: #7fa0aa;
+  font-size: 11px;
+  height: 28px;
+  padding: 0 6px;
+  width: 100%;
+}
+
+.audio-device-select:hover,
+.audio-device-select:focus {
+  border-color: #46c6a8;
+  color: #c5f0e4;
+  outline: none;
+}
+
 .audio-meter-row {
   display: flex;
   gap: 4px;

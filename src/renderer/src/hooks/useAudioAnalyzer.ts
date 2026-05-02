@@ -34,7 +34,7 @@ const INACTIVE: AudioData = {
   freqBands: new Array(NUM_BANDS).fill(0)
 }
 
-export function useAudioAnalyzer(enabled: boolean): AudioData {
+export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
   const [audioData, setAudioData] = useState<AudioData>(INACTIVE)
   const prevBassRef = useRef(0)
   const frameRef = useRef<number | null>(null)
@@ -49,8 +49,12 @@ export function useAudioAnalyzer(enabled: boolean): AudioData {
     let stream: MediaStream | null = null
     let audioContext: AudioContext | null = null
 
+    const audioConstraint: MediaStreamConstraints = deviceId
+      ? { audio: { deviceId: { exact: deviceId } }, video: false }
+      : { audio: true, video: false }
+
     navigator.mediaDevices
-      .getUserMedia({ audio: true, video: false })
+      .getUserMedia(audioConstraint)
       .then((micStream) => {
         if (cancelled) {
           micStream.getTracks().forEach((t) => t.stop())
@@ -124,7 +128,7 @@ export function useAudioAnalyzer(enabled: boolean): AudioData {
       stream?.getTracks().forEach((t) => t.stop())
       audioContext?.close().catch(() => undefined)
     }
-  }, [enabled])
+  }, [enabled, deviceId])
 
   return audioData
 }

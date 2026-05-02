@@ -15,6 +15,8 @@ const EN = {
   // Audio
   'audio.on': 'Audio On',
   'audio.off': 'Audio Off',
+  'audio.defaultDevice': 'Default (Mic)',
+  'audio.deviceLabel': 'Audio Source',
   'audio.tooltip.on': 'Disable mic input',
   'audio.tooltip.off': 'Enable audio reactive',
   // Engine
@@ -152,6 +154,8 @@ const ZH: TranslationTable = {
   'nav.diagnostics': '诊断',
   'audio.on': '音频已开',
   'audio.off': '音频已关',
+  'audio.defaultDevice': '默认（麦克风）',
+  'audio.deviceLabel': '音频源',
   'audio.tooltip.on': '关闭麦克风',
   'audio.tooltip.off': '开启音频响应',
   'engine.label': '引擎',

@@ -97,9 +97,13 @@ export function App(): JSX.Element {
   const [audioEnabled, setAudioEnabled] = useState(() =>
     localStorage.getItem('rgbbox:audio') === '1'
   )
+  const [audioDeviceId, setAudioDeviceId] = useState(() =>
+    localStorage.getItem('rgbbox:audioDevice') ?? ''
+  )
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
   const [overlayDisplayIds, setOverlayDisplayIds] = useState<number[]>([])
   const [powerSaveBlock, setPowerSaveBlock] = useState(false)
-  const audio = useAudioAnalyzer(audioEnabled)
+  const audio = useAudioAnalyzer(audioEnabled, audioDeviceId)
 
   useEffect(() => {
     Promise.all([
@@ -140,7 +144,25 @@ export function App(): JSX.Element {
   // ── Persist UI state to localStorage ────────────────────────────────────
   useEffect(() => { localStorage.setItem('rgbbox:view', currentView) }, [currentView])
   useEffect(() => { localStorage.setItem('rgbbox:audio', audioEnabled ? '1' : '0') }, [audioEnabled])
+  useEffect(() => { localStorage.setItem('rgbbox:audioDevice', audioDeviceId) }, [audioDeviceId])
   useEffect(() => { localStorage.setItem('rgbbox:selectedLayerId', selectedLayerId) }, [selectedLayerId])
+
+  // Enumerate audio input devices (labels populated after first getUserMedia permission)
+  useEffect(() => {
+    if (!audioEnabled) return undefined
+    const enumerate = async (): Promise<void> => {
+      const all = await navigator.mediaDevices.enumerateDevices()
+      setAudioDevices(all.filter((d) => d.kind === 'audioinput'))
+    }
+    // Enumerate immediately, then again after 800ms (labels appear after permission)
+    enumerate()
+    const timer = window.setTimeout(enumerate, 800)
+    navigator.mediaDevices.addEventListener('devicechange', enumerate)
+    return () => {
+      window.clearTimeout(timer)
+      navigator.mediaDevices.removeEventListener('devicechange', enumerate)
+    }
+  }, [audioEnabled])
 
   useEffect(() => {
     if (!profile) return undefined
@@ -389,6 +411,21 @@ export function App(): JSX.Element {
             {audioEnabled ? <Mic size={16} /> : <MicOff size={16} />}
             <span>{audioEnabled ? t('audio.on') : t('audio.off')}</span>
           </button>
+          {audioEnabled && (
+            <select
+              className="audio-device-select"
+              value={audioDeviceId}
+              title={t('audio.deviceLabel')}
+              onChange={(e) => setAudioDeviceId(e.target.value)}
+            >
+              <option value="">{t('audio.defaultDevice')}</option>
+              {audioDevices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || d.deviceId.slice(0, 12)}
+                </option>
+              ))}
+            </select>
+          )}
           {audioEnabled && audio.active && (
             <div className="audio-meter-row">
               <div className="audio-meter" style={{ '--level': audio.bass } as React.CSSProperties} title="Bass" />
