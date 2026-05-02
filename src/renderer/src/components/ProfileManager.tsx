@@ -36,11 +36,13 @@ export function ProfileManager({ currentProfile, onLoad, onClose }: ProfileManag
     const newId = existsInList
       ? currentProfile.id
       : `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
-    const profile: Profile = { ...currentProfile, id: newId, name: trimmedName }
-    await window.rgbbox.saveProfileAs(profile)
+    const savedProfile: Profile = { ...currentProfile, id: newId, name: trimmedName }
+    await window.rgbbox.saveProfileAs(savedProfile)
+    // Update the working profile in App so the dropdown points to the saved slot
+    onLoad(savedProfile)
     refreshList()
     flash(t('profile.saveCurrent'))
-  }, [currentProfile, profileName, profiles, refreshList, t])
+  }, [currentProfile, profileName, profiles, onLoad, refreshList, t])
 
   const handleLoad = useCallback(async (id: string) => {
     const loaded = await window.rgbbox.loadProfileById(id)

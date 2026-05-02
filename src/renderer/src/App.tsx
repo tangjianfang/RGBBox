@@ -252,7 +252,7 @@ export function App(): JSX.Element {
       {showProfileManager && (
         <ProfileManager
           currentProfile={profile}
-          onLoad={(p) => setProfile(p)}
+          onLoad={(p) => { setProfile(p); refreshProfiles() }}
           onClose={() => { setShowProfileManager(false); refreshProfiles() }}
         />
       )}
