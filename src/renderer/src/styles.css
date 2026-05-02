@@ -973,36 +973,37 @@ select:focus {
   padding-top: 12px;
 }
 
-.sidebar-profile-btn {
+.profile-selector-row {
   align-items: center;
-  background: #0d1318;
+  display: flex;
+  gap: 6px;
+}
+
+.profile-selector-icon {
+  color: #8aa2ad;
+  flex-shrink: 0;
+}
+
+.profile-select {
+  appearance: none;
+  background: #0d1318 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238aa2ad'/%3E%3C/svg%3E") no-repeat right 8px center;
   border: 1px solid #26343c;
   border-radius: 6px;
-  color: #9cb7c3;
-  display: flex;
-  font-size: 13px;
-  gap: 8px;
-  height: 36px;
-  overflow: hidden;
-  padding: 0 10px;
-  text-align: left;
-  text-overflow: ellipsis;
-  transition: background 120ms, border-color 120ms, color 120ms;
-  white-space: nowrap;
-  width: 100%;
-}
-
-.sidebar-profile-btn:hover {
-  background: #18242b;
-  border-color: #46c6a8;
-  color: #e4f8fb;
-}
-
-.sidebar-profile-btn span {
+  color: #c9e4ec;
   flex: 1;
+  font-size: 12px;
+  height: 30px;
+  min-width: 0;
   overflow: hidden;
+  padding: 0 24px 0 8px;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  transition: border-color 120ms;
+}
+
+.profile-select:hover,
+.profile-select:focus {
+  border-color: #46c6a8;
+  outline: none;
 }
 
 .lang-toggle-btn {

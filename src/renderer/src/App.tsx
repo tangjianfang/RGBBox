@@ -1,7 +1,7 @@
 import { Activity, Gauge, Languages, Mic, MicOff, Monitor, Pause, Play, Plus, SlidersHorizontal, Sparkles, Trash2, Users } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
 import { effectPresets } from '../../shared/defaultProfile'
-import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, EngineStatus, Profile, RgbFrame } from '../../shared/types'
+import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, EngineStatus, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
 import { useI18n } from './i18n'
 import { DisplayMap } from './components/DisplayMap'
 import { EffectsView } from './components/EffectsView'
@@ -61,6 +61,14 @@ export function App(): JSX.Element {
   const [status, setStatus] = useState<EngineStatus>({ running: true, fps: 30, output: 'virtual-preview' })
   const [version, setVersion] = useState('0.1.0')
   const [showProfileManager, setShowProfileManager] = useState(false)
+  const [savedProfiles, setSavedProfiles] = useState<ProfileMeta[]>([])
+
+  const refreshProfiles = useCallback(() => {
+    window.rgbbox.listProfiles().then(setSavedProfiles)
+  }, [])
+
+  useEffect(() => { refreshProfiles() }, [refreshProfiles])
+
   // ── UI state persisted to localStorage ──────────────────────────────────
   const [selectedLayerId, setSelectedLayerId] = useState(() =>
     localStorage.getItem('rgbbox:selectedLayerId') ?? 'layer-screen-ambient'
@@ -245,7 +253,7 @@ export function App(): JSX.Element {
         <ProfileManager
           currentProfile={profile}
           onLoad={(p) => setProfile(p)}
-          onClose={() => setShowProfileManager(false)}
+          onClose={() => { setShowProfileManager(false); refreshProfiles() }}
         />
       )}
       <aside className="sidebar">
@@ -315,15 +323,33 @@ export function App(): JSX.Element {
         </label>
 
         <div className="sidebar-footer">
-          <button
-            className="sidebar-profile-btn"
-            type="button"
-            onClick={() => setShowProfileManager(true)}
-            title={t('profile.label')}
-          >
-            <Users size={15} />
-            <span>{profile.name}</span>
-          </button>
+          <div className="profile-selector-row">
+            <Users size={14} className="profile-selector-icon" />
+            <select
+              className="profile-select"
+              value={savedProfiles.find((p) => p.id === profile.id)?.id ?? ''}
+              onChange={async (e) => {
+                if (!e.target.value) return
+                const loaded = await window.rgbbox.loadProfileById(e.target.value)
+                if (loaded) setProfile(loaded)
+              }}
+            >
+              {!savedProfiles.find((p) => p.id === profile.id) && (
+                <option value="">{profile.name}</option>
+              )}
+              {savedProfiles.map((meta) => (
+                <option key={meta.id} value={meta.id}>{meta.name}</option>
+              ))}
+            </select>
+            <button
+              className="icon-button small"
+              type="button"
+              onClick={() => setShowProfileManager(true)}
+              title={t('profile.label')}
+            >
+              <SlidersHorizontal size={13} />
+            </button>
+          </div>
           <button
             className="lang-toggle-btn"
             type="button"
@@ -404,7 +430,7 @@ export function App(): JSX.Element {
                     onClick={() => selectEffect(preset.kind)}
                     title={preset.description}
                   >
-                    {preset.label}
+                    {t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}
                   </button>
                 ))}
               </div>
