@@ -28,6 +28,7 @@ const PARAM_META: Record<string, { labelKey: string; min: number; max: number; s
   textX:       { labelKey: 'param.textX',    min: 0,   max: 1,   step: 0.05 },
   textY:       { labelKey: 'param.textY',    min: 0,   max: 1,   step: 0.05 },
   textScale:   { labelKey: 'param.textScale', min: 1,  max: 4,   step: 1 },
+  textWeight:  { labelKey: 'param.textWeight', min: 100, max: 900, step: 100 },
 }
 
 // performanceLabels is now computed inside the App component using t()
@@ -172,7 +173,8 @@ export function App(): JSX.Element {
               profile.sampling.rows,
               Number(layer.parameters.textX ?? 0.5),
               Number(layer.parameters.textY ?? 0.5),
-              Number(layer.parameters.textScale ?? 1)
+              Number(layer.parameters.textScale ?? 1),
+              Number(layer.parameters.textWeight ?? 400)
             )
           }
         }
