@@ -419,6 +419,7 @@ export function App(): JSX.Element {
               onChange={(e) => setAudioDeviceId(e.target.value)}
             >
               <option value="">{t('audio.defaultDevice')}</option>
+              <option value="__system_audio__">{t('audio.systemAudio')}</option>
               {audioDevices.map((d) => (
                 <option key={d.deviceId} value={d.deviceId}>
                   {d.label || d.deviceId.slice(0, 12)}

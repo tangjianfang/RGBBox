@@ -27,6 +27,8 @@ const api = {
     ipcRenderer.invoke(ipcChannels.closeOverlay, displayId),
   getOverlayDisplayIds: (): Promise<number[]> =>
     ipcRenderer.invoke(ipcChannels.getOverlayDisplayIds),
+  getDesktopAudioSourceId: (): Promise<string | null> =>
+    ipcRenderer.invoke(ipcChannels.getDesktopAudioSourceId),
 
   onOverlayFrame: (callback: (frame: RgbFrame) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, frame: RgbFrame): void => callback(frame)

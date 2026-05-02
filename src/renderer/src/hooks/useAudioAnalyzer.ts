@@ -45,21 +45,50 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
       return
     }
 
+    const SYSTEM_AUDIO_ID = '__system_audio__'
+
     let cancelled = false
     let stream: MediaStream | null = null
     let audioContext: AudioContext | null = null
 
-    const audioConstraint: MediaStreamConstraints = deviceId
-      ? { audio: { deviceId: { exact: deviceId } }, video: false }
-      : { audio: true, video: false }
+    const getStream = async (): Promise<MediaStream> => {
+      if (deviceId === SYSTEM_AUDIO_ID) {
+        // Use desktopCapturer sourceId to capture system audio loopback.
+        // Requires a tiny video track alongside (Electron constraint); we stop it immediately after.
+        const sourceId = await window.rgbbox.getDesktopAudioSourceId()
+        if (!sourceId) throw new Error('No desktop source available')
+        return navigator.mediaDevices.getUserMedia({
+          audio: {
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: sourceId
+            }
+          } as MediaTrackConstraints,
+          video: {
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: sourceId,
+              maxWidth: 1,
+              maxHeight: 1,
+              maxFrameRate: 1
+            }
+          } as MediaTrackConstraints
+        })
+      }
+      const audioConstraint: MediaStreamConstraints = deviceId
+        ? { audio: { deviceId: { exact: deviceId } }, video: false }
+        : { audio: true, video: false }
+      return navigator.mediaDevices.getUserMedia(audioConstraint)
+    }
 
-    navigator.mediaDevices
-      .getUserMedia(audioConstraint)
+    getStream()
       .then((micStream) => {
         if (cancelled) {
           micStream.getTracks().forEach((t) => t.stop())
           return
         }
+        // Discard video tracks (present when using desktop loopback capture)
+        micStream.getVideoTracks().forEach((t) => { t.stop(); micStream.removeTrack(t) })
 
         stream = micStream
         audioContext = new AudioContext()

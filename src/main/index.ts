@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, powerSaveBlocker, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, powerSaveBlocker, shell } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AudioInput } from '../engine/previewEngine'
@@ -130,6 +130,12 @@ function registerIpc(): void {
   })
   ipcMain.handle(ipcChannels.getOverlayDisplayIds, () => {
     return getOverlayDisplayIds()
+  })
+
+  // Return the first screen's desktopCapturer sourceId for system audio loopback
+  ipcMain.handle(ipcChannels.getDesktopAudioSourceId, async () => {
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })
+    return sources[0]?.id ?? null
   })
 
   // Named profile management

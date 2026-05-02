@@ -20,6 +20,8 @@ export const ipcChannels = {
   // Power save blocker
   setPowerSaveBlock: 'rgbbox:system:set-power-save-block',
   getPowerSaveBlock: 'rgbbox:system:get-power-save-block',
+  // Desktop audio loopback source ID (for system audio capture)
+  getDesktopAudioSourceId: 'rgbbox:audio:desktop-source-id',
   // Named profile management
   listProfiles: 'rgbbox:profiles:list',
   loadProfileById: 'rgbbox:profiles:load',
