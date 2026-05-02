@@ -757,13 +757,13 @@ export function App(): JSX.Element {
                   <div className="sampling-controls">
                     <label className="control-line">
                       <span>{t('sampling.columns')}</span>
-                      <input min={1} max={96} type="range" value={profile.sampling.columns}
+                      <input min={1} max={320} type="range" value={profile.sampling.columns}
                         onChange={(e) => setSamplingValue('columns', Number(e.target.value))} />
                       <strong>{profile.sampling.columns}</strong>
                     </label>
                     <label className="control-line">
                       <span>{t('sampling.rows')}</span>
-                      <input min={1} max={54} type="range" value={profile.sampling.rows}
+                      <input min={1} max={180} type="range" value={profile.sampling.rows}
                         onChange={(e) => setSamplingValue('rows', Number(e.target.value))} />
                       <strong>{profile.sampling.rows}</strong>
                     </label>
