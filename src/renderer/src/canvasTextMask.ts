@@ -21,9 +21,9 @@ export function computeTextMask(
   const cached = cache.get(key)
   if (cached) return cached
 
-  // Cell pixel size for the offscreen canvas — use a reasonable upscale so
-  // we get decent sub-cell coverage even on small grids.
-  const cellPx = Math.max(8, Math.round(32 * s))
+  // Canvas oversampling: 32 canvas-pixels per grid cell (constant, independent of s).
+  // Scale s is applied through fontSize instead.
+  const cellPx = 32
   const canvasW = cols * cellPx
   const canvasH = rows * cellPx
 
@@ -33,8 +33,9 @@ export function computeTextMask(
   ctx.clearRect(0, 0, canvasW, canvasH)
   ctx.fillStyle = '#ffffff'
 
-  // Font size: roughly fill ~60% of a grid cell height, scaled by s
-  const fontSize = Math.max(6, Math.round(cellPx * 0.7))
+  // Match the bitmap font's visual size: bitmap chars are 7 cells tall at scale=1.
+  // So font height = 7 * s * cellPx canvas-pixels.
+  const fontSize = Math.max(6, Math.round(7 * s * cellPx))
   ctx.font = `bold ${fontSize}px "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'center'
