@@ -1,12 +1,11 @@
-import { Activity, Gauge, Languages, Mic, MicOff, Monitor, Pause, Play, Plus, SlidersHorizontal, Sparkles, Trash2, Users } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
-import { effectPresets } from '../../shared/defaultProfile'
+import { Activity, Download, FilePlus, Gauge, Languages, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Sparkles, Trash2, Upload, Users } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, EngineStatus, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
 import { useI18n } from './i18n'
 import { DisplayMap } from './components/DisplayMap'
 import { EffectsView } from './components/EffectsView'
 import { PreviewGrid } from './components/PreviewGrid'
-import { ProfileManager } from './components/ProfileManager'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 
 type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics'
@@ -60,14 +59,27 @@ export function App(): JSX.Element {
   const [frame, setFrame] = useState<RgbFrame | null>(null)
   const [status, setStatus] = useState<EngineStatus>({ running: true, fps: 30, output: 'virtual-preview' })
   const [version, setVersion] = useState('0.1.0')
-  const [showProfileManager, setShowProfileManager] = useState(false)
   const [savedProfiles, setSavedProfiles] = useState<ProfileMeta[]>([])
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement | null>(null)
 
   const refreshProfiles = useCallback(() => {
     window.rgbbox.listProfiles().then(setSavedProfiles)
   }, [])
 
   useEffect(() => { refreshProfiles() }, [refreshProfiles])
+
+  // Close profile menu on outside click
+  useEffect(() => {
+    if (!profileMenuOpen) return undefined
+    const handler = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setProfileMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [profileMenuOpen])
 
   // ── UI state persisted to localStorage ──────────────────────────────────
   const [selectedLayerId, setSelectedLayerId] = useState(() =>
@@ -237,6 +249,57 @@ export function App(): JSX.Element {
     })
   }, [selectEffect])
 
+  // ── Profile menu actions ─────────────────────────────────────────────────
+  const handleProfileNew = useCallback(async () => {
+    setProfileMenuOpen(false)
+    const name = window.prompt(t('profile.namePlaceholder'), t('profile.new'))
+    if (!name) return
+    const newId = `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+    const newProfile: Profile = { ...defaultProfile, id: newId, name: name.trim() }
+    await window.rgbbox.saveProfileAs(newProfile)
+    setProfile(newProfile)
+    refreshProfiles()
+  }, [t, refreshProfiles])
+
+  const handleProfileRename = useCallback(async () => {
+    if (!profile) return
+    setProfileMenuOpen(false)
+    const newName = window.prompt(t('profile.namePlaceholder'), profile.name)
+    if (!newName || newName.trim() === profile.name) return
+    const renamed: Profile = { ...profile, name: newName.trim() }
+    if (savedProfiles.find((p) => p.id === profile.id)) {
+      await window.rgbbox.saveProfileAs(renamed)
+      refreshProfiles()
+    }
+    setProfile(renamed)
+  }, [profile, savedProfiles, t, refreshProfiles])
+
+  const handleProfileDelete = useCallback(async () => {
+    if (!profile) return
+    setProfileMenuOpen(false)
+    if (!savedProfiles.find((p) => p.id === profile.id)) return
+    await window.rgbbox.deleteProfile(profile.id)
+    const remaining = savedProfiles.filter((p) => p.id !== profile.id)
+    setSavedProfiles(remaining)
+    if (remaining.length > 0) {
+      const first = await window.rgbbox.loadProfileById(remaining[0].id)
+      if (first) { setProfile(first); return }
+    }
+    setProfile({ ...defaultProfile })
+  }, [profile, savedProfiles])
+
+  const handleProfileImport = useCallback(async () => {
+    setProfileMenuOpen(false)
+    const loaded = await window.rgbbox.importProfileDialog()
+    if (loaded) { setProfile(loaded); refreshProfiles() }
+  }, [refreshProfiles])
+
+  const handleProfileExport = useCallback(async () => {
+    if (!profile) return
+    setProfileMenuOpen(false)
+    await window.rgbbox.exportProfileDialog(profile)
+  }, [profile])
+
   const performanceLabels: Record<Profile['performanceMode'], string> = {
     battery: t('perf.battery'),
     balanced: t('perf.balanced'),
@@ -249,13 +312,6 @@ export function App(): JSX.Element {
 
   return (
     <main className="app-shell">
-      {showProfileManager && (
-        <ProfileManager
-          currentProfile={profile}
-          onLoad={(p) => { setProfile(p); refreshProfiles() }}
-          onClose={() => { setShowProfileManager(false); refreshProfiles() }}
-        />
-      )}
       <aside className="sidebar">
         <div className="brand-block">
           <div className="brand-mark">RB</div>
@@ -341,14 +397,38 @@ export function App(): JSX.Element {
                 <option key={meta.id} value={meta.id}>{meta.name}</option>
               ))}
             </select>
-            <button
-              className="icon-button small"
-              type="button"
-              onClick={() => setShowProfileManager(true)}
-              title={t('profile.label')}
-            >
-              <SlidersHorizontal size={13} />
-            </button>
+            <div className="profile-menu-anchor" ref={profileMenuRef}>
+              <button
+                className="icon-button small"
+                type="button"
+                onClick={() => setProfileMenuOpen((v) => !v)}
+                title={t('profile.label')}
+              >
+                <MoreVertical size={13} />
+              </button>
+              {profileMenuOpen && (
+                <div className="profile-menu">
+                  <button className="profile-menu-item" type="button" onClick={handleProfileNew}>
+                    <FilePlus size={12} /> {t('profile.new')}
+                  </button>
+                  <button className="profile-menu-item" type="button" onClick={handleProfileRename}>
+                    <Pencil size={12} /> {t('profile.rename')}
+                  </button>
+                  {savedProfiles.find((p) => p.id === profile.id) && (
+                    <button className="profile-menu-item danger" type="button" onClick={handleProfileDelete}>
+                      <Trash2 size={12} /> {t('profile.delete')}
+                    </button>
+                  )}
+                  <div className="profile-menu-divider" />
+                  <button className="profile-menu-item" type="button" onClick={handleProfileImport}>
+                    <Upload size={12} /> {t('profile.import')}
+                  </button>
+                  <button className="profile-menu-item" type="button" onClick={handleProfileExport}>
+                    <Download size={12} /> {t('profile.export')}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <button
             className="lang-toggle-btn"
@@ -516,8 +596,7 @@ export function App(): JSX.Element {
                   <h2
                     className="profile-name-header"
                     title={t('profile.label')}
-                    onClick={() => setShowProfileManager(true)}
-                    style={{ cursor: 'pointer' }}
+                    style={{ cursor: 'default' }}
                   >
                     {profile.name}
                   </h2>
@@ -568,7 +647,7 @@ export function App(): JSX.Element {
                       <p className="eyebrow">{t('sampling.eyebrow')}</p>
                       <h3>{t('sampling.title')}</h3>
                     </div>
-                    <SlidersHorizontal size={18} />
+                    <span className="chip">{t('sampling.title')}</span>
                   </div>
                   <div className="sampling-controls">
                     <label className="control-line">
