@@ -142,9 +142,19 @@ void main() {
 `
 
 /**
- * warp-portal: Volumetric energy portal.
- * 5 concentric glowing rings domain-warped by FBM, with spiral tendrils
- * extending along the Z-axis. Camera gently sways in front of the portal.
+ * warp-portal: Screen-space energy portal with depth tunnel.
+ *
+ * Redesigned to avoid nested loops (which cause silent compilation failure or
+ * brightness overflow on WebGL1 drivers).  The 5 rings are unrolled into plain
+ * sequential code so no inner loop exists.  A separate single-depth loop adds
+ * the 3D tunnel illusion.
+ *
+ * Algorithm:
+ *   1. Polar coords (r, θ) from screen centre.
+ *   2. Single FBM call domain-warps r into wr.
+ *   3. Five rings rendered with plain sequential code (unrolled).
+ *   4. Separate 28-step depth loop: convergent tunnel rushing toward viewer.
+ *   5. Spiral energy tendrils + central core flash + outer atmosphere.
  */
 const WARP_PORTAL_FS = COMMON + /* glsl */`
 void main() {
@@ -155,46 +165,78 @@ void main() {
   vec2 uv = (gl_FragCoord.xy / u_resolution - 0.5);
   uv.x   *= u_resolution.x / u_resolution.y;
 
-  /* Camera slightly swaying, looking into the portal */
-  vec3 ro = vec3(sin(t * 0.12) * 0.25, cos(t * 0.09) * 0.2, 2.8);
-  vec3 rd = normalize(vec3(uv, -1.4));
+  float r     = length(uv);
+  float theta = atan(uv.y, uv.x);
+
+  /* Single FBM domain warp for the whole frame */
+  float warp = fbm(vec3(uv * 2.5, t * 0.4)) * 0.18;
+  float wr   = r + warp * 0.5;
 
   vec3  col  = vec3(0.0);
-  float d    = 0.0;
+  float ringD, pls, br, hh;
 
-  for (int i = 0; i < 96; i++) {
-    vec3  p     = ro + rd * d;
-    float r     = length(p.xy);
-    float theta = atan(p.y, p.x);
+  /* ── 5 concentric energy rings (unrolled — no nested loop) ──────────── */
 
-    /* Domain warp: FBM distorts the radial coordinate */
-    float warp = fbm(vec3(r * 1.6, theta * 0.6366, p.z + t * 0.35)) * 0.28;
-    float wr   = r + warp * 0.4;
+  /* Ring 0  r = 0.08 */
+  ringD = abs(wr - 0.08) - 0.016;
+  pls   = 0.5 + 0.5 * sin(t * 3.2 + theta * 2.0);
+  br    = exp(-max(0.0, ringD) * 32.0) * (0.6 + pls * 0.4);
+  hh    = mod(theta * 57.296 + t * 85.0 + hueShift + 720.0, 360.0);
+  col  += hsl(hh, 1.0, 0.60) * br;
 
-    /* 5 concentric energy rings */
-    for (int j = 0; j < 5; j++) {
-      float rj    = 0.12 + float(j) * 0.16;
-      float ringD = abs(wr - rj) - 0.022;
-      float pls   = 0.5 + 0.5 * sin(t * 3.5 - float(j) * 1.3 + theta * 2.0 + p.z * 2.0);
-      float br    = exp(-max(0.0, ringD) * 20.0) * (0.5 + pls * 0.5);
-      float h2    = mod(theta / 3.14159 * 180.0 + float(j) * 72.0 - p.z * 28.0 + t * 65.0 + hueShift + 720.0, 360.0);
-      col += hsl(h2, 1.0, 0.65) * br * 0.13;
-    }
+  /* Ring 1  r = 0.20 */
+  ringD = abs(wr - 0.20) - 0.016;
+  pls   = 0.5 + 0.5 * sin(t * 3.2 - theta * 2.0 + 1.26);
+  br    = exp(-max(0.0, ringD) * 32.0) * (0.6 + pls * 0.4);
+  hh    = mod(theta * 57.296 + 72.0 + t * 85.0 + hueShift + 720.0, 360.0);
+  col  += hsl(hh, 1.0, 0.60) * br;
 
-    /* Spiral tendrils streaming outward along Z */
-    float spiral = sin(theta * 4.0 - p.z * 5.5 - t * 5.0) * 0.5 + 0.5;
-    float tendD  = abs(wr - 0.56) - 0.055;
-    float tend   = exp(-max(0.0, tendD) * 12.0) * spiral * exp(-abs(p.z) * 0.85);
-    float tHue   = mod(theta / 3.14159 * 180.0 - p.z * 32.0 + t * 90.0 + hueShift + 720.0, 360.0);
-    col += hsl(tHue, 1.0, 0.7) * tend * 0.1;
+  /* Ring 2  r = 0.33 */
+  ringD = abs(wr - 0.33) - 0.016;
+  pls   = 0.5 + 0.5 * sin(t * 3.2 + theta * 2.0 + 2.51);
+  br    = exp(-max(0.0, ringD) * 32.0) * (0.6 + pls * 0.4);
+  hh    = mod(theta * 57.296 + 144.0 + t * 85.0 + hueShift + 720.0, 360.0);
+  col  += hsl(hh, 1.0, 0.60) * br;
 
-    d += 0.048;
-    if (d > 5.0) break;
+  /* Ring 3  r = 0.47 */
+  ringD = abs(wr - 0.47) - 0.016;
+  pls   = 0.5 + 0.5 * sin(t * 3.2 - theta * 2.0 + 3.77);
+  br    = exp(-max(0.0, ringD) * 32.0) * (0.6 + pls * 0.4);
+  hh    = mod(theta * 57.296 + 216.0 + t * 85.0 + hueShift + 720.0, 360.0);
+  col  += hsl(hh, 1.0, 0.60) * br;
+
+  /* Ring 4  r = 0.62 */
+  ringD = abs(wr - 0.62) - 0.016;
+  pls   = 0.5 + 0.5 * sin(t * 3.2 + theta * 2.0 + 5.03);
+  br    = exp(-max(0.0, ringD) * 32.0) * (0.6 + pls * 0.4);
+  hh    = mod(theta * 57.296 + 288.0 + t * 85.0 + hueShift + 720.0, 360.0);
+  col  += hsl(hh, 1.0, 0.60) * br;
+
+  /* ── Depth tunnel (single loop, no nesting) ─────────────────────────── */
+  for (int i = 0; i < 28; i++) {
+    float z  = float(i) * 0.12;
+    /* Perspective convergence: radius shrinks as we go deeper */
+    float rz = wr * (1.0 + z * 0.32);
+    float az = theta - t * (2.0 + z * 0.07) - z * 0.32;
+    float w2 = fbm(vec3(rz * 1.8, az * 0.637, z * 0.5 + t * 0.22)) * 0.08;
+    float rw = rz + w2;
+    float dRingD = abs(rw - 0.50) - 0.026;
+    float dBr    = exp(-max(0.0, dRingD) * 14.0) * exp(-z * 0.55);
+    float dHh    = mod(az * 57.296 - z * 24.0 + t * 65.0 + hueShift + 720.0, 360.0);
+    col += hsl(dHh, 1.0, 0.58) * dBr * 0.18;
   }
 
-  /* Central white-hot core flash */
-  float ctr = exp(-length(uv) * 4.5) * (0.35 + 0.25 * sin(t * 9.0));
-  col += hsl(mod(t * 180.0 + hueShift + 720.0, 360.0), 0.35, 0.95) * ctr;
+  /* ── Spiral energy tendrils ──────────────────────────────────────────── */
+  float spiral   = sin(theta * 4.0 - r * 6.0 - t * 5.0) * 0.5 + 0.5;
+  float tendGlow = max(0.0, 1.0 - abs(wr - 0.52) * 14.0) * spiral;
+  col += hsl(mod(theta * 57.296 + t * 95.0 + hueShift + 720.0, 360.0), 1.0, 0.70) * tendGlow * 0.6;
+
+  /* ── Central white-hot core ──────────────────────────────────────────── */
+  col += hsl(mod(t * 180.0 + hueShift + 720.0, 360.0), 0.25, 0.96)
+       * exp(-r * 10.0) * (0.5 + 0.35 * sin(t * 9.0));
+
+  /* ── Outer atmospheric glow ──────────────────────────────────────────── */
+  col += hsl(mod(t * 48.0 + hueShift + 720.0, 360.0), 0.85, 0.48) * exp(-r * 3.2) * 0.28;
 
   gl_FragColor = vec4(col, 1.0);
 }
