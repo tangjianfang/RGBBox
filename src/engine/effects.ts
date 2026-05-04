@@ -179,8 +179,28 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       // Micro-flicker: very fast per-pixel shimmer for live glowing look
       const flicker  = vn(fx * 9.0 + t * 2.4, fy * 5.5 - drift * 0.4) * 0.20 + 0.80  // 0.80..1.0
 
-      // Quadratic fy falloff: top (fy=0) always dark; turbulence only where base heat exists.
-      const temperature = clampUnit((fy * fy * 1.8 * heightScale + turbulence * fy * 0.80 - 0.04) * intensity * flicker)
+      // ── Explicit flame tip ────────────────────────────────────────────────
+      // Root cause of "top barely changes": fy² × heightScale → near fy=0
+      // the term stays near zero regardless of heightScale, so upper rows
+      // never visibly respond to surges/lulls.
+      //
+      // Fix: compute tipFy explicitly from heightScale.
+      //   tipFy=0  → flame fills the full grid (surge)
+      //   tipFy≈1  → flame shrinks to a thin base glow (lull)
+      // Pixels above tipFy → 0 except for turbulence wisps.
+      const tipFy    = Math.max(0.0, 1.0 - heightScale * 0.88)  // 0 (full height) .. ~1 (tiny)
+
+      // flameFy: normalised 0 (tip) → 1 (base) within the live flame body
+      const flameFy  = clampUnit((fy - tipFy) / Math.max(0.01, 1.0 - tipFy))
+
+      // Wisp zone: turbulence pushes tendrils slightly above nominal tip
+      const aboveTip = Math.max(0, tipFy - fy)           // positive only above tip
+      const wispZone = Math.max(0, 1.0 - aboveTip * 7)   // 1 just above tip, 0 far above
+      const wisp     = turbulence * wispZone * heightScale * 0.28
+
+      const temperature = clampUnit(
+        (flameFy * flameFy * 1.5 + turbulence * (flameFy * 0.55 + 0.04) + wisp - 0.03) * intensity * flicker
+      )
 
       // 4-stop realistic fire palette: black → user color → orange → yellow → white
       if (temperature < 0.35) {
