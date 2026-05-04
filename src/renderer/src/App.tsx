@@ -227,6 +227,14 @@ export function App(): JSX.Element {
     return () => window.clearTimeout(timer)
   }, [profile])
 
+  // ── Display hotplug — refresh topology when monitors are added/removed ──
+  useEffect(() => {
+    return window.rgbbox.onDisplayTopologyChanged(async () => {
+      const newTopology = await window.rgbbox.getDisplayTopology()
+      setTopology(newTopology)
+    })
+  }, [])
+
   useEffect(() => {
     if (!profile || !status.running || !workerRef.current) return undefined
 
@@ -312,6 +320,50 @@ export function App(): JSX.Element {
 
   const setSamplingValue = useCallback((key: keyof Profile['sampling'], value: number | boolean) => {
     setProfile((cur) => cur ? { ...cur, sampling: { ...cur.sampling, [key]: value } } : cur)
+  }, [])
+
+  // ── Grid density mode ─────────────────────────────────────────────────
+  // Single "long-edge LED count" drives both columns and rows from display aspect ratio.
+  // Advanced mode falls back to the old independent sliders.
+  const [gridAdvanced, setGridAdvanced] = useState(() => localStorage.getItem('rgbbox:gridAdvanced') === '1')
+  useEffect(() => { localStorage.setItem('rgbbox:gridAdvanced', gridAdvanced ? '1' : '0') }, [gridAdvanced])
+
+  // Display aspect ratio: virtual-desktop ratio in linked mode, primary display otherwise
+  const displayAspectRatioRef = useRef<number>(16 / 9)
+  useEffect(() => {
+    if (!topology) return
+    const s = profile ? activeScene(profile) : null
+    if (s?.linkedDisplays) {
+      const vb = topology.virtualBounds
+      displayAspectRatioRef.current = vb.width / Math.max(1, vb.height)
+    } else {
+      const primary = topology.displays.find((d) => d.primary) ?? topology.displays[0]
+      if (primary) displayAspectRatioRef.current = primary.bounds.width / Math.max(1, primary.bounds.height)
+    }
+  })
+
+  /** Snap columns/rows to display aspect ratio while keeping the long-edge count. */
+  const matchDisplayRatio = useCallback(() => {
+    setProfile((cur) => {
+      if (!cur) return cur
+      const ar = displayAspectRatioRef.current
+      const longEdge = Math.max(cur.sampling.columns, cur.sampling.rows)
+      const cols = ar >= 1 ? longEdge : Math.max(1, Math.round(longEdge * ar))
+      const rows = ar >= 1 ? Math.max(1, Math.round(longEdge / ar)) : longEdge
+      return { ...cur, sampling: { ...cur.sampling, columns: cols, rows: rows } }
+    })
+  }, [])
+
+  /** Drive both dimensions from a single long-edge count using display aspect ratio. */
+  const setGridDensity = useCallback((longEdge: number) => {
+    setProfile((cur) => {
+      if (!cur) return cur
+      const ar = displayAspectRatioRef.current
+      const clamped = Math.max(8, Math.min(160, longEdge))
+      const cols = ar >= 1 ? clamped : Math.max(1, Math.round(clamped * ar))
+      const rows = ar >= 1 ? Math.max(1, Math.round(clamped / ar)) : clamped
+      return { ...cur, sampling: { ...cur.sampling, columns: cols, rows: rows } }
+    })
   }, [])
 
   const [aspectLocked, setAspectLocked] = useState(() => localStorage.getItem('rgbbox:aspectLock') === '1')
@@ -921,29 +973,57 @@ export function App(): JSX.Element {
                     <span className="chip">{t('sampling.title')}</span>
                   </div>
                   <div className="sampling-controls">
-                    <label className="control-line">
-                      <span>{t('sampling.columns')}</span>
-                      <input min={1} max={320} type="range" value={profile.sampling.columns}
-                        onChange={(e) => setColumns(Number(e.target.value))} />
-                      <strong>{profile.sampling.columns}</strong>
-                    </label>
-                    <div className="aspect-lock-row">
-                      <button
-                        className={`aspect-lock-btn${aspectLocked ? ' locked' : ''}`}
-                        title={t('sampling.aspectLock')}
-                        onClick={toggleAspectLock}
-                        type="button"
-                      >
-                        {aspectLocked ? <Link2 size={12} /> : <Link2Off size={12} />}
-                        <span>{t('sampling.aspectLock')}</span>
-                      </button>
-                    </div>
-                    <label className="control-line">
-                      <span>{t('sampling.rows')}</span>
-                      <input min={1} max={180} type="range" value={profile.sampling.rows}
-                        onChange={(e) => setRows(Number(e.target.value))} />
-                      <strong>{profile.sampling.rows}</strong>
-                    </label>
+                    {/* ── Auto density mode (default) ── */}
+                    {!gridAdvanced ? (
+                      <>
+                        <label className="control-line">
+                          <span>{t('sampling.resolution')}</span>
+                          <input min={8} max={160} type="range"
+                            value={Math.max(profile.sampling.columns, profile.sampling.rows)}
+                            onChange={(e) => setGridDensity(Number(e.target.value))} />
+                          <strong>{profile.sampling.columns} × {profile.sampling.rows}</strong>
+                        </label>
+                        <div className="aspect-lock-row">
+                          <button className="aspect-lock-btn" onClick={matchDisplayRatio} type="button">
+                            <Monitor size={12} />
+                            <span>{t('sampling.matchRatio')}</span>
+                          </button>
+                          <button className="aspect-lock-btn" onClick={() => setGridAdvanced(true)} type="button">
+                            <span>{t('sampling.advanced')}</span>
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      /* ── Manual mode (advanced) ── */
+                      <>
+                        <label className="control-line">
+                          <span>{t('sampling.columns')}</span>
+                          <input min={1} max={320} type="range" value={profile.sampling.columns}
+                            onChange={(e) => setColumns(Number(e.target.value))} />
+                          <strong>{profile.sampling.columns}</strong>
+                        </label>
+                        <div className="aspect-lock-row">
+                          <button
+                            className={`aspect-lock-btn${aspectLocked ? ' locked' : ''}`}
+                            title={t('sampling.aspectLock')}
+                            onClick={toggleAspectLock}
+                            type="button"
+                          >
+                            {aspectLocked ? <Link2 size={12} /> : <Link2Off size={12} />}
+                            <span>{t('sampling.aspectLock')}</span>
+                          </button>
+                          <button className="aspect-lock-btn locked" onClick={() => { setGridAdvanced(false); matchDisplayRatio() }} type="button">
+                            <span>{t('sampling.autoGrid')}</span>
+                          </button>
+                        </div>
+                        <label className="control-line">
+                          <span>{t('sampling.rows')}</span>
+                          <input min={1} max={180} type="range" value={profile.sampling.rows}
+                            onChange={(e) => setRows(Number(e.target.value))} />
+                          <strong>{profile.sampling.rows}</strong>
+                        </label>
+                      </>
+                    )}
                     <label className="control-line">
                       <span>{t('sampling.smooth')}</span>
                       <input min={0} max={0.9} step={0.05} type="range" value={profile.sampling.smoothing}

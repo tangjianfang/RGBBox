@@ -28,6 +28,8 @@ export const ipcChannels = {
   getPowerSaveBlock: 'rgbbox:system:get-power-save-block',
   // Desktop audio loopback source ID (for system audio capture)
   getDesktopAudioSourceId: 'rgbbox:audio:desktop-source-id',
+  // Main → renderer: display added/removed/metrics-changed (hotplug)
+  displayTopologyChanged: 'rgbbox:system:display-topology-changed',
   // Named profile management
   listProfiles: 'rgbbox:profiles:list',
   loadProfileById: 'rgbbox:profiles:load',

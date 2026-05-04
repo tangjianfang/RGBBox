@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, powerSaveBlocker, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, powerSaveBlocker, screen, shell } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defaultProfile } from '../shared/defaultProfile'
@@ -186,6 +186,14 @@ function registerIpc(): void {
 app.whenReady().then(() => {
   registerIpc()
   createMainWindow()
+
+  // Notify the renderer whenever display topology changes (hotplug)
+  const notifyTopologyChanged = (): void => {
+    mainWindow?.webContents.send(ipcChannels.displayTopologyChanged)
+  }
+  screen.on('display-added', notifyTopologyChanged)
+  screen.on('display-removed', notifyTopologyChanged)
+  screen.on('display-metrics-changed', notifyTopologyChanged)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

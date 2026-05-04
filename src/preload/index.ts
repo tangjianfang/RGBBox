@@ -67,6 +67,13 @@ const api = {
     return () => ipcRenderer.off(ipcChannels.overlayEffectChanged, handler)
   },
 
+  // Fired when a display is added, removed, or its metrics change (hotplug)
+  onDisplayTopologyChanged: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on(ipcChannels.displayTopologyChanged, handler)
+    return () => ipcRenderer.off(ipcChannels.displayTopologyChanged, handler)
+  },
+
   // Power save blocker
   getPowerSaveBlock: (): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.getPowerSaveBlock),
