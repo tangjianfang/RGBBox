@@ -132,7 +132,7 @@ export function App(): JSX.Element {
 
   // ── UI state persisted to localStorage ──────────────────────────────────
   const [selectedLayerId, setSelectedLayerId] = useState(() =>
-    localStorage.getItem('rgbbox:selectedLayerId') ?? 'layer-screen-ambient'
+    localStorage.getItem('rgbbox:selectedLayerId') ?? 'layer-rainbow'
   )
   const [currentView, setCurrentView] = useState<View>(() => {
     const v = localStorage.getItem('rgbbox:view') as View | null

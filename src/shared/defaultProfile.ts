@@ -127,13 +127,13 @@ export const defaultProfile: Profile = {
       displayIds: [],
       layers: [
         {
-          id: 'layer-screen-ambient',
-          name: 'Screen Ambient',
-          kind: 'screen-ambient',
+          id: 'layer-rainbow',
+          name: 'Rainbow',
+          kind: 'rainbow',
           enabled: true,
           opacity: 1,
           blendMode: 'normal',
-          parameters: effectPresets[0].defaults
+          parameters: { ...effectPresets.find((p) => p.kind === 'rainbow')!.defaults }
         }
       ]
     }
