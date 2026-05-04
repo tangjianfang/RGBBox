@@ -2,6 +2,7 @@ import { useEffect, useRef, type JSX } from 'react'
 import { effectPresets } from '../../../shared/defaultProfile'
 import { renderEffectPixel } from '../../../engine/effects'
 import type { EffectKind, EffectLayer } from '../../../shared/types'
+import { useI18n } from '../i18n'
 
 interface EffectCardProps {
   preset: (typeof effectPresets)[number]
@@ -92,21 +93,22 @@ interface EffectsViewProps {
 }
 
 const CATEGORIES = [
-  { label: 'Classic', kinds: ['screen-ambient', 'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'random-color'] },
-  { label: 'Advanced', kinds: ['fire', 'starlight', 'ripple', 'spectrum', 'comet', 'lightning', 'aurora', 'explode'] },
-  { label: 'Audio Reactive', kinds: ['audio-beat', 'audio-equalizer'] }
+  { labelKey: 'effects.classic' as const, kinds: ['screen-ambient', 'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'random-color'] },
+  { labelKey: 'effects.advanced' as const, kinds: ['fire', 'starlight', 'ripple', 'spectrum', 'comet', 'lightning', 'aurora', 'explode'] },
+  { labelKey: 'effects.audio' as const, kinds: ['audio-beat', 'audio-equalizer'] }
 ] as const
 
 export function EffectsView({ activeKind, onSelectEffect }: EffectsViewProps): JSX.Element {
+  const { t } = useI18n()
   return (
     <div className="effects-view">
       <header className="effects-view-header">
-        <h2>Effect Library</h2>
-        <p className="eyebrow">16 built-in effects — click to apply to selected layer</p>
+        <h2>{t('effects.library')}</h2>
+        <p className="eyebrow">{t('effects.eyebrow')}</p>
       </header>
       {CATEGORIES.map((cat) => (
-        <section key={cat.label} className="effects-category">
-          <h3 className="effects-category-label">{cat.label}</h3>
+        <section key={cat.labelKey} className="effects-category">
+          <h3 className="effects-category-label">{t(cat.labelKey)}</h3>
           <div className="effects-card-grid">
             {effectPresets
               .filter((p) => (cat.kinds as readonly string[]).includes(p.kind))

@@ -82,7 +82,7 @@ const EN = {
   'sampling.autoGrid': 'Auto',
   // Effects view
   'effects.library': 'Effect Library',
-  'effects.eyebrow': '18 built-in effects — click to apply to selected layer',
+  'effects.eyebrow': '17 built-in effects — click to apply to selected layer',
   'effects.classic': 'Classic',
   'effects.advanced': 'Advanced',
   'effects.audio': 'Audio Reactive',
@@ -223,7 +223,7 @@ const ZH: TranslationTable = {
   'sampling.advanced': '手动设置',
   'sampling.autoGrid': '自动',
   'effects.library': '效果库',
-  'effects.eyebrow': '18 种内置效果 — 点击应用到选中图层',
+  'effects.eyebrow': '17 种内置效果 — 点击应用到选中图层',
   'effects.classic': '经典',
   'effects.advanced': '进阶',
   'effects.audio': '音频响应',

@@ -1,0 +1,52 @@
+{
+  "id": "default-profile",
+  "name": "RGBBox Default01",
+  "activeSceneId": "scene-desk",
+  "performanceMode": "balanced",
+  "sampling": {
+    "columns": 94,
+    "rows": 54,
+    "fps": 60,
+    "smoothing": 0.3,
+    "brightnessLimit": 1,
+    "saturationBoost": 2,
+    "usePerformanceGuard": true
+  },
+  "scenes": [
+    {
+      "id": "scene-desk",
+      "name": "Desk Ambience",
+      "displayIds": [],
+      "layers": [
+        {
+          "id": "layer-screen-ambient",
+          "name": "Random Color",
+          "kind": "random-color",
+          "enabled": false,
+          "opacity": 1,
+          "blendMode": "normal",
+          "parameters": {
+            "speed": 0.3
+          }
+        },
+        {
+          "id": "layer-101",
+          "name": "Static",
+          "kind": "static",
+          "enabled": true,
+          "opacity": 0.75,
+          "blendMode": "screen",
+          "parameters": {
+            "color": "#37d5ff",
+            "text": "",
+            "textColor": "#ffffff",
+            "textX": 0.5,
+            "textY": 0.5,
+            "textScale": 4
+          }
+        }
+      ]
+    }
+  ],
+  "_savedAt": "2026-05-02T14:49:19.376Z"
+}

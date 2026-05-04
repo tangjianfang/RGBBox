@@ -40,7 +40,7 @@ export const effectPresets: PresetDefinition[] = [
   {
     kind: 'fire',
     label: 'Fire',
-    description: 'Organic flame simulation rising from the bottom edge.',
+    description: 'Organic flame simulation with discrete gust events, per-column height envelopes, and a 4-stop colour rampper-column height envelopes, and a 4-stop colour ramp.',
     defaults: { speed: 0.7, intensity: 0.85, spread: 1.2, color: '#ff4400' }
   },
   {
@@ -58,7 +58,7 @@ export const effectPresets: PresetDefinition[] = [
   {
     kind: 'spectrum',
     label: 'Spectrum',
-    description: 'Uniform hue that cycles through the full color wheel.',
+    description: 'Smooth diagonal colour-wash cycling the full hue wheel. Spread controls the spatial gradient rangeel. Spread controls the spatial gradient range.',
     defaults: { speed: 0.25, saturation: 0.95, hueShift: 0, spread: 1.0 }
   },
   {
@@ -88,13 +88,13 @@ export const effectPresets: PresetDefinition[] = [
   {
     kind: 'audio-beat',
     label: 'Audio Beat',
-    description: 'Pulses outward from center locked to the bass beat.',
+    description: 'Radial pulse locked to the bass beat with smooth attack-decay envelopettack-decay envelope.',
     defaults: { color: '#ff2266', sensitivity: 1.2 }
   },
   {
     kind: 'audio-equalizer',
     label: 'Equalizer',
-    description: 'Vertical bar graph reactive to bass/mid/high bands.',
+    description: 'Anti-aliased bar graph across 32 log-spaced FFT bands with smooth peak-hold falloffnds with smooth peak-hold falloff.',
     defaults: { sensitivity: 1.0, colorLow: '#00ff44', colorHigh: '#ff2200' }
   },
   {
