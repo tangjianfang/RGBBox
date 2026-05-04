@@ -376,7 +376,7 @@ export function App(): JSX.Element {
     setProfile((cur) => {
       if (!cur) return cur
       const ar = displayAspectRatioRef.current
-      const clamped = Math.max(8, Math.min(160, longEdge))
+      const clamped = Math.max(8, Math.min(320, longEdge))
       const cols = ar >= 1 ? clamped : Math.max(1, Math.round(clamped * ar))
       const rows = ar >= 1 ? Math.max(1, Math.round(clamped / ar)) : clamped
       return { ...cur, sampling: { ...cur.sampling, columns: cols, rows: rows } }
@@ -404,8 +404,8 @@ export function App(): JSX.Element {
   const setColumns = useCallback((cols: number) => {
     setProfile((cur) => {
       if (!cur) return cur
-      const newCols = Math.max(1, Math.min(320, cols))
-      const newRows = aspectLocked ? Math.max(1, Math.min(180, Math.round(newCols / aspectRatioRef.current))) : cur.sampling.rows
+      const newCols = Math.max(1, Math.min(960, cols))
+      const newRows = aspectLocked ? Math.max(1, Math.min(540, Math.round(newCols / aspectRatioRef.current))) : cur.sampling.rows
       return { ...cur, sampling: { ...cur.sampling, columns: newCols, rows: newRows } }
     })
   }, [aspectLocked])
@@ -413,8 +413,8 @@ export function App(): JSX.Element {
   const setRows = useCallback((rows: number) => {
     setProfile((cur) => {
       if (!cur) return cur
-      const newRows = Math.max(1, Math.min(180, rows))
-      const newCols = aspectLocked ? Math.max(1, Math.min(320, Math.round(newRows * aspectRatioRef.current))) : cur.sampling.columns
+      const newRows = Math.max(1, Math.min(540, rows))
+      const newCols = aspectLocked ? Math.max(1, Math.min(960, Math.round(newRows * aspectRatioRef.current))) : cur.sampling.columns
       return { ...cur, sampling: { ...cur.sampling, columns: newCols, rows: newRows } }
     })
   }, [aspectLocked])
@@ -998,7 +998,7 @@ export function App(): JSX.Element {
                       <>
                         <label className="control-line">
                           <span>{t('sampling.resolution')}</span>
-                          <input min={8} max={160} type="range"
+                          <input min={8} max={320} type="range"
                             value={Math.max(profile.sampling.columns, profile.sampling.rows)}
                             onChange={(e) => setGridDensity(Number(e.target.value))} />
                           <strong>{profile.sampling.columns} × {profile.sampling.rows}</strong>
@@ -1018,7 +1018,7 @@ export function App(): JSX.Element {
                       <>
                         <label className="control-line">
                           <span>{t('sampling.columns')}</span>
-                          <input min={1} max={320} type="range" value={profile.sampling.columns}
+                          <input min={1} max={960} type="range" value={profile.sampling.columns}
                             onChange={(e) => setColumns(Number(e.target.value))} />
                           <strong>{profile.sampling.columns}</strong>
                         </label>
@@ -1038,7 +1038,7 @@ export function App(): JSX.Element {
                         </div>
                         <label className="control-line">
                           <span>{t('sampling.rows')}</span>
-                          <input min={1} max={180} type="range" value={profile.sampling.rows}
+                          <input min={1} max={540} type="range" value={profile.sampling.rows}
                             onChange={(e) => setRows(Number(e.target.value))} />
                           <strong>{profile.sampling.rows}</strong>
                         </label>
