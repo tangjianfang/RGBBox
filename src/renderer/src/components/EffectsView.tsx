@@ -1,7 +1,9 @@
 import { useEffect, useRef, type JSX } from 'react'
 import { effectPresets } from '../../../shared/defaultProfile'
 import { renderEffectPixel } from '../../../engine/effects'
-import type { EffectKind, EffectLayer } from '../../../shared/types'
+import { EFFECT_3D_KINDS } from '../../../shared/types'
+import type { Effect3DKind, EffectKind, EffectLayer } from '../../../shared/types'
+import { Effect3DGl } from '../gl/effect3dGl'
 import { useI18n } from '../i18n'
 
 interface EffectCardProps {
@@ -87,6 +89,60 @@ function EffectCard({ preset, selected, onSelect }: EffectCardProps): JSX.Elemen
   )
 }
 
+/**
+ * Thumbnail card for GPU 3D effects — renders the GLSL shader directly in
+ * the card canvas using a dedicated WebGL context.
+ */
+function EffectCard3D({ preset, selected, onSelect }: EffectCardProps): JSX.Element {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const glRef     = useRef<Effect3DGl | null>(null)
+  const animRef   = useRef<number | null>(null)
+  const startRef  = useRef(performance.now())
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    canvas.width  = 80
+    canvas.height = 44
+    try {
+      glRef.current = new Effect3DGl(canvas, preset.kind as Effect3DKind)
+    } catch {
+      return
+    }
+    const params: [number, number, number, number] = [
+      (preset.defaults.speed    as number) ?? 0.5,
+      (preset.defaults.hueShift as number) ?? 0,
+      1.0,
+      0.5,
+    ]
+    const draw = (): void => {
+      const t = (performance.now() - startRef.current) / 1000
+      glRef.current?.draw(t, params)
+      animRef.current = requestAnimationFrame(draw)
+    }
+    animRef.current = requestAnimationFrame(draw)
+    return () => {
+      if (animRef.current !== null) cancelAnimationFrame(animRef.current)
+      glRef.current?.dispose()
+      glRef.current = null
+    }
+  }, [preset])
+
+  return (
+    <button
+      className={`effect-card ${selected ? 'selected' : ''}`}
+      type="button"
+      onClick={() => onSelect(preset.kind)}
+    >
+      <canvas ref={canvasRef} aria-hidden="true" />
+      <div className="effect-card-info">
+        <strong>{preset.label}</strong>
+        <p>{preset.description}</p>
+      </div>
+    </button>
+  )
+}
+
 interface EffectsViewProps {
   activeKind: EffectKind
   onSelectEffect: (kind: EffectKind) => void
@@ -96,7 +152,8 @@ const CATEGORIES = [
   { labelKey: 'effects.classic'  as const, kinds: ['screen-ambient', 'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'random-color'] },
   { labelKey: 'effects.advanced' as const, kinds: ['fire', 'starlight', 'ripple', 'spectrum', 'comet', 'lightning', 'aurora', 'explode'] },
   { labelKey: 'effects.threed'   as const, kinds: ['plasma', 'vortex', 'tunnel', 'crystal'] },
-  { labelKey: 'effects.audio'    as const, kinds: ['audio-beat', 'audio-equalizer'] }
+  { labelKey: 'effects.gpu3d'    as const, kinds: ['sphere-pulse', 'warp-portal', 'neon-galaxy', 'lava-sphere'] },
+  { labelKey: 'effects.audio'    as const, kinds: ['audio-beat', 'audio-equalizer'] },
 ] as const
 
 export function EffectsView({ activeKind, onSelectEffect }: EffectsViewProps): JSX.Element {
@@ -113,14 +170,11 @@ export function EffectsView({ activeKind, onSelectEffect }: EffectsViewProps): J
           <div className="effects-card-grid">
             {effectPresets
               .filter((p) => (cat.kinds as readonly string[]).includes(p.kind))
-              .map((p) => (
-                <EffectCard
-                  key={p.kind}
-                  preset={p}
-                  selected={activeKind === p.kind}
-                  onSelect={onSelectEffect}
-                />
-              ))}
+              .map((p) =>
+                EFFECT_3D_KINDS.has(p.kind)
+                  ? <EffectCard3D key={p.kind} preset={p} selected={activeKind === p.kind} onSelect={onSelectEffect} />
+                  : <EffectCard   key={p.kind} preset={p} selected={activeKind === p.kind} onSelect={onSelectEffect} />
+              )}
           </div>
         </section>
       ))}

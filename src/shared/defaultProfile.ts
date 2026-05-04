@@ -127,6 +127,31 @@ export const effectPresets: PresetDefinition[] = [
     label: 'Crystal',
     description: 'Voronoi crystal facets with specular edge highlights — slowly shifting gemstone planes catch light at every boundary.',
     defaults: { speed: 0.18, density: 0.5, saturation: 0.95 }
+  },
+  // ── GPU 3D (WebGL raymarching) ─────────────────────────────────────────────
+  {
+    kind: 'sphere-pulse',
+    label: 'Sphere Pulse',
+    description: 'Raymarched sphere with FBM surface displacement. Orbiting camera reveals depth, rim lighting, specular highlight, and volumetric glow halo.',
+    defaults: { speed: 0.50, hueShift: 0 }
+  },
+  {
+    kind: 'warp-portal',
+    label: 'Warp Portal',
+    description: 'Volumetric energy portal — 5 domain-warped concentric rings with spiral tendrils streaming outward along the Z-axis.',
+    defaults: { speed: 0.60, hueShift: 0 }
+  },
+  {
+    kind: 'neon-galaxy',
+    label: 'Neon Galaxy',
+    description: '3D galaxy disc with perspective. Orbiting camera, volumetric spiral arms, galactic core bulge, and rotating point stars.',
+    defaults: { speed: 0.40, hueShift: 0 }
+  },
+  {
+    kind: 'lava-sphere',
+    label: 'Lava Sphere',
+    description: 'Raymarched molten lava globe. Triple-axis domain-warped FBM creates flowing crust patterns with subsurface glow leaking through thin areas.',
+    defaults: { speed: 0.30, hueShift: 0 }
   }
 ]
 

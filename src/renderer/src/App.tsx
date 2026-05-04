@@ -2,10 +2,12 @@ import { Activity, Download, FilePlus, Gauge, Languages, Link2, Link2Off, Mic, M
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, EngineStatus, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
+import { is3DEffect } from '../../shared/types'
 import { useI18n } from './i18n'
 import { DisplayMap } from './components/DisplayMap'
 import { EffectsView } from './components/EffectsView'
 import { PreviewGrid } from './components/PreviewGrid'
+import { Preview3D } from './components/Preview3D'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 import type { WorkerInput } from './workers/previewEngineWorker'
 
@@ -285,6 +287,9 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (!profile || !status.running || !workerRef.current) return undefined
 
+    // 3D effects are rendered directly by Preview3D on the GPU — bypass the worker.
+    if (is3DEffect(activeLayer(profile).kind)) return undefined
+
     let cancelled    = false
     const intervalMs = Math.max(16, Math.floor(1000 / profile.sampling.fps))
     const worker     = workerRef.current
@@ -391,6 +396,23 @@ export function App(): JSX.Element {
   }, [profile, status.running])
 
   const scene = useMemo(() => (profile ? activeScene(profile) : null), [profile])
+
+  /** Frame handler for GPU 3D effects — Preview3D calls this instead of the worker. */
+  const handleFrame3D = useCallback((frame: RgbFrame) => {
+    frame.showGap = profile?.sampling.showGap ?? false
+    frameRef.current = frame
+    if (overlayIdsRef.current.length > 0) {
+      const topo = topologyRef.current
+      if (scene?.linkedDisplays && topo && topo.displays.length > 1) {
+        for (const displayId of overlayIdsRef.current) {
+          const subFrame = extractSubFrame(frame, displayId, topo)
+          if (subFrame) window.rgbbox.pushFrameToDisplay(displayId, subFrame)
+        }
+      } else {
+        window.rgbbox.pushFrameToOverlays(frame)
+      }
+    }
+  }, [profile, scene])
 
   const selectedLayer = useMemo(() => {
     if (!profile || !scene) return null
@@ -1016,11 +1038,20 @@ export function App(): JSX.Element {
                     </div>
                     <span className="chip">{status.output}</span>
                   </div>
-                  <PreviewGrid
-                    frameRef={frameRef}
-                    showGap={profile.sampling.showGap ?? false}
-                    onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
-                  />
+                  {is3DEffect(activeLayer(profile).kind) ? (
+                    <Preview3D
+                      layer={activeLayer(profile)}
+                      columns={profile.sampling.columns}
+                      rows={profile.sampling.rows}
+                      onFrame={handleFrame3D}
+                    />
+                  ) : (
+                    <PreviewGrid
+                      frameRef={frameRef}
+                      showGap={profile.sampling.showGap ?? false}
+                      onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
+                    />
+                  )}
                 </section>
 
                 <section className="panel map-panel">

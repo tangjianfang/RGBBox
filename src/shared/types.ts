@@ -2,6 +2,13 @@ export type PlatformName = 'windows' | 'macos' | 'linux' | 'unknown'
 
 export type BlendMode = 'normal' | 'add' | 'multiply' | 'screen'
 
+/** GPU-rendered 3D effects (WebGL raymarching shaders, bypass the CPU worker). */
+export type Effect3DKind =
+  | 'sphere-pulse'
+  | 'warp-portal'
+  | 'neon-galaxy'
+  | 'lava-sphere'
+
 export type EffectKind =
   | 'screen-ambient'
   | 'static'
@@ -24,6 +31,20 @@ export type EffectKind =
   | 'vortex'
   | 'tunnel'
   | 'crystal'
+  | Effect3DKind
+
+/** Runtime set of all 3D effect kinds — keep in sync with Effect3DKind. */
+export const EFFECT_3D_KINDS = new Set<EffectKind>([
+  'sphere-pulse',
+  'warp-portal',
+  'neon-galaxy',
+  'lava-sphere',
+])
+
+/** True when the effect is rendered via GPU shaders (Preview3D) rather than the CPU worker. */
+export function is3DEffect(kind: EffectKind): kind is Effect3DKind {
+  return EFFECT_3D_KINDS.has(kind)
+}
 
 export type PerformanceMode = 'battery' | 'balanced' | 'extreme'
 
