@@ -47,9 +47,15 @@ function drawFrame(canvas: HTMLCanvasElement, frame: RgbFrame): void {
 export function OverlayCanvas({ displayId }: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
-  // Double-click: close this overlay
-  const handleDoubleClick = useCallback(() => {
-    window.rgbbox.closeOverlay(displayId)
+  // Esc key: close this overlay
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        window.rgbbox.closeOverlay(displayId)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [displayId])
 
   // Right-click: show native context menu with effects + exit
@@ -84,7 +90,6 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
   return (
     <div
       style={{ position: 'fixed', inset: 0, cursor: 'default' }}
-      onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
     >
       <canvas
@@ -114,7 +119,7 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
         animation: 'overlayHintFade 3s ease 1.5s forwards',
         whiteSpace: 'nowrap'
       }}>
-        双击退出 · 右键菜单
+        ESC 退出 · 右键菜单
       </div>
     </div>
   )
