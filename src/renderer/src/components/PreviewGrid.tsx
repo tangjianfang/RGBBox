@@ -9,6 +9,8 @@ interface PreviewGridProps {
    * the component's own rAF loop polls the ref on every vsync.
    */
   frameRef: React.RefObject<RgbFrame | null>
+  /** Show dark grid lines between cells (default false). */
+  showGap?: boolean
   /** When a ripple layer is active, called with normalised (0..1) click coordinates. */
   onRippleClick?: (nx: number, ny: number) => void
 }
@@ -39,7 +41,7 @@ function initGl(canvas: HTMLCanvasElement): PreviewGl | null {
   }
 }
 
-export function PreviewGrid({ frameRef, onRippleClick }: PreviewGridProps): JSX.Element {
+export function PreviewGrid({ frameRef, showGap = false, onRippleClick }: PreviewGridProps): JSX.Element {
   const canvasRef  = useRef<HTMLCanvasElement | null>(null)
   const glRef      = useRef<PreviewGl | null>(null)
   const rafRef     = useRef<number | null>(null)
@@ -47,6 +49,16 @@ export function PreviewGrid({ frameRef, onRippleClick }: PreviewGridProps): JSX.
   const [started, setStarted] = useState(false)
   // Stable ref so the rAF loop closure can set started without stale-closure issues.
   const startedRef = useRef(false)
+
+  // Apply gap setting whenever it changes (without remounting the GL context).
+  useEffect(() => {
+    glRef.current?.setGap(showGap ? 0.06 : 0.0)
+  }, [showGap])
+
+  // Apply gap setting whenever it changes (without remounting the GL context).
+  useEffect(() => {
+    glRef.current?.setGap(showGap ? 0.06 : 0.0)
+  }, [showGap])
 
   useEffect(() => {
     const canvas = canvasRef.current

@@ -117,7 +117,8 @@ export const defaultProfile: Profile = {
     smoothing: 0.35,
     brightnessLimit: 1.0,
     saturationBoost: 1.5,
-    usePerformanceGuard: true
+    usePerformanceGuard: true,
+    showGap: false
   },
   scenes: [
     {

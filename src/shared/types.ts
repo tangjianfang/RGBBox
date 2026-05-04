@@ -55,6 +55,7 @@ export interface SamplingSettings {
   brightnessLimit: number
   saturationBoost: number
   usePerformanceGuard: boolean
+  showGap: boolean
 }
 
 export interface RgbColor {

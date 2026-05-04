@@ -255,4 +255,10 @@ export class PreviewGl {
     this.gl.deleteTexture(this.tex)
     this.gl.deleteProgram(this.prog)
   }
+
+  /** Set the inter-cell gap fraction (0 = no lines, 0.06 = ~6% gap). */
+  setGap(gap: number): void {
+    this.gl.useProgram(this.prog)
+    this.gl.uniform1f(this.uGap, gap)
+  }
 }

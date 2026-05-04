@@ -958,6 +958,7 @@ export function App(): JSX.Element {
                   </div>
                   <PreviewGrid
                     frameRef={frameRef}
+                    showGap={profile.sampling.showGap ?? false}
                     onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
                   />
                 </section>
@@ -1094,6 +1095,11 @@ export function App(): JSX.Element {
                       <input checked={profile.sampling.usePerformanceGuard} type="checkbox"
                         onChange={(e) => setSamplingValue('usePerformanceGuard', e.target.checked)} />
                       <span>{t('sampling.perfGuard')}</span>
+                    </label>
+                    <label className="toggle-line sampling-toggle">
+                      <input checked={profile.sampling.showGap ?? false} type="checkbox"
+                        onChange={(e) => setSamplingValue('showGap', e.target.checked)} />
+                      <span>{t('sampling.showGap')}</span>
                     </label>
                   </div>
                 </section>
