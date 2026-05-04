@@ -10,26 +10,43 @@ interface PreviewGridProps {
 
 export function PreviewGrid({ frame, onRippleClick }: PreviewGridProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  // Track physical canvas dimensions; updated only on actual resize, not every frame.
+  const sizeRef = useRef({ pw: 0, ph: 0 })
+  // Reuse ImageData buffer; reallocated only when canvas size changes.
+  const imgDataRef = useRef<ImageData | null>(null)
 
+  // ResizeObserver: resize the canvas backing buffer and invalidate cached ImageData.
   useEffect(() => {
     const canvas = canvasRef.current
+    if (!canvas) return
 
-    if (!canvas || !frame) {
-      return
+    const applySize = (): void => {
+      const pixelRatio = window.devicePixelRatio || 1
+      const bounds = canvas.getBoundingClientRect()
+      const pw = Math.floor(bounds.width * pixelRatio)
+      const ph = Math.floor(bounds.height * pixelRatio)
+      if (pw === sizeRef.current.pw && ph === sizeRef.current.ph) return
+      canvas.width = pw
+      canvas.height = ph
+      sizeRef.current = { pw, ph }
+      imgDataRef.current = null  // force re-allocation on next render
     }
 
+    applySize()
+    const ro = new ResizeObserver(applySize)
+    ro.observe(canvas)
+    return () => ro.disconnect()
+  }, [])
+
+  // Render: only pixel writes + a single putImageData, no layout queries or canvas resizes.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !frame) return
     const context = canvas.getContext('2d')
+    if (!context) return
 
-    if (!context) {
-      return
-    }
-
-    const pixelRatio = window.devicePixelRatio || 1
-    const bounds = canvas.getBoundingClientRect()
-    const pw = Math.floor(bounds.width * pixelRatio)
-    const ph = Math.floor(bounds.height * pixelRatio)
-    canvas.width = pw
-    canvas.height = ph
+    const { pw, ph } = sizeRef.current
+    if (pw === 0 || ph === 0) return
 
     // Each cell fills exactly its share of the canvas — cols×rows covers 100% of the area.
     // We operate in physical pixels (no ctx.scale) and use a single putImageData call
@@ -38,13 +55,17 @@ export function PreviewGrid({ frame, onRippleClick }: PreviewGridProps): JSX.Ele
     const cellH = ph / frame.rows
     const gap = Math.max(0.5, Math.min(cellW, cellH) * 0.06)
 
-    const imageData = context.createImageData(pw, ph)
-    const data = imageData.data
-
-    // Fill background (dark)
-    for (let i = 0; i < data.length; i += 4) {
-      data[i] = 8; data[i + 1] = 13; data[i + 2] = 17; data[i + 3] = 255
+    // Allocate ImageData only when resolution changes; reuse across frames to reduce GC.
+    if (!imgDataRef.current || imgDataRef.current.width !== pw || imgDataRef.current.height !== ph) {
+      imgDataRef.current = context.createImageData(pw, ph)
+      // Pre-fill background once; gap pixels keep this color for the lifetime of the buffer.
+      const bg = imgDataRef.current.data
+      for (let i = 0; i < bg.length; i += 4) {
+        bg[i] = 8; bg[i + 1] = 13; bg[i + 2] = 17; bg[i + 3] = 255
+      }
     }
+    const imageData = imgDataRef.current
+    const data = imageData.data
 
     for (let row = 0; row < frame.rows; row++) {
       for (let col = 0; col < frame.columns; col++) {

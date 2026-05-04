@@ -9,39 +9,45 @@ interface Props {
 // Effect list passed to the native context menu
 const OVERLAY_EFFECTS = effectPresets.map((p) => ({ kind: p.kind, label: p.label }))
 
+// Module-level cache: reuse OffscreenCanvas and ImageData to avoid per-frame allocations.
+let _offscreen: OffscreenCanvas | null = null
+let _offCtx: OffscreenCanvasRenderingContext2D | null = null
+let _imgData: ImageData | null = null
+
 function drawFrame(canvas: HTMLCanvasElement, frame: RgbFrame): void {
+  const { columns, rows, pixels } = frame
+
+  // Lazy-create or resize the offscreen canvas at frame resolution.
+  if (!_offscreen || _offscreen.width !== columns || _offscreen.height !== rows) {
+    _offscreen = new OffscreenCanvas(columns, rows)
+    _offCtx = _offscreen.getContext('2d')
+    _imgData = null
+  }
+  if (!_offCtx) return
+
+  // Reuse ImageData buffer; only allocate when resolution changes.
+  if (!_imgData) {
+    _imgData = _offCtx.createImageData(columns, rows)
+  }
+
+  // RGB (packed 3-byte) → RGBA typed-array write — single tight loop, no string allocs.
+  const data = _imgData.data
+  for (let i = 0, len = columns * rows; i < len; i++) {
+    const s = i * 3
+    const d = i * 4
+    data[d]     = pixels[s]
+    data[d + 1] = pixels[s + 1]
+    data[d + 2] = pixels[s + 2]
+    data[d + 3] = 255
+  }
+  _offCtx.putImageData(_imgData, 0, 0)
+
+  // Scale the small frame up to the full overlay canvas in one GPU-accelerated blit.
   const ctx = canvas.getContext('2d')
   if (!ctx) return
-
-  const { columns, rows, pixels } = frame
-  const w = canvas.width
-  const h = canvas.height
-
-  // Use square cells: compute the largest cell size that fits the grid inside the canvas,
-  // then centre the grid (letterbox/pillarbox) so cells are always square.
-  const cellSize = Math.min(w / columns, h / rows)
-  const gap = Math.max(1, cellSize * 0.06)
-  const totalW = cellSize * columns
-  const totalH = cellSize * rows
-  const offsetX = (w - totalW) / 2
-  const offsetY = (h - totalH) / 2
-
-  ctx.clearRect(0, 0, w, h)
-
-  for (let i = 0; i < columns * rows; i++) {
-    const r = pixels[i * 3]
-    const g = pixels[i * 3 + 1]
-    const b = pixels[i * 3 + 2]
-    const col = i % columns
-    const row = Math.floor(i / columns)
-    const rx = offsetX + col * cellSize + gap / 2
-    const ry = offsetY + row * cellSize + gap / 2
-    const rw = cellSize - gap
-    const rh = cellSize - gap
-
-    ctx.fillStyle = `rgb(${r},${g},${b})`
-    ctx.fillRect(rx, ry, rw, rh)
-  }
+  ctx.imageSmoothingEnabled = false
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(_offscreen, 0, 0, canvas.width, canvas.height)
 }
 
 export function OverlayCanvas({ displayId }: Props): JSX.Element {

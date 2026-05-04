@@ -89,11 +89,20 @@ self.onmessage = (e: MessageEvent<WorkerInput>): void => {
   )
 
   // Keep a copy for next frame's smoothing BEFORE transferring the buffer.
-  previousFrame = {
-    columns: frame.columns,
-    rows: frame.rows,
-    pixels: new Uint8ClampedArray(frame.pixels),
-    generatedAt: frame.generatedAt
+  // Reuse the existing pixel buffer (same size) instead of allocating 170KB each frame.
+  const pixelLen = frame.pixels.length
+  if (!previousFrame || previousFrame.pixels.length !== pixelLen) {
+    previousFrame = {
+      columns: frame.columns,
+      rows: frame.rows,
+      pixels: new Uint8ClampedArray(frame.pixels),
+      generatedAt: frame.generatedAt
+    }
+  } else {
+    previousFrame.pixels.set(frame.pixels)
+    previousFrame.columns = frame.columns
+    previousFrame.rows = frame.rows
+    previousFrame.generatedAt = frame.generatedAt
   }
 
   // Transfer pixel buffer to the renderer thread (zero-copy).
