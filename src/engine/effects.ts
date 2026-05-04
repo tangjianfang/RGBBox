@@ -144,25 +144,25 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       // any one of them going low can nearly kill a column entirely, while
       // all three peaking at once creates a dramatic tall surge.
 
-      // 1. Global gust  (period ≈ 5–12 s): whole fire surges or calms together
-      const gustA    = vn(t * 0.07 + 0.5,  t * 0.04)
-      const gustB    = vn(t * 0.11 + 7.3,  t * 0.06 + 3.1)
+      // 1. Global gust  (period ≈ 3–8 s): whole fire surges or calms together
+      const gustA    = vn(t * 0.10 + 0.5,  t * 0.06)
+      const gustB    = vn(t * 0.15 + 7.3,  t * 0.08 + 3.1)
       const gust     = gustA * 0.55 + gustB * 0.45          // 0..1
-      const globalH  = 0.30 + gust * 0.90                   // 0.30 (embers) .. 1.20 (surging)
+      const globalH  = 0.05 + gust * 1.35                   // 0.05 (near-dead) .. 1.40 (surging)
 
-      // 2. Slow column envelope  (period ≈ 1–3 s): rolling shape differences
-      const colSlow  = vn(fx * 2.0 + t * 0.22, t * 0.14)
-      const colH     = 0.20 + colSlow * 0.80                // 0.20 (low tongue) .. 1.0
+      // 2. Slow column envelope  (period ≈ 0.7–2 s): rolling shape differences
+      const colSlow  = vn(fx * 2.0 + t * 0.32, t * 0.20)
+      const colH     = 0.05 + colSlow * 0.95                // 0.05 (almost out) .. 1.0
 
-      // 3. Fast column burst  (period ≈ 0.3–0.8 s): rapid flare-and-die per column
-      const colFast  = vn(fx * 3.5 - t * 0.65, t * 0.45 + 5.7)
-      const burstH   = 0.55 + colFast * 0.45                // 0.55 (dim) .. 1.0 (bright burst)
+      // 3. Fast column burst  (period ≈ 0.2–0.6 s): rapid flare-and-die per column
+      const colFast  = vn(fx * 3.5 - t * 0.90, t * 0.62 + 5.7)
+      const burstH   = 0.30 + colFast * 0.70                // 0.30 (dim) .. 1.0 (bright burst)
 
       const heightScale = globalH * colH * burstH
-      // range: 0.033 (near-dead) … 1.08 (full surge)
+      // range: ~0.001 (fully extinguished) … ~1.33 (surging column)
 
       // Micro-flicker: very fast per-pixel shimmer for live glowing look
-      const flicker  = vn(fx * 9.0 + t * 2.4, fy * 5.5 - drift * 0.4) * 0.12 + 0.88  // 0.88..1.0
+      const flicker  = vn(fx * 9.0 + t * 2.4, fy * 5.5 - drift * 0.4) * 0.18 + 0.82  // 0.82..1.0
 
       // Quadratic fy falloff: top (fy=0) always dark; turbulence only where base heat exists.
       const temperature = clampUnit((fy * fy * 1.8 * heightScale + turbulence * fy * 0.80 - 0.04) * intensity * flicker)
