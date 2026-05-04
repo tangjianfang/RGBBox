@@ -27,7 +27,13 @@ function hash2(x: number, y: number): number {
   return hash(x * 127.1 + y * 311.7)
 }
 
-// ── Fire per-column / per-frame cache ──────────────────────────────────────
+// ── Audio effect frame-level caches ──────────────────────────────────────
+// audio-beat: per-layer decay envelope (fast attack, slow release)
+// audio-equalizer: per-layer per-band level EMA (fast attack, slow decay)
+interface _BeatEnv { lastNow: number; pulse: number }
+interface _EqBandCache { lastNow: number; smoothed: Float32Array }
+const _beatEnvMap    = new Map<string, _BeatEnv>()
+const _eqBandCacheMap = new Map<string, _EqBandCache>()
 // colSlow / colFast (and everything derived: colH, burstH, heightScale, tipFy)
 // have NO dependency on fy (row coordinate) — they are identical for every row
 // in the same column.  Similarly, the gust-event state is the same for every
@@ -459,7 +465,21 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const bass = Number(context._audioBass ?? 0)
       const beat = Number(context._audioBeat ?? 0)
 
-      const pulse = clampUnit((bass * 0.65 + beat * 0.35) * sensitivity)
+      // Decay envelope: computed once per frame (keyed by context.now), so all pixels
+      // in the same frame share the same smooth pulse value.
+      // Fast attack (~2 frames) + slow decay (~0.80/frame ≈ 200ms at 30fps).
+      let env = _beatEnvMap.get(layer.id)
+      if (!env || env.lastNow !== context.now) {
+        const rawPulse = clampUnit((bass * 0.70 + beat * 0.30) * sensitivity)
+        const prev = env?.pulse ?? 0
+        const newPulse = rawPulse > prev
+          ? prev * 0.15 + rawPulse * 0.85   // fast attack
+          : prev * 0.80                     // slow decay
+        env = { lastNow: context.now, pulse: newPulse }
+        _beatEnvMap.set(layer.id, env)
+      }
+      const pulse = env.pulse
+
       const cx = (context.columns - 1) / 2
       const cy = (context.rows - 1) / 2
       const dx = (context.x - cx) / Math.max(1, context.columns / 2)
@@ -480,15 +500,31 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const colorLow  = hexToRgb(String(layer.parameters.colorLow  ?? '#00ff44'))
       const colorHigh = hexToRgb(String(layer.parameters.colorHigh ?? '#ff2200'))
 
-      let bandLevel: number
+      // Per-frame per-band EMA cache: smooths band levels between frames so bars
+      // move fluidly instead of snapping.  Fast attack, slow decay (same as hook
+      // but applied a second time for extra stability in the worker thread).
       const freqBands = context._audioFreqBands
+      let bandLevel: number
       if (freqBands && freqBands.length > 0) {
-        // Map column to the log-spaced frequency band (with linear interpolation)
+        let eqCache = _eqBandCacheMap.get(layer.id)
+        if (!eqCache || eqCache.lastNow !== context.now) {
+          const prevSmoothed = eqCache?.smoothed
+          const smoothed = new Float32Array(freqBands.length)
+          for (let i = 0; i < freqBands.length; i++) {
+            const raw = freqBands[i]
+            const p = prevSmoothed ? prevSmoothed[i] : 0
+            smoothed[i] = raw > p ? p * 0.30 + raw * 0.70 : p * 0.82 + raw * 0.18
+          }
+          eqCache = { lastNow: context.now, smoothed }
+          _eqBandCacheMap.set(layer.id, eqCache)
+        }
+
+        // Map column to log-spaced frequency band with linear interpolation
         const t = context.x / Math.max(1, context.columns - 1)
-        const bandIdxF = t * (freqBands.length - 1)
+        const bandIdxF = t * (eqCache.smoothed.length - 1)
         const lo = Math.floor(bandIdxF)
-        const hi = Math.min(freqBands.length - 1, lo + 1)
-        bandLevel = freqBands[lo] * (1 - (bandIdxF - lo)) + freqBands[hi] * (bandIdxF - lo)
+        const hi = Math.min(eqCache.smoothed.length - 1, lo + 1)
+        bandLevel = eqCache.smoothed[lo] * (1 - (bandIdxF - lo)) + eqCache.smoothed[hi] * (bandIdxF - lo)
       } else {
         // Fallback to 3-band averages when no FFT data available
         const bass = Number(context._audioBass ?? 0)
@@ -504,16 +540,21 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         }
       }
 
+      const threshold = clampUnit(bandLevel * sensitivity)
       const heightFraction = 1 - context.y / Math.max(1, context.rows - 1)
-      const lit = heightFraction < clampUnit(bandLevel * sensitivity) ? 1 : 0
 
-      if (lit === 0) return { r: 0, g: 0, b: 0 }
+      // Soft anti-aliased bar edge: 1-pixel smooth transition at the bar top so
+      // the bar moves fluidly rather than snapping row by row.
+      // edgeFrac = 1 (fully lit) well below threshold, 0 (dark) well above,
+      // and linearly interpolates over exactly 1 pixel height.
+      const edgeFrac = clampUnit((threshold - heightFraction) * (context.rows - 1) + 0.5)
+      if (edgeFrac < 0.004) return { r: 0, g: 0, b: 0 }
 
-      // blend from colorLow (bar bottom) to colorHigh (bar top) by height
+      // Blend from colorLow (bar bottom) to colorHigh (bar top) by height
       return {
-        r: Math.round(colorLow.r * (1 - heightFraction) + colorHigh.r * heightFraction),
-        g: Math.round(colorLow.g * (1 - heightFraction) + colorHigh.g * heightFraction),
-        b: Math.round(colorLow.b * (1 - heightFraction) + colorHigh.b * heightFraction)
+        r: Math.round((colorLow.r * (1 - heightFraction) + colorHigh.r * heightFraction) * edgeFrac),
+        g: Math.round((colorLow.g * (1 - heightFraction) + colorHigh.g * heightFraction) * edgeFrac),
+        b: Math.round((colorLow.b * (1 - heightFraction) + colorHigh.b * heightFraction) * edgeFrac)
       }
     }
 

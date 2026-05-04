@@ -38,6 +38,9 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
   const [audioData, setAudioData] = useState<AudioData>(INACTIVE)
   const prevBassRef = useRef(0)
   const frameRef = useRef<number | null>(null)
+  // Per-band EMA: fast attack (0.75), slow decay (0.20) → VU-meter "peak hold" feel.
+  // Prevents the harsh instant-drop that makes equalizer bars jittery.
+  const smoothedBandsRef = useRef<number[]>(new Array(NUM_BANDS).fill(0))
 
   useEffect(() => {
     if (!enabled) {
@@ -133,11 +136,18 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
           const beat = Math.max(0, (bass - prevBassRef.current) * 5)
           prevBassRef.current = bass * 0.85 + prevBassRef.current * 0.15
 
-          // Per-band FFT: take the max bin value within each log-spaced band
-          const freqBands = bandEdges.map(([lo, hi]) => {
+          // Per-band FFT: take the max bin value within each log-spaced band,
+          // then apply asymmetric EMA (fast attack / slow decay) so bars rise
+          // quickly on signal and hold / fall slowly — classic VU-meter feel.
+          const freqBands = bandEdges.map(([lo, hi], i) => {
             let peak = 0
-            for (let i = lo; i <= hi; i++) peak = Math.max(peak, dataArray[i] / 255)
-            return peak
+            for (let j = lo; j <= hi; j++) peak = Math.max(peak, dataArray[j] / 255)
+            const prev = smoothedBandsRef.current[i]
+            const next = peak > prev
+              ? prev * 0.25 + peak * 0.75   // fast attack  (~1-2 frames to rise)
+              : prev * 0.80 + peak * 0.20   // slow decay   (~300ms half-life at 30fps)
+            smoothedBandsRef.current[i] = next
+            return next
           })
 
           setAudioData({ active: true, bass, mid, high, level, beat, freqBands })
