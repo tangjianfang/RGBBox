@@ -35,10 +35,11 @@ const VS = /* glsl */`
 const FS = /* glsl */`
   precision mediump float;
 
-  uniform sampler2D uFrame; // columns × rows RGB texture
-  uniform vec2      uGrid;  // vec2(columns, rows)
-  uniform float     uGap;   // gap fraction of cell size (0.06 = 6 %)
-  uniform vec3      uBg;    // gap / background colour
+  uniform sampler2D uFrame;   // columns × rows RGB texture
+  uniform vec2      uGrid;    // vec2(columns, rows)
+  uniform float     uGap;     // gap fraction of cell size (0.06 = 6 %)
+  uniform vec3      uBg;      // gap / background colour
+  uniform float     uBgAlpha; // 1.0 = opaque preview, 0.0 = transparent overlay
 
   varying vec2 vUV;
 
@@ -51,8 +52,8 @@ const FS = /* glsl */`
     float hg = uGap * 0.5;
     if (local.x < hg || local.x > 1.0 - hg ||
         local.y < hg || local.y > 1.0 - hg) {
-      // Gap region → background colour.
-      gl_FragColor = vec4(uBg, 1.0);
+      // Gap region → opaque background (preview) or fully transparent (overlay).
+      gl_FragColor = vec4(uBg * uBgAlpha, uBgAlpha);
       return;
     }
 
@@ -96,11 +97,24 @@ export class PreviewGl {
   private readonly uGrid: WebGLUniformLocation
   private readonly uGap: WebGLUniformLocation
   private readonly uBg: WebGLUniformLocation
+  private readonly uBgAlpha: WebGLUniformLocation
+  /** True when this instance is used in a transparent overlay window. */
+  private readonly overlay: boolean
 
-  constructor(canvas: HTMLCanvasElement) {
+  /**
+   * @param canvas  The canvas element whose backing buffer has already been
+   *                sized to the desired physical resolution by the caller.
+   *                Do NOT change canvas.width/height after construction —
+   *                setting those attributes triggers a WebGL context-lost event.
+   *                Call resize() + recreate the PreviewGl instance on resize.
+   * @param overlay Pass true for overlay windows (enables transparent gaps,
+   *                uses alpha:true WebGL context for compositor blending).
+   */
+  constructor(canvas: HTMLCanvasElement, overlay = false) {
+    this.overlay = overlay
     const gl = canvas.getContext('webgl', {
       antialias:             false,
-      alpha:                 false,  // opaque → compositor skip
+      alpha:                 overlay,  // overlay needs transparency; preview is opaque
       depth:                 false,
       stencil:               false,
       preserveDrawingBuffer: false,
@@ -129,14 +143,29 @@ export class PreviewGl {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE)
 
-    // Uniform handles.
-    this.uGrid = gl.getUniformLocation(this.prog, 'uGrid')!
-    this.uGap  = gl.getUniformLocation(this.prog, 'uGap')!
-    this.uBg   = gl.getUniformLocation(this.prog, 'uBg')!
+    // RGB textures: rows are 3 bytes × width. Default UNPACK_ALIGNMENT=4 would
+    // cause misalignment for widths where (width*3) is not divisible by 4.
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
 
-    // Defaults (match the legacy 2D canvas appearance).
-    gl.uniform1f(this.uGap, 0.06)
-    gl.uniform3f(this.uBg,  8/255, 13/255, 17/255)  // #08 #0D #11
+    // Uniform handles.
+    this.uGrid     = gl.getUniformLocation(this.prog, 'uGrid')!
+    this.uGap      = gl.getUniformLocation(this.prog, 'uGap')!
+    this.uBg       = gl.getUniformLocation(this.prog, 'uBg')!
+    this.uBgAlpha  = gl.getUniformLocation(this.prog, 'uBgAlpha')!
+
+    // Defaults.
+    gl.uniform1f(this.uGap,     0.06)
+    gl.uniform3f(this.uBg,      8/255, 13/255, 17/255)  // #08 #0D #11
+    gl.uniform1f(this.uBgAlpha, overlay ? 0.0 : 1.0)    // transparent gaps for overlay
+
+    // Clear colour: transparent for overlay, dark for preview.
+    if (overlay) {
+      gl.enable(gl.BLEND)
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+      gl.clearColor(0, 0, 0, 0)
+    } else {
+      gl.clearColor(8/255, 13/255, 17/255, 1)
+    }
 
     gl.viewport(0, 0, canvas.width, canvas.height)
   }
@@ -167,6 +196,7 @@ export class PreviewGl {
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, columns, rows, gl.RGB, gl.UNSIGNED_BYTE, pixels)
     }
 
+    if (this.overlay) gl.clear(gl.COLOR_BUFFER_BIT)
     gl.drawArrays(gl.TRIANGLES, 0, 6)
   }
 

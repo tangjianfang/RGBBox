@@ -13,48 +13,73 @@ interface PreviewGridProps {
   onRippleClick?: (nx: number, ny: number) => void
 }
 
+/**
+ * Initialise (or reinitialise) a PreviewGl renderer for a canvas.
+ *
+ * IMPORTANT: setting canvas.width / canvas.height on an already-contextualised
+ * canvas fires a WebGL context-lost event, making all subsequent GL calls no-ops.
+ * The correct resize pattern is:
+ *   1. Dispose the old PreviewGl (which detaches the context).
+ *   2. Set canvas.width / canvas.height to new physical dimensions.
+ *   3. Construct a new PreviewGl.
+ */
+function initGl(canvas: HTMLCanvasElement): PreviewGl | null {
+  const pr = window.devicePixelRatio || 1
+  const w  = Math.floor(canvas.offsetWidth  * pr)
+  const h  = Math.floor(canvas.offsetHeight * pr)
+  // Skip if the container hasn't been laid out yet (zero dimensions).
+  if (!w || !h) return null
+  canvas.width  = w
+  canvas.height = h
+  try {
+    return new PreviewGl(canvas)
+  } catch (err) {
+    console.warn('[PreviewGrid] WebGL init failed:', err)
+    return null
+  }
+}
+
 export function PreviewGrid({ frameRef, onRippleClick }: PreviewGridProps): JSX.Element {
   const canvasRef  = useRef<HTMLCanvasElement | null>(null)
   const glRef      = useRef<PreviewGl | null>(null)
   const rafRef     = useRef<number | null>(null)
-  const drawnRef   = useRef<RgbFrame | null>(null)  // last frame actually drawn
-  const [started, setStarted] = useState(false)     // shown-once: "starting" overlay
+  const drawnRef   = useRef<RgbFrame | null>(null)
+  const [started, setStarted] = useState(false)
+  // Stable ref so the rAF loop closure can set started without stale-closure issues.
+  const startedRef = useRef(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    // ── Resize handling ──────────────────────────────────────────────────
-    const applySize = (): void => {
-      const pr = window.devicePixelRatio || 1
-      const w  = Math.floor(canvas.offsetWidth  * pr)
-      const h  = Math.floor(canvas.offsetHeight * pr)
-      if (canvas.width === w && canvas.height === h) return
-      canvas.width  = w
-      canvas.height = h
-      glRef.current?.resize(w, h)
-    }
-    applySize()
-    const ro = new ResizeObserver(applySize)
+    // ── Initial WebGL context setup ───────────────────────────────────────
+    // canvas.width/height are set inside initGl() BEFORE the GL context is
+    // created, so there is no context-lost risk at init time.
+    glRef.current = initGl(canvas)
+
+    // ── ResizeObserver: recreate GL context on canvas size change ─────────
+    // We MUST dispose the old context and create a new one because setting
+    // canvas.width/canvas.height fires a WebGL context-lost event that makes
+    // all future GL calls silent no-ops on the old context.
+    const ro = new ResizeObserver(() => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      glRef.current?.dispose()
+      glRef.current = initGl(canvas)
+      // Restart the rAF loop after reinitialising.
+      rafRef.current = requestAnimationFrame(loop)
+    })
     ro.observe(canvas)
 
-    // ── WebGL renderer ───────────────────────────────────────────────────
-    let gl: PreviewGl | null = null
-    try {
-      gl = new PreviewGl(canvas)
-      glRef.current = gl
-    } catch (err) {
-      console.warn('[PreviewGrid] WebGL unavailable:', err)
-    }
-
     // ── requestAnimationFrame render loop ────────────────────────────────
-    // Reads frameRef.current on every vsync — completely bypasses React.
     const loop = (): void => {
       const frame = frameRef.current
       if (frame && frame !== drawnRef.current) {
         drawnRef.current = frame
         glRef.current?.drawFrame(frame)
-        if (!started) setStarted(true)
+        if (!startedRef.current) {
+          startedRef.current = true
+          setStarted(true)
+        }
       }
       rafRef.current = requestAnimationFrame(loop)
     }
@@ -64,10 +89,9 @@ export function PreviewGrid({ frameRef, onRippleClick }: PreviewGridProps): JSX.
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
       ro.disconnect()
       glRef.current?.dispose()
-      glRef.current  = null
+      glRef.current    = null
       drawnRef.current = null
     }
-  // frameRef is a stable object; eslint-disable is intentional here.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

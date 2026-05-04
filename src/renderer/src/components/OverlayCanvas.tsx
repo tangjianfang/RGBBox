@@ -35,30 +35,33 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    // ── Initial size + resize handling ──────────────────────────────────
-    const applySize = (): void => {
+    // ── Helper: set canvas physical size then (re-)create the GL context ──
+    // Overlay canvas covers the entire display, so no devicePixelRatio scaling
+    // is applied — we want 1 CSS pixel = 1 physical pixel here.
+    const initGl = (): PreviewGl | null => {
       const w = canvas.offsetWidth  || window.innerWidth
       const h = canvas.offsetHeight || window.innerHeight
-      if (canvas.width === w && canvas.height === h) return
+      if (!w || !h) return null
       canvas.width  = w
       canvas.height = h
-      glRef.current?.resize(w, h)
+      try {
+        return new PreviewGl(canvas, true /* overlay */)
+      } catch (err) {
+        console.warn('[OverlayCanvas] WebGL init failed:', err)
+        return null
+      }
     }
-    applySize()
-    const ro = new ResizeObserver(applySize)
-    ro.observe(canvas)
 
-    // ── WebGL renderer ───────────────────────────────────────────────────
-    // The overlay canvas covers the entire display (e.g. 1920×1080).
-    // The frame texture is only columns×rows (e.g. 320×180).
-    // WebGL scales the texture to fill the screen in a single draw call.
-    let gl: PreviewGl | null = null
-    try {
-      gl = new PreviewGl(canvas)
-      glRef.current = gl
-    } catch (err) {
-      console.warn('[OverlayCanvas] WebGL unavailable:', err)
-    }
+    // ── Initial WebGL context ────────────────────────────────────────────
+    glRef.current = initGl()
+
+    // ── ResizeObserver: recreate GL context (setting canvas dimensions ───
+    //   fires a WebGL context-lost event; must dispose + recreate)
+    const ro = new ResizeObserver(() => {
+      glRef.current?.dispose()
+      glRef.current = initGl()
+    })
+    ro.observe(canvas)
 
     // ── Frame subscription (IPC callback, no React state) ────────────────
     const unsubscribe = window.rgbbox.onOverlayFrame((frame: RgbFrame) => {
