@@ -1040,6 +1040,19 @@ export function App(): JSX.Element {
                             onChange={(e) => setGridDensity(Number(e.target.value))} />
                           <strong>{profile.sampling.columns} × {profile.sampling.rows}</strong>
                         </label>
+                        {(() => {
+                          const px = profile.sampling.columns * profile.sampling.rows
+                          // Empirical throughput after per-column precompute optimisation:
+                          // ~250,000 pixels/sec for complex effects (fire/aurora/lightning)
+                          // on a modern CPU in a single Web Worker.
+                          const estFps = Math.min(60, Math.round(250_000 / px))
+                          const slow = estFps < 15
+                          return (
+                            <div className={`grid-fps-hint${slow ? ' grid-fps-hint--warn' : ''}`}>
+                              ~{estFps}&nbsp;{t(slow ? 'sampling.fpsSlow' : 'sampling.fpsOk')}
+                            </div>
+                          )
+                        })()}
                         <div className="aspect-lock-row">
                           <button className="aspect-lock-btn" onClick={matchDisplayRatio} type="button">
                             <Monitor size={12} />

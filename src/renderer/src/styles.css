@@ -710,6 +710,17 @@ select:focus {
 }
 
 /* Aspect-ratio lock row sits between columns and rows sliders */
+.grid-fps-hint {
+  color: #5e8091;
+  font-size: 10px;
+  margin: -4px 0 2px;
+  text-align: right;
+}
+
+.grid-fps-hint--warn {
+  color: #e0a040;
+}
+
 .aspect-lock-row {
   display: flex;
   justify-content: center;

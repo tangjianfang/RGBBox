@@ -27,6 +27,20 @@ function hash2(x: number, y: number): number {
   return hash(x * 127.1 + y * 311.7)
 }
 
+// ── Fire per-column / per-frame cache ──────────────────────────────────────
+// colSlow / colFast (and everything derived: colH, burstH, heightScale, tipFy)
+// have NO dependency on fy (row coordinate) — they are identical for every row
+// in the same column.  Similarly, the gust-event state is the same for every
+// pixel in a frame.  Both are expensive (8 Math.sin calls per pixel currently),
+// so we precompute them once per frame and cache by layerId.
+interface _FireColCache {
+  t: number          // context.now * speed at cache-build time
+  cols: number       // columns at cache-build time (invalidated on grid resize)
+  heightScaleArr: Float32Array
+  tipFyArr: Float32Array
+}
+const _fireColCacheMap = new Map<string, _FireColCache>()
+
 /**
  * Returns a 0..1 coordinate projected along the given direction angle (degrees, 0 = right, 90 = down).
  * Accounts for aspect ratio so that angle 45° looks visually diagonal regardless of grid shape.
@@ -139,56 +153,52 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const n3 = vn(fx * 13.0 + t * 0.9, fy * 10.0 - drift * 3.8) * 0.25
       const turbulence = (n1 + n2 + n3) / 1.75
 
-      // ── Global fire state: discrete gust events ───────────────────────────
-      // Smooth noise is statistically "stuck" near its mean. Instead, fire
-      // transitions between discrete random target states every ~1.8 s with a
-      // short 0.3 s cross-fade. Power-curve mapping makes near-dead and
-      // near-surge states more probable than the boring middle range.
-      const evRate   = 0.55                              // ~1 event per 1.8 s
-      const evBucket = Math.floor(t * evRate)
-      const evFrac   = t * evRate - evBucket             // 0..1 within this window
-      const evCur    = hash(evBucket       * 4.13 + 1.7) // 0..1 random for this window
-      const evNext   = hash((evBucket + 1) * 4.13 + 1.7) // 0..1 random for next window
-      // Smooth ramp only in first 18% of window (≈ 0.33 s), then hold
-      const xf     = Math.min(1.0, evFrac / 0.18)
-      const xfSm   = xf * xf * (3 - 2 * xf)             // smoothstep
-      const evBlend  = evCur * (1 - xfSm) + evNext * xfSm
-      // Power curve: x^2.5 mapping pushes near-0 (calm lull) and near-1 (surge)
-      // to appear more often than mid values — bimodal-like distribution
-      const evShaped = evBlend < 0.5
-        ? Math.pow(evBlend * 2, 2.5) * 0.5
-        : 1.0 - Math.pow((1.0 - evBlend) * 2, 2.5) * 0.5
-      const globalH  = 0.03 + evShaped * 1.42           // 0.03 (near-dead) .. 1.45 (surging)
+      // ── Per-frame + per-column precompute cache ───────────────────────────
+      // colSlow/colFast have no fy-dependence: compute once per column per frame.
+      // Gust state has no x/y dependence: compute once per frame.
+      // Both are cached in _fireColCacheMap and invalidated when t or column count changes.
+      let colCache = _fireColCacheMap.get(layer.id)
+      if (!colCache || colCache.cols !== context.columns || colCache.t !== t) {
+        const cols = context.columns
 
-      // ── Per-column envelopes ──────────────────────────────────────────────
-      // Slow: power-curve skew pushes columns toward being mostly low or mostly high
-      const colSlow   = vn(fx * 2.0 + t * 0.32, t * 0.20)
-      const colShaped = Math.pow(colSlow, 1.8)           // skew lower → more dark columns
-      const colH      = 0.04 + colShaped * 0.96          // 0.04 .. 1.0
+        // Gust event state (per-frame, identical for all pixels)
+        const evRate   = 0.55
+        const evBucket = Math.floor(t * evRate)
+        const evFrac   = t * evRate - evBucket
+        const evCur    = hash(evBucket       * 4.13 + 1.7)
+        const evNext   = hash((evBucket + 1) * 4.13 + 1.7)
+        const xf       = Math.min(1.0, evFrac / 0.18)
+        const xfSm     = xf * xf * (3 - 2 * xf)
+        const evBlend  = evCur * (1 - xfSm) + evNext * xfSm
+        const evShaped = evBlend < 0.5
+          ? Math.pow(evBlend * 2, 2.5) * 0.5
+          : 1.0 - Math.pow((1.0 - evBlend) * 2, 2.5) * 0.5
+        const globalH  = 0.03 + evShaped * 1.42
 
-      // Fast burst: quick flare-and-die per column
-      const colFast  = vn(fx * 3.5 - t * 0.90, t * 0.62 + 5.7)
-      const burstH   = 0.12 + colFast * 0.88             // 0.12 (nearly out) .. 1.0
+        // Per-column arrays (no fy term → O(cols) instead of O(cols×rows))
+        const heightScaleArr = new Float32Array(cols)
+        const tipFyArr       = new Float32Array(cols)
+        for (let cx = 0; cx < cols; cx++) {
+          const cfx     = (cx / Math.max(1, cols - 1) - 0.5) * spread
+          const colSlow   = vn(cfx * 2.0 + t * 0.32, t * 0.20)
+          const colShaped = Math.pow(colSlow, 1.8)
+          const colH      = 0.04 + colShaped * 0.96
+          const colFast   = vn(cfx * 3.5 - t * 0.90, t * 0.62 + 5.7)
+          const burstH    = 0.12 + colFast * 0.88
+          const hs        = globalH * Math.sqrt(colH * burstH)
+          heightScaleArr[cx] = hs
+          tipFyArr[cx]       = Math.max(0.0, 1.0 - hs * 0.88)
+        }
 
-      // sqrt(colH*burstH): far less statistically damped than triple product —
-      // column extremes remain visible instead of being drowned in the mean
-      const heightScale = globalH * Math.sqrt(colH * burstH)
-      // calm lull:  ~0.03 × sqrt(0.04×0.12) = ~0.002  (almost fully dark)
-      // hard surge: ~1.45 × sqrt(1.0 ×1.0 ) = ~1.45   (tall bright pillar)
+        colCache = { t, cols, heightScaleArr, tipFyArr }
+        _fireColCacheMap.set(layer.id, colCache)
+      }
+
+      const heightScale = colCache.heightScaleArr[context.x]
+      const tipFy       = colCache.tipFyArr[context.x]
 
       // Micro-flicker: very fast per-pixel shimmer for live glowing look
       const flicker  = vn(fx * 9.0 + t * 2.4, fy * 5.5 - drift * 0.4) * 0.20 + 0.80  // 0.80..1.0
-
-      // ── Explicit flame tip ────────────────────────────────────────────────
-      // Root cause of "top barely changes": fy² × heightScale → near fy=0
-      // the term stays near zero regardless of heightScale, so upper rows
-      // never visibly respond to surges/lulls.
-      //
-      // Fix: compute tipFy explicitly from heightScale.
-      //   tipFy=0  → flame fills the full grid (surge)
-      //   tipFy≈1  → flame shrinks to a thin base glow (lull)
-      // Pixels above tipFy → 0 except for turbulence wisps.
-      const tipFy    = Math.max(0.0, 1.0 - heightScale * 0.88)  // 0 (full height) .. ~1 (tiny)
 
       // flameFy: normalised 0 (tip) → 1 (base) within the live flame body
       const flameFy  = clampUnit((fy - tipFy) / Math.max(0.01, 1.0 - tipFy))
