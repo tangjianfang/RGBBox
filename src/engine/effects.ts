@@ -139,30 +139,45 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const n3 = vn(fx * 13.0 + t * 0.9, fy * 10.0 - drift * 3.8) * 0.25
       const turbulence = (n1 + n2 + n3) / 1.75
 
-      // ── Height modulation ─────────────────────────────────────────────────
-      // Three independent layers of height variation; their product means
-      // any one of them going low can nearly kill a column entirely, while
-      // all three peaking at once creates a dramatic tall surge.
+      // ── Global fire state: discrete gust events ───────────────────────────
+      // Smooth noise is statistically "stuck" near its mean. Instead, fire
+      // transitions between discrete random target states every ~1.8 s with a
+      // short 0.3 s cross-fade. Power-curve mapping makes near-dead and
+      // near-surge states more probable than the boring middle range.
+      const evRate   = 0.55                              // ~1 event per 1.8 s
+      const evBucket = Math.floor(t * evRate)
+      const evFrac   = t * evRate - evBucket             // 0..1 within this window
+      const evCur    = hash(evBucket       * 4.13 + 1.7) // 0..1 random for this window
+      const evNext   = hash((evBucket + 1) * 4.13 + 1.7) // 0..1 random for next window
+      // Smooth ramp only in first 18% of window (≈ 0.33 s), then hold
+      const xf     = Math.min(1.0, evFrac / 0.18)
+      const xfSm   = xf * xf * (3 - 2 * xf)             // smoothstep
+      const evBlend  = evCur * (1 - xfSm) + evNext * xfSm
+      // Power curve: x^2.5 mapping pushes near-0 (calm lull) and near-1 (surge)
+      // to appear more often than mid values — bimodal-like distribution
+      const evShaped = evBlend < 0.5
+        ? Math.pow(evBlend * 2, 2.5) * 0.5
+        : 1.0 - Math.pow((1.0 - evBlend) * 2, 2.5) * 0.5
+      const globalH  = 0.03 + evShaped * 1.42           // 0.03 (near-dead) .. 1.45 (surging)
 
-      // 1. Global gust  (period ≈ 3–8 s): whole fire surges or calms together
-      const gustA    = vn(t * 0.10 + 0.5,  t * 0.06)
-      const gustB    = vn(t * 0.15 + 7.3,  t * 0.08 + 3.1)
-      const gust     = gustA * 0.55 + gustB * 0.45          // 0..1
-      const globalH  = 0.05 + gust * 1.35                   // 0.05 (near-dead) .. 1.40 (surging)
+      // ── Per-column envelopes ──────────────────────────────────────────────
+      // Slow: power-curve skew pushes columns toward being mostly low or mostly high
+      const colSlow   = vn(fx * 2.0 + t * 0.32, t * 0.20)
+      const colShaped = Math.pow(colSlow, 1.8)           // skew lower → more dark columns
+      const colH      = 0.04 + colShaped * 0.96          // 0.04 .. 1.0
 
-      // 2. Slow column envelope  (period ≈ 0.7–2 s): rolling shape differences
-      const colSlow  = vn(fx * 2.0 + t * 0.32, t * 0.20)
-      const colH     = 0.05 + colSlow * 0.95                // 0.05 (almost out) .. 1.0
-
-      // 3. Fast column burst  (period ≈ 0.2–0.6 s): rapid flare-and-die per column
+      // Fast burst: quick flare-and-die per column
       const colFast  = vn(fx * 3.5 - t * 0.90, t * 0.62 + 5.7)
-      const burstH   = 0.30 + colFast * 0.70                // 0.30 (dim) .. 1.0 (bright burst)
+      const burstH   = 0.12 + colFast * 0.88             // 0.12 (nearly out) .. 1.0
 
-      const heightScale = globalH * colH * burstH
-      // range: ~0.001 (fully extinguished) … ~1.33 (surging column)
+      // sqrt(colH*burstH): far less statistically damped than triple product —
+      // column extremes remain visible instead of being drowned in the mean
+      const heightScale = globalH * Math.sqrt(colH * burstH)
+      // calm lull:  ~0.03 × sqrt(0.04×0.12) = ~0.002  (almost fully dark)
+      // hard surge: ~1.45 × sqrt(1.0 ×1.0 ) = ~1.45   (tall bright pillar)
 
       // Micro-flicker: very fast per-pixel shimmer for live glowing look
-      const flicker  = vn(fx * 9.0 + t * 2.4, fy * 5.5 - drift * 0.4) * 0.18 + 0.82  // 0.82..1.0
+      const flicker  = vn(fx * 9.0 + t * 2.4, fy * 5.5 - drift * 0.4) * 0.20 + 0.80  // 0.80..1.0
 
       // Quadratic fy falloff: top (fy=0) always dark; turbulence only where base heat exists.
       const temperature = clampUnit((fy * fy * 1.8 * heightScale + turbulence * fy * 0.80 - 0.04) * intensity * flicker)
