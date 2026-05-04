@@ -14,7 +14,7 @@ type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics'
 // Human-readable parameter metadata — labels pulled from i18n in render
 const PARAM_META: Record<string, { labelKey: string; min: number; max: number; step: number; unit?: string }> = {
   speed:       { labelKey: 'Speed',       min: 0,    max: 2,    step: 0.05, unit: '×' },
-  spread:      { labelKey: 'Spread',      min: 0.5,  max: 3,    step: 0.1,  unit: '×' },
+  spread:      { labelKey: 'Spread',      min: 0,    max: 3,    step: 0.1,  unit: '×' },
   width:       { labelKey: 'Width',       min: 0,    max: 1,    step: 0.05 },
   saturation:  { labelKey: 'Saturation',  min: 0,    max: 2,    step: 0.05, unit: '×' },
   contrast:    { labelKey: 'Contrast',    min: 0,    max: 2,    step: 0.05, unit: '×' },

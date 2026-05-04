@@ -301,21 +301,25 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
     }
 
     case 'spectrum': {
-      const speed = Number(layer.parameters.speed ?? 0.25)
+      const speed      = Number(layer.parameters.speed    ?? 0.25)
       const saturation = Number(layer.parameters.saturation ?? 0.95)
-      const hueShift = Number(layer.parameters.hueShift ?? 0)
+      const hueShift   = Number(layer.parameters.hueShift ?? 0)
+      const spread     = Number(layer.parameters.spread   ?? 1.0)
 
-      // Each pixel has a unique ±20° hue offset so the grid looks like a glittery wash
-      // rather than a flat solid colour that cycles.
-      const pixOff     = (hash2(context.x, context.y) - 0.5) * 40
-      const hue        = (context.now * speed * 360 + hueShift + pixOff + 360) % 360
+      // Spatial hue gradient: pixels at different positions have a smooth hue offset
+      // based on their position along the diagonal.  This gives the classic "spectrum
+      // wash" look — a slow continuous rainbow flowing across the whole grid uniformly.
+      // spread=0 → all pixels same hue (pure global cycle); spread=1 → ~120° range.
+      const nx = context.x / Math.max(1, context.columns - 1) - 0.5
+      const ny = context.y / Math.max(1, context.rows    - 1) - 0.5
+      const spatialT = (nx + ny) * 0.5 + 0.5           // 0..1 diagonal position
+      const hue = (context.now * speed * 360 + hueShift + spatialT * 120 * spread + 360) % 360
 
-      // Independent per-pixel brightness shimmer
-      const shimFreq   = 0.5 + hash2(context.x + 5,  context.y + 7)  * 1.5
-      const shimPhase  = hash2(context.x + 99, context.y + 33) * Math.PI * 2
-      const shimmer    = 0.75 + Math.sin(context.now * shimFreq + shimPhase) * 0.25
+      // Gentle global brightness pulse — identical for all pixels so the whole
+      // grid breathes together (NOT a per-pixel shimmer).
+      const pulse = 0.82 + Math.sin(context.now * 0.9) * 0.18   // 0.64..1.0
 
-      return hslToRgb(hue, saturation, 0.50 * shimmer)
+      return hslToRgb(hue, saturation, 0.50 * pulse)
     }
 
     case 'comet': {

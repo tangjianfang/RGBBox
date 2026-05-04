@@ -59,7 +59,7 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'spectrum',
     label: 'Spectrum',
     description: 'Uniform hue that cycles through the full color wheel.',
-    defaults: { speed: 0.25, saturation: 0.95, hueShift: 0 }
+    defaults: { speed: 0.25, saturation: 0.95, hueShift: 0, spread: 1.0 }
   },
   {
     kind: 'comet',
