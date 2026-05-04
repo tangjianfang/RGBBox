@@ -19,7 +19,7 @@ export interface WorkerInput {
   audioInput?: AudioInput
   screenSample?: RgbFrame
   /** When ripple effect is active and a burst was triggered by clicking, inject transient center here. */
-  rippleBurst?: { cx: number; cy: number; burstAt: number }
+  rippleBurst?: { cx: number; cy: number; burstAge: number }
 }
 
 // Retained across frames for temporal smoothing
@@ -49,7 +49,7 @@ self.onmessage = (e: MessageEvent<WorkerInput>): void => {
                           ...l.parameters,
                           burstCx: rippleBurst.cx,
                           burstCy: rippleBurst.cy,
-                          burstAt: rippleBurst.burstAt,
+                          burstAge: rippleBurst.burstAge,
                         },
                       }
                     : l

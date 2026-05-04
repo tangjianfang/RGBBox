@@ -181,26 +181,23 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const wave = Math.sin((dist * frequency - context.now * speed) * Math.PI * 2)
       let brightness = clampUnit((wave + 1) / 2) * Math.max(0, 1 - dist * 0.65)
 
-      // Burst ripple: click injects burstAt (unix-seconds) + burstCx/burstCy
-      const burstAt = Number(layer.parameters.burstAt ?? 0)
-      if (burstAt > 0) {
-        const elapsed = context.now - burstAt      // seconds since click
-        const burstDuration = 2.5
-        if (elapsed >= 0 && elapsed < burstDuration) {
-          const bcxN = Number(layer.parameters.burstCx ?? 0.5)
-          const bcyN = Number(layer.parameters.burstCy ?? 0.5)
-          const bcx = bcxN * (context.columns - 1)
-          const bcy = bcyN * (context.rows - 1)
-          const bdx = (context.x - bcx) / Math.max(1, context.columns / 2)
-          const bdy = (context.y - bcy) / Math.max(1, context.rows / 2)
-          const bdist = Math.sqrt(bdx * bdx + bdy * bdy)
-          const burstSpeed = 1.1
-          const burstFreq = Number(layer.parameters.frequency ?? 3.5) * 1.4
-          const burstWave = Math.sin((bdist * burstFreq - elapsed * burstSpeed) * Math.PI * 2)
-          const decay = Math.max(0, 1 - elapsed / burstDuration)
-          const burstB = clampUnit((burstWave + 1) / 2) * Math.max(0, 1 - bdist * 0.55) * decay
-          brightness = Math.min(1, brightness + burstB)
-        }
+      // Burst ripple: click injects burstAge (seconds since click, computed in renderer) + burstCx/burstCy
+      const burstAge = Number(layer.parameters.burstAge ?? -1)
+      const burstDuration = 2.5
+      if (burstAge >= 0 && burstAge < burstDuration) {
+        const bcxN = Number(layer.parameters.burstCx ?? 0.5)
+        const bcyN = Number(layer.parameters.burstCy ?? 0.5)
+        const bcx = bcxN * (context.columns - 1)
+        const bcy = bcyN * (context.rows - 1)
+        const bdx = (context.x - bcx) / Math.max(1, context.columns / 2)
+        const bdy = (context.y - bcy) / Math.max(1, context.rows / 2)
+        const bdist = Math.sqrt(bdx * bdx + bdy * bdy)
+        const burstSpeed = 1.1
+        const burstFreq = Number(layer.parameters.frequency ?? 3.5) * 1.4
+        const burstWave = Math.sin((bdist * burstFreq - burstAge * burstSpeed) * Math.PI * 2)
+        const decay = Math.max(0, 1 - burstAge / burstDuration)
+        const burstB = clampUnit((burstWave + 1) / 2) * Math.max(0, 1 - bdist * 0.55) * decay
+        brightness = Math.min(1, brightness + burstB)
       }
 
       return {

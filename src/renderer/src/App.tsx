@@ -151,12 +151,12 @@ export function App(): JSX.Element {
   topologyRef.current = topology
 
   /** Ripple burst: set on canvas click, cleared after 2.5 s (matches burstDuration in effects.ts). */
-  const rippleBurstRef = useRef<{ cx: number; cy: number; burstAt: number } | null>(null)
+  const rippleBurstRef = useRef<{ cx: number; cy: number; clickedAt: number } | null>(null)
   const rippleBurstTimerRef = useRef<number | null>(null)
 
   const handleRippleClick = useCallback((nx: number, ny: number) => {
     if (rippleBurstTimerRef.current !== null) window.clearTimeout(rippleBurstTimerRef.current)
-    rippleBurstRef.current = { cx: nx, cy: ny, burstAt: performance.now() / 1000 }
+    rippleBurstRef.current = { cx: nx, cy: ny, clickedAt: performance.now() }
     rippleBurstTimerRef.current = window.setTimeout(() => {
       rippleBurstRef.current = null
       rippleBurstTimerRef.current = null
@@ -282,7 +282,11 @@ export function App(): JSX.Element {
       if (cancelled) return
 
       // Send to worker; transfer screen sample buffer (zero-copy) if present
-      const msg: WorkerInput = { profile, audioInput, screenSample, rippleBurst: rippleBurstRef.current ?? undefined }
+      const burst = rippleBurstRef.current
+      const rippleBurst = burst
+        ? { cx: burst.cx, cy: burst.cy, burstAge: (performance.now() - burst.clickedAt) / 1000 }
+        : undefined
+      const msg: WorkerInput = { profile, audioInput, screenSample, rippleBurst }
       if (screenSample) {
         worker.postMessage(msg, [screenSample.pixels.buffer])
       } else {
