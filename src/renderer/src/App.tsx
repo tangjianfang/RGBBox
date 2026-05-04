@@ -94,7 +94,11 @@ export function App(): JSX.Element {
   const { t, lang, setLang } = useI18n()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [topology, setTopology] = useState<DisplayTopology | null>(null)
-  const [frame, setFrame] = useState<RgbFrame | null>(null)
+  /**
+   * Latest frame from the worker, stored in a ref so updates never trigger a
+   * React re-render.  PreviewGrid polls this ref in its own rAF loop.
+   */
+  const frameRef = useRef<RgbFrame | null>(null)
   const [status, setStatus] = useState<EngineStatus>({ running: true, fps: 30, output: 'virtual-preview' })
   const [version, setVersion] = useState('0.1.0')
   const [savedProfiles, setSavedProfiles] = useState<ProfileMeta[]>([])
@@ -251,11 +255,14 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (!profile || !status.running || !workerRef.current) return undefined
 
-    let cancelled = false
+    let cancelled    = false
     const intervalMs = Math.max(16, Math.floor(1000 / profile.sampling.fps))
-    let timerId: number | null = null
-    const worker = workerRef.current
-    const scene = profile.scenes.find((s) => s.id === profile.activeSceneId) ?? profile.scenes[0]
+    const worker     = workerRef.current
+    const scene      = profile.scenes.find((s) => s.id === profile.activeSceneId) ?? profile.scenes[0]
+
+    // ── Worker tick (async: may do screen capture) ────────────────────────
+    let tickPending  = false
+    let lastTickTime = 0
 
     const tick = async (): Promise<void> => {
       if (cancelled) return
@@ -294,10 +301,12 @@ export function App(): JSX.Element {
       }
     }
 
+    // ── Worker response handler ──────────────────────────────────────────
+    // Store the frame in a ref — no React setState, no reconciliation.
     const onWorkerMessage = (e: MessageEvent<RgbFrame>): void => {
       if (cancelled) return
       const frame = e.data
-      setFrame(frame)
+      frameRef.current = frame
       // Push to any open overlay windows (fire-and-forget, not awaited)
       if (overlayIdsRef.current.length > 0) {
         const topo = topologyRef.current
@@ -311,15 +320,28 @@ export function App(): JSX.Element {
           window.rgbbox.pushFrameToOverlays(frame)
         }
       }
-      timerId = window.setTimeout(tick, intervalMs)
+    }
+
+    // ── requestAnimationFrame tick loop ──────────────────────────────────
+    // Drives worker ticks at the configured FPS, vsync-aligned.
+    // Rendering is handled by PreviewGrid's own rAF loop reading frameRef.
+    let rafId = 0
+    const onRaf = (timestamp: DOMHighResTimeStamp): void => {
+      if (cancelled) return
+      if (!tickPending && timestamp - lastTickTime >= intervalMs) {
+        lastTickTime = timestamp
+        tickPending  = true
+        void tick().finally(() => { tickPending = false })
+      }
+      rafId = requestAnimationFrame(onRaf)
     }
 
     worker.addEventListener('message', onWorkerMessage)
-    void tick()
+    rafId = requestAnimationFrame(onRaf)
 
     return () => {
       cancelled = true
-      if (timerId !== null) window.clearTimeout(timerId)
+      cancelAnimationFrame(rafId)
       worker.removeEventListener('message', onWorkerMessage)
     }
   }, [profile, status.running, audio])
@@ -935,7 +957,7 @@ export function App(): JSX.Element {
                     <span className="chip">{status.output}</span>
                   </div>
                   <PreviewGrid
-                    frame={frame}
+                    frameRef={frameRef}
                     onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
                   />
                 </section>
@@ -1103,7 +1125,7 @@ export function App(): JSX.Element {
             <div className="panel" style={{ maxWidth: 560 }}>
               <dl className="diagnostics-list">
                 <div><dt>{t('diag.virtualBounds')}</dt><dd>{topology.virtualBounds.width}×{topology.virtualBounds.height}</dd></div>
-                <div><dt>{t('diag.frameAge')}</dt><dd>{frame ? `${Math.max(0, Date.now() - frame.generatedAt)} ms` : t('diag.waiting')}</dd></div>
+                <div><dt>{t('diag.frameAge')}</dt><dd>{frameRef.current ? `${Math.max(0, Date.now() - frameRef.current.generatedAt)} ms` : t('diag.waiting')}</dd></div>
                 <div><dt>{t('diag.brightGain')}</dt><dd>{Math.round(profile.sampling.brightnessLimit * 100)}%</dd></div>
                 <div><dt>{t('diag.gridSize')}</dt><dd>{profile.sampling.columns}×{profile.sampling.rows} ({profile.sampling.columns * profile.sampling.rows} pixels)</dd></div>
                 <div><dt>{t('diag.activeLayers')}</dt><dd>{scene?.layers.filter((l) => l.enabled).length ?? 0}</dd></div>

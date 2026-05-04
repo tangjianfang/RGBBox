@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type JSX } from 'react'
 import { effectPresets } from '../../../shared/defaultProfile'
 import type { RgbFrame } from '../../../shared/types'
+import { PreviewGl } from '../gl/previewGl'
 
 interface Props {
   displayId: number
@@ -9,49 +10,9 @@ interface Props {
 // Effect list passed to the native context menu
 const OVERLAY_EFFECTS = effectPresets.map((p) => ({ kind: p.kind, label: p.label }))
 
-// Module-level cache: reuse OffscreenCanvas and ImageData to avoid per-frame allocations.
-let _offscreen: OffscreenCanvas | null = null
-let _offCtx: OffscreenCanvasRenderingContext2D | null = null
-let _imgData: ImageData | null = null
-
-function drawFrame(canvas: HTMLCanvasElement, frame: RgbFrame): void {
-  const { columns, rows, pixels } = frame
-
-  // Lazy-create or resize the offscreen canvas at frame resolution.
-  if (!_offscreen || _offscreen.width !== columns || _offscreen.height !== rows) {
-    _offscreen = new OffscreenCanvas(columns, rows)
-    _offCtx = _offscreen.getContext('2d')
-    _imgData = null
-  }
-  if (!_offCtx) return
-
-  // Reuse ImageData buffer; only allocate when resolution changes.
-  if (!_imgData) {
-    _imgData = _offCtx.createImageData(columns, rows)
-  }
-
-  // RGB (packed 3-byte) → RGBA typed-array write — single tight loop, no string allocs.
-  const data = _imgData.data
-  for (let i = 0, len = columns * rows; i < len; i++) {
-    const s = i * 3
-    const d = i * 4
-    data[d]     = pixels[s]
-    data[d + 1] = pixels[s + 1]
-    data[d + 2] = pixels[s + 2]
-    data[d + 3] = 255
-  }
-  _offCtx.putImageData(_imgData, 0, 0)
-
-  // Scale the small frame up to the full overlay canvas in one GPU-accelerated blit.
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-  ctx.imageSmoothingEnabled = false
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
-  ctx.drawImage(_offscreen, 0, 0, canvas.width, canvas.height)
-}
-
 export function OverlayCanvas({ displayId }: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const glRef     = useRef<PreviewGl | null>(null)
 
   // Esc key: close this overlay
   useEffect(() => {
@@ -74,24 +35,45 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const resizeObserver = new ResizeObserver(() => {
-      canvas.width = canvas.offsetWidth
-      canvas.height = canvas.offsetHeight
-    })
-    resizeObserver.observe(canvas)
+    // ── Initial size + resize handling ──────────────────────────────────
+    const applySize = (): void => {
+      const w = canvas.offsetWidth  || window.innerWidth
+      const h = canvas.offsetHeight || window.innerHeight
+      if (canvas.width === w && canvas.height === h) return
+      canvas.width  = w
+      canvas.height = h
+      glRef.current?.resize(w, h)
+    }
+    applySize()
+    const ro = new ResizeObserver(applySize)
+    ro.observe(canvas)
 
-    canvas.width = canvas.offsetWidth || window.innerWidth
-    canvas.height = canvas.offsetHeight || window.innerHeight
+    // ── WebGL renderer ───────────────────────────────────────────────────
+    // The overlay canvas covers the entire display (e.g. 1920×1080).
+    // The frame texture is only columns×rows (e.g. 320×180).
+    // WebGL scales the texture to fill the screen in a single draw call.
+    let gl: PreviewGl | null = null
+    try {
+      gl = new PreviewGl(canvas)
+      glRef.current = gl
+    } catch (err) {
+      console.warn('[OverlayCanvas] WebGL unavailable:', err)
+    }
 
+    // ── Frame subscription (IPC callback, no React state) ────────────────
     const unsubscribe = window.rgbbox.onOverlayFrame((frame: RgbFrame) => {
-      drawFrame(canvas, frame)
+      glRef.current?.drawFrame(frame)
     })
 
     return () => {
-      resizeObserver.disconnect()
+      ro.disconnect()
       unsubscribe()
+      glRef.current?.dispose()
+      glRef.current = null
     }
   }, [])
+
+
 
   return (
     <div
