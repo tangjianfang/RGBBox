@@ -35,20 +35,30 @@ const VS = /* glsl */`
 const FS = /* glsl */`
   precision mediump float;
 
-  uniform sampler2D uFrame;   // columns × rows RGB texture
-  uniform vec2      uGrid;    // vec2(columns, rows)
-  uniform float     uGap;     // gap fraction of cell size (0.06 = 6 %)
-  uniform vec3      uBg;      // gap / background colour
-  uniform float     uBgAlpha; // 1.0 = opaque preview, 0.0 = transparent overlay
+  uniform sampler2D uFrame;    // columns × rows RGB texture
+  uniform vec2      uGrid;     // vec2(columns, rows)
+  uniform float     uGap;      // gap fraction of cell size (0.06 = 6 %)
+  uniform vec3      uBg;       // gap / background colour
+  uniform float     uBgAlpha;  // 1.0 = opaque preview, 0.0 = transparent overlay
+  // Layout uniforms (square cells, letterbox/pillarbox centring):
+  uniform vec2      uOrigin;   // normalised canvas UV where the grid starts
+  uniform vec2      uCellSize; // normalised canvas UV size of one square cell
 
   varying vec2 vUV;
 
   void main() {
-    // Continuous cell position over the whole grid.
-    vec2 cell  = vUV * uGrid;
-    // Fractional position within the current cell [0, 1).
-    vec2 local = fract(cell);
+    // Map the full-canvas UV to grid-relative position (in cell units).
+    vec2 gridPos = (vUV - uOrigin) / uCellSize;
 
+    // Outside the grid → background / transparent gap colour.
+    if (gridPos.x < 0.0 || gridPos.x > uGrid.x ||
+        gridPos.y < 0.0 || gridPos.y > uGrid.y) {
+      gl_FragColor = vec4(uBg * uBgAlpha, uBgAlpha);
+      return;
+    }
+
+    // Fractional position within the current cell [0, 1).
+    vec2 local = fract(gridPos);
     float hg = uGap * 0.5;
     if (local.x < hg || local.x > 1.0 - hg ||
         local.y < hg || local.y > 1.0 - hg) {
@@ -58,7 +68,7 @@ const FS = /* glsl */`
     }
 
     // Sample the frame texture at the centre of this cell (NEAREST → crisp blocks).
-    vec2 tc = (floor(cell) + 0.5) / uGrid;
+    vec2 tc = (floor(gridPos) + 0.5) / uGrid;
     gl_FragColor = vec4(texture2D(uFrame, tc).rgb, 1.0);
   }
 `
@@ -98,8 +108,12 @@ export class PreviewGl {
   private readonly uGap: WebGLUniformLocation
   private readonly uBg: WebGLUniformLocation
   private readonly uBgAlpha: WebGLUniformLocation
+  private readonly uOrigin: WebGLUniformLocation
+  private readonly uCellSize: WebGLUniformLocation
   /** True when this instance is used in a transparent overlay window. */
   private readonly overlay: boolean
+  private canvasW = 0
+  private canvasH = 0
 
   /**
    * @param canvas  The canvas element whose backing buffer has already been
@@ -152,11 +166,19 @@ export class PreviewGl {
     this.uGap      = gl.getUniformLocation(this.prog, 'uGap')!
     this.uBg       = gl.getUniformLocation(this.prog, 'uBg')!
     this.uBgAlpha  = gl.getUniformLocation(this.prog, 'uBgAlpha')!
+    this.uOrigin   = gl.getUniformLocation(this.prog, 'uOrigin')!
+    this.uCellSize = gl.getUniformLocation(this.prog, 'uCellSize')!
 
     // Defaults.
     gl.uniform1f(this.uGap,     0.06)
     gl.uniform3f(this.uBg,      8/255, 13/255, 17/255)  // #08 #0D #11
     gl.uniform1f(this.uBgAlpha, overlay ? 0.0 : 1.0)    // transparent gaps for overlay
+    // Safe default: cover whole canvas with a single 1×1 cell until first frame.
+    gl.uniform2f(this.uOrigin,   0, 0)
+    gl.uniform2f(this.uCellSize, 1, 1)
+
+    this.canvasW = canvas.width
+    this.canvasH = canvas.height
 
     // Clear colour: transparent for overlay, dark for preview.
     if (overlay) {
@@ -170,9 +192,36 @@ export class PreviewGl {
     gl.viewport(0, 0, canvas.width, canvas.height)
   }
 
-  /** Must be called after the canvas backing-buffer is resized. */
+  /**
+   * Must be called after the canvas backing-buffer is resized.
+   * Layout uniforms will be recomputed on the next drawFrame().
+   */
   resize(width: number, height: number): void {
     this.gl.viewport(0, 0, width, height)
+    this.canvasW = width
+    this.canvasH = height
+    // Reset texCols/texRows to force layout uniform recompute next frame.
+    this.texCols = 0
+    this.texRows = 0
+  }
+
+  /**
+   * Compute and upload layout uniforms so cells are square and the grid is
+   * centred with letterbox / pillarbox padding.
+   */
+  private updateLayout(columns: number, rows: number): void {
+    const { gl, canvasW, canvasH } = this
+    if (!canvasW || !canvasH) return
+    // cellSize in physical pixels — same formula as the old 2D canvas code.
+    const cellPx   = Math.min(canvasW / columns, canvasH / rows)
+    const totalW   = cellPx * columns
+    const totalH   = cellPx * rows
+    const originX  = (canvasW - totalW) / 2 / canvasW  // normalised
+    const originY  = (canvasH - totalH) / 2 / canvasH
+    const cellSizeX = cellPx / canvasW
+    const cellSizeY = cellPx / canvasH
+    gl.uniform2f(this.uOrigin,   originX,   originY)
+    gl.uniform2f(this.uCellSize, cellSizeX, cellSizeY)
   }
 
   /**
@@ -191,6 +240,8 @@ export class PreviewGl {
       this.texCols = columns
       this.texRows = rows
       gl.uniform2f(this.uGrid, columns, rows)
+      // Recompute square-cell layout whenever the grid resolution changes.
+      this.updateLayout(columns, rows)
     } else {
       // Sub-update existing texture — avoids GPU re-allocation.
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, columns, rows, gl.RGB, gl.UNSIGNED_BYTE, pixels)
