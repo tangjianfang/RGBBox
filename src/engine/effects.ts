@@ -139,13 +139,33 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const n3 = vn(fx * 13.0 + t * 0.9, fy * 10.0 - drift * 3.8) * 0.25
       const turbulence = (n1 + n2 + n3) / 1.75
 
-      // Per-column height envelope: slow noise makes some columns taller, others shorter.
-      const colEnv = vn(fx * 1.5 + t * 0.12, 0.5)      // 0..1
-      const heightScale = 0.45 + colEnv * 0.55           // 0.45..1.0
+      // ── Height modulation ─────────────────────────────────────────────────
+      // Three independent layers of height variation; their product means
+      // any one of them going low can nearly kill a column entirely, while
+      // all three peaking at once creates a dramatic tall surge.
 
-      // Quadratic fy falloff: at top (fy=0) always 0; turbulence weighted by fy so
-      // it can only push upward from where base heat already exists.
-      const temperature = clampUnit((fy * fy * 1.6 * heightScale + turbulence * fy * 0.75 - 0.04) * intensity)
+      // 1. Global gust  (period ≈ 5–12 s): whole fire surges or calms together
+      const gustA    = vn(t * 0.07 + 0.5,  t * 0.04)
+      const gustB    = vn(t * 0.11 + 7.3,  t * 0.06 + 3.1)
+      const gust     = gustA * 0.55 + gustB * 0.45          // 0..1
+      const globalH  = 0.30 + gust * 0.90                   // 0.30 (embers) .. 1.20 (surging)
+
+      // 2. Slow column envelope  (period ≈ 1–3 s): rolling shape differences
+      const colSlow  = vn(fx * 2.0 + t * 0.22, t * 0.14)
+      const colH     = 0.20 + colSlow * 0.80                // 0.20 (low tongue) .. 1.0
+
+      // 3. Fast column burst  (period ≈ 0.3–0.8 s): rapid flare-and-die per column
+      const colFast  = vn(fx * 3.5 - t * 0.65, t * 0.45 + 5.7)
+      const burstH   = 0.55 + colFast * 0.45                // 0.55 (dim) .. 1.0 (bright burst)
+
+      const heightScale = globalH * colH * burstH
+      // range: 0.033 (near-dead) … 1.08 (full surge)
+
+      // Micro-flicker: very fast per-pixel shimmer for live glowing look
+      const flicker  = vn(fx * 9.0 + t * 2.4, fy * 5.5 - drift * 0.4) * 0.12 + 0.88  // 0.88..1.0
+
+      // Quadratic fy falloff: top (fy=0) always dark; turbulence only where base heat exists.
+      const temperature = clampUnit((fy * fy * 1.8 * heightScale + turbulence * fy * 0.80 - 0.04) * intensity * flicker)
 
       // 4-stop realistic fire palette: black → user color → orange → yellow → white
       if (temperature < 0.35) {
