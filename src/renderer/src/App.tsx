@@ -153,6 +153,12 @@ export function App(): JSX.Element {
   overlayIdsRef.current = overlayDisplayIds
   const topologyRef = useRef<DisplayTopology | null>(topology)
   topologyRef.current = topology
+  // audioRef: always points to the latest AudioData without being a useEffect dependency.
+  // If audio were in the dependency array, the engine effect would restart every rAF tick
+  // (~16ms), resetting tickPending and clearing the setInterval before it ever fires — making
+  // effect switching completely unreliable when audio is active.
+  const audioRef = useRef(audio)
+  audioRef.current = audio
 
   /** Ripple burst: set on canvas click, cleared after 2.5 s (matches burstDuration in effects.ts). */
   const rippleBurstRef = useRef<{ cx: number; cy: number; clickedAt: number } | null>(null)
@@ -271,8 +277,8 @@ export function App(): JSX.Element {
     const tick = async (): Promise<boolean> => {
       if (cancelled) return false
 
-      const audioInput = audio.active
-        ? { bass: audio.bass, mid: audio.mid, high: audio.high, beat: audio.beat, freqBands: audio.freqBands }
+      const audioInput = audioRef.current.active
+        ? { bass: audioRef.current.bass, mid: audioRef.current.mid, high: audioRef.current.high, beat: audioRef.current.beat, freqBands: audioRef.current.freqBands }
         : undefined
 
       // Screen capture is only needed for screen-ambient effect and when no overlays are active
@@ -358,7 +364,7 @@ export function App(): JSX.Element {
       window.clearInterval(timerId)
       worker.removeEventListener('message', onWorkerMessage)
     }
-  }, [profile, status.running, audio])
+  }, [profile, status.running])
 
   const scene = useMemo(() => (profile ? activeScene(profile) : null), [profile])
 
