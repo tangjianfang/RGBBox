@@ -616,11 +616,18 @@ export function App(): JSX.Element {
   }
 
   if (!profile || !topology) {
-    return <main className="boot-screen">RGBBox</main>
+    return (
+      <>
+        <div className="titlebar-drag" aria-hidden="true" />
+        <main className="boot-screen">RGBBox</main>
+      </>
+    )
   }
 
   return (
-    <main className="app-shell">
+    <>
+      <div className="titlebar-drag" aria-hidden="true" />
+      <main className="app-shell">
       <aside className="sidebar">
         <div className="brand-block">
           <div className="brand-mark">RB</div>
@@ -1183,5 +1190,6 @@ export function App(): JSX.Element {
         )}
       </section>
     </main>
+    </>
   )
 }

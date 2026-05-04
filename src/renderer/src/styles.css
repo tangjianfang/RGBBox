@@ -41,10 +41,23 @@ button {
   justify-content: center;
 }
 
+/* Electron Window Controls Overlay drag region — covers the 40px titlebar strip */
+.titlebar-drag {
+  -webkit-app-region: drag;
+  height: 40px;
+  left: 0;
+  pointer-events: none;
+  position: fixed;
+  right: 152px; /* leave gap for native close/min/max buttons */
+  top: 0;
+  z-index: 9999;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 240px 1fr;
-  height: 100vh;
+  height: calc(100vh - 40px);
+  margin-top: 40px;
   overflow: hidden;
 }
 
@@ -54,7 +67,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 20px 16px;
+  padding: 16px;
 }
 
 .brand-block {

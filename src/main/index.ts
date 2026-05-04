@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, powerSaveBlocker, screen, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, screen, shell, Tray } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defaultProfile } from '../shared/defaultProfile'
@@ -9,9 +9,18 @@ import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, push
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame } from './screenCapture'
 
+// ── Single instance lock ──────────────────────────────────────────────────
+const gotSingleLock = app.requestSingleInstanceLock()
+if (!gotSingleLock) {
+  app.quit()
+  process.exit(0)
+}
+
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL)
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let isQuitting = false
 let powerSaveBlockerId: number | null = null
 let engineStatus: EngineStatus = {
   running: true,
@@ -28,6 +37,13 @@ function createMainWindow(): void {
     title: 'RGBBox',
     backgroundColor: '#0f1418',
     show: false,
+    // Remove native title bar; use Window Controls Overlay for seamless dark chrome
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#11191f',
+      symbolColor: '#9cb7c3',
+      height: 40
+    },
     icon: join(__dirname, '../../build/icon.ico'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -44,11 +60,17 @@ function createMainWindow(): void {
     mainWindow?.show()
   })
 
-  // When the main window is closed, shut down all overlay windows immediately.
-  // Without this, overlays outlive the main window (they are separate BrowserWindows),
-  // window-all-closed never fires, app.quit() is never called, and the process hangs.
+  // Close button → hide to tray (minimize to tray pattern).
+  // isQuitting is set by the tray "Quit" action and app.on('before-quit').
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault()
+      mainWindow?.hide()
+      tray?.displayBalloon?.({ title: 'RGBBox', content: '已最小化到系统托盘，右键托盘图标可退出。', iconType: 'info' })
+    }
+  })
+
   mainWindow.on('closed', () => {
-    closeAllOverlays()
     mainWindow = null
   })
 
@@ -195,9 +217,48 @@ function registerIpc(): void {
   )
 }
 
+function createTray(): void {
+  const iconPath = process.platform === 'win32'
+    ? join(__dirname, '../../build/icon.ico')
+    : join(__dirname, '../../build/icon.png')
+  const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
+  tray = new Tray(icon)
+  tray.setToolTip('RGBBox')
+
+  const toggleMainWindow = (): void => {
+    if (!mainWindow) return
+    if (mainWindow.isVisible()) {
+      mainWindow.hide()
+    } else {
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  }
+
+  const contextMenu = Menu.buildFromTemplate([
+    { label: '显示 / 隐藏主界面', click: toggleMainWindow },
+    { type: 'separator' },
+    {
+      label: '退出 RGBBox',
+      click: () => {
+        isQuitting = true
+        app.quit()
+      }
+    }
+  ])
+  tray.setContextMenu(contextMenu)
+  tray.on('double-click', toggleMainWindow)
+}
+
 app.whenReady().then(() => {
+  // Force dark theme so native title bar and system chrome match the dark UI
+  nativeTheme.themeSource = 'dark'
+  // Remove the default application menu (File / Edit / View / …)
+  Menu.setApplicationMenu(null)
+
   registerIpc()
   createMainWindow()
+  createTray()
 
   // Notify the renderer whenever display topology changes (hotplug)
   const notifyTopologyChanged = (): void => {
@@ -212,6 +273,19 @@ app.whenReady().then(() => {
       createMainWindow()
     }
   })
+})
+
+app.on('second-instance', () => {
+  // A second launch was attempted — focus the existing window
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  }
+})
+
+app.on('before-quit', () => {
+  isQuitting = true
 })
 
 app.on('window-all-closed', () => {
