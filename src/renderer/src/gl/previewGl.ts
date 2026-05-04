@@ -170,7 +170,7 @@ export class PreviewGl {
     this.uCellSize = gl.getUniformLocation(this.prog, 'uCellSize')!
 
     // Defaults.
-    gl.uniform1f(this.uGap,     0.06)
+    gl.uniform1f(this.uGap,     0.0)
     gl.uniform3f(this.uBg,      8/255, 13/255, 17/255)  // #08 #0D #11
     gl.uniform1f(this.uBgAlpha, overlay ? 0.0 : 1.0)    // transparent gaps for overlay
     // Safe default: cover whole canvas with a single 1×1 cell until first frame.
