@@ -261,10 +261,15 @@ export function App(): JSX.Element {
     const scene      = profile.scenes.find((s) => s.id === profile.activeSceneId) ?? profile.scenes[0]
 
     // ── Worker tick (async: may do screen capture) ────────────────────────
+    // tickPending is cleared by onWorkerMessage (when the worker RESPONDS),
+    // not by tick().finally() (which fires right after postMessage returns).
+    // This ensures at most one message is in the worker's queue at any time.
+    // Without this, slow workers (large grids) accumulate a deep backlog;
+    // switching effects sends new profile to the back of that queue.
     let tickPending  = false
 
-    const tick = async (): Promise<void> => {
-      if (cancelled) return
+    const tick = async (): Promise<boolean> => {
+      if (cancelled) return false
 
       const audioInput = audio.active
         ? { bass: audio.bass, mid: audio.mid, high: audio.high, beat: audio.beat, freqBands: audio.freqBands }
@@ -285,7 +290,7 @@ export function App(): JSX.Element {
         screenSample = captured ?? undefined
       }
 
-      if (cancelled) return
+      if (cancelled) return false
 
       // Send to worker; transfer screen sample buffer (zero-copy) if present
       const burst = rippleBurstRef.current
@@ -298,11 +303,16 @@ export function App(): JSX.Element {
       } else {
         worker.postMessage(msg)
       }
+      // Return true = message was posted; tickPending cleared by onWorkerMessage response
+      return true
     }
 
     // ── Worker response handler ──────────────────────────────────────────
     // Store the frame in a ref — no React setState, no reconciliation.
     const onWorkerMessage = (e: MessageEvent<RgbFrame>): void => {
+      // Always unblock the tick gate first, even if cancelled, so the gate
+      // is never permanently stuck if cleanup happened mid-flight.
+      tickPending = false
       if (cancelled) return
       const frame = e.data
       frame.showGap = profile.sampling.showGap ?? false
@@ -332,7 +342,11 @@ export function App(): JSX.Element {
       if (cancelled) return
       if (!tickPending) {
         tickPending = true
-        void tick().finally(() => { tickPending = false })
+        // tick() may cancel mid-way (cancelled flag); if it does WITHOUT posting
+        // a message the worker will never reply, so we must unblock the gate here.
+        void tick().catch(() => { tickPending = false }).then((posted) => {
+          if (posted === false) tickPending = false
+        })
       }
     }
 
