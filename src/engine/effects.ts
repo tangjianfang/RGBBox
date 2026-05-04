@@ -139,8 +139,13 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const n3 = vn(fx * 13.0 + t * 0.9, fy * 10.0 - drift * 3.8) * 0.25
       const turbulence = (n1 + n2 + n3) / 1.75
 
-      // Temperature: bottom is the constant heat source; turbulence creates tongues that reach up
-      const temperature = clampUnit((fy * 1.2 + turbulence * 0.55 - 0.2) * intensity)
+      // Per-column height envelope: slow noise makes some columns taller, others shorter.
+      const colEnv = vn(fx * 1.5 + t * 0.12, 0.5)      // 0..1
+      const heightScale = 0.45 + colEnv * 0.55           // 0.45..1.0
+
+      // Quadratic fy falloff: at top (fy=0) always 0; turbulence weighted by fy so
+      // it can only push upward from where base heat already exists.
+      const temperature = clampUnit((fy * fy * 1.6 * heightScale + turbulence * fy * 0.75 - 0.04) * intensity)
 
       // 4-stop realistic fire palette: black → user color → orange → yellow → white
       if (temperature < 0.35) {
@@ -234,27 +239,47 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const speed = Number(layer.parameters.speed ?? 0.25)
       const saturation = Number(layer.parameters.saturation ?? 0.95)
       const hueShift = Number(layer.parameters.hueShift ?? 0)
-      const hue = (context.now * speed * 360 + hueShift) % 360
 
-      return hslToRgb(hue, saturation, 0.56)
+      // Each pixel has a unique ±20° hue offset so the grid looks like a glittery wash
+      // rather than a flat solid colour that cycles.
+      const pixOff     = (hash2(context.x, context.y) - 0.5) * 40
+      const hue        = (context.now * speed * 360 + hueShift + pixOff + 360) % 360
+
+      // Independent per-pixel brightness shimmer
+      const shimFreq   = 0.5 + hash2(context.x + 5,  context.y + 7)  * 1.5
+      const shimPhase  = hash2(context.x + 99, context.y + 33) * Math.PI * 2
+      const shimmer    = 0.75 + Math.sin(context.now * shimFreq + shimPhase) * 0.25
+
+      return hslToRgb(hue, saturation, 0.50 * shimmer)
     }
 
     case 'comet': {
       const speed = Number(layer.parameters.speed ?? 0.45)
-      const tail = Number(layer.parameters.tail ?? 0.35)
+      const tail  = Number(layer.parameters.tail  ?? 0.35)
       const color = hexToRgb(String(layer.parameters.color ?? '#ffffff'))
       const angle = Number(layer.parameters.angle ?? 0)
 
-      const headPos = (context.now * speed) % 1
-      const axisPos = dirT(context, angle)
+      const axisPos  = dirT(context, angle)
       const crossPos = dirT(context, (angle + 90) % 360)
-
-      const behind = (axisPos - headPos + 1) % 1
-      const tailFall = behind < tail ? Math.exp(-behind * 6 / tail) : 0
       const crossDist = Math.abs(crossPos - 0.5) * 2
-      const crossFade = Math.max(0, 1 - crossDist * 5)
-      const brightness = tailFall * crossFade
-      const whiteBlend = 1 - clampUnit(behind / Math.max(0.01, tail))
+
+      let brightness = 0
+      let whiteBlend = 0
+
+      // Two comets 180° apart keep the grid continuously lit
+      for (let i = 0; i < 2; i++) {
+        const headPos = ((context.now * speed) + i * 0.5) % 1
+        const behind  = (axisPos - headPos + 1) % 1
+        if (behind >= tail) continue
+
+        const tailFall  = Math.exp(-behind * 6 / tail)
+        const crossFade = Math.max(0, 1 - crossDist * 4)  // slightly wider glow
+        const b = tailFall * crossFade
+        if (b > brightness) {
+          brightness = b
+          whiteBlend = 1 - clampUnit(behind / Math.max(0.01, tail))
+        }
+      }
 
       return {
         r: Math.round((color.r + (255 - color.r) * whiteBlend) * brightness),
@@ -292,23 +317,33 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
     }
 
     case 'aurora': {
-      const speed = Number(layer.parameters.speed ?? 0.12)
+      const speed     = Number(layer.parameters.speed     ?? 0.12)
       const intensity = Number(layer.parameters.intensity ?? 0.88)
-      const hueShift = Number(layer.parameters.hueShift ?? 0)
+      const hueShift  = Number(layer.parameters.hueShift  ?? 0)
 
-      const vFraction = context.y / Math.max(1, context.rows - 1)
-      const curtain = Math.pow(clampUnit(1 - vFraction * 1.3), 0.6)
       const hFraction = context.x / Math.max(1, context.columns - 1)
+      const vFraction = context.y / Math.max(1, context.rows - 1)
 
-      const w1 = Math.sin(hFraction * Math.PI * 3.9 + context.now * speed * 1.1) * 0.5 + 0.5
-      const w2 = Math.sin(hFraction * Math.PI * 1.8 - context.now * speed * 0.65) * 0.5 + 0.5
-      const w3 = Math.cos(hFraction * Math.PI * 6.1 + context.now * speed * 1.8) * 0.5 + 0.5
+      // Curtain: strong at top, fades toward bottom
+      const curtain = Math.pow(clampUnit(1 - vFraction * 1.4), 0.55)
 
-      const blended = w1 * 0.5 + w2 * 0.3 + w3 * 0.2
-      const hue = ((120 + blended * 100 + hueShift) % 360 + 360) % 360
-      const brightness = curtain * intensity * (0.4 + blended * 0.5)
+      const t = context.now * speed
+      // Slow undulating ribbons + fast shimmer, modulated by slowly-varying phase
+      const w1 = Math.sin(hFraction * Math.PI * 2.7 + t * 0.9  + Math.sin(t * 0.31) * 1.2) * 0.5 + 0.5
+      const w2 = Math.sin(hFraction * Math.PI * 5.1 - t * 1.4  + Math.cos(t * 0.47) * 0.8) * 0.5 + 0.5
+      const w3 = Math.sin(hFraction * Math.PI * 9.8 + t * 2.3) * 0.25 + 0.25   // fine shimmer
+      const w4 = Math.cos(hFraction * Math.PI * 3.3 - t * 0.5) * 0.5 + 0.5    // slow broad band
+      const blended = w1 * 0.4 + w2 * 0.3 + w3 * 0.1 + w4 * 0.2
 
-      return hslToRgb(hue, 0.95, brightness * 0.7)
+      // Hue: green-teal core (130..220°), edges drift toward purple
+      const edgeDist = Math.abs(hFraction - 0.5) * 2  // 0=center, 1=edge
+      const hue = ((130 + blended * 90 + edgeDist * 55 + hueShift) % 360 + 360) % 360
+
+      // Bright fringe glow along the very top edge (where curtain meets sky)
+      const topRim = Math.max(0, 1 - vFraction * 8) * 0.4
+
+      const brightness = curtain * intensity * (0.35 + blended * 0.55) * (0.65 + w4 * 0.35)
+      return hslToRgb(hue, 0.95, Math.min(0.9, brightness * 0.75 + topRim * curtain))
     }
 
     case 'explode': {
@@ -319,17 +354,31 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const cy = (context.rows - 1) / 2
       const dx = (context.x - cx) / Math.max(1, context.columns / 2)
       const dy = (context.y - cy) / Math.max(1, context.rows / 2)
-      const dist = Math.sqrt(dx * dx + dy * dy)
+      const dist  = Math.sqrt(dx * dx + dy * dy)
+      const angle = Math.atan2(dy, dx)  // -π..π
 
-      const cycle = (context.now * speed) % 1
-      const ring = Math.abs(dist - cycle)
-      const burst = Math.max(0, 0.14 - ring) / 0.14
-      const edgeFade = Math.max(0, 1 - dist * 0.7)
+      // Three rings at staggered phases for a continuous burst feel
+      let totalBurst = 0
+      let hotCycle   = 0
+      for (let i = 0; i < 3; i++) {
+        const phase   = i / 3
+        const cycle   = ((context.now * speed) + phase) % 1
+        const expandR = cycle * 1.5          // ring expands from 0 to 1.5
+        const ring    = Math.abs(dist - expandR)
+        const burst   = Math.max(0, 0.12 - ring) / 0.12
+        // Cosine angular mask: creates 8-ray spoke pattern that spins outward
+        const spoke   = 0.35 + 0.65 * Math.max(0, Math.cos(angle * 8 + expandR * Math.PI * 4 + i * 2.1))
+        const contrib = burst * spoke
+        if (contrib > totalBurst) { totalBurst = contrib; hotCycle = cycle }
+      }
 
+      const edgeFade = Math.max(0, 1 - dist * 0.65)
+      // Colour: deep user colour at ring front → orange → bright yellow at peak
+      const hotness = hotCycle
       return {
-        r: Math.min(255, Math.round(color.r * burst * edgeFade + 255 * burst * 0.5)),
-        g: Math.round(color.g * burst * edgeFade),
-        b: Math.round(color.b * burst * edgeFade)
+        r: Math.min(255, Math.round((color.r + (255 - color.r) * hotness * 0.6) * totalBurst * edgeFade)),
+        g: Math.min(255, Math.round((color.g + (200 - color.g) * hotness * 0.8) * totalBurst * edgeFade)),
+        b: Math.max(0,   Math.round(color.b * Math.max(0, 1 - hotness * 2) * totalBurst * edgeFade))
       }
     }
 
