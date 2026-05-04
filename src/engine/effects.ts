@@ -563,6 +563,142 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       return hslToRgb(slotHue, 1.0, 0.5)
     }
 
+    // ── 3D Visual ─────────────────────────────────────────────────────────────
+
+    case 'plasma': {
+      // Classic demoscene multi-wave interference plasma.
+      // Four overlapping sine waves — different spatial & temporal frequencies —
+      // combine into a fluid, endlessly morphing colour field.
+      const speed      = Number(layer.parameters.speed      ?? 0.40)
+      const frequency  = Number(layer.parameters.frequency  ?? 3.0)
+      const saturation = Number(layer.parameters.saturation ?? 1.0)
+
+      const aspect = context.columns / Math.max(1, context.rows)
+      const nx = (context.x / Math.max(1, context.columns - 1) - 0.5) * 2 * aspect
+      const ny = (context.y / Math.max(1, context.rows    - 1) - 0.5) * 2
+      const t  = context.now * speed
+
+      const v1 = Math.sin(nx * frequency                       + t)
+      const v2 = Math.sin(ny * frequency * 0.82                + t * 1.17)
+      const v3 = Math.sin((nx + ny) * frequency * 0.63         + t * 0.73)
+      const v4 = Math.sin(Math.sqrt(nx * nx + ny * ny) * frequency * 1.4 - t * 0.92)
+      const v  = (v1 + v2 + v3 + v4) * 0.25  // -1..1
+
+      const hue = ((v * 180 + t * 60) % 360 + 360) % 360
+      return hslToRgb(hue, saturation, 0.42 + v * 0.10)
+    }
+
+    case 'vortex': {
+      // Hypnotic spinning vortex portal. Polar spiral arms + depth-fade create
+      // a convincing 3D rotating tunnel illusion.
+      const speed    = Number(layer.parameters.speed    ?? 0.50)
+      const density  = Number(layer.parameters.density  ?? 5.0)
+      const hueShift = Number(layer.parameters.hueShift ?? 0)
+
+      const aspect = context.columns / Math.max(1, context.rows)
+      const nx    = (context.x / Math.max(1, context.columns - 1) - 0.5) * aspect
+      const ny    = (context.y / Math.max(1, context.rows    - 1) - 0.5)
+      const r     = Math.sqrt(nx * nx + ny * ny) / (0.5 * Math.max(1, aspect))
+      const angle = Math.atan2(ny, nx)  // -π..π
+      const t     = context.now * speed
+
+      // Counter-rotating double-spiral for rich interference
+      const spiralPhase = angle + r * density - t * 3.0
+      const s1 = Math.sin(spiralPhase * 2) * 0.5 + 0.5
+      const s2 = Math.sin(spiralPhase * 3 + t * 1.5) * 0.5 + 0.5
+      const combined = s1 * 0.6 + s2 * 0.4
+
+      // Depth-fade: pixels near centre appear "closest" in the 3D tunnel
+      const depthFade = Math.max(0, 1 - r * 0.90)
+
+      const hue = (((angle / Math.PI) * 180) + r * 40 + t * 45 + hueShift + 360) % 360
+      const brightness = (0.15 + combined * 0.65) * (0.35 + depthFade * 0.65)
+
+      return hslToRgb(hue, 0.95, Math.min(0.75, brightness * 0.70))
+    }
+
+    case 'tunnel': {
+      // Classic zoom tunnel. 1/r depth mapping + scrolling angular stripes
+      // and radial rings that rush toward the viewer.
+      const speed     = Number(layer.parameters.speed     ?? 0.60)
+      const frequency = Number(layer.parameters.frequency ?? 6)
+      const hueShift  = Number(layer.parameters.hueShift  ?? 0)
+
+      const aspect = context.columns / Math.max(1, context.rows)
+      const nx    = (context.x / Math.max(1, context.columns - 1) - 0.5) * aspect
+      const ny    = (context.y / Math.max(1, context.rows    - 1) - 0.5)
+      const r     = Math.sqrt(nx * nx + ny * ny)
+      const angle = Math.atan2(ny, nx)  // -π..π
+      const t     = context.now * speed
+
+      // Depth UV: 1/r → vanishing point at centre, open walls at edges
+      const depth = clampUnit(0.10 / Math.max(0.006, r))  // 0..1 (1 = close)
+      const u     = (angle / Math.PI) * 0.5 + 0.5         // 0..1 angular
+
+      // Wall stripes that rush toward the viewer
+      const stripePhase = (u * frequency + depth * 4.0 - t * 3.0) % 2
+      const stripe      = clampUnit(Math.abs(stripePhase - 1) * 3.0 - 0.5)
+
+      // Radial rings zooming outward
+      const ringPhase = (depth * 8.0 - t * 4.0) % 1
+      const ring      = 0.4 + Math.sin(ringPhase * Math.PI * 2) * 0.30
+
+      const hue = ((u * 360 + depth * 60 - t * 30 + hueShift) % 360 + 360) % 360
+      const brightness = stripe * 0.55 + ring * 0.30 + depth * 0.15
+
+      return hslToRgb(hue, 0.92, clampUnit(brightness * 0.70))
+    }
+
+    case 'crystal': {
+      // Voronoi crystal facets. Edge boundaries light up like light reflecting
+      // off a gemstone; each cell has a unique hue that slowly drifts.
+      const speed      = Number(layer.parameters.speed      ?? 0.18)
+      const density    = Number(layer.parameters.density    ?? 0.5)
+      const saturation = Number(layer.parameters.saturation ?? 0.95)
+
+      const t  = context.now * speed
+      const nx = context.x / Math.max(1, context.columns - 1)
+      const ny = context.y / Math.max(1, context.rows    - 1)
+
+      // 3..9 Voronoi cells across the canvas
+      const scale = 3 + density * 6
+      const gx = nx * scale
+      const gy = ny * scale
+      const gi = Math.floor(gx)
+      const gj = Math.floor(gy)
+
+      let minDist1 = 9999, minDist2 = 9999
+      let closestId = 0
+
+      for (let di = -1; di <= 1; di++) {
+        for (let dj = -1; dj <= 1; dj++) {
+          const ci = gi + di
+          const cj = gj + dj
+          const s1 = hash2(ci * 127.1, cj * 311.7)
+          const s2 = hash2(ci * 269.5, cj * 183.3)
+          const s3 = hash2(ci + 500.0, cj + 500.0)
+          // Seeds drift slowly — "rotating crystal" feel
+          const sx = ci + s1 + Math.sin(t * 0.28 + s3 * 6.2) * 0.22
+          const sy = cj + s2 + Math.cos(t * 0.35 + s3 * 8.4) * 0.22
+          const d  = Math.sqrt((gx - sx) * (gx - sx) + (gy - sy) * (gy - sy))
+          if (d < minDist1) { minDist2 = minDist1; minDist1 = d; closestId = s1 }
+          else if (d < minDist2) { minDist2 = d }
+        }
+      }
+
+      // Crystal facet edge: the closer to the boundary, the brighter (specular highlight)
+      const edgeDist = minDist2 - minDist1
+      const edgeGlow = Math.max(0, 1 - edgeDist * 6.0)
+
+      // Unique hue per cell, slowly cycling
+      const cellHue = ((closestId * 360 + t * 18) % 360 + 360) % 360
+
+      // Interior shading: mimics anisotropic facet reflection
+      const facet = 0.25 + minDist1 * 0.35 + Math.sin(t * 0.6 + closestId * 9.2) * 0.12
+
+      return hslToRgb(cellHue, saturation, clampUnit(facet * 0.55 + edgeGlow * 0.44))
+    }
+
     // ── Screen Ambient ────────────────────────────────────────────────────────
 
     case 'screen-ambient':

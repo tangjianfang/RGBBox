@@ -102,6 +102,31 @@ export const effectPresets: PresetDefinition[] = [
     label: 'Random Color',
     description: 'Each block cycles through a unique random hue, smoothly drifting in sync.',
     defaults: { speed: 0.30 }
+  },
+  // ── 3D Visual ──────────────────────────────────────────────────────────────
+  {
+    kind: 'plasma',
+    label: 'Plasma',
+    description: 'Classic demoscene multi-wave interference — four sine waves combine into a fluid, endlessly morphing colour field.',
+    defaults: { speed: 0.40, frequency: 3.0, saturation: 1.0 }
+  },
+  {
+    kind: 'vortex',
+    label: 'Vortex',
+    description: 'Counter-rotating spiral arms with depth-fade create a hypnotic 3D spinning portal illusion.',
+    defaults: { speed: 0.50, density: 5.0, hueShift: 0 }
+  },
+  {
+    kind: 'tunnel',
+    label: 'Tunnel',
+    description: '3D zoom tunnel: depth-mapped stripes and radial rings rush toward the viewer in a continuous flythrough.',
+    defaults: { speed: 0.60, frequency: 6, hueShift: 0 }
+  },
+  {
+    kind: 'crystal',
+    label: 'Crystal',
+    description: 'Voronoi crystal facets with specular edge highlights — slowly shifting gemstone planes catch light at every boundary.',
+    defaults: { speed: 0.18, density: 0.5, saturation: 0.95 }
   }
 ]
 

@@ -20,6 +20,10 @@ export type EffectKind =
   | 'audio-beat'
   | 'audio-equalizer'
   | 'random-color'
+  | 'plasma'
+  | 'vortex'
+  | 'tunnel'
+  | 'crystal'
 
 export type PerformanceMode = 'battery' | 'balanced' | 'extreme'
 

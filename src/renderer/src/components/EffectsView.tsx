@@ -93,9 +93,10 @@ interface EffectsViewProps {
 }
 
 const CATEGORIES = [
-  { labelKey: 'effects.classic' as const, kinds: ['screen-ambient', 'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'random-color'] },
+  { labelKey: 'effects.classic'  as const, kinds: ['screen-ambient', 'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'random-color'] },
   { labelKey: 'effects.advanced' as const, kinds: ['fire', 'starlight', 'ripple', 'spectrum', 'comet', 'lightning', 'aurora', 'explode'] },
-  { labelKey: 'effects.audio' as const, kinds: ['audio-beat', 'audio-equalizer'] }
+  { labelKey: 'effects.threed'   as const, kinds: ['plasma', 'vortex', 'tunnel', 'crystal'] },
+  { labelKey: 'effects.audio'    as const, kinds: ['audio-beat', 'audio-equalizer'] }
 ] as const
 
 export function EffectsView({ activeKind, onSelectEffect }: EffectsViewProps): JSX.Element {
