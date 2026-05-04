@@ -44,6 +44,14 @@ function createMainWindow(): void {
     mainWindow?.show()
   })
 
+  // When the main window is closed, shut down all overlay windows immediately.
+  // Without this, overlays outlive the main window (they are separate BrowserWindows),
+  // window-all-closed never fires, app.quit() is never called, and the process hangs.
+  mainWindow.on('closed', () => {
+    closeAllOverlays()
+    mainWindow = null
+  })
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
@@ -98,8 +106,12 @@ function registerIpc(): void {
   })
 
   // Notify main renderer when an overlay is closed externally (e.g. double-click close)
+  // Guard against destroyed webContents: mainWindow may be non-null but already destroyed
+  // when this callback fires during the main-window-close sequence.
   setOverlayClosedCallback((displayId) => {
-    mainWindow?.webContents.send(ipcChannels.overlayClosed, displayId)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(ipcChannels.overlayClosed, displayId)
+    }
   })
 
   // Overlay management
