@@ -262,7 +262,6 @@ export function App(): JSX.Element {
 
     // ── Worker tick (async: may do screen capture) ────────────────────────
     let tickPending  = false
-    let lastTickTime = 0
 
     const tick = async (): Promise<void> => {
       if (cancelled) return
@@ -323,26 +322,26 @@ export function App(): JSX.Element {
       }
     }
 
-    // ── requestAnimationFrame tick loop ──────────────────────────────────
-    // Drives worker ticks at the configured FPS, vsync-aligned.
-    // Rendering is handled by PreviewGrid's own rAF loop reading frameRef.
-    let rafId = 0
-    const onRaf = (timestamp: DOMHighResTimeStamp): void => {
+    // ── setInterval tick loop ─────────────────────────────────────────────
+    // Drives worker ticks at the configured FPS using setInterval so that
+    // ticks continue even when the main window is minimised.
+    // (requestAnimationFrame stops when the window is minimised; setInterval
+    // is not paused as long as backgroundThrottling is false in webPreferences.)
+    let timerId = 0
+    const onTick = (): void => {
       if (cancelled) return
-      if (!tickPending && timestamp - lastTickTime >= intervalMs) {
-        lastTickTime = timestamp
-        tickPending  = true
+      if (!tickPending) {
+        tickPending = true
         void tick().finally(() => { tickPending = false })
       }
-      rafId = requestAnimationFrame(onRaf)
     }
 
     worker.addEventListener('message', onWorkerMessage)
-    rafId = requestAnimationFrame(onRaf)
+    timerId = window.setInterval(onTick, intervalMs)
 
     return () => {
       cancelled = true
-      cancelAnimationFrame(rafId)
+      window.clearInterval(timerId)
       worker.removeEventListener('message', onWorkerMessage)
     }
   }, [profile, status.running, audio])
