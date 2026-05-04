@@ -102,6 +102,9 @@ export function App(): JSX.Element {
   const [status, setStatus] = useState<EngineStatus>({ running: true, fps: 30, output: 'virtual-preview' })
   const [version, setVersion] = useState('0.1.0')
   const [savedProfiles, setSavedProfiles] = useState<ProfileMeta[]>([])
+  // Ref lets the auto-save effect read savedProfiles without listing it as a dep
+  const savedProfilesRef = useRef<ProfileMeta[]>([])
+  savedProfilesRef.current = savedProfiles
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [profileEditMode, setProfileEditMode] = useState<'new' | 'rename' | null>(null)
   const [profileEditName, setProfileEditName] = useState('')
@@ -112,7 +115,8 @@ export function App(): JSX.Element {
     window.rgbbox.listProfiles().then(setSavedProfiles)
   }, [])
 
-  useEffect(() => { refreshProfiles() }, [refreshProfiles])
+  // Note: initial load is done inside the main Promise.all below to allow
+  // ensuring the working profile is always registered as a named slot.
 
   // Close profile menu on outside click
   useEffect(() => {
@@ -192,8 +196,9 @@ export function App(): JSX.Element {
       window.rgbbox.getEngineStatus(),
       window.rgbbox.getAppVersion(),
       window.rgbbox.getOverlayDisplayIds(),
-      window.rgbbox.getPowerSaveBlock()
-    ]).then(([loadedProfile, loadedTopology, loadedStatus, loadedVersion, loadedOverlays, loadedPSB]) => {
+      window.rgbbox.getPowerSaveBlock(),
+      window.rgbbox.listProfiles()
+    ]).then(async ([loadedProfile, loadedTopology, loadedStatus, loadedVersion, loadedOverlays, loadedPSB, loadedProfiles]) => {
       // Back-fill fields added after the profile was first persisted
       const migratedProfile = {
         ...loadedProfile,
@@ -208,6 +213,15 @@ export function App(): JSX.Element {
       setVersion(loadedVersion)
       setOverlayDisplayIds(loadedOverlays)
       setPowerSaveBlock(loadedPSB)
+      // Ensure the current working profile is always present in the named slots.
+      // On first launch (profiles/ directory empty) or after a reset, this seeds
+      // the list so the dropdown is never empty.
+      if (!loadedProfiles.find((p) => p.id === migratedProfile.id)) {
+        const meta = await window.rgbbox.saveProfileAs(migratedProfile)
+        setSavedProfiles([...loadedProfiles, meta])
+      } else {
+        setSavedProfiles(loadedProfiles)
+      }
     })
   }, [])
 
@@ -246,7 +260,17 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     if (!profile) return undefined
-    const timer = window.setTimeout(() => { window.rgbbox.saveProfile(profile) }, 350)
+    const timer = window.setTimeout(() => {
+      // Always persist working state to the quick-save slot
+      window.rgbbox.saveProfile(profile)
+      // Also update the named profile slot so that switching away and back
+      // preserves the latest changes.
+      if (savedProfilesRef.current.find((p) => p.id === profile.id)) {
+        window.rgbbox.saveProfileAs(profile).then((meta) => {
+          setSavedProfiles((prev) => prev.map((p) => p.id === meta.id ? meta : p))
+        })
+      }
+    }, 400)
     return () => window.clearTimeout(timer)
   }, [profile])
 
@@ -565,10 +589,12 @@ export function App(): JSX.Element {
 
   const handleProfileEditConfirm = useCallback(async () => {
     const name = profileEditName.trim()
-    if (!name) { setProfileEditMode(null); return }
+    if (!name || !profile) { setProfileEditMode(null); return }
     if (profileEditMode === 'new') {
       const newId = `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
-      const newProfile: Profile = { ...defaultProfile, id: newId, name }
+      // Copy from current profile so the user keeps their setup rather than
+      // getting a blank slate from defaultProfile.
+      const newProfile: Profile = { ...profile, id: newId, name }
       await window.rgbbox.saveProfileAs(newProfile)
       setProfile(newProfile)
       refreshProfiles()
@@ -753,16 +779,23 @@ export function App(): JSX.Element {
                   <>
                     <select
                       className="profile-select"
-                      value={savedProfiles.find((p) => p.id === profile.id)?.id ?? ''}
+                      value={profile.id}
                       onChange={async (e) => {
-                        if (!e.target.value) return
-                        const loaded = await window.rgbbox.loadProfileById(e.target.value)
-                        if (loaded) setProfile(loaded)
+                        const targetId = e.target.value
+                        if (!targetId) return
+                        const loaded = await window.rgbbox.loadProfileById(targetId)
+                        if (loaded) {
+                          // Reset selected layer so it points to an actual layer in the
+                          // new profile — without this, updateLayer silently no-ops.
+                          const newScene = loaded.scenes.find((s) => s.id === loaded.activeSceneId) ?? loaded.scenes[0]
+                          const firstLayer = newScene?.layers[0]
+                          if (firstLayer) setSelectedLayerId(firstLayer.id)
+                          setProfile(loaded)
+                        }
                       }}
                     >
-                      <option value="" disabled>{t('profile.label')}</option>
                       {!savedProfiles.find((p) => p.id === profile.id) && (
-                        <option value="">{profile.name}</option>
+                        <option value={profile.id}>{profile.name}</option>
                       )}
                       {savedProfiles.map((meta) => (
                         <option key={meta.id} value={meta.id}>{meta.name}</option>
