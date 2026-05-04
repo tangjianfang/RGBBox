@@ -99,7 +99,9 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
         const analyser = audioContext.createAnalyser()
         // 2048-point FFT → 1024 bins, binHz ≈ 43 Hz at 44100 — much better low-freq resolution
         analyser.fftSize = 2048
-        analyser.smoothingTimeConstant = 0.72
+        // Lower smoothing constant gives faster attack response (~1 frame vs ~3 frames at 0.72).
+        // The hook-side EMA handles decay smoothing, so we don't need heavy API-level smoothing.
+        analyser.smoothingTimeConstant = 0.45
         source.connect(analyser)
 
         const binCount = analyser.frequencyBinCount  // 1024

@@ -28,12 +28,9 @@ function hash2(x: number, y: number): number {
 }
 
 // ── Audio effect frame-level caches ──────────────────────────────────────
-// audio-beat: per-layer decay envelope (fast attack, slow release)
-// audio-equalizer: per-layer per-band level EMA (fast attack, slow decay)
+// audio-beat: per-layer decay envelope (fast attack, decay-only release)
 interface _BeatEnv { lastNow: number; pulse: number }
-interface _EqBandCache { lastNow: number; smoothed: Float32Array }
-const _beatEnvMap    = new Map<string, _BeatEnv>()
-const _eqBandCacheMap = new Map<string, _EqBandCache>()
+const _beatEnvMap = new Map<string, _BeatEnv>()
 // colSlow / colFast (and everything derived: colH, burstH, heightScale, tipFy)
 // have NO dependency on fy (row coordinate) — they are identical for every row
 // in the same column.  Similarly, the gust-event state is the same for every
@@ -473,8 +470,8 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const rawPulse = clampUnit((bass * 0.70 + beat * 0.30) * sensitivity)
         const prev = env?.pulse ?? 0
         const newPulse = rawPulse > prev
-          ? prev * 0.15 + rawPulse * 0.85   // fast attack
-          : prev * 0.80                     // slow decay
+          ? rawPulse                         // instant attack — no lag on the beat
+          : prev * 0.72                      // decay ~150ms at 30fps
         env = { lastNow: context.now, pulse: newPulse }
         _beatEnvMap.set(layer.id, env)
       }
@@ -500,31 +497,17 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const colorLow  = hexToRgb(String(layer.parameters.colorLow  ?? '#00ff44'))
       const colorHigh = hexToRgb(String(layer.parameters.colorHigh ?? '#ff2200'))
 
-      // Per-frame per-band EMA cache: smooths band levels between frames so bars
-      // move fluidly instead of snapping.  Fast attack, slow decay (same as hook
-      // but applied a second time for extra stability in the worker thread).
+      // freqBands are already smoothed by the EMA in useAudioAnalyzer (fast attack,
+      // slow decay) — no second pass here to avoid adding latency.
       const freqBands = context._audioFreqBands
       let bandLevel: number
       if (freqBands && freqBands.length > 0) {
-        let eqCache = _eqBandCacheMap.get(layer.id)
-        if (!eqCache || eqCache.lastNow !== context.now) {
-          const prevSmoothed = eqCache?.smoothed
-          const smoothed = new Float32Array(freqBands.length)
-          for (let i = 0; i < freqBands.length; i++) {
-            const raw = freqBands[i]
-            const p = prevSmoothed ? prevSmoothed[i] : 0
-            smoothed[i] = raw > p ? p * 0.30 + raw * 0.70 : p * 0.82 + raw * 0.18
-          }
-          eqCache = { lastNow: context.now, smoothed }
-          _eqBandCacheMap.set(layer.id, eqCache)
-        }
-
         // Map column to log-spaced frequency band with linear interpolation
         const t = context.x / Math.max(1, context.columns - 1)
-        const bandIdxF = t * (eqCache.smoothed.length - 1)
+        const bandIdxF = t * (freqBands.length - 1)
         const lo = Math.floor(bandIdxF)
-        const hi = Math.min(eqCache.smoothed.length - 1, lo + 1)
-        bandLevel = eqCache.smoothed[lo] * (1 - (bandIdxF - lo)) + eqCache.smoothed[hi] * (bandIdxF - lo)
+        const hi = Math.min(freqBands.length - 1, lo + 1)
+        bandLevel = freqBands[lo] * (1 - (bandIdxF - lo)) + freqBands[hi] * (bandIdxF - lo)
       } else {
         // Fallback to 3-band averages when no FFT data available
         const bass = Number(context._audioBass ?? 0)
