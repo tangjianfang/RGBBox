@@ -70,6 +70,8 @@ export interface RgbFrame {
   /** Flat RGB triplets: pixel i → [i*3]=R, [i*3+1]=G, [i*3+2]=B. Length = columns*rows*3. */
   pixels: Uint8ClampedArray
   generatedAt: number
+  /** When true the WebGL renderer shows inter-cell gap lines (propagated from sampling.showGap). */
+  showGap?: boolean
 }
 
 export interface EffectLayer {

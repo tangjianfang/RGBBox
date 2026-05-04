@@ -85,7 +85,7 @@ function extractSubFrame(
       pixels[dstI + 2] = virtualFrame.pixels[srcI + 2]
     }
   }
-  return { columns: dispCols, rows: dispRows, pixels, generatedAt: virtualFrame.generatedAt }
+  return { columns: dispCols, rows: dispRows, pixels, generatedAt: virtualFrame.generatedAt, showGap: virtualFrame.showGap }
 }
 
 let _layerCounter = 100
@@ -306,6 +306,7 @@ export function App(): JSX.Element {
     const onWorkerMessage = (e: MessageEvent<RgbFrame>): void => {
       if (cancelled) return
       const frame = e.data
+      frame.showGap = profile.sampling.showGap ?? false
       frameRef.current = frame
       // Push to any open overlay windows (fire-and-forget, not awaited)
       if (overlayIdsRef.current.length > 0) {

@@ -111,34 +111,57 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
     // ── Advanced ─────────────────────────────────────────────────────────────
 
     case 'fire': {
-      const speed = Number(layer.parameters.speed ?? 0.7)
+      const speed     = Number(layer.parameters.speed     ?? 0.7)
       const intensity = Number(layer.parameters.intensity ?? 0.85)
-      const spread = Number(layer.parameters.spread ?? 1.2)
-      const color = hexToRgb(String(layer.parameters.color ?? '#ff4400'))
-      const t = context.now * speed
+      const spread    = Number(layer.parameters.spread    ?? 1.2)
+      const color     = hexToRgb(String(layer.parameters.color ?? '#ff4400'))
+      const t         = context.now * speed
 
-      const verticalFall = Math.max(0, 1 - context.y / Math.max(1, context.rows - 1))
-      const nx = (context.x / context.columns) * spread
+      // fy: 0 = top row (cool tip), 1 = bottom row (hot base) → fire rises upward
+      const fy = context.y / Math.max(1, context.rows - 1)
+      const fx = (context.x / Math.max(1, context.columns - 1) - 0.5) * spread
 
-      // Multi-octave turbulence for organic flame shape
-      const n1 = Math.sin(nx * 2.1 + t * 3.3) * Math.cos(context.y * 1.8 - t * 2.5)
-      const n2 = Math.sin(nx * 4.3 - t * 2.1) * Math.cos(context.y * 3.7 + t * 4.4)
-      const n3 = Math.sin(nx * 8.7 + t * 5.1) * Math.cos(context.y * 7.1 - t * 3.2)
-      const turbulence = (n1 * 0.5 + n2 * 0.3 + n3 * 0.2 + 1) / 2
+      // Smooth value noise: hash-based bilinear interpolation.
+      // Produces organic shapes without the stripe artefacts of sin/cos.
+      const vn = (nx: number, ny: number): number => {
+        const ix = Math.floor(nx), iy = Math.floor(ny)
+        const ux = nx - ix,         uy = ny - iy
+        const sx = ux * ux * (3 - 2 * ux), sy = uy * uy * (3 - 2 * uy)
+        const a = hash2(ix,     iy),     b = hash2(ix + 1, iy)
+        const c = hash2(ix,     iy + 1), d = hash2(ix + 1, iy + 1)
+        return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy
+      }
 
-      const temperature = clampUnit((verticalFall * 1.3 + turbulence * 0.4 - 0.15) * intensity)
+      // Upward drift: subtract time from noise y-coord so flames appear to rise
+      const drift = t * 1.8
+      const n1 = vn(fx * 3.0 + t * 0.4,  fy * 2.5 - drift)
+      const n2 = vn(fx * 6.5 - t * 0.6,  fy * 5.0 - drift * 2.1) * 0.5
+      const n3 = vn(fx * 13.0 + t * 0.9, fy * 10.0 - drift * 3.8) * 0.25
+      const turbulence = (n1 + n2 + n3) / 1.75
 
-      // temperature: 0 → black, 0.5 → user color, 1.0 → white
-      if (temperature < 0.5) {
-        const p = temperature / 0.5
+      // Temperature: bottom is the constant heat source; turbulence creates tongues that reach up
+      const temperature = clampUnit((fy * 1.2 + turbulence * 0.55 - 0.2) * intensity)
+
+      // 4-stop realistic fire palette: black → user color → orange → yellow → white
+      if (temperature < 0.35) {
+        const p = temperature / 0.35
         return { r: Math.round(color.r * p), g: Math.round(color.g * p), b: Math.round(color.b * p) }
-      } else {
-        const p = (temperature - 0.5) / 0.5
+      } else if (temperature < 0.65) {
+        // user color → orange (#ff8800)
+        const p = (temperature - 0.35) / 0.30
         return {
           r: Math.min(255, Math.round(color.r + (255 - color.r) * p)),
-          g: Math.min(255, Math.round(color.g + (255 - color.g) * p)),
-          b: Math.min(255, Math.round(color.b + (255 - color.b) * p))
+          g: Math.min(255, Math.round(color.g + (136 - color.g) * p)),
+          b: Math.round(color.b * (1 - p))
         }
+      } else if (temperature < 0.85) {
+        // orange (#ff8800) → yellow (#ffe000)
+        const p = (temperature - 0.65) / 0.20
+        return { r: 255, g: Math.round(136 + (224 - 136) * p), b: Math.round(24 * p) }
+      } else {
+        // yellow (#ffe000) → white (#ffffff)
+        const p = (temperature - 0.85) / 0.15
+        return { r: 255, g: Math.round(224 + (255 - 224) * p), b: Math.round(24 + (255 - 24) * p) }
       }
     }
 
