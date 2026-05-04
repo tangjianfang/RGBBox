@@ -169,14 +169,39 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const frequency = Number(layer.parameters.frequency ?? 3.5)
       const color = hexToRgb(String(layer.parameters.color ?? '#00e5ff'))
 
-      const cx = (context.columns - 1) / 2
-      const cy = (context.rows - 1) / 2
+      // Default idle center (0..1 normalised, default = grid center)
+      const cxN = Number(layer.parameters.cx ?? 0.5)
+      const cyN = Number(layer.parameters.cy ?? 0.5)
+      const cx = cxN * (context.columns - 1)
+      const cy = cyN * (context.rows - 1)
       const dx = (context.x - cx) / Math.max(1, context.columns / 2)
       const dy = (context.y - cy) / Math.max(1, context.rows / 2)
       const dist = Math.sqrt(dx * dx + dy * dy)
 
       const wave = Math.sin((dist * frequency - context.now * speed) * Math.PI * 2)
-      const brightness = clampUnit((wave + 1) / 2) * Math.max(0, 1 - dist * 0.65)
+      let brightness = clampUnit((wave + 1) / 2) * Math.max(0, 1 - dist * 0.65)
+
+      // Burst ripple: click injects burstAt (unix-seconds) + burstCx/burstCy
+      const burstAt = Number(layer.parameters.burstAt ?? 0)
+      if (burstAt > 0) {
+        const elapsed = context.now - burstAt      // seconds since click
+        const burstDuration = 2.5
+        if (elapsed >= 0 && elapsed < burstDuration) {
+          const bcxN = Number(layer.parameters.burstCx ?? 0.5)
+          const bcyN = Number(layer.parameters.burstCy ?? 0.5)
+          const bcx = bcxN * (context.columns - 1)
+          const bcy = bcyN * (context.rows - 1)
+          const bdx = (context.x - bcx) / Math.max(1, context.columns / 2)
+          const bdy = (context.y - bcy) / Math.max(1, context.rows / 2)
+          const bdist = Math.sqrt(bdx * bdx + bdy * bdy)
+          const burstSpeed = 1.1
+          const burstFreq = Number(layer.parameters.frequency ?? 3.5) * 1.4
+          const burstWave = Math.sin((bdist * burstFreq - elapsed * burstSpeed) * Math.PI * 2)
+          const decay = Math.max(0, 1 - elapsed / burstDuration)
+          const burstB = clampUnit((burstWave + 1) / 2) * Math.max(0, 1 - bdist * 0.55) * decay
+          brightness = Math.min(1, brightness + burstB)
+        }
+      }
 
       return {
         r: Math.round(color.r * brightness),

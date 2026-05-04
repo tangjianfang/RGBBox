@@ -150,6 +150,19 @@ export function App(): JSX.Element {
   const topologyRef = useRef<DisplayTopology | null>(topology)
   topologyRef.current = topology
 
+  /** Ripple burst: set on canvas click, cleared after 2.5 s (matches burstDuration in effects.ts). */
+  const rippleBurstRef = useRef<{ cx: number; cy: number; burstAt: number } | null>(null)
+  const rippleBurstTimerRef = useRef<number | null>(null)
+
+  const handleRippleClick = useCallback((nx: number, ny: number) => {
+    if (rippleBurstTimerRef.current !== null) window.clearTimeout(rippleBurstTimerRef.current)
+    rippleBurstRef.current = { cx: nx, cy: ny, burstAt: performance.now() / 1000 }
+    rippleBurstTimerRef.current = window.setTimeout(() => {
+      rippleBurstRef.current = null
+      rippleBurstTimerRef.current = null
+    }, 2600)
+  }, [])
+
   useEffect(() => {
     const worker = new Worker(
       new URL('./workers/previewEngineWorker.ts', import.meta.url),
@@ -269,7 +282,7 @@ export function App(): JSX.Element {
       if (cancelled) return
 
       // Send to worker; transfer screen sample buffer (zero-copy) if present
-      const msg: WorkerInput = { profile, audioInput, screenSample }
+      const msg: WorkerInput = { profile, audioInput, screenSample, rippleBurst: rippleBurstRef.current ?? undefined }
       if (screenSample) {
         worker.postMessage(msg, [screenSample.pixels.buffer])
       } else {
@@ -917,7 +930,10 @@ export function App(): JSX.Element {
                     </div>
                     <span className="chip">{status.output}</span>
                   </div>
-                  <PreviewGrid frame={frame} />
+                  <PreviewGrid
+                    frame={frame}
+                    onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
+                  />
                 </section>
 
                 <section className="panel map-panel">

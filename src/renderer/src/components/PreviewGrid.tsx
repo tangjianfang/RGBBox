@@ -4,9 +4,11 @@ import type { RgbFrame } from '../../../shared/types'
 
 interface PreviewGridProps {
   frame: RgbFrame | null
+  /** When a ripple layer is active, called with normalised (0..1) click coordinates. */
+  onRippleClick?: (nx: number, ny: number) => void
 }
 
-export function PreviewGrid({ frame }: PreviewGridProps): JSX.Element {
+export function PreviewGrid({ frame, onRippleClick }: PreviewGridProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -73,7 +75,17 @@ export function PreviewGrid({ frame }: PreviewGridProps): JSX.Element {
 
   return (
     <div className="preview-frame">
-      <canvas ref={canvasRef} aria-label="RGB preview canvas" />
+      <canvas
+        ref={canvasRef}
+        aria-label="RGB preview canvas"
+        style={onRippleClick ? { cursor: 'crosshair' } : undefined}
+        onClick={onRippleClick ? (e) => {
+          const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect()
+          const nx = (e.clientX - rect.left) / rect.width
+          const ny = (e.clientY - rect.top) / rect.height
+          onRippleClick(Math.max(0, Math.min(1, nx)), Math.max(0, Math.min(1, ny)))
+        } : undefined}
+      />
       {!frame && <span className="preview-empty">Starting virtual engine</span>}
     </div>
   )

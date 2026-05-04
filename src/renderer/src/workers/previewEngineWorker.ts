@@ -18,26 +18,58 @@ export interface WorkerInput {
   profile: Profile
   audioInput?: AudioInput
   screenSample?: RgbFrame
+  /** When ripple effect is active and a burst was triggered by clicking, inject transient center here. */
+  rippleBurst?: { cx: number; cy: number; burstAt: number }
 }
 
 // Retained across frames for temporal smoothing
 let previousFrame: RgbFrame | undefined
 
 self.onmessage = (e: MessageEvent<WorkerInput>): void => {
-  const { profile, audioInput, screenSample } = e.data
+  const { profile, audioInput, screenSample, rippleBurst } = e.data
 
   // Compute text masks for static-text layers (OffscreenCanvas works in Workers)
   const scene =
     profile.scenes.find((s) => s.id === profile.activeSceneId) ?? profile.scenes[0]
+
+  // Inject burst parameters into any ripple layers that are currently active
+  const patchedProfile: Profile = rippleBurst
+    ? {
+        ...profile,
+        scenes: profile.scenes.map((s) =>
+          s.id !== scene.id
+            ? s
+            : {
+                ...s,
+                layers: s.layers.map((l) =>
+                  l.enabled && l.kind === 'ripple'
+                    ? {
+                        ...l,
+                        parameters: {
+                          ...l.parameters,
+                          burstCx: rippleBurst.cx,
+                          burstCy: rippleBurst.cy,
+                          burstAt: rippleBurst.burstAt,
+                        },
+                      }
+                    : l
+                ),
+              }
+        ),
+      }
+    : profile
+  const patchedScene =
+    patchedProfile.scenes.find((s) => s.id === patchedProfile.activeSceneId) ?? patchedProfile.scenes[0]
+
   const textMasks: Record<string, boolean[]> = {}
-  for (const layer of scene.layers) {
+  for (const layer of patchedScene.layers) {
     if (layer.enabled && layer.kind === 'static') {
       const text = String(layer.parameters.text ?? '')
       if (text.trim()) {
         textMasks[layer.id] = computeTextMask(
           text,
-          profile.sampling.columns,
-          profile.sampling.rows,
+          patchedProfile.sampling.columns,
+          patchedProfile.sampling.rows,
           Number(layer.parameters.textX ?? 0.5),
           Number(layer.parameters.textY ?? 0.5),
           Number(layer.parameters.textScale ?? 1),
@@ -48,7 +80,7 @@ self.onmessage = (e: MessageEvent<WorkerInput>): void => {
   }
 
   const frame = renderPreviewFrame(
-    profile,
+    patchedProfile,
     undefined,
     previousFrame,
     audioInput,
