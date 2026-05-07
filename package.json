@@ -21,22 +21,22 @@
   },
   "dependencies": {
     "@mkkellogg/gaussian-splats-3d": "0.4.7",
-    "@vitejs/plugin-react": "latest",
-    "lucide-react": "latest",
-    "react": "latest",
-    "react-dom": "latest",
+    "@vitejs/plugin-react": "6.0.1",
+    "lucide-react": "1.14.0",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
     "three": "0.184.0"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
+    "@types/node": "25.6.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
     "@types/three": "0.184.1",
-    "electron": "latest",
-    "electron-builder": "latest",
-    "electron-vite": "latest",
-    "typescript": "latest",
-    "vite": "latest"
+    "electron": "41.4.0",
+    "electron-builder": "26.8.1",
+    "electron-vite": "5.0.0",
+    "typescript": "6.0.3",
+    "vite": "8.0.10"
   },
   "build": {
     "appId": "app.rgbbox.desktop",
