@@ -15,10 +15,11 @@
     "typecheck": "yarn typecheck:node && yarn typecheck:web",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "predist": "npm version patch --no-git-tag-version",
     "dist": "yarn build && electron-builder",
-    "dist:win": "yarn build && electron-builder --win",
-    "dist:mac": "yarn build && electron-builder --mac",
-    "dist:dir": "yarn build && electron-builder --dir"
+    "dist:win": "npm version patch --no-git-tag-version && yarn build && electron-builder --win",
+    "dist:mac": "npm version patch --no-git-tag-version && yarn build && electron-builder --mac",
+    "dist:dir": "npm version patch --no-git-tag-version && yarn build && electron-builder --dir"
   },
   "dependencies": {
     "@mkkellogg/gaussian-splats-3d": "0.4.7",
