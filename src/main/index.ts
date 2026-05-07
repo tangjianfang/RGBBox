@@ -335,9 +335,10 @@ function registerIpc(): void {
 }
 
 function createTray(): void {
+  const isDev = !app.isPackaged
   const iconPath = process.platform === 'win32'
-    ? join(__dirname, '../../build/icon.ico')
-    : join(__dirname, '../../build/icon.png')
+    ? (isDev ? join(__dirname, '../../build/icon.ico') : join(process.resourcesPath, 'icon.ico'))
+    : (isDev ? join(__dirname, '../../build/icon.png') : join(process.resourcesPath, 'icon.png'))
   const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
   tray = new Tray(icon)
   tray.setToolTip('RGBBox')
