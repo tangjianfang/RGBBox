@@ -24,6 +24,17 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        input: resolve(__dirname, 'src/renderer/index.html'),
+        output: {
+          manualChunks(id) {
+            if (id.includes('@mkkellogg/gaussian-splats-3d')) return 'vendor-splat'
+            if (id.includes('node_modules/three/')) return 'vendor-three'
+          }
+        }
+      }
+    },
     server: {
       headers: {
         // Required for SharedArrayBuffer (used by gaussian-splats-3d sort worker)

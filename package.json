@@ -1,6 +1,6 @@
 {
   "name": "rgbbox",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Local-first desktop RGB lighting controller with multi-display screen sampling.",
   "author": "RGBBox Contributors",
   "homepage": "https://github.com/tjf/RGBBox",
@@ -49,6 +49,10 @@
     },
     "files": [
       "out/**/*",
+      "!out/renderer/assets/models/*.splat",
+      "!out/renderer/assets/models/*.ksplat",
+      "!out/renderer/assets/models/*.spz",
+      "!out/renderer/assets/models/*.ply",
       "package.json"
     ],
     "win": {
