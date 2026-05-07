@@ -9,7 +9,7 @@ The .splat binary format stores each gaussian point as 32 bytes:
     Bytes  0–11   XYZ position      (3 × float32)
     Bytes 12–15   RGBA color        (4 × uint8)
     Bytes 16–27   XYZ scale         (3 × float32)
-    Bytes 28–31   WXYZ quaternion   (4 × uint8, normalised to [-1,1] via (v-128)/128)
+    Bytes 28–31   WXYZ quaternion   (4 × uint8, normalized to [-1,1] via (v-128)/128)
 
 This matches the format expected by @mkkellogg/gaussian-splats-3d.
 
@@ -37,7 +37,7 @@ SH_C0 = 0.28209479177387814
 
 
 def sh_dc_to_rgb(sh: np.ndarray) -> np.ndarray:
-    """Convert the zeroth-order SH coefficient to a 0..255 uint8 colour."""
+    """Convert the zeroth-order SH coefficient to a 0..255 uint8 color."""
     rgb = np.clip((sh * SH_C0 + 0.5) * 255, 0, 255).astype(np.uint8)
     return rgb
 

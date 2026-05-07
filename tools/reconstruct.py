@@ -13,7 +13,7 @@ The script will:
   Step 2  COLMAP feature matching (exhaustive, suitable for <100 images)
   Step 3  COLMAP sparse reconstruction (Mapper)
   Step 4  Convert COLMAP model from BIN to TXT format
-  Step 5  Train 3D Gaussian Splatting (30 000 iterations, ~20–30 min on RTX 3060+)
+  Step 5  Train 3D Gaussian Splatting (30,000 iterations, ~20–30 min on RTX 3060+)
   Step 6  Convert PLY point cloud to web-compatible .splat format
 
 Requirements:

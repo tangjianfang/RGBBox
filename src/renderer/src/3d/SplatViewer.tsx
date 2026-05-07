@@ -140,7 +140,7 @@ export function SplatViewer({ model, ledColors, paused = false }: SplatViewerPro
     )
     camera.position.set(0, 0.5, 2)
 
-    // ── Ambient light (dim fill so non-LED parts are visible) ──────────────
+    // Ambient light (dim fill so non-LED parts are visible)
     scene.add(new THREE.AmbientLight(0x222222))
 
     // ── OrbitControls ──────────────────────────────────────────────────────
