@@ -1,5 +1,5 @@
 import { Activity, Box, Download, FilePlus, Gauge, Languages, Link2, Link2Off, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Sparkles, Trash2, Upload } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, EngineStatus, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
 import { is3DEffect } from '../../shared/types'
@@ -10,9 +10,11 @@ import { PreviewGrid } from './components/PreviewGrid'
 import { Preview3D } from './components/Preview3D'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 import type { WorkerInput } from './workers/previewEngineWorker'
-import { SplatViewer } from './3d/SplatViewer'
-import { LEDMapper } from './3d/LEDMapper'
 import { useModelStore } from './3d/useModelStore'
+
+// Lazily loaded — vendor-splat (1.6MB) is only fetched when the 3D view is first opened
+const SplatViewer = lazy(() => import('./3d/SplatViewer').then((m) => ({ default: m.SplatViewer })))
+const LEDMapper   = lazy(() => import('./3d/LEDMapper').then((m) => ({ default: m.LEDMapper })))
 
 type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics' | 'model3d'
 
@@ -1321,10 +1323,12 @@ export function App(): JSX.Element {
             </div>
 
             {selectedModel && ledMapperOpen ? (
-              <LEDMapper
-                model={selectedModel}
-                initialLedMap={selectedModel.ledMap}
-              />
+              <Suspense fallback={<div className="model3d-splat-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>Loading…</div>}>
+                <LEDMapper
+                  model={selectedModel}
+                  initialLedMap={selectedModel.ledMap}
+                />
+              </Suspense>
             ) : selectedModel && selectedModel.downloadStatus !== 'cached' ? (
               <div className="model3d-splat-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
                 {selectedModel.downloadStatus === 'error' ? (
@@ -1353,11 +1357,13 @@ export function App(): JSX.Element {
               </div>
             ) : (
               <div className="model3d-splat-wrapper">
-                <SplatViewer
-                  model={selectedModel}
-                  ledColors={ledColorsRef.current}
-                  paused={!status.running}
-                />
+                <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.5 }}>Loading 3D viewer…</div>}>
+                  <SplatViewer
+                    model={selectedModel}
+                    ledColors={ledColorsRef.current}
+                    paused={!status.running}
+                  />
+                </Suspense>
               </div>
             )}
           </div>
