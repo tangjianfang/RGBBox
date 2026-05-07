@@ -285,12 +285,14 @@ button {
 }
 
 .preview-frame {
+  aspect-ratio: 16 / 9;
   background: #0b1014;
   border: 1px solid #253740;
   border-radius: 6px;
-  height: 354px;
   overflow: hidden;
   position: relative;
+  /* Prevent ultra-wide canvas at 2560×1440 — caps the preview at ~500 px tall */
+  width: min(100%, 888px);
 }
 
 .preview-frame::after {
@@ -1433,4 +1435,200 @@ select:focus {
 .text-param-input:focus {
   border-color: #46c6a8;
   outline: none;
+}
+
+/* ── 3D Model View ──────────────────────────────────────────────────────── */
+
+.model3d-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 24px;
+}
+
+.model3d-toolbar {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 10px;
+}
+
+.model3d-splat-wrapper {
+  border: 1px solid #253740;
+  border-radius: 8px;
+  flex: 1;
+  min-height: 400px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Splat Viewer ────────────────────────────────────────────────────────── */
+
+.splat-viewer {
+  background: #0b1014;
+  height: 100%;
+  position: relative;
+  width: 100%;
+}
+
+.splat-overlay {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+  z-index: 10;
+}
+
+.splat-loading {
+  color: #8aa2ad;
+}
+
+.splat-error {
+  color: #f07070;
+}
+
+.splat-empty {
+  color: #5e8091;
+}
+
+.splat-progress-bar {
+  background: #1e2e36;
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+  width: 200px;
+}
+
+.splat-progress-fill {
+  background: linear-gradient(90deg, #46c6a8, #3db7ff);
+  border-radius: 4px;
+  height: 100%;
+  transition: width 200ms ease;
+}
+
+/* ── LED Mapper ──────────────────────────────────────────────────────────── */
+
+.led-mapper {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.led-mapper-toolbar {
+  align-items: center;
+  background: #0f171c;
+  border: 1px solid #253740;
+  border-radius: 8px;
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.led-mapper-canvas {
+  border: 1px solid #253740;
+  border-radius: 8px;
+  flex: 1;
+  min-height: 400px;
+  overflow: hidden;
+  position: relative;
+}
+
+.led-mapper-btn {
+  align-items: center;
+  background: #1a2a32;
+  border: 1px solid #2d4550;
+  border-radius: 6px;
+  color: #c9e4ec;
+  cursor: pointer;
+  display: flex;
+  font-size: 12px;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  transition: background 120ms, border-color 120ms;
+  white-space: nowrap;
+}
+
+.led-mapper-btn:hover {
+  background: #223840;
+  border-color: #46c6a8;
+}
+
+.led-mapper-btn.active {
+  background: #1b3d34;
+  border-color: #36a87c;
+  color: #5dffc0;
+}
+
+.led-mapper-btn.primary {
+  background: #1b3d34;
+  border-color: #36a87c;
+  color: #5dffc0;
+}
+
+.led-mapper-btn.danger {
+  background: #2d1a1f;
+  border-color: #7a3040;
+  color: #f8a0b0;
+}
+
+.led-mapper-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.led-mapper-zone-label {
+  align-items: center;
+  color: #8aa2ad;
+  display: flex;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.led-mapper-zone-input {
+  background: #0d1318;
+  border: 1px solid #2a3e48;
+  border-radius: 6px;
+  color: #e8f7fa;
+  height: 28px;
+  padding: 0 8px;
+  transition: border-color 120ms;
+  width: 100px;
+}
+
+.led-mapper-zone-input:focus {
+  border-color: #46c6a8;
+  outline: none;
+}
+
+.led-mapper-count {
+  color: #5e8091;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.led-mapper-hint {
+  background: rgb(70 198 168 / 12%);
+  border: 1px solid rgb(70 198 168 / 30%);
+  border-radius: 6px;
+  bottom: 16px;
+  color: #46c6a8;
+  font-size: 12px;
+  left: 50%;
+  padding: 6px 14px;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 20;
 }
