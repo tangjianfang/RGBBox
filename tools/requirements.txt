@@ -1,0 +1,20 @@
+# RGBBox offline reconstruction tools
+# Python 3.10+ required
+
+# PyTorch (CUDA 11.8 build — adjust the index URL for your CUDA version)
+# torch>=2.0.0
+# torchvision>=0.15.0
+# Install with:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+# PLY file I/O
+plyfile>=0.9.0
+
+# Progress bars
+tqdm>=4.65.0
+
+# Optional: point-cloud utilities (used by advanced preprocessing scripts)
+# open3d>=0.17.0
+
+# Numpy (usually already present)
+numpy>=1.24.0

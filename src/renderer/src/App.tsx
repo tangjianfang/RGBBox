@@ -1,4 +1,4 @@
-import { Activity, Download, FilePlus, Gauge, Languages, Link2, Link2Off, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Sparkles, Trash2, Upload } from 'lucide-react'
+import { Activity, Box, Download, FilePlus, Gauge, Languages, Link2, Link2Off, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Sparkles, Trash2, Upload } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, EngineStatus, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
@@ -10,8 +10,11 @@ import { PreviewGrid } from './components/PreviewGrid'
 import { Preview3D } from './components/Preview3D'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 import type { WorkerInput } from './workers/previewEngineWorker'
+import { SplatViewer } from './3d/SplatViewer'
+import { LEDMapper } from './3d/LEDMapper'
+import { useModelStore } from './3d/useModelStore'
 
-type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics'
+type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics' | 'model3d'
 
 // Human-readable parameter metadata — labels pulled from i18n in render
 const PARAM_META: Record<string, { labelKey: string; min: number; max: number; step: number; unit?: string }> = {
@@ -169,6 +172,18 @@ export function App(): JSX.Element {
   /** Ripple burst: set on canvas click, cleared after 2.5 s (matches burstDuration in effects.ts). */
   const rippleBurstRef = useRef<{ cx: number; cy: number; clickedAt: number } | null>(null)
   const rippleBurstTimerRef = useRef<number | null>(null)
+
+  /**
+   * Flat RGB bytes from the latest engine frame — shared with SplatViewer so its
+   * rAF loop can drive LED PointLights without going through React state.
+   * Mutated in-place on every worker response; never triggers a re-render.
+   */
+  const ledColorsRef = useRef<Uint8Array>(new Uint8Array(0))
+
+  const { models: splatModels, loading: splatLoading } = useModelStore()
+  const [selectedModelIndex, setSelectedModelIndex] = useState(0)
+  const [ledMapperOpen, setLedMapperOpen] = useState(false)
+  const selectedModel = splatModels[selectedModelIndex] ?? null
 
   const handleRippleClick = useCallback((nx: number, ny: number) => {
     if (rippleBurstTimerRef.current !== null) window.clearTimeout(rippleBurstTimerRef.current)
@@ -352,6 +367,11 @@ export function App(): JSX.Element {
       const frame = e.data
       frame.showGap = profile.sampling.showGap ?? false
       frameRef.current = frame
+      // Copy pixel data for the 3D splat viewer LED lights
+      if (ledColorsRef.current.length !== frame.pixels.length) {
+        ledColorsRef.current = new Uint8Array(frame.pixels.length)
+      }
+      ledColorsRef.current.set(frame.pixels)
       // Push to any open overlay windows (fire-and-forget, not awaited)
       if (overlayIdsRef.current.length > 0) {
         const topo = topologyRef.current
@@ -401,6 +421,11 @@ export function App(): JSX.Element {
   const handleFrame3D = useCallback((frame: RgbFrame) => {
     frame.showGap = profile?.sampling.showGap ?? false
     frameRef.current = frame
+    // Copy pixel data for the 3D splat viewer LED lights
+    if (ledColorsRef.current.length !== frame.pixels.length) {
+      ledColorsRef.current = new Uint8Array(frame.pixels.length)
+    }
+    ledColorsRef.current.set(frame.pixels)
     if (overlayIdsRef.current.length > 0) {
       const topo = topologyRef.current
       if (scene?.linkedDisplays && topo && topo.displays.length > 1) {
@@ -697,6 +722,10 @@ export function App(): JSX.Element {
           <button className={`nav-item ${currentView === 'diagnostics' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('diagnostics')}>
             <Gauge size={18} />
             {t('nav.diagnostics')}
+          </button>
+          <button className={`nav-item ${currentView === 'model3d' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('model3d')}>
+            <Box size={18} />
+            3D Model
           </button>
         </nav>
 
@@ -1221,6 +1250,62 @@ export function App(): JSX.Element {
               setCurrentView('workspace')
             }}
           />
+        )}
+
+        {currentView === 'model3d' && (
+          <div className="model3d-view">
+            <header className="workspace-header">
+              <div>
+                <p className="eyebrow">3D Model Viewer</p>
+                <h2>Gaussian Splat</h2>
+              </div>
+              <div className="metric-row">
+                {splatLoading ? (
+                  <span className="chip">Loading models…</span>
+                ) : (
+                  <span className="chip">{splatModels.length} model{splatModels.length !== 1 ? 's' : ''}</span>
+                )}
+              </div>
+            </header>
+
+            <div className="model3d-toolbar">
+              <select
+                className="profile-select"
+                value={selectedModelIndex}
+                disabled={splatModels.length === 0}
+                onChange={(e) => { setSelectedModelIndex(Number(e.target.value)); setLedMapperOpen(false) }}
+              >
+                {splatModels.length === 0 && <option value={0}>No models available</option>}
+                {splatModels.map((m, i) => (
+                  <option key={m.name} value={i}>{m.name}</option>
+                ))}
+              </select>
+              {selectedModel && (
+                <button
+                  className={`aspect-lock-btn${ledMapperOpen ? ' locked' : ''}`}
+                  type="button"
+                  onClick={() => setLedMapperOpen((v) => !v)}
+                >
+                  🎯 {ledMapperOpen ? 'Close LED Mapper' : 'Open LED Mapper'}
+                </button>
+              )}
+            </div>
+
+            {selectedModel && ledMapperOpen ? (
+              <LEDMapper
+                model={selectedModel}
+                initialLedMap={selectedModel.ledMap}
+              />
+            ) : (
+              <div className="model3d-splat-wrapper">
+                <SplatViewer
+                  model={selectedModel}
+                  ledColors={ledColorsRef.current}
+                  paused={!status.running}
+                />
+              </div>
+            )}
+          </div>
         )}
 
         {currentView === 'diagnostics' && (

@@ -1,0 +1,19 @@
+{
+  "model": "mouse_rgb.splat",
+  "device_type": "mouse",
+  "led_count": 12,
+  "leds": [
+    { "id": 0,  "position": [-0.015, 0.030,  0.050], "zone": "left_button" },
+    { "id": 1,  "position": [-0.005, 0.030,  0.050], "zone": "left_button" },
+    { "id": 2,  "position": [ 0.015, 0.030,  0.050], "zone": "right_button" },
+    { "id": 3,  "position": [ 0.005, 0.030,  0.050], "zone": "right_button" },
+    { "id": 4,  "position": [ 0.000, 0.038,  0.020], "zone": "scroll_wheel" },
+    { "id": 5,  "position": [ 0.000, 0.038,  0.000], "zone": "scroll_wheel" },
+    { "id": 6,  "position": [-0.022, 0.000,  0.020], "zone": "underglow" },
+    { "id": 7,  "position": [-0.022, 0.000, -0.010], "zone": "underglow" },
+    { "id": 8,  "position": [ 0.000, 0.000, -0.030], "zone": "underglow" },
+    { "id": 9,  "position": [ 0.022, 0.000, -0.010], "zone": "underglow" },
+    { "id": 10, "position": [ 0.022, 0.000,  0.020], "zone": "underglow" },
+    { "id": 11, "position": [ 0.000, 0.035,  0.060], "zone": "logo" }
+  ]
+}

@@ -20,15 +20,18 @@
     "dist:dir": "yarn build && electron-builder --dir"
   },
   "dependencies": {
+    "@mkkellogg/gaussian-splats-3d": "0.4.7",
     "@vitejs/plugin-react": "latest",
     "lucide-react": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "three": "0.184.0"
   },
   "devDependencies": {
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "@types/three": "0.184.1",
     "electron": "latest",
     "electron-builder": "latest",
     "electron-vite": "latest",
@@ -46,6 +49,9 @@
     "files": [
       "out/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      { "from": "./assets/models/", "to": "models", "filter": ["**/*"] }
     ],
     "win": {
       "target": [
