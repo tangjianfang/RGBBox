@@ -8,8 +8,10 @@
   "main": "./out/main/index.js",
   "type": "module",
   "scripts": {
+    "download-models": "node scripts/download-models.mjs",
+    "postinstall": "node scripts/download-models.mjs",
     "dev": "electron-vite dev",
-    "build": "yarn typecheck && electron-vite build",
+    "build": "node scripts/download-models.mjs && yarn typecheck && electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "yarn typecheck:node && yarn typecheck:web",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",

@@ -180,10 +180,24 @@ export function App(): JSX.Element {
    */
   const ledColorsRef = useRef<Uint8Array>(new Uint8Array(0))
 
-  const { models: splatModels, loading: splatLoading } = useModelStore()
+  const { models: splatModels, loading: splatLoading, importFile: importSplatFile } = useModelStore()
   const [selectedModelIndex, setSelectedModelIndex] = useState(0)
   const [ledMapperOpen, setLedMapperOpen] = useState(false)
   const selectedModel = splatModels[selectedModelIndex] ?? null
+  const splatFileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const handleSplatImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const model = importSplatFile(file)
+    // Auto-select the newly imported model
+    const newIndex = splatModels.length  // will be appended at the end
+    setSelectedModelIndex(newIndex)
+    setLedMapperOpen(false)
+    // Reset the input so the same file can be re-imported if needed
+    e.target.value = ''
+    void model
+  }, [importSplatFile, splatModels.length])
 
   const handleRippleClick = useCallback((nx: number, ny: number) => {
     if (rippleBurstTimerRef.current !== null) window.clearTimeout(rippleBurstTimerRef.current)
@@ -1280,6 +1294,21 @@ export function App(): JSX.Element {
                   <option key={m.name} value={i}>{m.name}</option>
                 ))}
               </select>
+              <button
+                className="aspect-lock-btn"
+                type="button"
+                title="Import a .splat, .ply, .ksplat or .spz file"
+                onClick={() => splatFileInputRef.current?.click()}
+              >
+                📂 Import Model
+              </button>
+              <input
+                ref={splatFileInputRef}
+                type="file"
+                accept=".splat,.ply,.ksplat,.spz"
+                style={{ display: 'none' }}
+                onChange={handleSplatImport}
+              />
               {selectedModel && (
                 <button
                   className={`aspect-lock-btn${ledMapperOpen ? ' locked' : ''}`}

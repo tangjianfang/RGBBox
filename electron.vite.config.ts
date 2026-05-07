@@ -23,6 +23,13 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
-    plugins: [react()]
+    plugins: [react()],
+    server: {
+      headers: {
+        // Required for SharedArrayBuffer (used by gaussian-splats-3d sort worker)
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp'
+      }
+    }
   }
 })

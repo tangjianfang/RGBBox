@@ -5,9 +5,12 @@
  * from `process.resourcesPath/models/` (packaged Electron app).  Each model
  * is described by a manifest entry that references a `.splat` file and an
  * optional `.led-map.json` file.
+ *
+ * Users can also import their own `.splat` files via the browser File API.
+ * Imported models are kept as blob: URLs for the lifetime of the page.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export interface LedPosition {
   id: number
@@ -29,6 +32,8 @@ export interface SplatModel {
   splatUrl: string
   /** Parsed LED map, or null if no mapping file exists. */
   ledMap: LedMap | null
+  /** True for user-imported models (blob: URL, session-scoped). */
+  imported?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -38,6 +43,10 @@ export interface SplatModel {
 const BUNDLED_MODELS: Array<{ name: string; splatFile: string; ledMapFile: string | null }> = [
   { name: 'keyboard_rgb',  splatFile: 'keyboard_rgb.splat',  ledMapFile: 'keyboard_rgb.led-map.json' },
   { name: 'mouse_rgb',     splatFile: 'mouse_rgb.splat',     ledMapFile: 'mouse_rgb.led-map.json' },
+  // Demo scenes from the 3DGS benchmark dataset (Mip-NeRF 360)
+  { name: 'train',         splatFile: 'train.splat',         ledMapFile: null },
+  { name: 'garden',        splatFile: 'garden.splat',        ledMapFile: null },
+  { name: 'bicycle',       splatFile: 'bicycle.splat',       ledMapFile: null },
 ]
 
 /**
@@ -66,8 +75,13 @@ async function fetchLedMap(url: string): Promise<LedMap | null> {
 // ---------------------------------------------------------------------------
 
 export function useModelStore() {
-  const [models, setModels] = useState<SplatModel[]>([])
+  const [bundledModels, setBundledModels] = useState<SplatModel[]>([])
+  const [importedModels, setImportedModels] = useState<SplatModel[]>([])
   const [loading, setLoading] = useState(true)
+  // Track blob: URLs created for imported files so we can revoke on unmount.
+  const blobUrls = useRef<string[]>([])
+
+  const models = [...bundledModels, ...importedModels]
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -81,7 +95,7 @@ export function useModelStore() {
         return { name: entry.name, splatUrl, ledMap }
       })
     )
-    // Only expose models whose .splat URL is reachable (HEAD request).
+    // Only expose bundled models whose .splat URL is reachable (HEAD request).
     const available = await Promise.all(
       resolved.map(async (m) => {
         try {
@@ -92,11 +106,32 @@ export function useModelStore() {
         }
       })
     )
-    setModels(available.filter((m): m is SplatModel => m !== null))
+    setBundledModels(available.filter((m): m is SplatModel => m !== null))
     setLoading(false)
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+    // Revoke all blob URLs when the component using this hook unmounts.
+    const urls = blobUrls.current
+    return () => {
+      for (const url of urls) URL.revokeObjectURL(url)
+    }
+  }, [load])
 
-  return { models, loading, reload: load }
+  /**
+   * Import a .splat File object picked by the user.
+   * Creates a session-scoped blob: URL and appends the model to the list.
+   */
+  const importFile = useCallback((file: File): SplatModel => {
+    const blobUrl = URL.createObjectURL(file)
+    blobUrls.current.push(blobUrl)
+    // Strip extension for the display name
+    const name = file.name.replace(/\.(splat|ply|ksplat|spz)$/i, '')
+    const model: SplatModel = { name, splatUrl: blobUrl, ledMap: null, imported: true }
+    setImportedModels((prev) => [...prev, model])
+    return model
+  }, [])
+
+  return { models, loading, reload: load, importFile }
 }

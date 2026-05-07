@@ -26,6 +26,8 @@ declare module '@mkkellogg/gaussian-splats-3d' {
     dynamicScene?: boolean
     /** Self-driven render loop controlled by the viewer itself. */
     selfDrivenMode?: boolean
+    /** Use SharedArrayBuffer to communicate with sort worker. Requires crossOriginIsolated context. Default true. */
+    sharedMemoryForWorkers?: boolean
     /** Half-precision float format for storage. */
     halfPrecisionCovariancesOnGPU?: boolean
   }
@@ -33,8 +35,8 @@ declare module '@mkkellogg/gaussian-splats-3d' {
   export interface AddSplatSceneOptions {
     /** Show loading progress in the DOM. */
     showLoadingUI?: boolean
-    /** Called repeatedly during load with 0..1 progress. */
-    onProgress?: (progress: number) => void
+    /** Called during load: percent 0–100, label string, status (0=Downloading 1=Processing 2=Done). */
+    onProgress?: (percent: number, percentLabel: string, status: number) => void
     /** Position offset applied to the scene. */
     position?: [number, number, number]
     /** Euler rotation (radians) applied to the scene. */

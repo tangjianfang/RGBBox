@@ -7,3 +7,9 @@ release/
 .env
 .env.local
 *.tsbuildinfo
+
+# 3D model binary files — downloaded at install/build time via scripts/download-models.mjs
+*.splat
+*.ksplat
+*.spz
+*.ply

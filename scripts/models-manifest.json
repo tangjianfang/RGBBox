@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "3D model assets for RGBBox. These binary files are NOT tracked by git. Run `npm run download-models` (or `npm install`) to fetch them.",
+  "outputDir": "src/renderer/public/assets/models",
+  "models": [
+    {
+      "name": "keyboard_rgb",
+      "file": "keyboard_rgb.splat",
+      "url": "https://github.com/tjf/RGBBox/releases/download/models-v1/keyboard_rgb.splat",
+      "description": "RGB keyboard 3D Gaussian Splat"
+    },
+    {
+      "name": "mouse_rgb",
+      "file": "mouse_rgb.splat",
+      "url": "https://github.com/tjf/RGBBox/releases/download/models-v1/mouse_rgb.splat",
+      "description": "RGB mouse 3D Gaussian Splat"
+    },
+    {
+      "name": "train",
+      "file": "train.splat",
+      "url": "https://github.com/tjf/RGBBox/releases/download/models-v1/train.splat",
+      "description": "Demo scene — train (Mip-NeRF 360 dataset)"
+    },
+    {
+      "name": "garden",
+      "file": "garden.splat",
+      "url": "https://github.com/tjf/RGBBox/releases/download/models-v1/garden.splat",
+      "description": "Demo scene — garden (Mip-NeRF 360 dataset)"
+    },
+    {
+      "name": "bicycle",
+      "file": "bicycle.splat",
+      "url": "https://github.com/tjf/RGBBox/releases/download/models-v1/bicycle.splat",
+      "description": "Demo scene — bicycle (Mip-NeRF 360 dataset)"
+    }
+  ]
+}
