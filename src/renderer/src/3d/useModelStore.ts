@@ -1,16 +1,16 @@
 /**
  * useModelStore — React state for the list of available 3D splat models.
  *
- * Models are loaded from the `assets/models/` directory (development) or
- * from `process.resourcesPath/models/` (packaged Electron app).  Each model
- * is described by a manifest entry that references a `.splat` file and an
- * optional `.led-map.json` file.
+ * Bundled models are defined in shared/modelsManifest.ts.  Their binary
+ * .splat files are NOT shipped with the app — they are downloaded on demand
+ * via the `modelDownload` IPC channel and cached in userData/models/.
  *
- * Users can also import their own `.splat` files via the browser File API.
+ * Users can also import their own .splat files via the browser File API.
  * Imported models are kept as blob: URLs for the lifetime of the page.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { MODELS_MANIFEST } from '../../../shared/modelsManifest'
 
 export interface LedPosition {
   id: number
@@ -25,46 +25,40 @@ export interface LedMap {
   leds: LedPosition[]
 }
 
+export type ModelDownloadStatus = 'cached' | 'remote' | 'downloading' | 'error'
+
 export interface SplatModel {
   /** Unique name (slug) — matches the filename stem. */
   name: string
-  /** URL/path that the Three.js loader will fetch. */
+  /**
+   * URL/path that the Three.js loader will fetch.
+   * Points to a file:// URL when cached, empty string when not yet downloaded.
+   */
   splatUrl: string
   /** Parsed LED map, or null if no mapping file exists. */
   ledMap: LedMap | null
   /** True for user-imported models (blob: URL, session-scoped). */
   imported?: boolean
+  /** Download / cache state for bundled models. Always 'cached' for imported ones. */
+  downloadStatus: ModelDownloadStatus
+  /** Download progress 0–100 (only meaningful when downloadStatus === 'downloading'). */
+  downloadProgress: number
+  /** Error message when downloadStatus === 'error'. */
+  downloadError?: string
 }
 
 // ---------------------------------------------------------------------------
-// Built-in bundled model manifests (relative to `/assets/models/` at dev time)
+// LED map fetching
 // ---------------------------------------------------------------------------
 
-const BUNDLED_MODELS: Array<{ name: string; splatFile: string; ledMapFile: string | null }> = [
-  { name: 'keyboard_rgb',  splatFile: 'keyboard_rgb.splat',  ledMapFile: 'keyboard_rgb.led-map.json' },
-  { name: 'mouse_rgb',     splatFile: 'mouse_rgb.splat',     ledMapFile: 'mouse_rgb.led-map.json' },
-  // Demo scenes from the 3DGS benchmark dataset (Mip-NeRF 360)
-  { name: 'train',         splatFile: 'train.splat',         ledMapFile: null },
-  { name: 'garden',        splatFile: 'garden.splat',        ledMapFile: null },
-  { name: 'bicycle',       splatFile: 'bicycle.splat',       ledMapFile: null },
-]
-
-/**
- * Resolve the base path for bundled model assets.
- * - Development:  `/assets/models/` (served by Vite dev server from the repo root)
- * - Production:   `<resourcesPath>/models/` via the `file://` protocol
- */
-function modelBasePath(): string {
-  // In Electron renderer process window.__ELECTRON_RESOURCES__ may be injected
-  // by the preload; fall back to a relative path for Vite dev server.
-  const base = (window as unknown as Record<string, string>)['__ELECTRON_RESOURCES__']
-  if (base) return `${base}/models/`
+/** Base URL for LED-map JSON files (shipped inside the app bundle / Vite dev server). */
+function ledMapBasePath(): string {
   return '/assets/models/'
 }
 
-async function fetchLedMap(url: string): Promise<LedMap | null> {
+async function fetchLedMap(fileName: string): Promise<LedMap | null> {
   try {
-    const res = await fetch(url)
+    const res = await fetch(`${ledMapBasePath()}${fileName}`)
     if (!res.ok) return null
     return (await res.json()) as LedMap
   } catch {
@@ -83,55 +77,101 @@ export function useModelStore() {
 
   const models = [...bundledModels, ...importedModels]
 
+  // ── Initial load: build model list from manifest + cached paths ──────────
   const load = useCallback(async () => {
     setLoading(true)
-    const base = modelBasePath()
+
+    // Ask main process which models are already cached (file:// URLs).
+    const cachedPaths: Record<string, string> = await window.rgbbox.modelGetCachedPaths()
+
     const resolved: SplatModel[] = await Promise.all(
-      BUNDLED_MODELS.map(async (entry) => {
-        const splatUrl  = `${base}${entry.splatFile}`
-        const ledMap = entry.ledMapFile
-          ? await fetchLedMap(`${base}${entry.ledMapFile}`)
-          : null
-        return { name: entry.name, splatUrl, ledMap }
-      })
-    )
-    // Only expose bundled models whose .splat URL is reachable (HEAD request).
-    const available = await Promise.all(
-      resolved.map(async (m) => {
-        try {
-          const r = await fetch(m.splatUrl, { method: 'HEAD' })
-          return r.ok ? m : null
-        } catch {
-          return null
+      MODELS_MANIFEST.map(async (entry) => {
+        const cachedUrl = cachedPaths[entry.name]
+        const ledMap = entry.ledMapFile ? await fetchLedMap(entry.ledMapFile) : null
+        return {
+          name: entry.name,
+          splatUrl: cachedUrl ?? '',
+          ledMap,
+          downloadStatus: (cachedUrl ? 'cached' : 'remote') as ModelDownloadStatus,
+          downloadProgress: 0,
         }
       })
     )
-    setBundledModels(available.filter((m): m is SplatModel => m !== null))
+
+    setBundledModels(resolved)
     setLoading(false)
+  }, [])
+
+  // ── Listen to download progress from main process ────────────────────────
+  useEffect(() => {
+    const unsubscribe = window.rgbbox.onModelDownloadProgress((p) => {
+      setBundledModels((prev) =>
+        prev.map((m) => {
+          if (m.name !== p.name) return m
+          if (p.error) {
+            return { ...m, downloadStatus: 'error', downloadProgress: 0, downloadError: p.error }
+          }
+          if (p.done) {
+            // splatUrl will be updated by downloadModel's .then()
+            return { ...m, downloadStatus: 'downloading', downloadProgress: 100 }
+          }
+          return { ...m, downloadStatus: 'downloading', downloadProgress: p.percent }
+        })
+      )
+    })
+    return unsubscribe
   }, [])
 
   useEffect(() => {
     void load()
-    // Revoke all blob URLs when the component using this hook unmounts.
     const urls = blobUrls.current
     return () => {
       for (const url of urls) URL.revokeObjectURL(url)
     }
   }, [load])
 
-  /**
-   * Import a .splat File object picked by the user.
-   * Creates a session-scoped blob: URL and appends the model to the list.
-   */
+  // ── Trigger on-demand download for a bundled model ───────────────────────
+  const downloadModel = useCallback(async (name: string): Promise<void> => {
+    // Optimistically set status to downloading
+    setBundledModels((prev) =>
+      prev.map((m) =>
+        m.name === name ? { ...m, downloadStatus: 'downloading', downloadProgress: 0, downloadError: undefined } : m
+      )
+    )
+    try {
+      const fileUrl = await window.rgbbox.modelDownload(name)
+      setBundledModels((prev) =>
+        prev.map((m) =>
+          m.name === name ? { ...m, splatUrl: fileUrl, downloadStatus: 'cached', downloadProgress: 100 } : m
+        )
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setBundledModels((prev) =>
+        prev.map((m) =>
+          m.name === name ? { ...m, downloadStatus: 'error', downloadProgress: 0, downloadError: msg } : m
+        )
+      )
+    }
+  }, [])
+
+  // ── Import a user-picked .splat file ─────────────────────────────────────
   const importFile = useCallback((file: File): SplatModel => {
     const blobUrl = URL.createObjectURL(file)
     blobUrls.current.push(blobUrl)
-    // Strip extension for the display name
     const name = file.name.replace(/\.(splat|ply|ksplat|spz)$/i, '')
-    const model: SplatModel = { name, splatUrl: blobUrl, ledMap: null, imported: true }
+    const model: SplatModel = {
+      name,
+      splatUrl: blobUrl,
+      ledMap: null,
+      imported: true,
+      downloadStatus: 'cached',
+      downloadProgress: 100,
+    }
     setImportedModels((prev) => [...prev, model])
     return model
   }, [])
 
-  return { models, loading, reload: load, importFile }
+  return { models, loading, reload: load, importFile, downloadModel }
 }
+

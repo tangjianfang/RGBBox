@@ -27,6 +27,8 @@ const require = createRequire(import.meta.url)
 const manifest = require(MANIFEST_PATH)
 
 const force = process.argv.includes('--force')
+/** Exit with error code when downloads fail. Pass --strict to enable. */
+const strict = process.argv.includes('--strict')
 
 const outputDir = resolve(ROOT, manifest.outputDir)
 mkdirSync(outputDir, { recursive: true })
@@ -134,10 +136,14 @@ for (const model of manifest.models) {
 console.log(`\nModels: ${downloaded} downloaded, ${skipped} skipped, ${failed} failed.`)
 
 if (failed > 0) {
-  console.error(
+  const msg =
     '\nSome models failed to download. ' +
     'Update the URLs in scripts/models-manifest.json and re-run:\n' +
     '  node scripts/download-models.mjs\n'
-  )
-  process.exit(1)
+  if (strict) {
+    console.error(msg)
+    process.exit(1)
+  } else {
+    console.warn('[warn]' + msg)
+  }
 }

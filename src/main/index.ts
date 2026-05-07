@@ -1,9 +1,16 @@
 import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, screen, shell, Tray } from 'electron'
+import { access, mkdir, unlink } from 'node:fs/promises'
+import { createWriteStream } from 'node:fs'
+import { get as httpGet } from 'node:http'
+import { get as httpsGet } from 'node:https'
+import { pipeline } from 'node:stream/promises'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { defaultProfile } from '../shared/defaultProfile'
 import { ipcChannels } from '../shared/ipc'
-import type { EngineStatus, Profile, RgbFrame } from '../shared/types'
+import { MODELS_MANIFEST } from '../shared/modelsManifest'
+import type { EngineStatus, ModelDownloadProgress, Profile, RgbFrame } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
 import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, pushFrameToDisplay, pushFrameToOverlays, setOverlayClosedCallback } from './overlayManager'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
@@ -215,6 +222,116 @@ function registerIpc(): void {
       menu.popup({ window: senderWin })
     }
   )
+
+  // ── On-demand 3D model download ──────────────────────────────────────────
+
+  const modelsDir = join(app.getPath('userData'), 'models')
+
+  /** Return a file:// URL if the model is already cached, otherwise undefined. */
+  async function getCachedModelUrl(fileName: string): Promise<string | undefined> {
+    const filePath = join(modelsDir, fileName)
+    try {
+      await access(filePath)
+      return pathToFileURL(filePath).toString()
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Follow HTTPS/HTTP redirects and stream to dest, pushing progress events. */
+  function downloadWithProgress(
+    url: string,
+    dest: string,
+    onProgress: (p: ModelDownloadProgress, name: string) => void,
+    name: string
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const attempt = (currentUrl: string, redirects = 0): void => {
+        if (redirects > 10) { reject(new Error('Too many redirects')); return }
+        const getter = currentUrl.startsWith('https://') ? httpsGet : httpGet
+        getter(currentUrl, (res) => {
+          if (res.statusCode !== undefined && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            res.resume()
+            attempt(res.headers.location, redirects + 1)
+            return
+          }
+          if (res.statusCode !== 200) {
+            res.resume()
+            reject(new Error(`HTTP ${res.statusCode}`))
+            return
+          }
+          const totalBytes = parseInt(res.headers['content-length'] ?? '0', 10)
+          let receivedBytes = 0
+          res.on('data', (chunk: Buffer) => {
+            receivedBytes += chunk.length
+            const percent = totalBytes > 0 ? Math.round(receivedBytes / totalBytes * 100) : 0
+            onProgress({ name, receivedBytes, totalBytes, percent, done: false }, name)
+          })
+          const out = createWriteStream(dest)
+          pipeline(res, out)
+            .then(() => { onProgress({ name, receivedBytes, totalBytes, percent: 100, done: true }, name); resolve() })
+            .catch(reject)
+        }).on('error', reject)
+      }
+      attempt(url)
+    })
+  }
+
+  // Return mapping of model name → file:// URL for every model already cached
+  ipcMain.handle(ipcChannels.modelGetCachedPaths, async () => {
+    await mkdir(modelsDir, { recursive: true })
+    const result: Record<string, string> = {}
+    // Also check dev-time public assets directory so devs don't need to re-download
+    const devPublicDir = isDevelopment
+      ? join(__dirname, '../../src/renderer/public/assets/models')
+      : null
+    for (const entry of MODELS_MANIFEST) {
+      const url = await getCachedModelUrl(entry.file)
+      if (url) {
+        result[entry.name] = url
+      } else if (devPublicDir) {
+        const devPath = join(devPublicDir, entry.file)
+        try {
+          await access(devPath)
+          result[entry.name] = pathToFileURL(devPath).toString()
+        } catch { /* not present */ }
+      }
+    }
+    return result
+  })
+
+  // Download a model by name; push progress events; return file:// URL when done
+  ipcMain.handle(ipcChannels.modelDownload, async (_event, name: string) => {
+    const entry = MODELS_MANIFEST.find((m) => m.name === name)
+    if (!entry) throw new Error(`Unknown model: ${name}`)
+
+    await mkdir(modelsDir, { recursive: true })
+    const destPath = join(modelsDir, entry.file)
+
+    // Return cached copy immediately without re-downloading
+    const cached = await getCachedModelUrl(entry.file)
+    if (cached) return cached
+
+    // Remove any partial file from a previous failed attempt
+    try { await unlink(destPath) } catch { /* ignore */ }
+
+    const sendProgress = (p: ModelDownloadProgress): void => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(ipcChannels.modelDownloadProgress, p)
+      }
+    }
+
+    try {
+      await downloadWithProgress(entry.url, destPath, sendProgress, name)
+    } catch (err) {
+      try { await unlink(destPath) } catch { /* ignore */ }
+      const errMsg = err instanceof Error ? err.message : String(err)
+      sendProgress({ name, receivedBytes: 0, totalBytes: 0, percent: 0, done: true, error: errMsg })
+      throw err
+    }
+
+    return pathToFileURL(destPath).toString()
+  })
 }
 
 function createTray(): void {

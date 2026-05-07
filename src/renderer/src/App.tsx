@@ -180,7 +180,7 @@ export function App(): JSX.Element {
    */
   const ledColorsRef = useRef<Uint8Array>(new Uint8Array(0))
 
-  const { models: splatModels, loading: splatLoading, importFile: importSplatFile } = useModelStore()
+  const { models: splatModels, loading: splatLoading, importFile: importSplatFile, downloadModel: downloadSplatModel } = useModelStore()
   const [selectedModelIndex, setSelectedModelIndex] = useState(0)
   const [ledMapperOpen, setLedMapperOpen] = useState(false)
   const selectedModel = splatModels[selectedModelIndex] ?? null
@@ -1325,6 +1325,32 @@ export function App(): JSX.Element {
                 model={selectedModel}
                 initialLedMap={selectedModel.ledMap}
               />
+            ) : selectedModel && selectedModel.downloadStatus !== 'cached' ? (
+              <div className="model3d-splat-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+                {selectedModel.downloadStatus === 'error' ? (
+                  <>
+                    <p style={{ color: 'var(--color-error, #f87171)', margin: 0 }}>⚠ {selectedModel.downloadError ?? 'Download failed'}</p>
+                    <button className="aspect-lock-btn" type="button" onClick={() => void downloadSplatModel(selectedModel.name)}>
+                      ↺ Retry
+                    </button>
+                  </>
+                ) : selectedModel.downloadStatus === 'downloading' ? (
+                  <>
+                    <p style={{ margin: 0, opacity: 0.8 }}>Downloading {selectedModel.name}…</p>
+                    <div style={{ width: 260, height: 6, background: 'rgba(255,255,255,0.12)', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${selectedModel.downloadProgress}%`, height: '100%', background: 'var(--color-accent, #38bdf8)', transition: 'width 0.3s' }} />
+                    </div>
+                    <span style={{ fontSize: 12, opacity: 0.6 }}>{selectedModel.downloadProgress}%</span>
+                  </>
+                ) : (
+                  <>
+                    <p style={{ margin: 0, opacity: 0.7 }}>Model not yet downloaded</p>
+                    <button className="aspect-lock-btn" type="button" onClick={() => void downloadSplatModel(selectedModel.name)}>
+                      ⬇ Download {selectedModel.name}
+                    </button>
+                  </>
+                )}
+              </div>
             ) : (
               <div className="model3d-splat-wrapper">
                 <SplatViewer

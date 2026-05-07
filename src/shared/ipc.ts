@@ -37,6 +37,10 @@ export const ipcChannels = {
   deleteProfile: 'rgbbox:profiles:delete',
   exportProfileDialog: 'rgbbox:profiles:export-dialog',
   importProfileDialog: 'rgbbox:profiles:import-dialog',
+  // On-demand 3D model asset management
+  modelGetCachedPaths: 'rgbbox:models:get-cached-paths',
+  modelDownload: 'rgbbox:models:download',
+  modelDownloadProgress: 'rgbbox:models:download-progress',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

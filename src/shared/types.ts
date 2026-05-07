@@ -1,5 +1,15 @@
 export type PlatformName = 'windows' | 'macos' | 'linux' | 'unknown'
 
+export interface ModelDownloadProgress {
+  name: string
+  receivedBytes: number
+  totalBytes: number
+  /** 0–100 */
+  percent: number
+  done: boolean
+  error?: string
+}
+
 export type BlendMode = 'normal' | 'add' | 'multiply' | 'screen'
 
 /** GPU-rendered 3D effects (WebGL raymarching shaders, bypass the CPU worker). */

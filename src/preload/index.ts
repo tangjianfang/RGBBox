@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
-import type { DisplayTopology, EngineStatus, Profile, ProfileMeta, RgbFrame } from '../shared/types'
+import type { DisplayTopology, EngineStatus, ModelDownloadProgress, Profile, ProfileMeta, RgbFrame } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -93,6 +93,17 @@ const api = {
     ipcRenderer.invoke(ipcChannels.exportProfileDialog, profile),
   importProfileDialog: (): Promise<Profile | null> =>
     ipcRenderer.invoke(ipcChannels.importProfileDialog),
+
+  // On-demand 3D model assets
+  modelGetCachedPaths: (): Promise<Record<string, string>> =>
+    ipcRenderer.invoke(ipcChannels.modelGetCachedPaths),
+  modelDownload: (name: string): Promise<string> =>
+    ipcRenderer.invoke(ipcChannels.modelDownload, name),
+  onModelDownloadProgress: (callback: (p: ModelDownloadProgress) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, p: ModelDownloadProgress): void => callback(p)
+    ipcRenderer.on(ipcChannels.modelDownloadProgress, handler)
+    return () => ipcRenderer.off(ipcChannels.modelDownloadProgress, handler)
+  },
 }
 
 contextBridge.exposeInMainWorld('rgbbox', api)
