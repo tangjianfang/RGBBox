@@ -61,7 +61,6 @@
       ],
       "icon": "build/icon.ico",
       "forceCodeSigning": false,
-      "signAndEditExecutable": false,
       "verifyUpdateCodeSignature": false
     },
     "nsis": {
