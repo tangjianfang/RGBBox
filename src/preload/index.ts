@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
-import type { DisplayTopology, EngineStatus, ModelDownloadProgress, Profile, ProfileMeta, RgbFrame } from '../shared/types'
+import type { DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProfileMeta, RgbFrame } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -33,14 +33,18 @@ const api = {
     ipcRenderer.send(ipcChannels.overlayPushFrameForDisplay, displayId, frame),
 
   // Multi-display overlay
-  openOverlay: (displayId: number): Promise<boolean> =>
-    ipcRenderer.invoke(ipcChannels.openOverlay, displayId),
+  openOverlay: (displayId: number, config?: OverlayConfig): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.openOverlay, displayId, config),
   closeOverlay: (displayId: number): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.closeOverlay, displayId),
+  setOverlayConfig: (displayId: number, config?: OverlayConfig): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.setOverlayConfig, displayId, config),
   getOverlayDisplayIds: (): Promise<number[]> =>
     ipcRenderer.invoke(ipcChannels.getOverlayDisplayIds),
   getDesktopAudioSourceId: (): Promise<string | null> =>
     ipcRenderer.invoke(ipcChannels.getDesktopAudioSourceId),
+  getDesktopAudioSources: (): Promise<DesktopAudioSource[]> =>
+    ipcRenderer.invoke(ipcChannels.getDesktopAudioSources),
 
   onOverlayFrame: (callback: (frame: RgbFrame) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, frame: RgbFrame): void => callback(frame)

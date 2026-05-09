@@ -156,3 +156,34 @@ export interface PresetDefinition {
   description: string
   defaults: EffectLayer['parameters']
 }
+
+/** Preset region for the overlay window relative to the display bounds. */
+export type OverlayRegionPreset =
+  | 'fullscreen'
+  | 'top-third'
+  | 'middle-third'
+  | 'bottom-third'
+  | 'left-third'
+  | 'center-third'
+  | 'right-third'
+  | 'custom'
+
+/** Normalized (0–1) bounds relative to the display bounds, used when region = 'custom'. */
+export interface OverlayRegionCustom {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Configuration for how an overlay window is positioned on a display. */
+export interface OverlayConfig {
+  region: OverlayRegionPreset
+  custom?: OverlayRegionCustom
+}
+
+/** A desktop audio capture source returned by desktopCapturer. */
+export interface DesktopAudioSource {
+  id: string
+  name: string
+}

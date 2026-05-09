@@ -27,6 +27,7 @@ let previousFrame: RgbFrame | undefined
 
 self.onmessage = (e: MessageEvent<WorkerInput>): void => {
   const { profile, audioInput, screenSample, rippleBurst } = e.data
+  console.log('[dbg] worker onmessage, kind=', (profile.scenes[0]?.layers[0]?.kind ?? 'unknown'))
 
   // Compute text masks for static-text layers (OffscreenCanvas works in Workers)
   const scene =

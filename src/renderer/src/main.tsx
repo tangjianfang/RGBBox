@@ -12,6 +12,10 @@ const overlayDisplayId = Number(params.get('displayId') ?? 0)
 const root = ReactDOM.createRoot(document.getElementById('root')!)
 
 if (isOverlay) {
+  // Prevent the OS-theme scrollbars that appear when body min-width/min-height
+  // (960px / 640px) exceeds the partial-region overlay window dimensions.
+  document.documentElement.style.overflow = 'hidden'
+  document.body.classList.add('overlay-mode')
   root.render(<OverlayCanvas displayId={overlayDisplayId} />)
 } else {
   root.render(

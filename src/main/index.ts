@@ -10,9 +10,9 @@ import { pathToFileURL } from 'node:url'
 import { defaultProfile } from '../shared/defaultProfile'
 import { ipcChannels } from '../shared/ipc'
 import { MODELS_MANIFEST } from '../shared/modelsManifest'
-import type { EngineStatus, ModelDownloadProgress, Profile, RgbFrame } from '../shared/types'
+import type { DesktopAudioSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, RgbFrame } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
-import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, pushFrameToDisplay, pushFrameToOverlays, setOverlayClosedCallback } from './overlayManager'
+import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame } from './screenCapture'
 
@@ -144,20 +144,29 @@ function registerIpc(): void {
   })
 
   // Overlay management
-  ipcMain.handle(ipcChannels.openOverlay, (_event, displayId: number) => {
-    return openOverlay(displayId, isDevelopment, process.env.ELECTRON_RENDERER_URL)
+  ipcMain.handle(ipcChannels.openOverlay, (_event, displayId: number, config?: OverlayConfig) => {
+    return openOverlay(displayId, isDevelopment, process.env.ELECTRON_RENDERER_URL, config)
   })
   ipcMain.handle(ipcChannels.closeOverlay, (_event, displayId: number) => {
     return closeOverlay(displayId)
+  })
+  ipcMain.handle(ipcChannels.setOverlayConfig, (_event, displayId: number, config?: OverlayConfig) => {
+    return reopenOverlay(displayId, isDevelopment, process.env.ELECTRON_RENDERER_URL, config)
   })
   ipcMain.handle(ipcChannels.getOverlayDisplayIds, () => {
     return getOverlayDisplayIds()
   })
 
-  // Return the first screen's desktopCapturer sourceId for system audio loopback
+  // Return the first screen's desktopCapturer sourceId for system audio loopback (legacy)
   ipcMain.handle(ipcChannels.getDesktopAudioSourceId, async () => {
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })
     return sources[0]?.id ?? null
+  })
+
+  // Return ALL desktop audio capture sources (screens/displays)
+  ipcMain.handle(ipcChannels.getDesktopAudioSources, async (): Promise<DesktopAudioSource[]> => {
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })
+    return sources.map((s) => ({ id: s.id, name: s.name }))
   })
 
   // Named profile management

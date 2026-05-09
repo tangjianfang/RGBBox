@@ -15,6 +15,7 @@ export const ipcChannels = {
   // Multi-display overlay
   openOverlay: 'rgbbox:overlay:open',
   closeOverlay: 'rgbbox:overlay:close',
+  setOverlayConfig: 'rgbbox:overlay:set-config',
   getOverlayDisplayIds: 'rgbbox:overlay:get-ids',
   // Overlay push channel (main → renderer, not invokable)
   overlayFrame: 'overlay:frame',
@@ -28,6 +29,8 @@ export const ipcChannels = {
   getPowerSaveBlock: 'rgbbox:system:get-power-save-block',
   // Desktop audio loopback source ID (for system audio capture)
   getDesktopAudioSourceId: 'rgbbox:audio:desktop-source-id',
+  // All desktop audio capture sources (screens/displays)
+  getDesktopAudioSources: 'rgbbox:audio:desktop-sources',
   // Main → renderer: display added/removed/metrics-changed (hotplug)
   displayTopologyChanged: 'rgbbox:system:display-topology-changed',
   // Named profile management

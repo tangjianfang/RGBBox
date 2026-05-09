@@ -49,34 +49,88 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
     }
 
     const SYSTEM_AUDIO_ID = '__system_audio__'
+    const SPEAKER_PREFIX  = '__speaker__:'
+    const DESKTOP_PREFIX  = '__desktop__:'
+    const LOOPBACK_LABEL_RE = /stereo mix|what u hear|loopback|monitor/i
 
     let cancelled = false
     let stream: MediaStream | null = null
     let audioContext: AudioContext | null = null
 
+    const makeDesktopStream = (sourceId: string): Promise<MediaStream> =>
+      navigator.mediaDevices.getUserMedia({
+        audio: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: sourceId
+          }
+        } as MediaTrackConstraints,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: sourceId,
+            maxWidth: 1,
+            maxHeight: 1,
+            maxFrameRate: 1
+          }
+        } as MediaTrackConstraints
+      })
+
+    const tryCaptureSpeakerDevice = async (speakerDeviceId: string): Promise<MediaStream | null> => {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const output = devices.find(
+        (d) => d.kind === 'audiooutput' && d.deviceId === speakerDeviceId
+      )
+      // Preferred path: find a loopback-capable input in the same hardware group.
+      // On many Windows drivers this appears as "Stereo Mix" / "Loopback".
+      if (output?.groupId) {
+        const loopbackInput = devices.find(
+          (d) =>
+            d.kind === 'audioinput' &&
+            d.groupId === output.groupId &&
+            LOOPBACK_LABEL_RE.test(d.label)
+        )
+        if (loopbackInput) {
+          return navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: { exact: loopbackInput.deviceId } },
+            video: false,
+          })
+        }
+      }
+
+      // Fallback path: some environments expose a capturable endpoint with this ID.
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: { exact: speakerDeviceId } },
+          video: false,
+        })
+      } catch {
+        return null
+      }
+    }
+
     const getStream = async (): Promise<MediaStream> => {
+      // Legacy sentinel: use the first available desktop source
       if (deviceId === SYSTEM_AUDIO_ID) {
-        // Use desktopCapturer sourceId to capture system audio loopback.
-        // Requires a tiny video track alongside (Electron constraint); we stop it immediately after.
         const sourceId = await window.rgbbox.getDesktopAudioSourceId()
         if (!sourceId) throw new Error('No desktop source available')
-        return navigator.mediaDevices.getUserMedia({
-          audio: {
-            mandatory: {
-              chromeMediaSource: 'desktop',
-              chromeMediaSourceId: sourceId
-            }
-          } as MediaTrackConstraints,
-          video: {
-            mandatory: {
-              chromeMediaSource: 'desktop',
-              chromeMediaSourceId: sourceId,
-              maxWidth: 1,
-              maxHeight: 1,
-              maxFrameRate: 1
-            }
-          } as MediaTrackConstraints
-        })
+        return makeDesktopStream(sourceId)
+      }
+      // Preferred speaker path: pick a real audio output endpoint and capture its loopback.
+      if (deviceId.startsWith(SPEAKER_PREFIX)) {
+        const speakerDeviceId = deviceId.slice(SPEAKER_PREFIX.length)
+        const stream = await tryCaptureSpeakerDevice(speakerDeviceId)
+        if (stream) return stream
+
+        // Last fallback when the selected speaker has no exposed loopback input.
+        const sourceId = await window.rgbbox.getDesktopAudioSourceId()
+        if (!sourceId) throw new Error('No desktop source available')
+        return makeDesktopStream(sourceId)
+      }
+      // New: direct desktop source ID embedded after the prefix
+      if (deviceId.startsWith(DESKTOP_PREFIX)) {
+        const sourceId = deviceId.slice(DESKTOP_PREFIX.length)
+        return makeDesktopStream(sourceId)
       }
       const audioConstraint: MediaStreamConstraints = deviceId
         ? { audio: { deviceId: { exact: deviceId } }, video: false }

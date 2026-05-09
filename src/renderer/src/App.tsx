@@ -1,7 +1,7 @@
 import { Activity, Box, Download, FilePlus, Gauge, Languages, Link2, Link2Off, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Sparkles, Trash2, Upload } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
-import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, EngineStatus, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
+import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
 import { is3DEffect } from '../../shared/types'
 import { useI18n } from './i18n'
 import { DisplayMap } from './components/DisplayMap'
@@ -152,7 +152,12 @@ export function App(): JSX.Element {
     localStorage.getItem('rgbbox:audioDevice') ?? ''
   )
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
+  const [speakerDevices, setSpeakerDevices] = useState<MediaDeviceInfo[]>([])
   const [overlayDisplayIds, setOverlayDisplayIds] = useState<number[]>([])
+  const [overlayConfigs, setOverlayConfigs] = useState<Record<number, OverlayConfig>>(() => {
+    try { return JSON.parse(localStorage.getItem('rgbbox:overlayConfigs') ?? '{}') }
+    catch { return {} }
+  })
   const [powerSaveBlock, setPowerSaveBlock] = useState(false)
   const audio = useAudioAnalyzer(audioEnabled, audioDeviceId)
 
@@ -263,8 +268,16 @@ export function App(): JSX.Element {
       await window.rgbbox.closeOverlay(displayId)
       setOverlayDisplayIds((prev) => prev.filter((id) => id !== displayId))
     } else {
-      await window.rgbbox.openOverlay(displayId)
+      const config = overlayConfigs[displayId]
+      await window.rgbbox.openOverlay(displayId, config)
       setOverlayDisplayIds((prev) => [...prev, displayId])
+    }
+  }, [overlayDisplayIds, overlayConfigs])
+
+  const handleOverlayConfigChange = useCallback((displayId: number, config: OverlayConfig) => {
+    setOverlayConfigs((prev) => ({ ...prev, [displayId]: config }))
+    if (overlayDisplayIds.includes(displayId)) {
+      void window.rgbbox.setOverlayConfig(displayId, config)
     }
   }, [overlayDisplayIds])
 
@@ -273,13 +286,19 @@ export function App(): JSX.Element {
   useEffect(() => { localStorage.setItem('rgbbox:audio', audioEnabled ? '1' : '0') }, [audioEnabled])
   useEffect(() => { localStorage.setItem('rgbbox:audioDevice', audioDeviceId) }, [audioDeviceId])
   useEffect(() => { localStorage.setItem('rgbbox:selectedLayerId', selectedLayerId) }, [selectedLayerId])
+  useEffect(() => { localStorage.setItem('rgbbox:overlayConfigs', JSON.stringify(overlayConfigs)) }, [overlayConfigs])
 
-  // Enumerate audio input devices (labels populated after first getUserMedia permission)
+  // Enumerate audio input and output devices (labels populated after first getUserMedia permission)
   useEffect(() => {
     if (!audioEnabled) return undefined
     const enumerate = async (): Promise<void> => {
       const all = await navigator.mediaDevices.enumerateDevices()
       setAudioDevices(all.filter((d) => d.kind === 'audioinput'))
+      setSpeakerDevices(
+        all.filter(
+          (d) => d.kind === 'audiooutput' && d.deviceId !== 'default' && d.deviceId !== 'communications'
+        )
+      )
     }
     // Enumerate immediately, then again after 800ms (labels appear after permission)
     enumerate()
@@ -319,7 +338,9 @@ export function App(): JSX.Element {
     if (!profile || !status.running || !workerRef.current) return undefined
 
     // 3D effects are rendered directly by Preview3D on the GPU — bypass the worker.
-    if (is3DEffect(activeLayer(profile).kind)) return undefined
+    const _activeKind = activeLayer(profile).kind
+    console.log(`[dbg] engine effect: activeKind=${_activeKind} is3D=${is3DEffect(_activeKind)} running=${status.running}`)
+    if (is3DEffect(_activeKind)) return undefined
 
     let cancelled    = false
     const intervalMs = Math.max(16, Math.floor(1000 / profile.sampling.fps))
@@ -376,10 +397,10 @@ export function App(): JSX.Element {
     // ── Worker response handler ──────────────────────────────────────────
     // Store the frame in a ref — no React setState, no reconciliation.
     const onWorkerMessage = (e: MessageEvent<RgbFrame>): void => {
-      // Always unblock the tick gate first, even if cancelled, so the gate
-      // is never permanently stuck if cleanup happened mid-flight.
+      console.log('[dbg] onWorkerMessage fired, cancelled=', cancelled)
       tickPending = false
       if (cancelled) return
+      console.log('[dbg] worker frame received cols=', e.data.columns)
       const frame = e.data
       frame.showGap = profile.sampling.showGap ?? false
       frameRef.current = frame
@@ -422,7 +443,9 @@ export function App(): JSX.Element {
     }
 
     worker.addEventListener('message', onWorkerMessage)
+    worker.addEventListener('error', (err) => { console.log('[dbg] WORKER ERROR', err.message, err.filename, err.lineno) })
     timerId = window.setInterval(onTick, intervalMs)
+    console.log('[dbg] engine started, intervalMs=', intervalMs)
 
     return () => {
       cancelled = true
@@ -551,8 +574,9 @@ export function App(): JSX.Element {
   const selectEffect = useCallback((kind: EffectKind) => {
     const preset = effectPresets.find((p) => p.kind === kind)
     if (!preset) return
+    console.log(`[dbg] selectEffect kind=${kind} selectedLayerId=${selectedLayerId}`)
     updateSelectedLayer({ name: preset.label, kind: preset.kind, parameters: { ...preset.defaults } })
-  }, [updateSelectedLayer])
+  }, [updateSelectedLayer, selectedLayerId])
 
   const setSelectedLayerValue = useCallback(<K extends keyof EffectLayer>(key: K, value: EffectLayer[K]) => {
     updateSelectedLayer({ [key]: value } as Partial<EffectLayer>)
@@ -763,6 +787,11 @@ export function App(): JSX.Element {
               onChange={(e) => setAudioDeviceId(e.target.value)}
             >
               <option value="">{t('audio.defaultDevice')}</option>
+              {speakerDevices.map((d) => (
+                <option key={d.deviceId} value={`__speaker__:${d.deviceId}`}>
+                  {t('audio.speakerPrefix')}{d.label || d.deviceId.slice(0, 12)}
+                </option>
+              ))}
               <option value="__system_audio__">{t('audio.systemAudio')}</option>
               {audioDevices.map((d) => (
                 <option key={d.deviceId} value={d.deviceId}>
@@ -1107,7 +1136,7 @@ export function App(): JSX.Element {
                     </div>
                     <span className="chip">{topology.platform}</span>
                   </div>
-                  <DisplayMap topology={topology} overlayDisplayIds={overlayDisplayIds} onToggleOverlay={handleToggleOverlay} />
+                  <DisplayMap topology={topology} overlayDisplayIds={overlayDisplayIds} onToggleOverlay={handleToggleOverlay} overlayConfigs={overlayConfigs} onOverlayConfigChange={handleOverlayConfigChange} />
                   {topology.displays.length > 1 && (
                     <div className="linked-display-row">
                       <button

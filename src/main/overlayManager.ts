@@ -8,7 +8,7 @@
  */
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'node:path'
-import type { RgbFrame } from '../shared/types'
+import type { OverlayConfig, RgbFrame } from '../shared/types'
 
 const overlayWindows = new Map<number, BrowserWindow>()
 
@@ -27,10 +27,38 @@ export function isOverlayOpen(displayId: number): boolean {
   return win !== undefined && !win.isDestroyed()
 }
 
+/** Compute the pixel bounds for an overlay window given a region config and display bounds. */
+function computeRegionBounds(
+  b: { x: number; y: number; width: number; height: number },
+  config: OverlayConfig
+): { x: number; y: number; width: number; height: number } {
+  switch (config.region) {
+    case 'top-third':    return { x: b.x, y: b.y,                               width: b.width, height: Math.round(b.height / 3) }
+    case 'middle-third': return { x: b.x, y: b.y + Math.round(b.height / 3),    width: b.width, height: Math.round(b.height / 3) }
+    case 'bottom-third': return { x: b.x, y: b.y + Math.round(b.height * 2 / 3), width: b.width, height: Math.round(b.height / 3) }
+    case 'left-third':   return { x: b.x,                               y: b.y, width: Math.round(b.width / 3),     height: b.height }
+    case 'center-third': return { x: b.x + Math.round(b.width / 3),    y: b.y, width: Math.round(b.width / 3),     height: b.height }
+    case 'right-third':  return { x: b.x + Math.round(b.width * 2 / 3), y: b.y, width: Math.round(b.width / 3),    height: b.height }
+    case 'custom': {
+      const c = config.custom ?? { x: 0, y: 0, width: 1, height: 1 }
+      return {
+        x: Math.round(b.x + c.x * b.width),
+        y: Math.round(b.y + c.y * b.height),
+        width:  Math.max(1, Math.round(c.width  * b.width)),
+        height: Math.max(1, Math.round(c.height * b.height))
+      }
+    }
+    case 'fullscreen':
+    default:
+      return { x: b.x, y: b.y, width: b.width, height: b.height }
+  }
+}
+
 export function openOverlay(
   displayId: number,
   isDevelopment: boolean,
-  devUrl?: string
+  devUrl?: string,
+  config?: OverlayConfig
 ): boolean {
   if (isOverlayOpen(displayId)) return false
 
@@ -38,11 +66,15 @@ export function openOverlay(
   const display = allDisplays.find((d) => d.id === displayId)
   if (!display) return false
 
+  const effectiveConfig: OverlayConfig = config ?? { region: 'fullscreen' }
+  const bounds = computeRegionBounds(display.bounds, effectiveConfig)
+  const isFullscreen = effectiveConfig.region === 'fullscreen'
+
   const win = new BrowserWindow({
-    x: display.bounds.x,
-    y: display.bounds.y,
-    width: display.bounds.width,
-    height: display.bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
     frame: false,
     transparent: true,
     alwaysOnTop: false,
@@ -51,6 +83,9 @@ export function openOverlay(
     backgroundColor: '#00000000',
     focusable: true,
     resizable: false,
+    // Keep hidden until ready-to-show so the loading window cannot
+    // steal focus or intercept mouse events in the main window.
+    show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -60,13 +95,19 @@ export function openOverlay(
     }
   })
 
+  // Make the overlay click-through as soon as it's created, so it never blocks
+  // interaction with the main RGBBox window even during page load.
+  win.setIgnoreMouseEvents(true, { forward: true })
+
   // Cover taskbar: defer setAlwaysOnTop until after the window is fully loaded
   // so Windows assigns the correct z-order. screen-saver level sits above the taskbar.
   win.once('ready-to-show', () => {
-    win.show()
+    // Avoid focusing the overlay window; keep input focus on the main window.
+    win.showInactive()
     // On Windows, HWND_TOPMOST competes with the taskbar (same z-band).
     // setFullScreen moves the window into the exclusive-fullscreen band which is always above the taskbar.
-    if (process.platform === 'win32') {
+    // Only use fullscreen mode when the region is actually fullscreen.
+    if (process.platform === 'win32' && isFullscreen) {
       win.setFullScreen(true)
     }
     win.setAlwaysOnTop(true, 'screen-saver')
@@ -95,6 +136,28 @@ export function closeOverlay(displayId: number): boolean {
   if (!win || win.isDestroyed()) return false
   win.close()
   return true
+}
+
+/**
+ * Close an existing overlay and reopen it with a new config without triggering
+ * the onClosedCallback (so the renderer keeps the display in its active list).
+ * The new window uses show:false so it stays invisible and non-interactive
+ * while loading, preventing focus/click theft on the main window.
+ */
+export function reopenOverlay(
+  displayId: number,
+  isDevelopment: boolean,
+  devUrl?: string,
+  config?: OverlayConfig
+): boolean {
+  const existing = overlayWindows.get(displayId)
+  if (existing && !existing.isDestroyed()) {
+    // Remove the 'closed' listener BEFORE closing so onClosedCallback is not fired.
+    existing.removeAllListeners('closed')
+    overlayWindows.delete(displayId)
+    existing.close()
+  }
+  return openOverlay(displayId, isDevelopment, devUrl, config)
 }
 
 export function closeAllOverlays(): void {
