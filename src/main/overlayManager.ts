@@ -95,15 +95,10 @@ export function openOverlay(
     }
   })
 
-  // Make the overlay click-through as soon as it's created, so it never blocks
-  // interaction with the main RGBBox window even during page load.
-  win.setIgnoreMouseEvents(true, { forward: true })
-
   // Cover taskbar: defer setAlwaysOnTop until after the window is fully loaded
   // so Windows assigns the correct z-order. screen-saver level sits above the taskbar.
   win.once('ready-to-show', () => {
-    // Avoid focusing the overlay window; keep input focus on the main window.
-    win.showInactive()
+    win.show()
     // On Windows, HWND_TOPMOST competes with the taskbar (same z-band).
     // setFullScreen moves the window into the exclusive-fullscreen band which is always above the taskbar.
     // Only use fullscreen mode when the region is actually fullscreen.
@@ -112,6 +107,17 @@ export function openOverlay(
     }
     win.setAlwaysOnTop(true, 'screen-saver')
     win.moveTop()
+    win.focus()
+  })
+
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.key !== 'Escape') return
+    event.preventDefault()
+    if (win.isFullScreen()) {
+      win.setFullScreen(false)
+      return
+    }
+    closeOverlay(displayId)
   })
 
   const query = `overlay=true&displayId=${displayId}`

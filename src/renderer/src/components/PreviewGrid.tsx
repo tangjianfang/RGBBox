@@ -13,6 +13,11 @@ interface PreviewGridProps {
   showGap?: boolean
   /** When a ripple layer is active, called with normalised (0..1) click coordinates. */
   onRippleClick?: (nx: number, ny: number) => void
+  /**
+   * When > 1, draws vertical boundary lines dividing the preview into that many
+   * display slots (shown at 1/N, 2/N, … of the canvas width).
+   */
+  displayCount?: number
 }
 
 /**
@@ -41,7 +46,7 @@ function initGl(canvas: HTMLCanvasElement): PreviewGl | null {
   }
 }
 
-export function PreviewGrid({ frameRef, showGap = false, onRippleClick }: PreviewGridProps): JSX.Element {
+export function PreviewGrid({ frameRef, showGap = false, onRippleClick, displayCount = 1 }: PreviewGridProps): JSX.Element {
   const canvasRef  = useRef<HTMLCanvasElement | null>(null)
   const glRef      = useRef<PreviewGl | null>(null)
   const rafRef     = useRef<number | null>(null)
@@ -49,11 +54,6 @@ export function PreviewGrid({ frameRef, showGap = false, onRippleClick }: Previe
   const [started, setStarted] = useState(false)
   // Stable ref so the rAF loop closure can set started without stale-closure issues.
   const startedRef = useRef(false)
-
-  // Apply gap setting whenever it changes (without remounting the GL context).
-  useEffect(() => {
-    glRef.current?.setGap(showGap ? 0.06 : 0.0)
-  }, [showGap])
 
   // Apply gap setting whenever it changes (without remounting the GL context).
   useEffect(() => {
@@ -120,6 +120,14 @@ export function PreviewGrid({ frameRef, showGap = false, onRippleClick }: Previe
           onRippleClick(Math.max(0, Math.min(1, nx)), Math.max(0, Math.min(1, ny)))
         } : undefined}
       />
+      {displayCount > 1 && Array.from({ length: displayCount - 1 }, (_, i) => (
+        <div
+          key={i}
+          className="display-boundary"
+          style={{ left: `${((i + 1) / displayCount) * 100}%` }}
+          aria-hidden="true"
+        />
+      ))}
       {!started && <span className="preview-empty">Starting virtual engine</span>}
     </div>
   )

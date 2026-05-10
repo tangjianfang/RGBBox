@@ -81,7 +81,19 @@ export function Preview3D({ layer, columns, rows, onFrame }: Preview3DProps): JS
           (p.intensity as number) ?? 1,
           (p.density   as number) ?? 0.5,
         ]
-        gl.draw(t, params)
+        const detail: [number, number, number, number] = [
+          (p.gridDensity       as number) ?? 0.5,
+          (p.scanSpeed         as number) ?? 1,
+          (p.particleIntensity as number) ?? 1,
+          (p.glitchAmount      as number) ?? 0,
+        ]
+        const extra: [number, number, number, number] = [
+          (p.flickerAmount as number) ?? 0.35,
+          (p.hologramDepth as number) ?? 0.5,
+          (p.saturation    as number) ?? 1,
+          (p.scanWidth     as number) ?? 0.5,
+        ]
+        gl.draw(t, params, detail, extra)
         const pixels = gl.readLEDs(colsRef.current, rowsRef.current)
         onFrameRef.current({ columns: colsRef.current, rows: rowsRef.current, pixels, generatedAt: Date.now() })
         rafRef.current = requestAnimationFrame(loop)

@@ -28,6 +28,8 @@ precision mediump float;
 uniform vec2  u_resolution;
 uniform float u_time;
 uniform vec4  u_params;  /* [speed, hueShift, intensity, density] */
+uniform vec4  u_detail;  /* effect-specific: [gridDensity, scanSpeed, particleIntensity, glitchAmount] */
+uniform vec4  u_extra;   /* effect-specific: [flicker, hologramDepth, saturation, scanWidth] */
 
 float hash(float n) { return fract(sin(n) * 43758.5453); }
 
@@ -388,6 +390,185 @@ void main() {
 }
 `
 
+/**
+ * laser-show: Concert laser beams from stage floor sweeping the void.
+ * Five coloured beam cones radiate from the bottom-centre and sweep across
+ * the frame with independent sinusoidal speed/phase. Volumetric haze fills
+ * the background; a floor-mirror glow reflects the base of each beam.
+ */
+const LASER_SHOW_FS = COMMON + /* glsl */`
+void main() {
+  float speed    = max(0.05, u_params.x);
+  float hueShift = u_params.y;
+  float t        = u_time * speed;
+
+  vec2 uv = (gl_FragCoord.xy / u_resolution - 0.5);
+  uv.x   *= u_resolution.x / u_resolution.y;
+
+  /* Stage origin: bottom-center */
+  vec2  orig = vec2(0.0, -0.52);
+  vec2  dir  = uv - orig;
+  float len  = length(dir);
+  float ang  = atan(dir.y, dir.x);
+
+  vec3 col = vec3(0.0);
+
+  /* Volumetric haze background — denser near floor */
+  float haze = (fbm(vec3(uv * 2.5, t * 0.15)) * 0.5 + 0.25)
+             * exp(-(uv.y + 0.5) * (uv.y + 0.5) * 3.0);
+  col += hsl(mod(t * 22.0 + hueShift + 720.0, 360.0), 0.38, 0.10) * haze;
+
+  float bw = 0.035;
+  float ba, da, br, bh;
+
+  /* Beam 0 */
+  ba  = sin(t * 1.10 + 0.00) * 1.15 + 1.5708;
+  da  = abs(mod(ang - ba + 3.14159, 6.28318) - 3.14159);
+  br  = exp(-da * da / (bw * bw)) * (0.5 + 0.4 * sin(t * 4.1)) * min(len * 2.0, 1.0);
+  bh  = mod(0.0 + hueShift + 720.0, 360.0);
+  col += hsl(bh, 1.0, 0.72) * br;
+
+  /* Beam 1 */
+  ba  = sin(t * 0.83 + 1.26) * 1.05 + 1.5708;
+  da  = abs(mod(ang - ba + 3.14159, 6.28318) - 3.14159);
+  br  = exp(-da * da / (bw * bw)) * (0.5 + 0.4 * sin(t * 3.7 + 1.1)) * min(len * 2.0, 1.0);
+  bh  = mod(72.0 + hueShift + 720.0, 360.0);
+  col += hsl(bh, 1.0, 0.72) * br;
+
+  /* Beam 2 */
+  ba  = sin(t * 0.71 + 2.51) * 0.95 + 1.5708;
+  da  = abs(mod(ang - ba + 3.14159, 6.28318) - 3.14159);
+  br  = exp(-da * da / (bw * bw)) * (0.5 + 0.4 * sin(t * 3.3 + 2.2)) * min(len * 2.0, 1.0);
+  bh  = mod(144.0 + hueShift + 720.0, 360.0);
+  col += hsl(bh, 1.0, 0.72) * br;
+
+  /* Beam 3 */
+  ba  = sin(t * 0.97 + 3.77) * 1.20 + 1.5708;
+  da  = abs(mod(ang - ba + 3.14159, 6.28318) - 3.14159);
+  br  = exp(-da * da / (bw * bw)) * (0.5 + 0.4 * sin(t * 4.2 + 3.3)) * min(len * 2.0, 1.0);
+  bh  = mod(216.0 + hueShift + 720.0, 360.0);
+  col += hsl(bh, 1.0, 0.72) * br;
+
+  /* Beam 4 */
+  ba  = sin(t * 0.61 + 5.03) * 0.88 + 1.5708;
+  da  = abs(mod(ang - ba + 3.14159, 6.28318) - 3.14159);
+  br  = exp(-da * da / (bw * bw)) * (0.5 + 0.4 * sin(t * 2.9 + 4.4)) * min(len * 2.0, 1.0);
+  bh  = mod(288.0 + hueShift + 720.0, 360.0);
+  col += hsl(bh, 1.0, 0.72) * br;
+
+  /* Floor glow at origin */
+  float floorG = exp(-(uv.y + 0.52) * (uv.y + 0.52) * 60.0);
+  col += hsl(mod(t * 38.0 + hueShift + 720.0, 360.0), 0.9, 0.55) * floorG * 0.7;
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`
+
+/**
+ * hologram: Sci-fi holographic wireframe sphere.
+ * Raymarched sphere with lat/lon grid lines, animated scan ring, transparency
+ * through both hemispheres, and edge data-stream particles.
+ */
+const HOLOGRAM_FS = COMMON + /* glsl */`
+void main() {
+  float speed    = max(0.05, u_params.x);
+  float hueShift = u_params.y;
+  float intensity = clamp(u_params.z, 0.0, 2.0);
+  float density = clamp(u_params.w, 0.0, 1.0);
+  float gridDensity = mix(5.0, 18.0, clamp(u_detail.x, 0.0, 1.0));
+  float scanSpeed = max(0.1, u_detail.y);
+  float particleIntensity = clamp(u_detail.z, 0.0, 2.0);
+  float glitchAmount = clamp(u_detail.w, 0.0, 1.0);
+  float flickerAmount = clamp(u_extra.x, 0.0, 1.0);
+  float hologramDepth = clamp(u_extra.y, 0.0, 1.0);
+  float saturation = clamp(u_extra.z, 0.0, 1.4);
+  float scanWidth = mix(10.0, 36.0, clamp(u_extra.w, 0.0, 1.0));
+  float t        = u_time * speed;
+
+  vec2 uv = (gl_FragCoord.xy / u_resolution - 0.5);
+  uv.x   *= u_resolution.x / u_resolution.y;
+
+  float rowNoise = hash(floor(gl_FragCoord.y * 0.32) + floor(t * 16.0) * 41.0);
+  float rowShift = (rowNoise - 0.5) * glitchAmount * 0.055;
+  uv.x += rowShift;
+
+  /* Slow spin via UV rotation */
+  float ca = cos(t * (0.24 + hologramDepth * 0.22)), sa = sin(t * (0.24 + hologramDepth * 0.22));
+  vec2 ruv = vec2(ca * uv.x - sa * uv.y, sa * uv.x + ca * uv.y);
+
+  /* Ray from camera through pixel */
+  vec3 ro  = vec3(0.0, 0.0, 2.0 + hologramDepth * 0.35);
+  vec3 rd  = normalize(vec3(ruv.x, ruv.y, -1.5 - hologramDepth * 0.42));
+
+  /* Sphere (radius 0.85) intersection */
+  float radius = 0.78 + hologramDepth * 0.12;
+  float rb   = dot(ro, rd);
+  float rc   = dot(ro, ro) - radius * radius;
+  float disc = rb * rb - rc;
+
+  vec3  col     = vec3(0.0);
+  float baseHue = mod(hueShift + 190.0, 360.0);
+  float signalDrop = step(glitchAmount * 0.22, rowNoise);
+
+  if (disc >= 0.0) {
+    float sqrtD = sqrt(disc);
+    float scanY = sin(t * scanSpeed * 1.8) * 0.92;
+    float flick = mix(1.0, 0.58 + 0.42 * noise(vec3(t * 8.3, rowNoise * 3.0, 0.0)), flickerAmount);
+
+    /* Front surface */
+    vec3  pos1 = ro + rd * (-rb - sqrtD);
+    vec3  n1   = normalize(pos1);
+    float lon1 = atan(n1.z, n1.x) / 3.14159;
+    float lat1 = asin(clamp(n1.y, -0.999, 0.999)) / 1.5708;
+    float gl1  = fract(lon1 * gridDensity + noise(pos1 * 4.0 + vec3(t * 0.2)) * glitchAmount * 0.35);
+    float gl2  = fract(lat1 * (gridDensity * 0.72) + 0.5 + noise(pos1 * 3.1 - vec3(t * 0.15)) * glitchAmount * 0.28);
+    float gLine1 = min(
+      smoothstep(0.0, 0.055, gl1) * (1.0 - smoothstep(0.945, 1.0, gl1)),
+      smoothstep(0.0, 0.055, gl2) * (1.0 - smoothstep(0.945, 1.0, gl2))
+    );
+    float scan1 = exp(-abs(n1.y - scanY) * scanWidth);
+    float dataBands = step(0.74 + density * 0.12, noise(vec3(lon1 * 18.0, lat1 * 12.0, t * scanSpeed * 1.7)));
+    float rim1 = pow(1.0 - abs(dot(n1, -rd)), 2.2);
+    vec3 frontColor = hsl(baseHue + dataBands * 42.0, saturation, 0.60);
+    col += frontColor * ((1.0 - gLine1) * (0.58 + density * 0.28) + scan1 * (0.72 + density * 0.55) + dataBands * 0.28 + rim1 * 0.35) * flick * intensity * signalDrop;
+
+    /* Back surface — fainter through-glow */
+    vec3  pos2 = ro + rd * (-rb + sqrtD);
+    vec3  n2   = normalize(pos2);
+    float lon2 = atan(n2.z, n2.x) / 3.14159;
+    float lat2 = asin(clamp(n2.y, -0.999, 0.999)) / 1.5708;
+    float gl3  = fract(lon2 * gridDensity);
+    float gl4  = fract(lat2 * (gridDensity * 0.72) + 0.5);
+    float gLine2 = min(
+      smoothstep(0.0, 0.08, gl3) * (1.0 - smoothstep(0.92, 1.0, gl3)),
+      smoothstep(0.0, 0.08, gl4) * (1.0 - smoothstep(0.92, 1.0, gl4))
+    );
+    col += hsl(baseHue + 18.0, saturation, 0.40) * (1.0 - gLine2) * (0.14 + hologramDepth * 0.18) * flick * intensity * signalDrop;
+  }
+
+  /* Soft glow around sphere */
+  float r = length(uv);
+  col += hsl(baseHue, saturation * 0.82, 0.45) * exp(-r * (3.6 - hologramDepth * 1.1)) * (0.12 + intensity * 0.10);
+
+  /* Data-stream particles and scan packets along screen edge */
+  float edgeMask = max(abs(uv.x) - 0.38, abs(uv.y) - 0.38);
+  float edgeFalloff = exp(-max(0.0, edgeMask) * 24.0);
+  float packets = step(0.70 - density * 0.22, noise(vec3(floor(uv.x * 32.0), floor(uv.y * 22.0), floor(t * 7.0)))) * edgeFalloff;
+  float data = pow(noise(vec3(uv * (8.0 + density * 16.0), t * scanSpeed * 3.0)), 1.7) * edgeFalloff;
+  col += hsl(mod(baseHue + 35.0, 360.0), saturation, 0.74) * (data * 0.40 + packets * 0.45) * particleIntensity * intensity;
+
+  float scanline = 0.82 + sin((gl_FragCoord.y + t * 180.0 * scanSpeed) * 0.55) * 0.08;
+  col *= scanline;
+
+  if (glitchAmount > 0.0) {
+    float dropout = step(0.08 + glitchAmount * 0.72, noise(vec3(floor(gl_FragCoord.xy / 8.0), floor(t * 18.0))));
+    col *= mix(1.0, dropout, glitchAmount * 0.72);
+  }
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`
+
 // ── Shader map ─────────────────────────────────────────────────────────────
 
 export const SHADERS: Record<Effect3DKind, string> = {
@@ -395,6 +576,8 @@ export const SHADERS: Record<Effect3DKind, string> = {
   'warp-portal':  WARP_PORTAL_FS,
   'neon-galaxy':  NEON_GALAXY_FS,
   'lava-sphere':  LAVA_SPHERE_FS,
+  'laser-show':   LASER_SHOW_FS,
+  'hologram':     HOLOGRAM_FS,
 }
 
 // ── WebGL helpers ───────────────────────────────────────────────────────────
@@ -437,6 +620,8 @@ export class Effect3DGl {
   private readonly uResolution: WebGLUniformLocation
   private readonly uTime:       WebGLUniformLocation
   private readonly uParams:     WebGLUniformLocation
+  private readonly uDetail:     WebGLUniformLocation | null
+  private readonly uExtra:      WebGLUniformLocation | null
   /** Reused pixel readback buffer — avoids GC churn each frame. */
   private pixelBuf:    Uint8Array | null = null
   private pixelBufW  = 0
@@ -472,6 +657,8 @@ export class Effect3DGl {
     this.uResolution = gl.getUniformLocation(this.prog, 'u_resolution')!
     this.uTime       = gl.getUniformLocation(this.prog, 'u_time')!
     this.uParams     = gl.getUniformLocation(this.prog, 'u_params')!
+    this.uDetail     = gl.getUniformLocation(this.prog, 'u_detail')
+    this.uExtra      = gl.getUniformLocation(this.prog, 'u_extra')
 
     gl.uniform2f(this.uResolution, canvas.width, canvas.height)
     gl.viewport(0, 0, canvas.width, canvas.height)
@@ -488,11 +675,20 @@ export class Effect3DGl {
    * Render one frame to the canvas.
    * @param time   Elapsed seconds (unscaled; the shader applies u_params.x as speed)
    * @param params [speed, hueShift, intensity, density]
+   * @param detail [gridDensity, scanSpeed, particleIntensity, glitchAmount]
+   * @param extra  [flicker, hologramDepth, saturation, scanWidth]
    */
-  draw(time: number, params: [number, number, number, number]): void {
+  draw(
+    time: number,
+    params: [number, number, number, number],
+    detail: [number, number, number, number] = [0.5, 1, 1, 0],
+    extra: [number, number, number, number] = [0.35, 0.5, 1, 0.5]
+  ): void {
     const gl = this.gl
     gl.uniform1f(this.uTime,   time)
     gl.uniform4fv(this.uParams, params)
+    if (this.uDetail) gl.uniform4fv(this.uDetail, detail)
+    if (this.uExtra) gl.uniform4fv(this.uExtra, extra)
     gl.drawArrays(gl.TRIANGLES, 0, 6)
   }
 

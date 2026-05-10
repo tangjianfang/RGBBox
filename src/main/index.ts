@@ -10,11 +10,13 @@ import { pathToFileURL } from 'node:url'
 import { defaultProfile } from '../shared/defaultProfile'
 import { ipcChannels } from '../shared/ipc'
 import { MODELS_MANIFEST } from '../shared/modelsManifest'
-import type { DesktopAudioSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, RgbFrame } from '../shared/types'
+import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
+import type { DesktopAudioSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
 import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
-import { captureScreenFrame } from './screenCapture'
+import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
+import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
 
 // ── Single instance lock ──────────────────────────────────────────────────
 const gotSingleLock = app.requestSingleInstanceLock()
@@ -114,14 +116,24 @@ function registerIpc(): void {
     engineStatus = { ...engineStatus, running }
     return engineStatus
   })
-  ipcMain.handle(ipcChannels.captureScreenSample, async (_event, columns: number, rows: number, hasOverlays: boolean) => {
-    if (hasOverlays) return null  // avoid feedback loop when overlays are active
+  ipcMain.handle(
+    ipcChannels.renderPreviewFrame,
+    (_event, profile: Profile, audio?: AudioInput, textMasks?: Record<string, boolean[]>) => {
+      return renderPreviewFrame(profile, undefined, undefined, audio, undefined, textMasks)
+    }
+  )
+  ipcMain.handle(ipcChannels.captureScreenSample, async (_event, request: ScreenCaptureRequest) => {
+    if (request.hasOverlays) return null  // avoid feedback loop when overlays are active
     const topology = getDisplayTopology()
-    const primaryDisplay = topology.displays.find((d) => d.primary) ?? topology.displays[0]
+    if (request.linkedDisplays && topology.displays.length > 1) {
+      return captureVirtualScreenFrame(topology, request.columns, request.rows)
+    }
+    const primaryDisplay = topology.displays.find((d) => d.id === request.displayId) ?? topology.displays.find((d) => d.primary) ?? topology.displays[0]
     if (!primaryDisplay) return null
-    const captured = await captureScreenFrame(primaryDisplay.id, columns, rows)
+    const captured = await captureScreenFrame(primaryDisplay.id, request.columns, request.rows)
     return captured ?? null
   })
+  ipcMain.handle(ipcChannels.getCaptureProviderStatus, () => getCaptureProviderStatus())
 
   // Renderer → main: push a rendered frame to open overlay windows (fire-and-forget)
   ipcMain.on(ipcChannels.overlayPushFrame, (_event, frame: RgbFrame) => {
@@ -383,6 +395,7 @@ app.whenReady().then(() => {
   // Remove the default application menu (File / Edit / View / …)
   Menu.setApplicationMenu(null)
 
+  void initializeCaptureProviders()
   registerIpc()
   createMainWindow()
   createTray()

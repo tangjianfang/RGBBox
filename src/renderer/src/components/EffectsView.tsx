@@ -1,4 +1,5 @@
-import { useEffect, useRef, type JSX } from 'react'
+import { Star } from 'lucide-react'
+import { useEffect, useMemo, useRef, type JSX } from 'react'
 import { effectPresets } from '../../../shared/defaultProfile'
 import { renderEffectPixel } from '../../../engine/effects'
 import { EFFECT_3D_KINDS } from '../../../shared/types'
@@ -9,10 +10,13 @@ import { useI18n } from '../i18n'
 interface EffectCardProps {
   preset: (typeof effectPresets)[number]
   selected: boolean
+  favorite: boolean
   onSelect: (kind: EffectKind) => void
+  onToggleFavorite: (kind: EffectKind) => void
 }
 
-function EffectCard({ preset, selected, onSelect }: EffectCardProps): JSX.Element {
+function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite }: EffectCardProps): JSX.Element {
+  const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const animRef = useRef<number | null>(null)
   const startRef = useRef(performance.now())
@@ -75,17 +79,26 @@ function EffectCard({ preset, selected, onSelect }: EffectCardProps): JSX.Elemen
   }, [preset])
 
   return (
-    <button
+    <div
       className={`effect-card ${selected ? 'selected' : ''}`}
-      type="button"
-      onClick={() => onSelect(preset.kind)}
     >
-      <canvas ref={canvasRef} aria-hidden="true" />
-      <div className="effect-card-info">
-        <strong>{preset.label}</strong>
-        <p>{preset.description}</p>
-      </div>
-    </button>
+      <button className="effect-card-main" type="button" onClick={() => onSelect(preset.kind)}>
+        <canvas ref={canvasRef} aria-hidden="true" />
+        <div className="effect-card-info">
+          <strong>{preset.label}</strong>
+          <p>{preset.description}</p>
+        </div>
+      </button>
+      <button
+        className={`effect-favorite-btn ${favorite ? 'active' : ''}`}
+        type="button"
+        aria-pressed={favorite}
+        title={favorite ? t('effects.unfavorite') : t('effects.favorite')}
+        onClick={() => onToggleFavorite(preset.kind)}
+      >
+        <Star size={15} fill={favorite ? 'currentColor' : 'none'} />
+      </button>
+    </div>
   )
 }
 
@@ -93,7 +106,8 @@ function EffectCard({ preset, selected, onSelect }: EffectCardProps): JSX.Elemen
  * Thumbnail card for GPU 3D effects — renders the GLSL shader directly in
  * the card canvas using a dedicated WebGL context.
  */
-function EffectCard3D({ preset, selected, onSelect }: EffectCardProps): JSX.Element {
+function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite }: EffectCardProps): JSX.Element {
+  const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const glRef     = useRef<Effect3DGl | null>(null)
   const animRef   = useRef<number | null>(null)
@@ -129,41 +143,81 @@ function EffectCard3D({ preset, selected, onSelect }: EffectCardProps): JSX.Elem
   }, [preset])
 
   return (
-    <button
+    <div
       className={`effect-card ${selected ? 'selected' : ''}`}
-      type="button"
-      onClick={() => onSelect(preset.kind)}
     >
-      <canvas ref={canvasRef} aria-hidden="true" />
-      <div className="effect-card-info">
-        <strong>{preset.label}</strong>
-        <p>{preset.description}</p>
-      </div>
-    </button>
+      <button className="effect-card-main" type="button" onClick={() => onSelect(preset.kind)}>
+        <canvas ref={canvasRef} aria-hidden="true" />
+        <div className="effect-card-info">
+          <strong>{preset.label}</strong>
+          <p>{preset.description}</p>
+        </div>
+      </button>
+      <button
+        className={`effect-favorite-btn ${favorite ? 'active' : ''}`}
+        type="button"
+        aria-pressed={favorite}
+        title={favorite ? t('effects.unfavorite') : t('effects.favorite')}
+        onClick={() => onToggleFavorite(preset.kind)}
+      >
+        <Star size={15} fill={favorite ? 'currentColor' : 'none'} />
+      </button>
+    </div>
   )
 }
 
 interface EffectsViewProps {
   activeKind: EffectKind
+  favoriteKinds: EffectKind[]
   onSelectEffect: (kind: EffectKind) => void
+  onToggleFavorite: (kind: EffectKind) => void
 }
 
 const CATEGORIES = [
   { labelKey: 'effects.classic'  as const, kinds: ['screen-ambient', 'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'random-color'] },
-  { labelKey: 'effects.advanced' as const, kinds: ['fire', 'starlight', 'ripple', 'spectrum', 'comet', 'lightning', 'aurora', 'explode'] },
+  { labelKey: 'effects.advanced' as const, kinds: ['fire', 'aurora', 'nebula', 'fluid-flow', 'mirror-symmetry', 'starlight', 'ripple', 'spectrum', 'comet', 'lightning', 'explode', 'glitch', 'matrix-rain', 'neon-pulse'] },
+  { labelKey: 'effects.science'  as const, kinds: ['dna-helix', 'black-hole', 'solar-system', 'spiral-galaxy', 'orion-nebula', 'pulsar-beacon', 'hurricane-eye', 'lightning-leader', 'icosahedral-virus', 'protein-folding', 'mitosis-spindle', 'synapse-pulse', 'quantum-collapse', 'microvilli-field', 'eclipse-alignment', 'comet-tail', 'magnetosphere-aurora', 'wave-diffraction', 'vortex-flame', 'tokamak-plasma'] },
   { labelKey: 'effects.threed'   as const, kinds: ['plasma', 'vortex', 'tunnel', 'crystal'] },
-  { labelKey: 'effects.gpu3d'    as const, kinds: ['sphere-pulse', 'warp-portal', 'neon-galaxy', 'lava-sphere'] },
+  { labelKey: 'effects.gpu3d'    as const, kinds: ['sphere-pulse', 'warp-portal', 'neon-galaxy', 'lava-sphere', 'laser-show', 'hologram'] },
   { labelKey: 'effects.audio'    as const, kinds: ['audio-beat', 'audio-equalizer'] },
 ] as const
 
-export function EffectsView({ activeKind, onSelectEffect }: EffectsViewProps): JSX.Element {
+export function EffectsView({ activeKind, favoriteKinds, onSelectEffect, onToggleFavorite }: EffectsViewProps): JSX.Element {
   const { t } = useI18n()
+  const favoriteSet = useMemo(() => new Set(favoriteKinds), [favoriteKinds])
+  const favoritePresets = useMemo(() => {
+    return favoriteKinds
+      .map((kind) => effectPresets.find((preset) => preset.kind === kind))
+      .filter((preset): preset is (typeof effectPresets)[number] => Boolean(preset))
+  }, [favoriteKinds])
+
   return (
     <div className="effects-view">
       <header className="effects-view-header">
         <h2>{t('effects.library')}</h2>
         <p className="eyebrow">{t('effects.eyebrow')}</p>
       </header>
+      <section className="effects-category effects-favorites-section">
+        <h3 className="effects-category-label">{t('effects.favorites')}</h3>
+        {favoritePresets.length > 0 ? (
+          <div className="effects-favorites-row">
+            {favoritePresets.map((preset, index) => (
+              <button
+                className={`favorite-effect-chip ${activeKind === preset.kind ? 'selected' : ''}`}
+                key={preset.kind}
+                type="button"
+                title={`Alt+${index + 1} · ${preset.label}`}
+                onClick={() => onSelectEffect(preset.kind)}
+              >
+                <Star size={12} fill="currentColor" />
+                <span>{t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="effects-empty-hint">{t('effects.noFavorites')}</p>
+        )}
+      </section>
       {CATEGORIES.map((cat) => (
         <section key={cat.labelKey} className="effects-category">
           <h3 className="effects-category-label">{t(cat.labelKey)}</h3>
@@ -172,8 +226,8 @@ export function EffectsView({ activeKind, onSelectEffect }: EffectsViewProps): J
               .filter((p) => (cat.kinds as readonly string[]).includes(p.kind))
               .map((p) =>
                 EFFECT_3D_KINDS.has(p.kind)
-                  ? <EffectCard3D key={p.kind} preset={p} selected={activeKind === p.kind} onSelect={onSelectEffect} />
-                  : <EffectCard   key={p.kind} preset={p} selected={activeKind === p.kind} onSelect={onSelectEffect} />
+                  ? <EffectCard3D key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} onSelect={onSelectEffect} onToggleFavorite={onToggleFavorite} />
+                  : <EffectCard   key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} onSelect={onSelectEffect} onToggleFavorite={onToggleFavorite} />
               )}
           </div>
         </section>

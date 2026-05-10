@@ -8,6 +8,7 @@ export const ipcChannels = {
   renderPreviewFrame: 'rgbbox:engine:render-preview-frame',
   // Capture only the screen sample (no render); used when engine runs in renderer worker
   captureScreenSample: 'rgbbox:engine:capture-screen-sample',
+  getCaptureProviderStatus: 'rgbbox:capture:get-provider-status',
   // Renderer → main: push a rendered frame to any open overlay windows (fire-and-forget)
   overlayPushFrame: 'rgbbox:overlay:push-frame',
   // Renderer → main: push a rendered frame to ONE specific display overlay (for linked-display mode)

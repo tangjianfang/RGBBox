@@ -11,23 +11,31 @@
 
 import type { AudioInput } from '../../../engine/previewEngine'
 import { renderPreviewFrame } from '../../../engine/previewEngine'
-import type { Profile, RgbFrame } from '../../../shared/types'
+import type { FrameMetrics, Profile, RgbFrame } from '../../../shared/types'
 import { computeTextMask } from '../canvasTextMask'
 
 export interface WorkerInput {
   profile: Profile
   audioInput?: AudioInput
   screenSample?: RgbFrame
+  postedAt?: number
+  captureMs?: number
+  droppedTicks?: number
   /** When ripple effect is active and a burst was triggered by clicking, inject transient center here. */
   rippleBurst?: { cx: number; cy: number; burstAge: number }
+}
+
+export interface WorkerOutput {
+  frame: RgbFrame
+  metrics: FrameMetrics
 }
 
 // Retained across frames for temporal smoothing
 let previousFrame: RgbFrame | undefined
 
 self.onmessage = (e: MessageEvent<WorkerInput>): void => {
+  const startedAt = performance.now()
   const { profile, audioInput, screenSample, rippleBurst } = e.data
-  console.log('[dbg] worker onmessage, kind=', (profile.scenes[0]?.layers[0]?.kind ?? 'unknown'))
 
   // Compute text masks for static-text layers (OffscreenCanvas works in Workers)
   const scene =
@@ -62,6 +70,7 @@ self.onmessage = (e: MessageEvent<WorkerInput>): void => {
   const patchedScene =
     patchedProfile.scenes.find((s) => s.id === patchedProfile.activeSceneId) ?? patchedProfile.scenes[0]
 
+  const textMaskStartedAt = performance.now()
   const textMasks: Record<string, boolean[]> = {}
   for (const layer of patchedScene.layers) {
     if (layer.enabled && layer.kind === 'static') {
@@ -79,7 +88,9 @@ self.onmessage = (e: MessageEvent<WorkerInput>): void => {
       }
     }
   }
+  const textMaskMs = performance.now() - textMaskStartedAt
 
+  const renderStartedAt = performance.now()
   const frame = renderPreviewFrame(
     patchedProfile,
     undefined,
@@ -88,6 +99,7 @@ self.onmessage = (e: MessageEvent<WorkerInput>): void => {
     screenSample,
     Object.keys(textMasks).length > 0 ? textMasks : undefined
   )
+  const renderMs = performance.now() - renderStartedAt
 
   // Keep a copy for next frame's smoothing BEFORE transferring the buffer.
   // Reuse the existing pixel buffer (same size) instead of allocating 170KB each frame.
@@ -108,5 +120,19 @@ self.onmessage = (e: MessageEvent<WorkerInput>): void => {
 
   // Transfer pixel buffer to the renderer thread (zero-copy).
   // After this call frame.pixels.buffer is detached on the worker side.
-  ;(self as unknown as Worker).postMessage(frame, [frame.pixels.buffer])
+  const now = performance.now()
+  const output: WorkerOutput = {
+    frame,
+    metrics: {
+      timestamp: Date.now(),
+      workerProcessMs: now - startedAt,
+      textMaskMs,
+      renderMs,
+      captureMs: e.data.captureMs ?? 0,
+      roundTripMs: e.data.postedAt ? now - e.data.postedAt : now - startedAt,
+      outputMs: 0,
+      droppedTicks: e.data.droppedTicks ?? 0
+    }
+  }
+  ;(self as unknown as Worker).postMessage(output, [frame.pixels.buffer])
 }

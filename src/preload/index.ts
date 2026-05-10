@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
-import type { DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProfileMeta, RgbFrame } from '../shared/types'
+import type { CaptureProviderStatus, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProfileMeta, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -21,8 +21,10 @@ const api = {
     ipcRenderer.invoke(ipcChannels.renderPreviewFrame, profile, audio, textMasks),
 
   // Capture screen pixels only (no render) — used when engine runs in renderer worker
-  captureScreenSample: (columns: number, rows: number, hasOverlays: boolean): Promise<RgbFrame | null> =>
-    ipcRenderer.invoke(ipcChannels.captureScreenSample, columns, rows, hasOverlays),
+  captureScreenSample: (request: ScreenCaptureRequest): Promise<RgbFrame | null> =>
+    ipcRenderer.invoke(ipcChannels.captureScreenSample, request),
+  getCaptureProviderStatus: (): Promise<CaptureProviderStatus> =>
+    ipcRenderer.invoke(ipcChannels.getCaptureProviderStatus),
 
   // Push a rendered frame to any open overlay windows (fire-and-forget)
   pushFrameToOverlays: (frame: RgbFrame): void =>

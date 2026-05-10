@@ -1,7 +1,7 @@
-import { Activity, Box, Download, FilePlus, Gauge, Languages, Link2, Link2Off, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Sparkles, Trash2, Upload } from 'lucide-react'
+import { Activity, Box, Clock, Download, FilePlus, Gauge, Languages, Link2, Link2Off, Lock, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
-import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
+import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
 import { is3DEffect } from '../../shared/types'
 import { useI18n } from './i18n'
 import { DisplayMap } from './components/DisplayMap'
@@ -9,14 +9,48 @@ import { EffectsView } from './components/EffectsView'
 import { PreviewGrid } from './components/PreviewGrid'
 import { Preview3D } from './components/Preview3D'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
-import type { WorkerInput } from './workers/previewEngineWorker'
+import type { WorkerInput, WorkerOutput } from './workers/previewEngineWorker'
 import { useModelStore } from './3d/useModelStore'
+import { MetricsCollector } from './engine/metricsCollector'
 
 // Lazily loaded — vendor-splat (1.6MB) is only fetched when the 3D view is first opened
 const SplatViewer = lazy(() => import('./3d/SplatViewer').then((m) => ({ default: m.SplatViewer })))
 const LEDMapper   = lazy(() => import('./3d/LEDMapper').then((m) => ({ default: m.LEDMapper })))
 
 type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics' | 'model3d'
+
+type RandomizerMode = 'subtle' | 'bold' | 'calm' | 'energy'
+type ScheduleBlockId = 'day' | 'evening' | 'night'
+type AutomationMode = 'sine' | 'triangle' | 'pulse'
+type QuickDimensionId = 'motion' | 'energy' | 'detail' | 'palette'
+type QuickMotionId = 'slow' | 'flow' | 'active' | 'surge'
+type QuickEnergyId = 'soft' | 'balanced' | 'vivid' | 'max'
+type QuickDetailId = 'clean' | 'balanced' | 'rich' | 'dense'
+type QuickPaletteId = 'cool' | 'warm' | 'neon' | 'mono'
+
+interface QuickOption<T extends string> {
+  id: T
+  labelKey: string
+}
+
+interface ScheduleBlockDefinition {
+  id: ScheduleBlockId
+  labelKey: 'schedule.day' | 'schedule.evening' | 'schedule.night'
+  timeLabel: string
+  startHour: number
+  endHour: number
+}
+
+const EMPTY_ENGINE_METRICS: EngineMetrics = {
+  frameCount: 0,
+  avgFrameMs: 0,
+  p95FrameMs: 0,
+  lastFrameMs: 0,
+  workerProcessMs: 0,
+  captureMs: 0,
+  outputMs: 0,
+  droppedTicks: 0
+}
 
 // Human-readable parameter metadata — labels pulled from i18n in render
 const PARAM_META: Record<string, { labelKey: string; min: number; max: number; step: number; unit?: string }> = {
@@ -32,11 +66,366 @@ const PARAM_META: Record<string, { labelKey: string; min: number; max: number; s
   hueShift:    { labelKey: 'Hue Shift',   min: -180, max: 180,  step: 5,    unit: '°' },
   sensitivity: { labelKey: 'Sensitivity', min: 0.2,  max: 3,    step: 0.1,  unit: '×' },
   angle:       { labelKey: 'param.angle', min: 0,    max: 360,  step: 5,    unit: '°' },
+  baseBrightness: { labelKey: 'Base Light', min: 0,    max: 1,    step: 0.05 },
+  pulseAmplitude: { labelKey: 'Pulse Depth', min: 0,   max: 1,    step: 0.05 },
+  phaseOffset:    { labelKey: 'Phase',      min: 0,    max: 1,    step: 0.05 },
+  curtainHeight:  { labelKey: 'Curtain',    min: 0.4,  max: 1.6,  step: 0.05, unit: '×' },
+  ribbonFrequency:{ labelKey: 'Ribbons',    min: 0.5,  max: 2.5,  step: 0.05, unit: '×' },
+  shimmerIntensity:{ labelKey: 'Shimmer',   min: 0,    max: 1,    step: 0.05 },
+  baseHue:        { labelKey: 'Base Hue',   min: 0,    max: 360,  step: 5,    unit: '°' },
+  colorSpread:    { labelKey: 'Color Spread', min: 20, max: 180,  step: 5,    unit: '°' },
+  softEdge:       { labelKey: 'Soft Edge',  min: 0.25, max: 1.25, step: 0.05, unit: '×' },
+  heat:           { labelKey: 'Heat',       min: 0.3,  max: 1.5,  step: 0.05, unit: '×' },
+  sparks:         { labelKey: 'Sparks',     min: 0,    max: 1,    step: 0.05 },
+  wind:           { labelKey: 'Wind',       min: -1,   max: 1,    step: 0.05 },
+  baseHeight:     { labelKey: 'Base Height', min: 0.6, max: 1.5,  step: 0.05, unit: '×' },
+  gridDensity:       { labelKey: 'param.gridDensity',       min: 0,   max: 1,   step: 0.05 },
+  scanSpeed:         { labelKey: 'param.scanSpeed',         min: 0.1, max: 3,   step: 0.05, unit: '×' },
+  particleIntensity: { labelKey: 'param.particleIntensity', min: 0,   max: 2,   step: 0.05, unit: '×' },
+  glitchAmount:      { labelKey: 'param.glitchAmount',      min: 0,   max: 1,   step: 0.05 },
+  flickerAmount:     { labelKey: 'param.flickerAmount',     min: 0,   max: 1,   step: 0.05 },
+  hologramDepth:     { labelKey: 'param.hologramDepth',     min: 0,   max: 1,   step: 0.05 },
+  scanWidth:         { labelKey: 'param.scanWidth',         min: 0,   max: 1,   step: 0.05 },
   // Static text params
   textX:       { labelKey: 'param.textX',    min: 0,   max: 1,   step: 0.05 },
   textY:       { labelKey: 'param.textY',    min: 0,   max: 1,   step: 0.05 },
   textScale:   { labelKey: 'param.textScale', min: 1,  max: 4,   step: 1 },
   textWeight:  { labelKey: 'param.textWeight', min: 100, max: 900, step: 100 },
+}
+
+const DEFAULT_FAVORITE_EFFECTS: EffectKind[] = ['rainbow', 'fire', 'audio-equalizer', 'hologram', 'dna-helix', 'black-hole', 'tokamak-plasma']
+const RANDOMIZER_MODES: RandomizerMode[] = ['subtle', 'bold', 'calm', 'energy']
+const AUTOMATION_MODES: AutomationMode[] = ['sine', 'triangle', 'pulse']
+const AUTOMATION_TARGET_PARAMS = ['speed', 'intensity', 'hueShift', 'angle'] as const
+
+// ── Ambient Intelligence Presets ────────────────────────────────────────────
+
+interface AmbientPreset {
+  id: string
+  icon: string
+  labelKey: string
+  effectKind: EffectKind
+  parameters: Record<string, number | string | boolean>
+  opacity: number
+  blendMode: BlendMode
+}
+
+const AMBIENT_PRESETS: AmbientPreset[] = [
+  { id: 'focus',  icon: '🧠', labelKey: 'ambient.focus',  effectKind: 'breathing',      parameters: { speed: 0.18, color: '#6ab4ff' },              opacity: 0.70, blendMode: 'normal' },
+  { id: 'gaming', icon: '🎮', labelKey: 'ambient.gaming', effectKind: 'rainbow',        parameters: { speed: 0.80, spread: 1.5, hueShift: 0, angle: 0 }, opacity: 0.90, blendMode: 'screen' },
+  { id: 'party',  icon: '🎉', labelKey: 'ambient.party',  effectKind: 'spectrum',       parameters: { speed: 1.20, intensity: 1.0 },                opacity: 0.95, blendMode: 'add' },
+  { id: 'cinema', icon: '🎬', labelKey: 'ambient.cinema', effectKind: 'screen-ambient', parameters: { saturation: 0.9, contrast: 1.1 },              opacity: 0.85, blendMode: 'normal' },
+  { id: 'relax',  icon: '🌿', labelKey: 'ambient.relax',  effectKind: 'aurora',         parameters: { speed: 0.20, hueShift: 160, intensity: 0.6 }, opacity: 0.75, blendMode: 'screen' },
+  { id: 'sleep',  icon: '🌙', labelKey: 'ambient.sleep',  effectKind: 'breathing',      parameters: { speed: 0.10, color: '#ff5a28' },              opacity: 0.38, blendMode: 'normal' },
+]
+
+const QUICK_EFFECT_KINDS: EffectKind[] = ['screen-ambient', 'aurora', 'fire', 'hologram', 'dna-helix', 'black-hole', 'solar-system', 'spiral-galaxy', 'orion-nebula', 'hurricane-eye', 'icosahedral-virus', 'quantum-collapse', 'magnetosphere-aurora', 'tokamak-plasma']
+
+const QUICK_MOTION_OPTIONS: QuickOption<QuickMotionId>[] = [
+  { id: 'slow', labelKey: 'quick.motion.slow' },
+  { id: 'flow', labelKey: 'quick.motion.flow' },
+  { id: 'active', labelKey: 'quick.motion.active' },
+  { id: 'surge', labelKey: 'quick.motion.surge' },
+]
+
+const QUICK_ENERGY_OPTIONS: QuickOption<QuickEnergyId>[] = [
+  { id: 'soft', labelKey: 'quick.energy.soft' },
+  { id: 'balanced', labelKey: 'quick.energy.balanced' },
+  { id: 'vivid', labelKey: 'quick.energy.vivid' },
+  { id: 'max', labelKey: 'quick.energy.max' },
+]
+
+const QUICK_DETAIL_OPTIONS: QuickOption<QuickDetailId>[] = [
+  { id: 'clean', labelKey: 'quick.detail.clean' },
+  { id: 'balanced', labelKey: 'quick.detail.balanced' },
+  { id: 'rich', labelKey: 'quick.detail.rich' },
+  { id: 'dense', labelKey: 'quick.detail.dense' },
+]
+
+const QUICK_PALETTE_OPTIONS: QuickOption<QuickPaletteId>[] = [
+  { id: 'cool', labelKey: 'quick.palette.cool' },
+  { id: 'warm', labelKey: 'quick.palette.warm' },
+  { id: 'neon', labelKey: 'quick.palette.neon' },
+  { id: 'mono', labelKey: 'quick.palette.mono' },
+]
+
+const SCHEDULE_BLOCKS: ScheduleBlockDefinition[] = [
+  { id: 'day', labelKey: 'schedule.day', timeLabel: '08:00-18:00', startHour: 8, endHour: 18 },
+  { id: 'evening', labelKey: 'schedule.evening', timeLabel: '18:00-22:00', startHour: 18, endHour: 22 },
+  { id: 'night', labelKey: 'schedule.night', timeLabel: '22:00-08:00', startHour: 22, endHour: 8 }
+]
+
+const DEFAULT_SCHEDULE_EFFECTS: Record<ScheduleBlockId, EffectKind> = {
+  day: 'screen-ambient',
+  evening: 'aurora',
+  night: 'breathing'
+}
+
+const THEME_COLOR_PALETTES = {
+  cyberpunk: ['#00f5ff', '#ff2bd6', '#ffe600', '#39ff14', '#7c3cff'],
+  synthwave: ['#ff2a6d', '#05d9e8', '#d1f7ff', '#f9f871', '#7a04eb'],
+  vaporwave: ['#ff71ce', '#01cdfe', '#05ffa1', '#b967ff', '#fffb96'],
+  neonGoth: ['#00ff99', '#ff005d', '#00eaff', '#7b2cff', '#f8f8ff'],
+  auroraBorealis: ['#23f0a8', '#4cc9f0', '#9b5de5', '#f15bb5', '#e0fbfc'],
+  sunsetHeat: ['#ff3d00', '#ff8a00', '#ffd166', '#ff006e', '#8338ec'],
+  minimalWhite: ['#ffffff', '#dbeafe', '#94a3b8', '#38bdf8', '#111827'],
+  natureGlow: ['#2dd4bf', '#84cc16', '#facc15', '#fb7185', '#38bdf8']
+} as const
+
+const COLOR_PALETTES: Record<RandomizerMode, string[]> = {
+  subtle: [...THEME_COLOR_PALETTES.minimalWhite, ...THEME_COLOR_PALETTES.natureGlow],
+  bold: [...THEME_COLOR_PALETTES.cyberpunk, ...THEME_COLOR_PALETTES.vaporwave, ...THEME_COLOR_PALETTES.neonGoth],
+  calm: [...THEME_COLOR_PALETTES.auroraBorealis, ...THEME_COLOR_PALETTES.minimalWhite],
+  energy: [...THEME_COLOR_PALETTES.sunsetHeat, ...THEME_COLOR_PALETTES.synthwave, ...THEME_COLOR_PALETTES.cyberpunk]
+}
+
+function parseStoredEffectKinds(raw: string | null): EffectKind[] {
+  if (!raw) return DEFAULT_FAVORITE_EFFECTS
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return DEFAULT_FAVORITE_EFFECTS
+    const validKinds = new Set(effectPresets.map((preset) => preset.kind))
+    const unique = parsed.filter((kind): kind is EffectKind => typeof kind === 'string' && validKinds.has(kind as EffectKind))
+    return [...new Set(unique)].slice(0, 12)
+  } catch {
+    return DEFAULT_FAVORITE_EFFECTS
+  }
+}
+
+function parseStoredParameterLocks(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return [...new Set(parsed.filter((name): name is string => typeof name === 'string'))]
+  } catch {
+    return []
+  }
+}
+
+function parseStoredSchedule(raw: string | null): Record<ScheduleBlockId, EffectKind> {
+  if (!raw) return DEFAULT_SCHEDULE_EFFECTS
+  try {
+    const parsed = JSON.parse(raw) as Partial<Record<ScheduleBlockId, unknown>>
+    const validKinds = new Set(effectPresets.map((preset) => preset.kind))
+    return Object.fromEntries(
+      SCHEDULE_BLOCKS.map((block) => {
+        const kind = parsed[block.id]
+        return [block.id, typeof kind === 'string' && validKinds.has(kind as EffectKind) ? kind : DEFAULT_SCHEDULE_EFFECTS[block.id]]
+      })
+    ) as Record<ScheduleBlockId, EffectKind>
+  } catch {
+    return DEFAULT_SCHEDULE_EFFECTS
+  }
+}
+
+function scheduleBlockForHour(hour: number): ScheduleBlockDefinition {
+  return SCHEDULE_BLOCKS.find((block) => {
+    if (block.startHour < block.endHour) return hour >= block.startHour && hour < block.endHour
+    return hour >= block.startHour || hour < block.endHour
+  }) ?? SCHEDULE_BLOCKS[0]
+}
+
+function parseStoredAutomationParams(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    const allowed = new Set<string>(AUTOMATION_TARGET_PARAMS)
+    return [...new Set(parsed.filter((name): name is string => typeof name === 'string' && allowed.has(name)))]
+  } catch {
+    return []
+  }
+}
+
+function automationWave(now: number, mode: AutomationMode): number {
+  if (mode === 'triangle') {
+    const phase = (now * 0.18) % 1
+    return phase < 0.5 ? phase * 2 : 2 - phase * 2
+  }
+  if (mode === 'pulse') {
+    const phase = (Math.sin(now * 2.4) + 1) / 2
+    return phase > 0.68 ? 1 : 0.15
+  }
+  return (Math.sin(now * 1.1) + 1) / 2
+}
+
+function automateNumberParameter(name: string, baseValue: number, mode: AutomationMode, now: number): number {
+  const meta = PARAM_META[name]
+  const min = meta?.min ?? 0
+  const max = meta?.max ?? 2
+  const step = meta?.step ?? 0.05
+  const wave = automationWave(now, mode)
+
+  if (name === 'hueShift' || name === 'angle') {
+    return randomInRange(min + (max - min) * wave, min + (max - min) * wave, step)
+  }
+
+  const span = (max - min) * (mode === 'pulse' ? 0.4 : 0.28)
+  const low = Math.max(min, baseValue - span)
+  const high = Math.min(max, baseValue + span)
+  return randomInRange(low + (high - low) * wave, low + (high - low) * wave, step)
+}
+
+function applyParameterAutomation(
+  profile: Profile,
+  layerId: string,
+  enabled: boolean,
+  automatedParams: readonly string[],
+  mode: AutomationMode,
+  now: number
+): Profile {
+  if (!enabled || automatedParams.length === 0) return profile
+  const automatedSet = new Set(automatedParams)
+  return {
+    ...profile,
+    scenes: profile.scenes.map((scene) => {
+      if (scene.id !== profile.activeSceneId) return scene
+      return {
+        ...scene,
+        layers: scene.layers.map((layer) => {
+          if (layer.id !== layerId) return layer
+          const parameters = Object.fromEntries(
+            Object.entries(layer.parameters).map(([name, value]) => {
+              if (!automatedSet.has(name) || typeof value !== 'number') return [name, value]
+              return [name, automateNumberParameter(name, value, mode, now)]
+            })
+          )
+          return { ...layer, parameters }
+        })
+      }
+    })
+  }
+}
+
+function randomItem<T>(items: readonly T[]): T {
+  return items[Math.floor(Math.random() * items.length)]
+}
+
+function snapToStep(value: number, step: number): number {
+  if (step <= 0) return value
+  return Math.round(value / step) * step
+}
+
+function randomInRange(min: number, max: number, step: number): number {
+  const value = min + Math.random() * (max - min)
+  return Math.max(min, Math.min(max, snapToStep(value, step)))
+}
+
+function randomizeNumberParameter(name: string, current: number, mode: RandomizerMode): number {
+  const meta = PARAM_META[name]
+  const min = meta?.min ?? 0
+  const max = meta?.max ?? 2
+  const step = meta?.step ?? 0.05
+
+  if (mode === 'subtle') {
+    const span = (max - min) * 0.28
+    return randomInRange(Math.max(min, current - span), Math.min(max, current + span), step)
+  }
+
+  if (mode === 'calm') {
+    if (name === 'speed') return randomInRange(min, Math.min(max, 0.45), step)
+    if (name === 'intensity' || name === 'density' || name === 'sensitivity') return randomInRange(min, Math.min(max, min + (max - min) * 0.5), step)
+    return randomInRange(min, min + (max - min) * 0.72, step)
+  }
+
+  if (mode === 'energy') {
+    if (name === 'speed') return randomInRange(Math.max(min, 0.55), max, step)
+    if (name === 'intensity' || name === 'density' || name === 'sensitivity') return randomInRange(min + (max - min) * 0.45, max, step)
+    return randomInRange(min + (max - min) * 0.2, max, step)
+  }
+
+  return randomInRange(min, max, step)
+}
+
+function randomizeLayerParameters(layer: EffectLayer, mode: RandomizerMode, lockedParameters: ReadonlySet<string>): EffectLayer['parameters'] {
+  return Object.fromEntries(
+    Object.entries(layer.parameters).map(([name, value]) => {
+      if (name.startsWith('_')) return [name, value]
+      if (lockedParameters.has(name)) return [name, value]
+      if (typeof value === 'number') return [name, randomizeNumberParameter(name, value, mode)]
+      if (typeof value === 'string' && value.startsWith('#')) return [name, randomItem(COLOR_PALETTES[mode])]
+      if (typeof value === 'boolean') return [name, mode === 'bold' ? Math.random() > 0.5 : value]
+      return [name, value]
+    })
+  )
+}
+
+function setNumberIfPresent(parameters: EffectLayer['parameters'], name: string, value: number): void {
+  if (typeof parameters[name] === 'number') parameters[name] = value
+}
+
+function setColorIfPresent(parameters: EffectLayer['parameters'], name: string, value: string): void {
+  if (typeof parameters[name] === 'string' && String(parameters[name]).startsWith('#')) parameters[name] = value
+}
+
+function applyQuickDimensionParameters(
+  parameters: EffectLayer['parameters'],
+  dimension: QuickDimensionId,
+  option: string
+): EffectLayer['parameters'] {
+  const next: EffectLayer['parameters'] = { ...parameters, [`_quick${dimension[0].toUpperCase()}${dimension.slice(1)}`]: option }
+
+  if (dimension === 'motion') {
+    const values = {
+      slow:   { speed: 0.18, scanSpeed: 0.55, wind: -0.05 },
+      flow:   { speed: 0.38, scanSpeed: 1.00, wind: 0.00 },
+      active: { speed: 0.72, scanSpeed: 1.45, wind: 0.12 },
+      surge:  { speed: 1.15, scanSpeed: 2.15, wind: 0.28 },
+    }[option as QuickMotionId] ?? { speed: 0.38, scanSpeed: 1.00, wind: 0.00 }
+    setNumberIfPresent(next, 'speed', values.speed)
+    setNumberIfPresent(next, 'scanSpeed', values.scanSpeed)
+    setNumberIfPresent(next, 'wind', values.wind)
+  }
+
+  if (dimension === 'energy') {
+    const values = {
+      soft:     { intensity: 0.45, saturation: 0.72, contrast: 0.88, sensitivity: 0.72, heat: 0.70, sparks: 0.04, pulseAmplitude: 0.38, particleIntensity: 0.52 },
+      balanced: { intensity: 0.70, saturation: 1.00, contrast: 1.00, sensitivity: 1.00, heat: 1.00, sparks: 0.14, pulseAmplitude: 0.58, particleIntensity: 0.86 },
+      vivid:    { intensity: 0.88, saturation: 1.22, contrast: 1.18, sensitivity: 1.28, heat: 1.18, sparks: 0.26, pulseAmplitude: 0.74, particleIntensity: 1.18 },
+      max:      { intensity: 1.00, saturation: 1.50, contrast: 1.35, sensitivity: 1.60, heat: 1.42, sparks: 0.42, pulseAmplitude: 0.92, particleIntensity: 1.55 },
+    }[option as QuickEnergyId] ?? { intensity: 0.70, saturation: 1.00, contrast: 1.00, sensitivity: 1.00, heat: 1.00, sparks: 0.14, pulseAmplitude: 0.58, particleIntensity: 0.86 }
+    Object.entries(values).forEach(([name, value]) => setNumberIfPresent(next, name, value))
+    setNumberIfPresent(next, 'baseBrightness', Math.max(0.08, values.intensity * 0.22))
+    setNumberIfPresent(next, 'shimmerIntensity', Math.min(1, values.intensity * 0.72))
+  }
+
+  if (dimension === 'detail') {
+    const values = {
+      clean:    { density: 0.22, frequency: 2.0, spread: 0.88, gridDensity: 0.18, scanWidth: 0.72, colorSpread: 55, glitchAmount: 0.02 },
+      balanced: { density: 0.50, frequency: 3.8, spread: 1.20, gridDensity: 0.46, scanWidth: 0.58, colorSpread: 95, glitchAmount: 0.12 },
+      rich:     { density: 0.72, frequency: 5.8, spread: 1.55, gridDensity: 0.68, scanWidth: 0.45, colorSpread: 132, glitchAmount: 0.20 },
+      dense:    { density: 0.90, frequency: 8.0, spread: 2.00, gridDensity: 0.92, scanWidth: 0.32, colorSpread: 170, glitchAmount: 0.34 },
+    }[option as QuickDetailId] ?? { density: 0.50, frequency: 3.8, spread: 1.20, gridDensity: 0.46, scanWidth: 0.58, colorSpread: 95, glitchAmount: 0.12 }
+    Object.entries(values).forEach(([name, value]) => setNumberIfPresent(next, name, value))
+    setNumberIfPresent(next, 'particleIntensity', Math.max(0.35, values.density * 1.35))
+  }
+
+  if (dimension === 'palette') {
+    const values = {
+      cool: { hueShift: 190, baseHue: 182, color: '#38bdf8', colorLow: '#14f1ff', colorHigh: '#7c3cff' },
+      warm: { hueShift: 24,  baseHue: 28,  color: '#ff7a18', colorLow: '#ff3d00', colorHigh: '#ffd166' },
+      neon: { hueShift: 295, baseHue: 305, color: '#ff2bd6', colorLow: '#00f5ff', colorHigh: '#ff2bd6' },
+      mono: { hueShift: 0,   baseHue: 204, color: '#dbeafe', colorLow: '#ffffff', colorHigh: '#94a3b8' },
+    }[option as QuickPaletteId] ?? { hueShift: 190, baseHue: 182, color: '#38bdf8', colorLow: '#14f1ff', colorHigh: '#7c3cff' }
+    setNumberIfPresent(next, 'hueShift', values.hueShift)
+    setNumberIfPresent(next, 'baseHue', values.baseHue)
+    setColorIfPresent(next, 'color', values.color)
+    setColorIfPresent(next, 'textColor', values.color)
+    setColorIfPresent(next, 'colorLow', values.colorLow)
+    setColorIfPresent(next, 'colorHigh', values.colorHigh)
+  }
+
+  return next
+}
+
+function opacityForQuickEnergy(option: string): number {
+  switch (option) {
+    case 'soft': return 0.46
+    case 'vivid': return 0.86
+    case 'max': return 1.00
+    default: return 0.68
+  }
 }
 
 // performanceLabels is now computed inside the App component using t()
@@ -48,6 +437,10 @@ function activeLayer(profile: Profile) {
 
 function activeScene(profile: Profile) {
   return profile.scenes.find((c) => c.id === profile.activeSceneId) ?? profile.scenes[0]
+}
+
+function formatMs(value: number | undefined): string {
+  return `${(value ?? 0).toFixed(1)} ms`
 }
 
 function updateLayer(profile: Profile, layerId: string, patch: Partial<EffectLayer>): Profile {
@@ -107,13 +500,15 @@ export function App(): JSX.Element {
    */
   const frameRef = useRef<RgbFrame | null>(null)
   const [status, setStatus] = useState<EngineStatus>({ running: true, fps: 30, output: 'virtual-preview' })
+  const [captureProvider, setCaptureProvider] = useState<CaptureProviderStatus | null>(null)
+  const [engineMetrics, setEngineMetrics] = useState<EngineMetrics>(EMPTY_ENGINE_METRICS)
   const [version, setVersion] = useState('0.1.0')
   const [savedProfiles, setSavedProfiles] = useState<ProfileMeta[]>([])
   // Ref lets the auto-save effect read savedProfiles without listing it as a dep
   const savedProfilesRef = useRef<ProfileMeta[]>([])
   savedProfilesRef.current = savedProfiles
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
-  const [profileEditMode, setProfileEditMode] = useState<'new' | 'rename' | null>(null)
+  const [profileEditMode, setProfileEditMode] = useState<'duplicate' | 'rename' | null>(null)
   const [profileEditName, setProfileEditName] = useState('')
   const profileMenuRef = useRef<HTMLDivElement | null>(null)
   const editInputRef = useRef<HTMLInputElement | null>(null)
@@ -145,6 +540,39 @@ export function App(): JSX.Element {
     const v = localStorage.getItem('rgbbox:view') as View | null
     return v ?? 'workspace'
   })
+  const [favoriteEffectKinds, setFavoriteEffectKinds] = useState<EffectKind[]>(() =>
+    parseStoredEffectKinds(localStorage.getItem('rgbbox:favoriteEffects'))
+  )
+  const [allEffectsOpen, setAllEffectsOpen] = useState(() =>
+    localStorage.getItem('rgbbox:allEffectsOpen') === '1'
+  )
+  const [advancedControlsOpen, setAdvancedControlsOpen] = useState(() =>
+    localStorage.getItem('rgbbox:advancedControlsOpen') === '1'
+  )
+  const [randomizerMode, setRandomizerMode] = useState<RandomizerMode>(() => {
+    const saved = localStorage.getItem('rgbbox:randomizerMode') as RandomizerMode | null
+    return saved && RANDOMIZER_MODES.includes(saved) ? saved : 'bold'
+  })
+  const [randomizerLockedParams, setRandomizerLockedParams] = useState<string[]>(() =>
+    parseStoredParameterLocks(localStorage.getItem('rgbbox:randomizerLockedParams'))
+  )
+  const [scheduleEnabled, setScheduleEnabled] = useState(() =>
+    localStorage.getItem('rgbbox:scheduleEnabled') === '1'
+  )
+  const [scheduleEffects, setScheduleEffects] = useState<Record<ScheduleBlockId, EffectKind>>(() =>
+    parseStoredSchedule(localStorage.getItem('rgbbox:scheduleEffects'))
+  )
+  const [scheduleNow, setScheduleNow] = useState(() => new Date())
+  const [automationEnabled, setAutomationEnabled] = useState(() =>
+    localStorage.getItem('rgbbox:automationEnabled') === '1'
+  )
+  const [automationMode, setAutomationMode] = useState<AutomationMode>(() => {
+    const saved = localStorage.getItem('rgbbox:automationMode') as AutomationMode | null
+    return saved && AUTOMATION_MODES.includes(saved) ? saved : 'sine'
+  })
+  const [automatedParams, setAutomatedParams] = useState<string[]>(() =>
+    parseStoredAutomationParams(localStorage.getItem('rgbbox:automatedParams'))
+  )
   const [audioEnabled, setAudioEnabled] = useState(() =>
     localStorage.getItem('rgbbox:audio') === '1'
   )
@@ -175,6 +603,7 @@ export function App(): JSX.Element {
   // effect switching completely unreliable when audio is active.
   const audioRef = useRef(audio)
   audioRef.current = audio
+  const metricsCollectorRef = useRef(new MetricsCollector())
 
   /** Ripple burst: set on canvas click, cleared after 2.5 s (matches burstDuration in effects.ts). */
   const rippleBurstRef = useRef<{ cx: number; cy: number; clickedAt: number } | null>(null)
@@ -235,8 +664,9 @@ export function App(): JSX.Element {
       window.rgbbox.getAppVersion(),
       window.rgbbox.getOverlayDisplayIds(),
       window.rgbbox.getPowerSaveBlock(),
-      window.rgbbox.listProfiles()
-    ]).then(async ([loadedProfile, loadedTopology, loadedStatus, loadedVersion, loadedOverlays, loadedPSB, loadedProfiles]) => {
+      window.rgbbox.listProfiles(),
+      window.rgbbox.getCaptureProviderStatus(),
+    ]).then(async ([loadedProfile, loadedTopology, loadedStatus, loadedVersion, loadedOverlays, loadedPSB, loadedProfiles, loadedCaptureProvider]) => {
       // Back-fill fields added after the profile was first persisted
       const migratedProfile = {
         ...loadedProfile,
@@ -251,6 +681,7 @@ export function App(): JSX.Element {
       setVersion(loadedVersion)
       setOverlayDisplayIds(loadedOverlays)
       setPowerSaveBlock(loadedPSB)
+      setCaptureProvider(loadedCaptureProvider)
       // Ensure the current working profile is always present in the named slots.
       // On first launch (profiles/ directory empty) or after a reset, this seeds
       // the list so the dropdown is never empty.
@@ -283,10 +714,28 @@ export function App(): JSX.Element {
 
   // ── Persist UI state to localStorage ────────────────────────────────────
   useEffect(() => { localStorage.setItem('rgbbox:view', currentView) }, [currentView])
+  useEffect(() => { localStorage.setItem('rgbbox:favoriteEffects', JSON.stringify(favoriteEffectKinds)) }, [favoriteEffectKinds])
+  useEffect(() => { localStorage.setItem('rgbbox:allEffectsOpen', allEffectsOpen ? '1' : '0') }, [allEffectsOpen])
+  useEffect(() => { localStorage.setItem('rgbbox:advancedControlsOpen', advancedControlsOpen ? '1' : '0') }, [advancedControlsOpen])
+  useEffect(() => { localStorage.setItem('rgbbox:randomizerMode', randomizerMode) }, [randomizerMode])
+  useEffect(() => { localStorage.setItem('rgbbox:randomizerLockedParams', JSON.stringify(randomizerLockedParams)) }, [randomizerLockedParams])
+  useEffect(() => { localStorage.setItem('rgbbox:scheduleEnabled', scheduleEnabled ? '1' : '0') }, [scheduleEnabled])
+  useEffect(() => { localStorage.setItem('rgbbox:scheduleEffects', JSON.stringify(scheduleEffects)) }, [scheduleEffects])
+  useEffect(() => { localStorage.setItem('rgbbox:automationEnabled', automationEnabled ? '1' : '0') }, [automationEnabled])
+  useEffect(() => { localStorage.setItem('rgbbox:automationMode', automationMode) }, [automationMode])
+  useEffect(() => { localStorage.setItem('rgbbox:automatedParams', JSON.stringify(automatedParams)) }, [automatedParams])
   useEffect(() => { localStorage.setItem('rgbbox:audio', audioEnabled ? '1' : '0') }, [audioEnabled])
   useEffect(() => { localStorage.setItem('rgbbox:audioDevice', audioDeviceId) }, [audioDeviceId])
   useEffect(() => { localStorage.setItem('rgbbox:selectedLayerId', selectedLayerId) }, [selectedLayerId])
   useEffect(() => { localStorage.setItem('rgbbox:overlayConfigs', JSON.stringify(overlayConfigs)) }, [overlayConfigs])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setEngineMetrics(metricsCollectorRef.current.snapshot())
+      void window.rgbbox.getCaptureProviderStatus().then(setCaptureProvider)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   // Enumerate audio input and output devices (labels populated after first getUserMedia permission)
   useEffect(() => {
@@ -338,9 +787,8 @@ export function App(): JSX.Element {
     if (!profile || !status.running || !workerRef.current) return undefined
 
     // 3D effects are rendered directly by Preview3D on the GPU — bypass the worker.
-    const _activeKind = activeLayer(profile).kind
-    console.log(`[dbg] engine effect: activeKind=${_activeKind} is3D=${is3DEffect(_activeKind)} running=${status.running}`)
-    if (is3DEffect(_activeKind)) return undefined
+    const activeKind = activeLayer(profile).kind
+    if (is3DEffect(activeKind)) return undefined
 
     let cancelled    = false
     const intervalMs = Math.max(16, Math.floor(1000 / profile.sampling.fps))
@@ -354,6 +802,8 @@ export function App(): JSX.Element {
     // Without this, slow workers (large grids) accumulate a deep backlog;
     // switching effects sends new profile to the back of that queue.
     let tickPending  = false
+    let droppedTicksSinceLastPost = 0
+    let lastPostAt = 0
 
     const tick = async (): Promise<boolean> => {
       if (cancelled) return false
@@ -368,12 +818,16 @@ export function App(): JSX.Element {
         scene.layers.some((l) => l.enabled && l.kind === 'screen-ambient')
 
       let screenSample: RgbFrame | undefined
+      let captureMs = 0
       if (needsCapture) {
-        const captured = await window.rgbbox.captureScreenSample(
-          profile.sampling.columns,
-          profile.sampling.rows,
-          false  // hasOverlays already checked above
-        )
+        const captureStartedAt = performance.now()
+        const captured = await window.rgbbox.captureScreenSample({
+          columns: profile.sampling.columns,
+          rows: profile.sampling.rows,
+          hasOverlays: false,
+          linkedDisplays: Boolean(scene.linkedDisplays),
+        })
+        captureMs = performance.now() - captureStartedAt
         screenSample = captured ?? undefined
       }
 
@@ -384,7 +838,18 @@ export function App(): JSX.Element {
       const rippleBurst = burst
         ? { cx: burst.cx, cy: burst.cy, burstAge: (performance.now() - burst.clickedAt) / 1000 }
         : undefined
-      const msg: WorkerInput = { profile, audioInput, screenSample, rippleBurst }
+      const droppedTicks = droppedTicksSinceLastPost
+      droppedTicksSinceLastPost = 0
+      lastPostAt = performance.now()
+      const profileForWorker = applyParameterAutomation(
+        profile,
+        selectedLayerId,
+        automationEnabled,
+        automatedParams,
+        automationMode,
+        performance.now() / 1000
+      )
+      const msg: WorkerInput = { profile: profileForWorker, audioInput, screenSample, rippleBurst, captureMs, droppedTicks, postedAt: lastPostAt }
       if (screenSample) {
         worker.postMessage(msg, [screenSample.pixels.buffer])
       } else {
@@ -396,12 +861,10 @@ export function App(): JSX.Element {
 
     // ── Worker response handler ──────────────────────────────────────────
     // Store the frame in a ref — no React setState, no reconciliation.
-    const onWorkerMessage = (e: MessageEvent<RgbFrame>): void => {
-      console.log('[dbg] onWorkerMessage fired, cancelled=', cancelled)
+    const onWorkerMessage = (e: MessageEvent<WorkerOutput>): void => {
       tickPending = false
       if (cancelled) return
-      console.log('[dbg] worker frame received cols=', e.data.columns)
-      const frame = e.data
+      const { frame, metrics } = e.data
       frame.showGap = profile.sampling.showGap ?? false
       frameRef.current = frame
       // Copy pixel data for the 3D splat viewer LED lights
@@ -422,6 +885,9 @@ export function App(): JSX.Element {
           window.rgbbox.pushFrameToOverlays(frame)
         }
       }
+      metrics.outputMs = 0
+      metrics.roundTripMs = lastPostAt > 0 ? performance.now() - lastPostAt : metrics.workerProcessMs
+      metricsCollectorRef.current.add(metrics)
     }
 
     // ── setInterval tick loop ─────────────────────────────────────────────
@@ -439,25 +905,27 @@ export function App(): JSX.Element {
         void tick().catch(() => { tickPending = false }).then((posted) => {
           if (posted === false) tickPending = false
         })
+      } else {
+        droppedTicksSinceLastPost += 1
       }
     }
 
     worker.addEventListener('message', onWorkerMessage)
-    worker.addEventListener('error', (err) => { console.log('[dbg] WORKER ERROR', err.message, err.filename, err.lineno) })
+    worker.addEventListener('error', (err) => { console.warn('[RGBBox] Worker error', err.message, err.filename, err.lineno) })
     timerId = window.setInterval(onTick, intervalMs)
-    console.log('[dbg] engine started, intervalMs=', intervalMs)
 
     return () => {
       cancelled = true
       window.clearInterval(timerId)
       worker.removeEventListener('message', onWorkerMessage)
     }
-  }, [profile, status.running])
+  }, [profile, status.running, selectedLayerId, automationEnabled, automationMode, automatedParams])
 
   const scene = useMemo(() => (profile ? activeScene(profile) : null), [profile])
 
   /** Frame handler for GPU 3D effects — Preview3D calls this instead of the worker. */
   const handleFrame3D = useCallback((frame: RgbFrame) => {
+    const startedAt = performance.now()
     frame.showGap = profile?.sampling.showGap ?? false
     frameRef.current = frame
     // Copy pixel data for the 3D splat viewer LED lights
@@ -476,12 +944,36 @@ export function App(): JSX.Element {
         window.rgbbox.pushFrameToOverlays(frame)
       }
     }
+    const outputMs = 0
+    metricsCollectorRef.current.add({
+      timestamp: Date.now(),
+      workerProcessMs: 0,
+      textMaskMs: 0,
+      renderMs: performance.now() - startedAt,
+      captureMs: 0,
+      roundTripMs: performance.now() - startedAt,
+      outputMs,
+      droppedTicks: 0
+    })
   }, [profile, scene])
 
   const selectedLayer = useMemo(() => {
     if (!profile || !scene) return null
     return scene.layers.find((l) => l.id === selectedLayerId) ?? activeLayer(profile)
   }, [profile, scene, selectedLayerId])
+
+  const favoriteEffectPresets = useMemo(() => {
+    return favoriteEffectKinds
+      .map((kind) => effectPresets.find((preset) => preset.kind === kind))
+      .filter((preset): preset is (typeof effectPresets)[number] => Boolean(preset))
+  }, [favoriteEffectKinds])
+
+  const activeScheduleBlock = useMemo(() => scheduleBlockForHour(scheduleNow.getHours()), [scheduleNow])
+  const scheduledEffectKind = scheduleEffects[activeScheduleBlock.id]
+  const automatableParams = useMemo(() => {
+    if (!selectedLayer) return []
+    return AUTOMATION_TARGET_PARAMS.filter((name) => typeof selectedLayer.parameters[name] === 'number')
+  }, [selectedLayer])
 
   const updateSelectedLayer = useCallback((patch: Partial<EffectLayer>) => {
     setProfile((cur) => cur ? updateLayer(cur, selectedLayerId, patch) : cur)
@@ -574,9 +1066,92 @@ export function App(): JSX.Element {
   const selectEffect = useCallback((kind: EffectKind) => {
     const preset = effectPresets.find((p) => p.kind === kind)
     if (!preset) return
-    console.log(`[dbg] selectEffect kind=${kind} selectedLayerId=${selectedLayerId}`)
     updateSelectedLayer({ name: preset.label, kind: preset.kind, parameters: { ...preset.defaults } })
   }, [updateSelectedLayer, selectedLayerId])
+
+  const applyAmbientPreset = useCallback((preset: AmbientPreset) => {
+    const effectPreset = effectPresets.find((p) => p.kind === preset.effectKind)
+    updateSelectedLayer({
+      kind: preset.effectKind,
+      name: effectPreset?.label ?? preset.effectKind,
+      parameters: { ...preset.parameters, _quickProfile: preset.id },
+      opacity: preset.opacity,
+      blendMode: preset.blendMode,
+    })
+  }, [updateSelectedLayer])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setScheduleNow(new Date()), 60_000)
+    return () => window.clearInterval(intervalId)
+  }, [])
+
+  useEffect(() => {
+    if (!scheduleEnabled || !selectedLayer) return
+    if (selectedLayer.kind === scheduledEffectKind) return
+    selectEffect(scheduledEffectKind)
+  }, [scheduleEnabled, selectedLayer, scheduledEffectKind, selectEffect])
+
+  const setScheduleEffect = useCallback((blockId: ScheduleBlockId, kind: EffectKind) => {
+    setScheduleEffects((prev) => ({ ...prev, [blockId]: kind }))
+  }, [])
+
+  const toggleAutomatedParam = useCallback((name: string) => {
+    setAutomatedParams((prev) => {
+      if (prev.includes(name)) return prev.filter((entry) => entry !== name)
+      return [...prev, name]
+    })
+  }, [])
+
+  const toggleFavoriteEffect = useCallback((kind: EffectKind) => {
+    setFavoriteEffectKinds((prev) => {
+      if (prev.includes(kind)) return prev.filter((entry) => entry !== kind)
+      return [...prev, kind].slice(-12)
+    })
+  }, [])
+
+  const selectFavoriteByOffset = useCallback((offset: number) => {
+    if (favoriteEffectKinds.length === 0) return
+    const currentIndex = selectedLayer ? favoriteEffectKinds.indexOf(selectedLayer.kind) : -1
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0
+    const nextIndex = (baseIndex + offset + favoriteEffectKinds.length) % favoriteEffectKinds.length
+    selectEffect(favoriteEffectKinds[nextIndex])
+  }, [favoriteEffectKinds, selectedLayer, selectEffect])
+
+  const randomizeSelectedLayer = useCallback(() => {
+    if (!selectedLayer) return
+    updateSelectedLayer({ parameters: randomizeLayerParameters(selectedLayer, randomizerMode, new Set(randomizerLockedParams)) })
+  }, [selectedLayer, randomizerMode, randomizerLockedParams, updateSelectedLayer])
+
+  const toggleRandomizerParamLock = useCallback((name: string) => {
+    setRandomizerLockedParams((prev) => {
+      if (prev.includes(name)) return prev.filter((entry) => entry !== name)
+      return [...prev, name]
+    })
+  }, [])
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (!event.altKey) return
+
+      if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        selectFavoriteByOffset(1)
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        selectFavoriteByOffset(-1)
+      } else if (/^[1-9]$/.test(event.key)) {
+        const preset = favoriteEffectKinds[Number(event.key) - 1]
+        if (preset) {
+          event.preventDefault()
+          selectEffect(preset)
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [favoriteEffectKinds, selectEffect, selectFavoriteByOffset])
 
   const setSelectedLayerValue = useCallback(<K extends keyof EffectLayer>(key: K, value: EffectLayer[K]) => {
     updateSelectedLayer({ [key]: value } as Partial<EffectLayer>)
@@ -585,6 +1160,15 @@ export function App(): JSX.Element {
   const setLayerParameter = useCallback((name: string, value: number | string | boolean) => {
     if (!selectedLayer) return
     updateSelectedLayer({ parameters: { ...selectedLayer.parameters, [name]: value } })
+  }, [selectedLayer, updateSelectedLayer])
+
+  const applyQuickDimension = useCallback((dimension: QuickDimensionId, option: string) => {
+    if (!selectedLayer) return
+    const patch: Partial<EffectLayer> = {
+      parameters: applyQuickDimensionParameters(selectedLayer.parameters, dimension, option)
+    }
+    if (dimension === 'energy') patch.opacity = opacityForQuickEnergy(option)
+    updateSelectedLayer(patch)
   }, [selectedLayer, updateSelectedLayer])
 
   const toggleLayerEnabled = useCallback((layerId: string) => {
@@ -629,6 +1213,69 @@ export function App(): JSX.Element {
     setSelectedLayerId(newLayer.id)
   }, [])
 
+  const exportLayerPack = useCallback(() => {
+    if (!selectedLayer) return
+    const pack = {
+      rgbboxEffectPack: '1.0',
+      layer: {
+        name: selectedLayer.name,
+        kind: selectedLayer.kind,
+        enabled: selectedLayer.enabled,
+        opacity: selectedLayer.opacity,
+        blendMode: selectedLayer.blendMode,
+        parameters: selectedLayer.parameters,
+      },
+    }
+    const json = JSON.stringify(pack, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${selectedLayer.name.replace(/\s+/g, '_')}.rgbbox.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [selectedLayer])
+
+  const importLayerPackRef = useRef<HTMLInputElement>(null)
+
+  const handleImportLayerPack = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const pack = JSON.parse(ev.target?.result as string)
+        if (!pack?.rgbboxEffectPack || !pack?.layer) throw new Error('Invalid pack')
+        const src = pack.layer as Partial<EffectLayer>
+        _layerCounter += 1
+        const imported: EffectLayer = {
+          id: `layer-${_layerCounter}`,
+          name: typeof src.name === 'string' ? src.name : 'Imported',
+          kind: (src.kind as EffectKind) ?? 'rainbow',
+          enabled: true,
+          opacity: typeof src.opacity === 'number' ? src.opacity : 0.75,
+          blendMode: (src.blendMode as BlendMode) ?? 'screen',
+          parameters: src.parameters && typeof src.parameters === 'object' ? src.parameters : {},
+        }
+        setProfile((cur) => {
+          if (!cur) return cur
+          const sceneId = (cur.scenes.find((s) => s.id === cur.activeSceneId) ?? cur.scenes[0]).id
+          return {
+            ...cur,
+            scenes: cur.scenes.map((s) =>
+              s.id !== sceneId ? s : { ...s, layers: [...s.layers, imported] }
+            ),
+          }
+        })
+        setSelectedLayerId(imported.id)
+      } catch {
+        alert(t('pack.importError'))
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }, [t])
+
   const deleteLayer = useCallback((layerId: string) => {
     setProfile((cur) => {
       if (!cur) return cur
@@ -659,12 +1306,13 @@ export function App(): JSX.Element {
   }, [])
 
   // ── Profile menu actions ─────────────────────────────────────────────────
-  const handleProfileNew = useCallback(() => {
+  const handleProfileDuplicate = useCallback(() => {
+    if (!profile) return
     setProfileMenuOpen(false)
-    setProfileEditName('')
-    setProfileEditMode('new')
+    setProfileEditName(`${profile.name} Copy`)
+    setProfileEditMode('duplicate')
     window.setTimeout(() => editInputRef.current?.focus(), 30)
-  }, [])
+  }, [profile])
 
   const handleProfileRename = useCallback(() => {
     if (!profile) return
@@ -677,10 +1325,8 @@ export function App(): JSX.Element {
   const handleProfileEditConfirm = useCallback(async () => {
     const name = profileEditName.trim()
     if (!name || !profile) { setProfileEditMode(null); return }
-    if (profileEditMode === 'new') {
+    if (profileEditMode === 'duplicate') {
       const newId = `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
-      // Copy from current profile so the user keeps their setup rather than
-      // getting a blank slate from defaultProfile.
       const newProfile: Profile = { ...profile, id: newId, name }
       await window.rgbbox.saveProfileAs(newProfile)
       setProfile(newProfile)
@@ -727,6 +1373,19 @@ export function App(): JSX.Element {
     balanced: t('perf.balanced'),
     extreme: t('perf.extreme')
   }
+
+  const audioErrorLabel = useMemo(() => {
+    switch (audio.error) {
+      case 'permission-denied':
+        return t('audio.error.permissionDenied')
+      case 'source-unavailable':
+        return t('audio.error.sourceUnavailable')
+      case 'capture-failed':
+        return t('audio.error.captureFailed')
+      default:
+        return ''
+    }
+  }, [audio.error, t])
 
   if (!profile || !topology) {
     return (
@@ -806,6 +1465,9 @@ export function App(): JSX.Element {
               <div className="audio-meter" style={{ '--level': audio.mid } as React.CSSProperties} title="Mid" />
               <div className="audio-meter" style={{ '--level': audio.high } as React.CSSProperties} title="High" />
             </div>
+          )}
+          {audioEnabled && audio.error && (
+            <div className="audio-error" title={audioErrorLabel}>{audioErrorLabel}</div>
           )}
         </div>
 
@@ -908,8 +1570,8 @@ export function App(): JSX.Element {
                       </button>
                       {profileMenuOpen && (
                         <div className="profile-menu">
-                          <button className="profile-menu-item" type="button" onClick={handleProfileNew}>
-                            <FilePlus size={12} /> {t('profile.new')}
+                          <button className="profile-menu-item" type="button" onClick={handleProfileDuplicate}>
+                            <FilePlus size={12} /> {t('profile.duplicate')}
                           </button>
                           <button className="profile-menu-item" type="button" onClick={handleProfileRename}>
                             <Pencil size={12} /> {t('profile.rename')}
@@ -935,14 +1597,41 @@ export function App(): JSX.Element {
 
               <div className="fx-sidebar-header">
                 <span className="fx-section-title">{t('fx.layers')}</span>
-                <button
-                  className="icon-button small"
-                  type="button"
-                  onClick={() => addLayer('rainbow')}
-                  title={t('fx.addLayer')}
-                >
-                  <Plus size={13} />
-                </button>
+                <div className="fx-header-actions">
+                  <input
+                    accept=".json"
+                    aria-label={t('pack.import')}
+                    className="sr-only"
+                    ref={importLayerPackRef}
+                    type="file"
+                    onChange={handleImportLayerPack}
+                  />
+                  <button
+                    className="icon-button small"
+                    disabled={!selectedLayer}
+                    title={t('pack.export')}
+                    type="button"
+                    onClick={exportLayerPack}
+                  >
+                    <Upload size={13} />
+                  </button>
+                  <button
+                    className="icon-button small"
+                    title={t('pack.import')}
+                    type="button"
+                    onClick={() => importLayerPackRef.current?.click()}
+                  >
+                    <Download size={13} />
+                  </button>
+                  <button
+                    className="icon-button small"
+                    type="button"
+                    onClick={() => addLayer('rainbow')}
+                    title={t('fx.addLayer')}
+                  >
+                    <Plus size={13} />
+                  </button>
+                </div>
               </div>
 
               <div className="layer-stack" aria-label="Effect layer stack">
@@ -986,24 +1675,278 @@ export function App(): JSX.Element {
                 <span>{t('fx.effects')} — {selectedLayer?.name ?? t('fx.noLayer')}</span>
               </div>
 
-              {/* Effect kind picker — per selected layer */}
-              <div className="effect-kind-grid" aria-label="Effect type picker">
-                {effectPresets.map((preset) => (
-                  <button
-                    className={`effect-kind-btn ${selectedLayer?.kind === preset.kind ? 'selected' : ''}`}
-                    key={preset.kind}
-                    type="button"
-                    onClick={() => selectEffect(preset.kind)}
-                    title={preset.description}
-                  >
-                    {t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}
-                  </button>
-                ))}
+              {favoriteEffectPresets.length > 0 && (
+                <div className="favorite-effect-strip" aria-label={t('effects.favorites')}>
+                  {favoriteEffectPresets.map((preset, index) => (
+                    <button
+                      className={`favorite-effect-chip ${selectedLayer?.kind === preset.kind ? 'selected' : ''}`}
+                      key={preset.kind}
+                      type="button"
+                      onClick={() => selectEffect(preset.kind)}
+                      title={`Alt+${index + 1} · ${preset.label}`}
+                    >
+                      <Star size={11} fill="currentColor" />
+                      <span>{t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {selectedLayer && (
+                <div className="quick-customize-panel">
+                  <div className="quick-panel-header">
+                    <span className="ambient-label">{t('quick.title')}</span>
+                    <button className="icon-button small" type="button" onClick={randomizeSelectedLayer} title={t('effects.randomize')}>
+                      <Shuffle size={13} />
+                    </button>
+                  </div>
+                  <div className="quick-profile-row" aria-label={t('quick.profile')}>
+                    {AMBIENT_PRESETS.map((ap) => (
+                      <button
+                        key={ap.id}
+                        className={`quick-profile-btn ${String(selectedLayer.parameters._quickProfile ?? '') === ap.id ? 'active' : ''}`}
+                        type="button"
+                        title={t(ap.labelKey as Parameters<typeof t>[0])}
+                        onClick={() => applyAmbientPreset(ap)}
+                      >
+                        <span>{t(ap.labelKey as Parameters<typeof t>[0])}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="quick-tune-stack">
+                    <div className="quick-segment-row">
+                      <span>{t('quick.motion')}</span>
+                      <div className="quick-segment-control">
+                        {QUICK_MOTION_OPTIONS.map((option) => {
+                          const active = String(selectedLayer.parameters._quickMotion ?? 'flow') === option.id
+                          return <button key={option.id} className={active ? 'active' : ''} type="button" onClick={() => applyQuickDimension('motion', option.id)}>{t(option.labelKey as Parameters<typeof t>[0])}</button>
+                        })}
+                      </div>
+                    </div>
+                    <div className="quick-segment-row">
+                      <span>{t('quick.energy')}</span>
+                      <div className="quick-segment-control">
+                        {QUICK_ENERGY_OPTIONS.map((option) => {
+                          const active = String(selectedLayer.parameters._quickEnergy ?? 'balanced') === option.id
+                          return <button key={option.id} className={active ? 'active' : ''} type="button" onClick={() => applyQuickDimension('energy', option.id)}>{t(option.labelKey as Parameters<typeof t>[0])}</button>
+                        })}
+                      </div>
+                    </div>
+                    <div className="quick-segment-row">
+                      <span>{t('quick.detail')}</span>
+                      <div className="quick-segment-control">
+                        {QUICK_DETAIL_OPTIONS.map((option) => {
+                          const active = String(selectedLayer.parameters._quickDetail ?? 'balanced') === option.id
+                          return <button key={option.id} className={active ? 'active' : ''} type="button" onClick={() => applyQuickDimension('detail', option.id)}>{t(option.labelKey as Parameters<typeof t>[0])}</button>
+                        })}
+                      </div>
+                    </div>
+                    <div className="quick-segment-row">
+                      <span>{t('quick.palette')}</span>
+                      <div className="quick-segment-control">
+                        {QUICK_PALETTE_OPTIONS.map((option) => {
+                          const active = String(selectedLayer.parameters._quickPalette ?? 'cool') === option.id
+                          return <button key={option.id} className={active ? 'active' : ''} type="button" onClick={() => applyQuickDimension('palette', option.id)}>{t(option.labelKey as Parameters<typeof t>[0])}</button>
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="quick-effects-panel">
+                <span className="ambient-label">{t('quick.effects')}</span>
+                <div className="effect-kind-grid compact-effect-grid" aria-label={t('quick.effects')}>
+                  {QUICK_EFFECT_KINDS.map((kind) => {
+                    const preset = effectPresets.find((candidate) => candidate.kind === kind)
+                    if (!preset) return null
+                    return (
+                      <button
+                        className={`effect-kind-btn ${selectedLayer?.kind === preset.kind ? 'selected' : ''}`}
+                        key={preset.kind}
+                        type="button"
+                        onClick={() => selectEffect(preset.kind)}
+                        title={preset.description}
+                      >
+                        {t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}
+                      </button>
+                    )
+                  })}
+                </div>
+                <button className="advanced-toggle-row" type="button" onClick={() => setAllEffectsOpen((open) => !open)}>
+                  <Sparkles size={13} />
+                  <span>{t('quick.allEffects')}</span>
+                  <strong>{allEffectsOpen ? t('quick.hide') : t('quick.show')}</strong>
+                </button>
+                {allEffectsOpen && (
+                  <div className="effect-kind-grid all-effects-grid" aria-label="Effect type picker">
+                    {effectPresets
+                      .filter((preset) => !QUICK_EFFECT_KINDS.includes(preset.kind))
+                      .map((preset) => (
+                        <button
+                          className={`effect-kind-btn ${selectedLayer?.kind === preset.kind ? 'selected' : ''}`}
+                          key={preset.kind}
+                          type="button"
+                          onClick={() => selectEffect(preset.kind)}
+                          title={preset.description}
+                        >
+                          {t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}
+                        </button>
+                      ))}
+                  </div>
+                )}
               </div>
 
               {/* Per-layer parameters */}
               {selectedLayer && (
                 <div className="layer-params-panel">
+                  <button className="advanced-toggle-row" type="button" onClick={() => setAdvancedControlsOpen((open) => !open)}>
+                    <Gauge size={13} />
+                    <span>{t('quick.advanced')}</span>
+                    <strong>{advancedControlsOpen ? t('quick.hide') : t('quick.show')}</strong>
+                  </button>
+                  {advancedControlsOpen && (
+                    <>
+                      <div className="layer-tools-row">
+                        <select
+                          className="randomizer-select"
+                          value={randomizerMode}
+                          title={t('effects.randomizeMode')}
+                          onChange={(e) => setRandomizerMode(e.target.value as RandomizerMode)}
+                        >
+                          <option value="subtle">{t('effects.randomize.subtle')}</option>
+                          <option value="bold">{t('effects.randomize.bold')}</option>
+                          <option value="calm">{t('effects.randomize.calm')}</option>
+                          <option value="energy">{t('effects.randomize.energy')}</option>
+                        </select>
+                        <button className="layer-action-btn" type="button" onClick={randomizeSelectedLayer} title={t('effects.randomize')}>
+                          <Shuffle size={13} />
+                          <span>{t('effects.randomize')}</span>
+                        </button>
+                      </div>
+                      <div className="schedule-panel">
+                    <button
+                      className={`schedule-toggle ${scheduleEnabled ? 'active' : ''}`}
+                      type="button"
+                      onClick={() => setScheduleEnabled((enabled) => !enabled)}
+                      title={t('schedule.toggle')}
+                    >
+                      <Clock size={13} />
+                      <span>{t('schedule.title')}</span>
+                      <strong>{scheduleEnabled ? t('schedule.on') : t('schedule.off')}</strong>
+                    </button>
+                    {scheduleEnabled && (
+                      <div className="schedule-block-list">
+                        <div className="schedule-active-line">
+                          {t('schedule.active')}: {t(activeScheduleBlock.labelKey)} · {t((`effect.${scheduledEffectKind}`) as Parameters<typeof t>[0])}
+                        </div>
+                        {SCHEDULE_BLOCKS.map((block) => (
+                          <label className="schedule-block-row" key={block.id}>
+                            <span>{t(block.labelKey)}</span>
+                            <small>{block.timeLabel}</small>
+                            <select
+                              value={scheduleEffects[block.id]}
+                              onChange={(event) => setScheduleEffect(block.id, event.target.value as EffectKind)}
+                            >
+                              {effectPresets.map((preset) => (
+                                <option key={preset.kind} value={preset.kind}>
+                                  {t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {automatableParams.length > 0 && (
+                    <div className="automation-panel">
+                      <div className="automation-toolbar">
+                        <button
+                          className={`schedule-toggle ${automationEnabled ? 'active' : ''}`}
+                          type="button"
+                          onClick={() => setAutomationEnabled((enabled) => !enabled)}
+                          title={t('automation.toggle')}
+                        >
+                          <Activity size={13} />
+                          <span>{t('automation.title')}</span>
+                          <strong>{automationEnabled ? t('schedule.on') : t('schedule.off')}</strong>
+                        </button>
+                        <select
+                          className="automation-mode-select"
+                          value={automationMode}
+                          title={t('automation.mode')}
+                          onChange={(event) => setAutomationMode(event.target.value as AutomationMode)}
+                        >
+                          <option value="sine">{t('automation.sine')}</option>
+                          <option value="triangle">{t('automation.triangle')}</option>
+                          <option value="pulse">{t('automation.pulse')}</option>
+                        </select>
+                      </div>
+                      <div className="automation-param-row">
+                        {automatableParams.map((name) => {
+                          const active = automatedParams.includes(name)
+                          const meta = PARAM_META[name]
+                          const label = meta?.labelKey?.includes('.') ? t(meta.labelKey as Parameters<typeof t>[0]) : meta?.labelKey ?? name
+                          return (
+                            <button
+                              className={`automation-param-chip ${active ? 'active' : ''}`}
+                              key={name}
+                              type="button"
+                              aria-pressed={active}
+                              onClick={() => toggleAutomatedParam(name)}
+                            >
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {/* ── Zone Mask ────────────────────────────────────────── */}
+                  <div className="zone-mask-panel">
+                    <span className="zone-mask-label">{t('mask.title')}</span>
+                    <div className="zone-mask-buttons">
+                      {(['full', 'top', 'bottom', 'left', 'right', 'center', 'corners'] as const).map((zone) => {
+                        const active = (String(selectedLayer.parameters._maskZone ?? 'full')) === zone
+                        return (
+                          <button
+                            key={zone}
+                            className={`zone-mask-btn ${active ? 'active' : ''}`}
+                            type="button"
+                            aria-pressed={active}
+                            title={t(`mask.${zone}` as Parameters<typeof t>[0])}
+                            onClick={() => setLayerParameter('_maskZone', zone)}
+                          >
+                            {t(`mask.${zone}` as Parameters<typeof t>[0])}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  {/* ── Display Slot (multi-display linked mode) ──────────── */}
+                  {scene?.linkedDisplays && topology.displays.length > 1 && (
+                    <div className="zone-mask-panel">
+                      <span className="zone-mask-label">{t('display.slotTitle')}</span>
+                      <div className="zone-mask-buttons">
+                        {(['all', ...topology.displays.map((_, i) => String(i))] as const).map((slot) => {
+                          const active = (String(selectedLayer.parameters._displaySlot ?? 'all')) === slot
+                          const label = slot === 'all' ? t('display.slotAll') : `${t('display.slotN')} ${Number(slot) + 1}`
+                          return (
+                            <button
+                              key={slot}
+                              className={`zone-mask-btn ${active ? 'active' : ''}`}
+                              type="button"
+                              aria-pressed={active}
+                              onClick={() => setLayerParameter('_displaySlot', slot)}
+                            >
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <label className="control-line">
                     <span>{t('fx.opacity')}</span>
                     <input min={0} max={1} step={0.05} type="range" value={selectedLayer.opacity}
@@ -1028,10 +1971,23 @@ export function App(): JSX.Element {
                       const labelKey = meta?.labelKey ?? name
                       const label = (labelKey.includes('.') ? t(labelKey as Parameters<typeof t>[0]) : labelKey)
                       const unit = meta?.unit ?? ''
+                      const locked = randomizerLockedParams.includes(name)
+                      const lockTitle = locked ? t('effects.unlockParam') : t('effects.lockParam')
+                      const lockButton = (
+                        <button
+                          className={`parameter-lock-btn ${locked ? 'locked' : ''}`}
+                          type="button"
+                          aria-pressed={locked}
+                          title={lockTitle}
+                          onClick={() => toggleRandomizerParamLock(name)}
+                        >
+                          {locked ? <Lock size={12} /> : <Unlock size={12} />}
+                        </button>
+                      )
                       // Special case: text string parameter (not a color hex)
                       if (typeof value === 'string' && !value.startsWith('#')) {
                         return (
-                          <label className="parameter-line text-param" key={name}>
+                          <div className="parameter-line text-param" key={name}>
                             <span>{name === 'text' ? t('param.text') : label}</span>
                             <input
                               className="text-param-input"
@@ -1040,11 +1996,12 @@ export function App(): JSX.Element {
                               placeholder={name === 'text' ? t('param.textPlaceholder') : ''}
                               onChange={(e) => setLayerParameter(name, e.target.value)}
                             />
-                          </label>
+                            {lockButton}
+                          </div>
                         )
                       }
                       return (
-                        <label className="parameter-line" key={name}>
+                        <div className="parameter-line" key={name}>
                           <span>{name === 'color' ? t('param.bgColor') : name === 'textColor' ? t('param.textColor') : label}</span>
                           {typeof value === 'string' && value.startsWith('#') ? (
                             <input type="color" value={value}
@@ -1062,14 +2019,17 @@ export function App(): JSX.Element {
                             <input checked={Boolean(value)} type="checkbox"
                               onChange={(e) => setLayerParameter(name, e.target.checked)} />
                           )}
+                          {lockButton}
                           <strong>
                             {typeof value === 'number'
                               ? `${meta?.step && meta.step >= 1 ? Math.round(value) : value.toFixed(2)}${unit}`
                               : String(value)}
                           </strong>
-                        </label>
+                        </div>
                       )
                     })}
+                    </>
+                  )}
                 </div>
               )}
             </aside>
@@ -1124,6 +2084,7 @@ export function App(): JSX.Element {
                       frameRef={frameRef}
                       showGap={profile.sampling.showGap ?? false}
                       onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
+                      displayCount={scene?.linkedDisplays ? topology.displays.length : 1}
                     />
                   )}
                 </section>
@@ -1137,22 +2098,6 @@ export function App(): JSX.Element {
                     <span className="chip">{topology.platform}</span>
                   </div>
                   <DisplayMap topology={topology} overlayDisplayIds={overlayDisplayIds} onToggleOverlay={handleToggleOverlay} overlayConfigs={overlayConfigs} onOverlayConfigChange={handleOverlayConfigChange} />
-                  {topology.displays.length > 1 && (
-                    <div className="linked-display-row">
-                      <button
-                        className={`aspect-lock-btn${scene?.linkedDisplays ? ' locked' : ''}`}
-                        title={t('scene.linkedDisplays.hint')}
-                        onClick={toggleLinkedDisplays}
-                        type="button"
-                      >
-                        <Link2 size={12} />
-                        <span>{t('scene.linkedDisplays')}</span>
-                      </button>
-                      {scene?.linkedDisplays && (
-                        <span className="linked-hint">{t('scene.linkedDisplays.hint')}</span>
-                      )}
-                    </div>
-                  )}
                   {topology.displays.length > 1 && (
                     <div className="linked-display-row">
                       <button
@@ -1290,10 +2235,12 @@ export function App(): JSX.Element {
         {currentView === 'effects' && (
           <EffectsView
             activeKind={selectedLayer?.kind ?? 'static'}
+            favoriteKinds={favoriteEffectKinds}
             onSelectEffect={(kind) => {
               selectEffect(kind)
               setCurrentView('workspace')
             }}
+            onToggleFavorite={toggleFavoriteEffect}
           />
         )}
 
@@ -1305,6 +2252,14 @@ export function App(): JSX.Element {
                 <h2>Gaussian Splat</h2>
               </div>
               <div className="metric-row">
+                <button
+                  className="aspect-lock-btn model3d-back-btn"
+                  type="button"
+                  onClick={() => setCurrentView('workspace')}
+                >
+                  <Monitor size={13} />
+                  {t('nav.workspace')}
+                </button>
                 {splatLoading ? (
                   <span className="chip">Loading models…</span>
                 ) : (
@@ -1411,12 +2366,18 @@ export function App(): JSX.Element {
               <dl className="diagnostics-list">
                 <div><dt>{t('diag.virtualBounds')}</dt><dd>{topology.virtualBounds.width}×{topology.virtualBounds.height}</dd></div>
                 <div><dt>{t('diag.frameAge')}</dt><dd>{frameRef.current ? `${Math.max(0, Date.now() - frameRef.current.generatedAt)} ms` : t('diag.waiting')}</dd></div>
+                <div><dt>{t('diag.avgFrameMs')}</dt><dd>{formatMs(engineMetrics.avgFrameMs)}</dd></div>
+                <div><dt>{t('diag.p95FrameMs')}</dt><dd>{formatMs(engineMetrics.p95FrameMs)}</dd></div>
+                <div><dt>{t('diag.workerMs')}</dt><dd>{formatMs(engineMetrics.workerProcessMs)}</dd></div>
+                <div><dt>{t('diag.captureMs')}</dt><dd>{formatMs(engineMetrics.captureMs || captureProvider?.lastCaptureMs)}</dd></div>
+                <div><dt>{t('diag.outputMs')}</dt><dd>{formatMs(engineMetrics.outputMs)}</dd></div>
+                <div><dt>{t('diag.droppedTicks')}</dt><dd>{engineMetrics.droppedTicks}</dd></div>
                 <div><dt>{t('diag.brightGain')}</dt><dd>{Math.round(profile.sampling.brightnessLimit * 100)}%</dd></div>
                 <div><dt>{t('diag.gridSize')}</dt><dd>{profile.sampling.columns}×{profile.sampling.rows} ({profile.sampling.columns * profile.sampling.rows} pixels)</dd></div>
                 <div><dt>{t('diag.activeLayers')}</dt><dd>{scene?.layers.filter((l) => l.enabled).length ?? 0}</dd></div>
                 <div><dt>{t('diag.targetFps')}</dt><dd>{profile.sampling.fps}</dd></div>
                 <div><dt>{t('diag.platform')}</dt><dd>{topology.platform}</dd></div>
-                <div><dt>{t('diag.audio')}</dt><dd>{audio.active ? `Active — Bass ${(audio.bass * 100).toFixed(0)}%` : t('diag.off')}</dd></div>
+                <div><dt>{t('diag.audio')}</dt><dd>{audio.active ? `Active — Bass ${(audio.bass * 100).toFixed(0)}%` : audioErrorLabel || t('diag.off')}</dd></div>
                 {topology.displays.map((d) => (
                   <div key={d.id}>
                     <dt>{d.label}{d.primary ? ' (primary)' : ''}</dt>
@@ -1427,6 +2388,7 @@ export function App(): JSX.Element {
             </div>
           </div>
         )}
+
       </section>
     </main>
     </>

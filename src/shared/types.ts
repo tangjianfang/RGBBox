@@ -18,6 +18,8 @@ export type Effect3DKind =
   | 'warp-portal'
   | 'neon-galaxy'
   | 'lava-sphere'
+  | 'laser-show'
+  | 'hologram'
 
 export type EffectKind =
   | 'screen-ambient'
@@ -41,6 +43,32 @@ export type EffectKind =
   | 'vortex'
   | 'tunnel'
   | 'crystal'
+  | 'glitch'
+  | 'matrix-rain'
+  | 'neon-pulse'
+  | 'nebula'
+  | 'fluid-flow'
+  | 'mirror-symmetry'
+  | 'dna-helix'
+  | 'black-hole'
+  | 'solar-system'
+  | 'spiral-galaxy'
+  | 'orion-nebula'
+  | 'pulsar-beacon'
+  | 'hurricane-eye'
+  | 'lightning-leader'
+  | 'icosahedral-virus'
+  | 'protein-folding'
+  | 'mitosis-spindle'
+  | 'synapse-pulse'
+  | 'quantum-collapse'
+  | 'microvilli-field'
+  | 'eclipse-alignment'
+  | 'comet-tail'
+  | 'magnetosphere-aurora'
+  | 'wave-diffraction'
+  | 'vortex-flame'
+  | 'tokamak-plasma'
   | Effect3DKind
 
 /** Runtime set of all 3D effect kinds — keep in sync with Effect3DKind. */
@@ -49,6 +77,8 @@ export const EFFECT_3D_KINDS = new Set<EffectKind>([
   'warp-portal',
   'neon-galaxy',
   'lava-sphere',
+  'laser-show',
+  'hologram',
 ])
 
 /** True when the effect is rendered via GPU shaders (Preview3D) rather than the CPU worker. */
@@ -57,6 +87,38 @@ export function is3DEffect(kind: EffectKind): kind is Effect3DKind {
 }
 
 export type PerformanceMode = 'battery' | 'balanced' | 'extreme'
+
+export type CaptureProviderKind = 'desktop-capturer' | 'dxgi' | 'screen-capture-kit'
+
+export interface CaptureProviderStatus {
+  active: CaptureProviderKind
+  available: CaptureProviderKind[]
+  fallbackReason?: string
+  lastCaptureMs?: number
+  lastError?: string
+}
+
+export interface FrameMetrics {
+  timestamp: number
+  workerProcessMs: number
+  textMaskMs: number
+  renderMs: number
+  captureMs: number
+  roundTripMs: number
+  outputMs: number
+  droppedTicks: number
+}
+
+export interface EngineMetrics {
+  frameCount: number
+  avgFrameMs: number
+  p95FrameMs: number
+  lastFrameMs: number
+  workerProcessMs: number
+  captureMs: number
+  outputMs: number
+  droppedTicks: number
+}
 
 export interface Rect {
   x: number
@@ -109,6 +171,14 @@ export interface RgbFrame {
   showGap?: boolean
 }
 
+export interface ScreenCaptureRequest {
+  columns: number
+  rows: number
+  hasOverlays: boolean
+  linkedDisplays?: boolean
+  displayId?: number
+}
+
 export interface EffectLayer {
   id: string
   name: string
@@ -141,7 +211,7 @@ export interface EngineStatus {
   running: boolean
   fps: number
   lastFrameAt?: number
-  output: 'virtual-preview' | 'openrgb' | 'disabled'
+  output: 'virtual-preview' | 'disabled'
 }
 
 export interface ProfileMeta {

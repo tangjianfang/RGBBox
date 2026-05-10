@@ -17,13 +17,13 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'breathing',
     label: 'Breathing',
     description: 'Pulses brightness smoothly on a single hue.',
-    defaults: { color: '#ff4f87', speed: 0.45 }
+    defaults: { color: '#ff4f87', speed: 0.35, baseBrightness: 0.16, pulseAmplitude: 0.72, phaseOffset: 0, shimmerIntensity: 0.18 }
   },
   {
     kind: 'rainbow',
     label: 'Rainbow',
     description: 'Full-spectrum gradient sweeps across the canvas.',
-    defaults: { speed: 0.35, spread: 1.2, hueShift: 0, angle: 0 }
+    defaults: { speed: 0.42, spread: 1.6, hueShift: 0, angle: 18 }
   },
   {
     kind: 'wave',
@@ -40,8 +40,8 @@ export const effectPresets: PresetDefinition[] = [
   {
     kind: 'fire',
     label: 'Fire',
-    description: 'Organic flame simulation with discrete gust events, per-column height envelopes, and a 4-stop colour rampper-column height envelopes, and a 4-stop colour ramp.',
-    defaults: { speed: 0.7, intensity: 0.85, spread: 1.2, color: '#ff4400' }
+    description: 'Organic flame simulation with discrete gust events, per-column height envelopes, and a 4-stop colour ramp.',
+    defaults: { speed: 0.72, intensity: 0.88, spread: 1.28, color: '#ff3d00', heat: 1.08, sparks: 0.22, wind: 0.12, baseHeight: 1.08 }
   },
   {
     kind: 'starlight',
@@ -58,7 +58,7 @@ export const effectPresets: PresetDefinition[] = [
   {
     kind: 'spectrum',
     label: 'Spectrum',
-    description: 'Smooth diagonal colour-wash cycling the full hue wheel. Spread controls the spatial gradient rangeel. Spread controls the spatial gradient range.',
+    description: 'Smooth diagonal colour-wash cycling the full hue wheel. Spread controls the spatial gradient range.',
     defaults: { speed: 0.25, saturation: 0.95, hueShift: 0, spread: 1.0 }
   },
   {
@@ -77,7 +77,7 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'aurora',
     label: 'Aurora',
     description: 'Northern lights curtain sweeping across the top edge.',
-    defaults: { speed: 0.12, intensity: 0.88, hueShift: 0 }
+    defaults: { speed: 0.14, intensity: 0.92, hueShift: 0, curtainHeight: 1.08, ribbonFrequency: 1.18, shimmerIntensity: 0.52, baseHue: 132, colorSpread: 112, softEdge: 0.68 }
   },
   {
     kind: 'explode',
@@ -88,13 +88,13 @@ export const effectPresets: PresetDefinition[] = [
   {
     kind: 'audio-beat',
     label: 'Audio Beat',
-    description: 'Radial pulse locked to the bass beat with smooth attack-decay envelopettack-decay envelope.',
+    description: 'Radial pulse locked to the bass beat with smooth attack-decay envelope.',
     defaults: { color: '#ff2266', sensitivity: 1.2 }
   },
   {
     kind: 'audio-equalizer',
     label: 'Equalizer',
-    description: 'Anti-aliased bar graph across 32 log-spaced FFT bands with smooth peak-hold falloffnds with smooth peak-hold falloff.',
+    description: 'Anti-aliased bar graph across 32 log-spaced FFT bands with smooth peak-hold falloff.',
     defaults: { sensitivity: 1.0, colorLow: '#00ff44', colorHigh: '#ff2200' }
   },
   {
@@ -128,6 +128,164 @@ export const effectPresets: PresetDefinition[] = [
     description: 'Voronoi crystal facets with specular edge highlights — slowly shifting gemstone planes catch light at every boundary.',
     defaults: { speed: 0.18, density: 0.5, saturation: 0.95 }
   },
+  // ── 2D GLSL-style shader effects ──────────────────────────────────────────
+  {
+    kind: 'glitch',
+    label: 'Glitch',
+    description: 'Digital monitor glitch — horizontal band corruption, RGB channel splits, and animated scan-line interference.',
+    defaults: { speed: 0.50, intensity: 0.70, hueShift: 0 }
+  },
+  {
+    kind: 'matrix-rain',
+    label: 'Matrix Rain',
+    description: 'Columns of falling streaks (Matrix-style) with per-column speed variation and density control.',
+    defaults: { speed: 0.50, density: 0.55, color: '#00ff41' }
+  },
+  {
+    kind: 'neon-pulse',
+    label: 'Neon Pulse',
+    description: 'Concentric neon rings radiating from centre with colour-shifted interference shimmer.',
+    defaults: { speed: 0.50, frequency: 3.0, hueShift: 0 }
+  },
+  {
+    kind: 'nebula',
+    label: 'Nebula',
+    description: 'Layered cosmic gas clouds with drifting colour veils, star glints, and soft depth falloff.',
+    defaults: { speed: 0.28, intensity: 0.86, density: 0.62, hueShift: 250, colorSpread: 135 }
+  },
+  {
+    kind: 'fluid-flow',
+    label: 'Fluid Flow',
+    description: 'Perlin flow-field ribbons that drift like liquid light, with foam-like high-frequency highlights.',
+    defaults: { speed: 0.38, intensity: 0.82, frequency: 4.2, hueShift: 185, spread: 1.35 }
+  },
+  {
+    kind: 'mirror-symmetry',
+    label: 'Mirror Symmetry',
+    description: 'Kaleidoscopic mirrored ribbons with petal-like symmetry and luminous radial falloff.',
+    defaults: { speed: 0.34, intensity: 0.86, frequency: 5.0, hueShift: 310, angle: 45 }
+  },
+  // ── Scientific visualization effects ─────────────────────────────────────
+  {
+    kind: 'dna-helix',
+    label: 'DNA Double Helix',
+    description: 'Scientific double-helix projection with paired strands, glowing base-pair rungs, and thermal molecular breathing.',
+    defaults: { speed: 0.36, intensity: 0.88, density: 0.58, hueShift: 0 }
+  },
+  {
+    kind: 'black-hole',
+    label: 'Black Hole Accretion',
+    description: 'Event horizon silhouette surrounded by a tilted Keplerian accretion disk, thermal color gradient, lens ring, and polar jets.',
+    defaults: { speed: 0.34, intensity: 0.92, density: 0.62, hueShift: 0 }
+  },
+  {
+    kind: 'solar-system',
+    label: 'Solar System Orbits',
+    description: 'Eight planets orbit a central sun on elliptical paths with period ratios inspired by Keplerian motion.',
+    defaults: { speed: 0.26, intensity: 0.86, density: 0.55 }
+  },
+  {
+    kind: 'spiral-galaxy',
+    label: 'Spiral Galaxy',
+    description: 'Milky Way style logarithmic spiral arms with a luminous stellar bulge, dark dust lanes, and clustered star fields.',
+    defaults: { speed: 0.20, intensity: 0.90, density: 0.64, hueShift: 0 }
+  },
+  {
+    kind: 'orion-nebula',
+    label: 'Orion Nebula',
+    description: 'Star-forming molecular cloud using layered dust density, emission gas, young stars, and reflective blue-magenta glow.',
+    defaults: { speed: 0.16, intensity: 0.82, density: 0.58, hueShift: 285 }
+  },
+  {
+    kind: 'pulsar-beacon',
+    label: 'Pulsar Beacon',
+    description: 'Rotating neutron-star lighthouse with opposed radiation beams, bright core pulses, and exponential halo decay.',
+    defaults: { speed: 0.82, intensity: 0.90, density: 0.55, hueShift: 0 }
+  },
+  {
+    kind: 'hurricane-eye',
+    label: 'Hurricane Eye',
+    description: 'Satellite-like cyclone projection with a calm eye, bright eyewall, and rotating spiral rain bands shaped by vorticity.',
+    defaults: { speed: 0.32, intensity: 0.84, density: 0.58, hueShift: 0 }
+  },
+  {
+    kind: 'lightning-leader',
+    label: 'Lightning Leader',
+    description: 'Branching stepped-leader discharge from storm cloud to ground, followed by a bright return-stroke flash.',
+    defaults: { speed: 0.38, intensity: 0.94, density: 0.52, hueShift: 0 }
+  },
+  {
+    kind: 'icosahedral-virus',
+    label: 'Icosahedral Virus',
+    description: 'Rotating viral capsid projection with icosahedral edges, spike proteins, and depth-shaded shell geometry.',
+    defaults: { speed: 0.28, intensity: 0.88, density: 0.62, hueShift: 135 }
+  },
+  {
+    kind: 'protein-folding',
+    label: 'Protein Folding',
+    description: 'Animated protein backbone with alpha-helix bands, glowing residues, and folding depth cues.',
+    defaults: { speed: 0.24, intensity: 0.86, density: 0.56, hueShift: 42 }
+  },
+  {
+    kind: 'mitosis-spindle',
+    label: 'Mitosis Spindle',
+    description: 'Cell division spindle with paired centrosomes, microtubule fibers, chromosomes, and membrane outline.',
+    defaults: { speed: 0.30, intensity: 0.84, density: 0.56, hueShift: 0 }
+  },
+  {
+    kind: 'synapse-pulse',
+    label: 'Synapse Pulse',
+    description: 'Neural action potential crossing a synaptic cleft with vesicle release and neurotransmitter particles.',
+    defaults: { speed: 0.44, intensity: 0.88, density: 0.58, hueShift: 0 }
+  },
+  {
+    kind: 'quantum-collapse',
+    label: 'Quantum Collapse',
+    description: 'Double-source interference probability field collapsing into a bright measurement focus.',
+    defaults: { speed: 0.34, intensity: 0.88, density: 0.60, hueShift: 260 }
+  },
+  {
+    kind: 'microvilli-field',
+    label: 'Microvilli Field',
+    description: 'Brush-border microvilli forest with swaying epithelial projections, tip highlights, and fluid flow.',
+    defaults: { speed: 0.18, intensity: 0.82, density: 0.64, hueShift: 0 }
+  },
+  {
+    kind: 'eclipse-alignment',
+    label: 'Eclipse Alignment',
+    description: 'Solar eclipse alignment with lunar occlusion, white corona, and diamond-ring flare.',
+    defaults: { speed: 0.20, intensity: 0.88, density: 0.56, hueShift: 0 }
+  },
+  {
+    kind: 'comet-tail',
+    label: 'Comet Tail Physics',
+    description: 'Comet nucleus orbiting the sun with dust and ion tails streaming away from solar radiation.',
+    defaults: { speed: 0.30, intensity: 0.88, density: 0.58, hueShift: 0 }
+  },
+  {
+    kind: 'magnetosphere-aurora',
+    label: 'Magnetosphere Aurora',
+    description: 'Earth dipole field lines, solar-wind bow shock, and auroral ovals glowing near magnetic poles.',
+    defaults: { speed: 0.24, intensity: 0.86, density: 0.58, hueShift: 0 }
+  },
+  {
+    kind: 'wave-diffraction',
+    label: 'Wave Diffraction',
+    description: 'Double-slit wave diffraction with incident waves, slit glow, and downstream interference fringes.',
+    defaults: { speed: 0.36, intensity: 0.84, density: 0.62, hueShift: 0 }
+  },
+  {
+    kind: 'vortex-flame',
+    label: 'Vortex Flame',
+    description: 'Fire whirl projection with tapered rotating plume, helical flame bands, and hot ember particles.',
+    defaults: { speed: 0.46, intensity: 0.90, density: 0.60, hueShift: 0 }
+  },
+  {
+    kind: 'tokamak-plasma',
+    label: 'Tokamak Plasma',
+    description: 'Fusion torus with magnetic field striations, hot plasma core, limiter ring, and turbulent color drift.',
+    defaults: { speed: 0.34, intensity: 0.90, density: 0.62, hueShift: 280 }
+  },
   // ── GPU 3D (WebGL raymarching) ─────────────────────────────────────────────
   {
     kind: 'sphere-pulse',
@@ -152,6 +310,31 @@ export const effectPresets: PresetDefinition[] = [
     label: 'Lava Sphere',
     description: 'Raymarched molten lava globe. Triple-axis domain-warped FBM creates flowing crust patterns with subsurface glow leaking through thin areas.',
     defaults: { speed: 0.30, hueShift: 0 }
+  },
+  {
+    kind: 'laser-show',
+    label: 'Laser Show',
+    description: 'Concert stage laser beams sweeping from the floor in five independent arcs. Volumetric haze and a floor glow complete the show atmosphere.',
+    defaults: { speed: 0.50, hueShift: 0 }
+  },
+  {
+    kind: 'hologram',
+    label: 'Hologram',
+    description: 'Data-stream holographic sphere with adaptive wire density, scan packets, signal flicker, edge telemetry particles, and controllable projection depth.',
+    defaults: {
+      speed: 0.42,
+      hueShift: 0,
+      intensity: 0.95,
+      density: 0.68,
+      gridDensity: 0.62,
+      scanSpeed: 1.25,
+      particleIntensity: 1.15,
+      glitchAmount: 0.18,
+      flickerAmount: 0.42,
+      hologramDepth: 0.72,
+      saturation: 1.0,
+      scanWidth: 0.58
+    }
   }
 ]
 
@@ -177,13 +360,49 @@ export const defaultProfile: Profile = {
       displayIds: [],
       layers: [
         {
-          id: 'layer-rainbow',
-          name: 'Rainbow',
-          kind: 'rainbow',
+          id: 'layer-aurora-veil',
+          name: 'Emerald Veil',
+          kind: 'aurora',
           enabled: true,
-          opacity: 1,
-          blendMode: 'normal',
-          parameters: { ...effectPresets.find((p) => p.kind === 'rainbow')!.defaults }
+          opacity: 0.9,
+          blendMode: 'screen',
+          parameters: { ...effectPresets.find((p) => p.kind === 'aurora')!.defaults, _maskZone: 'top' }
+        },
+        {
+          id: 'layer-ember-bed',
+          name: 'Ember Bed',
+          kind: 'fire',
+          enabled: true,
+          opacity: 0.56,
+          blendMode: 'add',
+          parameters: { ...effectPresets.find((p) => p.kind === 'fire')!.defaults, speed: 0.58, heat: 0.92, sparks: 0.34, wind: -0.08, baseHeight: 0.86, _maskZone: 'bottom' }
+        },
+        {
+          id: 'layer-neon-core',
+          name: 'Neon Core',
+          kind: 'neon-pulse',
+          enabled: true,
+          opacity: 0.34,
+          blendMode: 'screen',
+          parameters: { ...effectPresets.find((p) => p.kind === 'neon-pulse')!.defaults, speed: 0.32, frequency: 3.8, hueShift: 265, _maskZone: 'center' }
+        },
+        {
+          id: 'layer-starlight-glint',
+          name: 'Starlight Glint',
+          kind: 'starlight',
+          enabled: true,
+          opacity: 0.42,
+          blendMode: 'add',
+          parameters: { ...effectPresets.find((p) => p.kind === 'starlight')!.defaults, density: 0.18, speed: 0.36, color: '#dbeafe', _maskZone: 'full' }
+        },
+        {
+          id: 'layer-nebula-depth',
+          name: 'Nebula Depth',
+          kind: 'nebula',
+          enabled: true,
+          opacity: 0.26,
+          blendMode: 'screen',
+          parameters: { ...effectPresets.find((p) => p.kind === 'nebula')!.defaults, speed: 0.18, hueShift: 225, density: 0.48, _maskZone: 'full' }
         }
       ]
     }

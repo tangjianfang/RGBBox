@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
+export type AudioCaptureError = 'permission-denied' | 'source-unavailable' | 'capture-failed'
+
 export interface AudioData {
   active: boolean
   bass: number
@@ -8,6 +10,7 @@ export interface AudioData {
   level: number
   beat: number
   freqBands: number[]  // 32 log-spaced bands 20 Hz – 20 kHz, each 0..1
+  error?: AudioCaptureError
 }
 
 const NUM_BANDS = 32
@@ -32,6 +35,16 @@ function buildBandEdges(sampleRate: number, fftSize: number): Array<[number, num
 const INACTIVE: AudioData = {
   active: false, bass: 0, mid: 0, high: 0, level: 0, beat: 0,
   freqBands: new Array(NUM_BANDS).fill(0)
+}
+
+function classifyAudioError(error: unknown): AudioCaptureError {
+  if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) {
+    return 'permission-denied'
+  }
+  if (error instanceof Error && error.message === 'source-unavailable') {
+    return 'source-unavailable'
+  }
+  return 'capture-failed'
 }
 
 export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
@@ -113,7 +126,7 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
       // Legacy sentinel: use the first available desktop source
       if (deviceId === SYSTEM_AUDIO_ID) {
         const sourceId = await window.rgbbox.getDesktopAudioSourceId()
-        if (!sourceId) throw new Error('No desktop source available')
+        if (!sourceId) throw new Error('source-unavailable')
         return makeDesktopStream(sourceId)
       }
       // Preferred speaker path: pick a real audio output endpoint and capture its loopback.
@@ -124,7 +137,7 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
 
         // Last fallback when the selected speaker has no exposed loopback input.
         const sourceId = await window.rgbbox.getDesktopAudioSourceId()
-        if (!sourceId) throw new Error('No desktop source available')
+        if (!sourceId) throw new Error('source-unavailable')
         return makeDesktopStream(sourceId)
       }
       // New: direct desktop source ID embedded after the prefix
@@ -212,9 +225,8 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
 
         frameRef.current = requestAnimationFrame(tick)
       })
-      .catch(() => {
-        // User denied mic — stay inactive
-        if (!cancelled) setAudioData(INACTIVE)
+      .catch((err: unknown) => {
+        if (!cancelled) setAudioData({ ...INACTIVE, error: classifyAudioError(err) })
       })
 
     return () => {

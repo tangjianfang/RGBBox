@@ -10,7 +10,7 @@
 
 Project context:
 - RGBBox is an Electron + Vite + React + TypeScript desktop RGB lighting client.
-- MVP targets Windows and macOS, local-first usage, multi-display screen sampling, virtual preview, preset effects, and later OpenRGB output.
+- MVP targets Windows and macOS, local-first usage, multi-display screen sampling, virtual preview, and preset effects.
 - Keep renderer code isolated from Node APIs through preload IPC.
 - Keep engine logic in pure TypeScript modules until native capture/output adapters are introduced.
 - Prefer focused changes and verify with `npm run typecheck` and `npm run build`.
