@@ -556,8 +556,8 @@ export function MiniGamesView(): JSX.Element {
           <span aria-label={statusAria} role="listitem" title={statusAria}><Shield aria-hidden="true" size={15} />{phaseLabel}</span>
           <span aria-label={waveAria} role="listitem" title={waveAria}><Zap aria-hidden="true" size={15} />{t('games.wave')} {snapshot.wave}/{MAX_WAVE}</span>
           <span aria-label={livesAria} role="listitem" title={livesAria}><Heart aria-hidden="true" size={15} />{snapshot.lives}</span>
-          <span aria-label={coinsAria} role="listitem" title={coinsAria}>◎ {snapshot.coins}</span>
-          <span aria-label={scoreAria} role="listitem" title={scoreAria}>★ {snapshot.score}</span>
+          <span aria-label={coinsAria} role="listitem" title={coinsAria}><span aria-hidden="true">◎</span> {snapshot.coins}</span>
+          <span aria-label={scoreAria} role="listitem" title={scoreAria}><span aria-hidden="true">★</span> {snapshot.score}</span>
         </div>
       </section>
 
