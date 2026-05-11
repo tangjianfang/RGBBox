@@ -25,6 +25,7 @@ RGBBox is a local-first Electron desktop client for multi-display RGB lighting. 
 - Runtime telemetry in diagnostics: average/p95 frame time, worker render time, capture time, output enqueue time, and dropped tick count.
 - Audio capture: microphone or system audio loopback (Windows), 32 log-spaced FFT bands, and visible capture failure state.
 - Gaussian Splat model viewer with on-demand model downloads, local cache detection, user model import, and LED mapping editor.
+- Single-player mini games theme with a playable local balloon tower-defense arena in the renderer.
 - FPS estimation hint in the resolution slider (calibrated for complex effects).
 - setInterval-based engine tick (continues when window is minimised).
 
@@ -47,8 +48,8 @@ src/preload   Context-isolated renderer API bridge
 src/shared    Shared types, IPC channel names, default profile and effect presets
 src/engine    Pure TypeScript effect engine (effects.ts, previewEngine.ts, color.ts)
 src/renderer  React UI — workspace, display map, layered effect controls,
-              virtual preview (WebGL), effects library, audio analyzer hook,
-              3D Gaussian Splat viewer and LED mapper
+               virtual preview (WebGL), effects library, audio analyzer hook,
+               mini games, 3D Gaussian Splat viewer and LED mapper
 ```
 
 ## Roadmap
