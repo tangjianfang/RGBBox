@@ -49,6 +49,11 @@ interface FloatingText extends Point {
   color: string
 }
 
+interface TextContainer {
+  texts: FloatingText[]
+  nextId: number
+}
+
 interface GameState {
   phase: GamePhase
   wave: number
@@ -134,7 +139,8 @@ interface ArcadeState {
 const WIDTH = 900
 const HEIGHT = 520
 const MAX_WAVE = 12
-const GROUND_Y = 420
+const ARCADE_GROUND_Y = 420
+const GRAVITY_ROTATION_COOLDOWN = 0.16
 
 const PATH: Point[] = [
   { x: -40, y: 284 },
@@ -305,7 +311,7 @@ function createArcadeState(id: ArcadeGameId): ArcadeState {
     base.obstacles = Array.from({ length: 34 }, () => makeOre(base))
   }
   if (id === 'qwop') {
-    base.player = { ...player, x: 170, y: GROUND_Y - 38, size: 18 }
+    base.player = { ...player, x: 170, y: ARCADE_GROUND_Y - 38, size: 18 }
     base.energy = 0.5
     base.lives = 1
     base.message = 'Coordinate Q W O P'
@@ -313,7 +319,21 @@ function createArcadeState(id: ArcadeGameId): ArcadeState {
   return base
 }
 
-function addText(state: { texts: FloatingText[], nextId: number }, x: number, y: number, text: string, color: string): void {
+function createArcadeStateMap(): Record<ArcadeGameId, ArcadeState> {
+  return {
+    fancy: createArcadeState('fancy'),
+    lineRider: createArcadeState('lineRider'),
+    helicopter: createArcadeState('helicopter'),
+    clubPenguin: createArcadeState('clubPenguin'),
+    run: createArcadeState('run'),
+    ageOfWar: createArcadeState('ageOfWar'),
+    boxhead: createArcadeState('boxhead'),
+    motherload: createArcadeState('motherload'),
+    qwop: createArcadeState('qwop'),
+  }
+}
+
+function addText(state: TextContainer, x: number, y: number, text: string, color: string): void {
   state.texts.push({ id: state.nextId++, x, y, text, color, life: 0.9 })
 }
 
@@ -447,7 +467,7 @@ function updateFancy(state: ArcadeState, dt: number): void {
   player.vx = clamp(player.vx + run * 900 * dt, -330, 390)
   player.vx *= run === 0 ? 0.93 : 0.985
   player.vy += 980 * dt
-  const ground = GROUND_Y + Math.sin((player.x + 80) / 95) * 32
+  const ground = ARCADE_GROUND_Y + Math.sin((player.x + 80) / 95) * 32
   if ((key(state, ' ') || key(state, 'space')) && player.y >= ground - 2) player.vy = -475
   player.x += player.vx * dt
   player.y += player.vy * dt
@@ -459,14 +479,14 @@ function updateFancy(state: ArcadeState, dt: number): void {
   state.distance = Math.max(state.distance, player.x - 150)
   if (state.obstacles.length < 16) {
     const x = state.camera + WIDTH + Math.random() * 900
-    state.obstacles.push(makeEntity(state, x, GROUND_Y - 80 - Math.random() * 120, 0, 0, 13, 'curl', 18))
+    state.obstacles.push(makeEntity(state, x, ARCADE_GROUND_Y - 80 - Math.random() * 120, 0, 0, 13, 'curl', 18))
   }
   for (const item of state.obstacles) {
     if (distance(player, item) < player.size + item.size) {
       state.resources += 1
       addText(state, item.x - state.camera, item.y, '+curl', '#facc15')
       item.x = state.camera + WIDTH + Math.random() * 1000
-      item.y = GROUND_Y - 80 - Math.random() * 150
+      item.y = ARCADE_GROUND_Y - 80 - Math.random() * 150
     }
   }
   if (player.y > HEIGHT + 40) loseArcade(state, 'Ink spill!')
@@ -549,10 +569,10 @@ function updateRun(state: ArcadeState, dt: number): void {
   state.actionTimer = Math.max(0, state.actionTimer - dt)
   if (state.actionTimer <= 0 && (key(state, 'arrowleft') || key(state, 'a'))) {
     state.gravitySide = (state.gravitySide + 3) % 4
-    state.actionTimer = 0.16
+    state.actionTimer = GRAVITY_ROTATION_COOLDOWN
   } else if (state.actionTimer <= 0 && (key(state, 'arrowright') || key(state, 'd'))) {
     state.gravitySide = (state.gravitySide + 1) % 4
-    state.actionTimer = 0.16
+    state.actionTimer = GRAVITY_ROTATION_COOLDOWN
   }
   const targetAngle = (state.gravitySide * Math.PI) / 2
   state.energy += (targetAngle - state.energy) * 5 * dt
@@ -897,7 +917,7 @@ function drawFancy(ctx: CanvasRenderingContext2D, state: ArcadeState): void {
   ctx.lineWidth = 4
   ctx.beginPath()
   for (let x = state.camera - 80; x < state.camera + WIDTH + 120; x += 20) {
-    const y = GROUND_Y + Math.sin((x + 80) / 95) * 32
+    const y = ARCADE_GROUND_Y + Math.sin((x + 80) / 95) * 32
     if (x === state.camera - 80) ctx.moveTo(x, y)
     else ctx.lineTo(x, y)
   }
@@ -983,7 +1003,7 @@ function drawMotherload(ctx: CanvasRenderingContext2D, state: ArcadeState): void
 }
 
 function drawQwop(ctx: CanvasRenderingContext2D, state: ArcadeState): void {
-  ctx.fillStyle = '#e0f2fe'; ctx.fillRect(0, 0, WIDTH, HEIGHT); ctx.fillStyle = '#0f172a'; ctx.fillRect(0, GROUND_Y + 12, WIDTH, 8)
+  ctx.fillStyle = '#e0f2fe'; ctx.fillRect(0, 0, WIDTH, HEIGHT); ctx.fillStyle = '#0f172a'; ctx.fillRect(0, ARCADE_GROUND_Y + 12, WIDTH, 8)
   const p = state.player
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(state.energy)
   ctx.strokeStyle = '#111827'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(0, -34, 11, 0, Math.PI * 2); ctx.moveTo(0, -22); ctx.lineTo(0, 8); ctx.moveTo(0, 8); ctx.lineTo(-18, 36); ctx.moveTo(0, 8); ctx.lineTo(22, 34); ctx.moveTo(0, -8); ctx.lineTo(-22, 8); ctx.moveTo(0, -8); ctx.lineTo(24, 7); ctx.stroke(); ctx.restore()
@@ -994,7 +1014,8 @@ export function MiniGamesView(): JSX.Element {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const tdStateRef = useRef<GameState>(initialState())
-  const arcadeRef = useRef<ArcadeState>(createArcadeState('fancy'))
+  const arcadeStatesRef = useRef<Record<ArcadeGameId, ArcadeState>>(createArcadeStateMap())
+  const arcadeRef = useRef<ArcadeState>(arcadeStatesRef.current.fancy)
   const [activeGame, setActiveGame] = useState<GameId>('balloon')
   const [selectedTower, setSelectedTower] = useState<TowerKind>('dart')
   const [tdSnapshot, setTdSnapshot] = useState<GameState>(() => ({ ...tdStateRef.current }))
@@ -1009,7 +1030,7 @@ export function MiniGamesView(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (activeGame !== 'balloon') arcadeRef.current = createArcadeState(activeGame)
+    if (activeGame !== 'balloon') arcadeRef.current = arcadeStatesRef.current[activeGame]
     publishSnapshot()
   }, [activeGame, publishSnapshot])
 
@@ -1044,13 +1065,12 @@ export function MiniGamesView(): JSX.Element {
   }, [activeDefinition, activeGame, publishSnapshot])
 
   useEffect(() => {
+    const normalizeKey = (event: KeyboardEvent) => event.code === 'Space' ? 'space' : event.key.toLowerCase()
     const down = (event: KeyboardEvent) => {
-      arcadeRef.current.keys.add(event.key.toLowerCase())
-      if (event.code === 'Space') arcadeRef.current.keys.add('space')
+      arcadeRef.current.keys.add(normalizeKey(event))
     }
     const up = (event: KeyboardEvent) => {
-      arcadeRef.current.keys.delete(event.key.toLowerCase())
-      if (event.code === 'Space') arcadeRef.current.keys.delete('space')
+      arcadeRef.current.keys.delete(normalizeKey(event))
     }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
@@ -1078,7 +1098,10 @@ export function MiniGamesView(): JSX.Element {
 
   const restart = useCallback(() => {
     if (activeGame === 'balloon') tdStateRef.current = initialState()
-    else arcadeRef.current = createArcadeState(activeGame)
+    else {
+      arcadeStatesRef.current[activeGame] = createArcadeState(activeGame)
+      arcadeRef.current = arcadeStatesRef.current[activeGame]
+    }
     publishSnapshot()
   }, [activeGame, publishSnapshot])
 
