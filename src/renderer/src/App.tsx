@@ -1,4 +1,4 @@
-import { Activity, Box, Clock, Download, FilePlus, Gauge, Languages, Link2, Link2Off, Lock, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload } from 'lucide-react'
+import { Activity, Box, Clock, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Mic, MicOff, Monitor, MoreVertical, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
@@ -6,6 +6,7 @@ import { is3DEffect } from '../../shared/types'
 import { useI18n } from './i18n'
 import { DisplayMap } from './components/DisplayMap'
 import { EffectsView } from './components/EffectsView'
+import { MiniGamesView } from './components/MiniGamesView'
 import { PreviewGrid } from './components/PreviewGrid'
 import { Preview3D } from './components/Preview3D'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
@@ -17,7 +18,7 @@ import { MetricsCollector } from './engine/metricsCollector'
 const SplatViewer = lazy(() => import('./3d/SplatViewer').then((m) => ({ default: m.SplatViewer })))
 const LEDMapper   = lazy(() => import('./3d/LEDMapper').then((m) => ({ default: m.LEDMapper })))
 
-type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics' | 'model3d'
+type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics' | 'model3d' | 'games'
 
 type RandomizerMode = 'subtle' | 'bold' | 'calm' | 'energy'
 type ScheduleBlockId = 'day' | 'evening' | 'night'
@@ -1418,6 +1419,10 @@ export function App(): JSX.Element {
             <Sparkles size={18} />
             {t('nav.effects')}
           </button>
+          <button className={`nav-item ${currentView === 'games' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('games')}>
+            <Gamepad2 size={18} />
+            {t('nav.games')}
+          </button>
           <button className={`nav-item ${currentView === 'diagnostics' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('diagnostics')}>
             <Gauge size={18} />
             {t('nav.diagnostics')}
@@ -2242,6 +2247,10 @@ export function App(): JSX.Element {
             }}
             onToggleFavorite={toggleFavoriteEffect}
           />
+        )}
+
+        {currentView === 'games' && (
+          <MiniGamesView />
         )}
 
         {currentView === 'model3d' && (
