@@ -1275,6 +1275,51 @@ input:not([type]):focus {
   gap: 10px;
 }
 
+.game-card-list {
+  display: grid;
+  gap: 8px;
+  max-height: 310px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.game-card {
+  align-items: center;
+  background: #101a21;
+  border: 1px solid #273a43;
+  border-radius: 10px;
+  color: #dceff4;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 34px 1fr;
+  padding: 10px;
+  text-align: left;
+  transition: background 120ms, border-color 120ms, transform 120ms;
+}
+
+.game-card:hover,
+.game-card.selected {
+  background: #13252b;
+  border-color: var(--game-accent, #46c6a8);
+  transform: translateY(-1px);
+}
+
+.game-card strong,
+.game-card small {
+  display: block;
+}
+
+.game-card strong {
+  font-size: 12px;
+}
+
+.game-card small {
+  color: #8aa2ad;
+  font-size: 10px;
+  line-height: 1.35;
+  margin-top: 3px;
+}
+
 .tower-card {
   align-items: center;
   background: #101a21;
