@@ -49,7 +49,7 @@ interface FloatingText extends Point {
   color: string
 }
 
-interface TextContainer {
+interface FloatingTextManager {
   texts: FloatingText[]
   nextId: number
 }
@@ -140,7 +140,8 @@ const WIDTH = 900
 const HEIGHT = 520
 const MAX_WAVE = 12
 const ARCADE_GROUND_Y = 420
-const GRAVITY_ROTATION_COOLDOWN = 0.16
+const RUN_ROTATION_COOLDOWN = 0.16
+const RUN_ROTATE_LEFT_STEP = 3
 
 const PATH: Point[] = [
   { x: -40, y: 284 },
@@ -333,7 +334,7 @@ function createArcadeStateMap(): Record<ArcadeGameId, ArcadeState> {
   }
 }
 
-function addText(state: TextContainer, x: number, y: number, text: string, color: string): void {
+function addText(state: FloatingTextManager, x: number, y: number, text: string, color: string): void {
   state.texts.push({ id: state.nextId++, x, y, text, color, life: 0.9 })
 }
 
@@ -376,7 +377,7 @@ function nearestTarget(tower: Tower, balloons: Balloon[]): Balloon | undefined {
 }
 
 function makeEntity(state: ArcadeState, x: number, y: number, vx: number, vy: number, size: number, kind?: string, value?: number): ArcadeEntity {
-  return { id: state.nextId++, x, y, vx, vy, size, kind, value, hp: value }
+  return { id: state.nextId++, x, y, vx, vy, size, kind, value, hp: value ?? 1 }
 }
 
 function makeCaveColumn(state: ArcadeState, x: number): ArcadeEntity {
@@ -568,11 +569,11 @@ function updateRun(state: ArcadeState, dt: number): void {
   const player = state.player
   state.actionTimer = Math.max(0, state.actionTimer - dt)
   if (state.actionTimer <= 0 && (key(state, 'arrowleft') || key(state, 'a'))) {
-    state.gravitySide = (state.gravitySide + 3) % 4
-    state.actionTimer = GRAVITY_ROTATION_COOLDOWN
+    state.gravitySide = (state.gravitySide + RUN_ROTATE_LEFT_STEP) % 4
+    state.actionTimer = RUN_ROTATION_COOLDOWN
   } else if (state.actionTimer <= 0 && (key(state, 'arrowright') || key(state, 'd'))) {
     state.gravitySide = (state.gravitySide + 1) % 4
-    state.actionTimer = GRAVITY_ROTATION_COOLDOWN
+    state.actionTimer = RUN_ROTATION_COOLDOWN
   }
   const targetAngle = (state.gravitySide * Math.PI) / 2
   state.energy += (targetAngle - state.energy) * 5 * dt
