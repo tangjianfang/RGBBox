@@ -548,11 +548,11 @@ export function MiniGamesView(): JSX.Element {
           <p>{t('games.description')}</p>
         </div>
         <div className="games-stat-grid">
-          <span><Shield size={15} />{phaseLabel}</span>
-          <span><Zap size={15} />{t('games.wave')} {snapshot.wave}/{MAX_WAVE}</span>
-          <span><Heart size={15} />{snapshot.lives}</span>
-          <span>◎ {snapshot.coins}</span>
-          <span>★ {snapshot.score}</span>
+          <span aria-label={`Game status: ${phaseLabel}`}><Shield size={15} />{phaseLabel}</span>
+          <span aria-label={`Current wave: ${snapshot.wave} of ${MAX_WAVE}`}><Zap size={15} />{t('games.wave')} {snapshot.wave}/{MAX_WAVE}</span>
+          <span aria-label={`Lives remaining: ${snapshot.lives}`}><Heart size={15} />{snapshot.lives}</span>
+          <span aria-label={`Available coins: ${snapshot.coins}`}>◎ {snapshot.coins}</span>
+          <span aria-label={`Total score: ${snapshot.score}`}>★ {snapshot.score}</span>
         </div>
       </section>
 
@@ -571,7 +571,7 @@ export function MiniGamesView(): JSX.Element {
                 type="button"
                 onClick={() => setSelectedTower(tower.kind)}
               >
-                <span className="tower-orb" style={{ background: tower.color }}><Crosshair size={15} /></span>
+                <span className="tower-orb" style={{ background: tower.color }}><Crosshair aria-label={`${tower.label} targeting tower`} size={15} /></span>
                 <span>
                   <strong>{tower.label}</strong>
                   <small>{tower.description}</small>
