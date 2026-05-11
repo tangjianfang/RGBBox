@@ -546,8 +546,14 @@ function updateClubPenguin(state: ArcadeState, dt: number): void {
 
 function updateRun(state: ArcadeState, dt: number): void {
   const player = state.player
-  if (key(state, 'arrowleft') || key(state, 'a')) state.gravitySide = (state.gravitySide + 3) % 4
-  if (key(state, 'arrowright') || key(state, 'd')) state.gravitySide = (state.gravitySide + 1) % 4
+  state.actionTimer = Math.max(0, state.actionTimer - dt)
+  if (state.actionTimer <= 0 && (key(state, 'arrowleft') || key(state, 'a'))) {
+    state.gravitySide = (state.gravitySide + 3) % 4
+    state.actionTimer = 0.16
+  } else if (state.actionTimer <= 0 && (key(state, 'arrowright') || key(state, 'd'))) {
+    state.gravitySide = (state.gravitySide + 1) % 4
+    state.actionTimer = 0.16
+  }
   const targetAngle = (state.gravitySide * Math.PI) / 2
   state.energy += (targetAngle - state.energy) * 5 * dt
   state.distance += 240 * dt
