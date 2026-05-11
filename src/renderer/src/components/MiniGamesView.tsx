@@ -521,6 +521,11 @@ export function MiniGamesView(): JSX.Element {
       : snapshot.phase === 'ready'
         ? t('games.statusReady')
         : t('games.statusRunning')
+  const statusAria = t('games.ariaStatus').replace('{value}', phaseLabel)
+  const waveAria = t('games.ariaWave').replace('{current}', String(snapshot.wave)).replace('{max}', String(MAX_WAVE))
+  const livesAria = t('games.ariaLives').replace('{value}', String(snapshot.lives))
+  const coinsAria = t('games.ariaCoins').replace('{value}', String(snapshot.coins))
+  const scoreAria = t('games.ariaScore').replace('{value}', String(snapshot.score))
 
   return (
     <div className="games-view">
@@ -547,12 +552,12 @@ export function MiniGamesView(): JSX.Element {
           <h3>Balloon TD Arena</h3>
           <p>{t('games.description')}</p>
         </div>
-        <div className="games-stat-grid">
-          <span aria-label={`Game status: ${phaseLabel}`} title={`Game status: ${phaseLabel}`}><Shield aria-hidden="true" size={15} />{phaseLabel}</span>
-          <span aria-label={`Current wave: ${snapshot.wave} of ${MAX_WAVE}`} title={`Current wave: ${snapshot.wave} of ${MAX_WAVE}`}><Zap aria-hidden="true" size={15} />{t('games.wave')} {snapshot.wave}/{MAX_WAVE}</span>
-          <span aria-label={`Lives remaining: ${snapshot.lives}`} title={`Lives remaining: ${snapshot.lives}`}><Heart aria-hidden="true" size={15} />{snapshot.lives}</span>
-          <span aria-label={`Available coins: ${snapshot.coins}`} title={`Available coins: ${snapshot.coins}`}>◎ {snapshot.coins}</span>
-          <span aria-label={`Total score: ${snapshot.score}`} title={`Total score: ${snapshot.score}`}>★ {snapshot.score}</span>
+        <div className="games-stat-grid" role="list">
+          <span aria-label={statusAria} role="listitem" title={statusAria}><Shield aria-hidden="true" size={15} />{phaseLabel}</span>
+          <span aria-label={waveAria} role="listitem" title={waveAria}><Zap aria-hidden="true" size={15} />{t('games.wave')} {snapshot.wave}/{MAX_WAVE}</span>
+          <span aria-label={livesAria} role="listitem" title={livesAria}><Heart aria-hidden="true" size={15} />{snapshot.lives}</span>
+          <span aria-label={coinsAria} role="listitem" title={coinsAria}>◎ {snapshot.coins}</span>
+          <span aria-label={scoreAria} role="listitem" title={scoreAria}>★ {snapshot.score}</span>
         </div>
       </section>
 
@@ -569,7 +574,7 @@ export function MiniGamesView(): JSX.Element {
                 className={`tower-card ${selectedTower === tower.kind ? 'selected' : ''}`}
                 key={tower.kind}
                 type="button"
-                aria-label={`Select ${tower.label} tower, costs ${tower.cost} coins`}
+                aria-label={t('games.ariaTower').replace('{name}', tower.label).replace('{cost}', String(tower.cost))}
                 onClick={() => setSelectedTower(tower.kind)}
               >
                 <span className="tower-orb" style={{ background: tower.color }}><Crosshair aria-hidden="true" size={15} /></span>
