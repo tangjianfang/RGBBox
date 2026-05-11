@@ -328,7 +328,7 @@ const ZH: TranslationTable = {
   'nav.effects': '效果库',
   'nav.profiles': 'Profile 管理',
   'nav.diagnostics': '诊断',
-  'nav.games': '单机小游戏',
+  'nav.games': '迷你游戏',
   'audio.on': '音频已开',
   'audio.off': '音频已关',
   'audio.defaultDevice': '默认（麦克风）',

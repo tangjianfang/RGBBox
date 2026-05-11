@@ -446,7 +446,7 @@ export function MiniGamesView(): JSX.Element {
     let snapshotTimer = 0
 
     const loop = (now: number) => {
-      const dt = Math.min(0.033, (now - last) / 1000)
+      const dt = Math.min(0.05, (now - last) / 1000)
       last = now
       tickGame(stateRef.current, dt)
       drawGame(ctx, stateRef.current)
