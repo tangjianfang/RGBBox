@@ -4,16 +4,29 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: resolve(__dirname, 'src/main/index.ts'),
+        external: ['electron']
+      }
+    }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: resolve(__dirname, 'src/preload/index.ts'),
+        external: ['electron']
+      }
+    }
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     plugins: [react()],
     build: {
       rollupOptions: {
+        input: resolve(__dirname, 'src/renderer/index.html'),
         output: {
           manualChunks(id: string) {
             if (id.includes('@mkkellogg/gaussian-splats-3d')) return 'vendor-splat'
@@ -21,9 +34,10 @@ export default defineConfig({
           }
         }
       }
-    } as any,
+    },
     server: {
       headers: {
+        // Required for SharedArrayBuffer (used by gaussian-splats-3d sort worker)
         'Cross-Origin-Opener-Policy': 'same-origin',
         'Cross-Origin-Embedder-Policy': 'require-corp'
       }
