@@ -10,6 +10,7 @@ export interface AudioInput {
   freqBands?: number[]  // 32 log-spaced bands 20 Hz – 20 kHz, each 0..1
 }
 
+
 const api = {
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(ipcChannels.appVersion),
   getDisplayTopology: (): Promise<DisplayTopology> => ipcRenderer.invoke(ipcChannels.getDisplayTopology),

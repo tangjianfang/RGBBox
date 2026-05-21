@@ -50,7 +50,7 @@ function classifyAudioError(error: unknown): AudioCaptureError {
 export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
   const [audioData, setAudioData] = useState<AudioData>(INACTIVE)
   const prevBassRef = useRef(0)
-  const frameRef = useRef<number | null>(null)
+  const intervalRef = useRef<number | null>(null)
   // Per-band EMA: fast attack (0.75), slow decay (0.20) → VU-meter "peak hold" feel.
   // Prevents the harsh instant-drop that makes equalizer bars jittery.
   const smoothedBandsRef = useRef<number[]>(new Array(NUM_BANDS).fill(0))
@@ -181,6 +181,7 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
         const BASS_END = Math.round(250 / binHz)   // 0 – ~250 Hz
         const MID_END  = Math.round(4000 / binHz)  // ~250 – 4000 Hz
 
+        // Use setInterval instead of requestAnimationFrame so it continues when window is minimized
         const tick = () => {
           if (cancelled) return
           analyser.getByteFrequencyData(dataArray)
@@ -220,10 +221,9 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
           })
 
           setAudioData({ active: true, bass, mid, high, level, beat, freqBands })
-          frameRef.current = requestAnimationFrame(tick)
         }
 
-        frameRef.current = requestAnimationFrame(tick)
+        intervalRef.current = window.setInterval(tick, 16) // ~60fps, but survives minimize
       })
       .catch((err: unknown) => {
         if (!cancelled) setAudioData({ ...INACTIVE, error: classifyAudioError(err) })
@@ -231,7 +231,7 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
 
     return () => {
       cancelled = true
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+      if (intervalRef.current !== null) window.clearInterval(intervalRef.current)
       stream?.getTracks().forEach((t) => t.stop())
       audioContext?.close().catch(() => undefined)
     }
