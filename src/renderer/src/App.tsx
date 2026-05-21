@@ -588,6 +588,7 @@ export function App(): JSX.Element {
     catch { return {} }
   })
   const [powerSaveBlock, setPowerSaveBlock] = useState(false)
+  const [autoLaunch, setAutoLaunch] = useState(false)
   const audio = useAudioAnalyzer(audioEnabled, audioDeviceId)
 
   // ── Engine Worker ─────────────────────────────────────────────────────────
@@ -667,7 +668,8 @@ export function App(): JSX.Element {
       window.rgbbox.getPowerSaveBlock(),
       window.rgbbox.listProfiles(),
       window.rgbbox.getCaptureProviderStatus(),
-    ]).then(async ([loadedProfile, loadedTopology, loadedStatus, loadedVersion, loadedOverlays, loadedPSB, loadedProfiles, loadedCaptureProvider]) => {
+      window.rgbbox.getAutoLaunch(),
+    ]).then(async ([loadedProfile, loadedTopology, loadedStatus, loadedVersion, loadedOverlays, loadedPSB, loadedProfiles, loadedCaptureProvider, loadedAutoLaunch]) => {
       // Back-fill fields added after the profile was first persisted
       const migratedProfile = {
         ...loadedProfile,
@@ -683,6 +685,7 @@ export function App(): JSX.Element {
       setOverlayDisplayIds(loadedOverlays)
       setPowerSaveBlock(loadedPSB)
       setCaptureProvider(loadedCaptureProvider)
+      setAutoLaunch(loadedAutoLaunch)
       // Ensure the current working profile is always present in the named slots.
       // On first launch (profiles/ directory empty) or after a reset, this seeds
       // the list so the dropdown is never empty.
@@ -1495,6 +1498,19 @@ export function App(): JSX.Element {
             checked={powerSaveBlock}
             onChange={(e) => {
               window.rgbbox.setPowerSaveBlock(e.target.checked).then(setPowerSaveBlock)
+            }}
+          />
+        </label>
+        <label className="status-panel" style={{ cursor: 'pointer' }}>
+          <div>
+            <span>{t('autoLaunch.label')}</span>
+            <strong>{autoLaunch ? t('autoLaunch.on') : t('autoLaunch.off')}</strong>
+          </div>
+          <input
+            type="checkbox"
+            checked={autoLaunch}
+            onChange={(e) => {
+              window.rgbbox.setAutoLaunch(e.target.checked).then(setAutoLaunch)
             }}
           />
         </label>

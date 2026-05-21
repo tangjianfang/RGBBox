@@ -28,6 +28,9 @@ export const ipcChannels = {
   // Power save blocker
   setPowerSaveBlock: 'rgbbox:system:set-power-save-block',
   getPowerSaveBlock: 'rgbbox:system:get-power-save-block',
+  // Auto-launch at login
+  getAutoLaunch: 'rgbbox:system:get-auto-launch',
+  setAutoLaunch: 'rgbbox:system:set-auto-launch',
   // Desktop audio loopback source ID (for system audio capture)
   getDesktopAudioSourceId: 'rgbbox:audio:desktop-source-id',
   // All desktop audio capture sources (screens/displays)

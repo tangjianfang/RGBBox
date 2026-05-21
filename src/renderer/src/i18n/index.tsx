@@ -33,6 +33,10 @@ const EN = {
   'power.label': 'Block Screensaver',
   'power.on': 'On',
   'power.off': 'Off',
+  // Auto-launch
+  'autoLaunch.label': 'Start at Login',
+  'autoLaunch.on': 'On',
+  'autoLaunch.off': 'Off',
   // Performance modes
   'perf.battery': 'Battery',
   'perf.balanced': 'Balanced',
@@ -351,6 +355,9 @@ const ZH: TranslationTable = {
   'power.label': '阻止屏保/睡眠',
   'power.on': '开',
   'power.off': '关',
+  'autoLaunch.label': '开机自动启动',
+  'autoLaunch.on': '开',
+  'autoLaunch.off': '关',
   'perf.battery': '省电',
   'perf.balanced': '均衡',
   'perf.extreme': '极致',

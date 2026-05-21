@@ -107,6 +107,12 @@ function registerIpc(): void {
     return powerSaveBlockerId !== null
   })
 
+  ipcMain.handle(ipcChannels.getAutoLaunch, () => app.getLoginItemSettings().openAtLogin)
+  ipcMain.handle(ipcChannels.setAutoLaunch, (_event, enable: boolean) => {
+    app.setLoginItemSettings({ openAtLogin: enable })
+    return app.getLoginItemSettings().openAtLogin
+  })
+
   ipcMain.handle(ipcChannels.appVersion, () => app.getVersion())
   ipcMain.handle(ipcChannels.getDisplayTopology, () => getDisplayTopology())
   ipcMain.handle(ipcChannels.getDefaultProfile, () => loadProfile())

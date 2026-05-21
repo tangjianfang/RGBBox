@@ -87,6 +87,12 @@ const api = {
   setPowerSaveBlock: (enable: boolean): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.setPowerSaveBlock, enable),
 
+  // Auto-launch at login
+  getAutoLaunch: (): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.getAutoLaunch),
+  setAutoLaunch: (enable: boolean): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.setAutoLaunch, enable),
+
   // Named profile slots
   listProfiles: (): Promise<ProfileMeta[]> =>
     ipcRenderer.invoke(ipcChannels.listProfiles),
