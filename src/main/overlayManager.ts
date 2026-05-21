@@ -87,7 +87,7 @@ export function openOverlay(
     // steal focus or intercept mouse events in the main window.
     show: false,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
