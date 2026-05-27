@@ -197,12 +197,21 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const pulseAmplitude = Number(layer.parameters.pulseAmplitude ?? 0.62)
       const phaseOffset = Number(layer.parameters.phaseOffset ?? 0)
       const shimmerIntensity = Number(layer.parameters.shimmerIntensity ?? 0)
+      // Apple-style breathing: ultra-smooth quintic ease (slow in/out, natural cadence)
       const wave = (Math.sin((context.now * speed + phaseOffset) * Math.PI * 2) + 1) * 0.5
-      const eased = wave * wave * (3 - 2 * wave)
+      const t6 = wave * wave * wave * (wave * (wave * 6 - 15) + 10) // quintic smoothstep
+      // Subtle warm-cool color temperature shift during breath cycle for organic feel
+      const warmShift = t6 * 0.06 // peak brightness warms slightly
       const spatial = 1 + (hash2(context.x, context.y) - 0.5) * shimmerIntensity * 0.12
-      const pulse = clampUnit((baseBrightness + eased * pulseAmplitude) * spatial)
+      const pulse = clampUnit((baseBrightness + t6 * pulseAmplitude) * spatial)
+      // Perceptual gamma: apply power curve so dim values don't appear too harsh on LED
+      const perceptualPulse = Math.pow(pulse, 1.12)
 
-      return { r: base.r * pulse, g: base.g * pulse, b: base.b * pulse }
+      return {
+        r: clampByte((base.r + warmShift * 40) * perceptualPulse),
+        g: clampByte(base.g * perceptualPulse),
+        b: clampByte((base.b - warmShift * 20) * perceptualPulse)
+      }
     }
 
     case 'rainbow': {
@@ -211,8 +220,12 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const hueShift = Number(layer.parameters.hueShift ?? 0)
       const angle = Number(layer.parameters.angle ?? 0)
       const hue = (dirT(context, angle) * 300 * spread + context.now * speed * 120 + hueShift) % 360
-
-      return hslToRgb(hue, 0.88, 0.54)
+      // Premium rainbow: perceptually-uniform luminance variation along the hue wheel
+      // Human eyes perceive yellow/green as brighter → lower lightness there for even visual weight
+      const hueRad = (hue * Math.PI) / 180
+      const perceptualL = 0.52 + Math.cos(hueRad * 2 - 1.2) * 0.06 // subtle luminance compensation
+      // Higher saturation with gentle bloom feel at peaks
+      return hslToRgb(hue, 0.94, perceptualL)
     }
 
     case 'wave': {
@@ -220,14 +233,20 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const width = Number(layer.parameters.width ?? 0.35)
       const color = hexToRgb(String(layer.parameters.color ?? '#00ccff'))
       const angle = Number(layer.parameters.angle ?? 45)
-      const wave = Math.sin((dirT(context, angle) + context.now * speed) * Math.PI * 2)
-      // only the positive half of the wave is bright; width scales peak brightness
-      const brightness = clampUnit(0.04 + Math.max(0, wave) * width * 2.7)
+      const phase = (dirT(context, angle) + context.now * speed) * Math.PI * 2
+      const wave = Math.sin(phase)
+      // Gaussian glow envelope instead of hard clamp for premium soft light falloff
+      const primary = Math.exp(-Math.pow((1 - wave) / (width * 1.8), 2))
+      // Secondary harmonic adds richness and depth to the wave pattern
+      const secondary = Math.exp(-Math.pow((1 - Math.sin(phase * 2.1 + 0.7)) / (width * 2.8), 2)) * 0.18
+      const brightness = clampUnit(0.02 + primary + secondary)
+      // Subtle white-core bloom at peak brightness (Apple-style glow)
+      const bloom = Math.pow(primary, 3.5) * 0.25
 
       return {
-        r: Math.round(color.r * brightness),
-        g: Math.round(color.g * brightness),
-        b: Math.round(color.b * brightness)
+        r: clampByte((color.r + (255 - color.r) * bloom) * brightness),
+        g: clampByte((color.g + (255 - color.g) * bloom) * brightness),
+        b: clampByte((color.b + (255 - color.b) * bloom) * brightness)
       }
     }
 
@@ -374,18 +393,30 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
 
       const h1 = hash2(context.x, context.y)
       const h2 = hash2(context.y + 100, context.x + 200)
+      const h3 = hash2(context.x + 300, context.y + 400)
 
       if (h1 > density) return { r: 0, g: 0, b: 0 }
 
       const phase = h2 * Math.PI * 4
       const freq = 0.5 + h1 * 2.5
-      const twinkle = 0.5 + Math.sin(context.now * freq * speed * Math.PI * 2 + phase) * 0.5
-      const brightness = Math.pow(twinkle, 2.4)
+      // Multi-frequency twinkle: primary pulse + fast scintillation (realistic atmospheric shimmer)
+      const primary = Math.sin(context.now * freq * speed * Math.PI * 2 + phase)
+      const scintillation = Math.sin(context.now * freq * speed * 7.3 + h3 * Math.PI * 6) * 0.15
+      const twinkle = 0.5 + (primary + scintillation) * 0.5
+      // Steeper gamma for more dramatic twinkle (stars snap bright then fade gracefully)
+      const brightness = Math.pow(twinkle, 2.8)
+      // Realistic star color temperature: warm (orange) to cool (blue-white) variation per star
+      const temperature = h3 // 0=warm, 1=cool
+      const warmR = 1.0, warmG = 0.82, warmB = 0.62
+      const coolR = 0.85, coolG = 0.92, coolB = 1.0
+      const tintR = warmR + (coolR - warmR) * temperature
+      const tintG = warmG + (coolG - warmG) * temperature
+      const tintB = warmB + (coolB - warmB) * temperature
 
       return {
-        r: Math.round(color.r * brightness),
-        g: Math.round(color.g * brightness),
-        b: Math.round(color.b * brightness)
+        r: clampByte(color.r * tintR * brightness),
+        g: clampByte(color.g * tintG * brightness),
+        b: clampByte(color.b * tintB * brightness)
       }
     }
 
@@ -403,8 +434,15 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const dy = (context.y - cy) / Math.max(1, context.rows / 2)
       const dist = Math.sqrt(dx * dx + dy * dy)
 
-      const wave = Math.sin((dist * frequency - context.now * speed) * Math.PI * 2)
-      let brightness = clampUnit((wave + 1) / 2) * Math.max(0, 1 - dist * 0.65)
+      // Multi-ring interference: primary + secondary wave create natural water-like pattern
+      const wave1 = Math.sin((dist * frequency - context.now * speed) * Math.PI * 2)
+      const wave2 = Math.sin((dist * frequency * 1.62 - context.now * speed * 1.3) * Math.PI * 2) * 0.35
+      const combined = wave1 + wave2
+      // Physically-inspired amplitude decay: 1/sqrt(r) falloff (2D circular wave energy conservation)
+      const decay = 1 / Math.max(1, Math.sqrt(dist * 2.8 + 0.3))
+      let brightness = clampUnit((combined + 1.35) / 2.7) * decay
+      // Soft gaussian vignette (premium edge rolloff instead of linear fade)
+      brightness *= Math.exp(-dist * dist * 0.85)
 
       // Burst ripple: click injects burstAge (seconds since click, computed in renderer) + burstCx/burstCy
       const burstAge = Number(layer.parameters.burstAge ?? -1)
@@ -418,17 +456,21 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const bdy = (context.y - bcy) / Math.max(1, context.rows / 2)
         const bdist = Math.sqrt(bdx * bdx + bdy * bdy)
         const burstSpeed = 1.1
-        const burstFreq = Number(layer.parameters.frequency ?? 3.5) * 1.4
+        const burstFreq = frequency * 1.4
         const burstWave = Math.sin((bdist * burstFreq - burstAge * burstSpeed) * Math.PI * 2)
-        const decay = Math.max(0, 1 - burstAge / burstDuration)
-        const burstB = clampUnit((burstWave + 1) / 2) * Math.max(0, 1 - bdist * 0.55) * decay
+        // Smooth exponential decay for premium fade-out
+        const decay2 = Math.exp(-burstAge / (burstDuration * 0.35))
+        const burstB = clampUnit((burstWave + 1) / 2) * Math.exp(-bdist * bdist * 0.6) * decay2
         brightness = Math.min(1, brightness + burstB)
       }
 
+      // White-hot center bloom for premium glow aesthetic
+      const bloom = Math.pow(brightness, 4.0) * 0.3
+
       return {
-        r: Math.round(color.r * brightness),
-        g: Math.round(color.g * brightness),
-        b: Math.round(color.b * brightness)
+        r: clampByte((color.r + (255 - color.r) * bloom) * brightness),
+        g: clampByte((color.g + (255 - color.g) * bloom) * brightness),
+        b: clampByte((color.b + (255 - color.b) * bloom) * brightness)
       }
     }
 
@@ -438,20 +480,21 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const hueShift   = Number(layer.parameters.hueShift ?? 0)
       const spread     = Number(layer.parameters.spread   ?? 1.0)
 
-      // Spatial hue gradient: pixels at different positions have a smooth hue offset
-      // based on their position along the diagonal.  This gives the classic "spectrum
-      // wash" look — a slow continuous rainbow flowing across the whole grid uniformly.
-      // spread=0 → all pixels same hue (pure global cycle); spread=1 → ~120° range.
+      // Spatial hue gradient along diagonal for smooth spectrum wash
       const nx = context.x / Math.max(1, context.columns - 1) - 0.5
       const ny = context.y / Math.max(1, context.rows    - 1) - 0.5
       const spatialT = (nx + ny) * 0.5 + 0.5           // 0..1 diagonal position
       const hue = (context.now * speed * 360 + hueShift + spatialT * 120 * spread + 360) % 360
 
-      // Gentle global brightness pulse — identical for all pixels so the whole
-      // grid breathes together (NOT a per-pixel shimmer).
-      const pulse = 0.82 + Math.sin(context.now * 0.9) * 0.18   // 0.64..1.0
+      // Premium: perceptually-uniform lightness compensation across hue wheel
+      // (OKLAB-inspired) — yellows/greens appear brighter to human eye, compensate
+      const hueRad = (hue * Math.PI) / 180
+      const perceptualL = 0.50 - Math.cos(hueRad + 1.05) * 0.04 - Math.cos(hueRad * 2 + 0.3) * 0.025
 
-      return hslToRgb(hue, saturation, 0.50 * pulse)
+      // Gentle global brightness pulse — identical for all pixels
+      const pulse = 0.85 + Math.sin(context.now * 0.9) * 0.15   // 0.70..1.0
+
+      return hslToRgb(hue, saturation, perceptualL * pulse)
     }
 
     case 'comet': {
@@ -473,19 +516,24 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const behind  = (axisPos - headPos + 1) % 1
         if (behind >= tail) continue
 
-        const tailFall  = Math.exp(-behind * 6 / tail)
-        const crossFade = Math.max(0, 1 - crossDist * 4)  // slightly wider glow
+        // Physically-inspired exponential tail falloff with gaussian cross-section
+        const tailFall  = Math.exp(-behind * 7 / tail)
+        const crossFade = Math.exp(-crossDist * crossDist * 12)  // gaussian beam profile
         const b = tailFall * crossFade
         if (b > brightness) {
           brightness = b
-          whiteBlend = 1 - clampUnit(behind / Math.max(0.01, tail))
+          whiteBlend = Math.pow(1 - clampUnit(behind / Math.max(0.01, tail)), 2.2) // steeper white-hot head
         }
       }
 
+      // HDR bloom: soft outer glow extends beyond the main body (like real light scatter)
+      const outerGlow = brightness * Math.exp(-crossDist * crossDist * 3) * 0.15
+      brightness = clampUnit(brightness + outerGlow)
+
       return {
-        r: Math.round((color.r + (255 - color.r) * whiteBlend) * brightness),
-        g: Math.round((color.g + (255 - color.g) * whiteBlend) * brightness),
-        b: Math.round((color.b + (255 - color.b) * whiteBlend) * brightness)
+        r: clampByte((color.r + (255 - color.r) * whiteBlend) * brightness),
+        g: clampByte((color.g + (255 - color.g) * whiteBlend) * brightness),
+        b: clampByte((color.b + (255 - color.b) * whiteBlend * 0.7) * brightness)
       }
     }
 
@@ -495,25 +543,38 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const intensity = Number(layer.parameters.intensity ?? 0.9)
 
       const cycle = (context.now * speed * 1.3) % 1
+      // Two flash windows: main strike + secondary return stroke
       const flashOn = cycle < 0.08 || (cycle > 0.52 && cycle < 0.57)
-
-      if (!flashOn) return { r: 0, g: 0, b: 0 }
+      // Atmospheric afterglow: exponential decay after each flash (realistic persistence)
+      const afterglow1 = cycle >= 0.08 && cycle < 0.28 ? Math.exp(-(cycle - 0.08) * 18) * 0.25 : 0
+      const afterglow2 = cycle >= 0.57 && cycle < 0.72 ? Math.exp(-(cycle - 0.57) * 22) * 0.15 : 0
 
       const nx = context.x / context.columns
       const ny = context.y / context.rows
 
+      // Main bolt path with multi-frequency displacement (fractal branching)
       const boltX = 0.5
         + Math.sin(ny * 6.3 + context.now * 9.1) * 0.09
         + Math.sin(ny * 14.7 - context.now * 5.3) * 0.05
         + Math.sin(ny * 27.1 + context.now * 13.7) * 0.025
+        + Math.sin(ny * 52.0 + context.now * 21.0) * 0.012
 
       const dist = Math.abs(nx - boltX)
-      const glow = Math.max(0, 1 - dist * context.columns * 1.6) * intensity
+
+      if (!flashOn && afterglow1 <= 0.001 && afterglow2 <= 0.001) return { r: 0, g: 0, b: 0 }
+
+      // Gaussian beam profile for premium soft edges (no hard cutoff)
+      const coreGlow = Math.exp(-dist * dist * context.columns * context.columns * 2.2) * intensity
+      const wideGlow = Math.exp(-dist * dist * context.columns * context.columns * 0.3) * intensity * 0.35
+      const glow = flashOn ? (coreGlow + wideGlow) : (coreGlow + wideGlow) * (afterglow1 + afterglow2)
+
+      // Atmospheric scattering: surrounding area gets subtle blue-purple illumination during flash
+      const scatter = flashOn ? Math.exp(-dist * context.columns * 0.8) * 0.12 : 0
 
       return {
-        r: Math.min(255, Math.round(color.r * glow + 255 * glow * 0.4)),
-        g: Math.min(255, Math.round(color.g * glow + 255 * glow * 0.5)),
-        b: Math.min(255, Math.round(color.b * glow + 255 * glow * 0.6))
+        r: clampByte(color.r * glow + 255 * scatter * 0.3),
+        g: clampByte(color.g * glow + 255 * scatter * 0.4),
+        b: clampByte(color.b * glow + 255 * scatter * 0.7 + 255 * glow * 0.15)
       }
     }
 
@@ -531,28 +592,37 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const hFraction = context.x / Math.max(1, context.columns - 1)
       const vFraction = context.y / Math.max(1, context.rows - 1)
 
-      // Curtain: strong at top, fades toward bottom
-      const curtain = Math.pow(clampUnit(1 - vFraction * (1.4 / Math.max(0.1, curtainHeight))), Math.max(0.25, softEdge))
+      // Premium curtain: quintic falloff for ultra-smooth vertical fade (Apple-style gradient)
+      const curtainRaw = clampUnit(1 - vFraction * (1.4 / Math.max(0.1, curtainHeight)))
+      const curtainPow = Math.max(0.25, softEdge)
+      const curtain = curtainRaw * curtainRaw * curtainRaw * (curtainRaw * (curtainRaw * 6 - 15) + 10) * Math.pow(curtainRaw, curtainPow * 0.3)
 
       const t = context.now * speed
-      // Slow undulating ribbons + fast shimmer, modulated by slowly-varying phase
-      const w1 = Math.sin(hFraction * Math.PI * 2.7 * ribbonFrequency + t * 0.9  + Math.sin(t * 0.31) * 1.2) * 0.5 + 0.5
-      const w2 = Math.sin(hFraction * Math.PI * 5.1 * ribbonFrequency - t * 1.4  + Math.cos(t * 0.47) * 0.8) * 0.5 + 0.5
-      const w3 = Math.sin(hFraction * Math.PI * 9.8 * ribbonFrequency + t * 2.3 + vFraction * 5.0) * 0.25 + 0.25
+      // Multi-layer ribbons with phase modulation for organic undulation
+      const phaseModA = Math.sin(t * 0.31 + hFraction * 2.1) * 1.4
+      const phaseModB = Math.cos(t * 0.47 + hFraction * 1.6) * 0.9
+      const w1 = Math.sin(hFraction * Math.PI * 2.7 * ribbonFrequency + t * 0.9 + phaseModA) * 0.5 + 0.5
+      const w2 = Math.sin(hFraction * Math.PI * 5.1 * ribbonFrequency - t * 1.4 + phaseModB) * 0.5 + 0.5
+      // Volumetric depth: vertical position modulates ribbon intensity (closer ribbons brighter)
+      const depthLayer = Math.sin(hFraction * Math.PI * 7.4 * ribbonFrequency + t * 1.8 + vFraction * 3.5) * 0.3 + 0.3
       const w4 = Math.cos(hFraction * Math.PI * 3.3 - t * 0.5) * 0.5 + 0.5
-      const grain = hash2(context.x + Math.floor(t * 18), context.y + Math.floor(t * 29))
-      const shimmer = (w3 * 0.7 + grain * 0.3) * shimmerIntensity
-      const blended = w1 * 0.38 + w2 * 0.28 + shimmer * 0.14 + w4 * 0.2
+      // Fine-grain shimmer with temporal coherence (avoids noise flicker)
+      const grain = hash2(context.x + Math.floor(t * 14), context.y + Math.floor(t * 22))
+      const shimmer = (depthLayer * 0.6 + grain * 0.4) * shimmerIntensity
+      const blended = w1 * 0.34 + w2 * 0.26 + shimmer * 0.16 + w4 * 0.18 + depthLayer * 0.06
 
-      // Hue: green-teal core (130..220°), edges drift toward purple
-      const edgeDist = Math.abs(hFraction - 0.5) * 2  // 0=center, 1=edge
-      const hue = ((baseHue + blended * colorSpread + edgeDist * colorSpread * 0.62 + hueShift) % 360 + 360) % 360
+      // Hue: green-teal core, edges drift toward purple; added subtle chromatic depth layering
+      const edgeDist = Math.abs(hFraction - 0.5) * 2
+      const depthHueShift = vFraction * 15 // deeper ribbons shift warmer
+      const hue = ((baseHue + blended * colorSpread + edgeDist * colorSpread * 0.62 + depthHueShift + hueShift) % 360 + 360) % 360
 
-      // Bright fringe glow along the very top edge (where curtain meets sky)
-      const topRim = Math.max(0, 1 - vFraction * 8) * 0.4
+      // Premium top-rim glow: exponential rather than linear for natural light bloom
+      const topRim = Math.exp(-vFraction * 12) * 0.35
 
       const brightness = curtain * intensity * (0.35 + blended * 0.55) * (0.65 + w4 * 0.35)
-      return hslToRgb(hue, 0.95, Math.min(0.9, brightness * 0.75 + topRim * curtain))
+      // Final lightness with perceptual gamma for LED rendering fidelity
+      const finalL = Math.min(0.88, Math.pow(brightness * 0.75 + topRim * curtain, 1.05))
+      return hslToRgb(hue, 0.96, finalL)
     }
 
     case 'explode': {
@@ -952,15 +1022,28 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const t = context.now * speed
       const swirl = Math.atan2(ny, nx) / Math.PI
       const radius = Math.sqrt(nx * nx + ny * ny)
-      const warpX = nx + Math.sin(ny * 4.0 + t * 1.4) * 0.18 + swirl * 0.08
-      const warpY = ny + Math.cos(nx * 3.2 - t * 1.1) * 0.18 - radius * 0.12
+      // Enhanced domain warping for more volumetric cloud structure
+      const warpX = nx + Math.sin(ny * 4.0 + t * 1.4) * 0.18 + swirl * 0.08 + Math.sin(radius * 6 + t * 0.7) * 0.06
+      const warpY = ny + Math.cos(nx * 3.2 - t * 1.1) * 0.18 - radius * 0.12 + Math.cos(radius * 5 - t * 0.5) * 0.05
+      // Multi-octave FBM for rich cloud layering
       const cloud = fbm2(warpX * 3.0 + t * 0.7, warpY * 3.0 - t * 0.45, 5)
-      const stars = Math.pow(hash2(context.x * 11 + Math.floor(t * 8), context.y * 17), 34) * 2.2
-      const core = Math.exp(-radius * radius * (2.8 - density))
-      const veil = clampUnit((cloud - (0.56 - density * 0.22)) * 2.4)
-      const brightness = clampUnit((veil * 0.72 + core * 0.28) * intensity + stars)
-      const hue = (hueShift + cloud * colorSpread + swirl * 45 + t * 35 + 720) % 360
-      return hslToRgb(hue, 0.96, brightness * 0.62)
+      const fineDetail = fbm2(warpX * 8.0 - t * 0.3, warpY * 8.0 + t * 0.2, 4) * 0.3
+      // Brighter, rarer stars with gaussian point-spread
+      const starSeed = hash2(context.x * 11 + Math.floor(t * 8), context.y * 17)
+      const stars = Math.pow(starSeed, 38) * 3.0
+      // Volumetric core with emission-like bloom (energy radiating from center)
+      const coreEmission = Math.exp(-radius * radius * (2.4 - density)) * (0.6 + Math.sin(t * 1.2) * 0.12)
+      const veil = clampUnit((cloud + fineDetail - (0.52 - density * 0.22)) * 2.6)
+      // Two-layer composite: volumetric cloud + emission core + stellar points
+      const brightness = clampUnit((veil * 0.65 + coreEmission * 0.35) * intensity + stars)
+      // Richer color separation: cloud hue vs core hue for depth perception
+      const cloudHue = (hueShift + cloud * colorSpread + swirl * 45 + t * 35 + 720) % 360
+      const coreHue = (hueShift + 40 + t * 20 + 720) % 360
+      const coreWeight = coreEmission / Math.max(0.01, veil + coreEmission)
+      const hue = cloudHue * (1 - coreWeight * 0.4) + coreHue * coreWeight * 0.4
+      // Emission bloom: core pixels get higher lightness for HDR-like glow
+      const emissionBoost = Math.pow(coreEmission, 2.5) * 0.15
+      return hslToRgb(hue, 0.97, clampUnit(brightness * 0.64 + emissionBoost))
     }
 
     case 'fluid-flow': {
