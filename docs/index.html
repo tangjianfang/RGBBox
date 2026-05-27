@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RGBBox — 多屏RGB灯光控制桌面客户端</title>
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --accent: #06b6d4;
+      --bg: #0f172a;
+      --bg-card: #1e293b;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --gradient: linear-gradient(135deg, #6366f1, #06b6d4, #10b981);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* Hero Section */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+      position: relative;
+      background: radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 60%),
+                  radial-gradient(ellipse at 80% 80%, rgba(6, 182, 212, 0.1) 0%, transparent 50%);
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(99,102,241,0.05)" stroke-width="0.5"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+      pointer-events: none;
+    }
+
+    .hero-logo {
+      width: 120px;
+      height: 120px;
+      border-radius: 24px;
+      box-shadow: 0 20px 60px rgba(99, 102, 241, 0.3);
+      margin-bottom: 2rem;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      font-weight: 800;
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 1rem;
+    }
+
+    .hero p {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 600px;
+      margin-bottom: 2rem;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.875rem 2rem;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.3s ease;
+    }
+
+    .btn-primary {
+      background: var(--gradient);
+      color: white;
+      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(99, 102, 241, 0.5);
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--primary);
+      transform: translateY(-2px);
+    }
+
+    /* Sections */
+    section {
+      padding: 5rem 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section-title {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .section-title h2 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .section-title p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+    }
+
+    /* Feature Cards */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid rgba(99, 102, 241, 0.1);
+      border-radius: 16px;
+      padding: 2rem;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--gradient);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(99, 102, 241, 0.3);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    .feature-card:hover::before {
+      opacity: 1;
+    }
+
+    .feature-icon {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .feature-card h3 {
+      font-size: 1.25rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    /* Effects Showcase */
+    .effects-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .effect-category {
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 1.5rem;
+      border: 1px solid rgba(99, 102, 241, 0.1);
+    }
+
+    .effect-category h4 {
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .effect-category ul {
+      list-style: none;
+    }
+
+    .effect-category li {
+      color: var(--text-muted);
+      padding: 0.25rem 0;
+      font-size: 0.9rem;
+    }
+
+    .effect-category li::before {
+      content: '✦ ';
+      color: var(--primary);
+    }
+
+    /* Screenshots */
+    .screenshots {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    .screenshot-item {
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      transition: transform 0.3s ease;
+    }
+
+    .screenshot-item:hover {
+      transform: scale(1.02);
+    }
+
+    .screenshot-item img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .screenshot-placeholder {
+      background: var(--bg-card);
+      aspect-ratio: 16/10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .screenshot-placeholder span {
+      font-size: 2rem;
+    }
+
+    /* Tech Stack */
+    .tech-stack {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+      margin-top: 2rem;
+    }
+
+    .tech-badge {
+      background: var(--bg-card);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      padding: 0.5rem 1.25rem;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      transition: all 0.3s ease;
+    }
+
+    .tech-badge:hover {
+      border-color: var(--primary);
+      color: var(--text);
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 3rem 2rem;
+      border-top: 1px solid rgba(99, 102, 241, 0.1);
+      color: var(--text-muted);
+    }
+
+    footer a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+      .effects-list {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <header class="hero">
+    <img src="https://raw.githubusercontent.com/tangjianfang/RGBBox/main/build/icon.png" alt="RGBBox Logo" class="hero-logo" />
+    <h1>RGBBox</h1>
+    <p>本地优先的多屏 RGB 灯光控制桌面客户端，提供虚拟 RGB 画布预览、分层特效引擎、音频响应特效和 3D 模型预览工具。</p>
+    <div class="btn-group">
+      <a href="https://github.com/tangjianfang/RGBBox/releases" class="btn btn-primary">
+        ⬇️ 下载最新版本
+      </a>
+      <a href="https://github.com/tangjianfang/RGBBox" class="btn btn-secondary">
+        📂 查看源码
+      </a>
+    </div>
+  </header>
+
+  <!-- Features -->
+  <section>
+    <div class="section-title">
+      <h2>✨ 核心功能</h2>
+      <p>强大的功能组合，打造极致 RGB 灯光体验</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🖥️</div>
+        <h3>多屏虚拟画布</h3>
+        <p>自动发现多显示器拓扑结构，支持热插拔刷新和链接显示器虚拟画布模式，实时预览 RGB 效果。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎨</div>
+        <h3>25+ 内置特效</h3>
+        <p>涵盖经典、高级、3D 视觉、GPU 3D 和音频响应五大类别，满足各种灯光氛围需求。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎵</div>
+        <h3>音频响应</h3>
+        <p>支持麦克风或系统音频回环捕获，32 频段 FFT 分析，让灯光随音乐律动。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🧊</div>
+        <h3>3D 高斯泼溅查看器</h3>
+        <p>支持模型下载、本地缓存、用户导入以及 LED 映射编辑器，让 3D 模型与灯光互动。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Web Worker 引擎</h3>
+        <p>渲染帧在主线程之外处理，WebGL 加速画布预览，保证流畅的 60fps 体验。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📅</div>
+        <h3>定时氛围调度</h3>
+        <p>支持白天/傍晚/夜间时间段自动切换效果，参数自动化支持正弦、三角和脉冲曲线。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Effects Showcase -->
+  <section>
+    <div class="section-title">
+      <h2>🌈 特效库一览</h2>
+      <p>五大类 25 种精心设计的灯光效果</p>
+    </div>
+    <div class="effects-list">
+      <div class="effect-category">
+        <h4>🔮 经典效果</h4>
+        <ul>
+          <li>屏幕氛围光</li>
+          <li>静态（点阵文字）</li>
+          <li>呼吸</li>
+          <li>彩虹</li>
+          <li>波浪</li>
+          <li>区域渐变</li>
+          <li>随机颜色</li>
+        </ul>
+      </div>
+      <div class="effect-category">
+        <h4>🚀 高级效果</h4>
+        <ul>
+          <li>火焰</li>
+          <li>星光</li>
+          <li>涟漪</li>
+          <li>光谱</li>
+          <li>彗星</li>
+          <li>闪电</li>
+          <li>极光</li>
+          <li>爆炸</li>
+        </ul>
+      </div>
+      <div class="effect-category">
+        <h4>🧊 3D 视觉</h4>
+        <ul>
+          <li>等离子体</li>
+          <li>旋涡</li>
+          <li>隧道</li>
+          <li>水晶</li>
+        </ul>
+      </div>
+      <div class="effect-category">
+        <h4>🎮 GPU 3D</h4>
+        <ul>
+          <li>球体脉冲</li>
+          <li>跃迁门户</li>
+          <li>霓虹银河</li>
+          <li>熔岩球</li>
+        </ul>
+      </div>
+      <div class="effect-category">
+        <h4>🎵 音频响应</h4>
+        <ul>
+          <li>音频节拍</li>
+          <li>均衡器（32频段）</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screenshots -->
+  <section>
+    <div class="section-title">
+      <h2>📸 界面预览</h2>
+      <p>直观的用户界面，一目了然的操作体验</p>
+    </div>
+    <div class="screenshots">
+      <div class="screenshot-item">
+        <div class="screenshot-placeholder">
+          <span>🖥️</span>
+          <p>主界面 - 虚拟画布预览</p>
+          <small>截图路径: docs/screenshots/main-canvas.png</small>
+        </div>
+      </div>
+      <div class="screenshot-item">
+        <div class="screenshot-placeholder">
+          <span>🎨</span>
+          <p>特效库 - 分类浏览</p>
+          <small>截图路径: docs/screenshots/effects-library.png</small>
+        </div>
+      </div>
+      <div class="screenshot-item">
+        <div class="screenshot-placeholder">
+          <span>🎵</span>
+          <p>音频响应 - 实时频谱</p>
+          <small>截图路径: docs/screenshots/audio-reactive.png</small>
+        </div>
+      </div>
+      <div class="screenshot-item">
+        <div class="screenshot-placeholder">
+          <span>🧊</span>
+          <p>3D 模型查看器</p>
+          <small>截图路径: docs/screenshots/3d-viewer.png</small>
+        </div>
+      </div>
+    </div>
+    <p style="text-align:center; color: var(--text-muted); margin-top: 2rem; font-size: 0.9rem;">
+      💡 将实际截图放入 <code>docs/screenshots/</code> 目录并替换占位符即可显示真实界面。
+    </p>
+  </section>
+
+  <!-- Tech Stack -->
+  <section>
+    <div class="section-title">
+      <h2>🛠️ 技术栈</h2>
+      <p>现代化技术选型，高性能与开发效率兼顾</p>
+    </div>
+    <div class="tech-stack">
+      <span class="tech-badge">Electron</span>
+      <span class="tech-badge">Vite</span>
+      <span class="tech-badge">React</span>
+      <span class="tech-badge">TypeScript</span>
+      <span class="tech-badge">WebGL</span>
+      <span class="tech-badge">Web Worker</span>
+      <span class="tech-badge">Web Audio API</span>
+      <span class="tech-badge">Three.js</span>
+    </div>
+  </section>
+
+  <!-- Quick Start -->
+  <section>
+    <div class="section-title">
+      <h2>🚀 快速开始</h2>
+      <p>简单几步，开始您的 RGB 灯光之旅</p>
+    </div>
+    <div class="features-grid" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
+      <div class="feature-card">
+        <div class="feature-icon">1️⃣</div>
+        <h3>下载安装</h3>
+        <p>从 <a href="https://github.com/tangjianfang/RGBBox/releases" style="color: var(--accent);">Releases</a> 页面下载适合您系统的安装包。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">2️⃣</div>
+        <h3>连接设备</h3>
+        <p>连接您的 RGB 灯带或设备，RGBBox 自动检测多显示器拓扑。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">3️⃣</div>
+        <h3>选择特效</h3>
+        <p>从 25+ 内置特效中选择，调整参数或使用智能随机器创造独特灯光。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <p>
+      RGBBox &copy; 2024-2026 &nbsp;|&nbsp;
+      <a href="https://github.com/tangjianfang/RGBBox">GitHub</a> &nbsp;|&nbsp;
+      <a href="https://github.com/tangjianfang/RGBBox/issues">反馈问题</a>
+    </p>
+  </footer>
+
+</body>
+</html>

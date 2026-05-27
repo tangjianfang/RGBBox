@@ -52,6 +52,70 @@ src/renderer  React UI — workspace, display map, layered effect controls,
                mini games, 3D Gaussian Splat viewer and LED mapper
 ```
 
+## 🌐 在线介绍页面（GitHub Pages）
+
+RGBBox 提供了一个美化的 HTML 产品介绍页，部署在 GitHub Pages 上，用于直观展示软件功能。
+
+**在线访问**: https://tangjianfang.github.io/RGBBox/
+
+### 页面结构
+
+```text
+docs/
+├── index.html              # 主介绍页面（单文件，无需构建工具）
+└── screenshots/            # 截图目录
+    ├── .gitkeep
+    ├── main-canvas.png     # 主界面截图（待添加）
+    ├── effects-library.png # 特效库截图（待添加）
+    ├── audio-reactive.png  # 音频响应截图（待添加）
+    └── 3d-viewer.png       # 3D查看器截图（待添加）
+```
+
+### 如何添加真实截图
+
+1. 运行 RGBBox 并截取各功能界面的截图
+2. 将截图保存为 PNG 格式，放入 `docs/screenshots/` 目录
+3. 编辑 `docs/index.html`，将截图占位符替换为真实图片：
+
+```html
+<!-- 替换前（占位符） -->
+<div class="screenshot-placeholder">
+  <span>🖥️</span>
+  <p>主界面 - 虚拟画布预览</p>
+</div>
+
+<!-- 替换后（真实截图） -->
+<img src="screenshots/main-canvas.png" alt="主界面 - 虚拟画布预览" />
+```
+
+### 部署到 GitHub Pages
+
+本仓库已配置 GitHub Actions 自动部署（`.github/workflows/pages.yml`），当 `docs/` 目录下的文件推送到 `main` 分支时自动触发部署。
+
+**首次启用步骤：**
+
+1. 打开仓库 Settings → Pages
+2. 在 "Build and deployment" 下选择 **Source: GitHub Actions**
+3. 推送任何对 `docs/` 目录的更改到 `main` 分支
+4. Actions 会自动构建并部署到 `https://tangjianfang.github.io/RGBBox/`
+
+**手动触发部署：**
+
+也可以在 Actions 页面点击 "Deploy to GitHub Pages" workflow，手动触发 `workflow_dispatch`。
+
+### 本地预览
+
+```bash
+# 方式一：直接打开
+open docs/index.html          # macOS
+start docs/index.html         # Windows
+
+# 方式二：使用本地服务器（推荐，避免跨域问题）
+npx serve docs
+# 或
+python -m http.server 8080 -d docs
+```
+
 ## Roadmap
 
 - Native capture providers for Windows (DXGI) / macOS (ScreenCaptureKit)
