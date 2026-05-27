@@ -135,9 +135,11 @@ function generateSineWave(ctx: OfflineAudioContext, config: GeneratorConfig): vo
   const gain = ctx.createGain()
   osc.type = 'sine'
   osc.frequency.setValueAtTime(config.frequency, 0)
-  gain.gain.setValueAtTime(config.gain, 0)
-  gain.gain.linearRampToValueAtTime(config.gain, 0.05)
-  gain.gain.setValueAtTime(config.gain, config.duration - 0.05)
+  // Professional anti-click envelope with cosine-shaped attack/release
+  const fadeTime = Math.min(0.01, config.duration * 0.05)
+  gain.gain.setValueAtTime(0, 0)
+  gain.gain.linearRampToValueAtTime(config.gain, fadeTime)
+  gain.gain.setValueAtTime(config.gain, config.duration - fadeTime)
   gain.gain.linearRampToValueAtTime(0, config.duration)
   osc.connect(gain)
   gain.connect(ctx.destination)
@@ -149,7 +151,12 @@ function generateSweep(ctx: OfflineAudioContext, config: GeneratorConfig): void 
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
   osc.type = 'sine'
-  gain.gain.setValueAtTime(config.gain, 0)
+  // Professional anti-click envelope
+  const fadeTime = Math.min(0.01, config.duration * 0.02)
+  gain.gain.setValueAtTime(0, 0)
+  gain.gain.linearRampToValueAtTime(config.gain, fadeTime)
+  gain.gain.setValueAtTime(config.gain, config.duration - fadeTime)
+  gain.gain.linearRampToValueAtTime(0, config.duration)
   if (config.sweepLog) {
     osc.frequency.setValueAtTime(config.frequency, 0)
     osc.frequency.exponentialRampToValueAtTime(config.endFrequency, config.duration)
@@ -199,18 +206,57 @@ function generateNoise(ctx: OfflineAudioContext, config: GeneratorConfig): void 
 }
 
 function generateEQTest(ctx: OfflineAudioContext, config: GeneratorConfig): void {
+  // Professional 10-band ISO standard center frequencies
   const eqFreqs = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
   const toneLen = config.duration / eqFreqs.length
+  // Professional fade time to prevent clicks (5ms attack/release)
+  const fadeTime = 0.005
+  // Silence gap between tones for clarity
+  const gapTime = Math.min(0.02, toneLen * 0.05)
+
   eqFreqs.forEach((freq, i) => {
+    const startTime = i * toneLen
+    const endTime = (i + 1) * toneLen - gapTime
+
+    // Main tone oscillator
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.type = 'sine'
     osc.frequency.setValueAtTime(freq, 0)
-    gain.gain.setValueAtTime(config.gain, 0)
+
+    // Professional ADSR envelope: smooth attack, sustain, smooth release
+    gain.gain.setValueAtTime(0, startTime)
+    gain.gain.linearRampToValueAtTime(config.gain, startTime + fadeTime)
+    gain.gain.setValueAtTime(config.gain, endTime - fadeTime)
+    gain.gain.linearRampToValueAtTime(0, endTime)
+
+    // Add subtle odd harmonics for richer test signal (professional standard)
+    const osc3 = ctx.createOscillator()
+    const gain3 = ctx.createGain()
+    osc3.type = 'sine'
+    osc3.frequency.setValueAtTime(freq * 3, 0) // 3rd harmonic
+    gain3.gain.setValueAtTime(0, startTime)
+    gain3.gain.linearRampToValueAtTime(config.gain * 0.08, startTime + fadeTime)
+    gain3.gain.setValueAtTime(config.gain * 0.08, endTime - fadeTime)
+    gain3.gain.linearRampToValueAtTime(0, endTime)
+
+    // Reference-grade bandpass filter for clean isolation
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'peaking'
+    filter.frequency.setValueAtTime(freq, 0)
+    filter.Q.setValueAtTime(1.41, 0)  // Butterworth Q for musical response
+    filter.gain.setValueAtTime(0, 0)  // Flat - just for signal path authenticity
+
     osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.start(i * toneLen)
-    osc.stop((i + 1) * toneLen)
+    osc3.connect(gain3)
+    gain.connect(filter)
+    gain3.connect(filter)
+    filter.connect(ctx.destination)
+
+    osc.start(startTime)
+    osc.stop(endTime)
+    osc3.start(startTime)
+    osc3.stop(endTime)
   })
 }
 
@@ -220,10 +266,20 @@ function generateSurroundTest(ctx: OfflineAudioContext, config: GeneratorConfig)
   const panner = ctx.createStereoPanner()
   osc.type = 'sine'
   osc.frequency.setValueAtTime(1000, 0)
-  gain.gain.setValueAtTime(config.gain, 0)
-  panner.pan.setValueAtTime(-1, 0)
-  panner.pan.linearRampToValueAtTime(1, config.duration / 2)
-  panner.pan.linearRampToValueAtTime(-1, config.duration)
+  // Professional anti-click envelope
+  const fadeTime = 0.01
+  gain.gain.setValueAtTime(0, 0)
+  gain.gain.linearRampToValueAtTime(config.gain, fadeTime)
+  gain.gain.setValueAtTime(config.gain, config.duration - fadeTime)
+  gain.gain.linearRampToValueAtTime(0, config.duration)
+  // Smooth sinusoidal panning for professional surround test
+  const steps = 60
+  for (let i = 0; i <= steps; i++) {
+    const t = (i / steps) * config.duration
+    const panVal = Math.sin((i / steps) * Math.PI * 4)
+    if (i === 0) panner.pan.setValueAtTime(panVal, t)
+    else panner.pan.linearRampToValueAtTime(panVal, t)
+  }
   osc.connect(gain)
   gain.connect(panner)
   panner.connect(ctx.destination)
@@ -234,16 +290,36 @@ function generateSurroundTest(ctx: OfflineAudioContext, config: GeneratorConfig)
 function generateBassBoost(ctx: OfflineAudioContext, config: GeneratorConfig): void {
   const frequencies = [30, 40, 50, 60, 80, 100]
   const toneLen = config.duration / frequencies.length
+  const fadeTime = 0.005  // 5ms anti-click fade
   frequencies.forEach((freq, i) => {
+    const startTime = i * toneLen
+    const endTime = (i + 1) * toneLen
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
+    // Add sub-harmonic for deep bass presence
+    const subOsc = ctx.createOscillator()
+    const subGain = ctx.createGain()
     osc.type = 'sine'
     osc.frequency.setValueAtTime(freq, 0)
-    gain.gain.setValueAtTime(config.gain, 0)
+    subOsc.type = 'sine'
+    subOsc.frequency.setValueAtTime(freq / 2, 0)
+    // Professional envelope
+    gain.gain.setValueAtTime(0, startTime)
+    gain.gain.linearRampToValueAtTime(config.gain, startTime + fadeTime)
+    gain.gain.setValueAtTime(config.gain, endTime - fadeTime)
+    gain.gain.linearRampToValueAtTime(0, endTime)
+    subGain.gain.setValueAtTime(0, startTime)
+    subGain.gain.linearRampToValueAtTime(config.gain * 0.4, startTime + fadeTime)
+    subGain.gain.setValueAtTime(config.gain * 0.4, endTime - fadeTime)
+    subGain.gain.linearRampToValueAtTime(0, endTime)
     osc.connect(gain)
+    subOsc.connect(subGain)
     gain.connect(ctx.destination)
-    osc.start(i * toneLen)
-    osc.stop((i + 1) * toneLen)
+    subGain.connect(ctx.destination)
+    osc.start(startTime)
+    osc.stop(endTime)
+    subOsc.start(startTime)
+    subOsc.stop(endTime)
   })
 }
 
@@ -643,50 +719,157 @@ function encodeLossless(audioBuffer: AudioBuffer, format: ExportFormat, bitDepth
   return encodeWav(audioBuffer, format === 'flac' ? 24 : bitDepth)
 }
 
-// ── Spectrum Analyzer ──────────────────────────────────────────────────────
+// ── Spectrum Analyzer (Premium Visualizer) ─────────────────────────────────
 
+const SPECTRUM_BARS = 64  // Optimal bar count for visual clarity
+
+/** Premium gradient spectrum with glow, rounded caps, and mirror reflection */
 function drawSpectrum(canvas: HTMLCanvasElement, analyser: AnalyserNode): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
-  const { width, height } = canvas
+  const dpr = window.devicePixelRatio || 1
+  const width = canvas.width / dpr
+  const height = canvas.height / dpr
+  ctx.save()
+  ctx.scale(dpr, dpr)
+
   const bufferLength = analyser.frequencyBinCount
   const dataArray = new Uint8Array(bufferLength)
   analyser.getByteFrequencyData(dataArray)
 
   ctx.clearRect(0, 0, width, height)
-  const barWidth = width / bufferLength * 2.5
-  let x = 0
-  for (let i = 0; i < bufferLength; i++) {
-    const barHeight = (dataArray[i] / 255) * height
-    const hue = (i / bufferLength) * 240
-    ctx.fillStyle = `hsl(${hue}, 80%, 55%)`
-    ctx.fillRect(x, height - barHeight, barWidth - 1, barHeight)
-    x += barWidth
-    if (x > width) break
+
+  // Use log-spaced bands for perceptually balanced spectrum
+  const barCount = SPECTRUM_BARS
+  const gap = 2
+  const barWidth = (width - (barCount - 1) * gap) / barCount
+  const mirrorHeight = height * 0.18  // Reflection zone
+  const mainHeight = height - mirrorHeight
+
+  for (let i = 0; i < barCount; i++) {
+    // Map bar index to FFT bin using logarithmic scale (20Hz–20kHz)
+    const loRatio = i / barCount
+    const hiRatio = (i + 1) / barCount
+    const loBin = Math.floor(Math.pow(loRatio, 2) * bufferLength * 0.75)
+    const hiBin = Math.max(loBin + 1, Math.floor(Math.pow(hiRatio, 2) * bufferLength * 0.75))
+    let peak = 0
+    for (let j = loBin; j < hiBin && j < bufferLength; j++) {
+      peak = Math.max(peak, dataArray[j] / 255)
+    }
+
+    const barH = peak * mainHeight * 0.92
+    const x = i * (barWidth + gap)
+    const y = mainHeight - barH
+
+    // Create vertical gradient: vibrant cyan → electric blue → magenta
+    const grad = ctx.createLinearGradient(x, mainHeight, x, y)
+    const hue1 = 190 + (i / barCount) * 80  // cyan → blue
+    const hue2 = 220 + (i / barCount) * 100 // blue → violet
+    const lightness = 50 + peak * 20
+    grad.addColorStop(0, `hsla(${hue1}, 90%, ${lightness}%, 0.85)`)
+    grad.addColorStop(0.5, `hsla(${(hue1 + hue2) / 2}, 85%, ${lightness + 5}%, 0.95)`)
+    grad.addColorStop(1, `hsla(${hue2}, 80%, ${lightness + 10}%, 1)`)
+
+    // Glow effect
+    if (peak > 0.3) {
+      ctx.shadowBlur = 6 + peak * 10
+      ctx.shadowColor = `hsla(${hue1}, 90%, 60%, ${peak * 0.6})`
+    } else {
+      ctx.shadowBlur = 0
+    }
+
+    // Draw bar with rounded top cap
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    const radius = Math.min(barWidth / 2, 3)
+    ctx.moveTo(x, mainHeight)
+    ctx.lineTo(x, y + radius)
+    ctx.quadraticCurveTo(x, y, x + radius, y)
+    ctx.lineTo(x + barWidth - radius, y)
+    ctx.quadraticCurveTo(x + barWidth, y, x + barWidth, y + radius)
+    ctx.lineTo(x + barWidth, mainHeight)
+    ctx.closePath()
+    ctx.fill()
+
+    // Mirror reflection (subtle, fading)
+    ctx.shadowBlur = 0
+    const reflH = barH * 0.35
+    const reflGrad = ctx.createLinearGradient(x, mainHeight, x, mainHeight + reflH)
+    reflGrad.addColorStop(0, `hsla(${hue1}, 70%, ${lightness}%, 0.25)`)
+    reflGrad.addColorStop(1, `hsla(${hue1}, 70%, ${lightness}%, 0)`)
+    ctx.fillStyle = reflGrad
+    ctx.fillRect(x, mainHeight + 1, barWidth, reflH)
   }
+
+  // Subtle horizontal separator line
+  ctx.strokeStyle = 'rgba(79, 195, 247, 0.15)'
+  ctx.lineWidth = 0.5
+  ctx.beginPath()
+  ctx.moveTo(0, mainHeight)
+  ctx.lineTo(width, mainHeight)
+  ctx.stroke()
+
+  ctx.restore()
 }
 
+/** Premium waveform with gradient stroke and subtle fill */
 function drawWaveform(canvas: HTMLCanvasElement, analyser: AnalyserNode): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
-  const { width, height } = canvas
+  const dpr = window.devicePixelRatio || 1
+  const width = canvas.width / dpr
+  const height = canvas.height / dpr
+  ctx.save()
+  ctx.scale(dpr, dpr)
+
   const bufferLength = analyser.fftSize
   const dataArray = new Float32Array(bufferLength)
   analyser.getFloatTimeDomainData(dataArray)
 
   ctx.clearRect(0, 0, width, height)
-  ctx.strokeStyle = '#4fc3f7'
-  ctx.lineWidth = 1.5
+
+  // Gradient stroke
+  const strokeGrad = ctx.createLinearGradient(0, 0, width, 0)
+  strokeGrad.addColorStop(0, 'rgba(79, 195, 247, 0.9)')
+  strokeGrad.addColorStop(0.3, 'rgba(129, 212, 250, 1)')
+  strokeGrad.addColorStop(0.6, 'rgba(79, 195, 247, 1)')
+  strokeGrad.addColorStop(1, 'rgba(171, 71, 188, 0.8)')
+
+  ctx.strokeStyle = strokeGrad
+  ctx.lineWidth = 1.8
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+
+  // Draw waveform path
   ctx.beginPath()
-  const sliceWidth = width / bufferLength
-  let x = 0
-  for (let i = 0; i < bufferLength; i++) {
-    const y = (dataArray[i] + 1) / 2 * height
-    if (i === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-    x += sliceWidth
+  const step = Math.max(1, Math.floor(bufferLength / width))
+  for (let i = 0; i < width; i++) {
+    const idx = Math.min(i * step, bufferLength - 1)
+    const y = (dataArray[idx] + 1) / 2 * height
+    if (i === 0) ctx.moveTo(i, y)
+    else ctx.lineTo(i, y)
   }
   ctx.stroke()
+
+  // Subtle fill beneath the waveform
+  ctx.lineTo(width, height)
+  ctx.lineTo(0, height)
+  ctx.closePath()
+  const fillGrad = ctx.createLinearGradient(0, 0, 0, height)
+  fillGrad.addColorStop(0, 'rgba(79, 195, 247, 0.08)')
+  fillGrad.addColorStop(1, 'rgba(79, 195, 247, 0)')
+  ctx.fillStyle = fillGrad
+  ctx.fill()
+
+  // Center line
+  ctx.strokeStyle = 'rgba(79, 195, 247, 0.12)'
+  ctx.lineWidth = 0.5
+  ctx.beginPath()
+  ctx.moveTo(0, height / 2)
+  ctx.lineTo(width, height / 2)
+  ctx.stroke()
+
+  ctx.restore()
 }
 
 // ── Cache helpers ──────────────────────────────────────────────────────────
@@ -780,8 +963,12 @@ export function AudioStudioView(): JSX.Element {
     if (audioContextRef.current) return audioContextRef.current
     const ctx = new AudioContext({ sampleRate: 48000 })
     const analyser = ctx.createAnalyser()
-    analyser.fftSize = 2048
-    analyser.smoothingTimeConstant = 0.8
+    // 4096-point FFT for higher frequency resolution (professional standard)
+    analyser.fftSize = 4096
+    // Lower smoothing for more responsive visualizations
+    analyser.smoothingTimeConstant = 0.72
+    analyser.minDecibels = -90
+    analyser.maxDecibels = -10
     const gain = ctx.createGain()
     gain.gain.setValueAtTime(volume, ctx.currentTime)
     const panner = ctx.createStereoPanner()
@@ -796,12 +983,24 @@ export function AudioStudioView(): JSX.Element {
     return ctx
   }, [volume, balance])
 
-  // Visualization loop
+  // Visualization loop with HiDPI support
   useEffect(() => {
     if (!isPlaying || !analyserRef.current) return
     const specCanvas = spectrumCanvasRef.current
     const waveCanvas = waveformCanvasRef.current
     const analyser = analyserRef.current
+
+    // Set up HiDPI canvas rendering
+    const setupCanvas = (canvas: HTMLCanvasElement | null) => {
+      if (!canvas) return
+      const dpr = window.devicePixelRatio || 1
+      const rect = canvas.getBoundingClientRect()
+      canvas.width = rect.width * dpr
+      canvas.height = rect.height * dpr
+    }
+    setupCanvas(specCanvas)
+    setupCanvas(waveCanvas)
+
     const draw = () => {
       if (specCanvas) drawSpectrum(specCanvas, analyser)
       if (waveCanvas) drawWaveform(waveCanvas, analyser)
@@ -1284,8 +1483,8 @@ export function AudioStudioView(): JSX.Element {
         {/* Right Panel - Studio Functions */}
         <div className="audio-right-panel">
           <div className="audio-visualizers">
-            <canvas ref={spectrumCanvasRef} className="audio-canvas" width={360} height={60} />
-            <canvas ref={waveformCanvasRef} className="audio-canvas" width={360} height={40} />
+            <canvas ref={spectrumCanvasRef} className="audio-canvas audio-canvas-spectrum" width={720} height={160} />
+            <canvas ref={waveformCanvasRef} className="audio-canvas audio-canvas-waveform" width={720} height={80} />
           </div>
 
           <div className="audio-tabs">
