@@ -1,10 +1,10 @@
-import { Download, Pause, Play, Plus, RefreshCw, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, FolderOpen, Pause, Play, Plus, RefreshCw, Repeat, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useI18n } from '../i18n'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-type StudioTab = 'player' | 'generator' | 'scenes' | 'export'
+type StudioTab = 'generator' | 'scenes' | 'export'
 type PlayMode = 'sequential' | 'loop' | 'shuffle'
 type NoiseType = 'white' | 'pink' | 'brown'
 type GeneratorType = 'sine' | 'sweep' | 'noise' | 'eq-test' | 'surround' | 'bass-boost' | 'spatial' | 'multichannel'
@@ -17,6 +17,12 @@ interface TrackItem {
   duration: number
   file?: File
   url?: string
+  group: string
+}
+
+interface TrackGroup {
+  name: string
+  collapsed: boolean
 }
 
 interface GeneratorConfig {
@@ -41,7 +47,20 @@ interface ScenePreset {
   description: string
 }
 
+interface AudioStudioCache {
+  playlist: Array<{ id: string; name: string; group: string }>
+  groups: TrackGroup[]
+  playMode: PlayMode
+  volume: number
+  balance: number
+  genConfig: GeneratorConfig
+  exportFormat: ExportFormat
+  activeTab: StudioTab
+}
+
 // ── Constants ──────────────────────────────────────────────────────────────
+
+const CACHE_KEY = 'rgbbox-audio-studio-config'
 
 const DEFAULT_GENERATOR_CONFIG: GeneratorConfig = {
   type: 'sine',
@@ -57,6 +76,26 @@ const DEFAULT_GENERATOR_CONFIG: GeneratorConfig = {
   panPosition: 0,
   reverbMix: 0,
 }
+
+const FREQUENCY_PRESETS = [
+  { label: 'A4 (440Hz)', value: 440 },
+  { label: 'C4 (261.6Hz)', value: 261.63 },
+  { label: 'Bass (100Hz)', value: 100 },
+  { label: 'Sub-bass (30Hz)', value: 30 },
+  { label: '1kHz', value: 1000 },
+  { label: '4kHz', value: 4000 },
+  { label: '8kHz', value: 8000 },
+  { label: '16kHz', value: 16000 },
+]
+
+const DURATION_PRESETS = [
+  { label: '1s', value: 1 },
+  { label: '2s', value: 2 },
+  { label: '5s', value: 5 },
+  { label: '10s', value: 10 },
+  { label: '30s', value: 30 },
+  { label: '60s', value: 60 },
+]
 
 const SCENE_PRESETS: ScenePreset[] = [
   { id: 'piano', category: 'instrument', labelKey: 'audio.scene.piano', description: 'Piano tone (A4 440Hz harmonic series)' },
@@ -97,7 +136,6 @@ function generateSineWave(ctx: OfflineAudioContext, config: GeneratorConfig): vo
   osc.type = 'sine'
   osc.frequency.setValueAtTime(config.frequency, 0)
   gain.gain.setValueAtTime(config.gain, 0)
-  // Volume envelope: fade in/out 50ms
   gain.gain.linearRampToValueAtTime(config.gain, 0.05)
   gain.gain.setValueAtTime(config.gain, config.duration - 0.05)
   gain.gain.linearRampToValueAtTime(0, config.duration)
@@ -133,7 +171,6 @@ function generateNoise(ctx: OfflineAudioContext, config: GeneratorConfig): void 
     if (config.noiseType === 'white') {
       for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * config.gain
     } else if (config.noiseType === 'pink') {
-      // Pink noise approximation using Paul Kellet's method
       let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0
       for (let i = 0; i < length; i++) {
         const white = Math.random() * 2 - 1
@@ -147,7 +184,6 @@ function generateNoise(ctx: OfflineAudioContext, config: GeneratorConfig): void 
         b6 = white * 0.115926
       }
     } else {
-      // Brown noise
       let last = 0
       for (let i = 0; i < length; i++) {
         const white = Math.random() * 2 - 1
@@ -163,7 +199,6 @@ function generateNoise(ctx: OfflineAudioContext, config: GeneratorConfig): void 
 }
 
 function generateEQTest(ctx: OfflineAudioContext, config: GeneratorConfig): void {
-  // Series of tones at standard EQ frequencies
   const eqFreqs = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
   const toneLen = config.duration / eqFreqs.length
   eqFreqs.forEach((freq, i) => {
@@ -180,7 +215,6 @@ function generateEQTest(ctx: OfflineAudioContext, config: GeneratorConfig): void
 }
 
 function generateSurroundTest(ctx: OfflineAudioContext, config: GeneratorConfig): void {
-  // Panning sweep for surround test
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
   const panner = ctx.createStereoPanner()
@@ -198,7 +232,6 @@ function generateSurroundTest(ctx: OfflineAudioContext, config: GeneratorConfig)
 }
 
 function generateBassBoost(ctx: OfflineAudioContext, config: GeneratorConfig): void {
-  // Sub-bass + bass frequencies with boosted gain
   const frequencies = [30, 40, 50, 60, 80, 100]
   const toneLen = config.duration / frequencies.length
   frequencies.forEach((freq, i) => {
@@ -215,7 +248,6 @@ function generateBassBoost(ctx: OfflineAudioContext, config: GeneratorConfig): v
 }
 
 function generateSpatialTest(ctx: OfflineAudioContext, config: GeneratorConfig): void {
-  // Circular panning with frequency modulation
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
   const panner = ctx.createStereoPanner()
@@ -223,7 +255,6 @@ function generateSpatialTest(ctx: OfflineAudioContext, config: GeneratorConfig):
   osc.frequency.setValueAtTime(800, 0)
   osc.frequency.linearRampToValueAtTime(1200, config.duration)
   gain.gain.setValueAtTime(config.gain, 0)
-  // Oscillate pan position
   const steps = 20
   for (let i = 0; i <= steps; i++) {
     const t = (i / steps) * config.duration
@@ -238,7 +269,6 @@ function generateSpatialTest(ctx: OfflineAudioContext, config: GeneratorConfig):
 }
 
 function generateMultichannelTest(ctx: OfflineAudioContext, config: GeneratorConfig): void {
-  // Alternating L/R tones
   const toneLen = 0.5
   const numTones = Math.floor(config.duration / toneLen)
   for (let i = 0; i < numTones; i++) {
@@ -257,11 +287,9 @@ function generateMultichannelTest(ctx: OfflineAudioContext, config: GeneratorCon
   }
 }
 
-// Scene-specific generators
 function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: GeneratorConfig): void {
   switch (sceneId) {
     case 'piano': {
-      // Piano: fundamental + harmonics with exponential decay
       const fundamentalFreq = 440
       const harmonics = [1, 2, 3, 4, 5, 6]
       const amplitudes = [1, 0.5, 0.25, 0.15, 0.08, 0.04]
@@ -280,7 +308,6 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
       break
     }
     case 'drum': {
-      // Drum: short noise burst + pitch-dropping sine
       const length = Math.ceil(config.sampleRate * config.duration)
       const buffer = ctx.createBuffer(config.channels, length, config.sampleRate)
       for (let ch = 0; ch < config.channels; ch++) {
@@ -301,18 +328,15 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
       break
     }
     case 'guitar': {
-      // Karplus-Strong plucked string
       const freq = 330
       const delaySamples = Math.round(config.sampleRate / freq)
       const length = Math.ceil(config.sampleRate * config.duration)
       const buffer = ctx.createBuffer(config.channels, length, config.sampleRate)
       for (let ch = 0; ch < config.channels; ch++) {
         const data = buffer.getChannelData(ch)
-        // Initialize with noise burst
         for (let i = 0; i < delaySamples; i++) {
           data[i] = (Math.random() * 2 - 1) * config.gain
         }
-        // Feedback loop with averaging filter
         for (let i = delaySamples; i < length; i++) {
           data[i] = (data[i - delaySamples] + data[i - delaySamples + 1]) * 0.498
         }
@@ -324,7 +348,6 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
       break
     }
     case 'violin': {
-      // Bowed string: sawtooth with vibrato
       const osc = ctx.createOscillator()
       const vibrato = ctx.createOscillator()
       const vibratoGain = ctx.createGain()
@@ -349,7 +372,6 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
       break
     }
     case 'electronic': {
-      // Synth pad: detuned saws with filter sweep
       const oscs = [0, 5, -5, 12].map((detune) => {
         const osc = ctx.createOscillator()
         osc.type = 'sawtooth'
@@ -376,7 +398,6 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
     }
     case 'male-voice':
     case 'female-voice': {
-      // Vocal formant synthesis
       const f0 = sceneId === 'male-voice' ? 120 : 220
       const formants = sceneId === 'male-voice'
         ? [{ f: 700, bw: 130 }, { f: 1220, bw: 70 }, { f: 2600, bw: 160 }]
@@ -401,7 +422,6 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
     }
     case 'dialogue':
     case 'vocal-test': {
-      // Modulated tone simulating speech cadence
       const osc = ctx.createOscillator()
       const modulator = ctx.createOscillator()
       const modGain = ctx.createGain()
@@ -423,7 +443,6 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
       break
     }
     case 'gunshot': {
-      // Transient impulse with fast decay
       const length = Math.ceil(config.sampleRate * config.duration)
       const buffer = ctx.createBuffer(config.channels, length, config.sampleRate)
       for (let ch = 0; ch < config.channels; ch++) {
@@ -441,7 +460,6 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
       break
     }
     case 'explosion': {
-      // Low-frequency rumble
       const length = Math.ceil(config.sampleRate * config.duration)
       const buffer = ctx.createBuffer(config.channels, length, config.sampleRate)
       for (let ch = 0; ch < config.channels; ch++) {
@@ -468,7 +486,6 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
     }
     case 'cinema-ambience':
     case 'rain': {
-      // Filtered noise for ambience
       const length = Math.ceil(config.sampleRate * config.duration)
       const buffer = ctx.createBuffer(config.channels, length, config.sampleRate)
       for (let ch = 0; ch < config.channels; ch++) {
@@ -489,7 +506,6 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
       break
     }
     case 'bgm-vocal-mix': {
-      // Chord pad + vocal formant
       const pad = ctx.createOscillator()
       pad.type = 'sawtooth'
       pad.frequency.setValueAtTime(220, 0)
@@ -503,7 +519,6 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
       padGain.connect(ctx.destination)
       pad.start(0)
       pad.stop(config.duration)
-      // Vocal layer
       const vocal = ctx.createOscillator()
       vocal.type = 'sawtooth'
       vocal.frequency.setValueAtTime(300, 0)
@@ -521,7 +536,6 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
       break
     }
     case 'gun-env-mix': {
-      // Gunshot layer + ambient
       const length = Math.ceil(config.sampleRate * config.duration)
       const buffer = ctx.createBuffer(config.channels, length, config.sampleRate)
       for (let ch = 0; ch < config.channels; ch++) {
@@ -529,10 +543,8 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
         let brown = 0
         for (let i = 0; i < length; i++) {
           const t = i / config.sampleRate
-          // Gunshot at t=0
           const gunEnv = t < 0.3 ? Math.exp(-t * 40) : 0
           const gunNoise = (Math.random() * 2 - 1) * gunEnv
-          // Ambient
           const white = Math.random() * 2 - 1
           brown = (brown + 0.02 * white) / 1.02
           const ambient = brown * 0.5
@@ -546,13 +558,11 @@ function generateSceneAudio(ctx: OfflineAudioContext, sceneId: string, config: G
       break
     }
     case 'haptic-test': {
-      // Low-frequency pulses for haptic feedback testing
       const osc = ctx.createOscillator()
       const gain = ctx.createGain()
       osc.type = 'sine'
       osc.frequency.setValueAtTime(30, 0)
       gain.gain.setValueAtTime(0, 0)
-      // Pulse pattern
       const pulseCount = Math.floor(config.duration / 0.5)
       for (let i = 0; i < pulseCount; i++) {
         const t = i * 0.5
@@ -583,24 +593,20 @@ function encodeWav(audioBuffer: AudioBuffer, bitDepth: number): ArrayBuffer {
   const buffer = new ArrayBuffer(headerSize + dataSize)
   const view = new DataView(buffer)
 
-  // RIFF header
   writeString(view, 0, 'RIFF')
   view.setUint32(4, 36 + dataSize, true)
   writeString(view, 8, 'WAVE')
-  // fmt chunk
   writeString(view, 12, 'fmt ')
   view.setUint32(16, 16, true)
-  view.setUint16(20, bitDepth === 32 ? 3 : 1, true) // PCM or IEEE float
+  view.setUint16(20, bitDepth === 32 ? 3 : 1, true)
   view.setUint16(22, numChannels, true)
   view.setUint32(24, sampleRate, true)
   view.setUint32(28, sampleRate * blockAlign, true)
   view.setUint16(32, blockAlign, true)
   view.setUint16(34, bitDepth, true)
-  // data chunk
   writeString(view, 36, 'data')
   view.setUint32(40, dataSize, true)
 
-  // Interleave and write samples
   const channels: Float32Array[] = []
   for (let ch = 0; ch < numChannels; ch++) {
     channels.push(audioBuffer.getChannelData(ch))
@@ -633,12 +639,7 @@ function writeString(view: DataView, offset: number, str: string): void {
   }
 }
 
-// Simple FLAC-like export (outputs WAV since true FLAC encoding in browser is complex)
-// For true FLAC, a WASM encoder would be needed; here we provide lossless WAV
 function encodeLossless(audioBuffer: AudioBuffer, format: ExportFormat, bitDepth: number): ArrayBuffer {
-  // Both formats output high-fidelity audio; WAV is natively lossless
-  // FLAC encoding in-browser would require a WASM module (libflac.js)
-  // For now, both export as lossless WAV (bit-perfect)
   return encodeWav(audioBuffer, format === 'flac' ? 24 : bitDepth)
 }
 
@@ -688,36 +689,56 @@ function drawWaveform(canvas: HTMLCanvasElement, analyser: AnalyserNode): void {
   ctx.stroke()
 }
 
+// ── Cache helpers ──────────────────────────────────────────────────────────
+
+function loadCache(): Partial<AudioStudioCache> {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return {}
+}
+
+function saveCache(cache: AudioStudioCache): void {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache))
+  } catch { /* ignore */ }
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function AudioStudioView(): JSX.Element {
   const { t } = useI18n()
 
+  const cached = useMemo(() => loadCache(), [])
+
   // Tab state
-  const [activeTab, setActiveTab] = useState<StudioTab>('player')
+  const [activeTab, setActiveTab] = useState<StudioTab>(cached.activeTab || 'generator')
 
   // Player state
   const [playlist, setPlaylist] = useState<TrackItem[]>([])
+  const [groups, setGroups] = useState<TrackGroup[]>(cached.groups || [])
   const [currentTrackIndex, setCurrentTrackIndex] = useState(-1)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [playMode, setPlayMode] = useState<PlayMode>('sequential')
-  const [volume, setVolume] = useState(0.8)
+  const [playMode, setPlayMode] = useState<PlayMode>(cached.playMode || 'sequential')
+  const [volume, setVolume] = useState(cached.volume ?? 0.8)
   const [muted, setMuted] = useState(false)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [balance, setBalance] = useState(0) // -1 to 1
+  const [balance, setBalance] = useState(cached.balance ?? 0)
 
   // Generator state
-  const [genConfig, setGenConfig] = useState<GeneratorConfig>(DEFAULT_GENERATOR_CONFIG)
+  const [genConfig, setGenConfig] = useState<GeneratorConfig>(cached.genConfig || DEFAULT_GENERATOR_CONFIG)
   const [generating, setGenerating] = useState(false)
   const [previewPlaying, setPreviewPlaying] = useState(false)
+  const [previewLoop, setPreviewLoop] = useState(false)
 
   // Scene state
   const [selectedScene, setSelectedScene] = useState<string | null>(null)
   const [sceneCategory, setSceneCategory] = useState<SceneCategory>('instrument')
 
   // Export state
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('wav')
+  const [exportFormat, setExportFormat] = useState<ExportFormat>(cached.exportFormat || 'wav')
   const [lastGeneratedBuffer, setLastGeneratedBuffer] = useState<AudioBuffer | null>(null)
 
   // Refs
@@ -732,8 +753,29 @@ export function AudioStudioView(): JSX.Element {
   const animFrameRef = useRef<number>(0)
   const previewSourceRef = useRef<AudioBufferSourceNode | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
+  const playModeRef = useRef<PlayMode>(playMode)
+  const playlistRef = useRef<TrackItem[]>(playlist)
 
-  // Initialize audio context and graph
+  // Keep refs in sync
+  useEffect(() => { playModeRef.current = playMode }, [playMode])
+  useEffect(() => { playlistRef.current = playlist }, [playlist])
+
+  // Save cache on state changes
+  useEffect(() => {
+    saveCache({
+      playlist: playlist.map(tr => ({ id: tr.id, name: tr.name, group: tr.group })),
+      groups,
+      playMode,
+      volume,
+      balance,
+      genConfig,
+      exportFormat,
+      activeTab,
+    })
+  }, [playlist, groups, playMode, volume, balance, genConfig, exportFormat, activeTab])
+
+  // Initialize audio context
   const ensureAudioContext = useCallback(() => {
     if (audioContextRef.current) return audioContextRef.current
     const ctx = new AudioContext({ sampleRate: 48000 })
@@ -760,7 +802,6 @@ export function AudioStudioView(): JSX.Element {
     const specCanvas = spectrumCanvasRef.current
     const waveCanvas = waveformCanvasRef.current
     const analyser = analyserRef.current
-
     const draw = () => {
       if (specCanvas) drawSpectrum(specCanvas, analyser)
       if (waveCanvas) drawWaveform(waveCanvas, analyser)
@@ -796,32 +837,90 @@ export function AudioStudioView(): JSX.Element {
   }, [isPlaying])
 
   // File loading
-  const handleFileSelect = useCallback((files: FileList | null) => {
+  const handleFileSelect = useCallback((files: FileList | null, folderName?: string) => {
     if (!files) return
+    const groupName = folderName || t('audio.defaultGroup')
     const newTracks: TrackItem[] = []
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       if (/\.(wav|flac|mp3|aac|m4a|ogg)$/i.test(file.name)) {
+        const path = (file as any).webkitRelativePath || ''
+        const detectedFolder = path ? path.split('/')[0] : groupName
         newTracks.push({
-          id: `${Date.now()}-${i}`,
+          id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
           name: file.name,
           duration: 0,
           file,
           url: URL.createObjectURL(file),
+          group: detectedFolder,
         })
       }
     }
-    setPlaylist((prev) => [...prev, ...newTracks])
+    if (newTracks.length === 0) return
+    const newGroupNames = [...new Set(newTracks.map(tr => tr.group))]
+    setGroups(prev => {
+      const existing = new Set(prev.map(g => g.name))
+      const toAdd = newGroupNames.filter(n => !existing.has(n))
+      return [...prev, ...toAdd.map(name => ({ name, collapsed: false }))]
+    })
+    setPlaylist(prev => [...prev, ...newTracks])
+  }, [t])
+
+  // Drag and drop
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const items = e.dataTransfer.items
+    if (items) {
+      const files: File[] = []
+      let folderName = ''
+      const processEntry = (entry: any): Promise<void> => {
+        return new Promise((resolve) => {
+          if (entry.isFile) {
+            entry.file((file: File) => { files.push(file); resolve() })
+          } else if (entry.isDirectory) {
+            if (!folderName) folderName = entry.name
+            const reader = entry.createReader()
+            reader.readEntries((entries: any[]) => {
+              Promise.all(entries.map(processEntry)).then(() => resolve())
+            })
+          } else { resolve() }
+        })
+      }
+      const entries: any[] = []
+      for (let i = 0; i < items.length; i++) {
+        const entry = items[i].webkitGetAsEntry?.()
+        if (entry) entries.push(entry)
+      }
+      if (entries.length > 0) {
+        Promise.all(entries.map(processEntry)).then(() => {
+          if (files.length > 0) {
+            const dt = new DataTransfer()
+            files.forEach(f => dt.items.add(f))
+            handleFileSelect(dt.files, folderName || undefined)
+          }
+        })
+      } else {
+        handleFileSelect(e.dataTransfer.files)
+      }
+    } else {
+      handleFileSelect(e.dataTransfer.files)
+    }
+  }, [handleFileSelect])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
   }, [])
 
-  // Playback controls
+  // Playback controls using refs for correct closure
   const playTrack = useCallback((index: number) => {
-    if (index < 0 || index >= playlist.length) return
+    const currentPlaylist = playlistRef.current
+    if (index < 0 || index >= currentPlaylist.length) return
     const ctx = ensureAudioContext()
-    const track = playlist[index]
+    const track = currentPlaylist[index]
     if (!track.url) return
 
-    // Clean up previous
     if (audioElementRef.current) {
       audioElementRef.current.pause()
       audioElementRef.current.src = ''
@@ -840,14 +939,16 @@ export function AudioStudioView(): JSX.Element {
     sourceNodeRef.current = source
 
     audio.onended = () => {
-      if (playMode === 'loop') {
+      const mode = playModeRef.current
+      const pl = playlistRef.current
+      if (mode === 'loop') {
         audio.currentTime = 0
         audio.play()
-      } else if (playMode === 'shuffle') {
-        const next = Math.floor(Math.random() * playlist.length)
+      } else if (mode === 'shuffle') {
+        const next = Math.floor(Math.random() * pl.length)
         playTrack(next)
       } else {
-        if (index < playlist.length - 1) playTrack(index + 1)
+        if (index < pl.length - 1) playTrack(index + 1)
         else setIsPlaying(false)
       }
     }
@@ -855,7 +956,7 @@ export function AudioStudioView(): JSX.Element {
     audio.play()
     setCurrentTrackIndex(index)
     setIsPlaying(true)
-  }, [playlist, playMode, ensureAudioContext])
+  }, [ensureAudioContext])
 
   const togglePlay = useCallback(() => {
     if (!audioElementRef.current) {
@@ -884,7 +985,7 @@ export function AudioStudioView(): JSX.Element {
   }, [currentTrackIndex, playlist, playTrack])
 
   const removeTrack = useCallback((index: number) => {
-    setPlaylist((prev) => {
+    setPlaylist(prev => {
       const next = [...prev]
       const removed = next.splice(index, 1)[0]
       if (removed.url) URL.revokeObjectURL(removed.url)
@@ -900,6 +1001,25 @@ export function AudioStudioView(): JSX.Element {
     }
   }, [currentTrackIndex])
 
+  const removeGroup = useCallback((groupName: string) => {
+    setPlaylist(prev => {
+      const toRemove = prev.filter(tr => tr.group === groupName)
+      toRemove.forEach(tr => { if (tr.url) URL.revokeObjectURL(tr.url) })
+      return prev.filter(tr => tr.group !== groupName)
+    })
+    setGroups(prev => prev.filter(g => g.name !== groupName))
+    if (audioElementRef.current) {
+      audioElementRef.current.pause()
+      audioElementRef.current.src = ''
+    }
+    setIsPlaying(false)
+    setCurrentTrackIndex(-1)
+  }, [])
+
+  const toggleGroupCollapse = useCallback((groupName: string) => {
+    setGroups(prev => prev.map(g => g.name === groupName ? { ...g, collapsed: !g.collapsed } : g))
+  }, [])
+
   const seek = useCallback((time: number) => {
     if (audioElementRef.current) {
       audioElementRef.current.currentTime = time
@@ -907,7 +1027,7 @@ export function AudioStudioView(): JSX.Element {
     }
   }, [])
 
-  // Generate audio from config
+  // Generate audio
   const generateAudio = useCallback(async (sceneId?: string) => {
     setGenerating(true)
     try {
@@ -916,7 +1036,6 @@ export function AudioStudioView(): JSX.Element {
         Math.ceil(genConfig.sampleRate * genConfig.duration),
         genConfig.sampleRate
       )
-
       if (sceneId) {
         generateSceneAudio(offlineCtx, sceneId, genConfig)
       } else {
@@ -931,7 +1050,6 @@ export function AudioStudioView(): JSX.Element {
           case 'multichannel': generateMultichannelTest(offlineCtx, genConfig); break
         }
       }
-
       const renderedBuffer = await offlineCtx.startRendering()
       setLastGeneratedBuffer(renderedBuffer)
       return renderedBuffer
@@ -940,7 +1058,7 @@ export function AudioStudioView(): JSX.Element {
     }
   }, [genConfig])
 
-  // Preview generated audio
+  // Preview with loop support
   const previewGenerated = useCallback(async (sceneId?: string) => {
     if (previewPlaying && previewSourceRef.current) {
       previewSourceRef.current.stop()
@@ -950,16 +1068,27 @@ export function AudioStudioView(): JSX.Element {
     const buffer = await generateAudio(sceneId)
     if (!buffer) return
     const ctx = ensureAudioContext()
-    const source = ctx.createBufferSource()
-    source.buffer = buffer
-    source.connect(gainNodeRef.current!)
-    source.onended = () => setPreviewPlaying(false)
-    previewSourceRef.current = source
-    source.start()
-    setPreviewPlaying(true)
-  }, [previewPlaying, generateAudio, ensureAudioContext])
 
-  // Export audio
+    const playBuffer = (): void => {
+      const source = ctx.createBufferSource()
+      source.buffer = buffer
+      source.connect(gainNodeRef.current!)
+      source.onended = () => {
+        if (previewLoop) {
+          playBuffer()
+        } else {
+          setPreviewPlaying(false)
+        }
+      }
+      previewSourceRef.current = source
+      source.start()
+    }
+
+    playBuffer()
+    setPreviewPlaying(true)
+  }, [previewPlaying, previewLoop, generateAudio, ensureAudioContext])
+
+  // Export
   const exportAudio = useCallback(async (sceneId?: string) => {
     const buffer = lastGeneratedBuffer || await generateAudio(sceneId)
     if (!buffer) return
@@ -968,12 +1097,11 @@ export function AudioStudioView(): JSX.Element {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `rgbbox-audio-${Date.now()}.${exportFormat === 'flac' ? 'wav' : 'wav'}`
+    a.download = `rgbbox-audio-${Date.now()}.wav`
     a.click()
     URL.revokeObjectURL(url)
   }, [lastGeneratedBuffer, generateAudio, exportFormat, genConfig.bitDepth])
 
-  // Format time
   const formatTime = (s: number): string => {
     if (!isFinite(s)) return '0:00'
     const m = Math.floor(s / 60)
@@ -981,11 +1109,20 @@ export function AudioStudioView(): JSX.Element {
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
-  // Filtered scenes
   const filteredScenes = useMemo(
-    () => SCENE_PRESETS.filter((s) => s.category === sceneCategory),
+    () => SCENE_PRESETS.filter(s => s.category === sceneCategory),
     [sceneCategory]
   )
+
+  const groupedPlaylist = useMemo(() => {
+    const grouped: Map<string, TrackItem[]> = new Map()
+    playlist.forEach(track => {
+      const list = grouped.get(track.group) || []
+      list.push(track)
+      grouped.set(track.group, list)
+    })
+    return grouped
+  }, [playlist])
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -998,24 +1135,18 @@ export function AudioStudioView(): JSX.Element {
         </div>
       </header>
 
-      {/* Tab navigation */}
-      <div className="audio-tabs">
-        {(['player', 'generator', 'scenes', 'export'] as StudioTab[]).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            className={`audio-tab ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {t(`audio.tab.${tab}` as any)}
-          </button>
-        ))}
-      </div>
+      <div className="audio-studio-layout">
+        {/* Left Panel - Playlist */}
+        <div className="audio-left-panel" onDrop={handleDrop} onDragOver={handleDragOver}>
+          <div className="audio-toolbar">
+            <button type="button" className="audio-btn" onClick={() => fileInputRef.current?.click()}>
+              <Plus size={14} /> {t('audio.addFiles')}
+            </button>
+            <button type="button" className="audio-btn" onClick={() => folderInputRef.current?.click()}>
+              <FolderOpen size={14} /> {t('audio.addFolder')}
+            </button>
+          </div>
 
-      {/* Player Tab */}
-      {activeTab === 'player' && (
-        <div className="audio-panel">
-          {/* File input */}
           <input
             ref={fileInputRef}
             type="file"
@@ -1024,399 +1155,478 @@ export function AudioStudioView(): JSX.Element {
             style={{ display: 'none' }}
             onChange={(e) => handleFileSelect(e.target.files)}
           />
-          <div className="audio-toolbar">
-            <button type="button" className="audio-btn" onClick={() => fileInputRef.current?.click()}>
-              <Plus size={14} /> {t('audio.addFiles')}
-            </button>
-            <div className="audio-play-mode">
-              <button
-                type="button"
-                className={`audio-btn-sm ${playMode === 'loop' ? 'active' : ''}`}
-                onClick={() => setPlayMode(playMode === 'loop' ? 'sequential' : 'loop')}
-                title={t('audio.loop')}
-              >
-                <RefreshCw size={13} />
-              </button>
-              <button
-                type="button"
-                className={`audio-btn-sm ${playMode === 'shuffle' ? 'active' : ''}`}
-                onClick={() => setPlayMode(playMode === 'shuffle' ? 'sequential' : 'shuffle')}
-                title={t('audio.shuffle')}
-              >
-                <Shuffle size={13} />
-              </button>
-            </div>
-          </div>
+          <input
+            ref={folderInputRef}
+            type="file"
+            accept=".wav,.flac,.mp3,.aac,.m4a,.ogg"
+            multiple
+            style={{ display: 'none' }}
+            {...{ webkitdirectory: '', directory: '' } as any}
+            onChange={(e) => handleFileSelect(e.target.files)}
+          />
 
-          {/* Playlist */}
           <div className="audio-playlist">
             {playlist.length === 0 && (
               <p className="audio-empty">{t('audio.emptyPlaylist')}</p>
             )}
-            {playlist.map((track, i) => (
-              <div
-                key={track.id}
-                className={`audio-track-item ${i === currentTrackIndex ? 'active' : ''}`}
-                onClick={() => playTrack(i)}
-              >
-                <span className="audio-track-name">{track.name}</span>
+            {groups.map(group => {
+              const tracks = groupedPlaylist.get(group.name) || []
+              if (tracks.length === 0) return null
+              return (
+                <div key={group.name} className="audio-group">
+                  <div className="audio-group-header" onClick={() => toggleGroupCollapse(group.name)}>
+                    {group.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                    <span className="audio-group-name">{group.name}</span>
+                    <span className="audio-group-count">{tracks.length}</span>
+                    <button
+                      type="button"
+                      className="audio-btn-icon"
+                      onClick={(e) => { e.stopPropagation(); removeGroup(group.name) }}
+                      title={t('audio.removeGroup')}
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                  {!group.collapsed && tracks.map(track => {
+                    const globalIdx = playlist.indexOf(track)
+                    return (
+                      <div
+                        key={track.id}
+                        className={`audio-track-item ${globalIdx === currentTrackIndex ? 'active' : ''}`}
+                        onClick={() => playTrack(globalIdx)}
+                      >
+                        <span className="audio-track-name">{track.name}</span>
+                        <button
+                          type="button"
+                          className="audio-btn-icon"
+                          onClick={(e) => { e.stopPropagation(); removeTrack(globalIdx) }}
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Player controls */}
+          <div className="audio-player-controls">
+            <div className="audio-transport">
+              <div className="audio-play-mode">
                 <button
                   type="button"
-                  className="audio-btn-icon"
-                  onClick={(e) => { e.stopPropagation(); removeTrack(i) }}
+                  className={`audio-btn-sm ${playMode === 'loop' ? 'active' : ''}`}
+                  onClick={() => setPlayMode(playMode === 'loop' ? 'sequential' : 'loop')}
+                  title={t('audio.loop')}
                 >
-                  <Trash2 size={12} />
+                  <RefreshCw size={13} />
+                </button>
+                <button
+                  type="button"
+                  className={`audio-btn-sm ${playMode === 'shuffle' ? 'active' : ''}`}
+                  onClick={() => setPlayMode(playMode === 'shuffle' ? 'sequential' : 'shuffle')}
+                  title={t('audio.shuffle')}
+                >
+                  <Shuffle size={13} />
                 </button>
               </div>
-            ))}
-          </div>
-
-          {/* Transport controls */}
-          <div className="audio-transport">
-            <button type="button" className="audio-btn-sm" onClick={skipPrev}><SkipBack size={16} /></button>
-            <button type="button" className="audio-btn-play" onClick={togglePlay}>
-              {isPlaying ? <Pause size={20} /> : <Play size={20} />}
-            </button>
-            <button type="button" className="audio-btn-sm" onClick={skipNext}><SkipForward size={16} /></button>
-          </div>
-
-          {/* Progress bar */}
-          <div className="audio-progress-row">
-            <span className="audio-time">{formatTime(progress)}</span>
-            <input
-              type="range"
-              className="audio-progress-bar"
-              min={0}
-              max={duration || 1}
-              step={0.1}
-              value={progress}
-              onChange={(e) => seek(Number(e.target.value))}
-            />
-            <span className="audio-time">{formatTime(duration)}</span>
-          </div>
-
-          {/* Volume & Balance */}
-          <div className="audio-controls-row">
-            <button type="button" className="audio-btn-icon" onClick={() => setMuted(!muted)}>
-              {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-            </button>
-            <input
-              type="range"
-              className="audio-slider"
-              min={0}
-              max={1}
-              step={0.01}
-              value={volume}
-              onChange={(e) => setVolume(Number(e.target.value))}
-              title={t('audio.volume')}
-            />
-            <span className="audio-label">{t('audio.balance')}</span>
-            <input
-              type="range"
-              className="audio-slider"
-              min={-1}
-              max={1}
-              step={0.01}
-              value={balance}
-              onChange={(e) => setBalance(Number(e.target.value))}
-            />
-          </div>
-
-          {/* Spectrum & Waveform */}
-          <div className="audio-visualizers">
-            <canvas ref={spectrumCanvasRef} className="audio-canvas" width={400} height={100} />
-            <canvas ref={waveformCanvasRef} className="audio-canvas" width={400} height={80} />
-          </div>
-        </div>
-      )}
-
-      {/* Generator Tab */}
-      {activeTab === 'generator' && (
-        <div className="audio-panel">
-          <div className="audio-gen-grid">
-            {/* Type selection */}
-            <div className="audio-gen-section">
-              <label className="audio-field-label">{t('audio.gen.type')}</label>
-              <div className="audio-gen-types">
-                {GENERATOR_TYPES.map((gt) => (
-                  <button
-                    key={gt.id}
-                    type="button"
-                    className={`audio-gen-type-btn ${genConfig.type === gt.id ? 'active' : ''}`}
-                    onClick={() => setGenConfig((c) => ({ ...c, type: gt.id }))}
-                  >
-                    {t(gt.labelKey as any)}
-                  </button>
-                ))}
-              </div>
+              <button type="button" className="audio-btn-sm" onClick={skipPrev}><SkipBack size={14} /></button>
+              <button type="button" className="audio-btn-play" onClick={togglePlay}>
+                {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+              </button>
+              <button type="button" className="audio-btn-sm" onClick={skipNext}><SkipForward size={14} /></button>
             </div>
 
-            {/* Parameters */}
-            <div className="audio-gen-section">
-              <label className="audio-field-label">{t('audio.gen.frequency')} (Hz)</label>
+            <div className="audio-progress-row">
+              <span className="audio-time">{formatTime(progress)}</span>
               <input
-                type="number"
-                className="audio-input"
-                value={genConfig.frequency}
-                min={1}
-                max={22000}
-                onChange={(e) => setGenConfig((c) => ({ ...c, frequency: Number(e.target.value) }))}
-              />
-            </div>
-
-            {genConfig.type === 'sweep' && (
-              <div className="audio-gen-section">
-                <label className="audio-field-label">{t('audio.gen.endFreq')} (Hz)</label>
-                <input
-                  type="number"
-                  className="audio-input"
-                  value={genConfig.endFrequency}
-                  min={1}
-                  max={22000}
-                  onChange={(e) => setGenConfig((c) => ({ ...c, endFrequency: Number(e.target.value) }))}
-                />
-              </div>
-            )}
-
-            {genConfig.type === 'noise' && (
-              <div className="audio-gen-section">
-                <label className="audio-field-label">{t('audio.gen.noiseType')}</label>
-                <select
-                  className="audio-select"
-                  value={genConfig.noiseType}
-                  onChange={(e) => setGenConfig((c) => ({ ...c, noiseType: e.target.value as NoiseType }))}
-                >
-                  <option value="white">{t('audio.noise.white')}</option>
-                  <option value="pink">{t('audio.noise.pink')}</option>
-                  <option value="brown">{t('audio.noise.brown')}</option>
-                </select>
-              </div>
-            )}
-
-            <div className="audio-gen-section">
-              <label className="audio-field-label">{t('audio.gen.sampleRate')} (Hz)</label>
-              <select
-                className="audio-select"
-                value={genConfig.sampleRate}
-                onChange={(e) => setGenConfig((c) => ({ ...c, sampleRate: Number(e.target.value) }))}
-              >
-                <option value={44100}>44100</option>
-                <option value={48000}>48000</option>
-                <option value={96000}>96000</option>
-                <option value={192000}>192000</option>
-              </select>
-            </div>
-
-            <div className="audio-gen-section">
-              <label className="audio-field-label">{t('audio.gen.bitDepth')}</label>
-              <select
-                className="audio-select"
-                value={genConfig.bitDepth}
-                onChange={(e) => setGenConfig((c) => ({ ...c, bitDepth: Number(e.target.value) }))}
-              >
-                <option value={16}>16-bit</option>
-                <option value={24}>24-bit</option>
-                <option value={32}>32-bit float</option>
-              </select>
-            </div>
-
-            <div className="audio-gen-section">
-              <label className="audio-field-label">{t('audio.gen.channels')}</label>
-              <select
-                className="audio-select"
-                value={genConfig.channels}
-                onChange={(e) => setGenConfig((c) => ({ ...c, channels: Number(e.target.value) }))}
-              >
-                <option value={1}>Mono</option>
-                <option value={2}>Stereo</option>
-              </select>
-            </div>
-
-            <div className="audio-gen-section">
-              <label className="audio-field-label">{t('audio.gen.duration')} (s)</label>
-              <input
-                type="number"
-                className="audio-input"
-                value={genConfig.duration}
-                min={0.1}
-                max={300}
+                type="range"
+                className="audio-progress-bar"
+                min={0}
+                max={duration || 1}
                 step={0.1}
-                onChange={(e) => setGenConfig((c) => ({ ...c, duration: Number(e.target.value) }))}
+                value={progress}
+                onChange={(e) => seek(Number(e.target.value))}
               />
+              <span className="audio-time">{formatTime(duration)}</span>
             </div>
 
-            <div className="audio-gen-section">
-              <label className="audio-field-label">{t('audio.gen.gain')}</label>
+            <div className="audio-controls-row">
+              <button type="button" className="audio-btn-icon" onClick={() => setMuted(!muted)}>
+                {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+              </button>
               <input
                 type="range"
                 className="audio-slider"
                 min={0}
                 max={1}
                 step={0.01}
-                value={genConfig.gain}
-                onChange={(e) => setGenConfig((c) => ({ ...c, gain: Number(e.target.value) }))}
+                value={volume}
+                onChange={(e) => setVolume(Number(e.target.value))}
+                title={t('audio.volume')}
               />
-              <span className="audio-value">{Math.round(genConfig.gain * 100)}%</span>
-            </div>
-
-            <div className="audio-gen-section">
-              <label className="audio-field-label">{t('audio.gen.pan')}</label>
+              <span className="audio-label">{t('audio.balance')}</span>
               <input
                 type="range"
                 className="audio-slider"
                 min={-1}
                 max={1}
                 step={0.01}
-                value={genConfig.panPosition}
-                onChange={(e) => setGenConfig((c) => ({ ...c, panPosition: Number(e.target.value) }))}
+                value={balance}
+                onChange={(e) => setBalance(Number(e.target.value))}
               />
-              <span className="audio-value">{genConfig.panPosition > 0 ? `R ${Math.round(genConfig.panPosition * 100)}%` : genConfig.panPosition < 0 ? `L ${Math.round(-genConfig.panPosition * 100)}%` : 'C'}</span>
             </div>
-
-            <div className="audio-gen-section">
-              <label className="audio-field-label">{t('audio.gen.reverb')}</label>
-              <input
-                type="range"
-                className="audio-slider"
-                min={0}
-                max={1}
-                step={0.01}
-                value={genConfig.reverbMix}
-                onChange={(e) => setGenConfig((c) => ({ ...c, reverbMix: Number(e.target.value) }))}
-              />
-              <span className="audio-value">{Math.round(genConfig.reverbMix * 100)}%</span>
-            </div>
-          </div>
-
-          {/* Generate actions */}
-          <div className="audio-gen-actions">
-            <button
-              type="button"
-              className="audio-btn audio-btn-primary"
-              onClick={() => previewGenerated()}
-              disabled={generating}
-            >
-              {previewPlaying ? <Square size={14} /> : <Play size={14} />}
-              {previewPlaying ? t('audio.stop') : t('audio.preview')}
-            </button>
-            <button
-              type="button"
-              className="audio-btn"
-              onClick={() => exportAudio()}
-              disabled={generating}
-            >
-              <Download size={14} /> {t('audio.export')}
-            </button>
           </div>
         </div>
-      )}
 
-      {/* Scenes Tab */}
-      {activeTab === 'scenes' && (
-        <div className="audio-panel">
-          <div className="audio-scene-categories">
-            {(['instrument', 'vocal', 'game', 'environment', 'mix'] as SceneCategory[]).map((cat) => (
+        {/* Right Panel - Studio Functions */}
+        <div className="audio-right-panel">
+          <div className="audio-visualizers">
+            <canvas ref={spectrumCanvasRef} className="audio-canvas" width={360} height={60} />
+            <canvas ref={waveformCanvasRef} className="audio-canvas" width={360} height={40} />
+          </div>
+
+          <div className="audio-tabs">
+            {(['generator', 'scenes', 'export'] as StudioTab[]).map(tab => (
               <button
-                key={cat}
+                key={tab}
                 type="button"
-                className={`audio-tab ${sceneCategory === cat ? 'active' : ''}`}
-                onClick={() => setSceneCategory(cat)}
+                className={`audio-tab ${activeTab === tab ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab)}
               >
-                {t(`audio.category.${cat}` as any)}
+                {t(`audio.tab.${tab}` as any)}
               </button>
             ))}
           </div>
 
-          <div className="audio-scene-grid">
-            {filteredScenes.map((scene) => (
-              <div
-                key={scene.id}
-                className={`audio-scene-card ${selectedScene === scene.id ? 'selected' : ''}`}
-                onClick={() => setSelectedScene(scene.id)}
-              >
-                <h4>{t(scene.labelKey as any)}</h4>
-                <p>{scene.description}</p>
-                <div className="audio-scene-actions">
-                  <button
-                    type="button"
-                    className="audio-btn-sm"
-                    onClick={(e) => { e.stopPropagation(); previewGenerated(scene.id) }}
-                    disabled={generating}
+          {/* Generator Tab */}
+          {activeTab === 'generator' && (
+            <div className="audio-panel audio-panel-scroll">
+              <div className="audio-gen-grid">
+                <div className="audio-gen-section audio-gen-full">
+                  <label className="audio-field-label">{t('audio.gen.type')}</label>
+                  <div className="audio-gen-types">
+                    {GENERATOR_TYPES.map(gt => (
+                      <button
+                        key={gt.id}
+                        type="button"
+                        className={`audio-gen-type-btn ${genConfig.type === gt.id ? 'active' : ''}`}
+                        onClick={() => setGenConfig(c => ({ ...c, type: gt.id }))}
+                      >
+                        {t(gt.labelKey as any)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="audio-gen-section">
+                  <label className="audio-field-label">{t('audio.gen.frequency')} (Hz)</label>
+                  <div className="audio-input-with-presets">
+                    <select
+                      className="audio-select"
+                      value=""
+                      onChange={(e) => { if (e.target.value) setGenConfig(c => ({ ...c, frequency: Number(e.target.value) })) }}
+                    >
+                      <option value="">{t('audio.preset')}</option>
+                      {FREQUENCY_PRESETS.map(p => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      className="audio-input"
+                      value={genConfig.frequency}
+                      min={1}
+                      max={22000}
+                      onChange={(e) => setGenConfig(c => ({ ...c, frequency: Number(e.target.value) }))}
+                    />
+                  </div>
+                </div>
+
+                {genConfig.type === 'sweep' && (
+                  <div className="audio-gen-section">
+                    <label className="audio-field-label">{t('audio.gen.endFreq')} (Hz)</label>
+                    <input
+                      type="number"
+                      className="audio-input"
+                      value={genConfig.endFrequency}
+                      min={1}
+                      max={22000}
+                      onChange={(e) => setGenConfig(c => ({ ...c, endFrequency: Number(e.target.value) }))}
+                    />
+                  </div>
+                )}
+
+                {genConfig.type === 'noise' && (
+                  <div className="audio-gen-section">
+                    <label className="audio-field-label">{t('audio.gen.noiseType')}</label>
+                    <select
+                      className="audio-select"
+                      value={genConfig.noiseType}
+                      onChange={(e) => setGenConfig(c => ({ ...c, noiseType: e.target.value as NoiseType }))}
+                    >
+                      <option value="white">{t('audio.noise.white')}</option>
+                      <option value="pink">{t('audio.noise.pink')}</option>
+                      <option value="brown">{t('audio.noise.brown')}</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className="audio-gen-section">
+                  <label className="audio-field-label">{t('audio.gen.sampleRate')} (Hz)</label>
+                  <select
+                    className="audio-select"
+                    value={genConfig.sampleRate}
+                    onChange={(e) => setGenConfig(c => ({ ...c, sampleRate: Number(e.target.value) }))}
                   >
-                    <Play size={12} /> {t('audio.preview')}
-                  </button>
-                  <button
-                    type="button"
-                    className="audio-btn-sm"
-                    onClick={(e) => { e.stopPropagation(); exportAudio(scene.id) }}
-                    disabled={generating}
+                    <option value={44100}>44100</option>
+                    <option value={48000}>48000</option>
+                    <option value={96000}>96000</option>
+                    <option value={192000}>192000</option>
+                  </select>
+                </div>
+
+                <div className="audio-gen-section">
+                  <label className="audio-field-label">{t('audio.gen.bitDepth')}</label>
+                  <select
+                    className="audio-select"
+                    value={genConfig.bitDepth}
+                    onChange={(e) => setGenConfig(c => ({ ...c, bitDepth: Number(e.target.value) }))}
                   >
-                    <Download size={12} /> {t('audio.export')}
-                  </button>
+                    <option value={16}>16-bit</option>
+                    <option value={24}>24-bit</option>
+                    <option value={32}>32-bit float</option>
+                  </select>
+                </div>
+
+                <div className="audio-gen-section">
+                  <label className="audio-field-label">{t('audio.gen.channels')}</label>
+                  <select
+                    className="audio-select"
+                    value={genConfig.channels}
+                    onChange={(e) => setGenConfig(c => ({ ...c, channels: Number(e.target.value) }))}
+                  >
+                    <option value={1}>Mono</option>
+                    <option value={2}>Stereo</option>
+                  </select>
+                </div>
+
+                <div className="audio-gen-section">
+                  <label className="audio-field-label">{t('audio.gen.duration')} (s)</label>
+                  <div className="audio-input-with-presets">
+                    <select
+                      className="audio-select"
+                      value=""
+                      onChange={(e) => { if (e.target.value) setGenConfig(c => ({ ...c, duration: Number(e.target.value) })) }}
+                    >
+                      <option value="">{t('audio.preset')}</option>
+                      {DURATION_PRESETS.map(p => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      className="audio-input"
+                      value={genConfig.duration}
+                      min={0.1}
+                      max={300}
+                      step={0.1}
+                      onChange={(e) => setGenConfig(c => ({ ...c, duration: Number(e.target.value) }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="audio-gen-section">
+                  <label className="audio-field-label">{t('audio.gen.gain')}</label>
+                  <input
+                    type="range"
+                    className="audio-slider"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={genConfig.gain}
+                    onChange={(e) => setGenConfig(c => ({ ...c, gain: Number(e.target.value) }))}
+                  />
+                  <span className="audio-value">{Math.round(genConfig.gain * 100)}%</span>
+                </div>
+
+                <div className="audio-gen-section">
+                  <label className="audio-field-label">{t('audio.gen.pan')}</label>
+                  <input
+                    type="range"
+                    className="audio-slider"
+                    min={-1}
+                    max={1}
+                    step={0.01}
+                    value={genConfig.panPosition}
+                    onChange={(e) => setGenConfig(c => ({ ...c, panPosition: Number(e.target.value) }))}
+                  />
+                  <span className="audio-value">{genConfig.panPosition > 0 ? `R ${Math.round(genConfig.panPosition * 100)}%` : genConfig.panPosition < 0 ? `L ${Math.round(-genConfig.panPosition * 100)}%` : 'C'}</span>
+                </div>
+
+                <div className="audio-gen-section">
+                  <label className="audio-field-label">{t('audio.gen.reverb')}</label>
+                  <input
+                    type="range"
+                    className="audio-slider"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={genConfig.reverbMix}
+                    onChange={(e) => setGenConfig(c => ({ ...c, reverbMix: Number(e.target.value) }))}
+                  />
+                  <span className="audio-value">{Math.round(genConfig.reverbMix * 100)}%</span>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Export Tab */}
-      {activeTab === 'export' && (
-        <div className="audio-panel">
-          <div className="audio-export-section">
-            <h3>{t('audio.export.title')}</h3>
-            <p className="audio-export-desc">{t('audio.export.desc')}</p>
-
-            <div className="audio-gen-section">
-              <label className="audio-field-label">{t('audio.export.format')}</label>
-              <div className="audio-export-formats">
+              <div className="audio-gen-actions">
                 <button
                   type="button"
-                  className={`audio-gen-type-btn ${exportFormat === 'wav' ? 'active' : ''}`}
-                  onClick={() => setExportFormat('wav')}
+                  className="audio-btn audio-btn-primary"
+                  onClick={() => previewGenerated()}
+                  disabled={generating}
                 >
-                  WAV
+                  {previewPlaying ? <Square size={14} /> : <Play size={14} />}
+                  {previewPlaying ? t('audio.stop') : t('audio.preview')}
                 </button>
                 <button
                   type="button"
-                  className={`audio-gen-type-btn ${exportFormat === 'flac' ? 'active' : ''}`}
-                  onClick={() => setExportFormat('flac')}
+                  className={`audio-btn-sm ${previewLoop ? 'active' : ''}`}
+                  onClick={() => setPreviewLoop(!previewLoop)}
+                  title={t('audio.previewLoop')}
                 >
-                  FLAC
+                  <Repeat size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="audio-btn"
+                  onClick={() => exportAudio()}
+                  disabled={generating}
+                >
+                  <Download size={14} /> {t('audio.export')}
                 </button>
               </div>
             </div>
+          )}
 
-            <div className="audio-export-specs">
-              <div className="audio-spec-item">
-                <span>{t('audio.gen.sampleRate')}</span>
-                <span>{genConfig.sampleRate} Hz</span>
+          {/* Scenes Tab */}
+          {activeTab === 'scenes' && (
+            <div className="audio-panel audio-panel-scroll">
+              <div className="audio-scene-categories">
+                {(['instrument', 'vocal', 'game', 'environment', 'mix'] as SceneCategory[]).map(cat => (
+                  <button
+                    key={cat}
+                    type="button"
+                    className={`audio-tab ${sceneCategory === cat ? 'active' : ''}`}
+                    onClick={() => setSceneCategory(cat)}
+                  >
+                    {t(`audio.category.${cat}` as any)}
+                  </button>
+                ))}
               </div>
-              <div className="audio-spec-item">
-                <span>{t('audio.gen.bitDepth')}</span>
-                <span>{genConfig.bitDepth}-bit</span>
-              </div>
-              <div className="audio-spec-item">
-                <span>{t('audio.gen.channels')}</span>
-                <span>{genConfig.channels === 1 ? 'Mono' : 'Stereo'}</span>
-              </div>
-              <div className="audio-spec-item">
-                <span>{t('audio.export.quality')}</span>
-                <span>{t('audio.export.lossless')}</span>
+
+              <div className="audio-scene-grid">
+                {filteredScenes.map(scene => (
+                  <div
+                    key={scene.id}
+                    className={`audio-scene-card ${selectedScene === scene.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedScene(scene.id)}
+                  >
+                    <h4>{t(scene.labelKey as any)}</h4>
+                    <p>{scene.description}</p>
+                    <div className="audio-scene-actions">
+                      <button
+                        type="button"
+                        className="audio-btn-sm"
+                        onClick={(e) => { e.stopPropagation(); previewGenerated(scene.id) }}
+                        disabled={generating}
+                      >
+                        <Play size={12} /> {t('audio.preview')}
+                      </button>
+                      <button
+                        type="button"
+                        className={`audio-btn-sm ${previewLoop ? 'active' : ''}`}
+                        onClick={(e) => { e.stopPropagation(); setPreviewLoop(!previewLoop) }}
+                        title={t('audio.previewLoop')}
+                      >
+                        <Repeat size={11} />
+                      </button>
+                      <button
+                        type="button"
+                        className="audio-btn-sm"
+                        onClick={(e) => { e.stopPropagation(); exportAudio(scene.id) }}
+                        disabled={generating}
+                      >
+                        <Download size={12} /> {t('audio.export')}
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
+          )}
 
-            <button
-              type="button"
-              className="audio-btn audio-btn-primary"
-              onClick={() => exportAudio()}
-              disabled={!lastGeneratedBuffer && generating}
-            >
-              <Download size={14} /> {t('audio.export.download')}
-            </button>
-          </div>
+          {/* Export Tab */}
+          {activeTab === 'export' && (
+            <div className="audio-panel">
+              <div className="audio-export-section">
+                <h3>{t('audio.export.title')}</h3>
+                <p className="audio-export-desc">{t('audio.export.desc')}</p>
+
+                <div className="audio-gen-section">
+                  <label className="audio-field-label">{t('audio.export.format')}</label>
+                  <div className="audio-export-formats">
+                    <button
+                      type="button"
+                      className={`audio-gen-type-btn ${exportFormat === 'wav' ? 'active' : ''}`}
+                      onClick={() => setExportFormat('wav')}
+                    >
+                      WAV
+                    </button>
+                    <button
+                      type="button"
+                      className={`audio-gen-type-btn ${exportFormat === 'flac' ? 'active' : ''}`}
+                      onClick={() => setExportFormat('flac')}
+                    >
+                      FLAC
+                    </button>
+                  </div>
+                </div>
+
+                <div className="audio-export-specs">
+                  <div className="audio-spec-item">
+                    <span>{t('audio.gen.sampleRate')}</span>
+                    <span>{genConfig.sampleRate} Hz</span>
+                  </div>
+                  <div className="audio-spec-item">
+                    <span>{t('audio.gen.bitDepth')}</span>
+                    <span>{genConfig.bitDepth}-bit</span>
+                  </div>
+                  <div className="audio-spec-item">
+                    <span>{t('audio.gen.channels')}</span>
+                    <span>{genConfig.channels === 1 ? 'Mono' : 'Stereo'}</span>
+                  </div>
+                  <div className="audio-spec-item">
+                    <span>{t('audio.export.quality')}</span>
+                    <span>{t('audio.export.lossless')}</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="audio-btn audio-btn-primary"
+                  onClick={() => exportAudio()}
+                  disabled={!lastGeneratedBuffer && generating}
+                >
+                  <Download size={14} /> {t('audio.export.download')}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
