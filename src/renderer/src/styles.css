@@ -2587,10 +2587,124 @@ input:not([type]):focus {
 .audio-studio-view {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 24px;
+  gap: 12px;
+  padding: 16px;
   height: 100%;
+  overflow: hidden;
+}
+
+.audio-studio-layout {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.audio-left-panel {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  min-width: 220px;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.audio-left-panel .audio-playlist {
+  flex: 1;
+  max-height: none;
   overflow-y: auto;
+}
+
+.audio-left-panel .audio-toolbar {
+  flex-wrap: wrap;
+}
+
+.audio-player-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid #1a2028;
+}
+
+.audio-right-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.audio-panel-scroll {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Group styles */
+.audio-group {
+  border-bottom: 1px solid #1a2028;
+}
+
+.audio-group:last-child {
+  border-bottom: none;
+}
+
+.audio-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  background: #181e24;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8ba3b0;
+  transition: background 0.1s;
+}
+
+.audio-group-header:hover {
+  background: #1e2830;
+}
+
+.audio-group-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-group-count {
+  font-size: 10px;
+  color: #5a7080;
+  background: #1a2028;
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+
+/* Input with presets */
+.audio-input-with-presets {
+  display: flex;
+  gap: 4px;
+}
+
+.audio-input-with-presets .audio-select {
+  width: auto;
+  min-width: 80px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 4px 6px;
+}
+
+.audio-input-with-presets .audio-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.audio-gen-full {
+  grid-column: 1 / -1;
 }
 
 .audio-tabs {
@@ -2626,7 +2740,7 @@ input:not([type]):focus {
 .audio-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .audio-toolbar {
@@ -2729,7 +2843,7 @@ input:not([type]):focus {
 }
 
 .audio-playlist {
-  max-height: 200px;
+  max-height: none;
   overflow-y: auto;
   border: 1px solid #1a2028;
   border-radius: 8px;
