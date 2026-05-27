@@ -1437,7 +1437,7 @@ export function App(): JSX.Element {
           </button>
           <button className={`nav-item ${currentView === 'model3d' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('model3d')}>
             <Box size={18} />
-            3D Model
+            {t('model3d.eyebrow')}
           </button>
         </nav>
 
@@ -1525,10 +1525,10 @@ export function App(): JSX.Element {
             className="lang-toggle-btn"
             type="button"
             onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
-            title="Toggle language"
+            title={lang === 'zh' ? 'Switch to English' : '切换到中文'}
           >
-            <Languages size={14} />
-            {t('lang.toggle')}
+            <Languages size={15} />
+            <span className="lang-toggle-label">{t('lang.toggle')}</span>
           </button>
         </div>
       </aside>
@@ -2282,8 +2282,8 @@ export function App(): JSX.Element {
           <div className="model3d-view">
             <header className="workspace-header">
               <div>
-                <p className="eyebrow">3D Model Viewer</p>
-                <h2>Gaussian Splat</h2>
+                <p className="eyebrow">{t('model3d.eyebrow')}</p>
+                <h2>{t('model3d.title')}</h2>
               </div>
               <div className="metric-row">
                 <button
@@ -2295,9 +2295,9 @@ export function App(): JSX.Element {
                   {t('nav.workspace')}
                 </button>
                 {splatLoading ? (
-                  <span className="chip">Loading models…</span>
+                  <span className="chip">{t('model3d.loading')}</span>
                 ) : (
-                  <span className="chip">{splatModels.length} model{splatModels.length !== 1 ? 's' : ''}</span>
+                  <span className="chip">{splatModels.length === 1 ? t('model3d.models').replace('{count}', String(splatModels.length)) : t('model3d.modelsPlural').replace('{count}', String(splatModels.length))}</span>
                 )}
               </div>
             </header>
@@ -2309,7 +2309,7 @@ export function App(): JSX.Element {
                 disabled={splatModels.length === 0}
                 onChange={(e) => { setSelectedModelIndex(Number(e.target.value)); setLedMapperOpen(false) }}
               >
-                {splatModels.length === 0 && <option value={0}>No models available</option>}
+                {splatModels.length === 0 && <option value={0}>{t('model3d.noModels')}</option>}
                 {splatModels.map((m, i) => (
                   <option key={m.name} value={i}>{m.name}</option>
                 ))}
@@ -2317,10 +2317,10 @@ export function App(): JSX.Element {
               <button
                 className="aspect-lock-btn"
                 type="button"
-                title="Import a .splat, .ply, .ksplat or .spz file"
+                title={t('model3d.importHint')}
                 onClick={() => splatFileInputRef.current?.click()}
               >
-                📂 Import Model
+                📂 {t('model3d.importModel')}
               </button>
               <input
                 ref={splatFileInputRef}
@@ -2335,13 +2335,13 @@ export function App(): JSX.Element {
                   type="button"
                   onClick={() => setLedMapperOpen((v) => !v)}
                 >
-                  🎯 {ledMapperOpen ? 'Close LED Mapper' : 'Open LED Mapper'}
+                  🎯 {ledMapperOpen ? t('model3d.closeLedMapper') : t('model3d.openLedMapper')}
                 </button>
               )}
             </div>
 
             {selectedModel && ledMapperOpen ? (
-              <Suspense fallback={<div className="model3d-splat-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>Loading…</div>}>
+              <Suspense fallback={<div className="model3d-splat-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>{t('model3d.loadingLedMapper')}</div>}>
                 <LEDMapper
                   model={selectedModel}
                   initialLedMap={selectedModel.ledMap}
@@ -2351,14 +2351,14 @@ export function App(): JSX.Element {
               <div className="model3d-splat-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
                 {selectedModel.downloadStatus === 'error' ? (
                   <>
-                    <p style={{ color: 'var(--color-error, #f87171)', margin: 0 }}>⚠ {selectedModel.downloadError ?? 'Download failed'}</p>
+                    <p style={{ color: 'var(--color-error, #f87171)', margin: 0 }}>⚠ {selectedModel.downloadError ?? t('model3d.downloadError')}</p>
                     <button className="aspect-lock-btn" type="button" onClick={() => void downloadSplatModel(selectedModel.name)}>
-                      ↺ Retry
+                      {t('model3d.retry')}
                     </button>
                   </>
                 ) : selectedModel.downloadStatus === 'downloading' ? (
                   <>
-                    <p style={{ margin: 0, opacity: 0.8 }}>Downloading {selectedModel.name}…</p>
+                    <p style={{ margin: 0, opacity: 0.8 }}>{t('model3d.downloading').replace('{name}', selectedModel.name)}</p>
                     <div style={{ width: 260, height: 6, background: 'rgba(255,255,255,0.12)', borderRadius: 3, overflow: 'hidden' }}>
                       <div style={{ width: `${selectedModel.downloadProgress}%`, height: '100%', background: 'var(--color-accent, #38bdf8)', transition: 'width 0.3s' }} />
                     </div>
@@ -2366,16 +2366,16 @@ export function App(): JSX.Element {
                   </>
                 ) : (
                   <>
-                    <p style={{ margin: 0, opacity: 0.7 }}>Model not yet downloaded</p>
+                    <p style={{ margin: 0, opacity: 0.7 }}>{t('model3d.notDownloaded')}</p>
                     <button className="aspect-lock-btn" type="button" onClick={() => void downloadSplatModel(selectedModel.name)}>
-                      ⬇ Download {selectedModel.name}
+                      {t('model3d.download').replace('{name}', selectedModel.name)}
                     </button>
                   </>
                 )}
               </div>
             ) : (
               <div className="model3d-splat-wrapper">
-                <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.5 }}>Loading 3D viewer…</div>}>
+                <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.5 }}>{t('model3d.loadingViewer')}</div>}>
                   <SplatViewer
                     model={selectedModel}
                     ledColors={ledColorsRef.current}
@@ -2411,10 +2411,10 @@ export function App(): JSX.Element {
                 <div><dt>{t('diag.activeLayers')}</dt><dd>{scene?.layers.filter((l) => l.enabled).length ?? 0}</dd></div>
                 <div><dt>{t('diag.targetFps')}</dt><dd>{profile.sampling.fps}</dd></div>
                 <div><dt>{t('diag.platform')}</dt><dd>{topology.platform}</dd></div>
-                <div><dt>{t('diag.audio')}</dt><dd>{audio.active ? `Active — Bass ${(audio.bass * 100).toFixed(0)}%` : audioErrorLabel || t('diag.off')}</dd></div>
+                <div><dt>{t('diag.audio')}</dt><dd>{audio.active ? t('diag.audioBass').replace('{bass}', (audio.bass * 100).toFixed(0)) : audioErrorLabel || t('diag.off')}</dd></div>
                 {topology.displays.map((d) => (
                   <div key={d.id}>
-                    <dt>{d.label}{d.primary ? ' (primary)' : ''}</dt>
+                    <dt>{d.label}{d.primary ? ` ${t('diag.displayPrimary')}` : ''}</dt>
                     <dd>{d.bounds.width}×{d.bounds.height} @{d.scaleFactor}×</dd>
                   </div>
                 ))}
