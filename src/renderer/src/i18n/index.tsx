@@ -399,6 +399,27 @@ const EN = {
   // Common
   'common.cancel': 'Cancel',
   'common.ok': 'OK',
+  // 3D Model Viewer
+  'model3d.eyebrow': '3D Model Viewer',
+  'model3d.title': 'Gaussian Splat',
+  'model3d.loading': 'Loading models…',
+  'model3d.noModels': 'No models available',
+  'model3d.importModel': 'Import Model',
+  'model3d.closeLedMapper': 'Close LED Mapper',
+  'model3d.openLedMapper': 'Open LED Mapper',
+  'model3d.loadingViewer': 'Loading 3D viewer…',
+  'model3d.loadingLedMapper': 'Loading…',
+  'model3d.downloadError': 'Download failed',
+  'model3d.retry': '↺ Retry',
+  'model3d.downloading': 'Downloading {name}…',
+  'model3d.notDownloaded': 'Model not yet downloaded',
+  'model3d.download': '⬇ Download {name}',
+  'model3d.models': '{count} model',
+  'model3d.modelsPlural': '{count} models',
+  'model3d.importHint': 'Import a .splat, .ply, .ksplat or .spz file',
+  // Diagnostics extras
+  'diag.audioBass': 'Active — Bass {bass}%',
+  'diag.displayPrimary': '(primary)',
 } as const
 
 export type TranslationKey = keyof typeof EN
@@ -777,6 +798,27 @@ const ZH: TranslationTable = {
   'audio.export.download': '下载文件',
   'common.cancel': '取消',
   'common.ok': '确定',
+  // 3D 模型查看器
+  'model3d.eyebrow': '3D 模型查看器',
+  'model3d.title': '高斯泼溅',
+  'model3d.loading': '加载模型中…',
+  'model3d.noModels': '暂无可用模型',
+  'model3d.importModel': '导入模型',
+  'model3d.closeLedMapper': '关闭 LED 映射器',
+  'model3d.openLedMapper': '打开 LED 映射器',
+  'model3d.loadingViewer': '加载 3D 查看器…',
+  'model3d.loadingLedMapper': '加载中…',
+  'model3d.downloadError': '下载失败',
+  'model3d.retry': '↺ 重试',
+  'model3d.downloading': '正在下载 {name}…',
+  'model3d.notDownloaded': '模型尚未下载',
+  'model3d.download': '⬇ 下载 {name}',
+  'model3d.models': '{count} 个模型',
+  'model3d.modelsPlural': '{count} 个模型',
+  'model3d.importHint': '导入 .splat、.ply、.ksplat 或 .spz 文件',
+  // 诊断补充
+  'diag.audioBass': '已激活 — 低频 {bass}%',
+  'diag.displayPrimary': '（主屏）',
 }
 
 export const translations: Record<Lang, TranslationTable> = { en: EN, zh: ZH }
