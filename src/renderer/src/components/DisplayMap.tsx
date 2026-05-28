@@ -1,15 +1,17 @@
 import { useState, type JSX, type PointerEvent as ReactPointerEvent } from 'react'
 import type { DisplayTopology, OverlayConfig, OverlayRegionCustom, OverlayRegionPreset } from '../../../shared/types'
+import { useI18n } from '../i18n'
+import type { TranslationKey } from '../i18n'
 
-const REGION_OPTIONS: Array<{ value: OverlayRegionPreset; label: string }> = [
-  { value: 'fullscreen',    label: '全屏' },
-  { value: 'top-third',     label: '上' },
-  { value: 'middle-third',  label: '中' },
-  { value: 'bottom-third',  label: '下' },
-  { value: 'left-third',    label: '左' },
-  { value: 'center-third',  label: '中列' },
-  { value: 'right-third',   label: '右' },
-  { value: 'custom',        label: '自定义' },
+const REGION_OPTION_KEYS: Array<{ value: OverlayRegionPreset; labelKey: TranslationKey }> = [
+  { value: 'fullscreen',    labelKey: 'overlay.region.fullscreen' },
+  { value: 'top-third',     labelKey: 'overlay.region.top' },
+  { value: 'middle-third',  labelKey: 'overlay.region.middle' },
+  { value: 'bottom-third',  labelKey: 'overlay.region.bottom' },
+  { value: 'left-third',    labelKey: 'overlay.region.left' },
+  { value: 'center-third',  labelKey: 'overlay.region.center' },
+  { value: 'right-third',   labelKey: 'overlay.region.right' },
+  { value: 'custom',        labelKey: 'overlay.region.custom' },
 ]
 
 const DEFAULT_CONFIG: OverlayConfig = { region: 'fullscreen' }
@@ -59,6 +61,7 @@ interface DisplayMapProps {
 }
 
 export function DisplayMap({ topology, overlayDisplayIds = [], onToggleOverlay, overlayConfigs = {}, onOverlayConfigChange }: DisplayMapProps): JSX.Element {
+  const { t } = useI18n()
   const { virtualBounds } = topology
   const safeWidth = Math.max(1, virtualBounds.width)
   const safeHeight = Math.max(1, virtualBounds.height)
@@ -101,23 +104,23 @@ export function DisplayMap({ topology, overlayDisplayIds = [], onToggleOverlay, 
             {onToggleOverlay && (
               <button
                 className={`overlay-toggle-btn ${overlayActive ? 'active' : ''}`}
-                title={overlayActive ? '关闭灯效叠加层' : '开启灯效叠加层'}
+                title={overlayActive ? t('overlay.toggle.off') : t('overlay.toggle.on')}
                 onClick={() => onToggleOverlay(display.id)}
               >
-                {overlayActive ? '■ 关闭叠加' : '▶ 开启叠加'}
+                {overlayActive ? t('overlay.deactivate') : t('overlay.activate')}
               </button>
             )}
             {onOverlayConfigChange && (
               <div className="overlay-region-row">
-                {REGION_OPTIONS.map((o) => (
+                {REGION_OPTION_KEYS.map((o) => (
                   <button
                     key={o.value}
                     className={`overlay-region-btn ${config.region === o.value ? 'active' : ''}`}
-                    title={`显示区域：${o.label}`}
+                    title={`${t('overlay.regionLabel')}${t(o.labelKey)}`}
                     type="button"
                     onClick={() => updateConfig({ region: o.value })}
                   >
-                    {o.label}
+                    {t(o.labelKey)}
                   </button>
                 ))}
               </div>
@@ -126,13 +129,13 @@ export function DisplayMap({ topology, overlayDisplayIds = [], onToggleOverlay, 
               <div className="overlay-custom-panel">
                 <div className="overlay-custom-drag-wrap">
                   <div className="overlay-custom-drag-head">
-                    <span>拖拽框选区域</span>
+                    <span>{t('overlay.dragHint')}</span>
                     <button
                       className="overlay-custom-reset-btn"
                       type="button"
                       onClick={() => updateConfig({ custom: DEFAULT_CUSTOM })}
                     >
-                      重置
+                      {t('overlay.reset')}
                     </button>
                   </div>
                   <div
