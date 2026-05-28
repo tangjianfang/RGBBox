@@ -1117,8 +1117,16 @@ export function AudioStudioView(): JSX.Element {
     })
     // Persist file paths to disk via main process for cross-session restore
     const pathEntries = playlist
-      .filter(tr => tr.file && (tr.file as any).path)
-      .map(tr => ({ id: tr.id, name: tr.name, path: (tr.file as any).path as string, group: tr.group }))
+      .map(tr => {
+        if (tr.file && (tr.file as any).path) {
+          return { id: tr.id, name: tr.name, path: (tr.file as any).path as string, group: tr.group }
+        }
+        if (tr.url && tr.url.startsWith('file://')) {
+          return { id: tr.id, name: tr.name, path: tr.url.replace('file://', ''), group: tr.group }
+        }
+        return null
+      })
+      .filter((entry): entry is { id: string; name: string; path: string; group: string } => entry !== null)
     if (pathEntries.length > 0) {
       window.rgbbox.audioSavePaths(pathEntries)
     }
@@ -1711,7 +1719,9 @@ export function AudioStudioView(): JSX.Element {
               ))}
             </div>
             <canvas ref={spectrumCanvasRef} className="audio-canvas audio-canvas-spectrum" width={720} height={160} />
-            <canvas ref={waveformCanvasRef} className="audio-canvas audio-canvas-waveform" width={720} height={80} />
+            {vizMode === 'oscilloscope' && (
+              <canvas ref={waveformCanvasRef} className="audio-canvas audio-canvas-waveform" width={720} height={80} />
+            )}
           </div>
 
           <div className="audio-tabs">
