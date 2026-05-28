@@ -103,6 +103,19 @@ export const effectPresets: PresetDefinition[] = [
     description: 'Each block cycles through a unique random hue, smoothly drifting in sync.',
     defaults: { speed: 0.30 }
   },
+  // ── Custom & Image ─────────────────────────────────────────────────────────
+  {
+    kind: 'custom-paint',
+    label: 'Custom Paint',
+    description: 'Paint each LED pixel individually. Drag to select regions and fill with solid, gradient, or rainbow colors.',
+    defaults: { pixelData: '', animateSpeed: 0 }
+  },
+  {
+    kind: 'image-paint',
+    label: 'Image Effect',
+    description: 'Convert images into LED pixel art. Supports multiple images with slideshow transitions.',
+    defaults: { imageDataList: '', activeImageIndex: 0, transitionSpeed: 3, animateTransition: true }
+  },
   // ── 3D Visual ──────────────────────────────────────────────────────────────
   {
     kind: 'plasma',

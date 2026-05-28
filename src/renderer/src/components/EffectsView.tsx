@@ -175,6 +175,7 @@ interface EffectsViewProps {
 
 const CATEGORIES = [
   { labelKey: 'effects.classic'  as const, kinds: ['screen-ambient', 'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'random-color'] },
+  { labelKey: 'effects.custom'   as const, kinds: ['custom-paint', 'image-paint'] },
   { labelKey: 'effects.advanced' as const, kinds: ['fire', 'aurora', 'nebula', 'fluid-flow', 'mirror-symmetry', 'starlight', 'ripple', 'spectrum', 'comet', 'lightning', 'explode', 'glitch', 'matrix-rain', 'neon-pulse'] },
   { labelKey: 'effects.science'  as const, kinds: ['dna-helix', 'black-hole', 'solar-system', 'spiral-galaxy', 'orion-nebula', 'pulsar-beacon', 'hurricane-eye', 'lightning-leader', 'icosahedral-virus', 'protein-folding', 'mitosis-spindle', 'synapse-pulse', 'quantum-collapse', 'microvilli-field', 'eclipse-alignment', 'comet-tail', 'magnetosphere-aurora', 'wave-diffraction', 'vortex-flame', 'tokamak-plasma'] },
   { labelKey: 'effects.threed'   as const, kinds: ['plasma', 'vortex', 'tunnel', 'crystal'] },

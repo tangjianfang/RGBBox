@@ -8,6 +8,8 @@ import { DisplayMap } from './components/DisplayMap'
 import { EffectsView } from './components/EffectsView'
 import { MiniGamesView } from './components/MiniGamesView'
 import { AudioStudioView } from './components/AudioStudioView'
+import { CustomPaintEditor } from './components/CustomPaintEditor'
+import { ImagePaintEditor } from './components/ImagePaintEditor'
 import { PreviewGrid } from './components/PreviewGrid'
 import { Preview3D } from './components/Preview3D'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
@@ -1989,7 +1991,48 @@ export function App(): JSX.Element {
                       <option value="multiply">{t('blend.multiply')}</option>
                     </select>
                   </label>
-                  {Object.entries(selectedLayer.parameters)
+                  {/* Custom Paint editor */}
+                  {selectedLayer.kind === 'custom-paint' && (
+                    <CustomPaintEditor
+                      columns={profile?.sampling.columns ?? 24}
+                      rows={profile?.sampling.rows ?? 14}
+                      pixelData={(() => {
+                        try {
+                          const raw = String(selectedLayer.parameters.pixelData ?? '')
+                          return raw ? JSON.parse(raw) as string[] : []
+                        } catch { return [] }
+                      })()}
+                      onChange={(pixels) => setLayerParameter('pixelData', JSON.stringify(pixels))}
+                    />
+                  )}
+                  {/* Image Paint editor */}
+                  {selectedLayer.kind === 'image-paint' && (
+                    <ImagePaintEditor
+                      columns={profile?.sampling.columns ?? 24}
+                      rows={profile?.sampling.rows ?? 14}
+                      imageDataList={(() => {
+                        try {
+                          const raw = String(selectedLayer.parameters.imageDataList ?? '')
+                          return raw ? JSON.parse(raw) as string[][] : []
+                        } catch { return [] }
+                      })()}
+                      activeImageIndex={Number(selectedLayer.parameters.activeImageIndex ?? 0)}
+                      transitionSpeed={Number(selectedLayer.parameters.transitionSpeed ?? 3)}
+                      animateTransition={selectedLayer.parameters.animateTransition !== false}
+                      onChange={(data) => {
+                        updateSelectedLayer({
+                          parameters: {
+                            ...selectedLayer.parameters,
+                            imageDataList: JSON.stringify(data.imageDataList),
+                            activeImageIndex: data.activeImageIndex,
+                            transitionSpeed: data.transitionSpeed,
+                            animateTransition: data.animateTransition,
+                          }
+                        })
+                      }}
+                    />
+                  )}
+                  {selectedLayer.kind !== 'custom-paint' && selectedLayer.kind !== 'image-paint' && Object.entries(selectedLayer.parameters)
                     .filter(([name]) => !name.startsWith('_'))
                     .map(([name, value]) => {
                       const meta = PARAM_META[name]
