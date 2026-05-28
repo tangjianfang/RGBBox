@@ -51,6 +51,9 @@ export const ipcChannels = {
   // Audio Studio file persistence
   audioGetSavedPaths: 'rgbbox:audio:get-saved-paths',
   audioSavePaths: 'rgbbox:audio:save-paths',
+  // Audio Studio native file/folder picker
+  audioOpenFiles: 'rgbbox:audio:open-files',
+  audioOpenFolder: 'rgbbox:audio:open-folder',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

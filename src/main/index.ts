@@ -1,11 +1,11 @@
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, screen, shell, Tray } from 'electron'
-import { access, mkdir, unlink } from 'node:fs/promises'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, screen, shell, Tray } from 'electron'
+import { access, mkdir, readdir, unlink } from 'node:fs/promises'
 import { createWriteStream } from 'node:fs'
 import { get as httpGet } from 'node:http'
 import { get as httpsGet } from 'node:https'
 import { pipeline } from 'node:stream/promises'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { defaultProfile } from '../shared/defaultProfile'
 import { ipcChannels } from '../shared/ipc'
@@ -20,6 +20,14 @@ import { getCaptureProviderStatus, initializeCaptureProviders } from './captureP
 
 // ── Single instance lock ──────────────────────────────────────────────────
 const gotSingleLock = app.requestSingleInstanceLock()
+
+// Register media:// as a privileged scheme so the renderer can load local
+// audio files from any origin (http://localhost in dev, file:// in prod).
+// Must be called BEFORE app is ready.
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'media',
+  privileges: { secure: true, standard: true, supportFetchAPI: true, corsEnabled: true, stream: true },
+}])
 if (!gotSingleLock) {
   app.quit()
   process.exit(0)
@@ -86,6 +94,24 @@ function createMainWindow(): void {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // F2 toggles DevTools (available in all builds for diagnostics)
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F2') {
+      if (mainWindow?.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.closeDevTools()
+      } else {
+        mainWindow?.webContents.openDevTools({ mode: 'detach' })
+      }
+    }
+  })
+
+  // F2 toggles DevTools in both dev and prod
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.key === 'F2' && input.type === 'keyDown') {
+      mainWindow?.webContents.toggleDevTools()
+    }
   })
 
   if (isDevelopment) {
@@ -321,6 +347,33 @@ function registerIpc(): void {
     await writeFile(audioConfigPath, JSON.stringify(paths, null, 2), 'utf-8')
   })
 
+  const AUDIO_FILTERS = [{ name: 'Audio', extensions: ['wav', 'flac', 'mp3', 'aac', 'm4a', 'ogg', 'opus', 'weba'] }]
+
+  ipcMain.handle(ipcChannels.audioOpenFiles, async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Add Audio Files',
+      properties: ['openFile', 'multiSelections'],
+      filters: AUDIO_FILTERS,
+    })
+    if (result.canceled) return []
+    return result.filePaths.map(p => ({ path: p, name: basename(p) }))
+  })
+
+  ipcMain.handle(ipcChannels.audioOpenFolder, async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Add Audio Folder',
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return []
+    const folderPath = result.filePaths[0]
+    const folderName = basename(folderPath)
+    let entries: string[] = []
+    try { entries = await readdir(folderPath) } catch { return [] }
+    return entries
+      .filter(f => /\.(wav|flac|mp3|aac|m4a|ogg|opus|weba)$/i.test(f))
+      .map(f => ({ path: join(folderPath, f), name: f, folder: folderName }))
+  })
+
   // Return mapping of model name → file:// URL for every model already cached
   ipcMain.handle(ipcChannels.modelGetCachedPaths, async () => {
     await mkdir(modelsDir, { recursive: true })
@@ -417,6 +470,34 @@ app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark'
   // Remove the default application menu (File / Edit / View / …)
   Menu.setApplicationMenu(null)
+
+  // Serve local audio files via the media:// custom scheme.
+  // net.fetch does NOT support file:// — use readFile + Response instead.
+  const AUDIO_MIME: Record<string, string> = {
+    mp3: 'audio/mpeg', wav: 'audio/wav', flac: 'audio/flac',
+    aac: 'audio/aac', m4a: 'audio/mp4', ogg: 'audio/ogg',
+    opus: 'audio/opus', weba: 'audio/webm',
+  }
+  protocol.handle('media', async (request) => {
+    try {
+      // Path is stored as query param ?p= to avoid Windows drive-letter mangling
+      // e.g. media://local?p=C%3A%5CUsers%5C...  →  C:\Users\...
+      const filePath = new URL(request.url).searchParams.get('p') ?? ''
+      console.log('[media://] filePath:', filePath)
+      const data = await readFile(filePath)
+      const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+      console.log('[media://] serving', data.byteLength, 'bytes, ext:', ext)
+      return new Response(data, {
+        headers: {
+          'Content-Type': AUDIO_MIME[ext] ?? 'audio/octet-stream',
+          'Access-Control-Allow-Origin': '*',
+        },
+      })
+    } catch (err) {
+      console.error('[media://] error:', request.url, err)
+      return new Response('File not found', { status: 404 })
+    }
+  })
 
   void initializeCaptureProviders()
   registerIpc()

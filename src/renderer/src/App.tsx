@@ -2317,9 +2317,9 @@ export function App(): JSX.Element {
           <MiniGamesView />
         )}
 
-        {currentView === 'audio' && (
+        <div style={{ display: currentView === 'audio' ? undefined : 'none' }}>
           <AudioStudioView />
-        )}
+        </div>
 
         {currentView === 'model3d' && (
           <div className="model3d-view">

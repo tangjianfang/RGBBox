@@ -1078,6 +1078,10 @@ export function AudioStudioView(): JSX.Element {
   const [exportFormat, setExportFormat] = useState<ExportFormat>(cached.exportFormat || 'wav')
   const [lastGeneratedBuffer, setLastGeneratedBuffer] = useState<AudioBuffer | null>(null)
 
+  // Tracks whether the cross-session restore has completed (prevents the initial
+  // empty-playlist render from overwriting saved paths on disk before restore runs)
+  const [isRestored, setIsRestored] = useState(false)
+
   // Visualizer mode
   const [vizMode, setVizMode] = useState<VisualizerMode>('spectrum')
 
@@ -1092,8 +1096,6 @@ export function AudioStudioView(): JSX.Element {
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null)
   const animFrameRef = useRef<number>(0)
   const previewSourceRef = useRef<AudioBufferSourceNode | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
   const playModeRef = useRef<PlayMode>(playMode)
   const playlistRef = useRef<TrackItem[]>(playlist)
   const spectrogramBufferRef = useRef<Uint8Array[]>([])
@@ -1103,8 +1105,10 @@ export function AudioStudioView(): JSX.Element {
   useEffect(() => { playModeRef.current = playMode }, [playMode])
   useEffect(() => { playlistRef.current = playlist }, [playlist])
 
-  // Save cache on state changes
+  // Save cache on state changes — skipped until restore has completed so the
+  // initial empty-playlist render does not wipe saved paths on disk.
   useEffect(() => {
+    if (!isRestored) return
     saveCache({
       playlist: playlist.map(tr => ({ id: tr.id, name: tr.name, group: tr.group })),
       groups,
@@ -1118,11 +1122,9 @@ export function AudioStudioView(): JSX.Element {
     // Persist file paths to disk via main process for cross-session restore
     const pathEntries = playlist
       .map(tr => {
-        if (tr.file && (tr.file as any).path) {
-          return { id: tr.id, name: tr.name, path: (tr.file as any).path as string, group: tr.group }
-        }
-        if (tr.url && tr.url.startsWith('file://')) {
-          return { id: tr.id, name: tr.name, path: tr.url.replace('file://', ''), group: tr.group }
+        if (tr.url && tr.url.startsWith('media://')) {
+          const filePath = (() => { try { return new URL(tr.url).searchParams.get('p') ?? '' } catch { return '' } })()
+          if (filePath) return { id: tr.id, name: tr.name, path: filePath, group: tr.group }
         }
         return null
       })
@@ -1130,37 +1132,41 @@ export function AudioStudioView(): JSX.Element {
     if (pathEntries.length > 0) {
       window.rgbbox.audioSavePaths(pathEntries)
     }
-  }, [playlist, groups, playMode, volume, balance, genConfig, exportFormat, activeTab])
+  }, [isRestored, playlist, groups, playMode, volume, balance, genConfig, exportFormat, activeTab])
 
   // Restore audio file paths from main process on mount
   useEffect(() => {
     let cancelled = false
     window.rgbbox.audioGetSavedPaths().then((saved) => {
-      if (cancelled || saved.length === 0) return
-      const restoredTracks: TrackItem[] = []
-      const restoredGroups: Set<string> = new Set()
-      for (const entry of saved) {
-        try {
-          // In Electron, we can construct a File from the path using fetch + blob
-          // But simpler: we set the path and load lazily when played
-          restoredTracks.push({
-            id: entry.id,
-            name: entry.name,
-            duration: 0,
-            file: undefined,
-            url: `file://${entry.path}`,
-            group: entry.group,
+      if (cancelled) return
+      if (saved.length > 0) {
+        const restoredTracks: TrackItem[] = []
+        const restoredGroups: Set<string> = new Set()
+        for (const entry of saved) {
+          try {
+            // Native path stored as ?p= to survive Chromium URL normalization
+            const mediaUrl = `media://local?p=${encodeURIComponent(entry.path)}`
+            restoredTracks.push({
+              id: entry.id,
+              name: entry.name,
+              duration: 0,
+              file: undefined,
+              url: mediaUrl,
+              group: entry.group,
+            })
+            restoredGroups.add(entry.group)
+          } catch { /* skip invalid entries */ }
+        }
+        if (restoredTracks.length > 0) {
+          setPlaylist(prev => prev.length > 0 ? prev : restoredTracks)
+          setGroups(prev => {
+            if (prev.length > 0) return prev
+            return [...restoredGroups].map(name => ({ name, collapsed: false }))
           })
-          restoredGroups.add(entry.group)
-        } catch { /* skip invalid entries */ }
+        }
       }
-      if (restoredTracks.length > 0) {
-        setPlaylist(prev => prev.length > 0 ? prev : restoredTracks)
-        setGroups(prev => {
-          if (prev.length > 0) return prev
-          return [...restoredGroups].map(name => ({ name, collapsed: false }))
-        })
-      }
+      // Mark restore as done regardless — allows the save effect to start running
+      setIsRestored(true)
     })
     return () => { cancelled = true }
   }, [])
@@ -1258,26 +1264,24 @@ export function AudioStudioView(): JSX.Element {
     return () => clearInterval(interval)
   }, [isPlaying])
 
-  // File loading
-  const handleFileSelect = useCallback((files: FileList | null, folderName?: string) => {
-    if (!files) return
-    const groupName = folderName || t('audio.defaultGroup')
-    const newTracks: TrackItem[] = []
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      if (/\.(wav|flac|mp3|aac|m4a|ogg)$/i.test(file.name)) {
-        const path = (file as any).webkitRelativePath || ''
-        const detectedFolder = path ? path.split('/')[0] : groupName
-        newTracks.push({
-          id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
-          name: file.name,
-          duration: 0,
-          file,
-          url: URL.createObjectURL(file),
-          group: detectedFolder,
-        })
+  // File loading — builds tracks using the custom media:// scheme so files can
+  // be played from any renderer origin (http://localhost dev or file:// prod).
+  // Native path is stored as ?p= query param to prevent Chromium URL normalization
+  // from mangling Windows drive letters (e.g. C: → c hostname).
+  const addTracksFromPaths = useCallback((entries: Array<{ path: string; name: string; folder?: string }>, defaultGroup?: string) => {
+    const groupName = defaultGroup || t('audio.defaultGroup')
+    const newTracks: TrackItem[] = entries.map((entry, i) => {
+      const mediaUrl = `media://local?p=${encodeURIComponent(entry.path)}`
+      const group = entry.folder || groupName
+      return {
+        id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+        name: entry.name,
+        duration: 0,
+        file: undefined,
+        url: mediaUrl,
+        group,
       }
-    }
+    })
     if (newTracks.length === 0) return
     const newGroupNames = [...new Set(newTracks.map(tr => tr.group))]
     setGroups(prev => {
@@ -1287,6 +1291,38 @@ export function AudioStudioView(): JSX.Element {
     })
     setPlaylist(prev => [...prev, ...newTracks])
   }, [t])
+
+  // Fallback for drag-and-drop: use File objects (blob URLs), with path extraction when available
+  const handleFileSelect = useCallback((files: FileList | null, folderName?: string) => {
+    if (!files) return
+    const entries: Array<{ path: string; name: string; folder?: string }> = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (!/\.(wav|flac|mp3|aac|m4a|ogg|opus|weba)$/i.test(file.name)) continue
+      const nativePath: string | undefined = (file as any).path
+      if (nativePath) {
+        const relPath = (file as any).webkitRelativePath as string | undefined
+        const folder = relPath ? relPath.split('/')[0] : folderName
+        entries.push({ path: nativePath, name: file.name, folder })
+      }
+      // Files without .path (browser security context) are skipped — they can't persist
+    }
+    if (entries.length > 0) {
+      addTracksFromPaths(entries, folderName)
+    }
+  }, [addTracksFromPaths, t])
+
+  const handleAddFiles = useCallback(() => {
+    window.rgbbox.audioOpenFiles().then(result => {
+      if (result.length > 0) addTracksFromPaths(result)
+    })
+  }, [addTracksFromPaths])
+
+  const handleAddFolder = useCallback(() => {
+    window.rgbbox.audioOpenFolder().then(result => {
+      if (result.length > 0) addTracksFromPaths(result, result[0]?.folder)
+    })
+  }, [addTracksFromPaths])
 
   // Drag and drop
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -1353,6 +1389,7 @@ export function AudioStudioView(): JSX.Element {
     }
 
     const audio = new Audio(track.url)
+    // media:// is a corsEnabled privileged scheme — crossOrigin needed for Web Audio API
     audio.crossOrigin = 'anonymous'
     audioElementRef.current = audio
 
@@ -1561,31 +1598,13 @@ export function AudioStudioView(): JSX.Element {
         {/* Left Panel - Playlist */}
         <div className="audio-left-panel" onDrop={handleDrop} onDragOver={handleDragOver}>
           <div className="audio-toolbar">
-            <button type="button" className="audio-btn" onClick={() => fileInputRef.current?.click()}>
+            <button type="button" className="audio-btn" onClick={handleAddFiles}>
               <Plus size={14} /> {t('audio.addFiles')}
             </button>
-            <button type="button" className="audio-btn" onClick={() => folderInputRef.current?.click()}>
+            <button type="button" className="audio-btn" onClick={handleAddFolder}>
               <FolderOpen size={14} /> {t('audio.addFolder')}
             </button>
           </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".wav,.flac,.mp3,.aac,.m4a,.ogg"
-            multiple
-            style={{ display: 'none' }}
-            onChange={(e) => handleFileSelect(e.target.files)}
-          />
-          <input
-            ref={folderInputRef}
-            type="file"
-            accept=".wav,.flac,.mp3,.aac,.m4a,.ogg"
-            multiple
-            style={{ display: 'none' }}
-            {...{ webkitdirectory: '', directory: '' } as any}
-            onChange={(e) => handleFileSelect(e.target.files)}
-          />
 
           <div className="audio-playlist">
             {playlist.length === 0 && (

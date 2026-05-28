@@ -123,6 +123,10 @@ const api = {
     ipcRenderer.invoke(ipcChannels.audioGetSavedPaths),
   audioSavePaths: (paths: Array<{ id: string; name: string; path: string; group: string }>): Promise<void> =>
     ipcRenderer.invoke(ipcChannels.audioSavePaths, paths),
+  audioOpenFiles: (): Promise<Array<{ path: string; name: string }>> =>
+    ipcRenderer.invoke(ipcChannels.audioOpenFiles),
+  audioOpenFolder: (): Promise<Array<{ path: string; name: string; folder: string }>> =>
+    ipcRenderer.invoke(ipcChannels.audioOpenFolder),
 }
 
 contextBridge.exposeInMainWorld('rgbbox', api)
