@@ -5,10 +5,35 @@
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* ── Custom scrollbar — matches dark theme, eliminates browser-default gray ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(138, 162, 173, 0.18);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(138, 162, 173, 0.32);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body {
@@ -43,9 +68,12 @@ button {
   align-items: center;
   color: #9cb7c3;
   display: flex;
-  font-size: 18px;
+  flex-direction: column;
+  font-size: 16px;
+  gap: 16px;
   height: 100vh;
   justify-content: center;
+  letter-spacing: -0.01em;
 }
 
 /* Electron Window Controls Overlay drag region — covers the 40px titlebar strip */
@@ -66,6 +94,7 @@ button {
   height: calc(100vh - 40px);
   margin-top: 40px;
   overflow: hidden;
+  background: linear-gradient(180deg, #0f1418 0%, #0d1216 100%);
 }
 
 .sidebar {
@@ -73,8 +102,11 @@ button {
   border-right: 1px solid #1e2e36;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
+  overflow-y: auto;
   padding: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
 }
 
 .brand-block {
@@ -109,6 +141,8 @@ button {
 
 .brand-block h1 {
   font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .brand-block p,
@@ -130,17 +164,20 @@ button {
   color: #b7cbd3;
   display: flex;
   font-size: 13.5px;
+  font-weight: 500;
   gap: 10px;
   height: 40px;
   padding: 0 12px;
   text-align: left;
-  transition: background 120ms, border-color 120ms, color 120ms;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
 .nav-item.active {
   background: linear-gradient(90deg, #182e38, #162633);
   border-color: #3a6070;
+  box-shadow: 0 0 12px rgba(70, 198, 168, 0.08);
   color: #e4f8fb;
+  font-weight: 600;
 }
 
 .nav-item:hover:not(.active) {
@@ -153,16 +190,17 @@ button {
   align-items: center;
   background: #0d1318;
   border: 1px solid #26343c;
-  border-radius: 8px;
+  border-radius: 10px;
   display: flex;
   justify-content: space-between;
   margin-top: auto;
   padding: 10px 12px;
-  transition: border-color 150ms;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
 }
 
 .status-panel:hover {
   border-color: #3a5a68;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
 }
 
 .status-panel span,
@@ -182,18 +220,19 @@ button {
   align-items: center;
   background: #1f3139;
   border: 1px solid #33505b;
-  border-radius: 6px;
+  border-radius: 8px;
   color: #e8f7fa;
   display: flex;
   height: 34px;
   justify-content: center;
-  transition: background 120ms, border-color 120ms;
+  transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
   width: 34px;
 }
 
 .icon-button:hover {
   background: #274550;
   border-color: #46c6a8;
+  box-shadow: 0 0 8px rgba(70, 198, 168, 0.12);
 }
 
 .icon-button.small {
@@ -215,8 +254,9 @@ button {
 }
 
 .workspace-header h2 {
-  font-size: 28px;
-  letter-spacing: 0;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .metric-row {
@@ -227,10 +267,10 @@ button {
 .metric {
   background: #131d23;
   border: 1px solid #26343c;
-  border-radius: 8px;
+  border-radius: 10px;
   min-width: 90px;
   padding: 9px 12px;
-  transition: border-color 150ms;
+  transition: border-color 200ms ease;
 }
 
 .metric:hover {
@@ -240,7 +280,7 @@ button {
 .content-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(320px, 1.45fr) minmax(260px, 0.9fr);
+  grid-template-columns: minmax(320px, 1.5fr) minmax(260px, 0.85fr);
 }
 
 .sampling-panel {
@@ -251,18 +291,24 @@ button {
 .panel {
   background: #131d23;
   border: 1px solid #26343c;
-  border-radius: 10px;
-  min-height: 240px;
+  border-radius: 12px;
+  min-height: 200px;
   padding: 16px;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.panel:hover {
+  border-color: #334d58;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.15);
 }
 
 .preview-panel {
-  min-height: 380px;
+  min-height: 320px;
 }
 
 .controls-panel,
 .diagnostics-panel {
-  min-height: 300px;
+  min-height: 260px;
 }
 
 .panel-header {
@@ -275,15 +321,16 @@ button {
 }
 
 .panel h3 {
-  font-size: 18px;
-  letter-spacing: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .chip {
   background: linear-gradient(135deg, #162936, #1a3540);
   border: 1px solid #3a606e;
   border-radius: 999px;
-  color: #9fd8e6;
+  color: #a8e2f0;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.04em;
@@ -295,11 +342,11 @@ button {
   aspect-ratio: 16 / 9;
   background: #0b1014;
   border: 1px solid #253740;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
   position: relative;
-  /* Prevent ultra-wide canvas at 2560×1440 — caps the preview at ~500 px tall */
-  width: min(100%, 888px);
+  /* Allow fluid width on most displays, cap at ultra-wide */
+  width: min(100%, 1120px);
 }
 
 .preview-frame::after {
@@ -351,8 +398,8 @@ button {
 .display-map {
   background: #0b1014;
   border: 1px solid #253740;
-  border-radius: 6px;
-  height: 350px;
+  border-radius: 8px;
+  height: 300px;
   position: relative;
 }
 
@@ -637,6 +684,7 @@ button {
 .diagnostics-list dt {
   color: #a2b7bf;
   font-size: 13px;
+  font-weight: 500;
 }
 
 .control-line strong {
@@ -1003,13 +1051,17 @@ input:not([type]):focus {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 32px;
+  gap: 28px;
   overflow-y: auto;
   padding: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
 }
 
 .effects-view-header h2 {
-  font-size: 28px;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   margin: 0 0 4px;
 }
 
@@ -1072,10 +1124,10 @@ input:not([type]):focus {
 }
 
 .effects-category-label {
-  color: #8aa2ad;
-  font-size: 12px;
+  color: #9fb7c1;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   margin: 0;
   text-transform: uppercase;
 }
@@ -1083,14 +1135,14 @@ input:not([type]):focus {
 .effects-card-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
 }
 
 .effect-card {
   align-items: flex-start;
   background: #131d23;
   border: 1px solid #26343c;
-  border-radius: 10px;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1098,7 +1150,7 @@ input:not([type]):focus {
   padding: 0;
   position: relative;
   text-align: left;
-  transition: border-color 150ms, box-shadow 150ms, transform 150ms;
+  transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
 }
 
 .effect-card-main {
@@ -1154,7 +1206,7 @@ input:not([type]):focus {
 
 .effect-card canvas {
   display: block;
-  height: 55px;
+  height: 64px;
   width: 100%;
 }
 
@@ -1185,6 +1237,8 @@ input:not([type]):focus {
   gap: 18px;
   overflow-y: auto;
   padding: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
 }
 
 .games-header,
@@ -1202,13 +1256,17 @@ input:not([type]):focus {
     radial-gradient(circle at 18% 0%, rgb(103 232 249 / 14%), transparent 28%),
     radial-gradient(circle at 82% 20%, rgb(240 171 252 / 13%), transparent 32%),
     #101820;
+  border-radius: 14px;
   display: flex;
   gap: 18px;
   justify-content: space-between;
+  padding: 20px;
 }
 
 .games-hero h3 {
-  font-size: 24px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   margin: 4px 0 8px;
 }
 
@@ -1252,10 +1310,11 @@ input:not([type]):focus {
   aspect-ratio: 900 / 520;
   background: #071118;
   border: 1px solid #28424e;
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: crosshair;
   display: block;
   width: 100%;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.3);
 }
 
 .games-control-panel {
@@ -1281,6 +1340,8 @@ input:not([type]):focus {
   max-height: 310px;
   overflow-y: auto;
   padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
 }
 
 .game-card {
@@ -1375,11 +1436,11 @@ input:not([type]):focus {
 .games-rules {
   background: #0d141a;
   border: 1px solid #233740;
-  border-radius: 10px;
+  border-radius: 12px;
   color: #b7cbd3;
   font-size: 12px;
-  line-height: 1.55;
-  padding: 12px;
+  line-height: 1.6;
+  padding: 14px;
 }
 
 .games-rules ul {
@@ -1396,6 +1457,8 @@ input:not([type]):focus {
   gap: 20px;
   overflow-y: auto;
   padding: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
 }
 
 /* ── Workspace three-column inner layout ────────────────────────────────── */
@@ -1415,7 +1478,7 @@ input:not([type]):focus {
   overflow-y: auto;
   padding: 12px 12px 16px;
   scrollbar-width: thin;
-  scrollbar-color: #2a3d46 transparent;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
   width: 272px;
   flex-shrink: 0;
 }
@@ -1439,7 +1502,7 @@ input:not([type]):focus {
   overflow-y: auto;
   padding: 20px 22px;
   scrollbar-width: thin;
-  scrollbar-color: #2a3d46 transparent;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
 }
 
 /* ── FX sidebar header ──────────────────────────────────────────────────── */
@@ -1468,7 +1531,7 @@ input:not([type]):focus {
 }
 
 .fx-section-title {
-  color: #8aa2ad;
+  color: #9fb7c1;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -2019,9 +2082,9 @@ input:not([type]):focus {
   border-top: 1px solid #1e2e36;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: 14px;
 }
 
 .profile-selector-row {
@@ -2176,8 +2239,8 @@ input:not([type]):focus {
 .profile-modal {
   background: #11191f;
   border: 1px solid #2a3e48;
-  border-radius: 12px;
-  box-shadow: 0 24px 64px rgb(0 0 0 / 60%);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 60%), 0 0 0 1px rgba(255,255,255,0.03);
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -2195,6 +2258,8 @@ input:not([type]):focus {
 
 .profile-modal-header h2 {
   font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   margin: 0;
 }
 
@@ -2300,6 +2365,8 @@ input:not([type]):focus {
   max-height: 280px;
   overflow-y: auto;
   padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
 }
 
 .profile-list-item {
@@ -2599,7 +2666,7 @@ input:not([type]):focus {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 20px;
+  padding: 22px;
   height: 100%;
   overflow: hidden;
 }
@@ -2624,6 +2691,7 @@ input:not([type]):focus {
   -webkit-backdrop-filter: blur(20px);
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
   padding: 16px;
 }
 
@@ -2657,6 +2725,7 @@ input:not([type]):focus {
   -webkit-backdrop-filter: blur(20px);
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
   padding: 16px;
 }
 
@@ -2664,6 +2733,8 @@ input:not([type]):focus {
   overflow-y: auto;
   flex: 1;
   min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
 }
 
 /* Group styles */
@@ -2744,7 +2815,7 @@ input:not([type]):focus {
 
 .audio-tab {
   flex: 1;
-  padding: 9px 16px;
+  padding: 10px 16px;
   border: none;
   border-radius: 9px;
   background: transparent;
@@ -2763,6 +2834,7 @@ input:not([type]):focus {
 .audio-tab.active {
   background: rgba(79, 195, 247, 0.12);
   color: #e6edf0;
+  font-weight: 600;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
@@ -2886,6 +2958,8 @@ input:not([type]):focus {
   border: 1px solid rgba(255, 255, 255, 0.04);
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.2);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
 }
 
 .audio-empty {
@@ -3160,7 +3234,7 @@ input:not([type]):focus {
 
 .audio-export-section h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   color: #e6edf0;
   letter-spacing: -0.02em;
