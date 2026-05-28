@@ -9,6 +9,7 @@ import { join, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { defaultProfile } from '../shared/defaultProfile'
 import { ipcChannels } from '../shared/ipc'
+import { initLogger } from '../shared/logger'
 import { MODELS_MANIFEST } from '../shared/modelsManifest'
 import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
 import type { DesktopAudioSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, RgbFrame, ScreenCaptureRequest } from '../shared/types'
@@ -18,7 +19,11 @@ import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile,
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
 
+// Initialize file logger — must be done after imports but before app.whenReady
+const log = initLogger(join(app.getPath('userData'), 'logs'), { minLevel: 'debug' })
+
 // ── Single instance lock ──────────────────────────────────────────────────
+log.info('App', `RGBBox starting, version=${app.getVersion()}, platform=${process.platform}`)
 const gotSingleLock = app.requestSingleInstanceLock()
 
 // Register media:// as a privileged scheme so the renderer can load local
@@ -29,6 +34,7 @@ protocol.registerSchemesAsPrivileged([{
   privileges: { secure: true, standard: true, supportFetchAPI: true, corsEnabled: true, stream: true },
 }])
 if (!gotSingleLock) {
+  log.warn('App', 'Another instance is running, quitting.')
   app.quit()
   process.exit(0)
 }
@@ -122,8 +128,10 @@ function createMainWindow(): void {
 }
 
 function registerIpc(): void {
+  log.info('IPC', 'Registering IPC handlers')
   ipcMain.handle(ipcChannels.getPowerSaveBlock, () => powerSaveBlockerId !== null)
   ipcMain.handle(ipcChannels.setPowerSaveBlock, (_event, enable: boolean) => {
+    log.info('Power', `Power save block ${enable ? 'enabled' : 'disabled'}`)
     if (enable && powerSaveBlockerId === null) {
       powerSaveBlockerId = powerSaveBlocker.start('prevent-display-sleep')
     } else if (!enable && powerSaveBlockerId !== null) {
@@ -135,6 +143,7 @@ function registerIpc(): void {
 
   ipcMain.handle(ipcChannels.getAutoLaunch, () => app.getLoginItemSettings().openAtLogin)
   ipcMain.handle(ipcChannels.setAutoLaunch, (_event, enable: boolean) => {
+    log.info('System', `Auto-launch ${enable ? 'enabled' : 'disabled'}`)
     app.setLoginItemSettings({ openAtLogin: enable })
     return app.getLoginItemSettings().openAtLogin
   })
@@ -142,9 +151,13 @@ function registerIpc(): void {
   ipcMain.handle(ipcChannels.appVersion, () => app.getVersion())
   ipcMain.handle(ipcChannels.getDisplayTopology, () => getDisplayTopology())
   ipcMain.handle(ipcChannels.getDefaultProfile, () => loadProfile())
-  ipcMain.handle(ipcChannels.saveProfile, (_event, profile: Profile) => saveProfile(profile))
+  ipcMain.handle(ipcChannels.saveProfile, (_event, profile: Profile) => {
+    log.info('Profile', `Saving active profile: id=${profile.id}, name="${profile.name}"`)
+    return saveProfile(profile)
+  })
   ipcMain.handle(ipcChannels.getEngineStatus, () => engineStatus)
   ipcMain.handle(ipcChannels.setEngineRunning, (_event, running: boolean) => {
+    log.info('Engine', `Engine ${running ? 'started' : 'stopped'}`)
     engineStatus = { ...engineStatus, running }
     return engineStatus
   })
@@ -189,12 +202,15 @@ function registerIpc(): void {
 
   // Overlay management
   ipcMain.handle(ipcChannels.openOverlay, (_event, displayId: number, config?: OverlayConfig) => {
+    log.info('Overlay', `Opening overlay for display ${displayId}, region=${config?.region ?? 'fullscreen'}`)
     return openOverlay(displayId, isDevelopment, process.env.ELECTRON_RENDERER_URL, config)
   })
   ipcMain.handle(ipcChannels.closeOverlay, (_event, displayId: number) => {
+    log.info('Overlay', `Closing overlay for display ${displayId}`)
     return closeOverlay(displayId)
   })
   ipcMain.handle(ipcChannels.setOverlayConfig, (_event, displayId: number, config?: OverlayConfig) => {
+    log.info('Overlay', `Updating overlay config for display ${displayId}, region=${config?.region ?? 'fullscreen'}`)
     return reopenOverlay(displayId, isDevelopment, process.env.ELECTRON_RENDERER_URL, config)
   })
   ipcMain.handle(ipcChannels.getOverlayDisplayIds, () => {
@@ -215,10 +231,20 @@ function registerIpc(): void {
 
   // Named profile management
   ipcMain.handle(ipcChannels.listProfiles, () => listProfiles())
-  ipcMain.handle(ipcChannels.loadProfileById, (_event, id: string) => loadProfileById(id))
-  ipcMain.handle(ipcChannels.saveProfileAs, (_event, profile: Profile) => saveProfileAs(profile))
-  ipcMain.handle(ipcChannels.deleteProfile, (_event, id: string) => deleteProfile(id))
+  ipcMain.handle(ipcChannels.loadProfileById, (_event, id: string) => {
+    log.info('Profile', `Loading profile by id: ${id}`)
+    return loadProfileById(id)
+  })
+  ipcMain.handle(ipcChannels.saveProfileAs, (_event, profile: Profile) => {
+    log.info('Profile', `Saving profile as: id=${profile.id}, name="${profile.name}"`)
+    return saveProfileAs(profile)
+  })
+  ipcMain.handle(ipcChannels.deleteProfile, (_event, id: string) => {
+    log.info('Profile', `Deleting profile: id=${id}`)
+    return deleteProfile(id)
+  })
   ipcMain.handle(ipcChannels.exportProfileDialog, async (_event, profile: Profile) => {
+    log.info('Profile', `Exporting profile: "${profile.name}"`)
     const result = await dialog.showSaveDialog({
       title: 'Export Profile',
       defaultPath: `${profile.name.replace(/[^a-zA-Z0-9_\- ]/g, '_')}.json`,
@@ -226,9 +252,11 @@ function registerIpc(): void {
     })
     if (result.canceled || !result.filePath) return false
     await writeFile(result.filePath, JSON.stringify(profile, null, 2), 'utf-8')
+    log.info('Profile', `Profile exported to: ${result.filePath}`)
     return true
   })
   ipcMain.handle(ipcChannels.importProfileDialog, async () => {
+    log.info('Profile', 'Importing profile from file dialog')
     const result = await dialog.showOpenDialog({
       title: 'Import Profile',
       filters: [{ name: 'JSON Profile', extensions: ['json'] }],
@@ -237,8 +265,10 @@ function registerIpc(): void {
     if (result.canceled || !result.filePaths[0]) return null
     try {
       const raw = await readFile(result.filePaths[0], 'utf-8')
+      log.info('Profile', `Profile imported from: ${result.filePaths[0]}`)
       return JSON.parse(raw) as Profile
     } catch {
+      log.error('Profile', `Failed to import profile from: ${result.filePaths[0]}`)
       return null
     }
   })
@@ -409,6 +439,8 @@ function registerIpc(): void {
     const cached = await getCachedModelUrl(entry.file)
     if (cached) return cached
 
+    log.info('Model', `Downloading model: ${name} from ${entry.url}`)
+
     // Remove any partial file from a previous failed attempt
     try { await unlink(destPath) } catch { /* ignore */ }
 
@@ -420,9 +452,11 @@ function registerIpc(): void {
 
     try {
       await downloadWithProgress(entry.url, destPath, sendProgress, name)
+      log.info('Model', `Model download complete: ${name}`)
     } catch (err) {
       try { await unlink(destPath) } catch { /* ignore */ }
       const errMsg = err instanceof Error ? err.message : String(err)
+      log.error('Model', `Model download failed: ${name}, error: ${errMsg}`)
       sendProgress({ name, receivedBytes: 0, totalBytes: 0, percent: 0, done: true, error: errMsg })
       throw err
     }
@@ -500,9 +534,11 @@ app.whenReady().then(() => {
   })
 
   void initializeCaptureProviders()
+  log.info('App', 'Capture providers initialized')
   registerIpc()
   createMainWindow()
   createTray()
+  log.info('App', 'Application ready — main window and tray created')
 
   // Notify the renderer whenever display topology changes (hotplug)
   const notifyTopologyChanged = (): void => {
@@ -529,10 +565,13 @@ app.on('second-instance', () => {
 })
 
 app.on('before-quit', () => {
+  log.info('App', 'Application quitting')
+  log.flushSync()
   isQuitting = true
 })
 
 app.on('window-all-closed', () => {
+  log.info('App', 'All windows closed')
   closeAllOverlays()
   if (process.platform !== 'darwin') {
     app.quit()

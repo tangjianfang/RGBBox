@@ -19,7 +19,9 @@
     "dist": "yarn build && electron-builder",
     "dist:win": "npm version patch --no-git-tag-version && yarn build && electron-builder --win",
     "dist:mac": "npm version patch --no-git-tag-version && yarn build && electron-builder --mac",
-    "dist:dir": "npm version patch --no-git-tag-version && yarn build && electron-builder --dir"
+    "dist:dir": "npm version patch --no-git-tag-version && yarn build && electron-builder --dir",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@mkkellogg/gaussian-splats-3d": "0.4.7",
@@ -38,7 +40,8 @@
     "electron-builder": "26.8.1",
     "electron-vite": "5.0.0",
     "typescript": "6.0.3",
-    "vite": "6.4.2"
+    "vite": "6.4.2",
+    "vitest": "4.1.7"
   },
   "build": {
     "appId": "app.rgbbox.desktop",
