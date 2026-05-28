@@ -1603,6 +1603,61 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       return hslToRgb(hue, 0.96, brightness * 0.68)
     }
 
+    // ── Custom Paint ──────────────────────────────────────────────────────────
+
+    case 'custom-paint': {
+      const pixelDataStr = String(layer.parameters.pixelData ?? '')
+      if (!pixelDataStr) return { r: 0, g: 0, b: 0 }
+      // pixelData is a JSON-encoded flat array of hex colors: ["#ff0000","#00ff00",...]
+      // indexed by y * columns + x
+      try {
+        const parsed = JSON.parse(pixelDataStr) as string[]
+        const idx = context.y * context.columns + context.x
+        const hex = parsed[idx]
+        if (!hex) return { r: 0, g: 0, b: 0 }
+        return hexToRgb(hex)
+      } catch {
+        return { r: 0, g: 0, b: 0 }
+      }
+    }
+
+    // ── Image Paint ───────────────────────────────────────────────────────────
+
+    case 'image-paint': {
+      const imageDataListStr = String(layer.parameters.imageDataList ?? '')
+      if (!imageDataListStr) return { r: 0, g: 0, b: 0 }
+      const transitionSpeed = Number(layer.parameters.transitionSpeed ?? 3)
+      const animateTransition = layer.parameters.animateTransition !== false
+      try {
+        // imageDataList: array of image pixel arrays, each is flat hex array for cols*rows
+        const images = JSON.parse(imageDataListStr) as string[][]
+        if (images.length === 0) return { r: 0, g: 0, b: 0 }
+        const idx = context.y * context.columns + context.x
+
+        if (images.length === 1 || !animateTransition) {
+          const activeIdx = Number(layer.parameters.activeImageIndex ?? 0) % images.length
+          const hex = images[activeIdx]?.[idx]
+          return hex ? hexToRgb(hex) : { r: 0, g: 0, b: 0 }
+        }
+
+        // Slideshow with crossfade between images
+        const cycleDuration = transitionSpeed * images.length
+        const phase = (context.now % cycleDuration) / transitionSpeed
+        const currentIdx = Math.floor(phase) % images.length
+        const nextIdx = (currentIdx + 1) % images.length
+        const blend = phase - Math.floor(phase)
+
+        const hexCurrent = images[currentIdx]?.[idx]
+        const hexNext = images[nextIdx]?.[idx]
+        const colorCurrent = hexCurrent ? hexToRgb(hexCurrent) : { r: 0, g: 0, b: 0 }
+        const colorNext = hexNext ? hexToRgb(hexNext) : { r: 0, g: 0, b: 0 }
+
+        return lerpColor(colorCurrent, colorNext, blend)
+      } catch {
+        return { r: 0, g: 0, b: 0 }
+      }
+    }
+
     // ── Screen Ambient ────────────────────────────────────────────────────────
 
     case 'screen-ambient':

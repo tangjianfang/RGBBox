@@ -39,6 +39,8 @@ export type EffectKind =
   | 'audio-beat'
   | 'audio-equalizer'
   | 'random-color'
+  | 'custom-paint'
+  | 'image-paint'
   | 'plasma'
   | 'vortex'
   | 'tunnel'
