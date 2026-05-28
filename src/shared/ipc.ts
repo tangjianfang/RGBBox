@@ -48,6 +48,9 @@ export const ipcChannels = {
   modelGetCachedPaths: 'rgbbox:models:get-cached-paths',
   modelDownload: 'rgbbox:models:download',
   modelDownloadProgress: 'rgbbox:models:download-progress',
+  // Audio Studio file persistence
+  audioGetSavedPaths: 'rgbbox:audio:get-saved-paths',
+  audioSavePaths: 'rgbbox:audio:save-paths',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

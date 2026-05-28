@@ -304,6 +304,23 @@ function registerIpc(): void {
     })
   }
 
+  // ── Audio Studio file path persistence ────────────────────────────────────
+  const audioConfigPath = join(app.getPath('userData'), 'config', 'audio-playlist.json')
+
+  ipcMain.handle(ipcChannels.audioGetSavedPaths, async () => {
+    try {
+      const raw = await readFile(audioConfigPath, 'utf-8')
+      return JSON.parse(raw)
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(ipcChannels.audioSavePaths, async (_event, paths: Array<{ id: string; name: string; path: string; group: string }>) => {
+    await mkdir(join(app.getPath('userData'), 'config'), { recursive: true })
+    await writeFile(audioConfigPath, JSON.stringify(paths, null, 2), 'utf-8')
+  })
+
   // Return mapping of model name → file:// URL for every model already cached
   ipcMain.handle(ipcChannels.modelGetCachedPaths, async () => {
     await mkdir(modelsDir, { recursive: true })

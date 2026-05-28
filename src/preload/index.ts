@@ -117,6 +117,12 @@ const api = {
     ipcRenderer.on(ipcChannels.modelDownloadProgress, handler)
     return () => ipcRenderer.off(ipcChannels.modelDownloadProgress, handler)
   },
+
+  // Audio Studio file persistence
+  audioGetSavedPaths: (): Promise<Array<{ id: string; name: string; path: string; group: string }>> =>
+    ipcRenderer.invoke(ipcChannels.audioGetSavedPaths),
+  audioSavePaths: (paths: Array<{ id: string; name: string; path: string; group: string }>): Promise<void> =>
+    ipcRenderer.invoke(ipcChannels.audioSavePaths, paths),
 }
 
 contextBridge.exposeInMainWorld('rgbbox', api)

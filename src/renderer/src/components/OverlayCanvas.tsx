@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, type JSX } from 'react'
 import { effectPresets } from '../../../shared/defaultProfile'
 import type { RgbFrame } from '../../../shared/types'
 import { PreviewGl } from '../gl/previewGl'
+import { useI18n } from '../i18n'
 
 interface Props {
   displayId: number
@@ -11,6 +12,7 @@ interface Props {
 const OVERLAY_EFFECTS = effectPresets.map((p) => ({ kind: p.kind, label: p.label }))
 
 export function OverlayCanvas({ displayId }: Props): JSX.Element {
+  const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const glRef     = useRef<PreviewGl | null>(null)
 
@@ -111,7 +113,7 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
         animation: 'overlayHintFade 3s ease 1.5s forwards',
         whiteSpace: 'nowrap'
       }}>
-        ESC 退出 · 右键菜单
+        {t('overlay.hint')}
       </div>
     </div>
   )

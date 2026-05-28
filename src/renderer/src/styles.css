@@ -3056,6 +3056,35 @@ input:not([type]):focus {
   gap: 8px;
 }
 
+.audio-viz-mode-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.audio-viz-mode-btn {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.audio-viz-mode-btn:hover {
+  background: rgba(79, 195, 247, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.audio-viz-mode-btn.active {
+  background: rgba(79, 195, 247, 0.15);
+  border-color: rgba(79, 195, 247, 0.4);
+  color: rgba(79, 195, 247, 0.95);
+}
+
 .audio-canvas {
   width: 100%;
   height: auto;

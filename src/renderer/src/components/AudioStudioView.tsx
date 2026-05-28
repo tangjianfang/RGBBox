@@ -723,6 +723,8 @@ function encodeLossless(audioBuffer: AudioBuffer, format: ExportFormat, bitDepth
 
 const SPECTRUM_BARS = 64  // Optimal bar count for visual clarity
 
+type VisualizerMode = 'spectrum' | 'oscilloscope' | 'spectrogram' | 'vuMeter'
+
 /** Premium gradient spectrum with glow, rounded caps, and mirror reflection */
 function drawSpectrum(canvas: HTMLCanvasElement, analyser: AnalyserNode): void {
   const ctx = canvas.getContext('2d')
@@ -872,6 +874,158 @@ function drawWaveform(canvas: HTMLCanvasElement, analyser: AnalyserNode): void {
   ctx.restore()
 }
 
+/** Spectrogram: scrolling time-frequency heat map */
+function drawSpectrogram(
+  canvas: HTMLCanvasElement,
+  analyser: AnalyserNode,
+  spectrogramBuffer: Uint8Array[]
+): void {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const dpr = window.devicePixelRatio || 1
+  const width = canvas.width / dpr
+  const height = canvas.height / dpr
+  ctx.save()
+  ctx.scale(dpr, dpr)
+
+  const bufferLength = analyser.frequencyBinCount
+  const dataArray = new Uint8Array(bufferLength)
+  analyser.getByteFrequencyData(dataArray)
+
+  // Add current frame to spectrogram buffer (sliding window)
+  spectrogramBuffer.push(new Uint8Array(dataArray))
+  const maxCols = Math.ceil(width)
+  while (spectrogramBuffer.length > maxCols) spectrogramBuffer.shift()
+
+  ctx.clearRect(0, 0, width, height)
+
+  // Draw the spectrogram columns (time → x, frequency → y)
+  const colWidth = Math.max(1, width / maxCols)
+  for (let col = 0; col < spectrogramBuffer.length; col++) {
+    const frame = spectrogramBuffer[col]
+    const x = col * colWidth
+    const binsPerPixel = bufferLength / height
+    for (let row = 0; row < height; row++) {
+      // Map bottom of canvas to low frequencies (invert y)
+      const binIdx = Math.floor((height - 1 - row) * binsPerPixel * 0.75)
+      const value = frame[binIdx] / 255
+      if (value < 0.02) continue
+      // Heat map: dark blue → cyan → yellow → red → white
+      const h = 240 - value * 240
+      const l = 10 + value * 55
+      ctx.fillStyle = `hsl(${h}, 90%, ${l}%)`
+      ctx.fillRect(x, row, colWidth + 0.5, 1)
+    }
+  }
+
+  ctx.restore()
+}
+
+/** VU Meter: professional audio level meter with peak hold */
+function drawVUMeter(
+  canvas: HTMLCanvasElement,
+  analyser: AnalyserNode,
+  peakHoldRef: { left: number; right: number; leftDecay: number; rightDecay: number }
+): void {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const dpr = window.devicePixelRatio || 1
+  const width = canvas.width / dpr
+  const height = canvas.height / dpr
+  ctx.save()
+  ctx.scale(dpr, dpr)
+
+  const bufferLength = analyser.fftSize
+  const dataArray = new Float32Array(bufferLength)
+  analyser.getFloatTimeDomainData(dataArray)
+
+  // Calculate RMS for left and right (simulated stereo from mono)
+  let sumLeft = 0
+  let sumRight = 0
+  const half = Math.floor(bufferLength / 2)
+  for (let i = 0; i < half; i++) {
+    sumLeft += dataArray[i] * dataArray[i]
+    sumRight += dataArray[i + half] * dataArray[i + half]
+  }
+  const rmsLeft = Math.sqrt(sumLeft / half)
+  const rmsRight = Math.sqrt(sumRight / half)
+
+  // Convert to dB scale (-60 to 0 dB range)
+  const toDb = (rms: number) => Math.max(-60, 20 * Math.log10(Math.max(rms, 1e-10)))
+  const dbLeft = toDb(rmsLeft)
+  const dbRight = toDb(rmsRight)
+  const normLeft = (dbLeft + 60) / 60
+  const normRight = (dbRight + 60) / 60
+
+  // Peak hold with decay
+  if (normLeft > peakHoldRef.left) { peakHoldRef.left = normLeft; peakHoldRef.leftDecay = 0 }
+  else { peakHoldRef.leftDecay++; if (peakHoldRef.leftDecay > 30) peakHoldRef.left = Math.max(0, peakHoldRef.left - 0.01) }
+  if (normRight > peakHoldRef.right) { peakHoldRef.right = normRight; peakHoldRef.rightDecay = 0 }
+  else { peakHoldRef.rightDecay++; if (peakHoldRef.rightDecay > 30) peakHoldRef.right = Math.max(0, peakHoldRef.right - 0.01) }
+
+  ctx.clearRect(0, 0, width, height)
+
+  const meterHeight = (height - 24) / 2
+  const meterY1 = 4
+  const meterY2 = meterY1 + meterHeight + 8
+
+  // Draw meter background
+  const drawMeter = (y: number, level: number, peak: number, label: string) => {
+    // Background track
+    ctx.fillStyle = 'rgba(30, 40, 50, 0.8)'
+    ctx.fillRect(24, y, width - 32, meterHeight)
+
+    // Green → Yellow → Red gradient fill
+    const meterWidth = width - 32
+    const fillWidth = level * meterWidth
+    const grad = ctx.createLinearGradient(24, 0, 24 + meterWidth, 0)
+    grad.addColorStop(0, '#22c55e')
+    grad.addColorStop(0.6, '#22c55e')
+    grad.addColorStop(0.75, '#eab308')
+    grad.addColorStop(0.9, '#ef4444')
+    grad.addColorStop(1, '#dc2626')
+    ctx.fillStyle = grad
+    ctx.fillRect(24, y, fillWidth, meterHeight)
+
+    // Peak hold indicator
+    const peakX = 24 + peak * meterWidth
+    ctx.fillStyle = peak > 0.9 ? '#ef4444' : '#ffffff'
+    ctx.fillRect(peakX - 1, y, 2, meterHeight)
+
+    // Scale marks at -40, -20, -10, -6, -3, 0 dB
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
+    ctx.font = `${Math.max(8, meterHeight * 0.5)}px monospace`
+    ctx.textAlign = 'center'
+    const marks = [-40, -20, -10, -6, -3, 0]
+    for (const db of marks) {
+      const mx = 24 + ((db + 60) / 60) * meterWidth
+      ctx.fillRect(mx, y + meterHeight - 2, 1, 2)
+    }
+
+    // Channel label
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'
+    ctx.textAlign = 'left'
+    ctx.font = `bold ${Math.max(9, meterHeight * 0.6)}px sans-serif`
+    ctx.fillText(label, 4, y + meterHeight * 0.7)
+  }
+
+  drawMeter(meterY1, normLeft, peakHoldRef.left, 'L')
+  drawMeter(meterY2, normRight, peakHoldRef.right, 'R')
+
+  // dB scale labels
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
+  ctx.font = '8px monospace'
+  ctx.textAlign = 'center'
+  const meterWidth = width - 32
+  const marks = [-40, -20, -10, -6, -3, 0]
+  for (const db of marks) {
+    const mx = 24 + ((db + 60) / 60) * meterWidth
+    ctx.fillText(`${db}`, mx, height - 2)
+  }
+
+  ctx.restore()
+}
+
 // ── Cache helpers ──────────────────────────────────────────────────────────
 
 function loadCache(): Partial<AudioStudioCache> {
@@ -924,6 +1078,9 @@ export function AudioStudioView(): JSX.Element {
   const [exportFormat, setExportFormat] = useState<ExportFormat>(cached.exportFormat || 'wav')
   const [lastGeneratedBuffer, setLastGeneratedBuffer] = useState<AudioBuffer | null>(null)
 
+  // Visualizer mode
+  const [vizMode, setVizMode] = useState<VisualizerMode>('spectrum')
+
   // Refs
   const audioContextRef = useRef<AudioContext | null>(null)
   const audioElementRef = useRef<HTMLAudioElement | null>(null)
@@ -939,6 +1096,8 @@ export function AudioStudioView(): JSX.Element {
   const folderInputRef = useRef<HTMLInputElement>(null)
   const playModeRef = useRef<PlayMode>(playMode)
   const playlistRef = useRef<TrackItem[]>(playlist)
+  const spectrogramBufferRef = useRef<Uint8Array[]>([])
+  const vuPeakRef = useRef({ left: 0, right: 0, leftDecay: 0, rightDecay: 0 })
 
   // Keep refs in sync
   useEffect(() => { playModeRef.current = playMode }, [playMode])
@@ -956,7 +1115,47 @@ export function AudioStudioView(): JSX.Element {
       exportFormat,
       activeTab,
     })
+    // Persist file paths to disk via main process for cross-session restore
+    const pathEntries = playlist
+      .filter(tr => tr.file && (tr.file as any).path)
+      .map(tr => ({ id: tr.id, name: tr.name, path: (tr.file as any).path as string, group: tr.group }))
+    if (pathEntries.length > 0) {
+      window.rgbbox.audioSavePaths(pathEntries)
+    }
   }, [playlist, groups, playMode, volume, balance, genConfig, exportFormat, activeTab])
+
+  // Restore audio file paths from main process on mount
+  useEffect(() => {
+    let cancelled = false
+    window.rgbbox.audioGetSavedPaths().then((saved) => {
+      if (cancelled || saved.length === 0) return
+      const restoredTracks: TrackItem[] = []
+      const restoredGroups: Set<string> = new Set()
+      for (const entry of saved) {
+        try {
+          // In Electron, we can construct a File from the path using fetch + blob
+          // But simpler: we set the path and load lazily when played
+          restoredTracks.push({
+            id: entry.id,
+            name: entry.name,
+            duration: 0,
+            file: undefined,
+            url: `file://${entry.path}`,
+            group: entry.group,
+          })
+          restoredGroups.add(entry.group)
+        } catch { /* skip invalid entries */ }
+      }
+      if (restoredTracks.length > 0) {
+        setPlaylist(prev => prev.length > 0 ? prev : restoredTracks)
+        setGroups(prev => {
+          if (prev.length > 0) return prev
+          return [...restoredGroups].map(name => ({ name, collapsed: false }))
+        })
+      }
+    })
+    return () => { cancelled = true }
+  }, [])
 
   // Initialize audio context
   const ensureAudioContext = useCallback(() => {
@@ -985,7 +1184,7 @@ export function AudioStudioView(): JSX.Element {
 
   // Visualization loop with HiDPI support
   useEffect(() => {
-    if (!isPlaying || !analyserRef.current) return
+    if ((!isPlaying && !previewPlaying) || !analyserRef.current) return
     const specCanvas = spectrumCanvasRef.current
     const waveCanvas = waveformCanvasRef.current
     const analyser = analyserRef.current
@@ -1002,13 +1201,29 @@ export function AudioStudioView(): JSX.Element {
     setupCanvas(waveCanvas)
 
     const draw = () => {
-      if (specCanvas) drawSpectrum(specCanvas, analyser)
-      if (waveCanvas) drawWaveform(waveCanvas, analyser)
+      switch (vizMode) {
+        case 'spectrum':
+          if (specCanvas) drawSpectrum(specCanvas, analyser)
+          if (waveCanvas) drawWaveform(waveCanvas, analyser)
+          break
+        case 'oscilloscope':
+          if (specCanvas) drawWaveform(specCanvas, analyser)
+          if (waveCanvas) drawWaveform(waveCanvas, analyser)
+          break
+        case 'spectrogram':
+          if (specCanvas) drawSpectrogram(specCanvas, analyser, spectrogramBufferRef.current)
+          if (waveCanvas) drawWaveform(waveCanvas, analyser)
+          break
+        case 'vuMeter':
+          if (specCanvas) drawVUMeter(specCanvas, analyser, vuPeakRef.current)
+          if (waveCanvas) drawWaveform(waveCanvas, analyser)
+          break
+      }
       animFrameRef.current = requestAnimationFrame(draw)
     }
     animFrameRef.current = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(animFrameRef.current)
-  }, [isPlaying])
+  }, [isPlaying, previewPlaying, vizMode])
 
   // Volume/pan updates
   useEffect(() => {
@@ -1483,6 +1698,18 @@ export function AudioStudioView(): JSX.Element {
         {/* Right Panel - Studio Functions */}
         <div className="audio-right-panel">
           <div className="audio-visualizers">
+            <div className="audio-viz-mode-bar">
+              {(['spectrum', 'oscilloscope', 'spectrogram', 'vuMeter'] as VisualizerMode[]).map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`audio-viz-mode-btn ${vizMode === mode ? 'active' : ''}`}
+                  onClick={() => { setVizMode(mode); spectrogramBufferRef.current = [] }}
+                >
+                  {t(`audio.viz.${mode}` as any)}
+                </button>
+              ))}
+            </div>
             <canvas ref={spectrumCanvasRef} className="audio-canvas audio-canvas-spectrum" width={720} height={160} />
             <canvas ref={waveformCanvasRef} className="audio-canvas audio-canvas-waveform" width={720} height={80} />
           </div>
