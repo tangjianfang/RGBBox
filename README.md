@@ -10,6 +10,14 @@
 
 RGBBox is a local-first Electron desktop client for multi-display RGB lighting. It provides a virtual RGB canvas preview with configurable sampling granularity, a layered effect engine, audio-reactive effects, and 3D model preview tooling.
 
+### Inspiration
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/ee5ed54c-9a08-4ad7-821b-d56610304b91" width="600" alt="LED panel displaying random colorful blocks at an Apple smart home store">
+</p>
+
+One day, while passing by an Apple smart home store with my son, we spotted an LED panel on display — it was continuously cycling through random colorful blocks, creating a mesmerizing mosaic of light. My son gazed at it and said, "That's so beautiful!" That moment stuck with me. When I got home, I decided to build a multi-display RGB lighting application that could recreate exactly that effect — and much more. The **Random Color** effect in RGBBox was born from that spark of inspiration.
+
 ### Current implementation
 
 - Electron + Vite + React + TypeScript application shell.
@@ -85,6 +93,14 @@ To deploy: Settings → Pages → Source: **GitHub Actions**, then push any chan
 ## 中文
 
 RGBBox 是一个**本地优先**的 Electron 桌面客户端，专为多屏 RGB 灯光控制设计。提供虚拟 RGB 画布预览、可配置的采样精度、分层特效引擎、音频响应特效以及 3D 模型预览工具。
+
+### 灵感来源
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/ee5ed54c-9a08-4ad7-821b-d56610304b91" width="600" alt="苹果智能家居店中展示随机彩色方块的 LED 面板">
+</p>
+
+有一天，我和儿子路过一家苹果智能家居体验店，店里展示着一块 LED 面板——它不停地显示着随机变换的彩色小方块，绚丽夺目。儿子看得入迷，说了一句："真漂亮！"这句话深深触动了我。回到家后，我决定做一款支持多显示器的 RGB 灯效软件，把那种随机色彩的效果完美复现出来。RGBBox 中的**随机颜色**特效，正是源于那一刻的灵感。
 
 ### 已实现功能
 
