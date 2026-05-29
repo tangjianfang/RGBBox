@@ -45,6 +45,9 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 let powerSaveBlockerId: number | null = null
+// Capture source id pre-selected by the Video Studio for the next getDisplayMedia()
+// call (see ipcChannels.selectCaptureSource + setDisplayMediaRequestHandler).
+let pendingCaptureSourceId: string | null = null
 let engineStatus: EngineStatus = {
   running: true,
   fps: defaultProfile.sampling.fps,
@@ -248,6 +251,15 @@ function registerIpc(): void {
       }))
     }
   )
+
+  // Remember which source the renderer wants the next getDisplayMedia() call to
+  // stream. The Video Studio sets this immediately before calling getDisplayMedia,
+  // and the display-media request handler (registered in app.whenReady) resolves
+  // it to a concrete desktopCapturer source.
+  ipcMain.handle(ipcChannels.selectCaptureSource, (_event, sourceId: string): boolean => {
+    pendingCaptureSourceId = typeof sourceId === 'string' ? sourceId : null
+    return true
+  })
 
   // Named profile management
   ipcMain.handle(ipcChannels.listProfiles, () => listProfiles())
@@ -535,6 +547,31 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
     return MEDIA_PERMISSIONS.has(permission)
   })
+
+  // Modern screen/window capture path. The Video Studio calls
+  // navigator.mediaDevices.getDisplayMedia() after pre-selecting a source id via
+  // ipcChannels.selectCaptureSource. This handler resolves that id to a concrete
+  // desktopCapturer source. Chromium's getDisplayMedia capturer correctly streams
+  // GPU-accelerated windows (e.g. browsers) that the legacy chromeMediaSource
+  // constraint often rendered black or failed to capture.
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    desktopCapturer
+      .getSources({ types: ['screen', 'window'] })
+      .then((sources) => {
+        const chosen = sources.find((s) => s.id === pendingCaptureSourceId) ?? sources[0]
+        pendingCaptureSourceId = null
+        if (chosen) {
+          callback({ video: chosen })
+        } else {
+          // No source available — deny gracefully.
+          callback({})
+        }
+      })
+      .catch((err) => {
+        log.error('Video', `setDisplayMediaRequestHandler failed: ${String(err)}`)
+        callback({})
+      })
+  }, { useSystemPicker: false })
 
   // Serve local audio files via the media:// custom scheme.
   // net.fetch does NOT support file:// — use readFile + Response instead.

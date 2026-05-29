@@ -3866,6 +3866,30 @@ input:not([type]):focus {
   flex: 1;
 }
 
+/* Collapsible panel header toggle (e.g. Filters) */
+.video-panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #8fe9d2;
+  cursor: pointer;
+}
+
+.video-panel-toggle:hover {
+  color: #b6f3e3;
+}
+
+/* Network stream URL field */
+.video-url-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+}
+
 .video-hint {
   font-size: 11px;
   color: rgba(200, 220, 229, 0.5);
