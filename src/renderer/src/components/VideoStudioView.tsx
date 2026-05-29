@@ -17,8 +17,9 @@
 import {
   Camera, CameraOff, Circle, Download, FlipHorizontal, Image as ImageIcon,
   Maximize2, Minimize2, Monitor, MonitorPlay, Pause, Play, RefreshCw,
-  Square, Video, Film, AppWindow,
+  Square, Video, Film, AppWindow, ChevronDown, ChevronRight, Link as LinkIcon,
 } from 'lucide-react'
+import Hls from 'hls.js'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useI18n } from '../i18n'
 import type { CaptureSource } from '../../../shared/types'
@@ -130,11 +131,17 @@ export function VideoStudioView(): JSX.Element {
   const [playerName, setPlayerName] = useState<string>('')
   const [playerRate, setPlayerRate] = useState<number>(1)
   const [playerLoop, setPlayerLoop] = useState<boolean>(false)
+  const [streamUrl, setStreamUrl] = useState<string>('')
+  const [usingHls, setUsingHls] = useState<boolean>(false)
+  const hlsRef = useRef<Hls | null>(null)
   const playerFileInputRef = useRef<HTMLInputElement | null>(null)
+  const mediaLoaded = playerUrl !== '' || usingHls
 
   // ── Filters / view ─────────────────────────────────────────────────────────
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
   const [fullscreen, setFullscreen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const studioRef = useRef<HTMLDivElement | null>(null)
 
   // ── Recording ──────────────────────────────────────────────────────────────
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -229,6 +236,20 @@ export function VideoStudioView(): JSX.Element {
     }
   }, [stopStream, resIndex, deviceId, fps, attachStream, refreshDevices])
 
+  // Re-apply camera constraints live: when the user changes device / resolution /
+  // frame-rate while the camera is already streaming, restart with the new values
+  // so the selection takes effect immediately (constraints are otherwise only read
+  // on the initial Start).
+  const startCameraRef = useRef(startCamera)
+  useEffect(() => { startCameraRef.current = startCamera }, [startCamera])
+  const streamingRef = useRef(streaming)
+  useEffect(() => { streamingRef.current = streaming }, [streaming])
+  useEffect(() => {
+    if (mode !== 'camera' || !streamingRef.current) return
+    void startCameraRef.current()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resIndex, fps, deviceId])
+
   // ── Screen / window sources ─────────────────────────────────────────────────
   const refreshSources = useCallback(async () => {
     setLoadingSources(true)
@@ -245,23 +266,38 @@ export function VideoStudioView(): JSX.Element {
   const startScreenCapture = useCallback(async (sourceId: string) => {
     stopStream()
     setActiveSourceId(sourceId)
+    setStreamError(null)
+    // Preferred (modern) path: pre-select the source in the main process, then use
+    // getDisplayMedia. Chromium's capturer correctly streams GPU-accelerated windows
+    // (browsers, etc.) that the legacy chromeMediaSource constraint often dropped.
     try {
-      // Electron exposes desktop sources through the legacy chromeMediaSource constraint.
-      const constraints = {
+      await window.rgbbox.selectCaptureSource(sourceId)
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 60 } },
         audio: false,
-        video: {
-          mandatory: {
-            chromeMediaSource: 'desktop',
-            chromeMediaSourceId: sourceId,
-            maxFrameRate: 60,
-          },
-        },
-      } as unknown as MediaStreamConstraints
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      })
       attachStream(stream)
-    } catch (err) {
-      setStreamError(err instanceof Error ? err.message : String(err))
-      setStreaming(false)
+      return
+    } catch (modernErr) {
+      // Fall back to the legacy desktop constraint if getDisplayMedia is unavailable.
+      try {
+        const constraints = {
+          audio: false,
+          video: {
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: sourceId,
+              maxFrameRate: 60,
+            },
+          },
+        } as unknown as MediaStreamConstraints
+        const stream = await navigator.mediaDevices.getUserMedia(constraints)
+        attachStream(stream)
+      } catch (legacyErr) {
+        const err = legacyErr ?? modernErr
+        setStreamError(err instanceof Error ? err.message : String(err))
+        setStreaming(false)
+      }
     }
   }, [stopStream, attachStream])
 
@@ -337,13 +373,52 @@ export function VideoStudioView(): JSX.Element {
     recTimerRef.current = window.setInterval(() => setRecElapsed(Date.now() - recStartRef.current), 250)
   }, [])
 
-  // ── Player file ─────────────────────────────────────────────────────────────
+  // ── Player sources (local file + network stream) ────────────────────────────
+  /** Tear down any active player source (blob URL or hls.js instance). */
+  const clearPlayerSource = useCallback(() => {
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
+    setUsingHls(false)
+    setPlayerUrl((prev) => { if (prev.startsWith('blob:')) URL.revokeObjectURL(prev); return '' })
+  }, [])
+
   const onPlayerFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setPlayerUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file) })
+    clearPlayerSource()
+    setStreamError(null)
+    setPlayerUrl(URL.createObjectURL(file))
     setPlayerName(file.name)
-  }, [])
+  }, [clearPlayerSource])
+
+  /**
+   * Load a network video stream. Direct progressive formats (mp4 / webm / ogg)
+   * are bound straight to the <video> element; HLS playlists (.m3u8) are played
+   * through hls.js via Media Source Extensions, which Chromium does not handle
+   * natively. This covers the mainstream live / VOD streaming formats.
+   */
+  const loadStreamUrl = useCallback((rawUrl: string) => {
+    const url = rawUrl.trim()
+    if (!url) return
+    clearPlayerSource()
+    setStreamError(null)
+    setPlayerName(url)
+    const el = playerRef.current
+    const isHls = /\.m3u8(\?|#|$)/i.test(url)
+    if (isHls && Hls.isSupported() && el) {
+      const hls = new Hls({ enableWorker: true, lowLatencyMode: true })
+      hlsRef.current = hls
+      hls.on(Hls.Events.ERROR, (_evt, data) => {
+        if (data.fatal) setStreamError(`HLS: ${data.details}`)
+      })
+      hls.loadSource(url)
+      hls.attachMedia(el)
+      void el.play().catch(() => { /* autoplay may defer */ })
+      setUsingHls(true)
+    } else {
+      // Direct URL (mp4/webm/ogg…) or platforms with native HLS support.
+      setPlayerUrl(url)
+    }
+  }, [clearPlayerSource])
 
   // ── Mode switch: (re)load source lists ──────────────────────────────────────
   useEffect(() => {
@@ -366,13 +441,37 @@ export function VideoStudioView(): JSX.Element {
   // Full cleanup on unmount
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((tr) => tr.stop())
+    if (hlsRef.current) hlsRef.current.destroy()
     if (recTimerRef.current) window.clearInterval(recTimerRef.current)
   }, [])
 
-  // ESC exits in-app fullscreen
+  // Built-in fullscreen via the native Fullscreen API on the studio container.
+  // (A CSS-overlay fallback is used if requestFullscreen is unavailable/rejected.)
+  const toggleFullscreen = useCallback(() => {
+    const el = studioRef.current
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => { /* noop */ })
+      return
+    }
+    if (el?.requestFullscreen) {
+      el.requestFullscreen().catch(() => setFullscreen((v) => !v))
+    } else {
+      // No native fullscreen support — fall back to the CSS overlay.
+      setFullscreen((v) => !v)
+    }
+  }, [])
+
+  // Keep local state in sync with the actual fullscreen element.
   useEffect(() => {
-    if (!fullscreen) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false) }
+    const onFsChange = (): void => setFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
+
+  // ESC exits the CSS-overlay fullscreen fallback (native fullscreen handles ESC itself).
+  useEffect(() => {
+    if (!fullscreen || document.fullscreenElement) return
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setFullscreen(false) }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [fullscreen])
@@ -381,7 +480,7 @@ export function VideoStudioView(): JSX.Element {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className={`video-studio${fullscreen ? ' video-studio-fullscreen' : ''}`}>
+    <div ref={studioRef} className={`video-studio${fullscreen ? ' video-studio-fullscreen' : ''}`}>
       <header className="workspace-header">
         <div>
           <p className="eyebrow">{t('video.eyebrow')}</p>
@@ -431,10 +530,10 @@ export function VideoStudioView(): JSX.Element {
                 <span>{streamError ? `⚠ ${streamError}` : t('video.notLive')}</span>
               </div>
             )}
-            {mode === 'player' && !playerUrl && (
+            {mode === 'player' && !mediaLoaded && (
               <div className="video-empty">
                 <Film size={40} />
-                <span>{t('video.player.empty')}</span>
+                <span>{streamError ? `⚠ ${streamError}` : t('video.player.empty')}</span>
               </div>
             )}
 
@@ -450,7 +549,7 @@ export function VideoStudioView(): JSX.Element {
               type="button"
               className="video-fs-btn"
               title={t(fullscreen ? 'video.exitFullscreen' : 'video.fullscreen')}
-              onClick={() => setFullscreen((v) => !v)}
+              onClick={toggleFullscreen}
             >
               {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
@@ -484,7 +583,7 @@ export function VideoStudioView(): JSX.Element {
             )}
 
             {/* Universal capture buttons (live + player) */}
-            {(streaming || (mode === 'player' && playerUrl)) && (
+            {(streaming || (mode === 'player' && mediaLoaded)) && (
               <>
                 <span className="video-transport-sep" />
                 <button type="button" className="video-btn" onClick={capturePhoto}><ImageIcon size={15} /> {t('video.photo')}</button>
@@ -587,18 +686,50 @@ export function VideoStudioView(): JSX.Element {
           {mode === 'player' && (
             <section className="video-panel">
               <h3 className="video-panel-title">{t('video.player.title')}</h3>
+              <label className="video-field-label">{t('video.player.streamUrl')}</label>
+              <div className="video-row">
+                <input
+                  className="profile-select video-url-input"
+                  type="text"
+                  inputMode="url"
+                  spellCheck={false}
+                  placeholder={t('video.player.streamPlaceholder')}
+                  value={streamUrl}
+                  onChange={(e) => setStreamUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') loadStreamUrl(streamUrl) }}
+                />
+                <button
+                  type="button"
+                  className="video-btn video-btn-icon"
+                  onClick={() => loadStreamUrl(streamUrl)}
+                  title={t('video.player.loadUrl')}
+                  disabled={!streamUrl.trim()}
+                >
+                  <LinkIcon size={14} />
+                </button>
+              </div>
               <p className="video-hint">{playerName || t('video.player.empty')}</p>
               <p className="video-hint" style={{ opacity: 0.6 }}>{t('video.player.formats')}</p>
             </section>
           )}
 
-          {/* Filters apply to every mode */}
+          {/* Filters apply to every mode — collapsed by default so they don't crowd the preview */}
           <section className="video-panel">
             <div className="video-row">
-              <h3 className="video-panel-title" style={{ flex: 1 }}>{t('video.filters')}</h3>
-              <button type="button" className="video-btn video-btn-icon" onClick={() => setFilters(DEFAULT_FILTERS)} title={t('video.reset')}><RefreshCw size={14} /></button>
+              <button
+                type="button"
+                className="video-panel-toggle"
+                onClick={() => setFiltersOpen((v) => !v)}
+                aria-expanded={filtersOpen}
+              >
+                {filtersOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <span className="video-panel-title" style={{ flex: 1, textAlign: 'left' }}>{t('video.filters')}</span>
+              </button>
+              {filtersOpen && (
+                <button type="button" className="video-btn video-btn-icon" onClick={() => setFilters(DEFAULT_FILTERS)} title={t('video.reset')}><RefreshCw size={14} /></button>
+              )}
             </div>
-            {([
+            {filtersOpen && ([
               ['brightness', 0, 200], ['contrast', 0, 200], ['saturate', 0, 300], ['hue', 0, 360],
               ['blur', 0, 20], ['grayscale', 0, 100], ['sepia', 0, 100], ['invert', 0, 100],
             ] as Array<[keyof FilterState, number, number]>).map(([key, min, max]) => (

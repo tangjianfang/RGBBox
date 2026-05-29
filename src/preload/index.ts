@@ -50,6 +50,8 @@ const api = {
     ipcRenderer.invoke(ipcChannels.getDesktopAudioSources),
   getCaptureSources: (types?: Array<'screen' | 'window'>): Promise<CaptureSource[]> =>
     ipcRenderer.invoke(ipcChannels.getCaptureSources, types),
+  selectCaptureSource: (sourceId: string): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.selectCaptureSource, sourceId),
 
   onOverlayFrame: (callback: (frame: RgbFrame) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, frame: RgbFrame): void => callback(frame)
