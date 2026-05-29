@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Download, FolderOpen, Pause, Play, Plus, RefreshCw, Repeat, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, FolderOpen, Maximize2, Minimize2, Pause, Play, Plus, RefreshCw, Repeat, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useI18n } from '../i18n'
 
@@ -1084,6 +1084,8 @@ export function AudioStudioView(): JSX.Element {
 
   // Visualizer mode
   const [vizMode, setVizMode] = useState<VisualizerMode>('spectrum')
+  // In-app fullscreen for the visualizer
+  const [vizFullscreen, setVizFullscreen] = useState(false)
 
   // Refs
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -1237,7 +1239,15 @@ export function AudioStudioView(): JSX.Element {
     }
     animFrameRef.current = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(animFrameRef.current)
-  }, [isPlaying, previewPlaying, vizMode])
+  }, [isPlaying, previewPlaying, vizMode, vizFullscreen])
+
+  // ESC exits the in-app visualizer fullscreen
+  useEffect(() => {
+    if (!vizFullscreen) return
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setVizFullscreen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [vizFullscreen])
 
   // Volume/pan updates
   useEffect(() => {
@@ -1724,7 +1734,7 @@ export function AudioStudioView(): JSX.Element {
 
         {/* Right Panel - Studio Functions */}
         <div className="audio-right-panel">
-          <div className="audio-visualizers">
+          <div className={`audio-visualizers${vizFullscreen ? ' audio-visualizers-fullscreen' : ''}`}>
             <div className="audio-viz-mode-bar">
               {(['spectrum', 'oscilloscope', 'spectrogram', 'vuMeter'] as VisualizerMode[]).map(mode => (
                 <button
@@ -1736,6 +1746,14 @@ export function AudioStudioView(): JSX.Element {
                   {t(`audio.viz.${mode}` as any)}
                 </button>
               ))}
+              <button
+                type="button"
+                className="audio-viz-fs-btn"
+                title={t(vizFullscreen ? 'audio.viz.exitFullscreen' : 'audio.viz.fullscreen')}
+                onClick={() => setVizFullscreen(v => !v)}
+              >
+                {vizFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
             </div>
             <canvas ref={spectrumCanvasRef} className="audio-canvas audio-canvas-spectrum" width={720} height={160} />
             {vizMode === 'oscilloscope' && (

@@ -35,6 +35,8 @@ export const ipcChannels = {
   getDesktopAudioSourceId: 'rgbbox:audio:desktop-source-id',
   // All desktop audio capture sources (screens/displays)
   getDesktopAudioSources: 'rgbbox:audio:desktop-sources',
+  // Screen/window/display capture sources for the Video Studio
+  getCaptureSources: 'rgbbox:video:capture-sources',
   // Main → renderer: display added/removed/metrics-changed (hotplug)
   displayTopologyChanged: 'rgbbox:system:display-topology-changed',
   // Named profile management

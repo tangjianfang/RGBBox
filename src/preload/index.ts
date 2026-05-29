@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
-import type { CaptureProviderStatus, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProfileMeta, RgbFrame, ScreenCaptureRequest } from '../shared/types'
+import type { CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProfileMeta, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -48,6 +48,8 @@ const api = {
     ipcRenderer.invoke(ipcChannels.getDesktopAudioSourceId),
   getDesktopAudioSources: (): Promise<DesktopAudioSource[]> =>
     ipcRenderer.invoke(ipcChannels.getDesktopAudioSources),
+  getCaptureSources: (types?: Array<'screen' | 'window'>): Promise<CaptureSource[]> =>
+    ipcRenderer.invoke(ipcChannels.getCaptureSources, types),
 
   onOverlayFrame: (callback: (frame: RgbFrame) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, frame: RgbFrame): void => callback(frame)
