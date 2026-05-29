@@ -259,3 +259,15 @@ export interface DesktopAudioSource {
   id: string
   name: string
 }
+
+/** A screen/window capture source returned by desktopCapturer (Video Studio). */
+export interface CaptureSource {
+  id: string
+  name: string
+  /** 'screen' for whole displays, 'window' for individual application windows. */
+  type: 'screen' | 'window'
+  /** Data-URL PNG thumbnail preview of the source. */
+  thumbnail: string
+  /** Data-URL PNG of the owning application's icon (windows only, may be empty). */
+  appIcon: string
+}

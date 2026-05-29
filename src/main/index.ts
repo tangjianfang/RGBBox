@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, screen, shell, Tray } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, screen, session, shell, Tray } from 'electron'
 import { access, mkdir, readdir, unlink } from 'node:fs/promises'
 import { createWriteStream } from 'node:fs'
 import { get as httpGet } from 'node:http'
@@ -12,7 +12,7 @@ import { ipcChannels } from '../shared/ipc'
 import { initLogger } from '../shared/logger'
 import { MODELS_MANIFEST } from '../shared/modelsManifest'
 import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
-import type { DesktopAudioSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, RgbFrame, ScreenCaptureRequest } from '../shared/types'
+import type { DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
 import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
@@ -228,6 +228,26 @@ function registerIpc(): void {
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })
     return sources.map((s) => ({ id: s.id, name: s.name }))
   })
+
+  // Return screen + window capture sources with thumbnails (Video Studio)
+  ipcMain.handle(
+    ipcChannels.getCaptureSources,
+    async (_event, types?: Array<'screen' | 'window'>): Promise<CaptureSource[]> => {
+      const wanted = types && types.length > 0 ? types : (['screen', 'window'] as Array<'screen' | 'window'>)
+      const sources = await desktopCapturer.getSources({
+        types: wanted,
+        thumbnailSize: { width: 320, height: 180 },
+        fetchWindowIcons: true,
+      })
+      return sources.map((s) => ({
+        id: s.id,
+        name: s.name,
+        type: s.id.startsWith('window:') ? 'window' : 'screen',
+        thumbnail: s.thumbnail?.isEmpty() ? '' : s.thumbnail.toDataURL(),
+        appIcon: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.toDataURL() : '',
+      }))
+    }
+  )
 
   // Named profile management
   ipcMain.handle(ipcChannels.listProfiles, () => listProfiles())
@@ -504,6 +524,17 @@ app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark'
   // Remove the default application menu (File / Edit / View / …)
   Menu.setApplicationMenu(null)
+
+  // Grant media + display-capture permissions so the Video Studio can access
+  // cameras, microphones and screen/window sources. All other permissions are
+  // denied (tighter than Electron's permissive default).
+  const MEDIA_PERMISSIONS = new Set(['media', 'audioCapture', 'videoCapture', 'display-capture'])
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(MEDIA_PERMISSIONS.has(permission))
+  })
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+    return MEDIA_PERMISSIONS.has(permission)
+  })
 
   // Serve local audio files via the media:// custom scheme.
   // net.fetch does NOT support file:// — use readFile + Response instead.
