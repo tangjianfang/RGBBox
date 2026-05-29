@@ -41,7 +41,9 @@ One day, while passing by an Apple smart home store with my son, we spotted an L
 - Capture provider architecture with Electron `desktopCapturer` fallback and diagnostics for active provider, capture time, and fallback state; native DXGI/ScreenCaptureKit providers are scaffolded for future builds.
 - Runtime telemetry in diagnostics: average/p95 frame time, worker render time, capture time, output enqueue time, and dropped tick count.
 - Audio capture: microphone or system audio loopback (Windows), 32 log-spaced FFT bands, and visible capture failure state.
-- Gaussian Splat model viewer with on-demand model downloads, local cache detection, user model import, and LED mapping editor.
+- Audio Studio with playlist, generators, scenes and premium visualizers (spectrum / oscilloscope / spectrogram / VU meter) that support an in-app fullscreen mode.
+- Video Studio: any-camera capture (resolution/frame-rate/hardware parameters), photo & video recording, screen/window source capture via `desktopCapturer`, a mainstream-format video player, live colour filters and in-app fullscreen.
+- Gaussian Splat model viewer with cinematic rendering (PMREM image-based lighting, ACES tone-mapping, reflective ground + contact shadow, additive LED bloom halos, auto-rotate and live exposure/glow controls), on-demand model downloads, local cache detection, user model import, and LED mapping editor.
 - Single-player mini games theme with a playable local balloon tower-defense arena in the renderer.
 - FPS estimation hint in the resolution slider (calibrated for complex effects).
 - setInterval-based engine tick (continues when window is minimised).
@@ -67,7 +69,7 @@ src/shared    Shared types, IPC channel names, default profile and effect preset
 src/engine    Pure TypeScript effect engine (effects.ts, previewEngine.ts, color.ts)
 src/renderer  React UI — workspace, display map, layered effect controls,
                virtual preview (WebGL), effects library, audio analyzer hook,
-               mini games, 3D Gaussian Splat viewer and LED mapper
+               mini games, audio & video studios, 3D Gaussian Splat viewer and LED mapper
 ```
 
 ### 🌐 Online Introduction Page (GitHub Pages)

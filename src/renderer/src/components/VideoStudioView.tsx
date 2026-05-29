@@ -345,14 +345,10 @@ export function VideoStudioView(): JSX.Element {
     setPlayerName(file.name)
   }, [])
 
-  // ── Mode switch / cleanup ─────────────────────────────────────────────────
+  // ── Mode switch: (re)load source lists ──────────────────────────────────────
   useEffect(() => {
-    if (mode === 'camera') { void refreshDevices() }
-    if (mode === 'screen') { void refreshSources() }
-    if (mode !== 'player') {
-      // leaving live modes handled by stopStream on the previous effect cleanup
-    }
-    return () => { /* keep stream when staying in same view; full cleanup on unmount below */ }
+    if (mode === 'camera') void refreshDevices()
+    if (mode === 'screen') void refreshSources()
   }, [mode, refreshDevices, refreshSources])
 
   // Stop live capture whenever we switch away from a live mode.
