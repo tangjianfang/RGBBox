@@ -15,9 +15,10 @@
  */
 
 import {
-  Camera, CameraOff, Circle, Download, FlipHorizontal, Image as ImageIcon,
+  Camera, CameraOff, Circle, Download, FileText, FlipHorizontal, Image as ImageIcon,
   Maximize2, Minimize2, Monitor, MonitorPlay, Pause, Play, RefreshCw,
   Square, Video, Film, AppWindow, ChevronDown, ChevronRight, Link as LinkIcon,
+  Volume2, VolumeX,
 } from 'lucide-react'
 import Hls from 'hls.js'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
@@ -98,6 +99,91 @@ function pickMimeType(): string {
   return ''
 }
 
+// ── Subtitle Types & Parsers ───────────────────────────────────────────────
+
+interface SubCue {
+  start: number  // seconds
+  end: number    // seconds
+  text: string
+}
+
+/** Strip any HTML/XML tags from subtitle lines using DOMParser for safety. */
+function stripTags(input: string): string {
+  try {
+    const doc = new DOMParser().parseFromString(input, 'text/html')
+    return doc.body.textContent ?? ''
+  } catch {
+    let s = input
+    let prev: string
+    do { prev = s; s = s.replace(/<[^>]*>/g, '') } while (s !== prev)
+    return s
+  }
+}
+
+/** Parse WebVTT (.vtt) subtitle text into cues. */
+function parseVtt(text: string): SubCue[] {
+  const cues: SubCue[] = []
+  // Split on double-newline blocks
+  const blocks = text.replace(/\r\n/g, '\n').split(/\n{2,}/)
+  const timeRe = /(\d+):(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(\d+):(\d{2}):(\d{2})[.,](\d{3})/
+  for (const block of blocks) {
+    const lines = block.trim().split('\n')
+    const timeLine = lines.find(l => timeRe.test(l))
+    if (!timeLine) continue
+    const m = timeRe.exec(timeLine)
+    if (!m) continue
+    const toSec = (h: string, mn: string, s: string, ms: string) =>
+      parseInt(h) * 3600 + parseInt(mn) * 60 + parseInt(s) + parseInt(ms) / 1000
+    const start = toSec(m[1], m[2], m[3], m[4])
+    const end = toSec(m[5], m[6], m[7], m[8])
+    const textLines = lines.slice(lines.indexOf(timeLine) + 1)
+      .filter(l => l.trim() && !/^NOTE/.test(l.trim()))
+      .map(l => stripTags(l))
+    const text = textLines.join('\n').trim()
+    if (text) cues.push({ start, end, text })
+  }
+  return cues
+}
+
+/** Parse SRT subtitle text into cues. */
+function parseSrt(text: string): SubCue[] {
+  const cues: SubCue[] = []
+  const blocks = text.replace(/\r\n/g, '\n').split(/\n{2,}/)
+  const timeRe = /(\d+):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d+):(\d{2}):(\d{2})[,.](\d{3})/
+  for (const block of blocks) {
+    const lines = block.trim().split('\n')
+    const timeLine = lines.find(l => timeRe.test(l))
+    if (!timeLine) continue
+    const m = timeRe.exec(timeLine)
+    if (!m) continue
+    const toSec = (h: string, mn: string, s: string, ms: string) =>
+      parseInt(h) * 3600 + parseInt(mn) * 60 + parseInt(s) + parseInt(ms) / 1000
+    const start = toSec(m[1], m[2], m[3], m[4])
+    const end = toSec(m[5], m[6], m[7], m[8])
+    const textLines = lines.slice(lines.indexOf(timeLine) + 1)
+      .filter(l => l.trim() && !/^\d+$/.test(l.trim()))
+      .map(l => stripTags(l))
+    const text = textLines.join('\n').trim()
+    if (text) cues.push({ start, end, text })
+  }
+  return cues
+}
+
+function parseSubtitle(text: string, filename: string): SubCue[] {
+  if (/\.vtt$/i.test(filename)) return parseVtt(text)
+  return parseSrt(text)  // default: SRT
+}
+
+/** Format seconds as m:ss or h:mm:ss */
+function formatPlayerTime(sec: number): string {
+  if (!isFinite(sec) || sec < 0) return '0:00'
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = Math.floor(sec % 60)
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 export function VideoStudioView(): JSX.Element {
   const { t } = useI18n()
 
@@ -136,6 +222,22 @@ export function VideoStudioView(): JSX.Element {
   const hlsRef = useRef<Hls | null>(null)
   const playerFileInputRef = useRef<HTMLInputElement | null>(null)
   const mediaLoaded = playerUrl !== '' || usingHls
+
+  // ── Player custom controls ─────────────────────────────────────────────────
+  const [playerPlaying, setPlayerPlaying] = useState(false)
+  const [playerCurrentTime, setPlayerCurrentTime] = useState(0)
+  const [playerDuration, setPlayerDuration] = useState(0)
+  const [playerVolume, setPlayerVolume] = useState(1)
+  const [playerMuted, setPlayerMuted] = useState(false)
+  const [playerControlsVisible, setPlayerControlsVisible] = useState(true)
+  const controlsHideTimerRef = useRef<number | null>(null)
+  const playerWrapRef = useRef<HTMLDivElement | null>(null)
+  const subFileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // ── Subtitles ─────────────────────────────────────────────────────────────
+  const [subCues, setSubCues] = useState<SubCue[]>([])
+  const [subFilename, setSubFilename] = useState('')
+  const [currentSubText, setCurrentSubText] = useState('')
 
   // ── Filters / view ─────────────────────────────────────────────────────────
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
@@ -438,11 +540,123 @@ export function VideoStudioView(): JSX.Element {
   // Player playback rate / loop
   useEffect(() => { if (playerRef.current) playerRef.current.playbackRate = playerRate }, [playerRate, playerUrl])
 
+  // Player volume/mute sync
+  useEffect(() => {
+    const el = playerRef.current
+    if (!el) return
+    el.volume = playerVolume
+    el.muted = playerMuted
+  }, [playerVolume, playerMuted])
+
+  // Player event listeners for custom controls
+  useEffect(() => {
+    const el = playerRef.current
+    if (!el) return
+    const onPlay = () => setPlayerPlaying(true)
+    const onPause = () => setPlayerPlaying(false)
+    const onEnded = () => setPlayerPlaying(false)
+    const onTimeUpdate = () => {
+      setPlayerCurrentTime(el.currentTime)
+      setPlayerDuration(el.duration || 0)
+    }
+    const onDurationChange = () => setPlayerDuration(el.duration || 0)
+    const onVolumeChange = () => {
+      setPlayerVolume(el.volume)
+      setPlayerMuted(el.muted)
+    }
+    el.addEventListener('play', onPlay)
+    el.addEventListener('pause', onPause)
+    el.addEventListener('ended', onEnded)
+    el.addEventListener('timeupdate', onTimeUpdate)
+    el.addEventListener('durationchange', onDurationChange)
+    el.addEventListener('volumechange', onVolumeChange)
+    return () => {
+      el.removeEventListener('play', onPlay)
+      el.removeEventListener('pause', onPause)
+      el.removeEventListener('ended', onEnded)
+      el.removeEventListener('timeupdate', onTimeUpdate)
+      el.removeEventListener('durationchange', onDurationChange)
+      el.removeEventListener('volumechange', onVolumeChange)
+    }
+    // Re-attach when the video source changes so the element ref is fresh
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerUrl, usingHls])
+
+  // Auto-hide player controls overlay after inactivity
+  const resetControlsTimer = useCallback(() => {
+    setPlayerControlsVisible(true)
+    if (controlsHideTimerRef.current) window.clearTimeout(controlsHideTimerRef.current)
+    if (playerPlaying) {
+      controlsHideTimerRef.current = window.setTimeout(() => setPlayerControlsVisible(false), 3000)
+    }
+  }, [playerPlaying])
+
+  // Show controls when paused
+  useEffect(() => {
+    if (!playerPlaying) {
+      setPlayerControlsVisible(true)
+      if (controlsHideTimerRef.current) window.clearTimeout(controlsHideTimerRef.current)
+    }
+  }, [playerPlaying])
+
+  // Subtitle cue activation
+  useEffect(() => {
+    if (subCues.length === 0) {
+      setCurrentSubText('')
+      return
+    }
+    const active = subCues.find(c => playerCurrentTime >= c.start && playerCurrentTime < c.end)
+    setCurrentSubText(active?.text ?? '')
+  }, [playerCurrentTime, subCues])
+
+  // Subtitle file loading
+  const handleSubFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setSubFilename(file.name)
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string
+      if (text) setSubCues(parseSubtitle(text, file.name))
+    }
+    reader.readAsText(file, 'utf-8')
+    e.target.value = ''
+  }, [])
+
+  // Player seek
+  const playerSeek = useCallback((time: number) => {
+    const el = playerRef.current
+    if (!el) return
+    el.currentTime = time
+    setPlayerCurrentTime(time)
+  }, [])
+
+  // Player toggle play/pause
+  const togglePlayerPlay = useCallback(() => {
+    const el = playerRef.current
+    if (!el) return
+    if (el.paused) void el.play()
+    else el.pause()
+  }, [])
+
+  // Player fullscreen (just the video wrapper)
+  const togglePlayerFullscreen = useCallback(() => {
+    const wrap = playerWrapRef.current
+    if (!wrap) return
+    if (document.fullscreenElement === wrap) {
+      void document.exitFullscreen().catch(() => { /* noop */ })
+    } else {
+      void wrap.requestFullscreen().catch(() => { /* noop */ })
+    }
+  }, [])
+
+
   // Full cleanup on unmount
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((tr) => tr.stop())
     if (hlsRef.current) hlsRef.current.destroy()
     if (recTimerRef.current) window.clearInterval(recTimerRef.current)
+    if (controlsHideTimerRef.current) window.clearTimeout(controlsHideTimerRef.current)
   }, [])
 
   // Built-in fullscreen via the native Fullscreen API on the studio container.
@@ -502,17 +716,106 @@ export function VideoStudioView(): JSX.Element {
       <div className="video-layout">
         {/* ── Stage ─────────────────────────────────────────────────────── */}
         <div className="video-stage">
-          <div className="video-preview-wrap">
-            {mode === 'player' ? (
+          {mode === 'player' ? (
+            /* ── Custom Player Wrapper ─────────────────────────────────── */
+            <div
+              ref={playerWrapRef}
+              className="video-player-wrap"
+              onMouseMove={resetControlsTimer}
+              onMouseEnter={resetControlsTimer}
+              onClick={togglePlayerPlay}
+            >
               <video
                 ref={playerRef}
                 className="video-preview"
                 style={{ filter: filterStyle }}
                 src={playerUrl || undefined}
-                controls
                 loop={playerLoop}
+                playsInline
               />
-            ) : (
+
+              {/* Empty-state overlay */}
+              {!mediaLoaded && (
+                <div className="video-empty">
+                  <Film size={40} />
+                  <span>{streamError ? `⚠ ${streamError}` : t('video.player.empty')}</span>
+                </div>
+              )}
+
+              {/* Subtitle overlay */}
+              {currentSubText && (
+                <div className="video-subtitle-overlay">
+                  {currentSubText.split('\n').map((line, i) => <span key={i}>{line}</span>)}
+                </div>
+              )}
+
+              {/* Custom controls overlay */}
+              {mediaLoaded && (
+                <div className={`video-player-controls-overlay${playerControlsVisible ? ' visible' : ''}`}>
+                  {/* Progress bar */}
+                  <div className="video-player-progress-row" onClick={(e) => e.stopPropagation()}>
+                    <span className="video-player-time">{formatPlayerTime(playerCurrentTime)}</span>
+                    <input
+                      type="range"
+                      className="video-player-seek"
+                      min={0}
+                      max={playerDuration || 1}
+                      step={0.1}
+                      value={playerCurrentTime}
+                      onChange={(e) => { e.stopPropagation(); playerSeek(Number(e.target.value)) }}
+                    />
+                    <span className="video-player-time">{formatPlayerTime(playerDuration)}</span>
+                  </div>
+
+                  {/* Buttons row */}
+                  <div className="video-player-btn-row" onClick={(e) => e.stopPropagation()}>
+                    <button type="button" className="video-player-btn" onClick={togglePlayerPlay} title={playerPlaying ? t('video.player.pause') : t('video.player.play')}>
+                      {playerPlaying ? <Pause size={16} /> : <Play size={16} />}
+                    </button>
+                    <button
+                      type="button"
+                      className={`video-player-btn${playerLoop ? ' active' : ''}`}
+                      onClick={() => setPlayerLoop((v) => !v)}
+                      title={t('video.player.loop')}
+                    >
+                      <RefreshCw size={14} />
+                    </button>
+                    <button type="button" className="video-player-btn" onClick={() => setPlayerMuted(v => !v)} title={playerMuted ? t('video.player.unmute') : t('video.player.mute')}>
+                      {playerMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                    </button>
+                    <input
+                      type="range"
+                      className="video-player-volume"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={playerMuted ? 0 : playerVolume}
+                      title={t('video.player.volume')}
+                      onChange={(e) => { setPlayerVolume(Number(e.target.value)); setPlayerMuted(false) }}
+                    />
+                    <select
+                      className="video-player-speed"
+                      value={playerRate}
+                      title={t('video.player.speed')}
+                      onChange={(e) => setPlayerRate(Number(e.target.value))}
+                    >
+                      {[0.25, 0.5, 1, 1.5, 2, 4].map((r) => <option key={r} value={r}>{r}×</option>)}
+                    </select>
+                    <div className="video-player-spacer" />
+                    <button type="button" className="video-player-btn" onClick={() => subFileInputRef.current?.click()} title={t('video.player.loadSub')}>
+                      <FileText size={14} />
+                    </button>
+                    <input ref={subFileInputRef} type="file" accept=".srt,.vtt,.ass,.ssa" style={{ display: 'none' }} onChange={handleSubFile} />
+                    <button type="button" className="video-player-btn" onClick={togglePlayerFullscreen} title={t('video.player.fullscreen')}>
+                      <Maximize2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ── Live preview (camera / screen) ────────────────────────── */
+            <div className="video-preview-wrap">
               <video
                 ref={videoRef}
                 className="video-preview"
@@ -521,39 +824,33 @@ export function VideoStudioView(): JSX.Element {
                 playsInline
                 muted
               />
-            )}
 
-            {/* Empty-state overlay */}
-            {mode !== 'player' && !streaming && (
-              <div className="video-empty">
-                {mode === 'camera' ? <CameraOff size={40} /> : <Monitor size={40} />}
-                <span>{streamError ? `⚠ ${streamError}` : t('video.notLive')}</span>
-              </div>
-            )}
-            {mode === 'player' && !mediaLoaded && (
-              <div className="video-empty">
-                <Film size={40} />
-                <span>{streamError ? `⚠ ${streamError}` : t('video.player.empty')}</span>
-              </div>
-            )}
+              {/* Empty-state overlay */}
+              {!streaming && (
+                <div className="video-empty">
+                  {mode === 'camera' ? <CameraOff size={40} /> : <Monitor size={40} />}
+                  <span>{streamError ? `⚠ ${streamError}` : t('video.notLive')}</span>
+                </div>
+              )}
 
-            {/* Live badges */}
-            {mode !== 'player' && streaming && (
-              <div className="video-badges">
-                {streamInfo && <span className="video-badge">{streamInfo}</span>}
-                {recording && <span className="video-badge video-badge-rec"><Circle size={9} fill="currentColor" /> REC {formatElapsed(recElapsed)}</span>}
-              </div>
-            )}
+              {/* Live badges */}
+              {streaming && (
+                <div className="video-badges">
+                  {streamInfo && <span className="video-badge">{streamInfo}</span>}
+                  {recording && <span className="video-badge video-badge-rec"><Circle size={9} fill="currentColor" /> REC {formatElapsed(recElapsed)}</span>}
+                </div>
+              )}
 
-            <button
-              type="button"
-              className="video-fs-btn"
-              title={t(fullscreen ? 'video.exitFullscreen' : 'video.fullscreen')}
-              onClick={toggleFullscreen}
-            >
-              {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
-          </div>
+              <button
+                type="button"
+                className="video-fs-btn"
+                title={t(fullscreen ? 'video.exitFullscreen' : 'video.fullscreen')}
+                onClick={toggleFullscreen}
+              >
+                {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              </button>
+            </div>
+          )}
 
           {/* Transport controls */}
           <div className="video-transport">
@@ -573,12 +870,10 @@ export function VideoStudioView(): JSX.Element {
             {mode === 'player' && (
               <>
                 <button type="button" className="video-btn video-btn-primary" onClick={() => playerFileInputRef.current?.click()}><Video size={15} /> {t('video.player.open')}</button>
-                <button type="button" className="video-btn" onClick={() => { const p = playerRef.current; if (p) p.paused ? void p.play() : p.pause() }}><Play size={15} />/<Pause size={15} /></button>
-                <button type="button" className={`video-btn ${playerLoop ? 'active' : ''}`} onClick={() => setPlayerLoop((v) => !v)} title={t('video.player.loop')}><RefreshCw size={15} /></button>
-                <select className="profile-select" value={playerRate} onChange={(e) => setPlayerRate(Number(e.target.value))} title={t('video.player.speed')}>
-                  {[0.25, 0.5, 1, 1.5, 2, 4].map((r) => <option key={r} value={r}>{r}×</option>)}
-                </select>
                 <input ref={playerFileInputRef} type="file" accept="video/*,.mkv,.mov,.avi,.flv,.ts" style={{ display: 'none' }} onChange={onPlayerFile} />
+                {subFilename && (
+                  <span className="video-hint video-sub-name"><FileText size={12} /> {subFilename}</span>
+                )}
               </>
             )}
 
@@ -710,6 +1005,18 @@ export function VideoStudioView(): JSX.Element {
               </div>
               <p className="video-hint">{playerName || t('video.player.empty')}</p>
               <p className="video-hint" style={{ opacity: 0.6 }}>{t('video.player.formats')}</p>
+              <label className="video-field-label" style={{ marginTop: 10 }}>{t('video.player.subtitle')}</label>
+              <div className="video-row">
+                <span className="video-hint" style={{ flex: 1 }}>{subFilename || t('video.player.noSub')}</span>
+                <button type="button" className="video-btn video-btn-icon" onClick={() => subFileInputRef.current?.click()} title={t('video.player.loadSub')}>
+                  <FileText size={14} />
+                </button>
+                {subCues.length > 0 && (
+                  <button type="button" className="video-btn video-btn-icon" onClick={() => { setSubCues([]); setSubFilename('') }} title={t('video.player.subOff')}>
+                    ×
+                  </button>
+                )}
+              </div>
             </section>
           )}
 

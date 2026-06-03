@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Download, FolderOpen, Maximize2, Minimize2, Pause, Play, Plus, RefreshCw, Repeat, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, FileText, FolderOpen, Maximize2, Minimize2, Pause, Play, Plus, RefreshCw, Repeat, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useI18n } from '../i18n'
 
@@ -10,6 +10,13 @@ type NoiseType = 'white' | 'pink' | 'brown'
 type GeneratorType = 'sine' | 'sweep' | 'noise' | 'eq-test' | 'surround' | 'bass-boost' | 'spatial' | 'multichannel'
 type SceneCategory = 'instrument' | 'vocal' | 'game' | 'environment' | 'mix'
 type ExportFormat = 'wav' | 'flac'
+
+// ── LRC Types ──────────────────────────────────────────────────────────────
+
+interface LrcLine {
+  time: number  // seconds
+  text: string
+}
 
 interface TrackItem {
   id: string
@@ -719,7 +726,51 @@ function encodeLossless(audioBuffer: AudioBuffer, format: ExportFormat, bitDepth
   return encodeWav(audioBuffer, format === 'flac' ? 24 : bitDepth)
 }
 
-// ── Spectrum Analyzer (Premium Visualizer) ─────────────────────────────────
+// ── LRC Parser ─────────────────────────────────────────────────────────────
+
+/**
+ * Parse a standard LRC file into a sorted array of timed lyric lines.
+ * Supports: [mm:ss.xx] single-timestamp lines and multi-timestamp lines.
+ */
+function parseLrc(text: string): LrcLine[] {
+  const timeRegex = /\[(\d{1,3}):(\d{2})(?:[.:]([\d]{1,3}))?\]/g
+  const lines: LrcLine[] = []
+  for (const rawLine of text.split('\n')) {
+    const stripped = rawLine.trim()
+    if (!stripped) continue
+    // Extract all timestamps from this line
+    const timestamps: number[] = []
+    let m: RegExpExecArray | null
+    timeRegex.lastIndex = 0
+    while ((m = timeRegex.exec(stripped)) !== null) {
+      const min = parseInt(m[1], 10)
+      const sec = parseInt(m[2], 10)
+      const centis = m[3] !== undefined ? parseInt(m[3].padEnd(3, '0').slice(0, 3), 10) : 0
+      timestamps.push(min * 60 + sec + centis / 1000)
+    }
+    if (timestamps.length === 0) continue
+    // Lyric text is what remains after removing all timestamp tags
+    const lyricsText = stripped.replace(/\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]/g, '').trim()
+    if (!lyricsText) continue  // skip metadata-only lines
+    for (const t of timestamps) {
+      lines.push({ time: t, text: lyricsText })
+    }
+  }
+  return lines.sort((a, b) => a.time - b.time)
+}
+
+/** Find the index of the active lyric line for the given playback time. */
+function findActiveLrcIndex(lines: LrcLine[], currentTime: number): number {
+  if (lines.length === 0) return -1
+  let idx = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].time <= currentTime) idx = i
+    else break
+  }
+  return idx
+}
+
+
 
 const SPECTRUM_BARS = 64  // Optimal bar count for visual clarity
 
@@ -1086,6 +1137,13 @@ export function AudioStudioView(): JSX.Element {
   const [vizMode, setVizMode] = useState<VisualizerMode>('spectrum')
   // In-app fullscreen for the visualizer
   const [vizFullscreen, setVizFullscreen] = useState(false)
+
+  // Lyrics state
+  const [lrcLines, setLrcLines] = useState<LrcLine[]>([])
+  const [activeLrcIndex, setActiveLrcIndex] = useState(-1)
+  const [showLyrics, setShowLyrics] = useState(false)
+  const lrcFileInputRef = useRef<HTMLInputElement | null>(null)
+  const lyricsContainerRef = useRef<HTMLDivElement | null>(null)
 
   // Refs
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -1496,7 +1554,45 @@ export function AudioStudioView(): JSX.Element {
     }
   }, [])
 
-  // Generate audio
+  // LRC file loading
+  const handleLrcFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string
+      if (text) {
+        const parsed = parseLrc(text)
+        setLrcLines(parsed)
+        setActiveLrcIndex(-1)
+      }
+    }
+    reader.readAsText(file, 'utf-8')
+    // reset so the same file can be re-selected
+    e.target.value = ''
+  }, [])
+
+  // Update active lyric line when progress changes
+  useEffect(() => {
+    if (lrcLines.length === 0) return
+    const idx = findActiveLrcIndex(lrcLines, progress)
+    setActiveLrcIndex(idx)
+  }, [progress, lrcLines])
+
+  // Auto-scroll lyrics to keep the active line centred
+  useEffect(() => {
+    if (!lyricsContainerRef.current || activeLrcIndex < 0) return
+    const container = lyricsContainerRef.current
+    const activeLine = container.querySelector<HTMLElement>('.audio-lyric-line.active')
+    if (activeLine) {
+      const containerMid = container.clientHeight / 2
+      const lineTop = activeLine.offsetTop
+      const lineH = activeLine.clientHeight
+      container.scrollTo({ top: lineTop - containerMid + lineH / 2, behavior: 'smooth' })
+    }
+  }, [activeLrcIndex])
+
+
   const generateAudio = useCallback(async (sceneId?: string) => {
     setGenerating(true)
     try {
@@ -1664,6 +1760,13 @@ export function AudioStudioView(): JSX.Element {
 
           {/* Player controls */}
           <div className="audio-player-controls">
+            {/* Current track name */}
+            {currentTrackIndex >= 0 && playlist[currentTrackIndex] && (
+              <div className="audio-now-playing">
+                <span className="audio-now-playing-label">{playlist[currentTrackIndex].name}</span>
+              </div>
+            )}
+
             <div className="audio-transport">
               <div className="audio-play-mode">
                 <button
@@ -1728,7 +1831,55 @@ export function AudioStudioView(): JSX.Element {
                 value={balance}
                 onChange={(e) => setBalance(Number(e.target.value))}
               />
+              {/* LRC lyrics button */}
+              <button
+                type="button"
+                className={`audio-btn-icon${showLyrics ? ' active' : ''}`}
+                title={t('audio.lyrics.title')}
+                onClick={() => setShowLyrics(v => !v)}
+              >
+                <FileText size={14} />
+              </button>
+              <input
+                ref={lrcFileInputRef}
+                type="file"
+                accept=".lrc,.txt"
+                style={{ display: 'none' }}
+                onChange={handleLrcFile}
+              />
             </div>
+
+            {/* Lyrics panel */}
+            {showLyrics && (
+              <div className="audio-lyrics-panel">
+                <div className="audio-lyrics-header">
+                  <span className="audio-lyrics-title">{t('audio.lyrics.title')}</span>
+                  <button
+                    type="button"
+                    className="audio-btn-sm"
+                    onClick={() => lrcFileInputRef.current?.click()}
+                    title={t('audio.lyrics.load')}
+                  >
+                    <Plus size={12} /> {t('audio.lyrics.load')}
+                  </button>
+                </div>
+                <div ref={lyricsContainerRef} className="audio-lyrics-scroll">
+                  {lrcLines.length === 0 ? (
+                    <p className="audio-lyrics-empty">{t('audio.lyrics.empty')}</p>
+                  ) : (
+                    lrcLines.map((line, i) => (
+                      <div
+                        key={i}
+                        className={`audio-lyric-line${i === activeLrcIndex ? ' active' : ''}`}
+                        onClick={() => seek(line.time)}
+                      >
+                        {line.text}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
