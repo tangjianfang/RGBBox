@@ -131,6 +131,20 @@ const api = {
     ipcRenderer.invoke(ipcChannels.audioOpenFiles),
   audioOpenFolder: (): Promise<Array<{ path: string; name: string; folder: string }>> =>
     ipcRenderer.invoke(ipcChannels.audioOpenFolder),
+
+  // Video Studio file persistence
+  videoGetSavedPaths: (): Promise<Array<{ id: string; name: string; path: string; group: string }>> =>
+    ipcRenderer.invoke(ipcChannels.videoGetSavedPaths),
+  videoSavePaths: (paths: Array<{ id: string; name: string; path: string; group: string }>): Promise<void> =>
+    ipcRenderer.invoke(ipcChannels.videoSavePaths, paths),
+  videoOpenFiles: (): Promise<Array<{ path: string; name: string }>> =>
+    ipcRenderer.invoke(ipcChannels.videoOpenFiles),
+  videoOpenFolder: (): Promise<Array<{ path: string; name: string; folder: string }>> =>
+    ipcRenderer.invoke(ipcChannels.videoOpenFolder),
+
+  // System display list (for multi-monitor spectrum pop-out)
+  getDisplays: (): Promise<Array<{ id: number; label: string; bounds: { x: number; y: number; width: number; height: number }; primary: boolean }>> =>
+    ipcRenderer.invoke(ipcChannels.getDisplays),
 }
 
 contextBridge.exposeInMainWorld('rgbbox', api)

@@ -436,6 +436,61 @@ function registerIpc(): void {
       .map(f => ({ path: join(folderPath, f), name: f, folder: folderName }))
   })
 
+  // ── Video Studio file path persistence ────────────────────────────────────
+  const videoConfigPath = join(app.getPath('userData'), 'config', 'video-playlist.json')
+
+  ipcMain.handle(ipcChannels.videoGetSavedPaths, async () => {
+    try {
+      const raw = await readFile(videoConfigPath, 'utf-8')
+      return JSON.parse(raw)
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(ipcChannels.videoSavePaths, async (_event, paths: Array<{ id: string; name: string; path: string; group: string }>) => {
+    await mkdir(join(app.getPath('userData'), 'config'), { recursive: true })
+    await writeFile(videoConfigPath, JSON.stringify(paths, null, 2), 'utf-8')
+  })
+
+  const VIDEO_FILTERS = [{ name: 'Video', extensions: ['mp4', 'webm', 'mkv', 'mov', 'avi', 'flv', 'ts', 'm4v', 'wmv'] }]
+
+  ipcMain.handle(ipcChannels.videoOpenFiles, async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Add Video Files',
+      properties: ['openFile', 'multiSelections'],
+      filters: VIDEO_FILTERS,
+    })
+    if (result.canceled) return []
+    return result.filePaths.map(p => ({ path: p, name: basename(p) }))
+  })
+
+  ipcMain.handle(ipcChannels.videoOpenFolder, async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Add Video Folder',
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return []
+    const folderPath = result.filePaths[0]
+    const folderName = basename(folderPath)
+    let entries: string[] = []
+    try { entries = await readdir(folderPath) } catch { return [] }
+    return entries
+      .filter(f => /\.(mp4|webm|mkv|mov|avi|flv|ts|m4v|wmv)$/i.test(f))
+      .map(f => ({ path: join(folderPath, f), name: f, folder: folderName }))
+  })
+
+  // ── System display list ────────────────────────────────────────────────────
+  ipcMain.handle(ipcChannels.getDisplays, () => {
+    const primaryId = screen.getPrimaryDisplay().id
+    return screen.getAllDisplays().map(d => ({
+      id: d.id,
+      label: `Display ${d.id}`,
+      bounds: d.bounds,
+      primary: d.id === primaryId,
+    }))
+  })
+
   // Return mapping of model name → file:// URL for every model already cached
   ipcMain.handle(ipcChannels.modelGetCachedPaths, async () => {
     await mkdir(modelsDir, { recursive: true })

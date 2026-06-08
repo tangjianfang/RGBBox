@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Download, FileText, FolderOpen, Maximize2, Minimize2, Pause, Play, Plus, RefreshCw, Repeat, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, FileText, FolderOpen, Maximize2, Minimize2, Monitor, Pause, Play, Plus, RefreshCw, Repeat, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useI18n } from '../i18n'
 
@@ -774,7 +774,7 @@ function findActiveLrcIndex(lines: LrcLine[], currentTime: number): number {
 
 const SPECTRUM_BARS = 64  // Optimal bar count for visual clarity
 
-type VisualizerMode = 'spectrum' | 'oscilloscope' | 'spectrogram' | 'vuMeter'
+type VisualizerMode = 'spectrum' | 'oscilloscope' | 'spectrogram' | 'vuMeter' | 'circular' | 'waveRing'
 
 /** Premium gradient spectrum with glow, rounded caps, and mirror reflection */
 function drawSpectrum(canvas: HTMLCanvasElement, analyser: AnalyserNode): void {
@@ -1077,6 +1077,116 @@ function drawVUMeter(
   ctx.restore()
 }
 
+/** Circular spectrum: bars radiate outward from center in a 360° ring */
+function drawCircularSpectrum(canvas: HTMLCanvasElement, analyser: AnalyserNode): void {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const dpr = window.devicePixelRatio || 1
+  const w = canvas.width / dpr
+  const h = canvas.height / dpr
+  ctx.save()
+  ctx.scale(dpr, dpr)
+  ctx.clearRect(0, 0, w, h)
+
+  const bufferLength = analyser.frequencyBinCount
+  const dataArray = new Uint8Array(bufferLength)
+  analyser.getByteFrequencyData(dataArray)
+
+  const cx = w / 2
+  const cy = h / 2
+  const radius = Math.min(w, h) * 0.28
+  const barCount = 128
+  const maxBarH = Math.min(w, h) * 0.22
+
+  for (let i = 0; i < barCount; i++) {
+    const binIdx = Math.floor((i / barCount) * bufferLength * 0.75)
+    const value = dataArray[binIdx] / 255
+    const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2
+    const barH = value * maxBarH
+
+    const x1 = cx + Math.cos(angle) * radius
+    const y1 = cy + Math.sin(angle) * radius
+    const x2 = cx + Math.cos(angle) * (radius + barH)
+    const y2 = cy + Math.sin(angle) * (radius + barH)
+
+    const hue = 180 + (i / barCount) * 180
+    ctx.strokeStyle = `hsla(${hue}, 90%, ${50 + value * 25}%, ${0.7 + value * 0.3})`
+    ctx.lineWidth = Math.max(1.5, (Math.PI * 2 * radius / barCount) * 0.65)
+    ctx.shadowBlur = value > 0.4 ? 8 + value * 12 : 0
+    ctx.shadowColor = `hsla(${hue}, 90%, 60%, 0.6)`
+    ctx.beginPath()
+    ctx.moveTo(x1, y1)
+    ctx.lineTo(x2, y2)
+    ctx.stroke()
+  }
+
+  // Center circle
+  ctx.shadowBlur = 0
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius)
+  grad.addColorStop(0, 'rgba(79, 195, 247, 0.15)')
+  grad.addColorStop(1, 'rgba(79, 195, 247, 0)')
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.restore()
+}
+
+/** Wave ring: oscilloscope waveform drawn as a circle */
+function drawWaveRing(canvas: HTMLCanvasElement, analyser: AnalyserNode): void {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const dpr = window.devicePixelRatio || 1
+  const w = canvas.width / dpr
+  const h = canvas.height / dpr
+  ctx.save()
+  ctx.scale(dpr, dpr)
+  ctx.clearRect(0, 0, w, h)
+
+  const bufferLength = analyser.fftSize
+  const dataArray = new Float32Array(bufferLength)
+  analyser.getFloatTimeDomainData(dataArray)
+
+  const cx = w / 2
+  const cy = h / 2
+  const baseRadius = Math.min(w, h) * 0.3
+  const amplitude = Math.min(w, h) * 0.15
+  const step = Math.max(1, Math.floor(bufferLength / 360))
+
+  // Mirror: draw ring using 360 points
+  const grad = ctx.createLinearGradient(0, 0, w, h)
+  grad.addColorStop(0, 'rgba(79, 195, 247, 0.9)')
+  grad.addColorStop(0.5, 'rgba(171, 71, 188, 1)')
+  grad.addColorStop(1, 'rgba(79, 195, 247, 0.9)')
+  ctx.strokeStyle = grad
+  ctx.lineWidth = 2
+  ctx.lineJoin = 'round'
+
+  ctx.beginPath()
+  for (let i = 0; i < 360; i++) {
+    const idx = Math.min(Math.floor(i * (bufferLength / 360)), bufferLength - 1)
+    const sample = dataArray[Math.floor(idx / step) * step] ?? 0
+    const r = baseRadius + sample * amplitude
+    const angle = (i / 360) * Math.PI * 2 - Math.PI / 2
+    const x = cx + Math.cos(angle) * r
+    const y = cy + Math.sin(angle) * r
+    if (i === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  }
+  ctx.closePath()
+  ctx.stroke()
+
+  // Glow fill
+  const fillGrad = ctx.createRadialGradient(cx, cy, baseRadius * 0.5, cx, cy, baseRadius + amplitude)
+  fillGrad.addColorStop(0, 'rgba(79, 195, 247, 0.05)')
+  fillGrad.addColorStop(1, 'rgba(79, 195, 247, 0)')
+  ctx.fillStyle = fillGrad
+  ctx.fill()
+
+  ctx.restore()
+}
+
 // ── Cache helpers ──────────────────────────────────────────────────────────
 
 function loadCache(): Partial<AudioStudioCache> {
@@ -1114,12 +1224,17 @@ export function AudioStudioView(): JSX.Element {
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
   const [balance, setBalance] = useState(cached.balance ?? 0)
+  const EQ_FREQS = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const
+  const [eqEnabled, setEqEnabled] = useState(false)
+  const [eqBands, setEqBands] = useState<number[]>(() => new Array(10).fill(0))
+  const [eqExpanded, setEqExpanded] = useState(false)
 
   // Generator state
   const [genConfig, setGenConfig] = useState<GeneratorConfig>(cached.genConfig || DEFAULT_GENERATOR_CONFIG)
   const [generating, setGenerating] = useState(false)
   const [previewPlaying, setPreviewPlaying] = useState(false)
   const [previewLoop, setPreviewLoop] = useState(false)
+  const [genExpanded, setGenExpanded] = useState(false)
 
   // Scene state
   const [selectedScene, setSelectedScene] = useState<string | null>(null)
@@ -1137,6 +1252,8 @@ export function AudioStudioView(): JSX.Element {
   const [vizMode, setVizMode] = useState<VisualizerMode>('spectrum')
   // In-app fullscreen for the visualizer
   const [vizFullscreen, setVizFullscreen] = useState(false)
+  const [displays, setDisplays] = useState<Array<{ id: number; label: string; bounds: { x: number; y: number; width: number; height: number }; primary: boolean }>>([])
+  const [showDisplayPicker, setShowDisplayPicker] = useState(false)
 
   // Lyrics state
   const [lrcLines, setLrcLines] = useState<LrcLine[]>([])
@@ -1152,6 +1269,7 @@ export function AudioStudioView(): JSX.Element {
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null)
   const gainNodeRef = useRef<GainNode | null>(null)
   const pannerRef = useRef<StereoPannerNode | null>(null)
+  const eqNodesRef = useRef<BiquadFilterNode[]>([])
   const spectrumCanvasRef = useRef<HTMLCanvasElement>(null)
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null)
   const animFrameRef = useRef<number>(0)
@@ -1247,7 +1365,22 @@ export function AudioStudioView(): JSX.Element {
     const panner = ctx.createStereoPanner()
     panner.pan.setValueAtTime(balance, ctx.currentTime)
     gain.connect(panner)
-    panner.connect(analyser)
+    // Build 10-band EQ chain between panner and analyser
+    const eqNodes: BiquadFilterNode[] = EQ_FREQS.map((freq) => {
+      const f = ctx.createBiquadFilter()
+      f.type = 'peaking'
+      f.frequency.value = freq
+      f.Q.value = 1.41
+      f.gain.value = 0
+      return f
+    })
+    eqNodesRef.current = eqNodes
+    let eqPrev: AudioNode = panner
+    for (const node of eqNodes) {
+      eqPrev.connect(node)
+      eqPrev = node
+    }
+    eqPrev.connect(analyser)
     analyser.connect(ctx.destination)
     audioContextRef.current = ctx
     analyserRef.current = analyser
@@ -1255,6 +1388,25 @@ export function AudioStudioView(): JSX.Element {
     pannerRef.current = panner
     return ctx
   }, [volume, balance])
+
+  const openSpectrumPopout = useCallback(async (displayId?: number) => {
+    try {
+      const allDisplays = await window.rgbbox.getDisplays()
+      if (!displayId && allDisplays.length > 1) {
+        setDisplays(allDisplays)
+        setShowDisplayPicker(true)
+        return
+      }
+      const target = displayId ? allDisplays.find(d => d.id === displayId) : allDisplays[0]
+      const bounds = target?.bounds ?? { x: 0, y: 0, width: 1280, height: 400 }
+      const w = window.open(
+        `${window.location.href.split('#')[0]}#spectrum-popout`,
+        'rgbbox-spectrum',
+        `width=900,height=400,left=${bounds.x + 190},top=${bounds.y + bounds.height - 430},menubar=no,toolbar=no,location=no,status=no`
+      )
+      if (w) { w.focus(); setShowDisplayPicker(false) }
+    } catch { /* ignore */ }
+  }, [])
 
   // Visualization loop with HiDPI support
   useEffect(() => {
@@ -1292,6 +1444,12 @@ export function AudioStudioView(): JSX.Element {
           if (specCanvas) drawVUMeter(specCanvas, analyser, vuPeakRef.current)
           if (waveCanvas) drawWaveform(waveCanvas, analyser)
           break
+        case 'circular':
+          if (specCanvas) drawCircularSpectrum(specCanvas, analyser)
+          break
+        case 'waveRing':
+          if (specCanvas) drawWaveRing(specCanvas, analyser)
+          break
       }
       animFrameRef.current = requestAnimationFrame(draw)
     }
@@ -1319,6 +1477,12 @@ export function AudioStudioView(): JSX.Element {
       pannerRef.current.pan.setValueAtTime(balance, audioContextRef.current?.currentTime ?? 0)
     }
   }, [balance])
+
+  useEffect(() => {
+    eqNodesRef.current.forEach((node, i) => {
+      node.gain.setTargetAtTime(eqEnabled ? eqBands[i] : 0, audioContextRef.current?.currentTime ?? 0, 0.01)
+    })
+  }, [eqBands, eqEnabled])
 
   // Progress tracking
   useEffect(() => {
@@ -1689,6 +1853,11 @@ export function AudioStudioView(): JSX.Element {
     return grouped
   }, [playlist])
 
+  const showFrequencyField = genConfig.type === 'sine' || genConfig.type === 'sweep'
+  const showFrequencyPresets = genConfig.type === 'sine'
+  const isSweepType = genConfig.type === 'sweep'
+  const isNoiseType = genConfig.type === 'noise'
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -1886,15 +2055,15 @@ export function AudioStudioView(): JSX.Element {
         {/* Right Panel - Studio Functions */}
         <div className="audio-right-panel">
           <div className={`audio-visualizers${vizFullscreen ? ' audio-visualizers-fullscreen' : ''}`}>
-            <div className="audio-viz-mode-bar">
-              {(['spectrum', 'oscilloscope', 'spectrogram', 'vuMeter'] as VisualizerMode[]).map(mode => (
+            <div className="audio-viz-mode-bar" style={{ position: 'relative' }}>
+              {(['spectrum', 'oscilloscope', 'spectrogram', 'vuMeter', 'circular', 'waveRing'] as VisualizerMode[]).map(mode => (
                 <button
                   key={mode}
                   type="button"
                   className={`audio-viz-mode-btn ${vizMode === mode ? 'active' : ''}`}
                   onClick={() => { setVizMode(mode); spectrogramBufferRef.current = [] }}
                 >
-                  {t(`audio.viz.${mode}` as any)}
+                  {mode === 'circular' ? 'Circular' : mode === 'waveRing' ? 'Wave Ring' : t(`audio.viz.${mode}` as any)}
                 </button>
               ))}
               <button
@@ -1905,10 +2074,90 @@ export function AudioStudioView(): JSX.Element {
               >
                 {vizFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
               </button>
+              <button
+                type="button"
+                className="audio-viz-fs-btn"
+                title="Pop out"
+                onClick={() => void openSpectrumPopout()}
+              >
+                <Monitor size={14} />
+              </button>
+              {showDisplayPicker && displays.length > 1 && (
+                <div className="audio-display-picker" style={{
+                  position: 'absolute', top: 30, right: 0, background: 'var(--surface-2, #1e2535)',
+                  border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: 8, zIndex: 100
+                }}>
+                  <p style={{ fontSize: 11, marginBottom: 6, opacity: 0.7 }}>Select display</p>
+                  {displays.map(d => (
+                    <button key={d.id} type="button" className="audio-btn-sm" style={{ display: 'block', width: '100%', marginBottom: 4 }}
+                      onClick={() => void openSpectrumPopout(d.id)}>
+                      {d.primary ? '★ ' : ''}{d.label} ({d.bounds.width}×{d.bounds.height})
+                    </button>
+                  ))}
+                  <button type="button" className="audio-btn-sm" onClick={() => setShowDisplayPicker(false)}>Cancel</button>
+                </div>
+              )}
             </div>
             <canvas ref={spectrumCanvasRef} className="audio-canvas audio-canvas-spectrum" width={720} height={160} />
             {vizMode === 'oscilloscope' && (
               <canvas ref={waveformCanvasRef} className="audio-canvas audio-canvas-waveform" width={720} height={80} />
+            )}
+          </div>
+
+          {/* EQ Section */}
+          <div className="audio-eq-section">
+            <div
+              className="audio-section-toggle"
+              onClick={() => setEqExpanded(v => !v)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '4px 0' }}
+            >
+              {eqExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85 }}>EQ</span>
+              <button
+                type="button"
+                className={`audio-btn-sm ${eqEnabled ? 'active' : ''}`}
+                style={{ marginLeft: 'auto' }}
+                onClick={(e) => { e.stopPropagation(); setEqEnabled(v => !v) }}
+              >
+                {eqEnabled ? t('audio.on') : t('audio.off')}
+              </button>
+            </div>
+            {eqExpanded && (
+              <div className="audio-eq-grid">
+                {EQ_FREQS.map((freq, i) => (
+                  <div key={freq} className="audio-eq-band">
+                    <span className="audio-eq-freq">{freq >= 1000 ? `${freq / 1000}k` : freq}</span>
+                    <input
+                      type="range"
+                      className="audio-eq-slider"
+                      min={-12}
+                      max={12}
+                      step={0.5}
+                      value={eqBands[i]}
+                      style={{ writingMode: 'vertical-lr', direction: 'rtl', height: 80, width: 20 }}
+                      onChange={(e) => {
+                        const val = Number(e.target.value)
+                        setEqBands(prev => { const next = [...prev]; next[i] = val; return next })
+                      }}
+                    />
+                    <span className="audio-eq-db">{eqBands[i] > 0 ? `+${eqBands[i]}` : eqBands[i]}</span>
+                    <button
+                      type="button"
+                      className="audio-btn-icon"
+                      title="Reset"
+                      onClick={() => setEqBands(prev => { const next = [...prev]; next[i] = 0; return next })}
+                    >×</button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="audio-btn-sm"
+                  style={{ gridColumn: '1 / -1', marginTop: 4 }}
+                  onClick={() => setEqBands(new Array(10).fill(0))}
+                >
+                  Reset EQ
+                </button>
+              </div>
             )}
           </div>
 
@@ -1928,182 +2177,209 @@ export function AudioStudioView(): JSX.Element {
           {/* Generator Tab */}
           {activeTab === 'generator' && (
             <div className="audio-panel audio-panel-scroll">
-              <div className="audio-gen-grid">
-                <div className="audio-gen-section audio-gen-full">
-                  <label className="audio-field-label">{t('audio.gen.type')}</label>
-                  <div className="audio-gen-types">
-                    {GENERATOR_TYPES.map(gt => (
-                      <button
-                        key={gt.id}
-                        type="button"
-                        className={`audio-gen-type-btn ${genConfig.type === gt.id ? 'active' : ''}`}
-                        onClick={() => setGenConfig(c => ({ ...c, type: gt.id }))}
-                      >
-                        {t(gt.labelKey as any)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="audio-gen-section">
-                  <label className="audio-field-label">{t('audio.gen.frequency')} (Hz)</label>
-                  <div className="audio-input-with-presets">
-                    <select
-                      className="audio-select"
-                      value=""
-                      onChange={(e) => { if (e.target.value) setGenConfig(c => ({ ...c, frequency: Number(e.target.value) })) }}
-                    >
-                      <option value="">{t('audio.preset')}</option>
-                      {FREQUENCY_PRESETS.map(p => (
-                        <option key={p.value} value={p.value}>{p.label}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      className="audio-input"
-                      value={genConfig.frequency}
-                      min={1}
-                      max={22000}
-                      onChange={(e) => setGenConfig(c => ({ ...c, frequency: Number(e.target.value) }))}
-                    />
-                  </div>
-                </div>
-
-                {genConfig.type === 'sweep' && (
-                  <div className="audio-gen-section">
-                    <label className="audio-field-label">{t('audio.gen.endFreq')} (Hz)</label>
-                    <input
-                      type="number"
-                      className="audio-input"
-                      value={genConfig.endFrequency}
-                      min={1}
-                      max={22000}
-                      onChange={(e) => setGenConfig(c => ({ ...c, endFrequency: Number(e.target.value) }))}
-                    />
-                  </div>
-                )}
-
-                {genConfig.type === 'noise' && (
-                  <div className="audio-gen-section">
-                    <label className="audio-field-label">{t('audio.gen.noiseType')}</label>
-                    <select
-                      className="audio-select"
-                      value={genConfig.noiseType}
-                      onChange={(e) => setGenConfig(c => ({ ...c, noiseType: e.target.value as NoiseType }))}
-                    >
-                      <option value="white">{t('audio.noise.white')}</option>
-                      <option value="pink">{t('audio.noise.pink')}</option>
-                      <option value="brown">{t('audio.noise.brown')}</option>
-                    </select>
-                  </div>
-                )}
-
-                <div className="audio-gen-section">
-                  <label className="audio-field-label">{t('audio.gen.sampleRate')} (Hz)</label>
-                  <select
-                    className="audio-select"
-                    value={genConfig.sampleRate}
-                    onChange={(e) => setGenConfig(c => ({ ...c, sampleRate: Number(e.target.value) }))}
-                  >
-                    <option value={44100}>44100</option>
-                    <option value={48000}>48000</option>
-                    <option value={96000}>96000</option>
-                    <option value={192000}>192000</option>
-                  </select>
-                </div>
-
-                <div className="audio-gen-section">
-                  <label className="audio-field-label">{t('audio.gen.bitDepth')}</label>
-                  <select
-                    className="audio-select"
-                    value={genConfig.bitDepth}
-                    onChange={(e) => setGenConfig(c => ({ ...c, bitDepth: Number(e.target.value) }))}
-                  >
-                    <option value={16}>16-bit</option>
-                    <option value={24}>24-bit</option>
-                    <option value={32}>32-bit float</option>
-                  </select>
-                </div>
-
-                <div className="audio-gen-section">
-                  <label className="audio-field-label">{t('audio.gen.channels')}</label>
-                  <select
-                    className="audio-select"
-                    value={genConfig.channels}
-                    onChange={(e) => setGenConfig(c => ({ ...c, channels: Number(e.target.value) }))}
-                  >
-                    <option value={1}>Mono</option>
-                    <option value={2}>Stereo</option>
-                  </select>
-                </div>
-
-                <div className="audio-gen-section">
-                  <label className="audio-field-label">{t('audio.gen.duration')} (s)</label>
-                  <div className="audio-input-with-presets">
-                    <select
-                      className="audio-select"
-                      value=""
-                      onChange={(e) => { if (e.target.value) setGenConfig(c => ({ ...c, duration: Number(e.target.value) })) }}
-                    >
-                      <option value="">{t('audio.preset')}</option>
-                      {DURATION_PRESETS.map(p => (
-                        <option key={p.value} value={p.value}>{p.label}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      className="audio-input"
-                      value={genConfig.duration}
-                      min={0.1}
-                      max={300}
-                      step={0.1}
-                      onChange={(e) => setGenConfig(c => ({ ...c, duration: Number(e.target.value) }))}
-                    />
-                  </div>
-                </div>
-
-                <div className="audio-gen-section">
-                  <label className="audio-field-label">{t('audio.gen.gain')}</label>
-                  <input
-                    type="range"
-                    className="audio-slider"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={genConfig.gain}
-                    onChange={(e) => setGenConfig(c => ({ ...c, gain: Number(e.target.value) }))}
-                  />
-                  <span className="audio-value">{Math.round(genConfig.gain * 100)}%</span>
-                </div>
-
-                <div className="audio-gen-section">
-                  <label className="audio-field-label">{t('audio.gen.pan')}</label>
-                  <input
-                    type="range"
-                    className="audio-slider"
-                    min={-1}
-                    max={1}
-                    step={0.01}
-                    value={genConfig.panPosition}
-                    onChange={(e) => setGenConfig(c => ({ ...c, panPosition: Number(e.target.value) }))}
-                  />
-                  <span className="audio-value">{genConfig.panPosition > 0 ? `R ${Math.round(genConfig.panPosition * 100)}%` : genConfig.panPosition < 0 ? `L ${Math.round(-genConfig.panPosition * 100)}%` : 'C'}</span>
-                </div>
-
-                <div className="audio-gen-section">
-                  <label className="audio-field-label">{t('audio.gen.reverb')}</label>
-                  <input
-                    type="range"
-                    className="audio-slider"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={genConfig.reverbMix}
-                    onChange={(e) => setGenConfig(c => ({ ...c, reverbMix: Number(e.target.value) }))}
-                  />
-                  <span className="audio-value">{Math.round(genConfig.reverbMix * 100)}%</span>
-                </div>
+              <div
+                className="audio-section-toggle"
+                onClick={() => setGenExpanded(v => !v)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '4px 0', marginBottom: 4 }}
+              >
+                {genExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85 }}>Generator Config</span>
               </div>
+              {genExpanded && (
+                <div className="audio-gen-grid">
+                  <div className="audio-gen-section audio-gen-full">
+                    <label className="audio-field-label">{t('audio.gen.type')}</label>
+                    <div className="audio-gen-types">
+                      {GENERATOR_TYPES.map(gt => (
+                        <button
+                          key={gt.id}
+                          type="button"
+                          className={`audio-gen-type-btn ${genConfig.type === gt.id ? 'active' : ''}`}
+                          onClick={() => setGenConfig(c => ({ ...c, type: gt.id }))}
+                        >
+                          {t(gt.labelKey as any)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {showFrequencyField && (
+                    <div className="audio-gen-section">
+                      <label className="audio-field-label">{t('audio.gen.frequency')} (Hz)</label>
+                      <div className="audio-input-with-presets">
+                        {showFrequencyPresets && (
+                          <select
+                            className="audio-select"
+                            value=""
+                            onChange={(e) => { if (e.target.value) setGenConfig(c => ({ ...c, frequency: Number(e.target.value) })) }}
+                          >
+                            <option value="">{t('audio.preset')}</option>
+                            {FREQUENCY_PRESETS.map(p => (
+                              <option key={p.value} value={p.value}>{p.label}</option>
+                            ))}
+                          </select>
+                        )}
+                        <input
+                          type="number"
+                          className="audio-input"
+                          value={genConfig.frequency}
+                          min={1}
+                          max={22000}
+                          onChange={(e) => setGenConfig(c => ({ ...c, frequency: Number(e.target.value) }))}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {isSweepType && (
+                    <>
+                      <div className="audio-gen-section">
+                        <label className="audio-field-label">{t('audio.gen.endFreq')} (Hz)</label>
+                        <input
+                          type="number"
+                          className="audio-input"
+                          value={genConfig.endFrequency}
+                          min={1}
+                          max={22000}
+                          onChange={(e) => setGenConfig(c => ({ ...c, endFrequency: Number(e.target.value) }))}
+                        />
+                      </div>
+
+                      <div className="audio-gen-section">
+                        <label className="audio-field-label">Log Sweep</label>
+                        <button
+                          type="button"
+                          className={`audio-btn-sm ${genConfig.sweepLog ? 'active' : ''}`}
+                          onClick={() => setGenConfig(c => ({ ...c, sweepLog: !c.sweepLog }))}
+                        >
+                          {genConfig.sweepLog ? 'On' : 'Off'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {isNoiseType && (
+                    <div className="audio-gen-section">
+                      <label className="audio-field-label">{t('audio.gen.noiseType')}</label>
+                      <select
+                        className="audio-select"
+                        value={genConfig.noiseType}
+                        onChange={(e) => setGenConfig(c => ({ ...c, noiseType: e.target.value as NoiseType }))}
+                      >
+                        <option value="white">{t('audio.noise.white')}</option>
+                        <option value="pink">{t('audio.noise.pink')}</option>
+                        <option value="brown">{t('audio.noise.brown')}</option>
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="audio-gen-section">
+                    <label className="audio-field-label">{t('audio.gen.sampleRate')} (Hz)</label>
+                    <select
+                      className="audio-select"
+                      value={genConfig.sampleRate}
+                      onChange={(e) => setGenConfig(c => ({ ...c, sampleRate: Number(e.target.value) }))}
+                    >
+                      <option value={44100}>44100</option>
+                      <option value={48000}>48000</option>
+                      <option value={96000}>96000</option>
+                      <option value={192000}>192000</option>
+                    </select>
+                  </div>
+
+                  <div className="audio-gen-section">
+                    <label className="audio-field-label">{t('audio.gen.bitDepth')}</label>
+                    <select
+                      className="audio-select"
+                      value={genConfig.bitDepth}
+                      onChange={(e) => setGenConfig(c => ({ ...c, bitDepth: Number(e.target.value) }))}
+                    >
+                      <option value={16}>16-bit</option>
+                      <option value={24}>24-bit</option>
+                      <option value={32}>32-bit float</option>
+                    </select>
+                  </div>
+
+                  <div className="audio-gen-section">
+                    <label className="audio-field-label">{t('audio.gen.channels')}</label>
+                    <select
+                      className="audio-select"
+                      value={genConfig.channels}
+                      onChange={(e) => setGenConfig(c => ({ ...c, channels: Number(e.target.value) }))}
+                    >
+                      <option value={1}>Mono</option>
+                      <option value={2}>Stereo</option>
+                    </select>
+                  </div>
+
+                  <div className="audio-gen-section">
+                    <label className="audio-field-label">{t('audio.gen.duration')} (s)</label>
+                    <div className="audio-input-with-presets">
+                      <select
+                        className="audio-select"
+                        value=""
+                        onChange={(e) => { if (e.target.value) setGenConfig(c => ({ ...c, duration: Number(e.target.value) })) }}
+                      >
+                        <option value="">{t('audio.preset')}</option>
+                        {DURATION_PRESETS.map(p => (
+                          <option key={p.value} value={p.value}>{p.label}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        className="audio-input"
+                        value={genConfig.duration}
+                        min={0.1}
+                        max={300}
+                        step={0.1}
+                        onChange={(e) => setGenConfig(c => ({ ...c, duration: Number(e.target.value) }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="audio-gen-section">
+                    <label className="audio-field-label">{t('audio.gen.gain')}</label>
+                    <input
+                      type="range"
+                      className="audio-slider"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={genConfig.gain}
+                      onChange={(e) => setGenConfig(c => ({ ...c, gain: Number(e.target.value) }))}
+                    />
+                    <span className="audio-value">{Math.round(genConfig.gain * 100)}%</span>
+                  </div>
+
+                  <div className="audio-gen-section">
+                    <label className="audio-field-label">{t('audio.gen.pan')}</label>
+                    <input
+                      type="range"
+                      className="audio-slider"
+                      min={-1}
+                      max={1}
+                      step={0.01}
+                      value={genConfig.panPosition}
+                      onChange={(e) => setGenConfig(c => ({ ...c, panPosition: Number(e.target.value) }))}
+                    />
+                    <span className="audio-value">{genConfig.panPosition > 0 ? `R ${Math.round(genConfig.panPosition * 100)}%` : genConfig.panPosition < 0 ? `L ${Math.round(-genConfig.panPosition * 100)}%` : 'C'}</span>
+                  </div>
+
+                  <div className="audio-gen-section">
+                    <label className="audio-field-label">{t('audio.gen.reverb')}</label>
+                    <input
+                      type="range"
+                      className="audio-slider"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={genConfig.reverbMix}
+                      onChange={(e) => setGenConfig(c => ({ ...c, reverbMix: Number(e.target.value) }))}
+                    />
+                    <span className="audio-value">{Math.round(genConfig.reverbMix * 100)}%</span>
+                  </div>
+                </div>
+              )}
 
               <div className="audio-gen-actions">
                 <button

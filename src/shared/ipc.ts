@@ -58,6 +58,14 @@ export const ipcChannels = {
   // Audio Studio native file/folder picker
   audioOpenFiles: 'rgbbox:audio:open-files',
   audioOpenFolder: 'rgbbox:audio:open-folder',
+  // Video Studio file persistence
+  videoGetSavedPaths: 'rgbbox:video:get-saved-paths',
+  videoSavePaths: 'rgbbox:video:save-paths',
+  // Video Studio native file/folder picker
+  videoOpenFiles: 'rgbbox:video:open-files',
+  videoOpenFolder: 'rgbbox:video:open-folder',
+  // System display list (for multi-monitor spectrum pop-out)
+  getDisplays: 'rgbbox:system:get-displays',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]
