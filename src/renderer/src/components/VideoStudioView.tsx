@@ -15,10 +15,10 @@
  */
 
 import {
-  Camera, CameraOff, Circle, Download, FileText, FlipHorizontal, Image as ImageIcon,
-  Maximize2, Minimize2, Monitor, MonitorPlay, Pause, Play, RefreshCw,
-  Square, Video, Film, AppWindow, ChevronDown, ChevronRight, Link as LinkIcon,
-  Volume2, VolumeX,
+  AppWindow, Camera, CameraOff, ChevronDown, ChevronRight, Circle, Download, FileText,
+  Film, FlipHorizontal, FolderOpen, Image as ImageIcon, Link as LinkIcon, Maximize2,
+  Minimize2, Monitor, MonitorPlay, Pause, Play, Plus, RefreshCw, Scissors, SkipBack,
+  SkipForward, Square, Trash2, Video, Volume2, VolumeX,
 } from 'lucide-react'
 import Hls from 'hls.js'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
@@ -41,6 +41,40 @@ interface FilterState {
   grayscale: number
   sepia: number
   invert: number
+}
+
+interface VideoItem {
+  id: string
+  name: string
+  url?: string
+  group: string
+}
+
+interface VideoGroup {
+  name: string
+  collapsed: boolean
+}
+
+const VIDEO_CACHE_KEY = 'rgbbox-video-playlist-config'
+
+interface VideoPlaylistCache {
+  playlist: Array<{ id: string; name: string; group: string }>
+  groups: VideoGroup[]
+  playlistVisible: boolean
+}
+
+function loadVideoCache(): Partial<VideoPlaylistCache> {
+  try {
+    const raw = localStorage.getItem(VIDEO_CACHE_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return {}
+}
+
+function saveVideoCache(cache: VideoPlaylistCache): void {
+  try {
+    localStorage.setItem(VIDEO_CACHE_KEY, JSON.stringify(cache))
+  } catch { /* ignore */ }
 }
 
 const DEFAULT_FILTERS: FilterState = {
@@ -254,6 +288,23 @@ export function VideoStudioView(): JSX.Element {
   const recTimerRef = useRef<number | null>(null)
 
   const [lastShot, setLastShot] = useState<string>('')
+
+  // ── Video Playlist ──────────────────────────────────────────────────────────
+  const videoCache = useMemo(() => loadVideoCache(), [])
+  const [videoPlaylist, setVideoPlaylist] = useState<VideoItem[]>([])
+  const [videoGroups, setVideoGroups] = useState<VideoGroup[]>(videoCache.groups || [])
+  const [playlistVisible, setPlaylistVisible] = useState(videoCache.playlistVisible ?? true)
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(-1)
+  const [videoIsRestored, setVideoIsRestored] = useState(false)
+  const videoFileInputRef = useRef<HTMLInputElement | null>(null)
+  const videoFolderInputRef = useRef<HTMLInputElement | null>(null)
+
+  // ── Video Trim / Clip ──────────────────────────────────────────────────────
+  const [trimMode, setTrimMode] = useState(false)
+  const [trimStart, setTrimStart] = useState(0)
+  const [trimEnd, setTrimEnd] = useState(0)
+  const [trimExporting, setTrimExporting] = useState(false)
+  const [trimQuality, setTrimQuality] = useState<'lossless' | 'high' | 'balanced'>('high')
 
   const filterStyle = useMemo(() => filterCss(filters), [filters])
 
@@ -488,6 +539,7 @@ export function VideoStudioView(): JSX.Element {
     if (!file) return
     clearPlayerSource()
     setStreamError(null)
+    setCurrentVideoIndex(-1)
     setPlayerUrl(URL.createObjectURL(file))
     setPlayerName(file.name)
   }, [clearPlayerSource])
@@ -503,6 +555,7 @@ export function VideoStudioView(): JSX.Element {
     if (!url) return
     clearPlayerSource()
     setStreamError(null)
+    setCurrentVideoIndex(-1)
     setPlayerName(url)
     const el = playerRef.current
     const isHls = /\.m3u8(\?|#|$)/i.test(url)
@@ -650,6 +703,27 @@ export function VideoStudioView(): JSX.Element {
     }
   }, [])
 
+  // ── Player keyboard shortcuts ───────────────────────────────────────────────
+  useEffect(() => {
+    if (mode !== 'player') return
+    const onKey = (e: KeyboardEvent) => {
+      const el = playerRef.current
+      if (!el) return
+      // Don't steal from input elements
+      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT') return
+      switch (e.key) {
+        case ' ': e.preventDefault(); togglePlayerPlay(); break
+        case 'ArrowLeft': e.preventDefault(); playerSeek(Math.max(0, el.currentTime - 10)); break
+        case 'ArrowRight': e.preventDefault(); playerSeek(Math.min(el.duration || 0, el.currentTime + 10)); break
+        case 'ArrowUp': e.preventDefault(); setPlayerVolume(v => Math.min(1, v + 0.1)); break
+        case 'ArrowDown': e.preventDefault(); setPlayerVolume(v => Math.max(0, v - 0.1)); break
+        case 'm': case 'M': setPlayerMuted(v => !v); break
+        case 'f': case 'F': togglePlayerFullscreen(); break
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mode, togglePlayerPlay, playerSeek, togglePlayerFullscreen])
 
   // Full cleanup on unmount
   useEffect(() => () => {
@@ -675,6 +749,140 @@ export function VideoStudioView(): JSX.Element {
     }
   }, [])
 
+  // ── Playlist management ────────────────────────────────────────────────────
+  const addVideoFromPaths = useCallback((entries: Array<{ path: string; name: string; folder?: string }>, defaultGroup?: string) => {
+    const groupName = defaultGroup || 'Default'
+    const newItems: VideoItem[] = entries.map((e, i) => ({
+      id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+      name: e.name,
+      url: `media://local?p=${encodeURIComponent(e.path)}`,
+      group: e.folder || groupName,
+    }))
+    if (newItems.length === 0) return
+    const newGroupNames = [...new Set(newItems.map(v => v.group))]
+    setVideoGroups(prev => {
+      const existing = new Set(prev.map(g => g.name))
+      return [...prev, ...newGroupNames.filter(n => !existing.has(n)).map(n => ({ name: n, collapsed: false }))]
+    })
+    setVideoPlaylist(prev => [...prev, ...newItems])
+  }, [])
+
+  const handleAddVideoFiles = useCallback(() => {
+    window.rgbbox.videoOpenFiles().then(result => {
+      if (result.length > 0) addVideoFromPaths(result)
+    }).catch(() => {})
+  }, [addVideoFromPaths])
+
+  const handleAddVideoFolder = useCallback(() => {
+    window.rgbbox.videoOpenFolder().then(result => {
+      if (result.length > 0) addVideoFromPaths(result, result[0]?.folder)
+    }).catch(() => {})
+  }, [addVideoFromPaths])
+
+  const playVideoItem = useCallback((index: number) => {
+    const item = videoPlaylist[index]
+    if (!item?.url) return
+    clearPlayerSource()
+    setPlayerUrl(item.url)
+    setPlayerName(item.name)
+    setCurrentVideoIndex(index)
+  }, [videoPlaylist, clearPlayerSource])
+
+  const removeVideoItem = useCallback((index: number) => {
+    setVideoPlaylist(prev => {
+      const next = [...prev]
+      next.splice(index, 1)
+      return next
+    })
+    if (index === currentVideoIndex) {
+      clearPlayerSource()
+      setCurrentVideoIndex(-1)
+    } else if (index < currentVideoIndex) {
+      setCurrentVideoIndex(prev => prev - 1)
+    }
+  }, [currentVideoIndex, clearPlayerSource])
+
+  const removeVideoGroup = useCallback((groupName: string) => {
+    const selectedItem = currentVideoIndex >= 0 ? videoPlaylist[currentVideoIndex] : null
+    setVideoPlaylist(prev => prev.filter(v => v.group !== groupName))
+    setVideoGroups(prev => prev.filter(g => g.name !== groupName))
+    if (selectedItem?.group === groupName) {
+      clearPlayerSource()
+      setCurrentVideoIndex(-1)
+    }
+  }, [currentVideoIndex, videoPlaylist, clearPlayerSource])
+
+  const toggleVideoGroupCollapse = useCallback((groupName: string) => {
+    setVideoGroups(prev => prev.map(g => g.name === groupName ? { ...g, collapsed: !g.collapsed } : g))
+  }, [])
+
+  // ── Trim / Clip ────────────────────────────────────────────────────────────
+  const setTrimPoint = useCallback((which: 'start' | 'end') => {
+    const el = playerRef.current
+    if (!el) return
+    if (which === 'start') setTrimStart(el.currentTime)
+    else setTrimEnd(el.currentTime)
+    if (!trimMode) setTrimMode(true)
+  }, [trimMode])
+
+  const exportTrimmedClip = useCallback(async () => {
+    const el = playerRef.current
+    if (!el || !mediaLoaded) return
+    const start = Math.min(trimStart, trimEnd)
+    const end = Math.max(trimStart, trimEnd)
+    if (end - start < 0.5) { alert('Please select at least 0.5 seconds'); return }
+
+    setTrimExporting(true)
+    try {
+      const mimeType = trimQuality === 'lossless'
+        ? (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm')
+        : trimQuality === 'high'
+        ? (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm')
+        : 'video/webm'
+
+      el.currentTime = start
+      await new Promise<void>(resolve => {
+        const onSeeked = () => { el.removeEventListener('seeked', onSeeked); resolve() }
+        el.addEventListener('seeked', onSeeked)
+      })
+      // Capture the video element's stream for recording
+      const canvas = document.createElement('canvas')
+      canvas.width = el.videoWidth || 1280
+      canvas.height = el.videoHeight || 720
+      const canvasCtx = canvas.getContext('2d')!
+      const canvasStream = canvas.captureStream(30)
+      const chunks: Blob[] = []
+      const recorder = new MediaRecorder(canvasStream, { mimeType })
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+      recorder.start(100)
+      await el.play()
+      // Draw frames until we reach trimEnd
+      let stopped = false
+      const drawFrame = () => {
+        if (stopped) return
+        if (el.currentTime >= end) {
+          stopped = true
+          el.pause()
+          recorder.stop()
+          return
+        }
+        canvasCtx.drawImage(el, 0, 0, canvas.width, canvas.height)
+        requestAnimationFrame(drawFrame)
+      }
+      drawFrame()
+      await new Promise<void>(resolve => { recorder.onstop = () => resolve() })
+      const blob = new Blob(chunks, { type: mimeType || 'video/webm' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `rgbbox-clip-${Date.now()}.webm`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 10_000)
+    } finally {
+      setTrimExporting(false)
+    }
+  }, [trimStart, trimEnd, trimQuality, mediaLoaded])
+
   // Keep local state in sync with the actual fullscreen element.
   useEffect(() => {
     const onFsChange = (): void => setFullscreen(!!document.fullscreenElement)
@@ -689,6 +897,54 @@ export function VideoStudioView(): JSX.Element {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [fullscreen])
+
+  // Persist video playlist when it changes (after restore)
+  useEffect(() => {
+    if (!videoIsRestored) return
+    saveVideoCache({
+      playlist: videoPlaylist.map(v => ({ id: v.id, name: v.name, group: v.group })),
+      groups: videoGroups,
+      playlistVisible,
+    })
+    const pathEntries = videoPlaylist
+      .map(v => {
+        if (v.url && v.url.startsWith('media://')) {
+          try { const filePath = new URL(v.url).searchParams.get('p') ?? ''; if (filePath) return { id: v.id, name: v.name, path: filePath, group: v.group } } catch { /* ignore */ }
+        }
+        return null
+      })
+      .filter((e): e is { id: string; name: string; path: string; group: string } => e !== null)
+    if (pathEntries.length > 0) window.rgbbox.videoSavePaths(pathEntries)
+  }, [videoIsRestored, videoPlaylist, videoGroups, playlistVisible])
+
+  // Restore video playlist from main process on mount
+  useEffect(() => {
+    let cancelled = false
+    window.rgbbox.videoGetSavedPaths().then(saved => {
+      if (cancelled) return
+      if (saved.length > 0) {
+        const tracks: VideoItem[] = saved.map(e => ({
+          id: e.id, name: e.name, group: e.group,
+          url: `media://local?p=${encodeURIComponent(e.path)}`,
+        }))
+        const groupNames = [...new Set(tracks.map(t => t.group))]
+        setVideoPlaylist(prev => prev.length > 0 ? prev : tracks)
+        setVideoGroups(prev => prev.length > 0 ? prev : groupNames.map(n => ({ name: n, collapsed: false })))
+      }
+      setVideoIsRestored(true)
+    }).catch(() => setVideoIsRestored(true))
+    return () => { cancelled = true }
+  }, [])
+
+  const groupedVideoPlaylist = useMemo(() => {
+    const grouped = new Map<string, VideoItem[]>()
+    videoPlaylist.forEach(v => {
+      const list = grouped.get(v.group) || []
+      list.push(v)
+      grouped.set(v.group, list)
+    })
+    return grouped
+  }, [videoPlaylist])
 
   const filteredSources = sources.filter((s) => sourceFilter === 'all' || s.type === sourceFilter)
 
@@ -769,8 +1025,14 @@ export function VideoStudioView(): JSX.Element {
 
                   {/* Buttons row */}
                   <div className="video-player-btn-row" onClick={(e) => e.stopPropagation()}>
+                    <button type="button" className="video-player-btn" onClick={() => playerSeek(Math.max(0, playerCurrentTime - 10))} title="-10s">
+                      <SkipBack size={14} />
+                    </button>
                     <button type="button" className="video-player-btn" onClick={togglePlayerPlay} title={playerPlaying ? t('video.player.pause') : t('video.player.play')}>
                       {playerPlaying ? <Pause size={16} /> : <Play size={16} />}
+                    </button>
+                    <button type="button" className="video-player-btn" onClick={() => playerSeek(Math.min(playerDuration, playerCurrentTime + 10))} title="+10s">
+                      <SkipForward size={14} />
                     </button>
                     <button
                       type="button"
@@ -871,6 +1133,8 @@ export function VideoStudioView(): JSX.Element {
               <>
                 <button type="button" className="video-btn video-btn-primary" onClick={() => playerFileInputRef.current?.click()}><Video size={15} /> {t('video.player.open')}</button>
                 <input ref={playerFileInputRef} type="file" accept="video/*,.mkv,.mov,.avi,.flv,.ts" style={{ display: 'none' }} onChange={onPlayerFile} />
+                <input ref={videoFileInputRef} type="file" style={{ display: 'none' }} />
+                <input ref={videoFolderInputRef} type="file" style={{ display: 'none' }} />
                 {subFilename && (
                   <span className="video-hint video-sub-name"><FileText size={12} /> {subFilename}</span>
                 )}
@@ -979,45 +1243,152 @@ export function VideoStudioView(): JSX.Element {
           )}
 
           {mode === 'player' && (
-            <section className="video-panel">
-              <h3 className="video-panel-title">{t('video.player.title')}</h3>
-              <label className="video-field-label">{t('video.player.streamUrl')}</label>
-              <div className="video-row">
-                <input
-                  className="profile-select video-url-input"
-                  type="text"
-                  inputMode="url"
-                  spellCheck={false}
-                  placeholder={t('video.player.streamPlaceholder')}
-                  value={streamUrl}
-                  onChange={(e) => setStreamUrl(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') loadStreamUrl(streamUrl) }}
-                />
-                <button
-                  type="button"
-                  className="video-btn video-btn-icon"
-                  onClick={() => loadStreamUrl(streamUrl)}
-                  title={t('video.player.loadUrl')}
-                  disabled={!streamUrl.trim()}
-                >
-                  <LinkIcon size={14} />
-                </button>
-              </div>
-              <p className="video-hint">{playerName || t('video.player.empty')}</p>
-              <p className="video-hint" style={{ opacity: 0.6 }}>{t('video.player.formats')}</p>
-              <label className="video-field-label" style={{ marginTop: 10 }}>{t('video.player.subtitle')}</label>
-              <div className="video-row">
-                <span className="video-hint" style={{ flex: 1 }}>{subFilename || t('video.player.noSub')}</span>
-                <button type="button" className="video-btn video-btn-icon" onClick={() => subFileInputRef.current?.click()} title={t('video.player.loadSub')}>
-                  <FileText size={14} />
-                </button>
-                {subCues.length > 0 && (
-                  <button type="button" className="video-btn video-btn-icon" onClick={() => { setSubCues([]); setSubFilename('') }} title={t('video.player.subOff')}>
-                    ×
+            <>
+              {/* Video Playlist */}
+              <section className="video-panel">
+                <div className="video-row" style={{ alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="video-panel-toggle"
+                    onClick={() => setPlaylistVisible(v => !v)}
+                    aria-expanded={playlistVisible}
+                    style={{ flex: 1, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    {playlistVisible ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                    <span className="video-panel-title" style={{ flex: 1 }}>{t('video.playlist.title')}</span>
+                    <span style={{ fontSize: 10, opacity: 0.5 }}>{videoPlaylist.length}</span>
                   </button>
+                  <button type="button" className="video-btn video-btn-icon" onClick={handleAddVideoFiles} title={t('video.playlist.addFiles')}><Plus size={13} /></button>
+                  <button type="button" className="video-btn video-btn-icon" onClick={handleAddVideoFolder} title={t('video.playlist.addFolder')}><FolderOpen size={13} /></button>
+                </div>
+                {playlistVisible && (
+                  <div className="video-playlist-scroll" style={{ maxHeight: 220, overflowY: 'auto' }}>
+                    {videoPlaylist.length === 0 && <p className="video-hint">{t('video.playlist.empty')}</p>}
+                    {videoGroups.map(group => {
+                      const items = groupedVideoPlaylist.get(group.name) || []
+                      if (items.length === 0) return null
+                      return (
+                        <div key={group.name} className="audio-group">
+                          <div className="audio-group-header" onClick={() => toggleVideoGroupCollapse(group.name)}>
+                            {group.collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+                            <span className="audio-group-name">{group.name}</span>
+                            <span className="audio-group-count">{items.length}</span>
+                            <button type="button" className="audio-btn-icon" onClick={(e) => { e.stopPropagation(); removeVideoGroup(group.name) }} title={t('video.playlist.removeGroup')}>
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                          {!group.collapsed && items.map(item => {
+                            const globalIdx = videoPlaylist.indexOf(item)
+                            return (
+                              <div
+                                key={item.id}
+                                className={`audio-track-item ${globalIdx === currentVideoIndex ? 'active' : ''}`}
+                                onClick={() => { playVideoItem(globalIdx); setMode('player') }}
+                              >
+                                <span className="audio-track-name">{item.name}</span>
+                                <button type="button" className="audio-btn-icon" onClick={(e) => { e.stopPropagation(); removeVideoItem(globalIdx) }}><Trash2 size={11} /></button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
-              </div>
-            </section>
+              </section>
+
+              {/* Player URL + subtitle settings */}
+              <section className="video-panel">
+                <h3 className="video-panel-title">{t('video.player.title')}</h3>
+                <label className="video-field-label">{t('video.player.streamUrl')}</label>
+                <div className="video-row">
+                  <input
+                    className="profile-select video-url-input"
+                    type="text"
+                    inputMode="url"
+                    spellCheck={false}
+                    placeholder={t('video.player.streamPlaceholder')}
+                    value={streamUrl}
+                    onChange={(e) => setStreamUrl(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') loadStreamUrl(streamUrl) }}
+                  />
+                  <button
+                    type="button"
+                    className="video-btn video-btn-icon"
+                    onClick={() => loadStreamUrl(streamUrl)}
+                    title={t('video.player.loadUrl')}
+                    disabled={!streamUrl.trim()}
+                  >
+                    <LinkIcon size={14} />
+                  </button>
+                </div>
+                <p className="video-hint">{playerName || t('video.player.empty')}</p>
+                <p className="video-hint" style={{ opacity: 0.6 }}>{t('video.player.formats')}</p>
+                <label className="video-field-label" style={{ marginTop: 10 }}>{t('video.player.subtitle')}</label>
+                <div className="video-row">
+                  <span className="video-hint" style={{ flex: 1 }}>{subFilename || t('video.player.noSub')}</span>
+                  <button type="button" className="video-btn video-btn-icon" onClick={() => subFileInputRef.current?.click()} title={t('video.player.loadSub')}>
+                    <FileText size={14} />
+                  </button>
+                  {subCues.length > 0 && (
+                    <button type="button" className="video-btn video-btn-icon" onClick={() => { setSubCues([]); setSubFilename('') }} title={t('video.player.subOff')}>
+                      ×
+                    </button>
+                  )}
+                </div>
+              </section>
+
+              {/* Trim / Clip */}
+              {mediaLoaded && (
+                <section className="video-panel">
+                  <div className="video-row">
+                    <h3 className="video-panel-title" style={{ flex: 1 }}>{t('video.trim.title')}</h3>
+                    <button
+                      type="button"
+                      className={`video-btn video-btn-icon ${trimMode ? 'active' : ''}`}
+                      onClick={() => setTrimMode(v => !v)}
+                      title={t('video.trim.toggle')}
+                    >
+                      <Scissors size={14} />
+                    </button>
+                  </div>
+                  {trimMode && (
+                    <>
+                      <div className="video-row" style={{ gap: 6, marginBottom: 6 }}>
+                        <button type="button" className="video-btn" onClick={() => setTrimPoint('start')}>
+                          {t('video.trim.setIn')} [{formatPlayerTime(trimStart)}]
+                        </button>
+                        <button type="button" className="video-btn" onClick={() => setTrimPoint('end')}>
+                          {t('video.trim.setOut')} [{formatPlayerTime(trimEnd)}]
+                        </button>
+                      </div>
+                      <div className="video-row" style={{ gap: 4, marginBottom: 6, fontSize: 11, opacity: 0.75 }}>
+                        <span>{t('video.trim.duration')}: {formatPlayerTime(Math.max(0, trimEnd - trimStart))}</span>
+                      </div>
+                      <label className="video-field-label">{t('video.trim.quality')}</label>
+                      <select
+                        className="profile-select"
+                        value={trimQuality}
+                        onChange={(e) => setTrimQuality(e.target.value as typeof trimQuality)}
+                      >
+                        <option value="lossless">{t('video.trim.quality.lossless')}</option>
+                        <option value="high">{t('video.trim.quality.high')}</option>
+                        <option value="balanced">{t('video.trim.quality.balanced')}</option>
+                      </select>
+                      <button
+                        type="button"
+                        className="video-btn video-btn-primary"
+                        style={{ marginTop: 8, width: '100%' }}
+                        onClick={() => void exportTrimmedClip()}
+                        disabled={trimExporting || trimEnd <= trimStart}
+                      >
+                        <Download size={14} /> {trimExporting ? t('video.trim.exporting') : t('video.trim.export')}
+                      </button>
+                    </>
+                  )}
+                </section>
+              )}
+            </>
           )}
 
           {/* Filters apply to every mode — collapsed by default so they don't crowd the preview */}
