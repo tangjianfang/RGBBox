@@ -4350,3 +4350,329 @@ input:not([type]):focus {
   max-width: 140px;
 }
 
+
+/* ── Architecture 3D visualization view ──────────────────────────────────── */
+
+.arch-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #0F172A;
+  user-select: none;
+}
+
+.arch-mount {
+  position: absolute;
+  inset: 0;
+}
+
+/* ── HTML label overlay ─────────────────────────────────────────────────── */
+
+.arch-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.arch-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 11px;
+  font-weight: 400;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  letter-spacing: 0.2px;
+}
+
+/* ── Demo phase banner ──────────────────────────────────────────────────── */
+
+.arch-demo-banner {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 12px;
+  color: #c9e4ec;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  letter-spacing: 0.2px;
+}
+
+/* ── Info panel (slides in from right) ──────────────────────────────────── */
+
+.arch-info-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 280px;
+  background: rgba(13, 20, 34, 0.92);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  padding: 48px 20px 24px;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto;
+  pointer-events: none;
+}
+
+.arch-info-panel--open {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.arch-info-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  border-radius: 4px;
+  color: #8aa2ad;
+  cursor: pointer;
+  font-size: 14px;
+  height: 26px;
+  width: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.arch-info-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.arch-info-accent {
+  height: 3px;
+  border-radius: 2px;
+  margin-bottom: 14px;
+  opacity: 0.85;
+}
+
+.arch-info-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 14px;
+  line-height: 1.35;
+}
+
+.arch-info-list {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.arch-info-list li {
+  font-size: 12.5px;
+  color: #a8c0cc;
+  padding-left: 14px;
+  position: relative;
+  line-height: 1.45;
+}
+
+.arch-info-list li::before {
+  content: '›';
+  position: absolute;
+  left: 0;
+  color: #4a7a8a;
+}
+
+.arch-info-deps {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 14px;
+}
+
+.arch-info-deps-label {
+  font-size: 11px;
+  color: #6a8a96;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.arch-info-dep-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.arch-dep-chip {
+  background: transparent;
+  border: 1px solid var(--chip-color, #4a7a8a);
+  border-radius: 4px;
+  color: var(--chip-color, #4a7a8a);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 8px;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.arch-dep-chip:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.arch-info-index {
+  margin-top: 24px;
+  font-size: 11px;
+  color: #3a5a6a;
+  text-align: right;
+}
+
+/* ── Legend panel ───────────────────────────────────────────────────────── */
+
+.arch-legend {
+  position: absolute;
+  top: 50px;
+  left: 16px;
+  background: rgba(13, 20, 34, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 14px 16px;
+  backdrop-filter: blur(12px);
+  font-size: 12px;
+  color: #a8c0cc;
+  min-width: 200px;
+  max-height: calc(100% - 80px);
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+.arch-legend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #c9e4ec;
+}
+
+.arch-legend-header .arch-info-close {
+  position: static;
+}
+
+.arch-legend-sub {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #4a6a7a;
+  margin: 0 0 6px;
+}
+
+.arch-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.arch-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.arch-legend-line {
+  width: 22px;
+  height: 2px;
+  border-radius: 1px;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* ── Bottom-right controls ──────────────────────────────────────────────── */
+
+.arch-controls {
+  position: absolute;
+  bottom: 20px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.arch-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #8aa2ad;
+  cursor: pointer;
+  font-size: 15px;
+  height: 34px;
+  width: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.arch-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #c9e4ec;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.arch-btn--active {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: #06B6D4;
+  color: #06B6D4;
+}
+
+/* ── Keyboard hint ──────────────────────────────────────────────────────── */
+
+.arch-hint {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: rgba(138, 162, 173, 0.4);
+  pointer-events: none;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+/* ── Responsive adjustments ─────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .arch-info-panel {
+    width: 240px;
+  }
+}
+
+@media (max-width: 640px) {
+  .arch-info-panel {
+    width: 100%;
+    bottom: auto;
+    top: auto;
+    max-height: 55%;
+    bottom: 0;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .arch-info-panel--open {
+    transform: translateY(0);
+  }
+}

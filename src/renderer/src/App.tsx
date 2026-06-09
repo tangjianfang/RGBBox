@@ -1,4 +1,4 @@
-import { Activity, Box, Clock, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Mic, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload, Video } from 'lucide-react'
+import { Activity, Box, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Mic, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload, Video } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
@@ -13,6 +13,7 @@ import { CustomPaintEditor } from './components/CustomPaintEditor'
 import { ImagePaintEditor } from './components/ImagePaintEditor'
 import { PreviewGrid } from './components/PreviewGrid'
 import { Preview3D } from './components/Preview3D'
+import { ArchitectureView } from './components/ArchitectureView'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 import type { WorkerInput, WorkerOutput } from './workers/previewEngineWorker'
 import { useModelStore } from './3d/useModelStore'
@@ -22,7 +23,7 @@ import { MetricsCollector } from './engine/metricsCollector'
 const SplatViewer = lazy(() => import('./3d/SplatViewer').then((m) => ({ default: m.SplatViewer })))
 const LEDMapper   = lazy(() => import('./3d/LEDMapper').then((m) => ({ default: m.LEDMapper })))
 
-type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics' | 'model3d' | 'games' | 'audio' | 'video'
+type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics' | 'model3d' | 'games' | 'audio' | 'video' | 'architecture'
 
 type RandomizerMode = 'subtle' | 'bold' | 'calm' | 'energy'
 type ScheduleBlockId = 'day' | 'evening' | 'night'
@@ -1446,6 +1447,10 @@ export function App(): JSX.Element {
             <Box size={18} />
             {t('model3d.eyebrow')}
           </button>
+          <button className={`nav-item ${currentView === 'architecture' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('architecture')}>
+            <Cpu size={18} />
+            {t('nav.architecture')}
+          </button>
         </nav>
 
         <div className="sidebar-audio">
@@ -2437,6 +2442,10 @@ export function App(): JSX.Element {
               </div>
             )}
           </div>
+        )}
+
+        {currentView === 'architecture' && (
+          <ArchitectureView />
         )}
 
         {currentView === 'diagnostics' && (
