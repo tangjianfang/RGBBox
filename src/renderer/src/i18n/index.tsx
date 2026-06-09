@@ -576,6 +576,10 @@ const EN = {
   // Diagnostics extras
   'diag.audioBass': 'Active — Bass {bass}%',
   'diag.displayPrimary': '(primary)',
+  // Architecture 3D view
+  'nav.architecture': '3D Visual',
+  'arch.eyebrow': 'Tech Stack',
+  'arch.title': '3D Architecture',
 } as const
 
 export type TranslationKey = keyof typeof EN
@@ -1131,6 +1135,10 @@ const ZH: TranslationTable = {
   // 诊断补充
   'diag.audioBass': '已激活 — 低频 {bass}%',
   'diag.displayPrimary': '（主屏）',
+  // 架构 3D 视图
+  'nav.architecture': '3D 可视化',
+  'arch.eyebrow': '技术栈',
+  'arch.title': '3D 架构图',
 }
 
 export const translations: Record<Lang, TranslationTable> = { en: EN, zh: ZH }
