@@ -21,7 +21,8 @@
     "dist:mac": "npm version patch --no-git-tag-version && yarn build && electron-builder --mac",
     "dist:dir": "npm version patch --no-git-tag-version && yarn build && electron-builder --dir",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@mkkellogg/gaussian-splats-3d": "0.4.7",
@@ -33,13 +34,19 @@
     "three": "0.184.0"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
     "@types/node": "25.6.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/three": "0.184.1",
+    "@vitest/coverage-v8": "^4.1.7",
     "electron": "41.4.0",
     "electron-builder": "26.8.1",
     "electron-vite": "5.0.0",
+    "gl": "^8.1.6",
+    "happy-dom": "^15.11.7",
     "typescript": "6.0.3",
     "vite": "6.4.2",
     "vitest": "4.1.7"
@@ -109,5 +116,6 @@
       "icon": "build/icon.png",
       "category": "Utility"
     }
-  }
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

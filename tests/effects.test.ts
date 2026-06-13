@@ -153,9 +153,10 @@ describe('renderEffectPixel', () => {
 
   describe('all effects return valid RGB', () => {
     const effectKinds = [
-      'static', 'breathing', 'rainbow', 'wave', 'fire', 'starlight',
+      'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'fire', 'starlight',
       'ripple', 'spectrum', 'comet', 'lightning', 'aurora', 'explode',
-      'random-color', 'plasma', 'vortex', 'tunnel', 'crystal', 'glitch',
+      'audio-beat', 'audio-equalizer', 'random-color', 'custom-paint', 'image-paint',
+      'plasma', 'vortex', 'tunnel', 'crystal', 'glitch',
       'matrix-rain', 'neon-pulse', 'nebula', 'fluid-flow', 'mirror-symmetry',
       'dna-helix', 'black-hole', 'solar-system', 'spiral-galaxy', 'orion-nebula',
       'pulsar-beacon', 'hurricane-eye', 'lightning-leader', 'icosahedral-virus',
@@ -183,5 +184,73 @@ describe('renderEffectPixel', () => {
         expect(result.b).toBeLessThanOrEqual(255)
       })
     }
+  })
+
+  describe('newly covered effects (zone-gradient, audio-equalizer, custom-paint, image-paint)', () => {
+    it('zone-gradient produces colour weighted by zone position', () => {
+      const layer = makeLayer('zone-gradient', { from: '#ff0000', to: '#0000ff', angle: 90 })
+      // angle=90 = vertical: top of grid is "from", bottom is "to"
+      const top = renderEffectPixel(layer, makeContext({ x: 5, y: 0, columns: 10, rows: 10 }))
+      const bottom = renderEffectPixel(layer, makeContext({ x: 5, y: 9, columns: 10, rows: 10 }))
+      // Top should be more red, bottom should be more blue
+      expect(top.r).toBeGreaterThan(bottom.r)
+      expect(top.b).toBeLessThan(bottom.b)
+    })
+
+    it('audio-equalizer responds to bass/mid/high bands', () => {
+      const layer = makeLayer('audio-equalizer', {})
+      const quiet = renderEffectPixel(layer, makeContext({ _audioBass: 0, _audioMid: 0, _audioHigh: 0, y: 9 }))
+      const loud = renderEffectPixel(layer, makeContext({ _audioBass: 1, _audioMid: 1, _audioHigh: 1, y: 9 }))
+      // At least one channel should differ
+      const sameR = quiet.r === loud.r
+      const sameG = quiet.g === loud.g
+      const sameB = quiet.b === loud.b
+      expect(sameR && sameG && sameB).toBe(false)
+    })
+
+    it('custom-paint uses pixelData parameter', () => {
+      // pixelData is a flat 1D array of '#rrggbb' strings;
+      // renderEffectPixel looks up the index `y * columns + x`.
+      const pixelData = JSON.stringify([
+        '#000000', '#111111', '#00ff00', '#ff0000'
+      ])
+      const layer = makeLayer('custom-paint', { pixelData })
+      // y=1, columns=2, x=0 → idx = 1 * 2 + 0 = 2 → '#00ff00'
+      const result = renderEffectPixel(layer, makeContext({ x: 0, y: 1, columns: 2, rows: 2 }))
+      expect(result.g).toBe(255)
+      expect(result.r).toBe(0)
+      expect(result.b).toBe(0)
+    })
+
+    it('custom-paint returns black when index is out of range', () => {
+      const pixelData = JSON.stringify(['#ff0000'])
+      const layer = makeLayer('custom-paint', { pixelData })
+      // y=0, columns=1, x=0 → idx = 0 (in range)
+      const r0 = renderEffectPixel(layer, makeContext({ x: 0, y: 0, columns: 1, rows: 1 }))
+      expect(r0.r).toBe(255)
+      // y=0, columns=2, x=0 → idx = 0 (in range) but flat array of length 1 means idx=1 OOB
+      const r1 = renderEffectPixel(layer, makeContext({ x: 1, y: 0, columns: 2, rows: 1 }))
+      expect(r1.r).toBe(0)
+    })
+
+    it('custom-paint returns black when pixelData is missing', () => {
+      const layer = makeLayer('custom-paint', {})
+      const result = renderEffectPixel(layer, makeContext({ x: 0, y: 0, columns: 10, rows: 10 }))
+      expect(result.r).toBe(0)
+      expect(result.g).toBe(0)
+      expect(result.b).toBe(0)
+    })
+
+    it('image-paint returns a valid pixel (may use cached image sample)', () => {
+      const layer = makeLayer('image-paint', {})
+      const result = renderEffectPixel(layer, makeContext())
+      // Even without an image sample, the result should be valid RGB
+      expect(result.r).toBeGreaterThanOrEqual(0)
+      expect(result.r).toBeLessThanOrEqual(255)
+      expect(result.g).toBeGreaterThanOrEqual(0)
+      expect(result.g).toBeLessThanOrEqual(255)
+      expect(result.b).toBeGreaterThanOrEqual(0)
+      expect(result.b).toBeLessThanOrEqual(255)
+    })
   })
 })
