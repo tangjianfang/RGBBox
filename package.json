@@ -3,7 +3,7 @@
   "version": "0.3.9",
   "description": "Local-first desktop RGB lighting controller with multi-display screen sampling.",
   "author": "RGBBox Contributors",
-  "homepage": "https://github.com/tjf/RGBBox",
+  "homepage": "https://github.com/tangjianfang/RGBBox",
   "license": "MIT",
   "main": "./out/main/index.js",
   "type": "module",
