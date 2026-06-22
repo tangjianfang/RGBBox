@@ -399,6 +399,171 @@
 
 ---
 
+### R13. 开源推广就绪度（赛道 A：62 → 100）
+
+> 来源：2026-06-22 四轮评审讨论第 1 轮「开源推广就绪度评分与提升方案」。
+> 目标：把项目从「优秀代码」打磨成「任何人点进来都愿意 star / 下载 / 分享」的高质量开源形态。
+> **风险等级：混合**——A1/A3/A4/A5 为 **L0/L1**（纯文档 / CI / 元信息）；A2 截图需真机素材。
+> **现状证据**（2026-06-22 核实）：仓库 0 star / 0 fork / 0 issue；根目录**无 `LICENSE` 文件**（`package.json:7` 仅声明 MIT）；`package.json:6` homepage 指向错误的 `github.com/tjf/RGBBox`；`.github/workflows/` 只有 `pages.yml`（无 CI）；`docs/screenshots/` 仅 `.gitkeep`（空）；README 唯一图为灵感照；`docs/index.html` 无 `og:`/`twitter:`/`description`/favicon；唯一 release v0.3.8 正文仅 "Initial release."。
+
+- **R13.1** **合规与信任地基**（+8 → 70）：
+  - **R13.1.1** 根目录新增 `LICENSE`（MIT 全文，与 `package.json` 声明一致，署名 "RGBBox Contributors"）。
+  - **R13.1.2** 修正 `package.json` `homepage`：`https://github.com/tjf/RGBBox` → `https://github.com/tangjianfang/RGBBox`。
+  - **R13.1.3** 新增 `CONTRIBUTING.md`（开发环境 + `yarn dev/typecheck/build/test` + 单 PRD / R-N 工作流对外简版 + 提交格式 `[PRD-0002] <type>: <subject>`）。
+  - **R13.1.4** 新增 `CODE_OF_CONDUCT.md`（Contributor Covenant 标准模板）。
+  - **R13.1.5** 新增 `SECURITY.md`（漏洞上报流程，Electron 桌面应用安全联系方式）。
+  - **R13.1.6** 新增 `.github/ISSUE_TEMPLATE/`（bug_report + feature_request）+ `.github/PULL_REQUEST_TEMPLATE.md`。
+  - **R13.1.7** 新增 `.github/FUNDING.yml`（GitHub Sponsors / Open Collective 占位）。
+  - **R13.1.8** 开启 GitHub Discussions（仓库设置，非代码；文档中记录步骤）。
+- **R13.2** **首屏说服力：视觉证据**（+10 → 80，⚠️ 需真机素材）：
+  - **R13.2.1** 录制 10–20s 主视觉 GIF/MP4（多屏画布 + 火焰/星系/均衡器），放 README 顶部。**需用户真机录制**。
+  - **R13.2.2** 截 4–6 张分类图存 `docs/screenshots/`（主工作区 / 特效库 / 音频 Studio / 3D 高斯泼溅 / 多屏）。**需用户真机录制**。
+  - **R13.2.3** README 顶部加徽章（License / Release / 平台 Win·macOS / Electron / CI 状态）。
+  - **R13.2.4** README 信息架构前移：主视觉 → 一句话定位 → 下载按钮 → 截图画廊 → 特性 → 灵感故事（保留）→ 架构/开发。
+- **R13.3** **工程可信度：CI 自动化**（+6 → 86，**L2**：改 `.github/workflows`）：
+  - **R13.3.1** 新增 `.github/workflows/ci.yml`：push/PR 触发 `yarn install → typecheck → test → build`（matrix: ubuntu + windows + macos 可选）。
+  - **R13.3.2** README 挂 CI 状态徽章；可选 Codecov 覆盖率徽章（`test:coverage` 已就绪，见 R11.4）。
+  - **R13.3.3** 可选：tag push 触发 `electron-builder` 出包并自动附到 GitHub Release（独立子任务，可延后）。
+- **R13.4** **可发现性 / SEO / 分发**（+8 → 94）：
+  - **R13.4.1** `docs/index.html` 补 `<meta name="description">` + `og:title/description/image/url` + `twitter:card` + `canonical` + favicon/apple-touch-icon（`og:image` 复用 R13.2 主视觉）。
+  - **R13.4.2** GitHub 仓库补 Topics（electron / rgb-lighting / react / typescript / ambient-lighting / led / webgl / desktop-app / gaussian-splatting / audio-visualizer）+ description + website（指向 Pages）。**仓库设置，文档记录。**
+  - **R13.4.3** 分发渠道清单（**用户执行**）：awesome-electron PR / Product Hunt / Show HN / Reddit / V2EX / 少数派 / 演示视频。
+- **R13.5** **长期护城河**（+6 → 100）：
+  - **R13.5.1** 新增 `CHANGELOG.md`（从 v0.3.8 起规范化，配合 `predist` 自动 patch）。
+  - **R13.5.2** 完善 v0.3.8 Release 描述（功能亮点 + 截图 + 安装说明）。**仓库设置，文档记录。**
+  - **R13.5.3** 新增文档保持中英双语对齐（README/落地页已双语，CONTRIBUTING 等英文优先 + 关键中文）。
+- **R13.6** **受本 R-N 影响的文件**：
+  - 新增：`LICENSE` / `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` / `SECURITY.md` / `CHANGELOG.md` / `.github/FUNDING.yml` / `.github/PULL_REQUEST_TEMPLATE.md` / `.github/ISSUE_TEMPLATE/*` / `.github/workflows/ci.yml` / `docs/screenshots/*`（素材）
+  - 修改：`package.json`（仅 `homepage` 字段；**不动 scripts/deps**）/ `README.md` / `docs/index.html`
+  - 业务代码（`src/`）：**0 diff**
+- **R13.7** **验收点**：
+  - [ ] `LICENSE` 存在且为 MIT；`package.json` homepage 指向 `tangjianfang/RGBBox`
+  - [ ] 4 个社区文件 + Issue/PR 模板存在，GitHub 显示 community 完整度提升
+  - [ ] `ci.yml` 在 PR 上跑通 typecheck/test/build（绿勾）
+  - [ ] `docs/index.html` 含 og/twitter/description/favicon；分享有缩略图
+  - [ ] README 顶部有徽章 + 截图画廊 + 下载入口
+- **R13.8** **状态**: ⏳
+
+### R14. 产品功能竞争力（赛道 B：88 → 100）
+
+> 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
+> 目标：从「优秀的灯效可视化引擎」升级为「真正的 RGB 控制器 + 无人能及的 AI 灯效引擎」。
+> **风险等级：L2**（engine 逻辑 / 新增 main 输出层 / 新增依赖 / 跨多文件架构）。**必须走标准四步，分阶段独立审批。**
+> **现状证据**（2026-06-22 核实）：`grep` 确认 `src/` 内**无任何 UDP/串口/WebSocket 真实出光**（`dgram`/`SerialPort`/`net.Socket` 均无命中）——当前是纯虚拟预览；但 `ProfileManager.tsx` 已有 `exportProfileDialog` + Upload/Download（R4.10），预设导入导出基础已存在。
+
+- **R14.1** **真实硬件输出适配器**（+6，最关键的产品定义补全；**每个适配器独立子 R-N**）：
+  - **R14.1.1** 新建 `src/main/outputs/` 输出抽象层（统一 `IOutputAdapter` 接口：`connect` / `pushFrame(buffer)` / `dispose`）。
+  - **R14.1.2** WLED 适配器（UDP DDP / WARLS 协议，免硬件即可被海量 WLED 用户验证）。**首发优先，最简单。**
+  - **R14.1.3** OpenRGB 适配器（SDK over TCP，覆盖键鼠/主板/灯带生态）。
+  - **R14.1.4** 把现有 50 个特效逐帧 LED 缓冲（`previewEngine` 已产出，R3.3）接到输出层；预览与真机同源。
+  - **R14.1.5** 设备发现 / 灯珠映射 UI（复用 `DisplayMap` / `LEDMapper` 思路，R4.x / R6）。
+  - **R14.1.6** 新增 IPC 通道（`rgbbox:output:*`）+ preload 桥（遵守 R5.1 白名单）+ 对应测试。
+- **R14.2** **效果创作工具化：图层 + 时间线**（+3）：
+  - **R14.2.1** 引入「效果图层」模型：多效果叠加 + 混合模式（add/screen/multiply）+ 按区域分配。
+  - **R14.2.2** 可选时间线 / 关键帧编排（场景切换、循环）。
+- **R14.3** **效果市场 / 预设生态**（+2，**复用已有能力**）：
+  - **R14.3.1** 扩展 `ProfileManager` 的导出（R4.10）为标准 `.rgbbox` 预设格式 + 版本号 + 一键导入。
+  - **R14.3.2** 社区预设库（GitHub 仓库 / Discussions 置顶 / Pages 画廊），形成「下载别人灯效」自传播闭环。
+- **R14.4** **AI 生成灯效**（+1，但这是差异化王牌，符合用户「结合 AI 做前沿」偏好）：
+  - **R14.4.1** 「文本 / 音乐 → 效果参数」AI 生成：prompt 或一段音乐自动产出特效配置（结合已集成的高斯泼溅 3D + GPU 管线 R2/R3.4）。
+  - **R14.4.2** 本地优先策略：可接本地小模型或可选云端，守 local-first 隐私承诺。
+- **R14.5** **联动触发**（补完体验）：
+  - **R14.5.1** 热键 / 系统事件 / CPU·GPU 温度 / 时间表触发灯效切换。
+- **R14.6** **受本 R-N 影响的文件**：
+  - 新增：`src/main/outputs/**`（抽象层 + WLED + OpenRGB）/ AI 生成模块 / 图层引擎模块 / 对应 `tests/**`
+  - 修改：`src/shared/ipc.ts`（新增 `rgbbox:output:*`）/ `src/preload/index.ts`（桥）/ `src/engine/previewEngine.ts`（图层）/ `src/renderer/src/App.tsx`（UI）/ `ProfileManager.tsx`（预设格式）/ `package.json`（新增 deps，**需独立审批**）
+  - 业务代码：**大量 diff**——必须分阶段、每阶段独立 R-N 审批。
+- **R14.7** **验收点**（分阶段）：
+  - [ ] 阶段1 WLED：能向真实/模拟 WLED 设备推送 50 个特效的帧，预览与设备同步
+  - [ ] 阶段2 OpenRGB：能枚举并驱动 OpenRGB 设备
+  - [ ] 阶段3 图层/时间线：多效果叠加 + 混合模式可用
+  - [ ] 阶段4 预设市场：`.rgbbox` 导入导出往返一致 + 社区库可下载
+  - [ ] 阶段5 AI 生成：prompt/音乐可生成可用特效配置
+- **R14.8** **状态**: ⏳
+
+### R15. 产品视觉竞争力（赛道 C：82 → 100）
+
+> 来源：四轮评审第 2 轮「视觉评价」+ 第 3 轮合并方案。
+> 目标：从「能用的好看」升级为「成体系的好看」——设计系统化、可换肤、有品牌识别。
+> **风险等级：L1/L2**——C1 设计令牌抽取（纯 CSS，行为不变，L1）；主题切换 / 组件库重构（涉及 UI 用户可见行为，L2）。**纯前端，风险可控。**
+> **现状证据**（2026-06-22 核实）：`src/renderer/src/styles.css` 4678 行、**零 CSS 自定义属性**（`grep -c "^\s*--"` = 0），颜色全硬编码（`#0f1418` / `#e6edf0` 散落 `:root`）；无 `data-theme` / `prefers-color-scheme`（无亮色模式 / 无换肤）；图标用通用 `lucide-react`（无品牌记忆点）；`body { min-width: 960px }` 硬下限；73 处 transition/animation/keyframes（动效基础好）。
+
+- **R15.1** **设计系统：CSS 设计令牌**（+7，视觉规模化根基；**L1**）：
+  - **R15.1.1** 把 `styles.css` 硬编码颜色/间距/圆角/阴影抽成 `:root` 设计令牌（`--color-*` / `--space-*` / `--radius-*` / `--shadow-*` / `--font-*`）。
+  - **R15.1.2** 分模块拆分 CSS（按 9 大 view，告别 4678 行单文件巨石）。
+  - **R15.1.3** 抽取过程**逐项验证视觉零回归**（截图对比 / 人工确认），行为不变。
+- **R15.2** **主题切换 + 亮色模式**（+4，**L2**）：
+  - **R15.2.1** 基于 R15.1 令牌实现 light/dark 切换 + `prefers-color-scheme` 跟随系统。
+  - **R15.2.2** 可选多套预设皮肤（霓虹 / 赛博 / 极简），主题状态持久化到 profile。
+- **R15.3** **品牌识别系统**（+4，**L1/L2**）：
+  - **R15.3.1** 统一 Logo + 品牌色板 + 图标语言（现 `lucide-react` 通用图标无记忆点）。
+  - **R15.3.2** 启动动效 / 关于页 / 加载态统一品牌签名。
+- **R15.4** **组件库统一 9 大 view**（+2，**L2**）：
+  - **R15.4.1** 抽出共享 UI 原子组件（Button/Card/Slider/Tabs/Panel），消除 `AudioStudioView.tsx`(2532 行)/`App.tsx`(2491 行) 等巨型组件间的间距/圆角/按钮漂移。
+- **R15.5** **响应式与窗口自适应**（+1，**L2**）：
+  - **R15.5.1** 优化 `body { min-width: 960px }` 硬下限下的小窗口体验；关键面板支持折叠/自适应。
+- **R15.6** **受本 R-N 影响的文件**：
+  - 修改：`src/renderer/src/styles.css`（令牌化 + 拆分）/ `src/renderer/src/App.tsx` + 各 `components/*.tsx`（消费令牌 + 主题切换 + 共享组件）/ `build/icon.*`（品牌）
+  - 新增：`src/renderer/src/styles/tokens.css` + `src/renderer/src/components/ui/*`（原子组件）
+  - 业务逻辑（engine/main/preload）：**0 diff**（仅视觉层）
+- **R15.7** **验收点**：
+  - [ ] `styles.css` 颜色/间距/圆角全部走 `--*` 令牌；视觉零回归
+  - [ ] light/dark 可切换 + 跟随系统；状态持久化
+  - [ ] 统一品牌 Logo / 色板上线
+  - [ ] 9 大 view 共用原子组件，视觉一致
+  - [ ] `yarn typecheck` + `yarn build` 通过
+- **R15.8** **状态**: ⏳
+
+### R16. 竞争力 & 影响力扩展维度（D–L）
+
+> 来源：四轮评审第 4 轮「其它维度提升整体竞争力和影响力」。
+> 目标：在 A/B/C 把产品做到 100 分之上，放大成「有行业影响力的开源项目」。
+> **风险等级：混合**——逐子项标注。**每个子项落地前独立确认风险级别。**
+> **现状证据**（2026-06-22 核实）：`package.json` 构建**仅 x64**（`win.arch=[x64]` / `mac.arch=[x64]`，无 arm64 → 排斥 Apple Silicon）；全 app 仅 ~52 个 `aria-`/`role`（无障碍薄弱）；i18n 仅 `zh`/`en`（`src/renderer/src/i18n/index.tsx:3`）；**无插件/扩展 SDK**（grep "plugin" 命中仅 ArchitectureView 文案）；`metricsCollector.ts` 已有 180 帧 metrics 基础（R6.12）。
+
+- **R16.1** **D 平台与架构覆盖**（影响力 ★★★★★；**L2** 改 `package.json` build）：
+  - **R16.1.1** mac 补 **arm64 / universal** 产物（修复放弃 Apple Silicon 用户的最大漏洞）；Windows ARM 评估。
+  - **R16.1.2** Linux 补 Flatpak / AUR 提升触达（已有 AppImage/deb，R9.2）。
+  - **R16.1.3** 评估 **Web/WASM 预览 Demo**（纯 TS 引擎 `src/engine/*` 无 Node 依赖，可编译成网页「打开即玩」零安装传播）。
+- **R16.2** **E 性能数字证据**（★★★★；**L1**，复用 R6.12）：
+  - **R16.2.1** FPS/CPU/GPU/内存可见性能面板 + README 真实数字背书（如「60fps @ 8 屏 1000 灯珠」）。
+  - **R16.2.2** 性能回归基准（接入 CI，防 PR 拖慢渲染）。
+- **R16.3** **F 插件 / 效果 SDK**（生态杠杆 ★★★★★；**L2**）：
+  - **R16.3.1** 设计效果插件 SDK（第三方用 TS 写自定义特效 + 热加载），让社区帮写效果。
+  - **R16.3.2** 效果模板仓库 + 文档 + 示例；与 R14.3 预设市场打通。
+- **R16.4** **G 无障碍 + i18n + 光敏安全**（受众宽度 ★★★；**L2**）：
+  - **R16.4.1** A11y 补强：键盘可达 / 焦点管理 / 屏幕阅读器标签 / 对比度 WCAG AA（现仅 ~52 aria）。
+  - **R16.4.2** i18n 扩语（现 zh/en，低成本加日/韩/德/西，架构 R6.11 已就绪）。
+  - **R16.4.3** **光敏癫痫安全开关**（glitch/lightning/strobe 强闪烁加「减少闪烁」选项）——伦理+法律护城河，差异化卖点。
+- **R16.5** **H 质量与安全硬资质**（信任 ★★★★；**L0/L2**）：
+  - **R16.5.1** 测试覆盖率公开徽章（`test:coverage` 已就绪 R11.4）。
+  - **R16.5.2** Electron 安全基线审计清单（CSP / contextIsolation / nodeIntegration / `setPermissionRequestHandler` 最小化，R5.1 已有基础）。
+  - **R16.5.3** 接入 CodeQL / Dependabot / OpenSSF Scorecard（拿安全可信徽章）。
+  - **R16.5.4** 供应链：lockfile 审计 + SBOM 生成。
+- **R16.6** **I 文档与开发者体验**（留存贡献者 ★★★；**L0**）：
+  - **R16.6.1** 文档站点（VitePress/Docusaurus）：用户手册 + 效果图鉴 + 架构文档 + SDK 文档。
+  - **R16.6.2** 交互式效果图鉴（每个特效配 GIF + 参数 + 在线预览，既文档又营销）。
+  - **R16.6.3** 一键开发环境（devcontainer / Codespaces）。
+- **R16.7** **J 数据驱动与隐私**（迭代方向盘 ★★★；**L2**）：
+  - **R16.7.1** 本地优先匿名遥测（可选开关，守 local-first）。
+  - **R16.7.2** 崩溃上报（用户同意，复用文件日志 R7.3 导出诊断包）。
+- **R16.8** **K 商业化与可持续**（影响力燃料 ★★；**L0/规划**）：
+  - **R16.8.1** 赞助通道（GitHub Sponsors / Open Collective / `FUNDING.yml`，与 R13.1.7 合并）。
+  - **R16.8.2** 双轨探索（核心 MIT 开源 + 可选 Pro：云同步 / AI 额度 / 企业多机管理）。
+  - **R16.8.3** 硬件/品牌联名（WLED / 灯带厂 / 键盘厂）。
+- **R16.9** **L 社区运营与内容**（影响力复利 ★★★★；**L0/运营**）：
+  - **R16.9.1** 内容飞轮（效果挑战赛 / 用户作品集 / 技术博客——高斯泼溅+RGB 跨界故事）。
+  - **R16.9.2** **应用内「导出灯效为 GIF/视频」按钮**（用户自发传播，反哺 R13.2 素材荒）。**L2，最高杠杆低成本项。**
+  - **R16.9.3** 路线图公开 + good-first-issue 标签 + 贡献者墙。
+- **R16.10** **受本 R-N 影响的文件**：按子项分散——`package.json`（build/arm64）/ 新增 SDK 模块 / 新增遥测模块 / `src/renderer/src/i18n/` / `.github/workflows/`（CodeQL）/ 文档站新仓或 `docs/` / `src/renderer/src/App.tsx`（A11y + 录制按钮）等。**每子项独立 R-N 审批。**
+- **R16.11** **三个最高杠杆点**（建议优先）：
+  - [ ] R16.1（arm64 + Web Demo）打开受众
+  - [ ] R16.3（插件 SDK）让社区造内容
+  - [ ] R14.4 ×（AI 生成灯效）建立差异化
+- **R16.12** **状态**: ⏳
+
+---
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |
@@ -480,3 +645,4 @@
 | 2026-06-12 | 用户批准 R12 + auto L1 模式启动；状态 ⏳ → 🔄 | mike |
 | 2026-06-12 | 实施 R12：装 5 个 devDep、setup.ts + 环境分流、写 18 个新测试、395/395 通过、coverage 79.75/65.02/65.23/77.12% | Claude |
 | 2026-06-12 | 状态 🔄 → ✅；§6 R12 自检全部通过；待用户验收 | Claude |
+| 2026-06-22 | 追加 R13–R16（四轮评审：推广就绪度 A / 功能力 B / 视觉力 C / 影响力维度 D–L）；状态全部 ⏳；配套 `docs/prd/TASKS-claude-execution.md` 执行清单 | mike / Claude |
