@@ -1,11 +1,12 @@
 import { Activity, Box, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Mic, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload, Video } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
-import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame, Scene } from '../../shared/types'
+import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame, Scene, VideoWallLayout } from '../../shared/types'
 import { is3DEffect } from '../../shared/types'
 import { extractWallPanelFrame } from '../../engine/videoWallFrame'
 import { useI18n } from './i18n'
 import { DisplayMap } from './components/DisplayMap'
+import { VideoWallEditor } from './components/VideoWallEditor'
 import { EffectsView } from './components/EffectsView'
 import { MiniGamesView } from './components/MiniGamesView'
 import { AudioStudioView } from './components/AudioStudioView'
@@ -1236,6 +1237,19 @@ export function App(): JSX.Element {
     })
   }, [])
 
+  const updateVideoWall = useCallback((layout: VideoWallLayout | undefined) => {
+    setProfile((cur) => {
+      if (!cur) return cur
+      const sceneId = (cur.scenes.find((s) => s.id === cur.activeSceneId) ?? cur.scenes[0]).id
+      return {
+        ...cur,
+        scenes: cur.scenes.map((s) =>
+          s.id !== sceneId ? s : { ...s, videoWall: layout }
+        )
+      }
+    })
+  }, [])
+
   const addLayer = useCallback((kind: EffectKind) => {
     const preset = effectPresets.find((p) => p.kind === kind) ?? effectPresets[0]
     _layerCounter += 1
@@ -2229,6 +2243,13 @@ export function App(): JSX.Element {
                         <span className="linked-hint">{t('scene.linkedDisplays.hint')}</span>
                       )}
                     </div>
+                  )}
+                  {topology.displays.length > 1 && (
+                    <VideoWallEditor
+                      layout={scene?.videoWall}
+                      topology={topology}
+                      onChange={updateVideoWall}
+                    />
                   )}
                 </section>
 
