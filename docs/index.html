@@ -834,12 +834,110 @@
 
     footer .sep { opacity: 0.4; }
 
+    /* ── Video wall section ── */
+    .vw-layout {
+      display: grid;
+      gap: 2rem;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      align-items: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .vw-diagram {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+    }
+
+    .vw-wall {
+      aspect-ratio: 16 / 9;
+      background:
+        linear-gradient(135deg, rgba(99,102,241,0.30), rgba(6,182,212,0.30) 50%, rgba(16,185,129,0.30));
+      border-radius: 10px;
+      display: grid;
+      gap: 6px;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      padding: 6px;
+    }
+
+    .vw-panel {
+      align-items: center;
+      background: rgba(10, 15, 26, 0.55);
+      border: 1px solid rgba(99, 102, 241, 0.45);
+      border-radius: 4px;
+      color: var(--text-dim);
+      display: flex;
+      font-size: 0.7rem;
+      font-weight: 700;
+      justify-content: center;
+      letter-spacing: 0.04em;
+    }
+
+    .vw-diagram-caption {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin-top: 1rem;
+      text-align: center;
+    }
+
+    .vw-points { display: grid; gap: 1rem; }
+
+    .vw-point {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--primary);
+      border-radius: 12px;
+      padding: 1.1rem 1.25rem;
+    }
+
+    .vw-point h4 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+    }
+
+    .vw-point p {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      margin: 0;
+    }
+
+    .vw-usecases {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .vw-usecase {
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+
+    .vw-usecase .vw-usecase-icon { font-size: 1.5rem; }
+
+    .vw-usecase h4 {
+      font-size: 0.98rem;
+      font-weight: 700;
+      margin: 0.6rem 0 0.3rem;
+    }
+
+    .vw-usecase p {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin: 0;
+    }
+
     /* ── Responsive ── */
     @media (max-width: 768px) {
       .topbar-nav { display: none; }
       .hero h1 { font-size: 2.5rem; }
       .features-grid, .demo-grid, .effects-grid { grid-template-columns: 1fr; }
       .hero-stats { gap: 1.5rem; }
+      .vw-layout { grid-template-columns: 1fr; }
     }
 
     /* ── i18n hidden/shown ── */
@@ -1620,6 +1718,7 @@
     </a>
     <ul class="topbar-nav">
       <li><a href="#features" class="zh">功能特性</a><a href="#features" class="en">Features</a></li>
+      <li><a href="#videowall" class="zh">视频墙</a><a href="#videowall" class="en">Video Wall</a></li>
       <li><a href="#effects" class="zh">特效库</a><a href="#effects" class="en">Effects</a></li>
       <li><a href="#demo" class="zh">效果预览</a><a href="#demo" class="en">Preview</a></li>
       <li><a href="#tech" class="zh">技术栈</a><a href="#tech" class="en">Tech Stack</a></li>
@@ -1779,6 +1878,91 @@
       </div>
     </div>
   </section>
+
+  <!-- Video wall / multi-display virtual canvas -->
+  <div class="section-full section-alt" id="videowall">
+    <div class="section-inner">
+      <div class="section-title">
+        <p class="eyebrow zh">重点功能</p>
+        <p class="eyebrow en">Spotlight</p>
+        <h2>🧩 <span class="zh">多屏虚拟画布 &amp; 视频墙拼接</span><span class="en">Multi-display Virtual Canvas &amp; Video Wall</span></h2>
+        <p class="zh">把任意数量的屏幕拼成一块连续的虚拟画布——2D 矩阵拼接、拼缝补偿、角度旋转与同步，一张图无缝铺满整面墙。</p>
+        <p class="en">Stitch any number of screens into one continuous virtual canvas — 2D matrix tiling, bezel correction, angled rotation and sync, so a single image flows seamlessly across the whole wall.</p>
+      </div>
+
+      <div class="vw-layout">
+        <div class="vw-diagram">
+          <div class="vw-wall" aria-hidden="true">
+            <div class="vw-panel">R1C1</div>
+            <div class="vw-panel">R1C2</div>
+            <div class="vw-panel">R1C3</div>
+            <div class="vw-panel">R1C4</div>
+            <div class="vw-panel">R2C1</div>
+            <div class="vw-panel">R2C2</div>
+            <div class="vw-panel">R2C3</div>
+            <div class="vw-panel">R2C4</div>
+          </div>
+          <p class="vw-diagram-caption zh">示例：2 行 × 4 列矩阵，8 块面板共享一张虚拟画布</p>
+          <p class="vw-diagram-caption en">Example: a 2-row × 4-column matrix — 8 panels sharing one virtual canvas</p>
+        </div>
+
+        <div class="vw-points">
+          <div class="vw-point">
+            <h4 class="zh">📐 2D 矩阵拼接</h4><h4 class="en">📐 2D Matrix Tiling</h4>
+            <p class="zh">按"行 × 列"把面板排成矩阵，引擎自动计算每块面板对应虚拟画布的采样区域，整幅画面行列对齐、连续无错位。</p>
+            <p class="en">Arrange panels in a rows × columns matrix; the engine computes each panel's sampling region of the virtual canvas so the whole image stays row/column-aligned and continuous.</p>
+          </div>
+          <div class="vw-point">
+            <h4 class="zh">🪟 拼缝补偿（Bezel Correction）</h4><h4 class="en">🪟 Bezel Correction</h4>
+            <p class="zh">把屏幕边框当成"画面在后方继续"，让被边框遮挡的内容自动跳过——相邻面板边缘精准衔接，消除断层。</p>
+            <p class="en">Treats screen bezels as if the image continues behind them, skipping the hidden content so adjacent panel edges line up and seams disappear.</p>
+          </div>
+          <div class="vw-point">
+            <h4 class="zh">🔄 角度旋转 &amp; 3D 拼接</h4><h4 class="en">🔄 Angled Rotation &amp; 3D Stitching</h4>
+            <p class="zh">每块面板可独立设置 0°/90°/180°/270° 或任意角度旋转，支持竖屏、斜切、立体造型墙等创意拼接，画面映射依旧同步。</p>
+            <p class="en">Per-panel rotation at 0/90/180/270° or any angle supports portrait, tilted and sculptural "3D" wall layouts while content mapping stays in sync.</p>
+          </div>
+          <div class="vw-point">
+            <h4 class="zh">🖼️ 内容适配（Fit）</h4><h4 class="en">🖼️ Content Fit</h4>
+            <p class="zh">拉伸 / 包含 / 覆盖三种模式，按墙体宽高比智能裁切或留边，源画面与墙面比例不一致时也能正确铺排。</p>
+            <p class="en">Stretch / Contain / Cover modes crop or letterbox by the wall aspect ratio, so source content maps correctly even when its ratio differs from the wall.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top:1rem">
+        <p class="eyebrow zh">业务场景</p>
+        <p class="eyebrow en">Use Cases</p>
+        <h2 style="font-size:1.6rem">🏢 <span class="zh">直接用于大型显示业务</span><span class="en">Built for Large-display Business</span></h2>
+      </div>
+      <div class="vw-usecases">
+        <div class="vw-usecase">
+          <div class="vw-usecase-icon">🛍️</div>
+          <h4 class="zh">广告大屏</h4><h4 class="en">Advertising Walls</h4>
+          <p class="zh">商场、户外、地铁的多屏广告墙，一张创意素材跨多块屏连续播放。</p>
+          <p class="en">Mall, outdoor and transit ad walls — one creative spans many screens continuously.</p>
+        </div>
+        <div class="vw-usecase">
+          <div class="vw-usecase-icon">🎭</div>
+          <h4 class="zh">舞台 / 节目背景</h4><h4 class="en">Stage &amp; Show Backdrops</h4>
+          <p class="zh">演唱会、晚会、发布会的大型 LED 背景墙，特效与画面整墙同步律动。</p>
+          <p class="en">Concert, gala and launch LED backdrops with effects and visuals synced across the entire wall.</p>
+        </div>
+        <div class="vw-usecase">
+          <div class="vw-usecase-icon">🏢</div>
+          <h4 class="zh">展厅 / 数字标牌</h4><h4 class="en">Showrooms &amp; Signage</h4>
+          <p class="zh">企业展厅、展会、数字标牌的拼接屏，竖屏/异形拼接也能精准对齐。</p>
+          <p class="en">Showroom, expo and signage tiling — portrait and irregular layouts still align precisely.</p>
+        </div>
+        <div class="vw-usecase">
+          <div class="vw-usecase-icon">🖥️</div>
+          <h4 class="zh">监控 / 指挥中心</h4><h4 class="en">Control Rooms</h4>
+          <p class="zh">监控墙、指挥中心大屏，多屏统一画布便于整体可视化布局。</p>
+          <p class="en">Monitoring and command-center walls where a unified canvas eases whole-wall visualization.</p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Effect previews -->
   <div class="section-full section-alt" id="demo">

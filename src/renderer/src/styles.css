@@ -1043,6 +1043,155 @@ input:not([type]):focus {
   font-size: 11px;
 }
 
+/* ── Video wall editor ──────────────────────────────────────────────────── */
+
+.videowall-editor {
+  border-top: 1px solid rgba(94, 128, 145, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.videowall-head {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.videowall-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.videowall-hint {
+  color: #5e8091;
+  font-size: 11px;
+  margin: 0;
+}
+
+.videowall-dims {
+  display: flex;
+  gap: 12px;
+}
+
+.videowall-field {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.videowall-field span {
+  color: #9bb6c2;
+  font-size: 11px;
+}
+
+.videowall-field input {
+  background: rgba(15, 28, 36, 0.7);
+  border: 1px solid rgba(94, 128, 145, 0.3);
+  border-radius: 6px;
+  color: inherit;
+  padding: 4px 6px;
+  width: 56px;
+}
+
+.videowall-field-label {
+  color: #9bb6c2;
+  display: block;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.videowall-check {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  gap: 8px;
+}
+
+.videowall-fit-buttons,
+.videowall-rotation-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.videowall-grid-wrap {
+  margin-top: 4px;
+}
+
+.videowall-grid {
+  aspect-ratio: 16 / 9;
+  background: rgba(10, 20, 26, 0.6);
+  border: 1px solid rgba(94, 128, 145, 0.25);
+  border-radius: 8px;
+  position: relative;
+  width: 100%;
+}
+
+.videowall-cell {
+  align-items: center;
+  background: rgba(54, 200, 135, 0.12);
+  border: 1px solid rgba(94, 128, 145, 0.45);
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font-size: 10px;
+  gap: 2px;
+  justify-content: center;
+  position: absolute;
+}
+
+.videowall-cell.active {
+  background: rgba(54, 200, 135, 0.3);
+  border-color: #36c887;
+  box-shadow: 0 0 0 1px #36c887;
+}
+
+.videowall-cell-label {
+  font-weight: 600;
+}
+
+.videowall-cell-map {
+  color: #9bb6c2;
+}
+
+.videowall-panel-edit {
+  border: 1px solid rgba(94, 128, 145, 0.25);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+.videowall-rotation {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.videowall-rotation > span {
+  color: #9bb6c2;
+  font-size: 11px;
+}
+
+.videowall-summary {
+  color: #5e8091;
+  font-size: 11px;
+  margin: 0;
+}
+
 .audio-meter {
   background: linear-gradient(to top, #36c887 calc(var(--level, 0) * 100%), #1a3028 0);
   border-radius: 3px;

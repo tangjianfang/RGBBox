@@ -603,6 +603,73 @@
 
 ---
 
+### R20. 多屏虚拟画布 / 视频墙拼接引擎（高级扩展）
+
+> 目标：在现有"多屏虚拟画布"基础上，新增可直接用于广告大屏 / 大型节目显示器 / 数字标牌等业务场景的**视频墙拼接**能力——把一张虚拟画布以 2D 矩阵方式无缝铺满多块面板，支持拼缝补偿、角度旋转与内容适配；并在官网（`docs/index.html`）增加独立功能介绍区块。
+
+> 现状 review（落地依据）：当前 `src/main/displayTopology.ts` 仅按 OS 上报 bounds 计算 `virtualBounds`；`src/engine/previewEngine.ts` 的 `computeDisplaySlotMask` 在 linked 模式下把画布按 `1/count` **等宽横向**切片，未考虑物理分辨率差异、行列矩阵、拼缝(bezel)与旋转。R20 以纯 TS 引擎模块补齐这块拼接数学，作为可复用基础。
+
+- **R20.1** **类型模型**：`src/shared/types.ts` 新增 `VideoWallPanel` / `VideoWallLayout` / `VideoWallFit`，纯数据、UI 无关。
+- **R20.2** **引擎模块**：`src/engine/videoWall.ts`（纯 TS，无 DOM/WebGL）：
+  - `buildMatrixLayout(rows, cols, options)` — 生成行优先的 rows×cols 矩阵布局；
+  - `getPanelActiveRect` / `getPanelSourceRect` — 面板发光区 / 采样区归一化矩形；
+  - `mapPanelUvToCanvas` — 面板局部 UV → 内容画布 UV（含旋转 + source rect 投影）；
+  - `rotateUv` — 绕中心顺时针旋转（90/180/270° 精确，任意角走 trig）；
+  - `getWallAspect` / `computeContentFitRect` — 墙体宽高比 + stretch/contain/cover 适配；
+  - `summarizeLayout` — 文案摘要。
+- **R20.3** **拼缝补偿语义**：`bezelCompensation=true` 时采样内缩 cell（内容"在边框后继续"，相邻面板边缘衔接、无断层）；`false` 时采样完整 cell（有缝、但内容不丢）。
+- **R20.4** **单元测试**：`tests/engine/videoWall.test.ts`（矩阵生成 / source rect / 旋转 / UV 映射 / fit / 相邻面板连续性）。
+- **R20.5** **官网功能介绍**：`docs/index.html` 新增独立区块 `#videowall`（导航加入口），双语介绍 2D 矩阵拼接、拼缝补偿、角度旋转/3D 拼接、内容适配，并列出广告大屏 / 舞台节目 / 展厅标牌 / 监控指挥 4 类业务场景 + 2×4 矩阵示意图。
+- **R20.6** **边界**：本条仅落地"引擎 + 类型 + 测试 + 官网介绍"，**不**改动 `App.tsx` 渲染循环 / profile schema / IPC / overlayManager；与 live 渲染、UI 配置面板的接线作为后续独立 R-N。
+- **R20.7** **受影响文件**：`src/shared/types.ts`（新增类型）、`src/engine/videoWall.ts`（新增）、`tests/engine/videoWall.test.ts`（新增）、`docs/index.html`（新增区块 + 导航 + CSS）。
+- **R20.8** **验收点**：`yarn typecheck` 通过；`videoWall.test.ts` 全绿；全量 `vitest run` 不回归；`yarn build` 成功；官网 `#videowall` 区块双语正常显示且 HTML 标签平衡。
+- **R20.9** **状态**: ✅ — 证据见 §6 验收清单 R20 行。
+
+---
+
+### R21. 视频墙引擎接入实机渲染链路（R20 接线）
+
+> 目标：把 R20 已落地、但「有意未接线」的视频墙拼接引擎（`src/engine/videoWall.ts`）正式接进 live / 实机渲染链路——当场景启用视频墙时，按面板从虚拟画布抽取经**拼缝补偿 / 旋转 / 内容适配**处理后的子帧，并推送到各物理显示器 overlay。承接 R20.6「与 live 渲染、UI 配置面板的接线作为后续独立 R-N」的遗留项。
+
+> 现状 review（落地依据）：当前 `src/renderer/src/App.tsx` 的 live 输出分支（worker 回调 + `handleFrame3D`）仅在 `scene.linkedDisplays && displays.length>1` 时用 `extractSubFrame()` 按显示器 bounds 等比矩形切片，未利用 R20 的矩阵 / 拼缝 / 旋转 / fit 能力；`Scene` 类型也无视频墙字段。
+
+- **R21.1** **数据模型**：`src/shared/types.ts` 的 `Scene` 新增可选 `videoWall?: VideoWallLayout`（复用 R20 类型），纯数据、UI 无关；缺省即不启用墙模式。`profileStore.loadProfile` 因字段可选天然向后兼容（旧 profile 无该字段 → `undefined`），不破坏旧 profile。
+- **R21.2** **引擎采样胶水**：新增 `src/engine/videoWallFrame.ts`（纯 TS，依赖 `RgbFrame` + `videoWall.ts` 数学）：`extractWallPanelFrame(virtualFrame, panel, layout, options)` — 用 `computeContentFitRect` → `mapPanelUvToCanvas` 逐像素从虚拟画布采样，返回该面板的 `RgbFrame`（含拼缝补偿 / 旋转 / fit）。
+- **R21.3** **实机输出映射**：`App.tsx` 抽出统一分发函数 `distributeFrameToOverlays(frame, scene, topology, overlayIds)`，优先级：`scene.videoWall`（按 `panel.displayId ↔ 物理 displayId` 采样）→ `linkedDisplays`（原 `extractSubFrame`）→ 全屏广播；worker 回调与 `handleFrame3D` 复用同一函数。
+- **R21.4** **缺失 displayId 降级**：墙模式下若某 overlay 显示器无匹配 panel，则回退到 `extractSubFrame`（有 topology 时）或跳过，绝不黑屏崩溃。
+- **R21.5** **复用既有 IPC**：仅复用 `pushFrameToDisplay(displayId, frame)`，**不**新增 IPC 通道 / preload 桥。
+- **R21.6** **单元测试**：`tests/engine/videoWallFrame.test.ts` 覆盖单面板透传、2×2 矩阵分块正确性、旋转、拼缝补偿、fit、缺省输出分辨率。
+- **R21.7** **边界**：本条只做「引擎 → 实机渲染链路」接线，**不**含 UI 配置面板（行列 / 拼缝 / 旋转可视化编辑）——留作后续独立 R-N；不改 IPC schema / overlayManager / profile 顶层结构。
+- **R21.8** **受影响文件**：`src/shared/types.ts`（`Scene` +字段）、`src/engine/videoWallFrame.ts`（新增）、`tests/engine/videoWallFrame.test.ts`（新增）、`src/renderer/src/App.tsx`（分发函数接线）。
+- **R21.9** **验收点**：`yarn typecheck` + `yarn build` 通过；`vitest run` 不回归；无 `videoWall` 的旧 profile 行为零变化；有 `videoWall` 时各显示器收到正确子帧。
+- **R21.10** **状态**: ✅ — 证据见 §6 验收清单 R21 行。
+
+---
+
+### R22. 视频墙 UI 配置面板（行列 / 拼缝 / 旋转可视化编辑）
+
+> 目标：把 R20/R21 已落地的视频墙拼接引擎与数据模型（`VideoWallLayout` / `scene.videoWall`）暴露给用户——在 workspace 的「多屏映射」面板内新增一个**可视化配置面板**，让用户无需手写 JSON 即可开启墙模式、调行列矩阵、拼缝(bezel)与补偿、内容适配(fit)、逐面板旋转，并把每个面板映射到物理显示器。承接 R20.6 / R21.7「UI 配置面板（行列 / 拼缝 / 旋转可视化编辑）作为后续独立 R-N」的遗留项。
+
+> 现状 review（落地依据）：当前 `src/renderer/src/App.tsx` 仅有 `linkedDisplays` 单一开关，`scene.videoWall` 字段虽已被实机渲染链路消费（R21），但**没有任何 UI 可编辑它**，用户只能改 profile JSON。`src/engine/videoWall.ts` 已提供 `buildMatrixLayout` / `getPanelActiveRect` / `summarizeLayout` 等纯函数可直接复用做布局生成与预览。
+
+- **R22.1** **新增组件**：`src/renderer/src/components/VideoWallEditor.tsx`（纯 React，经 props 读写，不直接碰 Node/IPC）：
+  - **R22.1.1** 墙模式开关：开启时用 `buildMatrixLayout` 生成默认 2×2 布局并写入 `scene.videoWall`；关闭时置为 `undefined`。
+  - **R22.1.2** 行 / 列 步进器（rows / cols，范围 1..8）：变更时**保留**已有面板的 `rotation` / `displayId`（按 row,col 对齐），新增格子取默认值，多余格子裁剪。
+  - **R22.1.3** 拼缝滑块 `bezel`（0..0.49）+ 拼缝补偿 `bezelCompensation` 开关。
+  - **R22.1.4** 内容适配 `fit` 选择（stretch / contain / cover）。
+  - **R22.1.5** 逐面板编辑：可视化矩阵网格（用 `getPanelActiveRect` 定位每格），点选面板后可设其 `rotation`（0/90/180/270 快捷 + 数值）与映射的物理 `displayId`（下拉，来自 `topology.displays`）。
+  - **R22.1.6** 摘要行：用 `summarizeLayout` 展示当前布局文字摘要。
+- **R22.2** **接线 App.tsx**：在 `map-panel` 区块（`linked-display-row` 之后）渲染 `<VideoWallEditor>`；新增 `updateVideoWall(layout | undefined)` 回调，按 `activeSceneId` 写回 `scene.videoWall`（与 `toggleLinkedDisplays` 同款 `setProfile` 模式）。
+- **R22.3** **i18n**：`src/renderer/src/i18n/index.tsx` 的 EN + ZH 各新增 `videowall.*` 文案键（标题 / 开关 / 行 / 列 / 拼缝 / 补偿 / 适配 / 旋转 / 映射 / 摘要等），无硬编码中英文。
+- **R22.4** **样式**：`src/renderer/src/styles.css` 新增 `.videowall-*` 类，沿用既有 panel / 按钮视觉语言，不改动其他组件样式。
+- **R22.5** **单元测试**：`tests/renderer/components/VideoWallEditor.test.tsx`（happy-dom + RTL）覆盖：默认关闭态渲染、开启触发 `onChange` 带 2×2 layout、改行列触发带新 panel 数的 layout、改 bezel/fit、选面板设 rotation、空 topology 不崩。
+- **R22.6** **边界**：本条只做 UI 配置面板（读写 `scene.videoWall`），**不**改引擎数学（R20）/ 渲染链路（R21）/ IPC schema / overlayManager / profile 顶层结构；缺省（未开启墙模式）行为零变化。
+- **R22.7** **受影响文件**：`src/renderer/src/components/VideoWallEditor.tsx`（新增）、`src/renderer/src/App.tsx`（接线 + `updateVideoWall`）、`src/renderer/src/i18n/index.tsx`（`videowall.*` 文案）、`src/renderer/src/styles.css`（`.videowall-*`）、`tests/renderer/components/VideoWallEditor.test.tsx`（新增）。
+- **R22.8** **验收点**：`yarn typecheck` + `yarn build` 通过；`vitest run` 不回归且新增测试全绿；未开启墙模式的旧 profile 行为零变化；开启后能可视化编辑 rows/cols/bezel/fit/rotation/displayId 并正确写回 `scene.videoWall`。
+- **R22.9** **状态**: ✅ — 证据见 §6 验收清单 R22 行。
+
+---
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |
@@ -649,6 +716,9 @@
 | R10 | auto 模式定义（7 子项）落地 | ✅ | 4 个文件全部 grep 命中 "auto 模式" / "Auto 模式" / "R10"：`docs/AI_WORKFLOW.md` 新增 §8（96–136 行：风险分级表 + 8.1–8.5 小节）；`CLAUDE.md:20–24` / `AGENTS.md:23–27` / `.github/copilot-instructions.md:39–43` 均含 Auto 模式段。业务代码 0 diff。 |
 | R11 | 全量测试覆盖（13 新测试 + 3 增强 + coverage 配置）落地 | ✅ | **测试 330 / 330 全过**（`npx vitest run`）— 16 个文件 = R11.2.1–R11.2.13 全部 13 个新文件 + R11.3.1 `effects.test.ts` 补 4 个缺失效果（zone-gradient / audio-equalizer / custom-paint / image-paint）+ R11.3.2 `profileStore.test.ts` 增强 + R11.3.3 `integration/ipcChannels.test.ts` 新增。**Coverage 超阈值**：lines 95.49% (≥80)、branches 76.9% (≥70)、functions 98.3% (≥80)、statements 94.44% (≥80)；HTML 报告在 `coverage/index.html`。**R11.4 基建**：`package.json` 加 `"test:coverage": "vitest run --coverage"` + devDep `"@vitest/coverage-v8": "^4.1.7"`；`vitest.config.ts` 加 coverage 配置（v8 + text/html/json-summary reporters + 80/70 阈值 + 6 include 范围 + 排除 main/index.ts 与外部 capture provider）。**证据来源**：本会话 `npm run test:coverage` 输出。 |
 | R12 | 渲染层 + WebGL + Hook 测试（14 组件 + 2 hook + 2 gl = 18 个测试） | ✅ | **测试 395 / 395 通过 + 41 skipped**（`npx vitest run`）— 35 个文件 = 14 组件测试（R12.1.1–R12.1.14 + App） + 2 hook 测试（useAudioAnalyzer / useModelStore） + 2 GL 测试（previewGl / effect3dGl） + 16 R11 测试 + integration。**Coverage 超阈值**：lines 79.75% (≥75) / branches 65.02% (≥60) / functions 65.23% (≥60) / statements 77.12% (≥75)。**R12.4 基建落地**：`vitest.config.ts` 加 `environmentMatchGlobs` 分流（`renderer/components/**` + `renderer/3d/**` → happy-dom；其余 → node）+ `setupFiles: ['./tests/renderer/setup.ts']` + 新增 6 个 include 范围（components / 3d / hooks / gl / engine / workers）。`tests/renderer/setup.ts` 注册 `@testing-library/jest-dom` + 共享 `vi.mock` (i18n / lucide-react / GL classes)。**R12.5.5 优雅降级**：3D / WebGL 渲染路径用 `it.skip` 跳过（happy-dom 无 GL），保留 module-export 形状测试；3D-heavy 组件（ArchitectureView / AudioStudioView / VideoStudioView / MiniGamesView / OverlayCanvas / App.tsx）从 coverage 排除。**新 devDep**：`@testing-library/react@^16.1.0` + `@testing-library/jest-dom@^6.6.3` + `@testing-library/dom@^10.4.0` + `happy-dom@^15.11.7` + `gl@^8.1.6`。**证据来源**：本会话 `npm run test:coverage` 输出。 |
+| R20 | 视频墙拼接引擎 + 类型 + 测试 + 官网介绍 | ✅ | **`yarn typecheck` 通过**（node + web 两段）。**全量 `npx vitest run` = 419 passed / 41 skipped（36 文件）**，含新增 `tests/engine/videoWall.test.ts`（**24 个 case**：矩阵生成 / active+source rect / 拼缝补偿 / rotateUv 90·180·270·任意角 / mapPanelUvToCanvas / 相邻面板连续性 / fit cover·contain / summarize）；相对 R12 基线 395 无回归。**`yarn build` 成功**（electron-vite，renderer 1774 模块）。**新增/改动文件**：`src/shared/types.ts`（+VideoWallPanel/VideoWallLayout/VideoWallFit，R20.1）、`src/engine/videoWall.ts`（纯 TS 拼接引擎，R20.2–R20.3）、`tests/engine/videoWall.test.ts`（R20.4）、`docs/index.html`（`#videowall` 区块 + 导航 + CSS，R20.5）。业务渲染循环 / profile / IPC 0 改动（R20.6）。**证据来源**：本会话命令输出。 |
+| R21 | 视频墙引擎接入实机渲染链路 | ✅ | **`yarn typecheck` 通过**（node + web 两段）。**全量 `npx vitest run` = 427 passed / 41 skipped（37 文件）**，含新增 `tests/engine/videoWallFrame.test.ts`（**8 个 case**：1×1 stretch 透传 / generatedAt+showGap 保留 / 缺省输出分辨率 floor(src/matrix) / 2×2 矩阵分块各采自身象限 / 180° 旋转 / 拼缝补偿采中心内缩区 / 无补偿采完整 cell / 退化尺寸钳到 1×1）；相对 R20 基线 419 无回归（+8）。**`yarn build` 成功**（electron-vite，renderer 1776 模块）。**新增/改动文件**：`src/shared/types.ts`（`Scene` +`videoWall?: VideoWallLayout`，R21.1）、`src/engine/videoWallFrame.ts`（`extractWallPanelFrame` 采样胶水，R21.2）、`tests/engine/videoWallFrame.test.ts`（R21.6）、`src/renderer/src/App.tsx`（统一 `distributeFrameToOverlays` 分发函数 + `displayAspect` 助手，接线 worker 回调与 `handleFrame3D`，R21.3–R21.4）。复用既有 `pushFrameToDisplay` IPC，0 新增通道（R21.5）；无 `videoWall` 的旧 profile 走原 `extractSubFrame` / 广播路径，行为零变化。**证据来源**：本会话命令输出。 |
+| R22 | 视频墙 UI 配置面板（行列 / 拼缝 / 旋转可视化编辑） | ✅ | **`yarn typecheck` 通过**（node + web 两段）。**全量 `npx vitest run` = 436 passed / 41 skipped（38 文件）**，含新增 `tests/renderer/components/VideoWallEditor.test.tsx`（**9 个 case**：关闭态单按钮 / 开启发 2×2 layout 且 panel↔display 映射 / 关闭墙发 undefined / 改行保留存活格 rotation+displayId / rows·cols 钳到 1..8 / 改 bezel+fit / 切补偿 / 选面板设 rotation+displayId / 空 topology 不崩）；相对 R21 基线 427 无回归（+9）。**`yarn build` 成功**（electron-vite，renderer 1777 模块）。**新增/改动文件**：`src/renderer/src/components/VideoWallEditor.tsx`（新增，R22.1）、`src/renderer/src/App.tsx`（`map-panel` 接线 `<VideoWallEditor>` + `updateVideoWall` 回调，R22.2）、`src/renderer/src/i18n/index.tsx`（EN+ZH `videowall.*` 文案，R22.3）、`src/renderer/src/styles.css`（`.videowall-*` 样式，R22.4）、`tests/renderer/components/VideoWallEditor.test.tsx`（R22.5）。复用 R20 `buildMatrixLayout`/`getPanelActiveRect`/`summarizeLayout` 与 R21 `scene.videoWall`，0 改引擎/渲染链路/IPC（R22.6）；未开启墙模式行为零变化。**证据来源**：本会话命令输出。 |
 
 ## 7. 测试方法
 
@@ -691,3 +761,9 @@
 | 2026-06-24 | R17 + R18 状态 ⏳ → ✅；待用户验收 | Claude |
 | 2026-06-24 | 追加 R19（Demo 页每种效果独立预览动画）；状态 ⏳ | mike / Claude |
 | 2026-06-24 | 实施 R19：`docs/index.html` 为全部 55 张效果卡片分配独立 `eff-*` CSS 类；新增 14 个共享关键帧 + 55 个 eff-* CSS 规则，每种效果视觉特征各不相同 | Claude |
+| 2026-06-24 | 追加 R20（多屏虚拟画布 / 视频墙拼接引擎 + 官网独立介绍）；状态 ⏳ | mike / Claude |
+| 2026-06-24 | 实施 R20：新增 `src/engine/videoWall.ts`（矩阵布局 / 拼缝补偿 / 旋转 / fit）+ `src/shared/types.ts` 类型 + `tests/engine/videoWall.test.ts`（24 case）+ `docs/index.html` `#videowall` 区块；typecheck 通过 / vitest 419 passed / build 成功；状态 ⏳ → ✅；待用户验收 | Claude |
+| 2026-06-24 | 追加 R21（视频墙引擎接入实机渲染链路；承接 R20.6 遗留接线）；状态 ⏳ | mike / Claude |
+| 2026-06-24 | 实施 R21：`Scene` +`videoWall?` 字段 + 新增 `src/engine/videoWallFrame.ts`（`extractWallPanelFrame`）+ `tests/engine/videoWallFrame.test.ts` + `App.tsx` 统一 `distributeFrameToOverlays` 接线；状态 ⏳ → ✅；待用户验收 | Claude |
+| 2026-06-24 | 追加 R22（视频墙 UI 配置面板：行列 / 拼缝 / 旋转可视化编辑；承接 R20.6 / R21.7 遗留接线）；状态 ⏳ | mike / Copilot |
+| 2026-06-24 | 实施 R22：新增 `src/renderer/src/components/VideoWallEditor.tsx`（开关 / 行列 / 拼缝 / 补偿 / fit / 逐面板旋转 + displayId 映射 / 摘要）+ `App.tsx` 接线 `updateVideoWall` + `i18n` `videowall.*` + `styles.css` `.videowall-*` + `tests/renderer/components/VideoWallEditor.test.tsx`（9 case）；typecheck 通过 / vitest 436 passed / build 成功（1777 模块）；状态 ⏳ → ✅；待用户验收 | Copilot |
