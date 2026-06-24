@@ -28,8 +28,8 @@ function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite }: 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const W = 80
-    const H = 44
+    const W = 240
+    const H = 135
     canvas.width = W
     canvas.height = H
 
@@ -48,8 +48,8 @@ function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite }: 
       ctx.fillStyle = '#080d11'
       ctx.fillRect(0, 0, W, H)
 
-      const cols = 16
-      const rows = 9
+      const cols = 48
+      const rows = 27
       // Full-coverage: each cell = W/cols × H/rows
       const cw = W / cols
       const ch = H / rows
