@@ -1043,6 +1043,528 @@
       100% { transform: scaleX(0.75) translateX(-8%); opacity: 0.9; }
     }
 
+    /* ── Per-effect unique preview animations (R19) ── */
+
+    /* Shared new keyframes */
+    @keyframes breathe {
+      0%,100% { filter: brightness(0.6); }
+      50%     { filter: brightness(1.3); }
+    }
+    @keyframes hueRoll {
+      0%   { filter: hue-rotate(0deg); }
+      100% { filter: hue-rotate(360deg); }
+    }
+    @keyframes wavePan {
+      0%   { background-position: 0% 0%; }
+      100% { background-position: 200% 0%; }
+    }
+    @keyframes colorCycle {
+      0%   { background: #ff0040; }
+      17%  { background: #ff8000; }
+      33%  { background: #ffff00; }
+      50%  { background: #00ff80; }
+      67%  { background: #0080ff; }
+      83%  { background: #8000ff; }
+      100% { background: #ff0040; }
+    }
+    @keyframes cometAnim {
+      0%   { left: -70%; }
+      100% { left: 110%; }
+    }
+    @keyframes lightningFlash {
+      0%,89%,100% { opacity: 0.08; }
+      91%,95%     { opacity: 1; }
+      93%,97%     { opacity: 0.25; }
+    }
+    @keyframes radialBurst {
+      0%   { transform: scale(0.3); opacity: 1; }
+      100% { transform: scale(1.8); opacity: 0; }
+    }
+    @keyframes glitchStep {
+      0%,100% { transform: translate(0,0); clip-path: inset(0 0 95% 0); }
+      20%     { transform: translate(-4%,0); clip-path: inset(15% 0 60% 0); }
+      40%     { transform: translate(4%,0);  clip-path: inset(50% 0 25% 0); }
+      60%     { transform: translate(-2%,0); clip-path: inset(5% 0 70% 0); }
+      80%     { transform: translate(3%,0);  clip-path: inset(65% 0 10% 0); }
+    }
+    @keyframes matrixCol {
+      0%   { background-position: 0 -100%; }
+      100% { background-position: 0 200%; }
+    }
+    @keyframes pulsarSweep {
+      0%   { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes vortexSpin {
+      0%   { transform: rotate(0deg) scale(1); }
+      50%  { transform: rotate(180deg) scale(0.8); }
+      100% { transform: rotate(360deg) scale(1); }
+    }
+    @keyframes laserBeam {
+      0%   { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes torusSpin {
+      0%   { transform: rotate(0deg); filter: hue-rotate(0deg); }
+      100% { transform: rotate(360deg); filter: hue-rotate(120deg); }
+    }
+
+    /* ── Classic ── */
+    .eff-screen-ambient {
+      animation: classicShift 1.8s ease-in-out infinite alternate;
+      background: linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb77, #4d96ff, #c77dff);
+      background-size: 400% 400%;
+    }
+    .eff-static { background: #e86030; }
+    .eff-breathing {
+      animation: breathe 2s ease-in-out infinite;
+      background: linear-gradient(135deg, #4f46e5, #7c3aed, #2563eb);
+    }
+    .eff-rainbow {
+      animation: hueRoll 2s linear infinite;
+      background: linear-gradient(90deg, #ff0000, #ff8800, #ffff00, #00ff00, #0088ff, #8800ff, #ff0088);
+    }
+    .eff-wave {
+      animation: wavePan 2.5s linear infinite;
+      background: linear-gradient(90deg, #1e3a5f, #0ea5e9, #38bdf8, #7dd3fc, #0ea5e9, #1e3a5f);
+      background-size: 200% 100%;
+    }
+    .eff-zone {
+      background: linear-gradient(90deg, #ef4444 33%, #eab308 33% 66%, #22c55e 66%);
+    }
+    .eff-random {
+      animation: colorCycle 1.2s step-start infinite;
+      background: #ff0040;
+    }
+
+    /* ── Custom Paint ── */
+    .eff-custpaint { background: #0a0f1a; }
+    .eff-custpaint::before {
+      animation: paint1 2.5s ease-in-out infinite alternate;
+      background: linear-gradient(120deg, transparent, #ec4899 30%, #f59e0b 55%, #10b981 80%, transparent);
+      border-radius: 6px; content: '';
+      height: 30%; width: 100%; position: absolute; top: 30%; filter: blur(5px);
+    }
+    .eff-custpaint::after {
+      animation: paint2 3.5s ease-in-out infinite alternate-reverse;
+      background: linear-gradient(120deg, transparent, #6366f1 35%, #06b6d4 65%, transparent);
+      border-radius: 4px; content: '';
+      height: 20%; width: 100%; position: absolute; top: 58%; filter: blur(6px);
+    }
+    .eff-imgpaint {
+      animation: classicShift 5s ease-in-out infinite;
+      background:
+        repeating-linear-gradient(0deg, transparent, transparent 12%, rgba(0,0,0,0.2) 12%, rgba(0,0,0,0.2) 14%),
+        repeating-linear-gradient(90deg, transparent, transparent 12%, rgba(0,0,0,0.2) 12%, rgba(0,0,0,0.2) 14%),
+        linear-gradient(135deg, #e74c3c, #f39c12, #2ecc71, #3498db, #9b59b6);
+      background-size: auto, auto, 300% 300%;
+    }
+
+    /* ── Advanced ── */
+    .eff-fire { background: #0a0f1a; }
+    .eff-fire::before {
+      animation: advFire 1.4s ease-in-out infinite alternate;
+      background: radial-gradient(ellipse at 50% 100%, #ff4500 0%, #ff8c00 30%, #ffd700 55%, transparent 80%);
+      bottom: 0; content: ''; left: 0; right: 0; height: 90%; position: absolute;
+    }
+    .eff-aurora { background: #001a0a; }
+    .eff-aurora::before {
+      animation: auroraFlow 4s ease-in-out infinite alternate;
+      background: linear-gradient(180deg, transparent 0%, rgba(0,255,120,0.55) 40%, rgba(0,230,200,0.4) 65%, rgba(0,100,255,0.25) 85%, transparent 100%);
+      content: ''; position: absolute; inset: 0;
+    }
+    .eff-aurora::after {
+      animation: auroraFlow2 6s ease-in-out infinite alternate-reverse;
+      background: linear-gradient(175deg, transparent 20%, rgba(100,255,180,0.3) 50%, transparent 75%);
+      content: ''; position: absolute; inset: 0;
+    }
+    .eff-nebula {
+      animation: breathe 4s ease-in-out infinite;
+      background: radial-gradient(ellipse at 40% 40%, #7c3aed 0%, #4f1c92 30%, #1e0858 60%, #0d0318 100%);
+    }
+    .eff-fluid {
+      animation: wavePan 2.5s linear infinite;
+      background: linear-gradient(45deg, #0c4a6e, #0369a1, #38bdf8, #0ea5e9, #0c4a6e, #0369a1);
+      background-size: 200% 200%;
+    }
+    .eff-mirror {
+      animation: breathe 3s ease-in-out infinite;
+      background: linear-gradient(90deg, #7c3aed 0%, #ec4899 25%, #f59e0b 50%, #ec4899 75%, #7c3aed 100%);
+    }
+    .eff-starlight { background: #000810; }
+    .eff-starlight::before {
+      animation: breathe 3s ease-in-out infinite;
+      background: radial-gradient(circle at 15% 30%, rgba(255,255,255,0.9) 1px, transparent 2px),
+                  radial-gradient(circle at 40% 15%, rgba(255,255,200,0.8) 1px, transparent 2px),
+                  radial-gradient(circle at 70% 35%, rgba(255,255,255,0.95) 1.5px, transparent 3px),
+                  radial-gradient(circle at 85% 20%, rgba(200,220,255,0.8) 1px, transparent 2px),
+                  radial-gradient(circle at 55% 60%, rgba(255,255,255,0.7) 1px, transparent 2px),
+                  radial-gradient(circle at 25% 70%, rgba(255,255,200,0.9) 1.5px, transparent 3px),
+                  radial-gradient(circle at 90% 75%, rgba(255,255,255,0.8) 1px, transparent 2px),
+                  radial-gradient(circle at 10% 85%, rgba(200,220,255,0.7) 1px, transparent 2px),
+                  #000810;
+      content: ''; position: absolute; inset: 0;
+    }
+    .eff-ripple { background: #001025; }
+    .eff-ripple::before {
+      animation: rippleExpand 2s ease-out infinite;
+      border: 2px solid rgba(6,182,212,0.9); border-radius: 50%; content: '';
+      height: 40%; width: 40%; position: absolute; top: 30%; left: 30%;
+    }
+    .eff-ripple::after {
+      animation: rippleExpand 2s 0.75s ease-out infinite;
+      border: 2px solid rgba(6,182,212,0.5); border-radius: 50%; content: '';
+      height: 40%; width: 40%; position: absolute; top: 30%; left: 30%;
+    }
+    .eff-spectrum {
+      animation: breathe 2s ease-in-out infinite;
+      background: linear-gradient(90deg,
+        hsl(0,100%,50%), hsl(40,100%,50%), hsl(80,100%,45%),
+        hsl(140,100%,40%), hsl(190,100%,45%), hsl(240,100%,55%),
+        hsl(280,100%,55%), hsl(320,100%,50%), hsl(360,100%,50%));
+    }
+    .eff-comet { background: #000510; }
+    .eff-comet::before {
+      animation: cometAnim 2s linear infinite;
+      background: linear-gradient(90deg, transparent, rgba(255,255,200,0.2), rgba(255,240,180,0.7), #fff9d4, rgba(255,240,180,0.4), transparent);
+      content: ''; height: 22%; width: 55%;
+      position: absolute; top: 39%; left: -55%;
+      filter: blur(2px); border-radius: 50%;
+    }
+    .eff-lightning { background: #000820; }
+    .eff-lightning::before {
+      animation: lightningFlash 1.5s ease-in-out infinite;
+      background: linear-gradient(160deg, transparent 25%, rgba(200,220,255,0.95) 48%, rgba(150,180,255,0.8) 54%, transparent 72%);
+      content: ''; position: absolute; inset: 0;
+    }
+    .eff-explode { background: #0a0500; }
+    .eff-explode::before {
+      animation: radialBurst 1.2s ease-out infinite;
+      background: radial-gradient(ellipse at center, #ffffff 0%, #ffd700 20%, #ff8c00 45%, #ff4500 65%, transparent 80%);
+      border-radius: 50%; content: '';
+      height: 100%; width: 100%; position: absolute; top: 0; left: 0;
+    }
+    .eff-glitch { background: #0a001a; }
+    .eff-glitch::before {
+      animation: glitchStep 0.8s steps(1) infinite;
+      background: linear-gradient(180deg,
+        #ff00ff 0%, #ff00ff 18%, #00ffff 18%, #00ffff 34%,
+        #ff0040 34%, #ff0040 50%, #00ff80 50%, #00ff80 66%,
+        #0040ff 66%, #0040ff 82%, #ffaa00 82%, #ffaa00 100%);
+      content: ''; position: absolute; inset: 0; opacity: 0.85;
+    }
+    .eff-matrix { background: #001400; }
+    .eff-matrix::before {
+      animation: matrixCol 1s linear infinite;
+      background: repeating-linear-gradient(180deg,
+        rgba(0,255,0,0) 0%, rgba(0,255,0,0) 30%,
+        rgba(0,200,0,0.85) 50%, rgba(0,255,0,0.4) 62%, rgba(0,255,0,0) 80%);
+      background-size: 100% 300%;
+      content: ''; position: absolute; inset: 0; filter: blur(0.5px);
+    }
+    .eff-matrix::after {
+      background: repeating-linear-gradient(90deg,
+        rgba(0,255,0,0.07) 0px, rgba(0,255,0,0.07) 2px, transparent 2px, transparent 8px);
+      content: ''; position: absolute; inset: 0;
+    }
+    .eff-neon {
+      animation: breathe 0.9s ease-in-out infinite;
+      background: linear-gradient(135deg, #ff00aa 0%, #aa00ff 35%, #00ccff 65%, #ff00aa 100%);
+      background-size: 200% 200%;
+      filter: drop-shadow(0 0 5px rgba(255,0,200,0.6));
+    }
+
+    /* ── Science Visualisation ── */
+    .eff-dna { background: #000a1a; }
+    .eff-dna::before {
+      animation: sciRing 3s linear infinite;
+      background: conic-gradient(from 0deg,
+        #06b6d4 0%, transparent 14%, #7c3aed 28%, transparent 42%,
+        #06b6d4 56%, transparent 70%, #7c3aed 84%, transparent 98%);
+      border-radius: 50%; content: '';
+      height: 140%; width: 140%; left: -20%; top: -20%; position: absolute;
+      filter: blur(3px); opacity: 0.85;
+    }
+    .eff-blackhole {
+      animation: breathe 4s ease-in-out infinite;
+      background: radial-gradient(ellipse at 50% 50%,
+        #000000 0%, #0a0000 22%, #3d0000 42%, #ff6600 58%, #ff9900 70%, #ffcc00 80%, transparent 90%),
+        #000005;
+    }
+    .eff-solar { background: #000510; }
+    .eff-solar::before {
+      animation: sciRing 4s linear infinite;
+      background:
+        radial-gradient(circle at center, #ffdd00 0%, #ff8800 8%, transparent 18%),
+        radial-gradient(circle at center, transparent 20%, rgba(100,180,255,0.35) 22%, transparent 25%),
+        radial-gradient(circle at center, transparent 33%, rgba(200,160,100,0.3) 35%, transparent 39%),
+        radial-gradient(circle at center, transparent 44%, rgba(255,120,80,0.25) 46%, transparent 50%);
+      border-radius: 50%; content: '';
+      height: 160%; width: 160%; left: -30%; top: -30%; position: absolute;
+    }
+    .eff-galaxy { background: #000008; }
+    .eff-galaxy::before {
+      animation: sciRing 6s linear infinite;
+      background: conic-gradient(from 0deg,
+        rgba(255,220,100,0.75) 0%, rgba(200,180,255,0.4) 9%, transparent 22%,
+        rgba(255,220,100,0.55) 50%, rgba(200,180,255,0.3) 59%, transparent 72%,
+        rgba(255,220,100,0.45) 100%);
+      border-radius: 50%; content: '';
+      height: 180%; width: 180%; left: -40%; top: -40%; position: absolute;
+      filter: blur(2px);
+    }
+    .eff-orion {
+      animation: breathe 4s ease-in-out infinite;
+      background:
+        radial-gradient(ellipse at 30% 40%, rgba(255,80,0,0.8) 0%, rgba(255,120,0,0.5) 22%, transparent 48%),
+        radial-gradient(ellipse at 68% 60%, rgba(0,80,255,0.65) 0%, rgba(0,150,255,0.4) 26%, transparent 52%),
+        radial-gradient(ellipse at 50% 50%, rgba(180,0,255,0.4) 0%, transparent 60%),
+        #020010;
+    }
+    .eff-pulsar { background: #000a14; }
+    .eff-pulsar::before {
+      animation: pulsarSweep 1.8s linear infinite;
+      background: conic-gradient(from 0deg,
+        rgba(0,220,255,0.95) 0%, transparent 7%,
+        transparent 50%, rgba(0,220,255,0.7) 50%, transparent 57%);
+      border-radius: 50%; content: '';
+      height: 140%; width: 140%; left: -20%; top: -20%; position: absolute;
+      filter: blur(1px);
+    }
+    .eff-pulsar::after {
+      background: radial-gradient(circle at center, rgba(255,255,255,0.85) 3%, rgba(0,200,255,0.4) 8%, transparent 20%);
+      content: ''; position: absolute; inset: 0;
+    }
+    .eff-hurricane { background: #001a20; }
+    .eff-hurricane::before {
+      animation: sciRing 3s linear infinite;
+      background: conic-gradient(from 0deg,
+        rgba(0,200,180,0.75) 0%, transparent 24%,
+        rgba(0,180,160,0.55) 50%, transparent 74%,
+        rgba(0,160,140,0.45) 100%);
+      border-radius: 50%; content: '';
+      height: 160%; width: 160%; left: -30%; top: -30%; position: absolute;
+      filter: blur(3px);
+    }
+    .eff-hurricane::after {
+      background: radial-gradient(circle at center, rgba(255,255,255,0.35) 3%, transparent 16%);
+      content: ''; position: absolute; inset: 0;
+    }
+    .eff-lightning-leader { background: #000510; }
+    .eff-lightning-leader::before {
+      animation: lightningFlash 0.7s ease-in-out infinite;
+      background:
+        linear-gradient(150deg, transparent 20%, rgba(150,200,255,0.9) 45%, rgba(100,150,255,0.7) 55%, transparent 75%),
+        linear-gradient(200deg, transparent 40%, rgba(180,220,255,0.6) 55%, transparent 65%);
+      content: ''; position: absolute; inset: 0;
+    }
+    .eff-virus { background: #001520; }
+    .eff-virus::before {
+      animation: sciRing 5s linear infinite;
+      background: conic-gradient(from 0deg,
+        rgba(0,210,220,0.8) 0%, rgba(0,210,220,0.1) 11%,
+        rgba(0,210,220,0.8) 16%, rgba(0,210,220,0.1) 27%,
+        rgba(0,210,220,0.8) 33%, rgba(0,210,220,0.1) 44%,
+        rgba(0,210,220,0.8) 50%, rgba(0,210,220,0.1) 61%,
+        rgba(0,210,220,0.8) 66%, rgba(0,210,220,0.1) 77%,
+        rgba(0,210,220,0.8) 83%, rgba(0,210,220,0.1) 94%);
+      border-radius: 50%; content: '';
+      height: 100%; width: 100%; left: 0; top: 0; position: absolute;
+      filter: blur(1px); opacity: 0.9;
+    }
+    .eff-protein {
+      animation: wavePan 3s linear infinite;
+      background: linear-gradient(90deg, #f59e0b, #ef4444, #f59e0b, #fbbf24, #f59e0b);
+      background-size: 200% 100%;
+    }
+    .eff-mitosis { background: #1a0020; }
+    .eff-mitosis::before {
+      animation: breathe 2s ease-in-out infinite;
+      background:
+        radial-gradient(ellipse at 35% 50%, rgba(236,72,153,0.85) 0%, rgba(167,40,120,0.5) 26%, transparent 52%),
+        radial-gradient(ellipse at 65% 50%, rgba(139,92,246,0.85) 0%, rgba(100,40,160,0.5) 26%, transparent 52%);
+      content: ''; position: absolute; inset: 0;
+    }
+    .eff-synapse { background: #001018; }
+    .eff-synapse::before {
+      animation: cometAnim 1.5s linear infinite;
+      background: linear-gradient(90deg, transparent, rgba(0,210,220,0.95), transparent);
+      content: ''; height: 4px; width: 60%;
+      position: absolute; top: 28%; left: -60%;
+    }
+    .eff-synapse::after {
+      animation: cometAnim 1.8s 0.55s linear infinite;
+      background: linear-gradient(90deg, transparent, rgba(0,180,255,0.75), transparent);
+      content: ''; height: 4px; width: 50%;
+      position: absolute; top: 58%; left: -50%;
+    }
+    .eff-quantum {
+      animation: hueRoll 2s linear infinite;
+      background:
+        radial-gradient(ellipse at 50% 50%,
+          rgba(255,255,255,0.9) 0%, rgba(100,200,255,0.7) 14%,
+          rgba(255,100,255,0.6) 30%, rgba(100,255,200,0.5) 50%,
+          rgba(200,100,255,0.4) 70%, transparent 90%),
+        #000816;
+    }
+    .eff-microvilli {
+      animation: breathe 3s ease-in-out infinite;
+      background:
+        repeating-linear-gradient(90deg, rgba(0,200,180,0.5) 0px, rgba(0,200,180,0.5) 3px, transparent 3px, transparent 9px),
+        repeating-linear-gradient(0deg, rgba(0,180,200,0.35) 0px, rgba(0,180,200,0.35) 3px, transparent 3px, transparent 13px),
+        #001a18;
+    }
+    .eff-eclipse {
+      animation: breathe 4s ease-in-out infinite;
+      background:
+        radial-gradient(circle at 50% 50%, #000000 0%, #000000 27%, #8b0000 28%, #cc2200 32%, #ff4400 36%, #ff8800 40%, #ffaa00 44%, transparent 52%),
+        #000005;
+    }
+    .eff-comet-tail { background: #000510; }
+    .eff-comet-tail::before {
+      animation: cometAnim 2.5s linear infinite;
+      background: linear-gradient(90deg, transparent, rgba(100,200,255,0.15), rgba(160,235,255,0.55), rgba(200,245,255,0.9), rgba(160,235,255,0.3), transparent);
+      content: ''; height: 38%; width: 72%;
+      position: absolute; top: 31%; left: -72%;
+      filter: blur(3px); border-radius: 50%;
+    }
+    .eff-magnetosphere { background: #001008; }
+    .eff-magnetosphere::before {
+      animation: auroraFlow 5s ease-in-out infinite alternate;
+      background: linear-gradient(180deg, transparent 0%, rgba(0,255,80,0.5) 35%, rgba(0,230,200,0.4) 55%, rgba(0,100,200,0.3) 75%, transparent 100%);
+      content: ''; position: absolute; inset: 0;
+    }
+    .eff-diffraction { background: #000a1a; }
+    .eff-diffraction::before {
+      animation: sciRing 4s linear infinite;
+      background: radial-gradient(circle at center,
+        transparent 10%, rgba(0,200,255,0.65) 12%, transparent 14%,
+        rgba(0,200,255,0.5) 22%, transparent 24%,
+        rgba(0,180,255,0.4) 34%, transparent 36%,
+        rgba(0,160,255,0.3) 46%, transparent 48%,
+        rgba(0,140,255,0.22) 58%, transparent 60%);
+      border-radius: 50%; content: '';
+      height: 200%; width: 200%; left: -50%; top: -50%; position: absolute;
+    }
+    .eff-vortex-flame { background: #0a0000; }
+    .eff-vortex-flame::before {
+      animation: sciRing 1.5s linear infinite;
+      background: conic-gradient(from 0deg,
+        #ff2200 0%, #ff8800 15%, #ffcc00 26%, transparent 40%,
+        #ff2200 50%, #ff6600 65%, #ffaa00 76%, transparent 90%);
+      border-radius: 50%; content: '';
+      height: 150%; width: 150%; left: -25%; top: -25%; position: absolute;
+    }
+    .eff-tokamak { background: #000820; }
+    .eff-tokamak::before {
+      animation: torusSpin 3s linear infinite;
+      background: conic-gradient(from 0deg,
+        rgba(0,150,255,0.9) 0%, rgba(100,210,255,0.75) 8%, rgba(200,255,255,0.95) 15%, rgba(100,210,255,0.65) 22%,
+        rgba(0,150,255,0.4) 35%, rgba(100,210,255,0.2) 45%,
+        rgba(0,150,255,0.85) 50%, rgba(100,210,255,0.7) 58%, rgba(200,255,255,0.9) 65%, rgba(100,210,255,0.55) 72%,
+        rgba(0,150,255,0.3) 85%, transparent 95%);
+      border-radius: 50%; content: '';
+      height: 120%; width: 120%; left: -10%; top: -10%; position: absolute;
+    }
+    .eff-tokamak::after {
+      background: #000820; border-radius: 50%; content: '';
+      height: 40%; width: 40%; left: 30%; top: 30%; position: absolute;
+    }
+
+    /* ── 3D Visual ── */
+    .eff-plasma3d {
+      animation: hueRoll 3s linear infinite;
+      background:
+        radial-gradient(ellipse at 50% 50%,
+          rgba(0,255,100,0.9) 0%, rgba(100,0,255,0.7) 30%,
+          rgba(0,200,255,0.5) 55%, rgba(200,0,200,0.4) 75%, transparent 90%),
+        #020010;
+    }
+    .eff-vortex3d { background: #000010; }
+    .eff-vortex3d::before {
+      animation: vortexSpin 2s ease-in-out infinite;
+      background: conic-gradient(from 0deg,
+        transparent 50%, rgba(30,0,120,0.75) 60%, rgba(100,0,255,0.85) 70%, rgba(180,100,255,0.65) 80%, transparent 90%);
+      border-radius: 50%; content: '';
+      height: 180%; width: 180%; left: -40%; top: -40%; position: absolute;
+    }
+    .eff-tunnel {
+      animation: breathe 2s ease-in-out infinite;
+      background: radial-gradient(circle at center,
+        #ffffff 0%, #c0c0c0 4%, #181840 8%, #0c0c2a 14%,
+        #181850 18%, #0a0a20 24%, #181855 28%, #0a0a22 34%,
+        #18185a 38%, #0a0a24 44%, #18185f 48%, #000010 60%);
+    }
+    .eff-crystal {
+      animation: hueRoll 4s linear infinite;
+      background: linear-gradient(120deg,
+        rgba(200,240,255,0.9) 0%, rgba(150,220,255,0.7) 18%,
+        rgba(220,200,255,0.85) 34%, rgba(200,255,240,0.9) 50%,
+        rgba(255,220,200,0.85) 66%, rgba(200,220,255,0.9) 82%, rgba(240,200,255,0.75) 100%);
+      background-size: 200% 200%;
+    }
+
+    /* ── GPU 3D ── */
+    .eff-sphere { background: #010020; }
+    .eff-sphere::before {
+      animation: breathe 1.5s ease-in-out infinite;
+      background: radial-gradient(ellipse at 50% 50%,
+        rgba(255,255,255,0.95) 0%, rgba(100,150,255,0.8) 16%,
+        rgba(60,0,200,0.65) 36%, rgba(30,0,100,0.4) 56%, transparent 72%);
+      content: ''; position: absolute; inset: 0;
+    }
+    .eff-warp { background: #000020; }
+    .eff-warp::before {
+      animation: sciRing 1.5s linear infinite;
+      background: conic-gradient(from 0deg,
+        #ff00ff 0%, #00ffff 17%, #ff00ff 34%, #00ffff 51%, #ff00ff 68%, #00ffff 85%, #ff00ff 100%);
+      border-radius: 50%; content: '';
+      height: 160%; width: 160%; left: -30%; top: -30%; position: absolute;
+      filter: blur(4px); opacity: 0.75;
+    }
+    .eff-neongalaxy { background: #000010; }
+    .eff-neongalaxy::before {
+      animation: sciRing 4s linear infinite;
+      background: conic-gradient(from 0deg,
+        rgba(255,0,200,0.85) 0%, rgba(100,0,255,0.55) 12%, transparent 26%,
+        rgba(0,200,255,0.55) 50%, rgba(255,100,0,0.45) 62%, transparent 76%,
+        rgba(255,0,200,0.65) 100%);
+      border-radius: 50%; content: '';
+      height: 200%; width: 200%; left: -50%; top: -50%; position: absolute;
+      filter: blur(2px);
+    }
+    .eff-lava {
+      animation: advFire 2s ease-in-out infinite alternate;
+      background: radial-gradient(ellipse at 50% 70%,
+        #ff2200 0%, #ff6600 25%, #cc4400 46%, #882200 66%, #220000 86%);
+    }
+    .eff-laser { background: #000010; }
+    .eff-laser::before {
+      animation: laserBeam 3s linear infinite;
+      background: conic-gradient(from 0deg,
+        rgba(255,0,0,0.95) 0%, transparent 3%,
+        rgba(0,255,0,0.95) 17%, transparent 20%,
+        rgba(0,0,255,0.95) 34%, transparent 37%,
+        rgba(255,255,0,0.95) 51%, transparent 54%,
+        rgba(255,0,255,0.95) 68%, transparent 71%,
+        rgba(0,255,255,0.95) 85%, transparent 88%);
+      border-radius: 50%; content: '';
+      height: 200%; width: 200%; left: -50%; top: -50%; position: absolute;
+      filter: blur(1px);
+    }
+    .eff-hologram { background: #000c14; }
+    .eff-hologram::before {
+      animation: sciScan 1.5s linear infinite;
+      background: linear-gradient(180deg, transparent 0%, rgba(0,255,220,0.28) 48%, rgba(0,255,220,0.28) 52%, transparent 100%);
+      content: ''; height: 6%; left: 0; right: 0; top: 0; position: absolute;
+    }
+    .eff-hologram::after {
+      background:
+        repeating-linear-gradient(0deg, rgba(0,255,200,0.07) 0px, rgba(0,255,200,0.07) 1px, transparent 1px, transparent 4px),
+        linear-gradient(135deg, rgba(0,200,255,0.12), rgba(0,255,200,0.18));
+      content: ''; position: absolute; inset: 0;
+    }
+
     /* ── #effects visual card upgrade ── */
     .effects-visual-wrap { margin-top: 0; }
     .effect-cat-block { margin-bottom: 2.5rem; }
@@ -1365,13 +1887,13 @@
             <div class="demo-all-section">
               <div class="demo-all-section-title">🔮 <span class="zh">经典（7）</span><span class="en">Classic (7)</span></div>
               <div class="demo-mini-grid">
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">屏幕采样</h5><h5 class="en">Screen Ambient</h5><p class="zh">实时捕获屏幕色彩映射</p><p class="en">Real-time screen colour mapping</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">静态</h5><h5 class="en">Static</h5><p class="zh">纯色填充 + 点阵文字</p><p class="en">Solid fill + dot-matrix text</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">呼吸灯</h5><h5 class="en">Breathing</h5><p class="zh">正弦节律淡入淡出</p><p class="en">Sine-rhythm fade in/out</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">彩虹</h5><h5 class="en">Rainbow</h5><p class="zh">流动全色彩扫描</p><p class="en">Flowing full-spectrum sweep</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">波浪</h5><h5 class="en">Wave</h5><p class="zh">sin/cos 调制光波</p><p class="en">sin/cos modulated light wave</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">区域渐变</h5><h5 class="en">Zone Gradient</h5><p class="zh">按显示区域分配颜色</p><p class="en">Colour per display zone</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">随机颜色</h5><h5 class="en">Random Color</h5><p class="zh">随机切换颜色</p><p class="en">Random colour switching</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-screen-ambient"></div><div class="demo-mini-label"><h5 class="zh">屏幕采样</h5><h5 class="en">Screen Ambient</h5><p class="zh">实时捕获屏幕色彩映射</p><p class="en">Real-time screen colour mapping</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-static"></div><div class="demo-mini-label"><h5 class="zh">静态</h5><h5 class="en">Static</h5><p class="zh">纯色填充 + 点阵文字</p><p class="en">Solid fill + dot-matrix text</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-breathing"></div><div class="demo-mini-label"><h5 class="zh">呼吸灯</h5><h5 class="en">Breathing</h5><p class="zh">正弦节律淡入淡出</p><p class="en">Sine-rhythm fade in/out</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-rainbow"></div><div class="demo-mini-label"><h5 class="zh">彩虹</h5><h5 class="en">Rainbow</h5><p class="zh">流动全色彩扫描</p><p class="en">Flowing full-spectrum sweep</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-wave"></div><div class="demo-mini-label"><h5 class="zh">波浪</h5><h5 class="en">Wave</h5><p class="zh">sin/cos 调制光波</p><p class="en">sin/cos modulated light wave</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-zone"></div><div class="demo-mini-label"><h5 class="zh">区域渐变</h5><h5 class="en">Zone Gradient</h5><p class="zh">按显示区域分配颜色</p><p class="en">Colour per display zone</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-random"></div><div class="demo-mini-label"><h5 class="zh">随机颜色</h5><h5 class="en">Random Color</h5><p class="zh">随机切换颜色</p><p class="en">Random colour switching</p></div></div>
               </div>
             </div>
 
@@ -1379,8 +1901,8 @@
             <div class="demo-all-section">
               <div class="demo-all-section-title">🎨 <span class="zh">自定义绘画（2）</span><span class="en">Custom Paint (2)</span></div>
               <div class="demo-mini-grid">
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-custom"></div><div class="demo-mini-label"><h5 class="zh">自由绘画</h5><h5 class="en">Custom Paint</h5><p class="zh">用户手绘 LED 图案</p><p class="en">User-drawn LED pattern</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-custom"></div><div class="demo-mini-label"><h5 class="zh">图片绘画</h5><h5 class="en">Image Paint</h5><p class="zh">导入图片映射到灯带</p><p class="en">Import image to LED strip</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-custpaint"></div><div class="demo-mini-label"><h5 class="zh">自由绘画</h5><h5 class="en">Custom Paint</h5><p class="zh">用户手绘 LED 图案</p><p class="en">User-drawn LED pattern</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-imgpaint"></div><div class="demo-mini-label"><h5 class="zh">图片绘画</h5><h5 class="en">Image Paint</h5><p class="zh">导入图片映射到灯带</p><p class="en">Import image to LED strip</p></div></div>
               </div>
             </div>
 
@@ -1388,20 +1910,20 @@
             <div class="demo-all-section">
               <div class="demo-all-section-title">🚀 <span class="zh">进阶（14）</span><span class="en">Advanced (14)</span></div>
               <div class="demo-mini-grid">
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">火焰</h5><h5 class="en">Fire</h5><p class="zh">离散阵风 + 4 档色阶</p><p class="en">Gust events + 4-stop ramp</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">极光</h5><h5 class="en">Aurora</h5><p class="zh">北极光飘动垂帘</p><p class="en">Northern-lights curtain</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">星云</h5><h5 class="en">Nebula</h5><p class="zh">深空星云色彩流动</p><p class="en">Deep-space nebula flow</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">流体光场</h5><h5 class="en">Fluid Flow</h5><p class="zh">流体扰动光场</p><p class="en">Fluid distortion field</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">镜像对称</h5><h5 class="en">Mirror Symmetry</h5><p class="zh">左右镜像对称光场</p><p class="en">Bilateral mirror field</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">星光</h5><h5 class="en">Starlight</h5><p class="zh">随机闪烁星点</p><p class="en">Random twinkling stars</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">涟漪</h5><h5 class="en">Ripple</h5><p class="zh">点击触发波纹扩散</p><p class="en">Click-to-burst ripple</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">光谱</h5><h5 class="en">Spectrum</h5><p class="zh">沿 x 轴分布色相</p><p class="en">Hue distributed along x</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">彗星</h5><h5 class="en">Comet</h5><p class="zh">运动拖尾光点</p><p class="en">Moving comet streak</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">闪电</h5><h5 class="en">Lightning</h5><p class="zh">随机分支闪电</p><p class="en">Random branching bolt</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">爆炸</h5><h5 class="en">Explode</h5><p class="zh">径向脉冲爆炸</p><p class="en">Radial pulse burst</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">故障闪烁</h5><h5 class="en">Glitch</h5><p class="zh">数字故障随机错位</p><p class="en">Digital glitch displacement</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">数字雨</h5><h5 class="en">Matrix Rain</h5><p class="zh">黑客帝国绿色字符瀑布</p><p class="en">Matrix green character rain</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">霓虹脉冲</h5><h5 class="en">Neon Pulse</h5><p class="zh">霓虹色块节律脉冲</p><p class="en">Neon colour rhythm pulse</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-fire"></div><div class="demo-mini-label"><h5 class="zh">火焰</h5><h5 class="en">Fire</h5><p class="zh">离散阵风 + 4 档色阶</p><p class="en">Gust events + 4-stop ramp</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-aurora"></div><div class="demo-mini-label"><h5 class="zh">极光</h5><h5 class="en">Aurora</h5><p class="zh">北极光飘动垂帘</p><p class="en">Northern-lights curtain</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-nebula"></div><div class="demo-mini-label"><h5 class="zh">星云</h5><h5 class="en">Nebula</h5><p class="zh">深空星云色彩流动</p><p class="en">Deep-space nebula flow</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-fluid"></div><div class="demo-mini-label"><h5 class="zh">流体光场</h5><h5 class="en">Fluid Flow</h5><p class="zh">流体扰动光场</p><p class="en">Fluid distortion field</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-mirror"></div><div class="demo-mini-label"><h5 class="zh">镜像对称</h5><h5 class="en">Mirror Symmetry</h5><p class="zh">左右镜像对称光场</p><p class="en">Bilateral mirror field</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-starlight"></div><div class="demo-mini-label"><h5 class="zh">星光</h5><h5 class="en">Starlight</h5><p class="zh">随机闪烁星点</p><p class="en">Random twinkling stars</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-ripple"></div><div class="demo-mini-label"><h5 class="zh">涟漪</h5><h5 class="en">Ripple</h5><p class="zh">点击触发波纹扩散</p><p class="en">Click-to-burst ripple</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-spectrum"></div><div class="demo-mini-label"><h5 class="zh">光谱</h5><h5 class="en">Spectrum</h5><p class="zh">沿 x 轴分布色相</p><p class="en">Hue distributed along x</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-comet"></div><div class="demo-mini-label"><h5 class="zh">彗星</h5><h5 class="en">Comet</h5><p class="zh">运动拖尾光点</p><p class="en">Moving comet streak</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-lightning"></div><div class="demo-mini-label"><h5 class="zh">闪电</h5><h5 class="en">Lightning</h5><p class="zh">随机分支闪电</p><p class="en">Random branching bolt</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-explode"></div><div class="demo-mini-label"><h5 class="zh">爆炸</h5><h5 class="en">Explode</h5><p class="zh">径向脉冲爆炸</p><p class="en">Radial pulse burst</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-glitch"></div><div class="demo-mini-label"><h5 class="zh">故障闪烁</h5><h5 class="en">Glitch</h5><p class="zh">数字故障随机错位</p><p class="en">Digital glitch displacement</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-matrix"></div><div class="demo-mini-label"><h5 class="zh">数字雨</h5><h5 class="en">Matrix Rain</h5><p class="zh">黑客帝国绿色字符瀑布</p><p class="en">Matrix green character rain</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-neon"></div><div class="demo-mini-label"><h5 class="zh">霓虹脉冲</h5><h5 class="en">Neon Pulse</h5><p class="zh">霓虹色块节律脉冲</p><p class="en">Neon colour rhythm pulse</p></div></div>
               </div>
             </div>
 
@@ -1409,26 +1931,26 @@
             <div class="demo-all-section">
               <div class="demo-all-section-title">🔬 <span class="zh">科学可视化（20）</span><span class="en">Science Visualisation (20)</span></div>
               <div class="demo-mini-grid">
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">DNA 双螺旋</h5><h5 class="en">DNA Helix</h5><p class="zh">旋转的双链结构</p><p class="en">Rotating double-strand helix</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">黑洞吸积盘</h5><h5 class="en">Black Hole</h5><p class="zh">引力透镜 + 吸积盘</p><p class="en">Gravitational lensing disc</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">太阳系轨道</h5><h5 class="en">Solar System</h5><p class="zh">行星轨道运行</p><p class="en">Planetary orbital motion</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">银河旋臂</h5><h5 class="en">Spiral Galaxy</h5><p class="zh">棒旋星系旋臂</p><p class="en">Barred spiral galaxy arms</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">猎户座星云</h5><h5 class="en">Orion Nebula</h5><p class="zh">彩色星云气体云</p><p class="en">Colorful nebula gas cloud</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">脉冲星信标</h5><h5 class="en">Pulsar Beacon</h5><p class="zh">脉冲星定时辐射束</p><p class="en">Timed pulsar radiation beam</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">飓风眼</h5><h5 class="en">Hurricane Eye</h5><p class="zh">旋转云带 + 风眼结构</p><p class="en">Rotating cloud bands + eye</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">先导闪电</h5><h5 class="en">Lightning Leader</h5><p class="zh">分形先导通道</p><p class="en">Fractal leader channel</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">正二十面体病毒</h5><h5 class="en">Icosahedral Virus</h5><p class="zh">对称病毒衣壳结构</p><p class="en">Symmetric viral capsid</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">蛋白质折叠</h5><h5 class="en">Protein Folding</h5><p class="zh">氨基酸链折叠过程</p><p class="en">Amino-acid chain folding</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">有丝分裂纺锤体</h5><h5 class="en">Mitosis Spindle</h5><p class="zh">细胞分裂纺锤丝</p><p class="en">Cell division spindle fibres</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">突触脉冲</h5><h5 class="en">Synapse Pulse</h5><p class="zh">神经元电信号传导</p><p class="en">Neuron electrical signal</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">量子坍缩</h5><h5 class="en">Quantum Collapse</h5><p class="zh">波函数概率坍缩</p><p class="en">Wave-function probability collapse</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">微绒毛场</h5><h5 class="en">Microvilli Field</h5><p class="zh">细胞表面微绒毛阵列</p><p class="en">Cell surface microvilli array</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">日食对齐</h5><h5 class="en">Eclipse Alignment</h5><p class="zh">日全食日冕光环</p><p class="en">Total eclipse corona ring</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">彗星尾迹</h5><h5 class="en">Comet Tail</h5><p class="zh">太阳风吹散的彗尾</p><p class="en">Solar-wind swept comet tail</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">磁层极光</h5><h5 class="en">Magnetosphere Aurora</h5><p class="zh">极区磁层粒子辐射</p><p class="en">Polar magnetosphere radiation</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">波衍射</h5><h5 class="en">Wave Diffraction</h5><p class="zh">光波干涉衍射条纹</p><p class="en">Light interference fringes</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">涡旋火焰</h5><h5 class="en">Vortex Flame</h5><p class="zh">旋转火焰涡流</p><p class="en">Rotating flame vortex</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">托卡马克等离子</h5><h5 class="en">Tokamak Plasma</h5><p class="zh">磁约束核聚变等离子体</p><p class="en">Magnetically confined plasma</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-dna"></div><div class="demo-mini-label"><h5 class="zh">DNA 双螺旋</h5><h5 class="en">DNA Helix</h5><p class="zh">旋转的双链结构</p><p class="en">Rotating double-strand helix</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-blackhole"></div><div class="demo-mini-label"><h5 class="zh">黑洞吸积盘</h5><h5 class="en">Black Hole</h5><p class="zh">引力透镜 + 吸积盘</p><p class="en">Gravitational lensing disc</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-solar"></div><div class="demo-mini-label"><h5 class="zh">太阳系轨道</h5><h5 class="en">Solar System</h5><p class="zh">行星轨道运行</p><p class="en">Planetary orbital motion</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-galaxy"></div><div class="demo-mini-label"><h5 class="zh">银河旋臂</h5><h5 class="en">Spiral Galaxy</h5><p class="zh">棒旋星系旋臂</p><p class="en">Barred spiral galaxy arms</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-orion"></div><div class="demo-mini-label"><h5 class="zh">猎户座星云</h5><h5 class="en">Orion Nebula</h5><p class="zh">彩色星云气体云</p><p class="en">Colorful nebula gas cloud</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-pulsar"></div><div class="demo-mini-label"><h5 class="zh">脉冲星信标</h5><h5 class="en">Pulsar Beacon</h5><p class="zh">脉冲星定时辐射束</p><p class="en">Timed pulsar radiation beam</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-hurricane"></div><div class="demo-mini-label"><h5 class="zh">飓风眼</h5><h5 class="en">Hurricane Eye</h5><p class="zh">旋转云带 + 风眼结构</p><p class="en">Rotating cloud bands + eye</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-lightning-leader"></div><div class="demo-mini-label"><h5 class="zh">先导闪电</h5><h5 class="en">Lightning Leader</h5><p class="zh">分形先导通道</p><p class="en">Fractal leader channel</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-virus"></div><div class="demo-mini-label"><h5 class="zh">正二十面体病毒</h5><h5 class="en">Icosahedral Virus</h5><p class="zh">对称病毒衣壳结构</p><p class="en">Symmetric viral capsid</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-protein"></div><div class="demo-mini-label"><h5 class="zh">蛋白质折叠</h5><h5 class="en">Protein Folding</h5><p class="zh">氨基酸链折叠过程</p><p class="en">Amino-acid chain folding</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-mitosis"></div><div class="demo-mini-label"><h5 class="zh">有丝分裂纺锤体</h5><h5 class="en">Mitosis Spindle</h5><p class="zh">细胞分裂纺锤丝</p><p class="en">Cell division spindle fibres</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-synapse"></div><div class="demo-mini-label"><h5 class="zh">突触脉冲</h5><h5 class="en">Synapse Pulse</h5><p class="zh">神经元电信号传导</p><p class="en">Neuron electrical signal</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-quantum"></div><div class="demo-mini-label"><h5 class="zh">量子坍缩</h5><h5 class="en">Quantum Collapse</h5><p class="zh">波函数概率坍缩</p><p class="en">Wave-function probability collapse</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-microvilli"></div><div class="demo-mini-label"><h5 class="zh">微绒毛场</h5><h5 class="en">Microvilli Field</h5><p class="zh">细胞表面微绒毛阵列</p><p class="en">Cell surface microvilli array</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-eclipse"></div><div class="demo-mini-label"><h5 class="zh">日食对齐</h5><h5 class="en">Eclipse Alignment</h5><p class="zh">日全食日冕光环</p><p class="en">Total eclipse corona ring</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-comet-tail"></div><div class="demo-mini-label"><h5 class="zh">彗星尾迹</h5><h5 class="en">Comet Tail</h5><p class="zh">太阳风吹散的彗尾</p><p class="en">Solar-wind swept comet tail</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-magnetosphere"></div><div class="demo-mini-label"><h5 class="zh">磁层极光</h5><h5 class="en">Magnetosphere Aurora</h5><p class="zh">极区磁层粒子辐射</p><p class="en">Polar magnetosphere radiation</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-diffraction"></div><div class="demo-mini-label"><h5 class="zh">波衍射</h5><h5 class="en">Wave Diffraction</h5><p class="zh">光波干涉衍射条纹</p><p class="en">Light interference fringes</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-vortex-flame"></div><div class="demo-mini-label"><h5 class="zh">涡旋火焰</h5><h5 class="en">Vortex Flame</h5><p class="zh">旋转火焰涡流</p><p class="en">Rotating flame vortex</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-tokamak"></div><div class="demo-mini-label"><h5 class="zh">托卡马克等离子</h5><h5 class="en">Tokamak Plasma</h5><p class="zh">磁约束核聚变等离子体</p><p class="en">Magnetically confined plasma</p></div></div>
               </div>
             </div>
 
@@ -1436,10 +1958,10 @@
             <div class="demo-all-section">
               <div class="demo-all-section-title">🧊 <span class="zh">3D 视觉（4）</span><span class="en">3D Visual (4)</span></div>
               <div class="demo-mini-grid">
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-3d"></div><div class="demo-mini-label"><h5 class="zh">等离子</h5><h5 class="en">Plasma</h5><p class="zh">流动霓虹等离子球</p><p class="en">Flowing neon plasma sphere</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-3d"></div><div class="demo-mini-label"><h5 class="zh">旋涡</h5><h5 class="en">Vortex</h5><p class="zh">深邃旋转涡旋</p><p class="en">Deep rotating vortex</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-3d"></div><div class="demo-mini-label"><h5 class="zh">隧道</h5><h5 class="en">Tunnel</h5><p class="zh">无限延伸透视隧道</p><p class="en">Infinite perspective tunnel</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-3d"></div><div class="demo-mini-label"><h5 class="zh">水晶</h5><h5 class="en">Crystal</h5><p class="zh">折射棱镜水晶光场</p><p class="en">Refracting crystal light field</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-plasma3d"></div><div class="demo-mini-label"><h5 class="zh">等离子</h5><h5 class="en">Plasma</h5><p class="zh">流动霓虹等离子球</p><p class="en">Flowing neon plasma sphere</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-vortex3d"></div><div class="demo-mini-label"><h5 class="zh">旋涡</h5><h5 class="en">Vortex</h5><p class="zh">深邃旋转涡旋</p><p class="en">Deep rotating vortex</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-tunnel"></div><div class="demo-mini-label"><h5 class="zh">隧道</h5><h5 class="en">Tunnel</h5><p class="zh">无限延伸透视隧道</p><p class="en">Infinite perspective tunnel</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-crystal"></div><div class="demo-mini-label"><h5 class="zh">水晶</h5><h5 class="en">Crystal</h5><p class="zh">折射棱镜水晶光场</p><p class="en">Refracting crystal light field</p></div></div>
               </div>
             </div>
 
@@ -1447,12 +1969,12 @@
             <div class="demo-all-section">
               <div class="demo-all-section-title">🎮 <span class="zh">GPU 3D 渲染（6）</span><span class="en">GPU 3D Render (6)</span></div>
               <div class="demo-mini-grid">
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">球体脉冲</h5><h5 class="en">Sphere Pulse</h5><p class="zh">WebGL 球体脉冲辉光</p><p class="en">WebGL sphere pulse glow</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">跃迁门户</h5><h5 class="en">Warp Portal</h5><p class="zh">超空间跃迁旋涡门</p><p class="en">Hyperspace warp vortex gate</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">霓虹星系</h5><h5 class="en">Neon Galaxy</h5><p class="zh">旋转星系旋臂 GPU 渲染</p><p class="en">GPU rotating galaxy spiral</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">熔岩球</h5><h5 class="en">Lava Sphere</h5><p class="zh">翻涌熔岩纹理球体</p><p class="en">Churning lava texture sphere</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">激光秀</h5><h5 class="en">Laser Show</h5><p class="zh">多彩激光光束交织</p><p class="en">Multi-colour laser beams</p></div></div>
-                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">全息投影</h5><h5 class="en">Hologram</h5><p class="zh">科幻扫描线 + 线框网格</p><p class="en">Sci-fi scanlines + wireframe</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-sphere"></div><div class="demo-mini-label"><h5 class="zh">球体脉冲</h5><h5 class="en">Sphere Pulse</h5><p class="zh">WebGL 球体脉冲辉光</p><p class="en">WebGL sphere pulse glow</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-warp"></div><div class="demo-mini-label"><h5 class="zh">跃迁门户</h5><h5 class="en">Warp Portal</h5><p class="zh">超空间跃迁旋涡门</p><p class="en">Hyperspace warp vortex gate</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-neongalaxy"></div><div class="demo-mini-label"><h5 class="zh">霓虹星系</h5><h5 class="en">Neon Galaxy</h5><p class="zh">旋转星系旋臂 GPU 渲染</p><p class="en">GPU rotating galaxy spiral</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-lava"></div><div class="demo-mini-label"><h5 class="zh">熔岩球</h5><h5 class="en">Lava Sphere</h5><p class="zh">翻涌熔岩纹理球体</p><p class="en">Churning lava texture sphere</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-laser"></div><div class="demo-mini-label"><h5 class="zh">激光秀</h5><h5 class="en">Laser Show</h5><p class="zh">多彩激光光束交织</p><p class="en">Multi-colour laser beams</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual eff-hologram"></div><div class="demo-mini-label"><h5 class="zh">全息投影</h5><h5 class="en">Hologram</h5><p class="zh">科幻扫描线 + 线框网格</p><p class="en">Sci-fi scanlines + wireframe</p></div></div>
               </div>
             </div>
 
