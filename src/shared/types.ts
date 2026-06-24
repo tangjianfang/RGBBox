@@ -271,3 +271,54 @@ export interface CaptureSource {
   /** Data-URL PNG of the owning application's icon (windows only, may be empty). */
   appIcon: string
 }
+
+// ── Video wall / multi-display stitching ────────────────────────────────────
+// Data model for stitching the virtual canvas across a 2D matrix of physical
+// panels/displays (advertising walls, large stage/show displays). Pure-data so
+// the engine math stays UI-agnostic. See src/engine/videoWall.ts.
+
+/** How the source content is fitted onto the wall's aspect ratio. */
+export type VideoWallFit = 'stretch' | 'contain' | 'cover'
+
+/** A single physical panel/display within a video wall. */
+export interface VideoWallPanel {
+  id: string
+  /** Zero-based column index in the matrix (0 = leftmost). */
+  col: number
+  /** Zero-based row index in the matrix (0 = topmost). */
+  row: number
+  /**
+   * Content rotation applied to this panel, in degrees clockwise. Enables
+   * angled / portrait-mounted panels in creative ("3D"/tilted) wall layouts.
+   */
+  rotation: number
+  /** Optional mapping to a physical display id from {@link DisplayInfo}. */
+  displayId?: number
+  /** Optional human-readable label. */
+  label?: string
+}
+
+/** A 2D matrix video-wall layout describing how panels tile the virtual canvas. */
+export interface VideoWallLayout {
+  /** 'matrix' = uniform rows×cols grid; 'freeform' reserved for future use. */
+  mode: 'matrix' | 'freeform'
+  /** Number of columns (>= 1). */
+  cols: number
+  /** Number of rows (>= 1). */
+  rows: number
+  /**
+   * Bezel/gap thickness as a fraction (0..0.49) of a single panel's pitch.
+   * Represents the inactive border around each panel's active area.
+   */
+  bezel: number
+  /**
+   * When true, content "continues behind" the bezels so the image looks
+   * seamless across physical gaps (standard video-wall bezel correction).
+   * When false, content is squeezed into active areas and seams are visible.
+   */
+  bezelCompensation: boolean
+  /** How source content is fitted onto the wall aspect ratio. */
+  fit: VideoWallFit
+  /** Per-panel descriptors (length === rows * cols for 'matrix' mode). */
+  panels: VideoWallPanel[]
+}

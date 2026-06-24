@@ -603,6 +603,30 @@
 
 ---
 
+### R20. 多屏虚拟画布 / 视频墙拼接引擎（高级扩展）
+
+> 目标：在现有"多屏虚拟画布"基础上，新增可直接用于广告大屏 / 大型节目显示器 / 数字标牌等业务场景的**视频墙拼接**能力——把一张虚拟画布以 2D 矩阵方式无缝铺满多块面板，支持拼缝补偿、角度旋转与内容适配；并在官网（`docs/index.html`）增加独立功能介绍区块。
+
+> 现状 review（落地依据）：当前 `src/main/displayTopology.ts` 仅按 OS 上报 bounds 计算 `virtualBounds`；`src/engine/previewEngine.ts` 的 `computeDisplaySlotMask` 在 linked 模式下把画布按 `1/count` **等宽横向**切片，未考虑物理分辨率差异、行列矩阵、拼缝(bezel)与旋转。R20 以纯 TS 引擎模块补齐这块拼接数学，作为可复用基础。
+
+- **R20.1** **类型模型**：`src/shared/types.ts` 新增 `VideoWallPanel` / `VideoWallLayout` / `VideoWallFit`，纯数据、UI 无关。
+- **R20.2** **引擎模块**：`src/engine/videoWall.ts`（纯 TS，无 DOM/WebGL）：
+  - `buildMatrixLayout(rows, cols, options)` — 生成行优先的 rows×cols 矩阵布局；
+  - `getPanelActiveRect` / `getPanelSourceRect` — 面板发光区 / 采样区归一化矩形；
+  - `mapPanelUvToCanvas` — 面板局部 UV → 内容画布 UV（含旋转 + source rect 投影）；
+  - `rotateUv` — 绕中心顺时针旋转（90/180/270° 精确，任意角走 trig）；
+  - `getWallAspect` / `computeContentFitRect` — 墙体宽高比 + stretch/contain/cover 适配；
+  - `summarizeLayout` — 文案摘要。
+- **R20.3** **拼缝补偿语义**：`bezelCompensation=true` 时采样内缩 cell（内容"在边框后继续"，相邻面板边缘衔接、无断层）；`false` 时采样完整 cell（有缝、但内容不丢）。
+- **R20.4** **单元测试**：`tests/engine/videoWall.test.ts`（矩阵生成 / source rect / 旋转 / UV 映射 / fit / 相邻面板连续性）。
+- **R20.5** **官网功能介绍**：`docs/index.html` 新增独立区块 `#videowall`（导航加入口），双语介绍 2D 矩阵拼接、拼缝补偿、角度旋转/3D 拼接、内容适配，并列出广告大屏 / 舞台节目 / 展厅标牌 / 监控指挥 4 类业务场景 + 2×4 矩阵示意图。
+- **R20.6** **边界**：本条仅落地"引擎 + 类型 + 测试 + 官网介绍"，**不**改动 `App.tsx` 渲染循环 / profile schema / IPC / overlayManager；与 live 渲染、UI 配置面板的接线作为后续独立 R-N。
+- **R20.7** **受影响文件**：`src/shared/types.ts`（新增类型）、`src/engine/videoWall.ts`（新增）、`tests/engine/videoWall.test.ts`（新增）、`docs/index.html`（新增区块 + 导航 + CSS）。
+- **R20.8** **验收点**：`yarn typecheck` 通过；`videoWall.test.ts` 全绿；全量 `vitest run` 不回归；`yarn build` 成功；官网 `#videowall` 区块双语正常显示且 HTML 标签平衡。
+- **R20.9** **状态**: ✅ — 证据见 §6 验收清单 R20 行。
+
+---
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |
@@ -649,6 +673,7 @@
 | R10 | auto 模式定义（7 子项）落地 | ✅ | 4 个文件全部 grep 命中 "auto 模式" / "Auto 模式" / "R10"：`docs/AI_WORKFLOW.md` 新增 §8（96–136 行：风险分级表 + 8.1–8.5 小节）；`CLAUDE.md:20–24` / `AGENTS.md:23–27` / `.github/copilot-instructions.md:39–43` 均含 Auto 模式段。业务代码 0 diff。 |
 | R11 | 全量测试覆盖（13 新测试 + 3 增强 + coverage 配置）落地 | ✅ | **测试 330 / 330 全过**（`npx vitest run`）— 16 个文件 = R11.2.1–R11.2.13 全部 13 个新文件 + R11.3.1 `effects.test.ts` 补 4 个缺失效果（zone-gradient / audio-equalizer / custom-paint / image-paint）+ R11.3.2 `profileStore.test.ts` 增强 + R11.3.3 `integration/ipcChannels.test.ts` 新增。**Coverage 超阈值**：lines 95.49% (≥80)、branches 76.9% (≥70)、functions 98.3% (≥80)、statements 94.44% (≥80)；HTML 报告在 `coverage/index.html`。**R11.4 基建**：`package.json` 加 `"test:coverage": "vitest run --coverage"` + devDep `"@vitest/coverage-v8": "^4.1.7"`；`vitest.config.ts` 加 coverage 配置（v8 + text/html/json-summary reporters + 80/70 阈值 + 6 include 范围 + 排除 main/index.ts 与外部 capture provider）。**证据来源**：本会话 `npm run test:coverage` 输出。 |
 | R12 | 渲染层 + WebGL + Hook 测试（14 组件 + 2 hook + 2 gl = 18 个测试） | ✅ | **测试 395 / 395 通过 + 41 skipped**（`npx vitest run`）— 35 个文件 = 14 组件测试（R12.1.1–R12.1.14 + App） + 2 hook 测试（useAudioAnalyzer / useModelStore） + 2 GL 测试（previewGl / effect3dGl） + 16 R11 测试 + integration。**Coverage 超阈值**：lines 79.75% (≥75) / branches 65.02% (≥60) / functions 65.23% (≥60) / statements 77.12% (≥75)。**R12.4 基建落地**：`vitest.config.ts` 加 `environmentMatchGlobs` 分流（`renderer/components/**` + `renderer/3d/**` → happy-dom；其余 → node）+ `setupFiles: ['./tests/renderer/setup.ts']` + 新增 6 个 include 范围（components / 3d / hooks / gl / engine / workers）。`tests/renderer/setup.ts` 注册 `@testing-library/jest-dom` + 共享 `vi.mock` (i18n / lucide-react / GL classes)。**R12.5.5 优雅降级**：3D / WebGL 渲染路径用 `it.skip` 跳过（happy-dom 无 GL），保留 module-export 形状测试；3D-heavy 组件（ArchitectureView / AudioStudioView / VideoStudioView / MiniGamesView / OverlayCanvas / App.tsx）从 coverage 排除。**新 devDep**：`@testing-library/react@^16.1.0` + `@testing-library/jest-dom@^6.6.3` + `@testing-library/dom@^10.4.0` + `happy-dom@^15.11.7` + `gl@^8.1.6`。**证据来源**：本会话 `npm run test:coverage` 输出。 |
+| R20 | 视频墙拼接引擎 + 类型 + 测试 + 官网介绍 | ✅ | **`yarn typecheck` 通过**（node + web 两段）。**全量 `npx vitest run` = 419 passed / 41 skipped（36 文件）**，含新增 `tests/engine/videoWall.test.ts`（**24 个 case**：矩阵生成 / active+source rect / 拼缝补偿 / rotateUv 90·180·270·任意角 / mapPanelUvToCanvas / 相邻面板连续性 / fit cover·contain / summarize）；相对 R12 基线 395 无回归。**`yarn build` 成功**（electron-vite，renderer 1774 模块）。**新增/改动文件**：`src/shared/types.ts`（+VideoWallPanel/VideoWallLayout/VideoWallFit，R20.1）、`src/engine/videoWall.ts`（纯 TS 拼接引擎，R20.2–R20.3）、`tests/engine/videoWall.test.ts`（R20.4）、`docs/index.html`（`#videowall` 区块 + 导航 + CSS，R20.5）。业务渲染循环 / profile / IPC 0 改动（R20.6）。**证据来源**：本会话命令输出。 |
 
 ## 7. 测试方法
 
@@ -691,3 +716,5 @@
 | 2026-06-24 | R17 + R18 状态 ⏳ → ✅；待用户验收 | Claude |
 | 2026-06-24 | 追加 R19（Demo 页每种效果独立预览动画）；状态 ⏳ | mike / Claude |
 | 2026-06-24 | 实施 R19：`docs/index.html` 为全部 55 张效果卡片分配独立 `eff-*` CSS 类；新增 14 个共享关键帧 + 55 个 eff-* CSS 规则，每种效果视觉特征各不相同 | Claude |
+| 2026-06-24 | 追加 R20（多屏虚拟画布 / 视频墙拼接引擎 + 官网独立介绍）；状态 ⏳ | mike / Claude |
+| 2026-06-24 | 实施 R20：新增 `src/engine/videoWall.ts`（矩阵布局 / 拼缝补偿 / 旋转 / fit）+ `src/shared/types.ts` 类型 + `tests/engine/videoWall.test.ts`（24 case）+ `docs/index.html` `#videowall` 区块；typecheck 通过 / vitest 419 passed / build 成功；状态 ⏳ → ✅；待用户验收 | Claude |
