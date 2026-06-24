@@ -198,6 +198,13 @@ export interface Scene {
   layers: EffectLayer[]
   /** When true, effects span across all monitors using the physical display layout as a virtual canvas. */
   linkedDisplays?: boolean
+  /**
+   * Optional video-wall layout. When present, live output is stitched across the
+   * physical panels described by this layout (matrix / bezel / rotation / fit)
+   * instead of the plain {@link linkedDisplays} equal-width slicing. Absent means
+   * video-wall mode is disabled (backward compatible with older profiles).
+   */
+  videoWall?: VideoWallLayout
 }
 
 export interface Profile {

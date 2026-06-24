@@ -1,8 +1,9 @@
 import { Activity, Box, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Mic, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload, Video } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
-import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame } from '../../shared/types'
+import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame, Scene } from '../../shared/types'
 import { is3DEffect } from '../../shared/types'
+import { extractWallPanelFrame } from '../../engine/videoWallFrame'
 import { useI18n } from './i18n'
 import { DisplayMap } from './components/DisplayMap'
 import { EffectsView } from './components/EffectsView'
@@ -494,6 +495,63 @@ function extractSubFrame(
   return { columns: dispCols, rows: dispRows, pixels, generatedAt: virtualFrame.generatedAt, showGap: virtualFrame.showGap }
 }
 
+/**
+ * Physical aspect ratio (width/height) of a display, used by video-wall content
+ * fitting. Falls back to 1 (square) when the display is unknown or degenerate.
+ */
+function displayAspect(displayId: number, topology: DisplayTopology | null): number {
+  const display = topology?.displays.find((d) => d.id === displayId)
+  if (!display || display.bounds.height <= 0) return 1
+  return display.bounds.width / display.bounds.height
+}
+
+/**
+ * Distribute a freshly rendered virtual-canvas frame to the open overlay
+ * windows. Selection order:
+ *  1. `scene.videoWall` present → stitch each panel via {@link extractWallPanelFrame}
+ *     and push to the panel's mapped physical display (R21). Overlays without a
+ *     matching panel fall back to {@link extractSubFrame} (or are skipped).
+ *  2. `scene.linkedDisplays` with >1 display → per-display equal-width sub-frame.
+ *  3. otherwise → broadcast the full frame to every overlay.
+ */
+function distributeFrameToOverlays(
+  frame: RgbFrame,
+  scene: Scene | null,
+  topology: DisplayTopology | null,
+  overlayIds: number[]
+): void {
+  if (overlayIds.length === 0) return
+
+  const wall = scene?.videoWall
+  if (wall && wall.panels.length > 0) {
+    for (const displayId of overlayIds) {
+      const panel = wall.panels.find((p) => p.displayId === displayId)
+      if (panel) {
+        const panelFrame = extractWallPanelFrame(frame, panel, wall, {
+          panelAspect: displayAspect(displayId, topology)
+        })
+        window.rgbbox.pushFrameToDisplay(displayId, panelFrame)
+        continue
+      }
+      // No panel mapped to this overlay: degrade gracefully rather than blanking.
+      const fallback = topology ? extractSubFrame(frame, displayId, topology) : null
+      if (fallback) window.rgbbox.pushFrameToDisplay(displayId, fallback)
+    }
+    return
+  }
+
+  if (scene?.linkedDisplays && topology && topology.displays.length > 1) {
+    // Linked-display mode: each overlay gets only its sub-region of the virtual canvas
+    for (const displayId of overlayIds) {
+      const subFrame = extractSubFrame(frame, displayId, topology)
+      if (subFrame) window.rgbbox.pushFrameToDisplay(displayId, subFrame)
+    }
+    return
+  }
+
+  window.rgbbox.pushFrameToOverlays(frame)
+}
+
 let _layerCounter = 100
 
 export function App(): JSX.Element {
@@ -882,18 +940,7 @@ export function App(): JSX.Element {
       }
       ledColorsRef.current.set(frame.pixels)
       // Push to any open overlay windows (fire-and-forget, not awaited)
-      if (overlayIdsRef.current.length > 0) {
-        const topo = topologyRef.current
-        if (scene.linkedDisplays && topo && topo.displays.length > 1) {
-          // Linked-display mode: each overlay gets only its sub-region of the virtual canvas
-          for (const displayId of overlayIdsRef.current) {
-            const subFrame = extractSubFrame(frame, displayId, topo)
-            if (subFrame) window.rgbbox.pushFrameToDisplay(displayId, subFrame)
-          }
-        } else {
-          window.rgbbox.pushFrameToOverlays(frame)
-        }
-      }
+      distributeFrameToOverlays(frame, scene, topologyRef.current, overlayIdsRef.current)
       metrics.outputMs = 0
       metrics.roundTripMs = lastPostAt > 0 ? performance.now() - lastPostAt : metrics.workerProcessMs
       metricsCollectorRef.current.add(metrics)
@@ -942,17 +989,7 @@ export function App(): JSX.Element {
       ledColorsRef.current = new Uint8Array(frame.pixels.length)
     }
     ledColorsRef.current.set(frame.pixels)
-    if (overlayIdsRef.current.length > 0) {
-      const topo = topologyRef.current
-      if (scene?.linkedDisplays && topo && topo.displays.length > 1) {
-        for (const displayId of overlayIdsRef.current) {
-          const subFrame = extractSubFrame(frame, displayId, topo)
-          if (subFrame) window.rgbbox.pushFrameToDisplay(displayId, subFrame)
-        }
-      } else {
-        window.rgbbox.pushFrameToOverlays(frame)
-      }
-    }
+    distributeFrameToOverlays(frame, scene, topologyRef.current, overlayIdsRef.current)
     const outputMs = 0
     metricsCollectorRef.current.add({
       timestamp: Date.now(),
