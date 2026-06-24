@@ -646,6 +646,30 @@
 
 ---
 
+### R22. 视频墙 UI 配置面板（行列 / 拼缝 / 旋转可视化编辑）
+
+> 目标：把 R20/R21 已落地的视频墙拼接引擎与数据模型（`VideoWallLayout` / `scene.videoWall`）暴露给用户——在 workspace 的「多屏映射」面板内新增一个**可视化配置面板**，让用户无需手写 JSON 即可开启墙模式、调行列矩阵、拼缝(bezel)与补偿、内容适配(fit)、逐面板旋转，并把每个面板映射到物理显示器。承接 R20.6 / R21.7「UI 配置面板（行列 / 拼缝 / 旋转可视化编辑）作为后续独立 R-N」的遗留项。
+
+> 现状 review（落地依据）：当前 `src/renderer/src/App.tsx` 仅有 `linkedDisplays` 单一开关，`scene.videoWall` 字段虽已被实机渲染链路消费（R21），但**没有任何 UI 可编辑它**，用户只能改 profile JSON。`src/engine/videoWall.ts` 已提供 `buildMatrixLayout` / `getPanelActiveRect` / `summarizeLayout` 等纯函数可直接复用做布局生成与预览。
+
+- **R22.1** **新增组件**：`src/renderer/src/components/VideoWallEditor.tsx`（纯 React，经 props 读写，不直接碰 Node/IPC）：
+  - **R22.1.1** 墙模式开关：开启时用 `buildMatrixLayout` 生成默认 2×2 布局并写入 `scene.videoWall`；关闭时置为 `undefined`。
+  - **R22.1.2** 行 / 列 步进器（rows / cols，范围 1..8）：变更时**保留**已有面板的 `rotation` / `displayId`（按 row,col 对齐），新增格子取默认值，多余格子裁剪。
+  - **R22.1.3** 拼缝滑块 `bezel`（0..0.49）+ 拼缝补偿 `bezelCompensation` 开关。
+  - **R22.1.4** 内容适配 `fit` 选择（stretch / contain / cover）。
+  - **R22.1.5** 逐面板编辑：可视化矩阵网格（用 `getPanelActiveRect` 定位每格），点选面板后可设其 `rotation`（0/90/180/270 快捷 + 数值）与映射的物理 `displayId`（下拉，来自 `topology.displays`）。
+  - **R22.1.6** 摘要行：用 `summarizeLayout` 展示当前布局文字摘要。
+- **R22.2** **接线 App.tsx**：在 `map-panel` 区块（`linked-display-row` 之后）渲染 `<VideoWallEditor>`；新增 `updateVideoWall(layout | undefined)` 回调，按 `activeSceneId` 写回 `scene.videoWall`（与 `toggleLinkedDisplays` 同款 `setProfile` 模式）。
+- **R22.3** **i18n**：`src/renderer/src/i18n/index.tsx` 的 EN + ZH 各新增 `videowall.*` 文案键（标题 / 开关 / 行 / 列 / 拼缝 / 补偿 / 适配 / 旋转 / 映射 / 摘要等），无硬编码中英文。
+- **R22.4** **样式**：`src/renderer/src/styles.css` 新增 `.videowall-*` 类，沿用既有 panel / 按钮视觉语言，不改动其他组件样式。
+- **R22.5** **单元测试**：`tests/renderer/components/VideoWallEditor.test.tsx`（happy-dom + RTL）覆盖：默认关闭态渲染、开启触发 `onChange` 带 2×2 layout、改行列触发带新 panel 数的 layout、改 bezel/fit、选面板设 rotation、空 topology 不崩。
+- **R22.6** **边界**：本条只做 UI 配置面板（读写 `scene.videoWall`），**不**改引擎数学（R20）/ 渲染链路（R21）/ IPC schema / overlayManager / profile 顶层结构；缺省（未开启墙模式）行为零变化。
+- **R22.7** **受影响文件**：`src/renderer/src/components/VideoWallEditor.tsx`（新增）、`src/renderer/src/App.tsx`（接线 + `updateVideoWall`）、`src/renderer/src/i18n/index.tsx`（`videowall.*` 文案）、`src/renderer/src/styles.css`（`.videowall-*`）、`tests/renderer/components/VideoWallEditor.test.tsx`（新增）。
+- **R22.8** **验收点**：`yarn typecheck` + `yarn build` 通过；`vitest run` 不回归且新增测试全绿；未开启墙模式的旧 profile 行为零变化；开启后能可视化编辑 rows/cols/bezel/fit/rotation/displayId 并正确写回 `scene.videoWall`。
+- **R22.9** **状态**: 🔄 — 实施中。
+
+---
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |
