@@ -845,6 +845,247 @@
     /* ── i18n hidden/shown ── */
     [data-lang="zh"] .en { display: none; }
     [data-lang="en"] .zh { display: none; }
+
+    /* ── All-effects expand panel ── */
+    .demo-expand-wrap { margin-top: 2rem; text-align: center; }
+
+    .demo-expand-btn {
+      align-items: center;
+      background: rgba(99,102,241,0.12);
+      border: 1px solid rgba(99,102,241,0.4);
+      border-radius: 10px;
+      color: #a5b4fc;
+      cursor: pointer;
+      display: inline-flex;
+      font-size: 0.92rem;
+      font-weight: 600;
+      gap: 0.5rem;
+      padding: 0.75rem 2rem;
+      transition: all 0.2s;
+    }
+    .demo-expand-btn:hover {
+      background: rgba(99,102,241,0.22);
+      border-color: rgba(99,102,241,0.7);
+      color: #fff;
+    }
+    .demo-expand-btn .expand-arrow {
+      display: inline-block;
+      transition: transform 0.25s;
+    }
+    .demo-expand-btn[aria-expanded="true"] .expand-arrow { transform: rotate(180deg); }
+
+    .demo-all-panel {
+      height: 0;
+      overflow: hidden;
+      transition: height 0.35s ease;
+    }
+    .demo-all-inner { padding-top: 1.5rem; text-align: left; }
+
+    .demo-all-section { margin-bottom: 2rem; }
+    .demo-all-section-title {
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.85rem;
+      text-transform: uppercase;
+    }
+    .demo-mini-grid {
+      display: grid;
+      gap: 0.85rem;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    }
+    .demo-mini-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .demo-mini-card:hover {
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      transform: scale(1.04);
+    }
+    .demo-mini-visual {
+      aspect-ratio: 16/9;
+      overflow: hidden;
+      position: relative;
+    }
+    .demo-mini-label {
+      padding: 0.5rem 0.7rem 0.65rem;
+    }
+    .demo-mini-label h5 {
+      font-size: 0.82rem;
+      font-weight: 700;
+      margin-bottom: 0.1rem;
+    }
+    .demo-mini-label p {
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      line-height: 1.35;
+    }
+
+    /* ── Category CSS animation templates ── */
+
+    /* Classic — colour gradient shift */
+    .anim-classic {
+      animation: classicShift 3s ease-in-out infinite alternate;
+      background: linear-gradient(135deg, #6366f1 0%, #06b6d4 50%, #10b981 100%);
+      background-size: 300% 300%;
+    }
+    @keyframes classicShift {
+      0%   { background-position: 0% 50%; filter: brightness(0.85); }
+      100% { background-position: 100% 50%; filter: brightness(1.2); }
+    }
+
+    /* Advanced — fire/particle */
+    .anim-advanced { background: #0a0f1a; overflow: hidden; }
+    .anim-advanced::before {
+      animation: advFire 1.6s ease-in-out infinite alternate;
+      background: radial-gradient(ellipse at 40% 100%, #ff4500 0%, #ff8c00 30%, #ffd700 55%, transparent 80%),
+                  radial-gradient(ellipse at 65% 100%, #ff3000 0%, #ff6347 40%, transparent 70%);
+      bottom: 0; content: ''; left: 0; right: 0; height: 85%; position: absolute;
+    }
+    @keyframes advFire {
+      0%   { transform: scaleY(0.8) translateY(8%); opacity: 0.85; }
+      100% { transform: scaleY(1.1) translateY(-4%); opacity: 1; }
+    }
+
+    /* Science — scan line + ring */
+    .anim-science { background: #000814; overflow: hidden; }
+    .anim-science::before {
+      animation: sciScan 2.4s linear infinite;
+      background: linear-gradient(180deg, transparent 0%, rgba(0,255,160,0.22) 48%, rgba(0,255,160,0.22) 52%, transparent 100%);
+      content: ''; height: 8%; left: 0; right: 0; top: 0; position: absolute;
+    }
+    .anim-science::after {
+      animation: sciRing 5s linear infinite;
+      background: conic-gradient(from 0deg, transparent 68%, rgba(0,210,255,0.3) 80%, rgba(0,255,180,0.35) 90%, transparent 100%);
+      border-radius: 50%; content: '';
+      height: 160%; width: 160%; left: -30%; top: -30%; position: absolute;
+    }
+    @keyframes sciScan {
+      0%   { top: -10%; } 100% { top: 110%; }
+    }
+    @keyframes sciRing {
+      0%   { transform: rotate(0deg); } 100% { transform: rotate(360deg); }
+    }
+
+    /* 3D — perspective gradient */
+    .anim-3d {
+      animation: tdPulse 4s ease-in-out infinite;
+      background: linear-gradient(45deg, #1a0066, #7b00ff, #00eeff, #ff00cc, #1a0066);
+      background-size: 400% 400%;
+    }
+    @keyframes tdPulse {
+      0%   { background-position: 0% 50%; filter: hue-rotate(0deg) brightness(0.9); }
+      50%  { background-position: 100% 50%; filter: hue-rotate(60deg) brightness(1.1); }
+      100% { background-position: 0% 50%; filter: hue-rotate(120deg) brightness(0.9); }
+    }
+
+    /* GPU 3D — glow spin */
+    .anim-gpu3d {
+      background: radial-gradient(ellipse at 50% 50%, #0a002a 0%, #000510 100%);
+      overflow: hidden;
+    }
+    .anim-gpu3d::before {
+      animation: gpuSpin 5s linear infinite;
+      background: conic-gradient(from 0deg, transparent 55%, rgba(180,80,255,0.4) 70%, rgba(80,180,255,0.45) 84%, transparent 92%);
+      border-radius: 50%; content: '';
+      height: 200%; width: 200%; left: -50%; top: -50%; position: absolute;
+      filter: blur(2px);
+    }
+    @keyframes gpuSpin {
+      0%   { transform: rotate(0deg); } 100% { transform: rotate(360deg); }
+    }
+
+    /* Audio — mini EQ bars */
+    .anim-audio {
+      align-items: flex-end;
+      background: linear-gradient(180deg, #0a0f1a 0%, #0d1b2a 100%);
+      display: flex;
+      gap: 2px;
+      justify-content: center;
+      padding: 6px;
+    }
+    .anim-audio .eq-b {
+      animation: eqB var(--d,0.5s) ease-in-out infinite alternate;
+      background: linear-gradient(to top, #06b6d4, #6366f1, #ec4899);
+      border-radius: 2px 2px 0 0;
+      flex: 1;
+      max-width: 16px;
+    }
+    @keyframes eqB {
+      0%   { height: var(--lo,20%); }
+      100% { height: var(--hi,80%); }
+    }
+
+    /* Custom — paint stroke */
+    .anim-custom { background: #0a0f1a; overflow: hidden; }
+    .anim-custom::before {
+      animation: paint1 3s ease-in-out infinite alternate;
+      background: linear-gradient(90deg, transparent 0%, #ec4899 20%, #f59e0b 50%, #10b981 80%, transparent 100%);
+      border-radius: 4px; content: '';
+      height: 30%; width: 100%; position: absolute; top: 34%; filter: blur(5px);
+    }
+    .anim-custom::after {
+      animation: paint2 4s ease-in-out infinite alternate-reverse;
+      background: linear-gradient(90deg, transparent 0%, #6366f1 30%, #06b6d4 65%, transparent 100%);
+      border-radius: 4px; content: '';
+      height: 20%; width: 100%; position: absolute; top: 56%; filter: blur(7px);
+    }
+    @keyframes paint1 {
+      0%   { transform: scaleX(0.7) translateX(-10%); opacity: 0.7; }
+      100% { transform: scaleX(1.1) translateX(5%);  opacity: 1; }
+    }
+    @keyframes paint2 {
+      0%   { transform: scaleX(0.9) translateX(5%);  opacity: 0.6; }
+      100% { transform: scaleX(0.75) translateX(-8%); opacity: 0.9; }
+    }
+
+    /* ── #effects visual card upgrade ── */
+    .effects-visual-wrap { margin-top: 0; }
+    .effect-cat-block { margin-bottom: 2.5rem; }
+    .effect-cat-block:last-child { margin-bottom: 0; }
+    .effect-cat-row {
+      align-items: center;
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .effect-cat-thumb {
+      aspect-ratio: 16/9;
+      border-radius: 8px;
+      flex-shrink: 0;
+      overflow: hidden;
+      position: relative;
+      width: 80px;
+    }
+    .effect-cat-row h3 {
+      color: var(--text);
+      font-size: 1rem;
+      font-weight: 700;
+    }
+    .effect-cat-row p {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin-top: 0.15rem;
+    }
+    .effect-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .effect-chip {
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      padding: 0.3rem 0.65rem;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .effect-chip:hover { border-color: rgba(99,102,241,0.4); color: var(--text); }
   </style>
 </head>
 <body>
@@ -1110,6 +1351,145 @@
           </div>
         </div>
       </div>
+
+      <!-- Expand all effects (R17) -->
+      <div class="demo-expand-wrap">
+        <button class="demo-expand-btn" id="expandAllBtn" aria-expanded="false">
+          <span class="zh">展开全部 55 种效果 ▼</span>
+          <span class="en">Show All 55 Effects ▼</span>
+        </button>
+        <div class="demo-all-panel" id="allEffectsPanel">
+          <div class="demo-all-inner">
+
+            <!-- Classic -->
+            <div class="demo-all-section">
+              <div class="demo-all-section-title">🔮 <span class="zh">经典（7）</span><span class="en">Classic (7)</span></div>
+              <div class="demo-mini-grid">
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">屏幕采样</h5><h5 class="en">Screen Ambient</h5><p class="zh">实时捕获屏幕色彩映射</p><p class="en">Real-time screen colour mapping</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">静态</h5><h5 class="en">Static</h5><p class="zh">纯色填充 + 点阵文字</p><p class="en">Solid fill + dot-matrix text</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">呼吸灯</h5><h5 class="en">Breathing</h5><p class="zh">正弦节律淡入淡出</p><p class="en">Sine-rhythm fade in/out</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">彩虹</h5><h5 class="en">Rainbow</h5><p class="zh">流动全色彩扫描</p><p class="en">Flowing full-spectrum sweep</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">波浪</h5><h5 class="en">Wave</h5><p class="zh">sin/cos 调制光波</p><p class="en">sin/cos modulated light wave</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">区域渐变</h5><h5 class="en">Zone Gradient</h5><p class="zh">按显示区域分配颜色</p><p class="en">Colour per display zone</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-classic"></div><div class="demo-mini-label"><h5 class="zh">随机颜色</h5><h5 class="en">Random Color</h5><p class="zh">随机切换颜色</p><p class="en">Random colour switching</p></div></div>
+              </div>
+            </div>
+
+            <!-- Custom -->
+            <div class="demo-all-section">
+              <div class="demo-all-section-title">🎨 <span class="zh">自定义绘画（2）</span><span class="en">Custom Paint (2)</span></div>
+              <div class="demo-mini-grid">
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-custom"></div><div class="demo-mini-label"><h5 class="zh">自由绘画</h5><h5 class="en">Custom Paint</h5><p class="zh">用户手绘 LED 图案</p><p class="en">User-drawn LED pattern</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-custom"></div><div class="demo-mini-label"><h5 class="zh">图片绘画</h5><h5 class="en">Image Paint</h5><p class="zh">导入图片映射到灯带</p><p class="en">Import image to LED strip</p></div></div>
+              </div>
+            </div>
+
+            <!-- Advanced -->
+            <div class="demo-all-section">
+              <div class="demo-all-section-title">🚀 <span class="zh">进阶（14）</span><span class="en">Advanced (14)</span></div>
+              <div class="demo-mini-grid">
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">火焰</h5><h5 class="en">Fire</h5><p class="zh">离散阵风 + 4 档色阶</p><p class="en">Gust events + 4-stop ramp</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">极光</h5><h5 class="en">Aurora</h5><p class="zh">北极光飘动垂帘</p><p class="en">Northern-lights curtain</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">星云</h5><h5 class="en">Nebula</h5><p class="zh">深空星云色彩流动</p><p class="en">Deep-space nebula flow</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">流体光场</h5><h5 class="en">Fluid Flow</h5><p class="zh">流体扰动光场</p><p class="en">Fluid distortion field</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">镜像对称</h5><h5 class="en">Mirror Symmetry</h5><p class="zh">左右镜像对称光场</p><p class="en">Bilateral mirror field</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">星光</h5><h5 class="en">Starlight</h5><p class="zh">随机闪烁星点</p><p class="en">Random twinkling stars</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">涟漪</h5><h5 class="en">Ripple</h5><p class="zh">点击触发波纹扩散</p><p class="en">Click-to-burst ripple</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">光谱</h5><h5 class="en">Spectrum</h5><p class="zh">沿 x 轴分布色相</p><p class="en">Hue distributed along x</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">彗星</h5><h5 class="en">Comet</h5><p class="zh">运动拖尾光点</p><p class="en">Moving comet streak</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">闪电</h5><h5 class="en">Lightning</h5><p class="zh">随机分支闪电</p><p class="en">Random branching bolt</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">爆炸</h5><h5 class="en">Explode</h5><p class="zh">径向脉冲爆炸</p><p class="en">Radial pulse burst</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">故障闪烁</h5><h5 class="en">Glitch</h5><p class="zh">数字故障随机错位</p><p class="en">Digital glitch displacement</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">数字雨</h5><h5 class="en">Matrix Rain</h5><p class="zh">黑客帝国绿色字符瀑布</p><p class="en">Matrix green character rain</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-advanced"></div><div class="demo-mini-label"><h5 class="zh">霓虹脉冲</h5><h5 class="en">Neon Pulse</h5><p class="zh">霓虹色块节律脉冲</p><p class="en">Neon colour rhythm pulse</p></div></div>
+              </div>
+            </div>
+
+            <!-- Science -->
+            <div class="demo-all-section">
+              <div class="demo-all-section-title">🔬 <span class="zh">科学可视化（20）</span><span class="en">Science Visualisation (20)</span></div>
+              <div class="demo-mini-grid">
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">DNA 双螺旋</h5><h5 class="en">DNA Helix</h5><p class="zh">旋转的双链结构</p><p class="en">Rotating double-strand helix</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">黑洞吸积盘</h5><h5 class="en">Black Hole</h5><p class="zh">引力透镜 + 吸积盘</p><p class="en">Gravitational lensing disc</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">太阳系轨道</h5><h5 class="en">Solar System</h5><p class="zh">行星轨道运行</p><p class="en">Planetary orbital motion</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">银河旋臂</h5><h5 class="en">Spiral Galaxy</h5><p class="zh">棒旋星系旋臂</p><p class="en">Barred spiral galaxy arms</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">猎户座星云</h5><h5 class="en">Orion Nebula</h5><p class="zh">彩色星云气体云</p><p class="en">Colorful nebula gas cloud</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">脉冲星信标</h5><h5 class="en">Pulsar Beacon</h5><p class="zh">脉冲星定时辐射束</p><p class="en">Timed pulsar radiation beam</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">飓风眼</h5><h5 class="en">Hurricane Eye</h5><p class="zh">旋转云带 + 风眼结构</p><p class="en">Rotating cloud bands + eye</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">先导闪电</h5><h5 class="en">Lightning Leader</h5><p class="zh">分形先导通道</p><p class="en">Fractal leader channel</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">正二十面体病毒</h5><h5 class="en">Icosahedral Virus</h5><p class="zh">对称病毒衣壳结构</p><p class="en">Symmetric viral capsid</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">蛋白质折叠</h5><h5 class="en">Protein Folding</h5><p class="zh">氨基酸链折叠过程</p><p class="en">Amino-acid chain folding</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">有丝分裂纺锤体</h5><h5 class="en">Mitosis Spindle</h5><p class="zh">细胞分裂纺锤丝</p><p class="en">Cell division spindle fibres</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">突触脉冲</h5><h5 class="en">Synapse Pulse</h5><p class="zh">神经元电信号传导</p><p class="en">Neuron electrical signal</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">量子坍缩</h5><h5 class="en">Quantum Collapse</h5><p class="zh">波函数概率坍缩</p><p class="en">Wave-function probability collapse</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">微绒毛场</h5><h5 class="en">Microvilli Field</h5><p class="zh">细胞表面微绒毛阵列</p><p class="en">Cell surface microvilli array</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">日食对齐</h5><h5 class="en">Eclipse Alignment</h5><p class="zh">日全食日冕光环</p><p class="en">Total eclipse corona ring</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">彗星尾迹</h5><h5 class="en">Comet Tail</h5><p class="zh">太阳风吹散的彗尾</p><p class="en">Solar-wind swept comet tail</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">磁层极光</h5><h5 class="en">Magnetosphere Aurora</h5><p class="zh">极区磁层粒子辐射</p><p class="en">Polar magnetosphere radiation</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">波衍射</h5><h5 class="en">Wave Diffraction</h5><p class="zh">光波干涉衍射条纹</p><p class="en">Light interference fringes</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">涡旋火焰</h5><h5 class="en">Vortex Flame</h5><p class="zh">旋转火焰涡流</p><p class="en">Rotating flame vortex</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-science"></div><div class="demo-mini-label"><h5 class="zh">托卡马克等离子</h5><h5 class="en">Tokamak Plasma</h5><p class="zh">磁约束核聚变等离子体</p><p class="en">Magnetically confined plasma</p></div></div>
+              </div>
+            </div>
+
+            <!-- 3D Visual -->
+            <div class="demo-all-section">
+              <div class="demo-all-section-title">🧊 <span class="zh">3D 视觉（4）</span><span class="en">3D Visual (4)</span></div>
+              <div class="demo-mini-grid">
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-3d"></div><div class="demo-mini-label"><h5 class="zh">等离子</h5><h5 class="en">Plasma</h5><p class="zh">流动霓虹等离子球</p><p class="en">Flowing neon plasma sphere</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-3d"></div><div class="demo-mini-label"><h5 class="zh">旋涡</h5><h5 class="en">Vortex</h5><p class="zh">深邃旋转涡旋</p><p class="en">Deep rotating vortex</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-3d"></div><div class="demo-mini-label"><h5 class="zh">隧道</h5><h5 class="en">Tunnel</h5><p class="zh">无限延伸透视隧道</p><p class="en">Infinite perspective tunnel</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-3d"></div><div class="demo-mini-label"><h5 class="zh">水晶</h5><h5 class="en">Crystal</h5><p class="zh">折射棱镜水晶光场</p><p class="en">Refracting crystal light field</p></div></div>
+              </div>
+            </div>
+
+            <!-- GPU 3D -->
+            <div class="demo-all-section">
+              <div class="demo-all-section-title">🎮 <span class="zh">GPU 3D 渲染（6）</span><span class="en">GPU 3D Render (6)</span></div>
+              <div class="demo-mini-grid">
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">球体脉冲</h5><h5 class="en">Sphere Pulse</h5><p class="zh">WebGL 球体脉冲辉光</p><p class="en">WebGL sphere pulse glow</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">跃迁门户</h5><h5 class="en">Warp Portal</h5><p class="zh">超空间跃迁旋涡门</p><p class="en">Hyperspace warp vortex gate</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">霓虹星系</h5><h5 class="en">Neon Galaxy</h5><p class="zh">旋转星系旋臂 GPU 渲染</p><p class="en">GPU rotating galaxy spiral</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">熔岩球</h5><h5 class="en">Lava Sphere</h5><p class="zh">翻涌熔岩纹理球体</p><p class="en">Churning lava texture sphere</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">激光秀</h5><h5 class="en">Laser Show</h5><p class="zh">多彩激光光束交织</p><p class="en">Multi-colour laser beams</p></div></div>
+                <div class="demo-mini-card"><div class="demo-mini-visual anim-gpu3d"></div><div class="demo-mini-label"><h5 class="zh">全息投影</h5><h5 class="en">Hologram</h5><p class="zh">科幻扫描线 + 线框网格</p><p class="en">Sci-fi scanlines + wireframe</p></div></div>
+              </div>
+            </div>
+
+            <!-- Audio -->
+            <div class="demo-all-section">
+              <div class="demo-all-section-title">🎵 <span class="zh">音频响应（2）</span><span class="en">Audio Reactive (2)</span></div>
+              <div class="demo-mini-grid">
+                <div class="demo-mini-card">
+                  <div class="demo-mini-visual anim-audio">
+                    <div class="eq-b" style="--lo:25%;--hi:80%;--d:0.42s"></div>
+                    <div class="eq-b" style="--lo:40%;--hi:90%;--d:0.35s"></div>
+                    <div class="eq-b" style="--lo:15%;--hi:70%;--d:0.55s"></div>
+                    <div class="eq-b" style="--lo:30%;--hi:85%;--d:0.48s"></div>
+                    <div class="eq-b" style="--lo:20%;--hi:75%;--d:0.62s"></div>
+                    <div class="eq-b" style="--lo:35%;--hi:88%;--d:0.38s"></div>
+                  </div>
+                  <div class="demo-mini-label"><h5 class="zh">节拍响应</h5><h5 class="en">Audio Beat</h5><p class="zh">低音节拍触发亮度跳变</p><p class="en">Bass beat triggers brightness burst</p></div>
+                </div>
+                <div class="demo-mini-card">
+                  <div class="demo-mini-visual anim-audio">
+                    <div class="eq-b" style="--lo:10%;--hi:60%;--d:0.70s"></div>
+                    <div class="eq-b" style="--lo:25%;--hi:85%;--d:0.45s"></div>
+                    <div class="eq-b" style="--lo:40%;--hi:95%;--d:0.38s"></div>
+                    <div class="eq-b" style="--lo:20%;--hi:78%;--d:0.58s"></div>
+                    <div class="eq-b" style="--lo:35%;--hi:90%;--d:0.43s"></div>
+                    <div class="eq-b" style="--lo:15%;--hi:65%;--d:0.68s"></div>
+                    <div class="eq-b" style="--lo:28%;--hi:82%;--d:0.50s"></div>
+                    <div class="eq-b" style="--lo:18%;--hi:72%;--d:0.60s"></div>
+                  </div>
+                  <div class="demo-mini-label"><h5 class="zh">音频均衡器</h5><h5 class="en">Audio Equalizer</h5><p class="zh">32 频段 FFT 实时均衡器</p><p class="en">32-band FFT live equalizer</p></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1118,91 +1498,165 @@
     <div class="section-title">
       <p class="eyebrow zh">特效库</p>
       <p class="eyebrow en">Effect Library</p>
-      <h2>🎆 <span class="zh">45 种精心设计的灯光特效</span><span class="en">45 Handcrafted Lighting Effects</span></h2>
-      <p class="zh">六大类别全面覆盖，从经典到前沿，满足任何场景需求</p>
-      <p class="en">Six categories covering everything from classic ambience to cutting-edge GPU effects</p>
+      <h2>🎆 <span class="zh">55 种精心设计的灯光特效</span><span class="en">55 Handcrafted Lighting Effects</span></h2>
+      <p class="zh">七大类别全面覆盖，从经典到前沿 GPU 渲染，满足任何场景需求</p>
+      <p class="en">Seven categories from classic ambience to cutting-edge GPU effects — covering every scene</p>
     </div>
-    <div class="effects-grid">
-      <div class="effect-category">
-        <h4>🔮 <span class="zh">经典</span><span class="en">Classic</span></h4>
-        <ul>
-          <li class="zh">屏幕采样</li><li class="en">Screen Ambient</li>
-          <li class="zh">静态（点阵文字）</li><li class="en">Static (Dot-matrix Text)</li>
-          <li class="zh">呼吸灯</li><li class="en">Breathing</li>
-          <li class="zh">彩虹</li><li class="en">Rainbow</li>
-          <li class="zh">波浪</li><li class="en">Wave</li>
-          <li class="zh">区域渐变</li><li class="en">Zone Gradient</li>
-          <li class="zh">随机颜色</li><li class="en">Random Color</li>
-        </ul>
+    <div class="effects-visual-wrap">
+
+      <div class="effect-cat-block">
+        <div class="effect-cat-row">
+          <div class="effect-cat-thumb anim-classic"></div>
+          <div>
+            <h3>🔮 <span class="zh">经典</span><span class="en">Classic</span></h3>
+            <p class="zh">7 种基础灯效，开箱即用</p><p class="en">7 ready-to-use base effects</p>
+          </div>
+        </div>
+        <div class="effect-chips">
+          <span class="effect-chip zh">屏幕采样</span><span class="effect-chip en">Screen Ambient</span>
+          <span class="effect-chip zh">静态</span><span class="effect-chip en">Static</span>
+          <span class="effect-chip zh">呼吸灯</span><span class="effect-chip en">Breathing</span>
+          <span class="effect-chip zh">彩虹</span><span class="effect-chip en">Rainbow</span>
+          <span class="effect-chip zh">波浪</span><span class="effect-chip en">Wave</span>
+          <span class="effect-chip zh">区域渐变</span><span class="effect-chip en">Zone Gradient</span>
+          <span class="effect-chip zh">随机颜色</span><span class="effect-chip en">Random Color</span>
+        </div>
       </div>
-      <div class="effect-category">
-        <h4>🚀 <span class="zh">进阶</span><span class="en">Advanced</span></h4>
-        <ul>
-          <li class="zh">火焰</li><li class="en">Fire</li>
-          <li class="zh">星光</li><li class="en">Starlight</li>
-          <li class="zh">涟漪</li><li class="en">Ripple</li>
-          <li class="zh">光谱</li><li class="en">Spectrum</li>
-          <li class="zh">彗星</li><li class="en">Comet</li>
-          <li class="zh">闪电</li><li class="en">Lightning</li>
-          <li class="zh">极光</li><li class="en">Aurora</li>
-          <li class="zh">爆炸</li><li class="en">Explode</li>
-        </ul>
+
+      <div class="effect-cat-block">
+        <div class="effect-cat-row">
+          <div class="effect-cat-thumb anim-custom"></div>
+          <div>
+            <h3>🎨 <span class="zh">自定义绘画</span><span class="en">Custom Paint</span></h3>
+            <p class="zh">2 种自由绘制模式</p><p class="en">2 freehand drawing modes</p>
+          </div>
+        </div>
+        <div class="effect-chips">
+          <span class="effect-chip zh">自由绘画</span><span class="effect-chip en">Custom Paint</span>
+          <span class="effect-chip zh">图片绘画</span><span class="effect-chip en">Image Paint</span>
+        </div>
       </div>
-      <div class="effect-category">
-        <h4>🔬 <span class="zh">科学可视化</span><span class="en">Science</span></h4>
-        <ul>
-          <li class="zh">DNA 双螺旋</li><li class="en">DNA Double Helix</li>
-          <li class="zh">黑洞吸积盘</li><li class="en">Black Hole</li>
-          <li class="zh">太阳系轨道</li><li class="en">Solar System</li>
-          <li class="zh">银河旋臂</li><li class="en">Spiral Galaxy</li>
-          <li class="zh">飓风眼</li><li class="en">Hurricane Eye</li>
-          <li class="zh">量子坍缩</li><li class="en">Quantum Collapse</li>
-          <li class="zh">托卡马克等离子</li><li class="en">Tokamak Plasma</li>
-          <li class="zh">磁层极光…</li><li class="en">Magnetosphere Aurora…</li>
-        </ul>
+
+      <div class="effect-cat-block">
+        <div class="effect-cat-row">
+          <div class="effect-cat-thumb anim-advanced"></div>
+          <div>
+            <h3>🚀 <span class="zh">进阶</span><span class="en">Advanced</span></h3>
+            <p class="zh">14 种动态特效，视觉冲击力十足</p><p class="en">14 dynamic effects with high visual impact</p>
+          </div>
+        </div>
+        <div class="effect-chips">
+          <span class="effect-chip zh">火焰</span><span class="effect-chip en">Fire</span>
+          <span class="effect-chip zh">极光</span><span class="effect-chip en">Aurora</span>
+          <span class="effect-chip zh">星云</span><span class="effect-chip en">Nebula</span>
+          <span class="effect-chip zh">流体光场</span><span class="effect-chip en">Fluid Flow</span>
+          <span class="effect-chip zh">镜像对称</span><span class="effect-chip en">Mirror Symmetry</span>
+          <span class="effect-chip zh">星光</span><span class="effect-chip en">Starlight</span>
+          <span class="effect-chip zh">涟漪</span><span class="effect-chip en">Ripple</span>
+          <span class="effect-chip zh">光谱</span><span class="effect-chip en">Spectrum</span>
+          <span class="effect-chip zh">彗星</span><span class="effect-chip en">Comet</span>
+          <span class="effect-chip zh">闪电</span><span class="effect-chip en">Lightning</span>
+          <span class="effect-chip zh">爆炸</span><span class="effect-chip en">Explode</span>
+          <span class="effect-chip zh">故障闪烁</span><span class="effect-chip en">Glitch</span>
+          <span class="effect-chip zh">数字雨</span><span class="effect-chip en">Matrix Rain</span>
+          <span class="effect-chip zh">霓虹脉冲</span><span class="effect-chip en">Neon Pulse</span>
+        </div>
       </div>
-      <div class="effect-category">
-        <h4>🧊 <span class="zh">3D 视觉</span><span class="en">3D Visual</span></h4>
-        <ul>
-          <li class="zh">等离子</li><li class="en">Plasma</li>
-          <li class="zh">旋涡</li><li class="en">Vortex</li>
-          <li class="zh">隧道</li><li class="en">Tunnel</li>
-          <li class="zh">水晶</li><li class="en">Crystal</li>
-          <li class="zh">故障闪烁</li><li class="en">Glitch</li>
-          <li class="zh">数字雨</li><li class="en">Matrix Rain</li>
-          <li class="zh">全息投影</li><li class="en">Hologram</li>
-          <li class="zh">流体光场…</li><li class="en">Fluid Flow…</li>
-        </ul>
+
+      <div class="effect-cat-block">
+        <div class="effect-cat-row">
+          <div class="effect-cat-thumb anim-science"></div>
+          <div>
+            <h3>🔬 <span class="zh">科学可视化</span><span class="en">Science Visualisation</span></h3>
+            <p class="zh">20 种科学现象动态还原</p><p class="en">20 scientific phenomena dynamically visualised</p>
+          </div>
+        </div>
+        <div class="effect-chips">
+          <span class="effect-chip zh">DNA 双螺旋</span><span class="effect-chip en">DNA Helix</span>
+          <span class="effect-chip zh">黑洞吸积盘</span><span class="effect-chip en">Black Hole</span>
+          <span class="effect-chip zh">太阳系轨道</span><span class="effect-chip en">Solar System</span>
+          <span class="effect-chip zh">银河旋臂</span><span class="effect-chip en">Spiral Galaxy</span>
+          <span class="effect-chip zh">猎户座星云</span><span class="effect-chip en">Orion Nebula</span>
+          <span class="effect-chip zh">脉冲星信标</span><span class="effect-chip en">Pulsar Beacon</span>
+          <span class="effect-chip zh">飓风眼</span><span class="effect-chip en">Hurricane Eye</span>
+          <span class="effect-chip zh">先导闪电</span><span class="effect-chip en">Lightning Leader</span>
+          <span class="effect-chip zh">正二十面体病毒</span><span class="effect-chip en">Icosahedral Virus</span>
+          <span class="effect-chip zh">蛋白质折叠</span><span class="effect-chip en">Protein Folding</span>
+          <span class="effect-chip zh">有丝分裂纺锤体</span><span class="effect-chip en">Mitosis Spindle</span>
+          <span class="effect-chip zh">突触脉冲</span><span class="effect-chip en">Synapse Pulse</span>
+          <span class="effect-chip zh">量子坍缩</span><span class="effect-chip en">Quantum Collapse</span>
+          <span class="effect-chip zh">微绒毛场</span><span class="effect-chip en">Microvilli Field</span>
+          <span class="effect-chip zh">日食对齐</span><span class="effect-chip en">Eclipse Alignment</span>
+          <span class="effect-chip zh">彗星尾迹</span><span class="effect-chip en">Comet Tail</span>
+          <span class="effect-chip zh">磁层极光</span><span class="effect-chip en">Magnetosphere Aurora</span>
+          <span class="effect-chip zh">波衍射</span><span class="effect-chip en">Wave Diffraction</span>
+          <span class="effect-chip zh">涡旋火焰</span><span class="effect-chip en">Vortex Flame</span>
+          <span class="effect-chip zh">托卡马克等离子</span><span class="effect-chip en">Tokamak Plasma</span>
+        </div>
       </div>
-      <div class="effect-category">
-        <h4>🎮 <span class="zh">GPU 3D 渲染</span><span class="en">GPU 3D</span></h4>
-        <ul>
-          <li class="zh">球体脉冲</li><li class="en">Sphere Pulse</li>
-          <li class="zh">跃迁门户</li><li class="en">Warp Portal</li>
-          <li class="zh">霓虹星系</li><li class="en">Neon Galaxy</li>
-          <li class="zh">熔岩球</li><li class="en">Lava Sphere</li>
-          <li class="zh">激光秀</li><li class="en">Laser Show</li>
-        </ul>
+
+      <div class="effect-cat-block">
+        <div class="effect-cat-row">
+          <div class="effect-cat-thumb anim-3d"></div>
+          <div>
+            <h3>🧊 <span class="zh">3D 视觉</span><span class="en">3D Visual</span></h3>
+            <p class="zh">4 种 CPU 3D 渲染效果</p><p class="en">4 CPU-rendered 3D effects</p>
+          </div>
+        </div>
+        <div class="effect-chips">
+          <span class="effect-chip zh">等离子</span><span class="effect-chip en">Plasma</span>
+          <span class="effect-chip zh">旋涡</span><span class="effect-chip en">Vortex</span>
+          <span class="effect-chip zh">隧道</span><span class="effect-chip en">Tunnel</span>
+          <span class="effect-chip zh">水晶</span><span class="effect-chip en">Crystal</span>
+        </div>
       </div>
-      <div class="effect-category">
-        <h4>🎵 <span class="zh">音频响应</span><span class="en">Audio Reactive</span></h4>
-        <ul>
-          <li class="zh">节拍（起音/衰减）</li><li class="en">Audio Beat</li>
-          <li class="zh">均衡器（32 频段）</li><li class="en">Equalizer (32-band)</li>
-          <li class="zh">麦克风 / 系统音频</li><li class="en">Mic / System Audio</li>
-          <li class="zh">反锯齿频谱渲染</li><li class="en">Anti-aliased Spectrum</li>
-        </ul>
+
+      <div class="effect-cat-block">
+        <div class="effect-cat-row">
+          <div class="effect-cat-thumb anim-gpu3d"></div>
+          <div>
+            <h3>🎮 <span class="zh">GPU 3D 渲染</span><span class="en">GPU 3D Render</span></h3>
+            <p class="zh">6 种 WebGL GLSL 着色器效果</p><p class="en">6 WebGL GLSL shader effects</p>
+          </div>
+        </div>
+        <div class="effect-chips">
+          <span class="effect-chip zh">球体脉冲</span><span class="effect-chip en">Sphere Pulse</span>
+          <span class="effect-chip zh">跃迁门户</span><span class="effect-chip en">Warp Portal</span>
+          <span class="effect-chip zh">霓虹星系</span><span class="effect-chip en">Neon Galaxy</span>
+          <span class="effect-chip zh">熔岩球</span><span class="effect-chip en">Lava Sphere</span>
+          <span class="effect-chip zh">激光秀</span><span class="effect-chip en">Laser Show</span>
+          <span class="effect-chip zh">全息投影</span><span class="effect-chip en">Hologram</span>
+        </div>
       </div>
+
+      <div class="effect-cat-block">
+        <div class="effect-cat-row">
+          <div class="effect-cat-thumb anim-audio">
+            <div class="eq-b" style="--lo:20%;--hi:75%;--d:0.45s"></div>
+            <div class="eq-b" style="--lo:35%;--hi:90%;--d:0.38s"></div>
+            <div class="eq-b" style="--lo:15%;--hi:65%;--d:0.60s"></div>
+          </div>
+          <div>
+            <h3>🎵 <span class="zh">音频响应</span><span class="en">Audio Reactive</span></h3>
+            <p class="zh">2 种实时音频驱动效果</p><p class="en">2 real-time audio-driven effects</p>
+          </div>
+        </div>
+        <div class="effect-chips">
+          <span class="effect-chip zh">节拍响应</span><span class="effect-chip en">Audio Beat</span>
+          <span class="effect-chip zh">均衡器（32 频段）</span><span class="effect-chip en">Equalizer (32-band)</span>
+        </div>
+      </div>
+
     </div>
     <div class="effect-count">
       <div class="effect-count-nums">
         <div class="effect-count-item">
-          <strong>45+</strong>
+          <strong>55</strong>
           <span class="zh">内置特效总数</span>
           <span class="en">Total Built-in Effects</span>
         </div>
         <div class="effect-count-item">
-          <strong>6</strong>
+          <strong>7</strong>
           <span class="zh">特效分类</span>
           <span class="en">Effect Categories</span>
         </div>
@@ -1402,6 +1856,35 @@
 
     // Init
     applyLang(getLang())
+
+    // Expand / collapse all effects panel (R17)
+    const expandBtn = document.getElementById('expandAllBtn')
+    const allPanel  = document.getElementById('allEffectsPanel')
+    if (expandBtn && allPanel) {
+      expandBtn.addEventListener('click', function () {
+        const isOpen = this.getAttribute('aria-expanded') === 'true'
+        if (isOpen) {
+          allPanel.style.height = allPanel.scrollHeight + 'px'
+          requestAnimationFrame(() => { allPanel.style.height = '0' })
+          this.setAttribute('aria-expanded', 'false')
+          const zh = this.querySelector('.zh')
+          const en = this.querySelector('.en')
+          if (zh) zh.textContent = '展开全部 55 种效果 ▼'
+          if (en) en.textContent = 'Show All 55 Effects ▼'
+        } else {
+          allPanel.style.height = allPanel.scrollHeight + 'px'
+          allPanel.addEventListener('transitionend', function handler() {
+            allPanel.style.height = 'auto'
+            allPanel.removeEventListener('transitionend', handler)
+          })
+          this.setAttribute('aria-expanded', 'true')
+          const zh = this.querySelector('.zh')
+          const en = this.querySelector('.en')
+          if (zh) zh.textContent = '收起全部效果 ▲'
+          if (en) en.textContent = 'Collapse Effects ▲'
+        }
+      })
+    }
   </script>
 </body>
 </html>
