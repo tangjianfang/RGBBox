@@ -123,6 +123,23 @@ function createMainWindow(): void {
     }
   })
 
+  // R25: force the runtime window icon in packaged builds. BrowserWindow's `icon:`
+  // option resolves `build/icon.ico` relative to `__dirname` (out/main/), which is
+  // only present in dev; in prod the file lives under `process.resourcesPath/icon.ico`
+  // (see extraResources in package.json). Without this override Windows falls back to
+  // the PE RT_ICON that electron-builder left untouched (R23 keeps it off), so the
+  // taskbar shows the Electron default. R26 fixes the PE icon for the .exe itself.
+  {
+    const isDev = !app.isPackaged
+    const iconPath = process.platform === 'win32'
+      ? (isDev ? join(__dirname, '../../build/icon.ico') : join(process.resourcesPath, 'icon.ico'))
+      : (isDev ? join(__dirname, '../../build/icon.png') : join(process.resourcesPath, 'icon.png'))
+    const img = nativeImage.createFromPath(iconPath)
+    if (!img.isEmpty()) {
+      mainWindow.setIcon(img)
+    }
+  }
+
   if (isDevelopment) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL!)
   } else {

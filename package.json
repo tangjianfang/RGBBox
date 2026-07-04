@@ -1,6 +1,6 @@
 {
   "name": "rgbbox",
-  "version": "0.3.10",
+  "version": "0.3.39",
   "description": "Local-first desktop RGB lighting controller with multi-display screen sampling.",
   "author": "RGBBox Contributors",
   "homepage": "https://github.com/tangjianfang/RGBBox",
@@ -16,10 +16,11 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "predist": "npm version patch --no-git-tag-version",
-    "dist": "yarn build && electron-builder",
-    "dist:win": "npm version patch --no-git-tag-version && yarn build && electron-builder --win",
-    "dist:mac": "npm version patch --no-git-tag-version && yarn build && electron-builder --mac",
-    "dist:dir": "npm version patch --no-git-tag-version && yarn build && electron-builder --dir",
+    "predist:clean": "node scripts/dist-clean.mjs",
+    "dist": "yarn predist:clean && yarn build && electron-builder",
+    "dist:win": "npm version patch --no-git-tag-version && yarn predist:clean && yarn build && electron-builder --win",
+    "dist:mac": "npm version patch --no-git-tag-version && yarn predist:clean && yarn build && electron-builder --mac",
+    "dist:dir": "npm version patch --no-git-tag-version && yarn predist:clean && yarn build && electron-builder --dir",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
@@ -31,7 +32,8 @@
     "lucide-react": "1.14.0",
     "react": "19.2.5",
     "react-dom": "19.2.5",
-    "three": "0.184.0"
+    "three": "0.184.0",
+    "wavesurfer.js": "^7.12.8"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.0",
@@ -47,6 +49,7 @@
     "electron-vite": "5.0.0",
     "gl": "^8.1.6",
     "happy-dom": "^15.11.7",
+    "rcedit": "2",
     "typescript": "6.0.3",
     "vite": "6.4.2",
     "vitest": "4.1.7"
@@ -55,6 +58,7 @@
     "appId": "app.rgbbox.desktop",
     "productName": "RGBBox",
     "copyright": "Copyright © 2025 RGBBox Contributors",
+    "afterPack": "./scripts/afterPack.mjs",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -88,7 +92,9 @@
       ],
       "icon": "build/icon.ico",
       "forceCodeSigning": false,
-      "verifyUpdateCodeSignature": false
+      "verifyUpdateCodeSignature": false,
+      "signAndEditExecutable": false,
+      "signtoolOptions": null
     },
     "nsis": {
       "oneClick": false,
@@ -106,7 +112,9 @@
         }
       ],
       "icon": "build/icon.png",
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "identity": null,
+      "sign": null
     },
     "linux": {
       "target": [
