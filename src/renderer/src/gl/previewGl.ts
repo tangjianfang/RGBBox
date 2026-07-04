@@ -206,12 +206,31 @@ export class PreviewGl {
   }
 
   /**
-   * Compute and upload layout uniforms so cells are square and the grid is
-   * centred with letterbox / pillarbox padding.
+   * Compute and upload layout uniforms.
+   *
+   * - Preview (in-app "RGB 画布预览"): cells are kept square, grid centred
+   *   with letterbox / pillarbox padding — this is a UI viewport, not a
+   *   physical output, so square cells simply look nicer.
+   * - Overlay (real per-display push, R30.1): always stretch the grid to
+   *   cover the full canvas edge-to-edge with zero padding. Overlay windows
+   *   are sized to the exact physical display, and in linked multi-display
+   *   mode each display's sub-frame aspect ratio rarely matches its own
+   *   screen aspect exactly (see `extractSubFrame` in App.tsx) — letterboxing
+   *   here would show up as a visible black border on real hardware. This
+   *   also keeps the physical output content-consistent with what the
+   *   virtual canvas preview shows for that display's region (no more
+   *   preview/output mismatch when displays have different resolutions).
    */
   private updateLayout(columns: number, rows: number): void {
     const { gl, canvasW, canvasH } = this
     if (!canvasW || !canvasH) return
+
+    if (this.overlay) {
+      gl.uniform2f(this.uOrigin, 0, 0)
+      gl.uniform2f(this.uCellSize, 1 / columns, 1 / rows)
+      return
+    }
+
     // cellSize in physical pixels — same formula as the old 2D canvas code.
     const cellPx   = Math.min(canvasW / columns, canvasH / rows)
     const totalW   = cellPx * columns

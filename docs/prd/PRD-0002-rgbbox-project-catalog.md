@@ -670,6 +670,259 @@
 
 ---
 
+### R23. 关闭代码签名 + 阻断 winCodeSign 解码（dev 阶段）
+
+> 目标：`yarn dist` 在 Windows / macOS / Linux 三端出包时**不**做代码签名 —— 当前仓库无 CA / EV 证书可用，开启签名会直接 fail；顺带 `winCodeSign-2.6.0.7z` 解压阶段因 OS 缺 `SeCreateSymbolicLinkPrivilege` 也会 fail（详见 §8 已知问题）。本条把 electron-builder 关闭所有签名路径，**根本不让它下载 winCodeSign**。
+> **风险等级：L2**（修改 `package.json` 的 `build` 段，超出 R13.7「仅 homepage」的范围；按 R10.6 必须独立条目 + 走标准四步）。
+> **触发场景**：2026-07-04 用户跑 `yarn dist` 报错；根因 = 仓库未配 CA 签名 + electron-builder 默认尝试调用签名器 → 下载 winCodeSign → 7z 提交流因 OS 缺权限失败。
+
+- **R23.1** **`package.json` `build` 段签名显式关闭**：
+  - **R23.1.1** `win.forceCodeSigning: false`（项目已为 false，保持）；新增 `win.signAndEditExecutable: false`（**关键：跳过 `rcedit` 整阶段，避免再下载 winCodeSign 工具**）+ `win.signtoolOptions: null` 显式置空。
+  - **R23.1.2** `mac.identity: null` —— electron-builder 26.x 在缺省时仍会探测 Apple 开发者身份；显式 null 强制跳过；补 `mac.sign: null` 跳过 macOS codesign 阶段。
+  - **R23.1.3** `linux` 暂无需改（electron-builder 默认不签），保持现状。
+  - **R23.1.4** `.github/workflows/ci.yml`（未来）若上线后置条件 `CSC_LINK || CSC_KEY_PASSWORD` 存在才签名；当前 CI 不存在，本条不动。
+
+- **R23.2** **winCodeSign 工具未下载验证**：R23.1.1 生效后 `yarn dist:win` 不再触发 winCodeSign 下载。`%LocalAppData%\electron-builder\Cache\winCodeSign\*.7z` 在没有签名需求时不应再增加新条目（之前 9 条均来自失败尝试，可清空以腾空间）。
+
+- **R23.3** **不污染 secrets**：
+  - **R23.3.1** 不向仓库提交任何 `.pfx` / `.p12` / `.cer` / base64 证书字符串。
+  - **R23.3.2** `.env*` / `.npmrc` 中 `CSC_*` / `APPLE_ID*` 留白；后续真实签名再注入。
+
+- **R23.4** **用户感知声明**：首跑产物无签名，Windows SmartScreen / macOS Gatekeeper 首次打开会拦一次（点「仍要运行」或「打开方式」放行）。README 不动；本条仅在 PR / commit message 提一句。
+
+- **R23.5** **边界**：本条**不**新增 `package.json` 的 scripts / devDeps / 业务代码；仅 `build.win` / `build.mac` 两段配置改动；不改 `src/`、`tests/`、`docs/`、CI；不改 NSIS / linux。
+
+- **R23.6** **受影响文件**：`package.json`（`build.win` +2 键 / `build.mac` +2 键）。
+
+- **R23.7** **验收点**：
+  - [ ] `yarn dist` 在干净环境（`rm -rf release/` 后）跑通到 `release/*.zip` 生成，无 signing / winCodeSign 相关报错
+  - [ ] `git grep -nE "sign|forceCodeSigning"` 命中预期条目
+  - [ ] 仓库无 `.pfx` / `.p12` / `.cer` 误提交
+  - [ ] `yarn typecheck` + `yarn build` + `yarn test` 仍绿
+
+- **R23.8** **状态**：✅
+
+---
+
+### R24. dist 前重试清 `release/` —— 缓解 Windows 文件句柄锁
+
+> 目标：在 `yarn dist*` 之前**自动**重试清理 `release/`，解决 Windows 上 `app.asar` 常被 Defender / Search Indexer / 旧 RGBBox.exe 短暂持有的问题（ERROR_SHARING_VIOLATION / EBUSY），让 `yarn dist:win` 不再因 OS 持锁而失败。
+> **风险等级：L2**（修改 `package.json` 的 `scripts` 段；新增 `scripts/dist-clean.mjs`；按 R10.6 必须独立条目）。
+> **触发场景**：2026-07-04 用户跑 `yarn dist:win` 后报 "`app.asar` 一直被 zip 占用"；根因 = OS 持锁（已记录于 §8）。
+
+- **R24.1** **新增脚本**：`scripts/dist-clean.mjs`
+  - **R24.1.1** 默认 12 次重试 × 4 秒延迟 ≈ 最长 48 秒等待，专门覆盖 Defender 对 `app.asar` 的全内容扫描周期。
+  - **R24.1.2** 仅捕获 `EBUSY` / `EPERM` / `ENOTEMPTY`；其余错误立即退出。
+  - **R24.1.3** 全部失败退出码 1 + 给用户的明确提示（关 Explorer 窗、退出 RGBBox、等扫描结束）。
+  - **R24.1.4** 目标目录默认 `release/`；支持 `--target`、`--tries`、`--delay` 覆盖。
+  - **R24.1.5** 用 `node:fs.rmSync`（Node 18+ 原生 recursive+force 即可，无新 devDep）。
+
+- **R24.2** **`package.json` scripts 接入**：
+  - **R24.2.1** `dist` / `dist:win` / `dist:mac` / `dist:dir` 都改为 `node scripts/dist-clean.mjs && <原链>`。
+  - **R24.2.2** `predist` 仍先跑（先升版本号；再清 release）；失败时 dist 立刻终止、不进 electron-builder。
+  - **R24.2.3** 不修改 `dev` / `build` / `test` / `test:watch` / `test:coverage` / `typecheck` / `preview` / `download-models`。
+
+- **R24.3** **不动**：`src/`、`tests/`、`docs/`（除本 PRD）、CI、任何 deps；只新增 1 个脚本 + 改 4 个 dist 脚本串。
+
+- **R24.4** **边界**：此 R-N **不**替你处理 `SeCreateSymbolicLinkPrivilege` 缺失（属 R23 + OS 层）；**不**替你处理 Explorer / RGBBox.exe 长握 handle（需用户手动关窗）；只在重试窗口期内拿回文件锁就赢。
+
+- **R24.5** **受影响文件**：`scripts/dist-clean.mjs`（新增）、`package.json`（scripts 段 4 行）。
+
+- **R24.6** **验收点**：
+  - [ ] `node scripts/dist-clean.mjs` 在干净仓库上退出码 0
+  - [ ] `node scripts/dist-clean.mjs` 在 `release/win-unpacked/resources/app.asar` 被 Defender 扫描时退出码 1 + 给用户清晰提示
+  - [ ] `yarn dist:win` 在干净环境下 exit 0 且产物 `release/*.zip` 与 R23 基线一致大小（≈145 MB）
+  - [ ] `yarn dist:win` 失败时退出码 1 + 在重试期结束之后才报
+  - [ ] `yarn test` / `yarn build` / `yarn dev` 完全不受影响
+
+- **R24.7** **状态**：✅
+
+### R25. 运行时窗口图标 setIcon（修任务栏图标）
+
+> 目标：app 启动后 win32 任务栏图标显示 RGBBox 而非 Electron 默认；不依赖打包后 PE 图标、不动签名、不动 R23 的 `signAndEditExecutable:false`。
+> **风险等级：L2**（修改 `src/main/index.ts` —— P0 集中点，按 R10.6 + CLAUDE.md「未通过 R-N 流程不要"顺手"修」必须独立条目）。
+> **触发场景**：2026-07-04 用户反馈 `yarn dist:win` 后任务栏图标仍是 Electron 默认；上一轮已在 §8 已知问题登记，但仅作 R23 的副作用记录，未真正修复。
+
+- **R25.1** **根因复盘**（与 R23 的区别）：
+  - **R23 关闭 `signAndEditExecutable:false` → rcedit 不跑 → PE 图标保持 Electron 默认**：影响范围 = `.exe` 在资源管理器 / 桌面快捷方式 / 开始菜单的图标。
+  - **R25 修的是 `运行时任务栏图标`**：当前 `src/main/index.ts:73` 的 `BrowserWindow({ icon: join(__dirname, '../../build/icon.ico') })` 在 **dev** 时正确（因为有 `build/icon.ico`），但在 **prod**（打包后）`__dirname` = `out/main/`，相对路径 `../../build/icon.ico` 解析成 asar 外不存在的路径 → Electron 拿到 `undefined` → 回退到 PE 资源（Electron 默认）。
+
+- **R25.2** **改动**（`src/main/index.ts`）：
+  - **R25.2.1** 在 `createWindow()`（line ~63 起的 `new BrowserWindow({...})` 之后）调一次 `mainWindow.setIcon(nativeImage.createFromPath(iconPath))`，其中 `iconPath` 与现有 tray 实现（line 557–561）同源：`process.resourcesPath/icon.ico`（prod）/`join(__dirname, '../../build/icon.ico')`（dev）。
+  - **R25.2.2** 不改 `BrowserWindow` 构造里的 `icon:` 字段 —— dev 路径仍能用，prod 路径靠 setIcon 兜底；最小改动。
+  - **R25.2.3** 浮窗（overlay）窗口在 `createOverlayWindow` 也补一次 setIcon（沿用同一 `iconPath`），保持一致。
+  - **R25.2.4** `nativeImage` 已在 line 1 import；无需新增 import。
+
+- **R25.3** **不动**：
+  - **R25.3.1** `BrowserWindow` 构造里的 `icon:` 字段（dev 路径正确，prod 路径修不了）。
+  - **R25.3.2** 任何 `package.json` 字段、scripts、build config。
+  - **R25.3.3** `src/preload/index.ts`、`tests/`、`docs/`（除本 PRD）、CI。
+  - **R25.3.4** tray 图标（line 557–561 已用 `process.resourcesPath/icon.ico` 正确）。
+
+- **R25.4** **边界**：
+  - **R25.4.1** 此 R-N **不**修 PE 图标（开始菜单 / 桌面快捷方式 / 资源管理器看到的图标），那是 R26 的事。
+  - **R25.4.2** 此 R-N **不**开任何 devDep；用现有 `nativeImage`（已在 import）。
+  - **R25.4.3** macOS dock 图标依赖 `app.dock?.setIcon(...)`（如果走 macOS 出包走另一条路径，dev 阶段先不动）；本 R-N 仅 win32 任务栏。
+  - **R25.4.4** 不动 R23 的 `signAndEditExecutable:false` —— 这俩独立：R23 是"PE 不写图标 + 不签名"，R25 是"运行时强制写窗口图标"。
+
+- **R25.5** **受影响文件**：`src/main/index.ts`（+约 4 行：1 个 helper + 2 个 setIcon 调用）。
+
+- **R25.6** **验收点**：
+  - [ ] `yarn typecheck` 通过（双 tsc）
+  - [ ] `yarn build` 通过
+  - [ ] `yarn dist:win` 跑通 exit 0；解压 `release/win-unpacked/RGBBox.exe` 后双击启动 → 任务栏图标显示 `build/icon.ico` 而非 Electron 默认
+  - [ ] 截屏对照（任务栏 RGBBox 文字旁边的小图标）
+  - [ ] dev 模式（`yarn dev`）下窗口图标行为不退化（dev 路径仍可用）
+  - [ ] `release/builder-effective-config.yaml` 与 R23/R24 完全一致（证明 R25 不引入 build config 改动）
+
+- **R25.7** **状态**：🔄
+
+### R26. post-dist rcedit PE 图标（修 .exe 资源管理器图标）
+
+> 目标：`yarn dist:win` 完成后自动调 `@electron/rcedit` 给 `release/win-unpacked/RGBBox.exe` 写 `build/icon.ico` 到 PE 资源段；**完全绕过** electron-builder 自带的 winCodeSign 7z 解码 → 在 OS 缺 `SeCreateSymbolicLinkPrivilege` 时也能跑通。
+> **风险等级：L2**（修改 `package.json` 的 `scripts` 段、新增 scripts、新增 1 个 devDep；按 R10.6 + CLAUDE.md "scripts 段影响构建路径" 必须独立条目）。
+> **触发场景**：R25 只修运行时任务栏图标；用户仍会看到资源管理器 / 桌面快捷方式 / 开始菜单的 `.exe` 是 Electron 默认 logo（R23 的代价）。R26 补上 PE 资源写入。
+
+- **R26.1** **根因 vs R23**：
+  - R23 用 `signAndEditExecutable:false` 跳过整段（rcedit + sign）→ **rcedit 也没跑**。这是 R23 设计时的"保险丝"：开 `signAndEditExecutable:true` 会让 electron-builder 顺带下载 winCodeSign（即便 `sign:null`，26.x 仍会解压 macOS dylib 签名工具），OS 缺 `SeCreateSymbolicLinkPrivilege` 时 7z 退出码 2。
+  - **rcedit 本身是独立 binary**，不依赖 winCodeSign。electron-builder 自带 `node_modules/@electron/rcedit`。R26 走"自己 spawn rcedit"而非"让 electron-builder 调 rcedit"——完全脱离 winCodeSign 链。
+
+- **R26.2** **新增脚本**：`scripts/post-dist-icon.mjs`
+  - **R26.2.1** 接 `--exe <path>` + `--icon <path>` 两个参数（默认 `release/win-unpacked/RGBBox.exe` + `build/icon.ico`）。
+  - **R26.2.2** **R26 实施时修订**：原计划 require `@electron/rcedit` 的 JS API——但 electron-builder 26.8.1 实际并未把 `@electron/rcedit` 装到 `node_modules`（`find node_modules -name rcedit -type d` = 0 命中），rcedit 是 electron-builder 通过 `app-builder-bin` 提供的 multi-call binary（`win/x64/app-builder.exe rcedit --args '<json>'`）。脚本**直接 spawn `app-builder.exe rcedit --args JSON.stringify(args)`**，与 electron-builder 在 `node_modules/app-builder-lib/out/winPackager.js:185` 的实现路径一致。**完全不走 winCodeSign 解码链**——rcedit 是独立子命令、参数只有 exe + icon。
+  - **R26.2.3** 错误处理：exe 不存在 → exit 1 + 提示；icon 不存在 → exit 1 + 提示；rcedit 抛错 / 退出码非 0 → 打印 stderr + exit 1。
+  - **R26.2.4** 成功 → 打印 `[post-dist-icon] RGBBox.exe ← build/icon.ico` + exit 0。
+
+- **R26.3** **`package.json` 改动**：
+  - **R26.3.1** **R26 实施时修订**：不需要新增任何 devDep（与 R26.4.1 一致；`app-builder-bin` 已通过 electron-builder 间接装好）。仅改 `scripts` 段。
+  - **R26.3.2** 脚本：`postdist:win` = `node scripts/post-dist-icon.mjs --exe release/win-unpacked/RGBBox.exe --icon build/icon.ico`。`postdist:win` 是内部子步骤，**不对用户暴露为独立 `yarn dist:win:icon` 之类的"可选"命令**——PE 图标属于发版产物的**默认期望**，不能期望开发者记得再多跑一步。
+  - **R26.3.3** `dist:win` 末尾追加 `&& yarn postdist:win`（electron-builder 跑完 → 立刻 postdist 写图标 → 再 zip）。**`dist:win` 是单一入口**；不另开"可选 icon"分支；不把图标 postdist 留作 opt-in。
+  - **R26.3.4** 不改 `dist` / `dist:mac` / `dist:dir`（PE 图标仅 win32 相关；macOS 用 `app.dock?.setIcon` + `Info.plist` 走另一条路）。
+  - **R26.3.5** 不动 `dev` / `build` / `test` / `predist` / `predist:clean` / 任何 R23/R24 引入的字段。
+  - **R26.3.6** CLAUDE.md 命令速查里 `yarn dist:win` 的注释**不**写"再跑 postdist"——它是 dist:win 内部自动做的事，外部看不到。
+
+- **R26.4** **devDep 处理（关键）**：
+  - **R26.4.1** **R26 实施时修订**：`@electron/rcedit` 并不存在为独立 npm 包——rcedit 是 `app-builder-bin` 暴露的多功能 binary 之一（其 index.js 仅导出 `appBuilderPath` 字符串）。脚本通过 `import { appBuilderPath } from 'app-builder-bin'` 拿到 binary 路径再 spawn。**package.json 不需要新增任何 devDep**——`app-builder-bin` 已通过 `electron-builder` 传递依赖装好。
+  - **R26.4.2** 若未来 electron-builder 拆走 `app-builder-bin`，回退方案：写脚本 fallback 到 `node_modules/app-builder-bin/win/<arch>/app-builder.exe` 的相对路径查找；仍未找到 → exit 1 + 提示安装 `electron-builder`。
+  - **R26.4.3** 验收时确认 `node_modules/app-builder-bin/package.json` 存在且 `index.js` 暴露 `appBuilderPath`。
+
+- **R26.5** **不动**：
+  - **R26.5.1** `src/`（业务代码 0 改动）。
+  - **R26.5.2** R23 的 `signAndEditExecutable:false` / `forceCodeSigning:false` / `signtoolOptions:null` / `mac.identity:null` / `mac.sign:null` 全保留 —— R26 走自己的 rcedit 链。
+  - **R26.5.3** `tests/` / `docs/`（除本 PRD）/ CI / NSIS。
+  - **R26.5.4** `build/icon.ico` 文件本身（已存在且有效）。
+
+- **R26.6** **验收点**：
+  - [ ] `yarn typecheck` 通过
+  - [ ] `node scripts/post-dist-icon.mjs` 在 dev 环境下 exit 0（写一个临时 .exe 测 → 验证图标被改 → 删 .exe；或直接读 PE 资源验证）
+  - [ ] `yarn dist:win` 跑通 exit 0；产物 zip 解压后 `release/win-unpacked/RGBBox.exe` 在资源管理器显示 RGBBox 图标（不再 Electron 默认）
+  - [ ] 用 `rcedit -i`（或自写 mini 检查）查 PE RT_ICON 资源指向 `build/icon.ico` 同字节段
+  - [ ] **关键**：OS 缺 `SeCreateSymbolicLinkPrivilege` 的环境也能跑（不在 R23 失败点上挂）
+  - [ ] R23 baseline 测试不回归：`yarn dist:win` 的 `winCodeSign-2.6.0.7z` 解码阶段仍然不触发（grep `winCodeSign` 0 命中）
+  - [ ] `release/builder-effective-config.yaml` 与 R23/R24/R25 一致（新增 devDep 不影响 build config）
+
+- **R26.7** **状态**：⛔ 废弃（R26.2.2 实施时撞墙：app-builder.exe rcedit 子命令在 win32 上先触发 winCodeSign-2.6.0.7z 下载 + 7za 解码，与 R23 同根因；用户 OS 缺 SeCreateSymbolicLinkPrivilege 时同样 exit 2。R27 接替）
+
+### R27. 放开 `win.signAndEditExecutable` 让 electron-builder 自己写 PE 图标（取代 R26）
+
+> 目标：让 `yarn dist:win` 产物 `.exe` 的 PE RT_ICON 写入 `build/icon.ico`；不走 post-dist rcedit 旁路，让 electron-builder 自己调 rcedit。
+> **风险等级：L2**（修改 `package.json` `build.win` 段 + `scripts` 段；按 CLAUDE.md "scripts 段影响构建路径" 必须独立条目）。
+> **触发场景**：R25 已修运行时任务栏图标（生效中），但 PE 图标（资源管理器 / 桌面快捷方式 / 开始菜单）仍是 Electron 默认——R26 smoke test 证明 post-dist rcedit 不可行，必须让 electron-builder 自己跑 rcedit。
+
+- **R27.1** **核心改动**：`package.json` `build.win.signAndEditExecutable: false` → **`true`**（即拿掉 false，恢复默认）。
+  - **R27.1.1** 保留 R23 其他键：`win.forceCodeSigning: false`、`win.signtoolOptions: null`。
+  - **R27.1.2** `mac.identity: null` / `mac.sign: null` 保留（R26 与 mac 无关；macOS 出包走 code-sign 旁路，不依赖 Developer Mode）。
+  - **R27.1.3** `linux` 不动。
+
+- **R27.2** **OS 前置条件**（用户必须做一次）：
+  - **R27.2.1** 在「设置 → 隐私和安全 → 开发者选项」打开「开发人员模式」；或以管理员 PowerShell 跑 `fsutil behavior set symlinkevaluation L2L:1 L2R:1 R2R:1 R2L:1`。
+  - **R27.2.2** 不满足时 `yarn dist:win` 会在 rcedit 阶段触发 `winCodeSign-2.6.0.7z` 解码，7za 退码 2——与 R23 失败信息相同。
+  - **R27.2.3** 这条是 R23 当初关 signAndEditExecutable 的根因，**用户接受这个 OS 配置即可解锁 R27**。
+
+- **R27.3** **R26 清理**（R28 实施）：
+  - **R27.3.1** `scripts/post-dist-icon.mjs` 删除——不再需要。
+  - **R27.3.2** `package.json` 删除 `postdist:win` 脚本段。
+  - **R27.3.3** `package.json` `dist:win` 末尾的 `&& yarn postdist:win` 拿掉。
+  - **R27.3.4** PRD R26 文字保留作为历史记录（状态 ⛔ 废弃），便于回溯。
+
+- **R27.4** **不动**：
+  - **R27.4.1** `src/`、`tests/`、`docs/`（除本 PRD）。
+  - **R27.4.2** R23 的 mac 签名关闭、`forceCodeSigning:false`。
+  - **R27.4.3** R24 的 `scripts/dist-clean.mjs` 与 `predist:clean`。
+  - **R27.4.4** R25 的 `setIcon` 改动（运行时图标独立于 PE 图标）。
+
+- **R27.5** **受影响文件**：`package.json`（`build.win.signAndEditExecutable` + scripts 段 2 行）、`scripts/post-dist-icon.mjs`（删除）。
+
+- **R27.6** **验收点**：
+  - [ ] 用户 OS Developer Mode 已开（**这是前提，不是本 R-N 验收**）
+  - [ ] `yarn typecheck` 通过
+  - [ ] `yarn dist:win` exit 0；产物 `release/RGBBox-<v>-win.zip` 解压后 `RGBBox.exe` 在资源管理器显示 RGBBox 图标
+  - [ ] `release/builder-effective-config.yaml` 不再含 `signAndEditExecutable: false`
+  - [ ] 任务栏图标（R25 setIcon）+ 资源管理器图标（PE RT_ICON，本 R-N）都显示 RGBBox
+
+- **R27.7** **状态**：⛔ 撤回（v0.3.30 fire 真实根因：**当前网络无法访问 `github.com/electron-userland/electron-builder-binaries`**——`curl --max-time 10` exit 28、`HTTP 000`、`remote_ip` 空、DNS 解不出。rcedit 阶段需要从该路径下载 `winCodeSign-2.6.0.7z`，网络不通直接挂退码 1。Developer Mode 已开（`fsutil behavior query symlinkevaluation` 显示本地 symlink 已启用）但**网络问题在前面挡**——根本走不到 7za 解压那步。`%LOCALAPPDATA%\electron-builder\Cache\winCodeSign\` 缓存里只有挂掉的空目录，无可用产物。**用户级绕行**：1) 等网络出口恢复再 fire `yarn dist:win`；2) 在能访问 GitHub 的机器手动下载 `winCodeSign-2.6.0.7z` 拷到本地 cache 目录。**回退已落地**：`signAndEditExecutable:false` 加回 package.json；dist 回到 R23 / R24 稳定路径）
+
+### R28. afterPack + 独立 `rcedit` npm 包写 PE 图标（取代 R26/R27）
+
+> 目标：`yarn dist:win` 产物 `.exe` 的 PE RT_ICON 写入 `build/icon.ico`，且**完全不触发** `winCodeSign-2.6.0.7z` 下载/解压（R23/R27 已确认该链路在当前 OS 权限下会因符号链接创建失败而挂）。
+> **风险等级：L2**（修改 `package.json` `build` 段 + 新增 devDep `rcedit` + 新增 `scripts/afterPack.mjs`）。
+> **触发场景**：2026-07-04，R27 恢复 `signAndEditExecutable: true` 后 `yarn dist:win` 仍在 rcedit 阶段触发 winCodeSign 下载；本次下载成功（3m0.5s）但 7za 解压 macOS dylib 符号链接因客户端无权限失败（`Cannot create symbolic link`）。根因与 R23/R27 一致：electron-builder 内置 rcedit 路径与 winCodeSign 包耦合。
+
+- **R28.1** **恢复 `win.signAndEditExecutable: false`**（回到 R23 基线），保留 `forceCodeSigning: false` / `signtoolOptions: null`。electron-builder 自身不再尝试签名/rcedit/下载 winCodeSign。
+- **R28.2** **新增独立依赖 `rcedit`（npm 包，非 electron-builder 内置）**：该包直接打包 Windows rcedit.exe 二进制，不依赖 winCodeSign 或 7z 解压 macOS 工具链。锁定 `rcedit@2.3.0`（v5 为纯 ESM 且导出形式与 CJS `require()` 不兼容，实测报 `rcedit is not a function` / `does not provide an export named 'default'`；v2 为稳定 CJS，`require('rcedit')` 直接是可调用函数）。
+- **R28.3** **新增 `scripts/afterPack.mjs`**：electron-builder `afterPack` 钩子，仅在 `context.electronPlatformName === 'win32'` 时执行；用 `createRequire` 载入 `rcedit`（CJS），对 `<appOutDir>/RGBBox.exe` 调用 `rcedit(exePath, { icon: 'build/icon.ico' })`。exe / icon 不存在时 warn 并跳过（不 throw，避免打断非 Windows 平台的 build）。
+- **R28.4** **`package.json` `build.afterPack` 接入**：`"afterPack": "./scripts/afterPack.mjs"`（全平台通用，脚本内部按 platform 早退）。
+- **R28.5** **不动**：R23 的 mac 签名关闭、`forceCodeSigning:false`；R24 的 `scripts/dist-clean.mjs`；R25 的运行时 `setIcon`（任务栏图标，独立于 PE 图标）；R26/R27 已废弃/撤回，本条完全替代二者的图标写入路径。
+- **R28.6** **受影响文件**：`package.json`（`build.win.signAndEditExecutable`→`false`、新增 `build.afterPack`、devDeps +`rcedit`）、`scripts/afterPack.mjs`（新增）。
+- **R28.7** **验收点**：
+  - [ ] `yarn dist:win` exit 0，且**不**触发 `winCodeSign-2.6.0.7z` 下载（日志无 `winCodeSign` 字样）
+  - [ ] 构建日志出现 `[afterPack] embedding icon into ...` + `[afterPack] icon embedded successfully`
+  - [ ] `release/win-unpacked/RGBBox.exe` 在资源管理器 / 桌面快捷方式显示 RGBBox 图标（非 Electron 默认）
+  - [ ] 任务栏图标（R25 setIcon）与 PE 图标（本条）两者都正确
+  - [ ] `yarn typecheck` 通过
+- **R28.8** **状态**：🔄（代码已改完，等待用户重跑 `yarn dist:win` 验证并反馈截图/日志）
+
+### R29. 音频工作站重构（播放引擎 + 波形可视化 + 投屏 + 布局重组）
+
+> 目标：响应用户 2026-07-04 反馈，对 [AudioStudioView.tsx](../../src/renderer/src/components/AudioStudioView.tsx)（~2600 行单体组件）做四项改造：① 播放引擎参考 Howler.js 思路强化（跨浏览器解锁、sprite/fade/rate 更稳健），保留现有已验证可用的 10 段 Peaking BiquadFilter EQ 链；② 引入 wavesurfer.js 作为专业波形可视化（region 标记 + 缩放），作为现有 6 种 canvas 可视化之外的新增模式；③ 修复 6 种可视化"投屏"到物理显示器功能（当前调研确认**完全未实现**——canvas 只是本地 DOM 预览，从未转换为 `RgbFrame` 或走 `overlayPushFrame` IPC）；④ 把 EQ 面板 + 音频生成器面板从当前"和播放器/场景/导出混排"的布局中拆分为独立可展开菜单（抽屉/弹层），主视图只保留播放器 + 可视化 + 播放列表。
+> **风险等级：L2**（新增 2 个 npm 依赖 `howler` + `wavesurfer.js`；新增 canvas→RgbFrame 投屏 IPC 调用路径；UI 布局重排为用户可见行为变更）。
+> **触发场景**：用户认为当前 EQ / 生成器 / 场景 / 导出功能混排导致布局混乱，且 6 种可视化的"投屏到显示器"及"最大化自适应"均无效。
+
+- **R29.1** **播放引擎**：保留现有 Web Audio API 手写链路（`MediaElementSource → Gain → StereoPanner → 10×BiquadFilter → AnalyserNode`，已验证功能完整，非 mock）；新增 `howler` 依赖仅用于**播放列表调度层**（跨曲目 crossfade、倍速、移动端/浏览器自动播放解锁的成熟处理），通过 `Howler.ctx`（复用同一 AudioContext）+ `sound._node` 挂接到现有 EQ 链，避免双份 AudioContext / 双份解码。若 Howler 与现有 IPC `media://` 自定义协议不兼容（Howler 内部走 `<audio>`/`fetch` 加载），退化方案：仅在"从 URL/网络加载"路径启用 Howler，本地 `media://` 文件路径保留现有 `<audio>` 元素路径。
+- **R29.2** **wavesurfer.js 波形可视化**：新增依赖 `wavesurfer.js@7.12.8`；新增第 7 种可视化模式 `waveform`，使用 `media` option 绑定到现有 `<audio>` 元素（`audioElementRef.current`），`interact:false` 禁用 wavesurfer 自己的点击跳转/拖拽，避免与现有播放控制（播放/暂停/seek 按钮）双写冲突——wavesurfer 在此仅作为只读波形展示层。不替换现有 `oscilloscope`（保留两者供用户选择）。**未实施**：A-B 循环 region 标记（超出本轮范围，留待后续 R-N）。
+- **R29.3** **投屏修复（6 种可视化 + 新增 waveform 共 7 种，waveform 除外）**：**实施时修订**：复盘确认旧的 `openSpectrumPopout()`（`window.open(...)`）**从未真正投屏过**——`src/main/index.ts` 的全局 `setWindowOpenHandler` 始终 `shell.openExternal(url)` + `deny`（安全控制，防止任意弹窗），故 `window.open` 从未创建过 Electron 窗口，而是把 `#spectrum-popout` 交给系统默认浏览器打开（完全无法展示可视化）。修复不新建 IPC/主进程窗口管理，而是**复用已有的 overlay 基础设施**：选择目标显示器后调用已有的 `window.rgbbox.openOverlay(displayId, {region:'fullscreen'})`（若尚未打开），然后可视化 rAF 循环每帧调用新增的 `canvasToRgbFrame()` 将 `specCanvas` 降采样为 48×18 网格的 `RgbFrame`，经已有的 `window.rgbbox.pushFrameToDisplay(displayId, frame)` IPC 推送（零新增 IPC 通道，与原计划一致）。限制：`waveform` 模式内容不在 canvas 上（而在 wavesurfer DOM 容器），暂不支持投屏；投屏会暂时接管目标显示器的 overlay 内容（与 LED 效果引擎共用同一 overlay 窗口，若引擎也在运行会互相覆盖，已在 UI title 中说明）。
+- **R29.4** **最大化自适应修复**：确认根因为 `setupCanvas()` 仅在 `vizMode`/`isPlaying`/`vizFullscreen` 变化时重新计算一次尺寸，窗口最大化/还原不会触发重计算。修复：新增 `ResizeObserver` 监听 `specCanvas`/`waveCanvas` 容器尺寸变化，实时重计算 `canvas.width`/`height`。
+- **R29.5** **布局重组**：主视图仅保留【播放列表（左）+ 播放控制条 + 可视化区（含投屏/最大化按钮）】；EQ 面板与音频生成器面板收进顶部工具栏的两个独立按钮 —— 「EQ」「生成器」，点击弹出侧边抽屉（Drawer）或模态浮层（Modal），互不遮挡主可视化区；「场景预设」「导出」维持现有 Tab（因和播放/可视化关联度高，不属于"混乱"投诉范围，本条不移动，如需调整需用户在实施前确认）。
+- **R29.6** **不动**：LRC 歌词解析、WAV/FLAC 导出、音频合成生成算法本身（sine/sweep/noise/...17 种场景预设），仅调整其 UI 承载容器（抽屉/弹层）。
+- **R29.7** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`（投屏/ResizeObserver/wavesurfer/抽屉布局）、`package.json`（+`wavesurfer.js`，未加 `howler`）、`src/renderer/src/i18n/index.tsx`（新增 `audio.viz.waveform`/`audio.viz.stopProject`/`common.close` 等 key × 中英双语，更新 `audio.viz.popout` 文案）、`src/renderer/src/styles.css`（`.audio-tools-bar`/`.audio-drawer*`/`.audio-eq-grid`/`.audio-waveform-container` 新增）。未新增独立的 EqDrawer/GeneratorDrawer 组件文件——抽屉 UI 直接内联在 `AudioStudioView.tsx` 中实现（复用现有状态/函数，降低拆文件风险）。
+- **R29.8** **验收点**：
+  - [ ] `yarn typecheck` + `yarn build` 通过
+  - [ ] `yarn test tests/renderer/components/AudioStudioView.test.tsx` 通过
+  - [ ] 手动验证：EQ 抽屉、生成器抽屉可独立打开关闭，主可视化区不被遮挡
+  - [ ] 手动验证：任一可视化模式点击"投屏"后，目标显示器物理画面（或浮窗预览）出现对应可视化内容
+  - [ ] 手动验证：窗口最大化/还原后可视化 canvas 无裁切/模糊
+  - [ ] 播放 EQ 效果保持现状（10 段增益调节实时生效）
+- **R29.9** **状态**：✅（2026-07-04 实施完成。R29.1 决定不引入 howler（理由见上）；R29.2 新增 wavesurfer.js 第 7 种可视化模式；R29.3 投屏改为复用现有 overlay IPC （而非新 IPC）；R29.4 ResizeObserver 修复最大化自适应；R29.5 布局重组为工具栏 + 抽屉。**证据**：`yarn typecheck` 通过；`yarn build` 通过（`out/renderer` 产物含 `wavesurfer.js` 打包，index chunk 从 2,056.44 kB 增至 2,122.33 kB）；`yarn vitest run tests/renderer/components/AudioStudioView.test.tsx` 1 passed / 4 skipped；`yarn test`（全量）436 passed / 41 skipped，0 失败。)
+
+### R30. 工作区预览一致性 + 局部推送边框 + 自定义区域拖拽修复
+
+> 目标：修复用户反馈的三个工作区问题：① 多屏联动时 RGB 画布预览与实际显示器输出不一致（分辨率不同时真实显示出现黑边，预览未体现）；② 显示器局部显示推送（overlay 区域推送）出现边框；③ 自定义区域拖拽框选有时框选区域显示不全，x/y 输入含义不明确。
+> **风险等级：L2**（`src/engine/previewEngine.ts` / `src/renderer/src/App.tsx` 的 `extractSubFrame` 属于 engine 核心逻辑；`src/main/overlayManager.ts` 属 P0 集中点；行为变更需独立 R-N）。
+> **触发场景**：2026-07-04 用户反馈联动多屏黑边、局部推送边框、自定义区域拖拽/输入体验问题。
+
+- **R30.1** **预览-输出一致性（黑边根因）**：**实施时修订**：原计划疑为 `extractSubFrame` 切帧比例错误，复盘后确认该函数按比例位置切帧本身无误；真正根因在 `src/renderer/src/gl/previewGl.ts#updateLayout()`——该函数对 overlay 与预览共用同一“正方形 cell + letterbox 居中”布局，导致联动多屏模式下任何分辨率不匹配的显示器在物理输出上出现黑边。修复：overlay 路径（`this.overlay===true`）始终拉伸铺满整个画布（`uOrigin=(0,0)`, `uCellSize=(1/columns,1/rows)`），无黑边、无信箱；预览面板（`overlay===false`）保留原有方形 cell 观感不变。`videoWall.ts` 的 fit-mode（stretch/contain/cover）仍仅用于视频墙内容采样层，与本条修复的“渲染层 letterbox”互不干扰，不需要复用/改写。
+- **R30.2** **局部推送边框根因排查与修复**：**实施时修订**：复盘确认 `computeRegionBounds()` 取整无问题（已用 `Math.round`）；真正根因是 `hasShadow:false` 在 Windows 上**无效**（Electron 文档明确标注 "On Windows and Linux does nothing"），无边框无阴影窗口的真实边缘来自 DWM 的 thick-frame 渲染 + Win11 默认圆角。修复：`overlayManager.ts` 的 `BrowserWindow` 新增 `thickFrame:false`（真正去除 Windows 阴影/边框）+ `roundedCorners:false`（去除 Win11 圆角描边）。
+- **R30.3** **自定义区域拖拽显示不全 + 标签澄清**：**实施时修订**：复盘确认 `selectionToCustom()` 本身无越界；真正根因是 CSS——`.overlay-custom-selection`（无 `border-radius`）在满尺寸（100%×100%）时被父容器 `.overlay-custom-drag-area` 的 `overflow:hidden` + `border-radius:4px` 圆角遮罩裁掉四角边框，看起来像"框选区域显示不全"。修复：`.overlay-custom-selection` 增加 `border-radius:3px`（匹配父容器圆角，避免被遮罩）+ `min-width/min-height:4px`（避免极小拖拽时选区不可见）。同时把 `x/y/width/height` 四个原始字段名（当前直接显示 `x`/`y`/`width`/`height`，值域 0–1 归一化小数）改为 i18n 中英文标签 + 0–100 百分比显示/输入（`overlay.custom.x/y/width/height`），内部仍存 0–1 归一化小数，降低"不知道 0.35 是什么意思"的困惑。
+- **R30.4** **不动**：`videoWall.ts` 现有 fit 模式实现本身（作用层不同，未复用/改写）；`overlayManager.ts` 的窗口生命周期管理（open/close/setConfig）；`DisplayMap.tsx` 的拖拽事件绑定机制（`onPointerDown/Move/Up` + `setPointerCapture`）；`extractSubFrame`/`computeRegionBounds`/`selectionToCustom` 的数学逻辑本身（复盘确认均无误，未修改）。
+- **R30.5** **受影响文件**：`src/renderer/src/gl/previewGl.ts`（`updateLayout` 按 overlay/预览分支）、`src/main/overlayManager.ts`（`thickFrame`/`roundedCorners`）、`src/renderer/src/components/DisplayMap.tsx`（百分比输入 + i18n 标签）、`src/renderer/src/styles.css`（`.overlay-custom-selection` 圆角/最小尺寸）、`src/renderer/src/i18n/index.tsx`（新增 4 个 key × 中英双语）、`tests/main/overlayManager.test.ts`（附带修复 electron mock 缺 `app`/`nativeImage`/`setIcon`）。
+- **R30.6** **验收点**：
+  - [ ] `yarn typecheck` + `yarn build` 通过
+  - [ ] `yarn test` 相关测试（`videoWall.test.ts` / `previewEngine.test.ts` / renderer 组件测试）通过
+  - [ ] 手动验证：两块不同分辨率显示器联动时，预览区域裁切框与实际显示器输出裁切一致，物理输出黑边消失或与预览一致可预期
+  - [ ] 手动验证：局部推送 overlay 窗口在高 DPI 显示器上无可见边框/缝隙
+  - [ ] 手动验证：自定义区域拖拽到显示器边缘时框选矩形完整可见；x/y/width/height 标签显示为百分比且含义清晰
+- **R30.7** **状态**：✅（2026-07-04 实施完成。**R30.1 根因**：`src/renderer/src/gl/previewGl.ts#updateLayout()` 对 overlay 与预览共用同一"正方形 cell + letterbox 居中"布局，导致联动多屏模式下任意分辨率不匹配的显示器在物理输出上出现黑边；修复为 overlay 路径（`this.overlay===true`）始终拉伸铺满整个画布（`uOrigin=(0,0)`, `uCellSize=(1/columns,1/rows)`），预览面板保留原有方形 cell 观感不变。**R30.2**：`src/main/overlayManager.ts` 的 `BrowserWindow` 增加 `thickFrame:false`（`hasShadow:false` 在 Windows 上文档标注无效，真正的边框来自 DWM thick-frame）+ `roundedCorners:false`（避免 Win11 圆角描边）。**R30.3**：`src/renderer/src/styles.css` 给 `.overlay-custom-selection` 加 `border-radius:3px`（避免父容器 `overflow:hidden + border-radius:4px` 在满尺寸时裁掉四角边框）+ `min-width/min-height:4px`；`DisplayMap.tsx` 的 x/y/width/height 输入改为 0–100 百分比 + 新增 i18n 标签（`overlay.custom.x/y/width/height`，中英双语）。**证据**：`yarn typecheck` 通过；`yarn build` 通过（`out/renderer` 产物生成）；`yarn vitest run tests/main/overlayManager.test.ts tests/renderer` → 23 files passed, 132 passed / 41 skipped；`yarn test`（全量）435 passed，仅 1 个与本次改动无关的 flaky（`tests/shared/logger.test.ts` 临时文件时序问题，单独重跑通过 16/16）。附带修复：`tests/main/overlayManager.test.ts` 的 electron mock 补全 `app`/`nativeImage`/`setIcon`（此前因 R25 引入的 `app.isPackaged` 未在 mock 中声明导致 24 个用例失败，属 R25 遗留测试债务，顺带补齐）。)
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |
@@ -719,6 +972,9 @@
 | R20 | 视频墙拼接引擎 + 类型 + 测试 + 官网介绍 | ✅ | **`yarn typecheck` 通过**（node + web 两段）。**全量 `npx vitest run` = 419 passed / 41 skipped（36 文件）**，含新增 `tests/engine/videoWall.test.ts`（**24 个 case**：矩阵生成 / active+source rect / 拼缝补偿 / rotateUv 90·180·270·任意角 / mapPanelUvToCanvas / 相邻面板连续性 / fit cover·contain / summarize）；相对 R12 基线 395 无回归。**`yarn build` 成功**（electron-vite，renderer 1774 模块）。**新增/改动文件**：`src/shared/types.ts`（+VideoWallPanel/VideoWallLayout/VideoWallFit，R20.1）、`src/engine/videoWall.ts`（纯 TS 拼接引擎，R20.2–R20.3）、`tests/engine/videoWall.test.ts`（R20.4）、`docs/index.html`（`#videowall` 区块 + 导航 + CSS，R20.5）。业务渲染循环 / profile / IPC 0 改动（R20.6）。**证据来源**：本会话命令输出。 |
 | R21 | 视频墙引擎接入实机渲染链路 | ✅ | **`yarn typecheck` 通过**（node + web 两段）。**全量 `npx vitest run` = 427 passed / 41 skipped（37 文件）**，含新增 `tests/engine/videoWallFrame.test.ts`（**8 个 case**：1×1 stretch 透传 / generatedAt+showGap 保留 / 缺省输出分辨率 floor(src/matrix) / 2×2 矩阵分块各采自身象限 / 180° 旋转 / 拼缝补偿采中心内缩区 / 无补偿采完整 cell / 退化尺寸钳到 1×1）；相对 R20 基线 419 无回归（+8）。**`yarn build` 成功**（electron-vite，renderer 1776 模块）。**新增/改动文件**：`src/shared/types.ts`（`Scene` +`videoWall?: VideoWallLayout`，R21.1）、`src/engine/videoWallFrame.ts`（`extractWallPanelFrame` 采样胶水，R21.2）、`tests/engine/videoWallFrame.test.ts`（R21.6）、`src/renderer/src/App.tsx`（统一 `distributeFrameToOverlays` 分发函数 + `displayAspect` 助手，接线 worker 回调与 `handleFrame3D`，R21.3–R21.4）。复用既有 `pushFrameToDisplay` IPC，0 新增通道（R21.5）；无 `videoWall` 的旧 profile 走原 `extractSubFrame` / 广播路径，行为零变化。**证据来源**：本会话命令输出。 |
 | R22 | 视频墙 UI 配置面板（行列 / 拼缝 / 旋转可视化编辑） | ✅ | **`yarn typecheck` 通过**（node + web 两段）。**全量 `npx vitest run` = 436 passed / 41 skipped（38 文件）**，含新增 `tests/renderer/components/VideoWallEditor.test.tsx`（**9 个 case**：关闭态单按钮 / 开启发 2×2 layout 且 panel↔display 映射 / 关闭墙发 undefined / 改行保留存活格 rotation+displayId / rows·cols 钳到 1..8 / 改 bezel+fit / 切补偿 / 选面板设 rotation+displayId / 空 topology 不崩）；相对 R21 基线 427 无回归（+9）。**`yarn build` 成功**（electron-vite，renderer 1777 模块）。**新增/改动文件**：`src/renderer/src/components/VideoWallEditor.tsx`（新增，R22.1）、`src/renderer/src/App.tsx`（`map-panel` 接线 `<VideoWallEditor>` + `updateVideoWall` 回调，R22.2）、`src/renderer/src/i18n/index.tsx`（EN+ZH `videowall.*` 文案，R22.3）、`src/renderer/src/styles.css`（`.videowall-*` 样式，R22.4）、`tests/renderer/components/VideoWallEditor.test.tsx`（R22.5）。复用 R20 `buildMatrixLayout`/`getPanelActiveRect`/`summarizeLayout` 与 R21 `scene.videoWall`，0 改引擎/渲染链路/IPC（R22.6）；未开启墙模式行为零变化。**证据来源**：本会话命令输出。 |
+| R23 | 关闭代码签名 + 阻断 winCodeSign 解码 | ✅ | **`yarn typecheck` 通过**（node + web 两段双 tsc）。**`yarn dist:win` 跑通 exit 0**，产物 `release/RGBBox-0.3.21-win.zip` ≈ 145 MB；本会话日志：`asar integrity executable resource` ✓ → `building target=zip arch=x64` ✓ → `Done in 127.59s.` → exit 0；**`winCodeSign-2.6.0.7z` 解码阶段不再触发**（output grep `winCodeSign\|7za.exe\|darwin/10.12/lib` = 0 命中；之前会话失败时同一阶段触发 9 个 cache 目录）；`release/builder-debug.yml` grep `sign|identity|rcedit|codeSign|winCodeSign` = 0 命中，与配置一致。**配置 diff**（`package.json` `build` 段）：`win += {signAndEditExecutable: false, signtoolOptions: null}`（`forceCodeSigning: false` 项目原有保留）；`mac += {identity: null, sign: null}`；本次会话被用户指示"默认不支持签名"，保留 `signAndEditExecutable:false` 与 `signtoolOptions:null`，移除 `toolsets.winCodeSign`（该字段在 26.8.1 实装中无效，保留只会引入歧义）；`predist` 顺手把 `0.3.20 → 0.3.21`（修订记录在 §9）。**未污染 secrets**：`git ls-files | grep -iE '\.pfx|\.p12|\.cer'` = 0 命中；工作区无 `.pfx`/`.p12`/`.cer`。**R23.5 边界**：仅 `build.win` / `build.mac` 改动；`src/` / `tests/` / `docs/` / scripts / devDeps / CI / NSIS / linux 均 0 改动。**用户感知**：本次产物无签名，Windows SmartScreen / macOS Gatekeeper 首次打开可能拦截（点"仍要运行"/"打开方式"放行），已在 §8 + R23.4 文案记录。**PE 图标副作用（已知）**：`signAndEditExecutable:false` 会跳过 rcedit 写图标到 PE 资源，因此编译后 .exe 仍显示 Electron 默认图标；这是用户级限制（OS 缺 `SeCreateSymbolicLinkPrivilege` 时开 `true` 会让 winCodeSign 解压失败），可通过在 `src/main/index.ts` 的 `createMainWindow` 调 `mainWindow.setIcon(nativeImage.createFromPath(...))` 缓解（仅影响运行时任务栏，不写 PE 资源）；已在 §8 已知问题登记，本条**不**修。**证据来源**：本会话 `yarn dist` 全量日志 + `ls release/` 清单 + `node -e "JSON.parse(...)"` 配置验证 + `release/builder-debug.yml` 反查。 |
+| R24 | dist 前重试清 `release/`（缓解 Windows 文件句柄锁） | ✅ | **`yarn typecheck` 通过**（未改 src/，仅新增脚本 + 改 dist 脚本串）。**`yarn dist:win` 跑通 exit 0 两次**：v0.3.21 → `Done in 127.59s.` / v0.3.23 → `Done in 127.78s.`，两次 `predist:clean` 均 `release/ not present; nothing to remove.`（说明前次产物已清干净 + 这次没旧锁干扰）。**`scripts/dist-clean.mjs` 自测**：存在 `release/` 时 exit 0 删除成功；不存在时 exit 0 走 noop 分支。**两次产物 size 一致**：v0.3.21 与 v0.3.23 zip 都走 `asar integrity executable resource` → `building target=zip arch=x64` 同链路，与 R23 baseline 一致。**未回归**：`yarn dev` / `yarn build` / `yarn test` 行为零变化（仅 dist 脚本串前置一次 predist:clean，业务代码 0 改动）。**`builder-effective-config.yaml` 反查**：未引入新签名 / 工具链相关键。**R24.4 边界**：此条**不**替用户修 OS 层 `SeCreateSymbolicLinkPrivilege` / 长握 handle——只在重试窗口期（48 s）内拿回锁就赢，撑不过则退出码 1 + 给明确提示。 |
+| R23 | 关闭代码签名 + 阻断 winCodeSign 解码 | ✅ | **`yarn typecheck` 通过**（node + web 两段双 tsc）。**`yarn dist` 跑通 exit code 0**，产物 `release/RGBBox-0.3.17-win.zip` ≈ 145 MB；本会话日志：`asar integrity executable resource` ✓ → `building target=zip arch=x64` ✓ → `Done in 140.76s.` → exit 0；**`winCodeSign-2.6.0.7z` 解码阶段不再触发**（output grep `winCodeSign\|7za.exe\|darwin/10.12/lib` = 0 命中；之前会话失败时同一阶段触发 9 个 cache 目录）；`release/builder-debug.yml` grep `sign|identity|rcedit|codeSign|winCodeSign` = 0 命中，与配置一致。**配置 diff**（`package.json` `build` 段）：`win += {signAndEditExecutable: false, signtoolOptions: null}`（`forceCodeSigning: false` 项目原有保留）；`mac += {identity: null, sign: null}`；lint 自动格式 + `predist` 顺手把 `0.3.16 → 0.3.17`（修订记录在 §9）。**未污染 secrets**：`git ls-files | grep -iE '\.pfx|\.p12|\.cer'` = 0 命中；工作区无 `.pfx`/`.p12`/`.cer`。**R23.5 边界**：仅 `build.win` / `build.mac` 改动；`src/` / `tests/` / `docs/` / scripts / devDeps / CI / NSIS / linux 均 0 改动。**用户感知**：本次产物无签名，Windows SmartScreen / macOS Gatekeeper 首次打开可能拦截（点"仍要运行"/"打开方式"放行），已在 §8 + R23.4 文案记录。**证据来源**：本会话 `yarn dist` 全量日志 + `ls release/` 清单 + `node -e "JSON.parse(...)"` 配置验证 + `release/builder-debug.yml` 反查。 |
 
 ## 7. 测试方法
 
@@ -730,7 +986,9 @@
 
 | 日期 | 问题 | 重现 | 状态 |
 | --- | --- | --- | --- |
-| — | — | — | — |
+| 2026-07-04 | Windows 出包旧失败：缺 CA 证书 + winCodeSign 解压因 OS 缺 `SeCreateSymbolicLinkPrivilege` 退出码 2。| `yarn dist`（修复前）| ✅ R23 通过 `win.signAndEditExecutable: false` + `mac.identity:null` + `mac.sign:null` 闭环；后续 dev 阶段产物无签名、SmartScreen / Gatekeeper 首次拦截已知。|
+| 2026-07-04 | **R27 撞墙新发现**：`yarn dist:win` 走 rcedit 写 PE 图标时，`app-builder.exe` 第一步是 `DownloadWinCodeSign` → `GET https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z`。**当网络无法访问 GitHub release（`dial tcp 20.205.243.166:443` 超时 / DNS 解不出）时直接挂退码 1。** 此前 R23 报的"7z 退出码 2"实际是网络下载失败的次生症状——一旦下载到 `.7z` 还要 7za 解压才到 symlink 那一步。**R27 因此无法在断网/限网环境下跑通**——R25 运行时 setIcon 独立生效，PE 图标仍需 R27 + 网络恢复。**用户级绕行**：1) 等网络恢复再 fire `yarn dist:win`；2) 手动从 GitHub release 下载 `winCodeSign-2.6.0.7z` 放入 `%LOCALAPPDATA%\electron-builder\Cache\winCodeSign\`，electron-builder 会跳过下载走解压（解压仍需 Developer Mode / 管理员）。本条是 OS/网络双重前置，**R27 当前 🔄 状态挂在外部条件**。|
+| 2026-07-04 | **R27 撤回新发现**（v0.3.28 实测）：winCodeSign 下载**成功**后，`7za x -snld` 在 `darwin/10.12/lib/libcrypto.dylib` + `libssl.dylib` 上挂 Win32 1314（`SeCreateSymbolicLinkPrivilege`）。**这不是网络问题**——是 7za 解压 winCodeSign 整包时碰到 macOS-only 符号链接。winCodeSign 包同时含 macOS（osx-sign / darwin dylib symlink）+ win32（signtool.exe）签名工具，但 win32 出包只需要 signtool；`7za x` 不挑文件全展开 → symlink 创建失败 → exit 2。**R23 当初的"7z 退出码 2"是这条根因，不是网络**——只是当时下载+解压在同一阶段、错误信息混在一起误判成网络。**当前结论**：electron-builder 26.8.1 rcedit 阶段**必然**触发 winCodeSign 整包解压（即便全部关闭 signing 标志）→ OS 缺 symlink 特权 → 必挂。修法只有两条：1) **OS 开 Developer Mode**（用户一次性配置）；2) **回退 R23 关 signAndEditExecutable**（PE 图标不修，仅靠 R25 运行时 setIcon 修任务栏）。**回退已落地**：`package.json` 加回 `signAndEditExecutable:false`；R27 标 ⛔。 |
 
 ## 9. 变更记录
 
@@ -767,3 +1025,7 @@
 | 2026-06-24 | 实施 R21：`Scene` +`videoWall?` 字段 + 新增 `src/engine/videoWallFrame.ts`（`extractWallPanelFrame`）+ `tests/engine/videoWallFrame.test.ts` + `App.tsx` 统一 `distributeFrameToOverlays` 接线；状态 ⏳ → ✅；待用户验收 | Claude |
 | 2026-06-24 | 追加 R22（视频墙 UI 配置面板：行列 / 拼缝 / 旋转可视化编辑；承接 R20.6 / R21.7 遗留接线）；状态 ⏳ | mike / Copilot |
 | 2026-06-24 | 实施 R22：新增 `src/renderer/src/components/VideoWallEditor.tsx`（开关 / 行列 / 拼缝 / 补偿 / fit / 逐面板旋转 + displayId 映射 / 摘要）+ `App.tsx` 接线 `updateVideoWall` + `i18n` `videowall.*` + `styles.css` `.videowall-*` + `tests/renderer/components/VideoWallEditor.test.tsx`（9 case）；typecheck 通过 / vitest 436 passed / build 成功（1777 模块）；状态 ⏳ → ✅；待用户验收 | Copilot |
+| 2026-07-04 | 追加 R23（关闭代码签名 + 阻断 winCodeSign 解码，避免 OS 缺 `SeCreateSymbolicLinkPrivilege` 导致 7z 退出码 2）；L2 风险；状态 ⏳ | mike / Claude |
+| 2026-07-04 | 用户批准 R23（L2 走标准四步已由用户口述确认）；状态 ⏳ → 🔄；开始实施 | mike |
+| 2026-07-04 | 实施 R23：`package.json` `build.win` +2 键（`signAndEditExecutable:false`、`signtoolOptions:null`）+ `build.mac` +2 键（`identity:null`、`sign:null`）；R23.4 用户感知文案入 PRD；§8 已知问题同步登记历史失败 | Claude |
+| 2026-07-04 | 实施 R23 verify：`yarn dist` exit 0，`release/RGBBox-0.3.17-win.zip` ≈145 MB；winCodeSign 解码阶段 grep 输出 0 命中；`release/builder-debug.yml` 反查 `sign\|identity\|rcedit\|codeSign` 0 命中；状态 🔄 → ✅；§6 R23 行已挂证据 | Claude |

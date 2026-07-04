@@ -23,6 +23,7 @@ vi.mock('electron', () => {
       if (event === 'closed') (this as any)._closedCb = cb
     })
     public once = vi.fn()
+    public setIcon = vi.fn()
     public close = vi.fn(() => {
       // Simulate the 'closed' event firing so the module-level Map is cleaned up
       const closedHandler = (this as any)._closedCb
@@ -37,6 +38,8 @@ vi.mock('electron', () => {
     }
   }
   return {
+    app: { isPackaged: false },
+    nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
     BrowserWindow: FakeBrowserWindow,
     screen: {
       getAllDisplays: () => mockScreenDisplays

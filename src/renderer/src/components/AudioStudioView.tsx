@@ -1,10 +1,12 @@
-import { ChevronDown, ChevronRight, Download, FileText, FolderOpen, Maximize2, Minimize2, Monitor, Pause, Play, Plus, RefreshCw, Repeat, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, FileText, FolderOpen, Maximize2, Minimize2, Monitor, Pause, Play, Plus, RefreshCw, Repeat, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import WaveSurfer from 'wavesurfer.js'
 import { useI18n } from '../i18n'
+import type { RgbFrame } from '../../../shared/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-type StudioTab = 'generator' | 'scenes' | 'export'
+type StudioTab = 'scenes' | 'export'
 type PlayMode = 'sequential' | 'loop' | 'shuffle'
 type NoiseType = 'white' | 'pink' | 'brown'
 type GeneratorType = 'sine' | 'sweep' | 'noise' | 'eq-test' | 'surround' | 'bass-boost' | 'spatial' | 'multichannel'
@@ -774,7 +776,42 @@ function findActiveLrcIndex(lines: LrcLine[], currentTime: number): number {
 
 const SPECTRUM_BARS = 64  // Optimal bar count for visual clarity
 
-type VisualizerMode = 'spectrum' | 'oscilloscope' | 'spectrogram' | 'vuMeter' | 'circular' | 'waveRing'
+// R29.3: grid resolution used when projecting a visualizer canvas onto a
+// physical display overlay. Coarser than the canvas's own pixel resolution —
+// this reuses the same LED-grid `RgbFrame` pipeline as the main effect
+// engine (see overlayManager.ts `pushFrameToDisplay`), so a moderate grid
+// keeps IPC payload small while still reading as a recognizable animation.
+const AUDIO_VIZ_GRID = { columns: 48, rows: 18 } as const
+
+/**
+ * Downsample a 2D canvas's current pixel content into a `columns × rows`
+ * `RgbFrame` (nearest-sample per cell). Used to "project" any of the audio
+ * visualizer modes onto a physical display overlay window via the existing
+ * `pushFrameToDisplay` IPC — no new IPC surface needed since this just
+ * produces the same `RgbFrame` shape the LED effect engine already sends.
+ */
+function canvasToRgbFrame(canvas: HTMLCanvasElement, columns: number, rows: number): RgbFrame | null {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  const { width, height } = canvas
+  if (width === 0 || height === 0) return null
+  const image = ctx.getImageData(0, 0, width, height).data
+  const pixels = new Uint8ClampedArray(columns * rows * 3)
+  for (let ry = 0; ry < rows; ry++) {
+    const sy = Math.min(height - 1, Math.floor(((ry + 0.5) / rows) * height))
+    for (let rx = 0; rx < columns; rx++) {
+      const sx = Math.min(width - 1, Math.floor(((rx + 0.5) / columns) * width))
+      const si = (sy * width + sx) * 4
+      const di = (ry * columns + rx) * 3
+      pixels[di] = image[si]
+      pixels[di + 1] = image[si + 1]
+      pixels[di + 2] = image[si + 2]
+    }
+  }
+  return { columns, rows, pixels, generatedAt: Date.now() }
+}
+
+type VisualizerMode = 'spectrum' | 'oscilloscope' | 'spectrogram' | 'vuMeter' | 'circular' | 'waveRing' | 'waveform'
 
 /** Premium gradient spectrum with glow, rounded caps, and mirror reflection */
 function drawSpectrum(canvas: HTMLCanvasElement, analyser: AnalyserNode): void {
@@ -1211,7 +1248,11 @@ export function AudioStudioView(): JSX.Element {
   const cached = useMemo(() => loadCache(), [])
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<StudioTab>(cached.activeTab || 'generator')
+  // R29.5: 'generator' used to be a tab here; it is now opened via its own
+  // drawer (see `genExpanded`), so guard against a stale cached value.
+  const [activeTab, setActiveTab] = useState<StudioTab>(
+    cached.activeTab === 'scenes' || cached.activeTab === 'export' ? cached.activeTab : 'scenes'
+  )
 
   // Player state
   const [playlist, setPlaylist] = useState<TrackItem[]>([])
@@ -1254,6 +1295,8 @@ export function AudioStudioView(): JSX.Element {
   const [vizFullscreen, setVizFullscreen] = useState(false)
   const [displays, setDisplays] = useState<Array<{ id: number; label: string; bounds: { x: number; y: number; width: number; height: number }; primary: boolean }>>([])
   const [showDisplayPicker, setShowDisplayPicker] = useState(false)
+  // R29.3: display currently receiving the projected visualizer frame (or null when not projecting)
+  const [projectDisplayId, setProjectDisplayId] = useState<number | null>(null)
 
   // Lyrics state
   const [lrcLines, setLrcLines] = useState<LrcLine[]>([])
@@ -1272,12 +1315,20 @@ export function AudioStudioView(): JSX.Element {
   const eqNodesRef = useRef<BiquadFilterNode[]>([])
   const spectrumCanvasRef = useRef<HTMLCanvasElement>(null)
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null)
+  // R29.2: wavesurfer.js container + instance for the 'waveform' visualizer mode
+  const waveformContainerRef = useRef<HTMLDivElement>(null)
+  const wavesurferRef = useRef<WaveSurfer | null>(null)
   const animFrameRef = useRef<number>(0)
   const previewSourceRef = useRef<AudioBufferSourceNode | null>(null)
   const playModeRef = useRef<PlayMode>(playMode)
   const playlistRef = useRef<TrackItem[]>(playlist)
   const spectrogramBufferRef = useRef<Uint8Array[]>([])
   const vuPeakRef = useRef({ left: 0, right: 0, leftDecay: 0, rightDecay: 0 })
+  // R29.3: mirrors `projectDisplayId` state into a ref so the rAF draw loop
+  // (which does not re-subscribe on every projection toggle) always reads
+  // the latest target without needing to restart the whole visualization effect.
+  const projectDisplayIdRef = useRef<number | null>(null)
+  useEffect(() => { projectDisplayIdRef.current = projectDisplayId }, [projectDisplayId])
 
   // Keep refs in sync
   useEffect(() => { playModeRef.current = playMode }, [playMode])
@@ -1389,7 +1440,18 @@ export function AudioStudioView(): JSX.Element {
     return ctx
   }, [volume, balance])
 
-  const openSpectrumPopout = useCallback(async (displayId?: number) => {
+  /**
+   * R29.3: project the current visualizer onto a physical display.
+   * Previously this opened a `window.open(...)` popup, but the app's global
+   * `setWindowOpenHandler` (src/main/index.ts) always denies popups and
+   * redirects them to the OS default browser for security — so the old
+   * popout never actually showed the visualizer at all. Real projection now
+   * reuses the existing overlay-window pipeline: ensure an overlay is open
+   * on the target display (`openOverlay`), then the visualization rAF loop
+   * below pushes a downsampled `RgbFrame` of the canvas to it every tick via
+   * the already-existing `pushFrameToDisplay` IPC (zero new IPC surface).
+   */
+  const projectToDisplay = useCallback(async (displayId?: number) => {
     try {
       const allDisplays = await window.rgbbox.getDisplays()
       if (!displayId && allDisplays.length > 1) {
@@ -1397,18 +1459,22 @@ export function AudioStudioView(): JSX.Element {
         setShowDisplayPicker(true)
         return
       }
-      const target = displayId ? allDisplays.find(d => d.id === displayId) : allDisplays[0]
-      const bounds = target?.bounds ?? { x: 0, y: 0, width: 1280, height: 400 }
-      const w = window.open(
-        `${window.location.href.split('#')[0]}#spectrum-popout`,
-        'rgbbox-spectrum',
-        `width=900,height=400,left=${bounds.x + 190},top=${bounds.y + bounds.height - 430},menubar=no,toolbar=no,location=no,status=no`
-      )
-      if (w) { w.focus(); setShowDisplayPicker(false) }
+      const target = displayId ?? allDisplays[0]?.id
+      if (target === undefined) return
+      const openIds = await window.rgbbox.getOverlayDisplayIds()
+      if (!openIds.includes(target)) {
+        await window.rgbbox.openOverlay(target, { region: 'fullscreen' })
+      }
+      setProjectDisplayId(target)
+      setShowDisplayPicker(false)
     } catch { /* ignore */ }
   }, [])
 
-  // Visualization loop with HiDPI support
+  const stopProjecting = useCallback(() => {
+    setProjectDisplayId(null)
+  }, [])
+
+  // Visualization loop with HiDPI support + live resize handling
   useEffect(() => {
     if ((!isPlaying && !previewPlaying) || !analyserRef.current) return
     const specCanvas = spectrumCanvasRef.current
@@ -1420,11 +1486,24 @@ export function AudioStudioView(): JSX.Element {
       if (!canvas) return
       const dpr = window.devicePixelRatio || 1
       const rect = canvas.getBoundingClientRect()
-      canvas.width = rect.width * dpr
-      canvas.height = rect.height * dpr
+      const w = Math.max(1, Math.round(rect.width * dpr))
+      const h = Math.max(1, Math.round(rect.height * dpr))
+      if (canvas.width !== w) canvas.width = w
+      if (canvas.height !== h) canvas.height = h
     }
     setupCanvas(specCanvas)
     setupCanvas(waveCanvas)
+
+    // R29.4: window maximize/restore (or any container resize) previously left
+    // the canvas backing-buffer at its old size until vizMode/isPlaying changed
+    // again, causing blurry/clipped rendering. A ResizeObserver keeps the
+    // backing buffer in sync with the element's actual on-screen size at all times.
+    const ro = new ResizeObserver(() => {
+      setupCanvas(specCanvas)
+      setupCanvas(waveCanvas)
+    })
+    if (specCanvas) ro.observe(specCanvas)
+    if (waveCanvas) ro.observe(waveCanvas)
 
     const draw = () => {
       switch (vizMode) {
@@ -1450,11 +1529,26 @@ export function AudioStudioView(): JSX.Element {
         case 'waveRing':
           if (specCanvas) drawWaveRing(specCanvas, analyser)
           break
+        case 'waveform':
+          // Rendered by the wavesurfer.js container (see the effect above),
+          // not the canvas — nothing to draw here.
+          break
+      }
+      // R29.3: while projecting, push a downsampled RgbFrame of the just-drawn
+      // visualizer canvas to the target display's overlay window. Skipped in
+      // 'waveform' mode since that content lives in the wavesurfer DOM
+      // container, not on `specCanvas`.
+      if (projectDisplayIdRef.current !== null && specCanvas && vizMode !== 'waveform') {
+        const frame = canvasToRgbFrame(specCanvas, AUDIO_VIZ_GRID.columns, AUDIO_VIZ_GRID.rows)
+        if (frame) window.rgbbox.pushFrameToDisplay(projectDisplayIdRef.current, frame)
       }
       animFrameRef.current = requestAnimationFrame(draw)
     }
     animFrameRef.current = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(animFrameRef.current)
+    return () => {
+      cancelAnimationFrame(animFrameRef.current)
+      ro.disconnect()
+    }
   }, [isPlaying, previewPlaying, vizMode, vizFullscreen])
 
   // ESC exits the in-app visualizer fullscreen
@@ -1464,6 +1558,41 @@ export function AudioStudioView(): JSX.Element {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [vizFullscreen])
+
+  // R29.2: wavesurfer.js waveform visualizer — bound to the SAME <audio>
+  // element the app already drives (via the `media` option), so play/pause/
+  // seek stay fully controlled by the existing transport controls. wavesurfer
+  // is read-only here (`interact: false`) purely for the waveform display,
+  // avoiding any dual-control conflict with the existing playback engine.
+  useEffect(() => {
+    if (vizMode !== 'waveform') {
+      wavesurferRef.current?.destroy()
+      wavesurferRef.current = null
+      return
+    }
+    const container = waveformContainerRef.current
+    const audioEl = audioElementRef.current
+    if (!container || !audioEl) return
+    let ws: WaveSurfer | null = null
+    try {
+      ws = WaveSurfer.create({
+        container,
+        media: audioEl,
+        url: audioEl.currentSrc || audioEl.src || undefined,
+        height: 140,
+        waveColor: 'rgba(79, 195, 247, 0.5)',
+        progressColor: 'rgba(171, 71, 188, 0.85)',
+        cursorColor: 'rgba(255, 255, 255, 0.6)',
+        interact: false,
+        normalize: true,
+      })
+      wavesurferRef.current = ws
+    } catch { /* custom media:// scheme decode failed — leave the container empty */ }
+    return () => {
+      ws?.destroy()
+      if (wavesurferRef.current === ws) wavesurferRef.current = null
+    }
+  }, [vizMode, currentTrackIndex])
 
   // Volume/pan updates
   useEffect(() => {
@@ -1867,6 +1996,28 @@ export function AudioStudioView(): JSX.Element {
           <p className="eyebrow">{t('audio.eyebrow')}</p>
           <h2>{t('audio.title')}</h2>
         </div>
+        {/* R29.5: EQ and the audio generator used to be mixed inline with the
+            player/visualizer/scenes/export flow, which felt cluttered. They
+            now live behind their own toolbar buttons and open as drawers,
+            keeping the main view focused on playback + visualization. */}
+        <div className="audio-tools-bar">
+          <button
+            type="button"
+            className={`audio-btn ${eqEnabled ? 'active' : ''}`}
+            onClick={() => setEqExpanded(true)}
+            title={t('audio.eq.title')}
+          >
+            {t('audio.eq.title')}
+          </button>
+          <button
+            type="button"
+            className="audio-btn"
+            onClick={() => setGenExpanded(true)}
+            title={t('audio.tab.generator')}
+          >
+            {t('audio.tab.generator')}
+          </button>
+        </div>
       </header>
 
       <div className="audio-studio-layout">
@@ -2056,7 +2207,7 @@ export function AudioStudioView(): JSX.Element {
         <div className="audio-right-panel">
           <div className={`audio-visualizers${vizFullscreen ? ' audio-visualizers-fullscreen' : ''}`}>
             <div className="audio-viz-mode-bar" style={{ position: 'relative' }}>
-              {(['spectrum', 'oscilloscope', 'spectrogram', 'vuMeter', 'circular', 'waveRing'] as VisualizerMode[]).map(mode => (
+              {(['spectrum', 'oscilloscope', 'spectrogram', 'vuMeter', 'circular', 'waveRing', 'waveform'] as VisualizerMode[]).map(mode => (
                 <button
                   key={mode}
                   type="button"
@@ -2076,9 +2227,9 @@ export function AudioStudioView(): JSX.Element {
               </button>
               <button
                 type="button"
-                className="audio-viz-fs-btn"
-                title="Pop out"
-                onClick={() => void openSpectrumPopout()}
+                className={`audio-viz-fs-btn ${projectDisplayId !== null ? 'active' : ''}`}
+                title={t(projectDisplayId !== null ? 'audio.viz.stopProject' : 'audio.viz.popout')}
+                onClick={() => { if (projectDisplayId !== null) stopProjecting(); else void projectToDisplay() }}
               >
                 <Monitor size={14} />
               </button>
@@ -2087,82 +2238,28 @@ export function AudioStudioView(): JSX.Element {
                   position: 'absolute', top: 30, right: 0, background: 'var(--surface-2, #1e2535)',
                   border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: 8, zIndex: 100
                 }}>
-                  <p style={{ fontSize: 11, marginBottom: 6, opacity: 0.7 }}>Select display</p>
+                  <p style={{ fontSize: 11, marginBottom: 6, opacity: 0.7 }}>{t('audio.viz.selectDisplay')}</p>
                   {displays.map(d => (
                     <button key={d.id} type="button" className="audio-btn-sm" style={{ display: 'block', width: '100%', marginBottom: 4 }}
-                      onClick={() => void openSpectrumPopout(d.id)}>
+                      onClick={() => void projectToDisplay(d.id)}>
                       {d.primary ? '★ ' : ''}{d.label} ({d.bounds.width}×{d.bounds.height})
                     </button>
                   ))}
-                  <button type="button" className="audio-btn-sm" onClick={() => setShowDisplayPicker(false)}>Cancel</button>
+                  <button type="button" className="audio-btn-sm" onClick={() => setShowDisplayPicker(false)}>{t('audio.viz.cancel')}</button>
                 </div>
               )}
             </div>
-            <canvas ref={spectrumCanvasRef} className="audio-canvas audio-canvas-spectrum" width={720} height={160} />
+            <canvas ref={spectrumCanvasRef} className={`audio-canvas audio-canvas-spectrum${vizMode === 'waveform' ? ' audio-canvas-hidden' : ''}`} width={720} height={160} />
             {vizMode === 'oscilloscope' && (
               <canvas ref={waveformCanvasRef} className="audio-canvas audio-canvas-waveform" width={720} height={80} />
             )}
-          </div>
-
-          {/* EQ Section */}
-          <div className="audio-eq-section">
-            <div
-              className="audio-section-toggle"
-              onClick={() => setEqExpanded(v => !v)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '4px 0' }}
-            >
-              {eqExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85 }}>EQ</span>
-              <button
-                type="button"
-                className={`audio-btn-sm ${eqEnabled ? 'active' : ''}`}
-                style={{ marginLeft: 'auto' }}
-                onClick={(e) => { e.stopPropagation(); setEqEnabled(v => !v) }}
-              >
-                {eqEnabled ? t('audio.on') : t('audio.off')}
-              </button>
-            </div>
-            {eqExpanded && (
-              <div className="audio-eq-grid">
-                {EQ_FREQS.map((freq, i) => (
-                  <div key={freq} className="audio-eq-band">
-                    <span className="audio-eq-freq">{freq >= 1000 ? `${freq / 1000}k` : freq}</span>
-                    <input
-                      type="range"
-                      className="audio-eq-slider"
-                      min={-12}
-                      max={12}
-                      step={0.5}
-                      value={eqBands[i]}
-                      style={{ writingMode: 'vertical-lr', direction: 'rtl', height: 80, width: 20 }}
-                      onChange={(e) => {
-                        const val = Number(e.target.value)
-                        setEqBands(prev => { const next = [...prev]; next[i] = val; return next })
-                      }}
-                    />
-                    <span className="audio-eq-db">{eqBands[i] > 0 ? `+${eqBands[i]}` : eqBands[i]}</span>
-                    <button
-                      type="button"
-                      className="audio-btn-icon"
-                      title="Reset"
-                      onClick={() => setEqBands(prev => { const next = [...prev]; next[i] = 0; return next })}
-                    >×</button>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  className="audio-btn-sm"
-                  style={{ gridColumn: '1 / -1', marginTop: 4 }}
-                  onClick={() => setEqBands(new Array(10).fill(0))}
-                >
-                  Reset EQ
-                </button>
-              </div>
+            {vizMode === 'waveform' && (
+              <div ref={waveformContainerRef} className="audio-waveform-container" />
             )}
           </div>
 
           <div className="audio-tabs">
-            {(['generator', 'scenes', 'export'] as StudioTab[]).map(tab => (
+            {(['scenes', 'export'] as StudioTab[]).map(tab => (
               <button
                 key={tab}
                 type="button"
@@ -2174,19 +2271,78 @@ export function AudioStudioView(): JSX.Element {
             ))}
           </div>
 
-          {/* Generator Tab */}
-          {activeTab === 'generator' && (
-            <div className="audio-panel audio-panel-scroll">
-              <div
-                className="audio-section-toggle"
-                onClick={() => setGenExpanded(v => !v)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '4px 0', marginBottom: 4 }}
-              >
-                {genExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85 }}>Generator Config</span>
+          {/* EQ drawer (R29.5: opened via the "EQ" toolbar button in the
+              header instead of being mixed inline with scenes/export) */}
+          {eqExpanded && (
+            <div className="audio-drawer-backdrop" onClick={() => setEqExpanded(false)}>
+              <div className="audio-drawer" onClick={(e) => e.stopPropagation()}>
+                <div className="audio-drawer-header">
+                  <h3>{t('audio.eq.title')}</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      type="button"
+                      className={`audio-btn-sm ${eqEnabled ? 'active' : ''}`}
+                      onClick={() => setEqEnabled(v => !v)}
+                    >
+                      {eqEnabled ? t('audio.on') : t('audio.off')}
+                    </button>
+                    <button type="button" className="audio-btn-icon" title={t('common.close')} onClick={() => setEqExpanded(false)}>
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="audio-eq-grid">
+                  {EQ_FREQS.map((freq, i) => (
+                    <div key={freq} className="audio-eq-band">
+                      <span className="audio-eq-freq">{freq >= 1000 ? `${freq / 1000}k` : freq}</span>
+                      <input
+                        type="range"
+                        className="audio-eq-slider"
+                        min={-12}
+                        max={12}
+                        step={0.5}
+                        value={eqBands[i]}
+                        style={{ writingMode: 'vertical-lr', direction: 'rtl', height: 80, width: 20 }}
+                        onChange={(e) => {
+                          const val = Number(e.target.value)
+                          setEqBands(prev => { const next = [...prev]; next[i] = val; return next })
+                        }}
+                      />
+                      <span className="audio-eq-db">{eqBands[i] > 0 ? `+${eqBands[i]}` : eqBands[i]}</span>
+                      <button
+                        type="button"
+                        className="audio-btn-icon"
+                        title="Reset"
+                        onClick={() => setEqBands(prev => { const next = [...prev]; next[i] = 0; return next })}
+                      >×</button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="audio-btn-sm"
+                    style={{ gridColumn: '1 / -1', marginTop: 4 }}
+                    onClick={() => setEqBands(new Array(10).fill(0))}
+                  >
+                    {t('audio.eq.reset')}
+                  </button>
+                </div>
               </div>
-              {genExpanded && (
-                <div className="audio-gen-grid">
+            </div>
+          )}
+
+          {/* Generator drawer (R29.5: opened via the "Generator" toolbar button
+              in the header instead of being mixed inline with scenes/export) */}
+          {genExpanded && (
+            <div className="audio-drawer-backdrop" onClick={() => setGenExpanded(false)}>
+              <div className="audio-drawer" onClick={(e) => e.stopPropagation()}>
+                <div className="audio-drawer-header">
+                  <h3>{t('audio.tab.generator')}</h3>
+                  <button type="button" className="audio-btn-icon" title={t('common.close')} onClick={() => setGenExpanded(false)}>
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="audio-panel audio-panel-scroll">
+                  <div className="audio-gen-grid">
                   <div className="audio-gen-section audio-gen-full">
                     <label className="audio-field-label">{t('audio.gen.type')}</label>
                     <div className="audio-gen-types">
@@ -2379,7 +2535,6 @@ export function AudioStudioView(): JSX.Element {
                     <span className="audio-value">{Math.round(genConfig.reverbMix * 100)}%</span>
                   </div>
                 </div>
-              )}
 
               <div className="audio-gen-actions">
                 <button
@@ -2407,6 +2562,8 @@ export function AudioStudioView(): JSX.Element {
                 >
                   <Download size={14} /> {t('audio.export')}
                 </button>
+              </div>
+                </div>
               </div>
             </div>
           )}

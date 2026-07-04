@@ -6,7 +6,7 @@
  * @FilePath: \RGBBox\src\main\overlayManager.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
-import { BrowserWindow, screen } from 'electron'
+import { app, BrowserWindow, nativeImage, screen } from 'electron'
 import { join } from 'node:path'
 import type { OverlayConfig, RgbFrame } from '../shared/types'
 
@@ -80,6 +80,12 @@ export function openOverlay(
     alwaysOnTop: false,
     skipTaskbar: true,
     hasShadow: false,
+    // R30.2: `hasShadow:false` is a no-op on Windows (Electron docs: "On Windows
+    // and Linux does nothing"). The visible 1px edge some users see around a
+    // frameless+transparent overlay on Windows comes from DWM's thick-frame /
+    // rounded-corner rendering, not from `hasShadow`. Disable both explicitly.
+    thickFrame: false,
+    roundedCorners: false,
     backgroundColor: '#00000000',
     focusable: true,
     resizable: false,
@@ -94,6 +100,21 @@ export function openOverlay(
       backgroundThrottling: false
     }
   })
+
+  // R25: keep overlay icons consistent with the main window. Even though
+  // skipTaskbar=true hides them from the taskbar, the Alt-Tab thumbnail and
+  // window-grouping heuristics still fall back to the PE icon when the
+  // runtime override is missing.
+  {
+    const isDev = !app.isPackaged
+    const iconPath = process.platform === 'win32'
+      ? (isDev ? join(__dirname, '../../build/icon.ico') : join(process.resourcesPath, 'icon.ico'))
+      : (isDev ? join(__dirname, '../../build/icon.png') : join(process.resourcesPath, 'icon.png'))
+    const img = nativeImage.createFromPath(iconPath)
+    if (!img.isEmpty()) {
+      win.setIcon(img)
+    }
+  }
 
   // Cover taskbar: defer setAlwaysOnTop until after the window is fully loaded
   // so Windows assigns the correct z-order. screen-saver level sits above the taskbar.

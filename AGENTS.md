@@ -20,6 +20,11 @@
 4. 若无 → 告诉用户"需要先在 PRD-0002 追加 R-N"，等用户确认；
 5. 有 → 按 R-N 实施，完成后更新 R-N 状态为 ✅ + 证据。
 
+## CC Switch / Claude Code 启动注意事项
+
+- 如果通过 CC Switch 使用 GitHub Copilot 供应商，务必在**已完成 Active 切换的同一个终端**里启动 Claude Code。
+- 若新终端提示 `Not logged in · Please run /login`，通常表示该终端没有继承 CC Switch 会话；请先重新激活 CC Switch，再启动 Claude Code。
+
 ## Auto 模式（可选）
 
 用户可说 `auto` / `信任模式` / `auto L0` / `auto L1` 触发 auto 模式，让 AI 自主跑完 R-N → 实施 → 自检全流程。详见 [`docs/AI_WORKFLOW.md §8`](./docs/AI_WORKFLOW.md) 与 `docs/prd/PRD-0002-rgbbox-project-catalog.md` **R10**。

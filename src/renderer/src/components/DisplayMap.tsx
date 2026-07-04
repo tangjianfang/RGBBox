@@ -17,6 +17,16 @@ const REGION_OPTION_KEYS: Array<{ value: OverlayRegionPreset; labelKey: Translat
 const DEFAULT_CONFIG: OverlayConfig = { region: 'fullscreen' }
 const DEFAULT_CUSTOM: OverlayRegionCustom = { x: 0, y: 0, width: 1, height: 1 }
 
+// R30.3: explicit field->label mapping so the x/y/width/height inputs show
+// unambiguous, percentage-based labels instead of raw one-letter keys with
+// confusing 0–1 fractional values.
+const CUSTOM_FIELD_KEYS: Array<{ field: keyof OverlayRegionCustom; labelKey: TranslationKey }> = [
+  { field: 'x', labelKey: 'overlay.custom.x' },
+  { field: 'y', labelKey: 'overlay.custom.y' },
+  { field: 'width', labelKey: 'overlay.custom.width' },
+  { field: 'height', labelKey: 'overlay.custom.height' },
+]
+
 interface DragSelection {
   displayId: number
   startX: number
@@ -192,14 +202,17 @@ export function DisplayMap({ topology, overlayDisplayIds = [], onToggleOverlay, 
                 </div>
 
                 <div className="overlay-custom-bounds">
-                  {(['x', 'y', 'width', 'height'] as const).map((field) => (
+                  {CUSTOM_FIELD_KEYS.map(({ field, labelKey }) => (
                     <label key={field} className="overlay-custom-field">
-                      <span>{field}</span>
+                      <span>{t(labelKey)}</span>
                       <input
                         type="number"
-                        min={0} max={1} step={0.05}
-                        value={custom[field]}
-                        onChange={(e) => updateCustom({ [field]: Math.min(1, Math.max(0, Number(e.target.value))) })}
+                        min={0} max={100} step={1}
+                        value={Math.round(custom[field] * 100)}
+                        onChange={(e) => {
+                          const percent = Math.min(100, Math.max(0, Number(e.target.value)))
+                          updateCustom({ [field]: percent / 100 })
+                        }}
                       />
                     </label>
                   ))}
