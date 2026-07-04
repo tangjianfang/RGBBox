@@ -1012,6 +1012,32 @@
   - [ ] 手动验证：帧率/CPU 占用相较 R33 无明显变化
 - **R34.7** **状态**：🔄（代码已实施完成，`yarn typecheck` 通过；`yarn build` 通过；`yarn test` 436 passed / 41 skipped，0 失败；等待用户实机视觉验收）
 
+### R35. GPU 直渲染架构 POC（分辨率级别灯效，绕过网格采样）
+
+> 目标：响应用户反馈——网格密度调到最大（长边 320）后，画质依然达不到"分辨率级别"。用户明确要求评估或重构新方案。
+> **评估结论**：R32–R34 的插值优化已经把"网格+插值"这条路走到了极限——无论网格多密，效果颜色从未在"每个屏幕像素"粒度上被计算过，插值算法只能在有限采样点之间尽量插得自然，不能生成采样点之间原本不存在的细节。真正的"分辨率级别"必须让效果颜色公式直接在 GPU 片元着色器里逐物理像素求值——GPU 并行处理，评估 200 万像素和评估 336 个格子在墙钟时间上差距很小（这正是任何 3A 游戏后处理特效的原理），"分辨率级别画质"和"不占用电脑性能"在 GPU 架构下不再矛盾。**意外的好消息**：`src/engine/effects.ts` 的效果函数本来就是纯函数式、逐格子求值的写法（`EffectContext{x,y,columns,rows,now,...}` → 颜色），内部的 `hash`/`valueNoise2`/`fbm2`/`smoothstep` 都是标准过程式噪声函数，和 GLSL 写法几乎是同一套数学，移植是机械性工作而非从零设计。
+> **风险等级：L1**（POC 范围极小：新增独立渲染类 + 应用内预览接入 1 个效果，不改类型/IPC/worker/overlay/video-wall，完全不影响未移植效果的现有行为）。
+> **触发场景**：用户明确要求"评估或者重构新方案"，并选择"先做 POC 验证整条链路（着色器架构+切换机制+性能）再汇报"。
+
+- **R35.1** **架构**：新增 `src/renderer/src/gl/effectGl.ts`——独立的 `EffectGl` 渲染类，不复用 `PreviewGl`（LED 网格渲染器）的着色器/uniform 体系，而是"每个 GPU 直渲染效果一个 fragment shader，逐物理像素求值"。新增 `GPU_DIRECT_EFFECTS: ReadonlySet<string>`（当前仅 `'rainbow'`，作为可扩展的白名单）+ `isGpuDirectEffect()` 判断函数。
+- **R35.2** **POC 效果：`rainbow`**：把 `effects.ts` 里的 `dirT()`（方向投影，纯 x/y/angle 三角函数）和 `color.ts` 的 `hslToRgb()`（HSL→RGB，标准 chroma/segment 公式）逐行翻译成 GLSL，验证：①连续 UV 空间下的 `dirT` 极限公式与离散版本一致；②`hslToRgb` 的色段判断逻辑与 CPU 版本数值对齐（保证"看起来一样，只是更平滑"而不是"换了个不同的效果"）。
+- **R35.3** **接入范围（POC 刻意收窄）**：仅接入应用内 **RGB 画布预览**（`PreviewGrid.tsx` 新增 `gpuLayer` prop）。当前激活图层的 `kind` 命中 `GPU_DIRECT_EFFECTS` 时，`PreviewGrid` 内部切换到 `EffectGl` 渲染循环（逐帧读 `performance.now()` 当时间 uniform + 效果参数当 uniform），完全跳过 CPU worker 的 `columns×rows` 网格计算；否则维持现有网格管线（R30/R32/R33/R34 全部不受影响）。**投屏/overlay/video-wall/worker 管线本次未接入**，仍走原网格路径——这几处要接入需要额外设计（overlay 窗口是独立渲染进程，需要把"当前效果+参数+时间"这类轻量状态而不是像素帧同步过去，类似 R31 音频投屏用 BroadcastChannel 的思路）。
+- **R35.4** **不动**：`src/engine/effects.ts` 的 CPU 效果算法本身（不删除、不重写，未移植效果继续用它）；`PreviewGl`（LED 网格渲染器）；R32/R33/R34 的网格+插值管线对所有其他效果的行为完全不变。
+- **R35.5** **后续阶段（不在本次范围，需用户视觉验收 POC 效果后决定）**：
+  - **阶段二**：扩展到"流动渐变类"效果（`wave`/`plasma`/`fire`/`aurora`/`zone-gradient`/`nebula`/`vortex`/`fluid-flow`/`wave-diffraction`/`tokamak-plasma` 等 ≈15 个），逐个把 CPU 版噪声/公式翻译成 GLSL，复用 `EFFECT_FS` 的按 kind 分派表结构。
+  - **阶段三**：视 POC + 阶段二效果和性能表现，评估是否接入投屏/overlay/video-wall（需要跨进程同步"效果 kind + 参数 + 时间"而非像素帧）。
+  - **不计划移植**：`matrix-rain`/`starlight`/`glitch`/`random-color`/`custom-paint`/`image-paint`/`screen-ambient`——要么本身该有离散颗粒感（和 R32 的 `PIXEL_STYLE_EFFECTS` 例外名单重合），要么依赖外部图像采样，搬到逐像素 shader 收益有限或需要更复杂的历史帧/纹理输入设计。
+- **R35.6** **受影响文件**：`src/renderer/src/gl/effectGl.ts`（新增）、`src/renderer/src/components/PreviewGrid.tsx`（新增 `gpuLayer` prop + 渲染分支）、`src/renderer/src/App.tsx`（传入 `gpuLayer` + 判断 `isGpuDirectEffect`）。
+- **R35.7** **验收点**：
+  - [ ] `yarn typecheck` 通过
+  - [ ] `yarn build` 通过
+  - [ ] `yarn test` 全量通过，无新增失败
+  - [ ] 手动验证：把当前图层切到 `rainbow` 效果后，应用内预览呈现真正连续无格子感的彩虹渐变（和网格模式对比应有明显差异）
+  - [ ] 手动验证：切换到其他效果时无缝退回原网格渲染，无残留/崩溃/黑屏
+  - [ ] 手动验证：`rainbow` 在 GPU 直渲染模式下的帧率/CPU 占用应低于或持平网格模式（不应更差）
+  - [ ] 手动验证：窗口缩放后 GPU 直渲染画面正常重建（不留黑屏/旧内容）
+- **R35.8** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped/0 失败；等待用户对 `rainbow` POC 效果的实机视觉+性能验收，再决定是否进入 R35.5 阶段二）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

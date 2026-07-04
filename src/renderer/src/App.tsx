@@ -3,6 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame, Scene, VideoWallLayout } from '../../shared/types'
 import { is3DEffect, resolveFrameRenderStyle } from '../../shared/types'
+import { isGpuDirectEffect } from './gl/effectGl'
 import { extractWallPanelFrame } from '../../engine/videoWallFrame'
 import { useI18n } from './i18n'
 import { DisplayMap } from './components/DisplayMap'
@@ -2216,6 +2217,7 @@ export function App(): JSX.Element {
                       frameRef={frameRef}
                       showGap={profile.sampling.showGap ?? false}
                       renderStyle={resolveFrameRenderStyle(profile.sampling.renderStyle, activeLayer(profile)?.kind)}
+                      gpuLayer={isGpuDirectEffect(activeLayer(profile)?.kind) ? activeLayer(profile) : null}
                       onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
                       displayCount={scene?.linkedDisplays ? topology.displays.length : 1}
                     />

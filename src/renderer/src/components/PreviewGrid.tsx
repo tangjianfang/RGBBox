@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
-import type { RgbFrame } from '../../../shared/types'
+import type { EffectLayer, RgbFrame } from '../../../shared/types'
+import { EffectGl } from '../gl/effectGl'
 import { PreviewGl } from '../gl/previewGl'
 
 interface PreviewGridProps {
@@ -13,6 +14,14 @@ interface PreviewGridProps {
   showGap?: boolean
   /** R32: 'smooth' (default) blends between cells; 'pixel' keeps the discrete LED-block look. */
   renderStyle?: 'pixel' | 'smooth'
+  /**
+   * R35 (POC): when the active layer's effect kind has a GPU-direct shader
+   * (see `GPU_DIRECT_EFFECTS` in `gl/effectGl.ts`), pass it here to bypass the
+   * CPU `columns×rows` grid entirely and render true per-pixel resolution
+   * directly in this component. `null`/`undefined` keeps the existing grid
+   * pipeline (all effects not yet ported).
+   */
+  gpuLayer?: EffectLayer | null
   /** When a ripple layer is active, called with normalised (0..1) click coordinates. */
   onRippleClick?: (nx: number, ny: number) => void
   /**
@@ -48,9 +57,10 @@ function initGl(canvas: HTMLCanvasElement): PreviewGl | null {
   }
 }
 
-export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth', onRippleClick, displayCount = 1 }: PreviewGridProps): JSX.Element {
+export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth', gpuLayer = null, onRippleClick, displayCount = 1 }: PreviewGridProps): JSX.Element {
   const canvasRef  = useRef<HTMLCanvasElement | null>(null)
   const glRef      = useRef<PreviewGl | null>(null)
+  const effectGlRef = useRef<EffectGl | null>(null)
   const rafRef     = useRef<number | null>(null)
   const drawnRef   = useRef<RgbFrame | null>(null)
   const [started, setStarted] = useState(false)
@@ -61,6 +71,8 @@ export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth',
   // value from whenever the canvas-init effect first ran.
   const showGapRef = useRef(showGap)
   const renderStyleRef = useRef(renderStyle)
+  const gpuLayerRef = useRef(gpuLayer)
+  useEffect(() => { gpuLayerRef.current = gpuLayer }, [gpuLayer])
 
   // Apply gap setting whenever it changes (without remounting the GL context).
   useEffect(() => {
@@ -102,6 +114,8 @@ export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth',
     const ro = new ResizeObserver(() => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
       glRef.current?.dispose()
+      effectGlRef.current?.dispose()
+      effectGlRef.current = null
       glRef.current = initGl(canvas)
       applyCurrentSettings()
       // Restart the rAF loop after reinitialising.
@@ -111,13 +125,31 @@ export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth',
 
     // ── requestAnimationFrame render loop ────────────────────────────────
     const loop = (): void => {
-      const frame = frameRef.current
-      if (frame && frame !== drawnRef.current) {
-        drawnRef.current = frame
-        glRef.current?.drawFrame(frame)
+      const layer = gpuLayerRef.current
+      if (layer) {
+        // R35 (POC): GPU-direct path — render the effect's own shader at full
+        // canvas resolution instead of drawing the CPU grid frame.
+        if (!effectGlRef.current && canvasRef.current) {
+          try {
+            effectGlRef.current = new EffectGl(canvasRef.current)
+          } catch (err) {
+            console.warn('[PreviewGrid] EffectGl init failed:', err)
+          }
+        }
+        effectGlRef.current?.render(layer, performance.now() / 1000)
         if (!startedRef.current) {
           startedRef.current = true
           setStarted(true)
+        }
+      } else {
+        const frame = frameRef.current
+        if (frame && frame !== drawnRef.current) {
+          drawnRef.current = frame
+          glRef.current?.drawFrame(frame)
+          if (!startedRef.current) {
+            startedRef.current = true
+            setStarted(true)
+          }
         }
       }
       rafRef.current = requestAnimationFrame(loop)
@@ -128,7 +160,9 @@ export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth',
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
       ro.disconnect()
       glRef.current?.dispose()
+      effectGlRef.current?.dispose()
       glRef.current    = null
+      effectGlRef.current = null
       drawnRef.current = null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
