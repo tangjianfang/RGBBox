@@ -227,39 +227,23 @@ export class PreviewGl {
   /**
    * Compute and upload layout uniforms.
    *
-   * - Preview (in-app "RGB 画布预览"): cells are kept square, grid centred
-   *   with letterbox / pillarbox padding — this is a UI viewport, not a
-   *   physical output, so square cells simply look nicer.
-   * - Overlay (real per-display push, R30.1): always stretch the grid to
-   *   cover the full canvas edge-to-edge with zero padding. Overlay windows
-   *   are sized to the exact physical display, and in linked multi-display
-   *   mode each display's sub-frame aspect ratio rarely matches its own
-   *   screen aspect exactly (see `extractSubFrame` in App.tsx) — letterboxing
-   *   here would show up as a visible black border on real hardware. This
-   *   also keeps the physical output content-consistent with what the
-   *   virtual canvas preview shows for that display's region (no more
-   *   preview/output mismatch when displays have different resolutions).
+   * R32 follow-up: previously the preview (in-app "RGB 画布预览") used
+   * square, letterboxed cells while the overlay (real per-display push,
+   * R30.1) always stretched to fill edge-to-edge — a deliberate difference
+   * at the time ("square cells look nicer" in the preview viewport). User
+   * feedback: this made the two views look visibly different (different
+   * aspect/distortion), especially now that 'smooth' style is meant to make
+   * them match. Fix: ALWAYS stretch to fill the canvas edge-to-edge, for
+   * both preview and overlay — the two renderers now use the exact same UV
+   * mapping formula, so for the common single/primary-display case the
+   * preview and the physical output are geometrically identical (only the
+   * physical pixel resolution differs, which is expected/unavoidable).
    */
   private updateLayout(columns: number, rows: number): void {
     const { gl, canvasW, canvasH } = this
     if (!canvasW || !canvasH) return
-
-    if (this.overlay) {
-      gl.uniform2f(this.uOrigin, 0, 0)
-      gl.uniform2f(this.uCellSize, 1 / columns, 1 / rows)
-      return
-    }
-
-    // cellSize in physical pixels — same formula as the old 2D canvas code.
-    const cellPx   = Math.min(canvasW / columns, canvasH / rows)
-    const totalW   = cellPx * columns
-    const totalH   = cellPx * rows
-    const originX  = (canvasW - totalW) / 2 / canvasW  // normalised
-    const originY  = (canvasH - totalH) / 2 / canvasH
-    const cellSizeX = cellPx / canvasW
-    const cellSizeY = cellPx / canvasH
-    gl.uniform2f(this.uOrigin,   originX,   originY)
-    gl.uniform2f(this.uCellSize, cellSizeX, cellSizeY)
+    gl.uniform2f(this.uOrigin, 0, 0)
+    gl.uniform2f(this.uCellSize, 1 / columns, 1 / rows)
   }
 
   /**
