@@ -59,13 +59,26 @@ const FS = /* glsl */`
     }
 
     if (uSmooth > 0.5) {
-      // R32 'smooth' style: sample the grid at its continuous (non-floored)
-      // position. Combined with GL_LINEAR texture filtering (set in
-      // setRenderStyle()), the GPU automatically blends between neighbouring
-      // cell colours — same texture size / same one draw call as 'pixel'
-      // style, just a different (practically free) filter mode. No gap
-      // cutout: a smoothly blended light bar has no visible seams.
-      vec2 tc = clamp(gridPos, vec2(0.5), uGrid - vec2(0.5)) / uGrid;
+      // R34: plain hardware bilinear (GL_LINEAR) is only C0-continuous — the
+      // blend *value* is continuous across a cell boundary but its *slope*
+      // isn't, so each cell boundary still shows a visible crease ("毛刺" /
+      // faceted-mosaic look), especially on high-contrast effects (comet
+      // heads, lightning, spectrum bars). Fix: remap the fractional position
+      // within each texel-to-texel interval through a quintic "smootherstep"
+      // curve (Ken Perlin's improved smoothstep, f*f*f*(f*(f*6-15)+10)) before
+      // handing it to texture2D — the GPU's own bilinear then blends using
+      // that eased weight instead of the raw linear one, giving a C2-continuous
+      // (smooth value AND smooth slope) result. Still exactly one texture
+      // sample, one draw call — a handful of extra ALU ops per fragment,
+      // effectively free on any GPU. This does NOT change the underlying
+      // columns × rows sample count (no extra CPU cost); it only makes the
+      // blend *between* those samples look organic instead of faceted.
+      vec2 clamped = clamp(gridPos, vec2(0.5), uGrid - vec2(0.5));
+      vec2 texelPos = clamped - 0.5;         // continuous position in texel-index space
+      vec2 i0 = floor(texelPos);
+      vec2 f  = texelPos - i0;
+      vec2 fs = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+      vec2 tc = (i0 + fs + 0.5) / uGrid;
       gl_FragColor = vec4(texture2D(uFrame, tc).rgb, 1.0);
       return;
     }
