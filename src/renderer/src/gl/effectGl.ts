@@ -15,6 +15,13 @@
  * `uColor1`), covering the parameter shapes used across the CPU effect
  * catalogue.
  *
+ * Batch 2 adds GLSL ports of `fbm2`/`valueNoise2` (fractal value noise),
+ * `thermalColor`, `colorScale`/`colorAdd` (as `colorScale3`/`colorAdd3`) and
+ * a custom `ss3()` smoothstep that matches `src/engine/effects.ts#smoothstep`
+ * exactly for both ascending AND descending edge order (GLSL's built-in
+ * `smoothstep` has undefined behaviour when edge0 > edge1, which several CPU
+ * effects rely on for inverted falloffs).
+ *
  * Deliberately NOT ported (see PRD-0002 R37 for full reasoning):
  *  - starlight / matrix-rain / glitch / random-color: discrete/particle look
  *    is the intended aesthetic (same exclusion list as R32's PIXEL_STYLE_EFFECTS).
@@ -24,8 +31,11 @@
  *    from live audio input, not currently plumbed into this GPU path.
  *  - fire / crystal / lightning / lightning-leader: reference the configured
  *    LED grid's `columns`/`rows` to size features (bolt width, cell count) —
- *    needs `columns`/`rows` threaded through as uniforms, not done in this
- *    batch (tracked as follow-up).
+ *    needs `columns`/`rows` threaded through as uniforms, not done yet.
+ *  - icosahedral-virus / protein-folding / mitosis-spindle / synapse-pulse /
+ *    microvilli-field: loop over tens of sample points per pixel with
+ *    `pointSegmentDistance`/icosahedron constants — higher translation risk,
+ *    deferred to a future batch.
  */
 
 import { hexToRgb } from '../../../engine/color'
@@ -33,6 +43,7 @@ import type { EffectLayer } from '../../../shared/types'
 
 /** Effect kinds that have a GPU-direct shader implementation (grows over time). */
 export const GPU_DIRECT_EFFECTS: ReadonlySet<string> = new Set([
+  // Batch 1 (R37): pure trig/hue formulas, no noise dependency
   'rainbow',
   'wave',
   'zone-gradient',
@@ -43,7 +54,18 @@ export const GPU_DIRECT_EFFECTS: ReadonlySet<string> = new Set([
   'spectrum',
   'comet',
   'explode',
-  'breathing'
+  'breathing',
+  // Batch 2 (R37): scientific 2D projections, some using fbm2 fractal noise
+  'mirror-symmetry',
+  'pulsar-beacon',
+  'dna-helix',
+  'nebula',
+  'fluid-flow',
+  'spiral-galaxy',
+  'orion-nebula',
+  'hurricane-eye',
+  'quantum-collapse',
+  'black-hole'
 ])
 
 export function isGpuDirectEffect(kind: string | undefined): boolean {
@@ -98,6 +120,60 @@ const GLSL_HELPERS = /* glsl */`
   }
   float hash2(float x, float y) {
     return hash1(x * 127.1 + y * 311.7);
+  }
+
+  // Matches src/engine/effects.ts#smoothstep exactly, including the case
+  // edge0 > edge1 (an inverted falloff) which several CPU effects rely on —
+  // GLSL's built-in smoothstep() has undefined behaviour in that case.
+  float ss3(float edge0, float edge1, float value) {
+    float range = edge1 - edge0;
+    float amount = clamp((value - edge0) / (abs(range) < 0.0001 ? 0.0001 : range), 0.0, 1.0);
+    return amount * amount * (3.0 - 2.0 * amount);
+  }
+
+  // Matches src/engine/effects.ts#valueNoise2 / fbm2 (value noise + fractal sum).
+  float valueNoise2(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    vec2 s = f * f * (3.0 - 2.0 * f);
+    float a = hash2(i.x, i.y);
+    float b = hash2(i.x + 1.0, i.y);
+    float c = hash2(i.x, i.y + 1.0);
+    float d = hash2(i.x + 1.0, i.y + 1.0);
+    return a + (b - a) * s.x + (c - a) * s.y + (a - b - c + d) * s.x * s.y;
+  }
+  // octaves capped at 5 (max used by any ported effect); constant-bound loop
+  // with an early break keeps this portable across WebGL1 drivers.
+  float fbm2(vec2 p, int octaves) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float scale = 1.0;
+    float total = 0.0;
+    for (int i = 0; i < 5; i++) {
+      if (i >= octaves) break;
+      value += valueNoise2(p * scale) * amplitude;
+      total += amplitude;
+      scale *= 2.02;
+      amplitude *= 0.52;
+    }
+    return total > 0.0 ? value / total : 0.0;
+  }
+
+  // Matches src/engine/effects.ts#colorScale / colorAdd, but operating on 0..1
+  // float colour (the shader's native space) instead of 0..255 bytes.
+  vec3 colorScale3(vec3 c, float scale) {
+    return clamp(c * scale, 0.0, 1.0);
+  }
+  vec3 colorAdd3(vec3 base, vec3 overlay, float scale) {
+    return clamp(base + overlay * scale, 0.0, 1.0);
+  }
+
+  // Matches src/engine/effects.ts#thermalColor exactly.
+  vec3 thermalColor(float temperature) {
+    float heat = clamp(temperature, 0.0, 1.0);
+    if (heat < 0.34) return hslToRgb(8.0 + heat * 50.0, 1.0, heat * 0.65);
+    if (heat < 0.72) return hslToRgb(28.0 + heat * 25.0, 1.0, 0.22 + heat * 0.46);
+    return hslToRgb(205.0 - heat * 70.0, 0.75, 0.58 + heat * 0.34);
   }
 `
 
@@ -413,6 +489,338 @@ const EFFECT_FS: Record<string, string> = {
       );
       gl_FragColor = vec4(col, 1.0);
     }
+  `,
+
+  // ── Batch 2 (R37): scientific 2D projections ──────────────────────────
+
+  // 'mirror-symmetry': uP0=speed, uP1=frequency, uP2=hueShift, uP3=intensity, uP4=angle
+  'mirror-symmetry': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[8];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float frequency = uP[1];
+      float hueShift = uP[2];
+      float intensity = uP[3];
+      float angleDeg = uP[4];
+      float rad = radians(angleDeg);
+      vec2 n0 = normCoords(vUV, uAspect);
+      float nx = n0.x * cos(rad) - n0.y * sin(rad);
+      float ny = n0.x * sin(rad) + n0.y * cos(rad);
+      float ax = abs(nx);
+      float ay = abs(ny);
+      float t = uTime * speed;
+      float radial = sqrt(ax * ax + ay * ay);
+      float petals = sin(atan(ay, ax) * frequency + radial * 9.0 - t * 3.0) * 0.5 + 0.5;
+      float lattice = sin((ax + ay) * frequency * 6.28318530718 - t * 4.0) * 0.5 + 0.5;
+      float glow = pow(petals * 0.65 + lattice * 0.35, 3.0) * exp(-radial * 0.7);
+      float hue = mod(hueShift + radial * 180.0 + petals * 70.0 + t * 48.0 + 720.0, 360.0);
+      vec3 col = hslToRgb(hue, 1.0, clamp(glow * intensity * 0.72, 0.0, 1.0));
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'pulsar-beacon': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'pulsar-beacon': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[8];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float time = uTime * speed;
+      float radius = length(n);
+      float angle = atan(n.y, n.x);
+      float beamAngle = time * 6.28318530718;
+      float angleDistance = abs(atan(sin(angle - beamAngle), cos(angle - beamAngle)));
+      float oppositeDistance = abs(atan(sin(angle - beamAngle - 3.14159265), cos(angle - beamAngle - 3.14159265)));
+      float beamWidth = 0.18 + density * 0.18;
+      float beam = exp(-pow(min(angleDistance, oppositeDistance) / beamWidth, 2.0)) * ss3(0.03, 0.62, radius) * ss3(0.90, 0.12, radius);
+      float pulse = pow(0.5 + 0.5 * cos(time * 6.28318530718), 12.0);
+      float core = exp(-radius * radius * 95.0) * (0.6 + pulse * 0.9);
+      float halo = exp(-radius * 5.2) * 0.22;
+      vec3 col = colorScale3(hslToRgb(214.0 + hueShift, 0.92, 0.62), (beam + halo) * intensity);
+      col = colorAdd3(col, vec3(1.0), core * intensity);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'dna-helix': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'dna-helix': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[8];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float normalizedX = n.x / max(0.0001, uAspect) + 0.5;
+      float normalizedY = n.y + 0.5;
+      float time = uTime * speed;
+      float turns = 3.2 + density * 2.2;
+      float phase = normalizedY * turns * 6.28318530718 - time * 6.28318530718;
+      float radius = 0.18 + density * 0.07;
+      float strandA = 0.5 + cos(phase) * radius;
+      float strandB = 0.5 - cos(phase) * radius;
+      float depthA = 0.55 + sin(phase) * 0.35;
+      float depthB = 0.55 - sin(phase) * 0.35;
+      float width = 0.018 + density * 0.01;
+      float chainA = exp(-pow((normalizedX - strandA) / width, 2.0)) * depthA;
+      float chainB = exp(-pow((normalizedX - strandB) / width, 2.0)) * depthB;
+      float rungPhase = abs(sin(normalizedY * turns * 3.14159265));
+      float loStrand = min(strandA, strandB);
+      float hiStrand = max(strandA, strandB);
+      float betweenChains = ss3(loStrand, hiStrand, normalizedX) * ss3(hiStrand, loStrand, normalizedX);
+      float basePair = exp(-pow(rungPhase / 0.18, 2.0)) * betweenChains * (0.45 + 0.35 * sin(time * 7.0 + normalizedY * 37.0));
+      vec3 col = vec3(0.0);
+      col = colorAdd3(col, hslToRgb(178.0 + hueShift, 0.95, 0.50), chainA * intensity);
+      col = colorAdd3(col, hslToRgb(214.0 + hueShift, 0.90, 0.46), chainB * intensity);
+      col = colorAdd3(col, hslToRgb(36.0 + hueShift, 1.0, 0.62), basePair * intensity);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'nebula': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift, uP4=colorSpread
+  nebula: /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[8];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      float colorSpread = uP[4];
+      vec2 n = normCoords(vUV, uAspect);
+      float t = uTime * speed;
+      float swirl = atan(n.y, n.x) / 3.14159265;
+      float radius = length(n);
+      float warpX = n.x + sin(n.y * 4.0 + t * 1.4) * 0.18 + swirl * 0.08 + sin(radius * 6.0 + t * 0.7) * 0.06;
+      float warpY = n.y + cos(n.x * 3.2 - t * 1.1) * 0.18 - radius * 0.12 + cos(radius * 5.0 - t * 0.5) * 0.05;
+      float cloud = fbm2(vec2(warpX * 3.0 + t * 0.7, warpY * 3.0 - t * 0.45), 5);
+      float fineDetail = fbm2(vec2(warpX * 8.0 - t * 0.3, warpY * 8.0 + t * 0.2), 4) * 0.3;
+      // Grid x/y indices aren't available in this continuous-UV shader; a fine,
+      // stable pixel-cell approximation keeps the same "rare sparkle" character.
+      vec2 cellApprox = floor(vUV * vec2(220.0, 140.0));
+      float starSeed = hash2(cellApprox.x * 11.0 + floor(t * 8.0), cellApprox.y * 17.0);
+      float stars = pow(starSeed, 38.0) * 3.0;
+      float coreEmission = exp(-radius * radius * (2.4 - density)) * (0.6 + sin(t * 1.2) * 0.12);
+      float veil = clamp((cloud + fineDetail - (0.52 - density * 0.22)) * 2.6, 0.0, 1.0);
+      float brightness = clamp((veil * 0.65 + coreEmission * 0.35) * intensity + stars, 0.0, 1.0);
+      float cloudHue = mod(hueShift + cloud * colorSpread + swirl * 45.0 + t * 35.0 + 720.0, 360.0);
+      float coreHue = mod(hueShift + 40.0 + t * 20.0 + 720.0, 360.0);
+      float coreWeight = coreEmission / max(0.01, veil + coreEmission);
+      float hue = cloudHue * (1.0 - coreWeight * 0.4) + coreHue * coreWeight * 0.4;
+      float emissionBoost = pow(coreEmission, 2.5) * 0.15;
+      vec3 col = hslToRgb(hue, 0.97, clamp(brightness * 0.64 + emissionBoost, 0.0, 1.0));
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'fluid-flow': uP0=speed, uP1=intensity, uP2=frequency, uP3=hueShift, uP4=spread
+  'fluid-flow': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[8];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float frequency = uP[2];
+      float hueShift = uP[3];
+      float spread = uP[4];
+      vec2 n = normCoords(vUV, uAspect);
+      float t = uTime * speed;
+      float field = fbm2(vec2(n.x * frequency + t * 0.9, n.y * frequency - t * 0.55), 4);
+      float angle = field * 6.28318530718 + t * 0.8;
+      float flowX = n.x + cos(angle) * 0.22 * spread;
+      float flowY = n.y + sin(angle) * 0.22 * spread;
+      float strand = sin((flowX * 5.5 + flowY * 3.2 + fbm2(vec2(flowX * 7.0, flowY * 7.0), 3) * 2.8 - t * 2.4) * 3.14159265);
+      float ribbon = pow(max(0.0, strand), 2.6);
+      float foam = pow(max(0.0, fbm2(vec2(flowX * 14.0 - t, flowY * 14.0 + t * 0.7), 3)), 3.2);
+      float brightness = clamp((ribbon * 0.78 + foam * 0.24) * intensity, 0.0, 1.0);
+      float hue = mod(hueShift + field * 90.0 + flowX * 60.0 + t * 26.0 + 720.0, 360.0);
+      vec3 col = hslToRgb(hue, 0.92, brightness * 0.68);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'spiral-galaxy': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'spiral-galaxy': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[8];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float t = uTime * speed;
+      float radius = length(n);
+      float angle = atan(n.y, n.x);
+      float armPhase = angle * 4.0 - log(radius + 0.04) * (3.4 + density * 2.2) + t * 1.5;
+      float arm = pow(0.5 + 0.5 * cos(armPhase), 7.0);
+      float disk = exp(-radius * (2.1 - density * 0.6));
+      float bulge = exp(-radius * radius * 38.0);
+      float dustLane = ss3(0.48, 0.20, fbm2(vec2(n.x * 7.0 - t, n.y * 7.0 + t * 0.5), 4));
+      vec2 cellApprox = floor(vUV * vec2(220.0, 140.0));
+      float stars = pow(hash2(cellApprox.x * 13.0 + floor(t * 9.0), cellApprox.y * 19.0), 30.0) * ss3(0.78, 0.12, radius);
+      float brightness = clamp((arm * disk * 0.72 + bulge * 0.58 + stars * 1.4) * intensity * (0.72 + dustLane * 0.45), 0.0, 1.0);
+      float hue = 218.0 + hueShift + arm * 58.0 - radius * 70.0;
+      vec3 col = hslToRgb(hue, 0.82, brightness * 0.72);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'orion-nebula': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'orion-nebula': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[8];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float t = uTime * speed;
+      float cloud = fbm2(vec2(n.x * 3.4 + t * 0.35, n.y * 3.4 - t * 0.25), 5);
+      float fineDust = fbm2(vec2(n.x * 11.0 - t * 0.22, n.y * 11.0 + t * 0.18), 4);
+      float radius = length(vec2(n.x + 0.05, n.y - 0.02));
+      float molecularCloud = clamp((cloud - (0.42 - density * 0.14)) * 2.2, 0.0, 1.0);
+      float darkDust = ss3(0.58, 0.86, fineDust) * ss3(0.62, 0.16, radius);
+      vec2 cellApprox = floor(vUV * vec2(220.0, 140.0));
+      float starSeed = hash2(cellApprox.x * 31.0, cellApprox.y * 47.0);
+      float stars = starSeed > 0.985 ? pow(starSeed, 18.0) : 0.0;
+      float emission = clamp((molecularCloud * 0.72 + exp(-radius * radius * 5.5) * 0.34 - darkDust * 0.45) * intensity + stars, 0.0, 1.0);
+      float hue = hueShift + cloud * 72.0 + fineDust * 32.0;
+      vec3 col = hslToRgb(hue, 0.86, emission * 0.66);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'hurricane-eye': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'hurricane-eye': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[8];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float t = uTime * speed;
+      float radius = length(n);
+      float angle = atan(n.y, n.x);
+      float spiral = angle + radius * (9.0 + density * 6.0) - t * 3.2;
+      float bands = pow(0.5 + 0.5 * sin(spiral * 2.7 + fbm2(vec2(n.x * 5.0, n.y * 5.0), 3) * 2.0), 3.4);
+      float eye = ss3(0.13, 0.06, radius);
+      float eyeWall = exp(-pow((radius - 0.16) / 0.045, 2.0));
+      float cloudFalloff = ss3(0.72, 0.12, radius);
+      float cloud = clamp((bands * cloudFalloff * 0.72 + eyeWall * 0.92 - eye * 0.64) * intensity, 0.0, 1.0);
+      vec3 col = colorScale3(hslToRgb(205.0 + hueShift, 0.35, 0.58), cloud);
+      col = colorAdd3(col, hslToRgb(48.0, 0.95, 0.72), eye * 0.32);
+      col = colorAdd3(col, vec3(1.0), eyeWall * intensity * 0.65);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'quantum-collapse': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'quantum-collapse': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[8];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float t = uTime * speed;
+      float cycle = t - floor(t);
+      float radiusA = length(vec2(n.x + 0.24, n.y));
+      float radiusB = length(vec2(n.x - 0.24, n.y));
+      float phase = (radiusA - radiusB) * (24.0 + density * 18.0) - t * 9.0;
+      float interference = pow(0.5 + 0.5 * cos(phase), 5.0) * ss3(0.78, 0.06, length(n));
+      float collapse = ss3(0.58, 0.86, cycle);
+      float ft = floor(t);
+      float focusX = sin(ft * 2.17) * 0.18;
+      float focusY = cos(ft * 1.61) * 0.12;
+      float focus = exp(-((n.x - focusX) * (n.x - focusX) + (n.y - focusY) * (n.y - focusY)) / (0.008 + (1.0 - collapse) * 0.05));
+      float probabilityCloud = fbm2(vec2(n.x * 5.0 + t * 0.4, n.y * 5.0 - t * 0.35), 4) * (1.0 - collapse);
+      float brightness = clamp((interference * (1.0 - collapse * 0.7) + focus * collapse * 1.35 + probabilityCloud * 0.22) * intensity, 0.0, 1.0);
+      float hue = hueShift + interference * 90.0 + collapse * 48.0;
+      vec3 col = hslToRgb(hue, 0.92, brightness * 0.68);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'black-hole': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'black-hole': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[8];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float time = uTime * speed;
+      float diskY = n.y * 2.45;
+      float radius = length(vec2(n.x, diskY));
+      float angle = atan(diskY, n.x);
+      float eventHorizon = ss3(0.11, 0.06, radius);
+      float diskMask = ss3(0.72, 0.12, radius) * ss3(0.07, 0.18, radius);
+      float keplerTwist = angle * 2.0 + 1.7 / max(0.08, radius) - time * (1.2 + 2.2 / max(0.2, radius));
+      float spiralBands = pow(0.5 + 0.5 * sin(keplerTwist * 3.0), 2.4);
+      float turbulence = fbm2(vec2(n.x * 5.2 + time * 0.7, diskY * 4.0 - time * 0.35), 4);
+      float temperature = diskMask * clamp((0.82 - radius) * (1.4 + density) + spiralBands * 0.42 + turbulence * 0.30, 0.0, 1.0);
+      float lensRing = exp(-pow((radius - 0.145) / 0.025, 2.0)) * 0.85;
+      float jet = exp(-pow(n.x / 0.045, 2.0)) * ss3(0.03, 0.46, abs(n.y)) * ss3(0.62, 0.16, abs(n.y)) * 0.55;
+      vec3 col = colorScale3(thermalColor(temperature), intensity);
+      col = colorAdd3(col, hslToRgb(210.0 + hueShift, 0.85, 0.72), lensRing * intensity);
+      col = colorAdd3(col, hslToRgb(192.0 + hueShift, 1.0, 0.62), jet * intensity);
+      if (eventHorizon > 0.5) col = vec3(0.0, 0.0, 0.0078);
+      gl_FragColor = vec4(col, 1.0);
+    }
   `
 }
 
@@ -462,6 +870,50 @@ function paramsFor(layer: EffectLayer): EffectParams {
         ],
         color0: toUnit(String(p.color ?? '#ff4f87'))
       }
+    case 'mirror-symmetry':
+      return {
+        floats: [
+          Number(p.speed ?? 0.34),
+          Number(p.frequency ?? 5.0),
+          Number(p.hueShift ?? 310),
+          Number(p.intensity ?? 0.86),
+          Number(p.angle ?? 45)
+        ]
+      }
+    case 'pulsar-beacon':
+      return { floats: [Number(p.speed ?? 0.82), Number(p.intensity ?? 0.90), Number(p.density ?? 0.55), Number(p.hueShift ?? 0)] }
+    case 'dna-helix':
+      return { floats: [Number(p.speed ?? 0.36), Number(p.intensity ?? 0.88), Number(p.density ?? 0.58), Number(p.hueShift ?? 0)] }
+    case 'nebula':
+      return {
+        floats: [
+          Number(p.speed ?? 0.28),
+          Number(p.intensity ?? 0.85),
+          Number(p.density ?? 0.62),
+          Number(p.hueShift ?? 250),
+          Number(p.colorSpread ?? 130)
+        ]
+      }
+    case 'fluid-flow':
+      return {
+        floats: [
+          Number(p.speed ?? 0.38),
+          Number(p.intensity ?? 0.82),
+          Number(p.frequency ?? 4.2),
+          Number(p.hueShift ?? 185),
+          Number(p.spread ?? 1.35)
+        ]
+      }
+    case 'spiral-galaxy':
+      return { floats: [Number(p.speed ?? 0.20), Number(p.intensity ?? 0.90), Number(p.density ?? 0.64), Number(p.hueShift ?? 0)] }
+    case 'orion-nebula':
+      return { floats: [Number(p.speed ?? 0.16), Number(p.intensity ?? 0.82), Number(p.density ?? 0.58), Number(p.hueShift ?? 285)] }
+    case 'hurricane-eye':
+      return { floats: [Number(p.speed ?? 0.32), Number(p.intensity ?? 0.84), Number(p.density ?? 0.58), Number(p.hueShift ?? 0)] }
+    case 'quantum-collapse':
+      return { floats: [Number(p.speed ?? 0.34), Number(p.intensity ?? 0.88), Number(p.density ?? 0.60), Number(p.hueShift ?? 260)] }
+    case 'black-hole':
+      return { floats: [Number(p.speed ?? 0.34), Number(p.intensity ?? 0.92), Number(p.density ?? 0.62), Number(p.hueShift ?? 0)] }
     default:
       return { floats: [] }
   }

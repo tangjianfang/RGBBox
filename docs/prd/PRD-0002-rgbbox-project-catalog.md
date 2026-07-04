@@ -1097,7 +1097,31 @@
   - [ ] `yarn test` 全量通过
   - [ ] 手动验证：把当前场景改为单一启用图层，依次切到这 10 个新效果 + rainbow，应用内预览均呈现连续无格子感的动画，且视觉上和切换前的 CPU 网格版本"神似"（颜色/运动节奏/整体形态一致，只是更平滑）
   - [ ] 手动验证：切到未移植效果（如 `fire`、`nebula`）时正常回退到 CPU 网格渲染，无崩溃/黑屏
-- **R37.7** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped，1 个已知无关 flaky；等待用户逐个效果实机视觉验收，确认无误后再排期下一批）
+- **R37.7** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build`/`yarn test` 通过；等待用户逐个效果实机视觉验收）
+
+### R37-B2. GPU 直渲染第二批：科学/天体类 10 个效果 + 噪声 helper + 着色器编译自检
+
+> 承接 R37 第一批，本条完成"通用噪声 helper 移植"和"第二批 10 个效果"，并补充了一个可复用的**离线着色器编译校验**手段（headless-gl），弥补"无法在此环境里实机跑 Electron 肉眼验证"这一验证盲区的一部分——虽然不能验证视觉观感是否正确，但能 100% 确定性地捕获 GLSL 语法/链接错误，这是本会话之前几批 GPU 移植完全没有的保障。
+> **风险等级：L1**（仍然只在 `effectGl.ts` 内扩展，`GPU_DIRECT_EFFECTS` 只增不减）。
+
+- **R37-B2.1** **共享 GLSL helper 新增**（`GLSL_HELPERS` 内）：
+  - `ss3(edge0, edge1, value)` —— 逐行对应 `effects.ts#smoothstep`，刻意不用 GLSL 内置 `smoothstep()`，因为内置版本在 `edge0 > edge1`（很多效果依赖的"反向衰减"）时是未定义行为，而 CPU 版本的自定义实现对该顺序有明确、可依赖的语义。
+  - `valueNoise2(vec2)` / `fbm2(vec2, int octaves)` —— 逐行对应 `effects.ts#valueNoise2`/`fbm2`；`fbm2` 用"常量上界 5 + 提前 break"的循环写法以保证跨 WebGL1 驱动的可移植性（动态循环上界在部分老硬件上不受支持）。
+  - `colorScale3(vec3, float)` / `colorAdd3(vec3, vec3, float)` —— 对应 `effects.ts#colorScale`/`colorAdd`，从 0–255 字节空间换成着色器原生的 0–1 浮点空间。
+  - `thermalColor(float)` —— 逐行对应 `effects.ts#thermalColor`（黑洞吸积盘温度着色用）。
+- **R37-B2.2** **本批移植的 10 个效果**：`mirror-symmetry`、`pulsar-beacon`、`dna-helix`、`nebula`、`fluid-flow`、`spiral-galaxy`、`orion-nebula`、`hurricane-eye`、`quantum-collapse`、`black-hole`。`GPU_DIRECT_EFFECTS` 现共 **21** 个（第一批 11 + 第二批 10）。
+  - `mirror-symmetry`/`pulsar-beacon`/`dna-helix` 不依赖噪声，纯三角函数 + 多层颜色叠加（`colorAdd3`），移植风险与第一批相当。
+  - `nebula`/`fluid-flow`/`spiral-galaxy`/`orion-nebula`/`hurricane-eye`/`quantum-collapse`/`black-hole` 依赖 `fbm2`/`hash2` 分形噪声；其中 `nebula`/`spiral-galaxy`/`orion-nebula` 里 CPU 版用整数网格坐标 `context.x`/`context.y` 做"稀有星点"哈希种子——GPU 版没有网格坐标，改用 `floor(vUV * vec2(220, 140))` 得到一个与真实网格无关、但足够细密稳定的"伪网格坐标"，保持"极稀疏星点闪烁"的观感，已在着色器注释中说明这一近似。
+- **R37-B2.3** **离线着色器编译校验（非永久测试，仅本次会话人工核实）**：用已在 `package.json` 里声明但此前从未被实际使用的 `gl`（headless-gl）依赖，临时创建 `tests/renderer/gl/_tmp-shader-check.test.ts`，对 `EFFECT_FS` 里全部 21 个片元着色器逐一 `compileShader`+`linkProgram`，确认零编译/链接错误后删除该临时文件（未提交、未进入正式测试套件——项目现有约定 `tests/renderer/gl/previewGl.test.ts`/`effect3dGl.test.ts` 明确因 headless-gl 跨环境可靠性问题而只做模块形状检查，不做真实 GL 编译，本次沿用该约定，不改变永久测试策略）。
+- **R37-B2.4** **不动**：`src/engine/effects.ts` 依旧完全不动；`EffectGl`/`paramsFor` 的整体架构不变（仅追加 `paramsFor` 的 10 个新 `case`）。
+- **R37-B2.5** **受影响文件**：`src/renderer/src/gl/effectGl.ts`。
+- **R37-B2.6** **验收点**：
+  - [x] `yarn typecheck` 通过
+  - [x] `yarn build` 通过
+  - [x] `yarn test` 全量通过（436 passed / 41 skipped，0 失败）
+  - [x] 离线校验：全部 21 个 GPU 直渲染着色器（含第一批）通过 headless-gl 编译 + 链接，零 GLSL 语法/链接错误
+  - [ ] 手动验证：单独启用这 10 个效果逐一切换，视觉上与切换前的 CPU 网格版本"神似"（结构/配色/运动节奏一致，仅更平滑），无黑屏/颜色错误/闪烁异常
+- **R37-B2.7** **状态**：🔄（代码 + 离线着色器编译校验已完成并通过；等待用户实机视觉验收，尤其是 `black-hole`/`nebula`/`spiral-galaxy` 这几个多层颜色叠加 + 噪声效果）
 
 ## 4. 受影响文件
 
