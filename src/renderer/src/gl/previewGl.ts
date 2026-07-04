@@ -37,9 +37,10 @@ const FS = /* glsl */`
 
   uniform sampler2D uFrame;    // columns × rows RGB texture
   uniform vec2      uGrid;     // vec2(columns, rows)
-  uniform float     uGap;      // gap fraction of cell size (0.06 = 6 %)
+  uniform float     uGap;      // gap fraction of cell size (0.06 = 6 %) — 'pixel' style only
   uniform vec3      uBg;       // gap / background colour
   uniform float     uBgAlpha;  // 1.0 = opaque preview, 0.0 = transparent overlay
+  uniform float     uSmooth;   // R32: 0 = discrete LED pixel blocks, 1 = smooth bilinear blend
   // Layout uniforms (square cells, letterbox/pillarbox centring):
   uniform vec2      uOrigin;   // normalised canvas UV where the grid starts
   uniform vec2      uCellSize; // normalised canvas UV size of one square cell
@@ -57,7 +58,19 @@ const FS = /* glsl */`
       return;
     }
 
-    // Fractional position within the current cell [0, 1).
+    if (uSmooth > 0.5) {
+      // R32 'smooth' style: sample the grid at its continuous (non-floored)
+      // position. Combined with GL_LINEAR texture filtering (set in
+      // setRenderStyle()), the GPU automatically blends between neighbouring
+      // cell colours — same texture size / same one draw call as 'pixel'
+      // style, just a different (practically free) filter mode. No gap
+      // cutout: a smoothly blended light bar has no visible seams.
+      vec2 tc = clamp(gridPos, vec2(0.5), uGrid - vec2(0.5)) / uGrid;
+      gl_FragColor = vec4(texture2D(uFrame, tc).rgb, 1.0);
+      return;
+    }
+
+    // 'pixel' style: fractional position within the current cell [0, 1).
     vec2 local = fract(gridPos);
     float hg = uGap * 0.5;
     if (local.x < hg || local.x > 1.0 - hg ||
@@ -110,6 +123,10 @@ export class PreviewGl {
   private readonly uBgAlpha: WebGLUniformLocation
   private readonly uOrigin: WebGLUniformLocation
   private readonly uCellSize: WebGLUniformLocation
+  private readonly uSmooth: WebGLUniformLocation
+  /** Tracks the last-applied render style so setRenderStyle() can skip
+   *  redundant texParameteri calls when called every frame with the same value. */
+  private currentRenderStyle: 'pixel' | 'smooth' = 'pixel'
   /** True when this instance is used in a transparent overlay window. */
   private readonly overlay: boolean
   private canvasW = 0
@@ -168,11 +185,13 @@ export class PreviewGl {
     this.uBgAlpha  = gl.getUniformLocation(this.prog, 'uBgAlpha')!
     this.uOrigin   = gl.getUniformLocation(this.prog, 'uOrigin')!
     this.uCellSize = gl.getUniformLocation(this.prog, 'uCellSize')!
+    this.uSmooth   = gl.getUniformLocation(this.prog, 'uSmooth')!
 
     // Defaults.
     gl.uniform1f(this.uGap,     0.0)
     gl.uniform3f(this.uBg,      8/255, 13/255, 17/255)  // #08 #0D #11
     gl.uniform1f(this.uBgAlpha, overlay ? 0.0 : 1.0)    // transparent gaps for overlay
+    gl.uniform1f(this.uSmooth,  0.0)                    // start in 'pixel' style; setRenderStyle() switches it
     // Safe default: cover whole canvas with a single 1×1 cell until first frame.
     gl.uniform2f(this.uOrigin,   0, 0)
     gl.uniform2f(this.uCellSize, 1, 1)
@@ -275,9 +294,26 @@ export class PreviewGl {
     this.gl.deleteProgram(this.prog)
   }
 
-  /** Set the inter-cell gap fraction (0 = no lines, 0.06 = ~6% gap). */
+  /** Set the inter-cell gap fraction (0 = no lines, 0.06 = ~6% gap). Only visible in 'pixel' style. */
   setGap(gap: number): void {
     this.gl.useProgram(this.prog)
     this.gl.uniform1f(this.uGap, gap)
+  }
+
+  /**
+   * R32: switch between the discrete 'pixel' LED-block look and the
+   * 'smooth' bilinear-blended look. Cheap to call every frame — skips GL
+   * state changes when the style hasn't actually changed.
+   */
+  setRenderStyle(style: 'pixel' | 'smooth'): void {
+    if (style === this.currentRenderStyle) return
+    this.currentRenderStyle = style
+    const { gl } = this
+    const filter = style === 'smooth' ? gl.LINEAR : gl.NEAREST
+    gl.bindTexture(gl.TEXTURE_2D, this.tex)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter)
+    gl.useProgram(this.prog)
+    gl.uniform1f(this.uSmooth, style === 'smooth' ? 1.0 : 0.0)
   }
 }

@@ -11,6 +11,8 @@ interface PreviewGridProps {
   frameRef: React.RefObject<RgbFrame | null>
   /** Show dark grid lines between cells (default false). */
   showGap?: boolean
+  /** R32: 'smooth' (default) blends between cells; 'pixel' keeps the discrete LED-block look. */
+  renderStyle?: 'pixel' | 'smooth'
   /** When a ripple layer is active, called with normalised (0..1) click coordinates. */
   onRippleClick?: (nx: number, ny: number) => void
   /**
@@ -46,7 +48,7 @@ function initGl(canvas: HTMLCanvasElement): PreviewGl | null {
   }
 }
 
-export function PreviewGrid({ frameRef, showGap = false, onRippleClick, displayCount = 1 }: PreviewGridProps): JSX.Element {
+export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth', onRippleClick, displayCount = 1 }: PreviewGridProps): JSX.Element {
   const canvasRef  = useRef<HTMLCanvasElement | null>(null)
   const glRef      = useRef<PreviewGl | null>(null)
   const rafRef     = useRef<number | null>(null)
@@ -54,20 +56,44 @@ export function PreviewGrid({ frameRef, showGap = false, onRippleClick, displayC
   const [started, setStarted] = useState(false)
   // Stable ref so the rAF loop closure can set started without stale-closure issues.
   const startedRef = useRef(false)
+  // Mirror the latest prop values into refs so the mount-time / resize-recreate
+  // GL init (below) can apply the CURRENT setting instead of a stale closure
+  // value from whenever the canvas-init effect first ran.
+  const showGapRef = useRef(showGap)
+  const renderStyleRef = useRef(renderStyle)
 
   // Apply gap setting whenever it changes (without remounting the GL context).
   useEffect(() => {
+    showGapRef.current = showGap
     glRef.current?.setGap(showGap ? 0.06 : 0.0)
   }, [showGap])
+
+  // R32: apply render style whenever it changes (without remounting the GL context).
+  useEffect(() => {
+    renderStyleRef.current = renderStyle
+    glRef.current?.setRenderStyle(renderStyle)
+  }, [renderStyle])
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
 
+    // Apply the current gap/render-style setting to a freshly (re)created GL
+    // context. Needed because the canvas-init effect below runs with `[]`
+    // deps (or on ResizeObserver-triggered recreation) — it must not rely on
+    // the separate prop-driven effects above having already fired (effect
+    // order across sibling `useEffect`s is not guaranteed relative to a
+    // fresh `glRef.current`).
+    const applyCurrentSettings = (): void => {
+      glRef.current?.setGap(showGapRef.current ? 0.06 : 0.0)
+      glRef.current?.setRenderStyle(renderStyleRef.current)
+    }
+
     // ── Initial WebGL context setup ───────────────────────────────────────
     // canvas.width/height are set inside initGl() BEFORE the GL context is
     // created, so there is no context-lost risk at init time.
     glRef.current = initGl(canvas)
+    applyCurrentSettings()
 
     // ── ResizeObserver: recreate GL context on canvas size change ─────────
     // We MUST dispose the old context and create a new one because setting
@@ -77,6 +103,7 @@ export function PreviewGrid({ frameRef, showGap = false, onRippleClick, displayC
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
       glRef.current?.dispose()
       glRef.current = initGl(canvas)
+      applyCurrentSettings()
       // Restart the rAF loop after reinitialising.
       rafRef.current = requestAnimationFrame(loop)
     })

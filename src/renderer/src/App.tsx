@@ -2,7 +2,7 @@ import { Activity, Box, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languag
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame, Scene, VideoWallLayout } from '../../shared/types'
-import { is3DEffect } from '../../shared/types'
+import { is3DEffect, resolveFrameRenderStyle } from '../../shared/types'
 import { extractWallPanelFrame } from '../../engine/videoWallFrame'
 import { useI18n } from './i18n'
 import { DisplayMap } from './components/DisplayMap'
@@ -493,7 +493,7 @@ function extractSubFrame(
       pixels[dstI + 2] = virtualFrame.pixels[srcI + 2]
     }
   }
-  return { columns: dispCols, rows: dispRows, pixels, generatedAt: virtualFrame.generatedAt, showGap: virtualFrame.showGap }
+  return { columns: dispCols, rows: dispRows, pixels, generatedAt: virtualFrame.generatedAt, showGap: virtualFrame.showGap, renderStyle: virtualFrame.renderStyle }
 }
 
 /**
@@ -934,6 +934,7 @@ export function App(): JSX.Element {
       if (cancelled) return
       const { frame, metrics } = e.data
       frame.showGap = profile.sampling.showGap ?? false
+      frame.renderStyle = resolveFrameRenderStyle(profile.sampling.renderStyle, activeLayer(profile)?.kind)
       frameRef.current = frame
       // Copy pixel data for the 3D splat viewer LED lights
       if (ledColorsRef.current.length !== frame.pixels.length) {
@@ -984,6 +985,7 @@ export function App(): JSX.Element {
   const handleFrame3D = useCallback((frame: RgbFrame) => {
     const startedAt = performance.now()
     frame.showGap = profile?.sampling.showGap ?? false
+    frame.renderStyle = resolveFrameRenderStyle(profile?.sampling.renderStyle, profile ? activeLayer(profile)?.kind : null)
     frameRef.current = frame
     // Copy pixel data for the 3D splat viewer LED lights
     if (ledColorsRef.current.length !== frame.pixels.length) {
@@ -1026,7 +1028,7 @@ export function App(): JSX.Element {
     setProfile((cur) => cur ? updateLayer(cur, selectedLayerId, patch) : cur)
   }, [selectedLayerId])
 
-  const setSamplingValue = useCallback((key: keyof Profile['sampling'], value: number | boolean) => {
+  const setSamplingValue = useCallback((key: keyof Profile['sampling'], value: number | boolean | string) => {
     setProfile((cur) => cur ? { ...cur, sampling: { ...cur.sampling, [key]: value } } : cur)
   }, [])
 
@@ -2213,6 +2215,7 @@ export function App(): JSX.Element {
                     <PreviewGrid
                       frameRef={frameRef}
                       showGap={profile.sampling.showGap ?? false}
+                      renderStyle={resolveFrameRenderStyle(profile.sampling.renderStyle, activeLayer(profile)?.kind)}
                       onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
                       displayCount={scene?.linkedDisplays ? topology.displays.length : 1}
                     />
@@ -2360,6 +2363,16 @@ export function App(): JSX.Element {
                       <input checked={profile.sampling.showGap ?? false} type="checkbox"
                         onChange={(e) => setSamplingValue('showGap', e.target.checked)} />
                       <span>{t('sampling.showGap')}</span>
+                    </label>
+                    <label className="control-line">
+                      <span>{t('sampling.renderStyle')}</span>
+                      <select
+                        value={profile.sampling.renderStyle ?? 'smooth'}
+                        onChange={(e) => setSamplingValue('renderStyle', e.target.value)}
+                      >
+                        <option value="smooth">{t('sampling.renderStyle.smooth')}</option>
+                        <option value="pixel">{t('sampling.renderStyle.pixel')}</option>
+                      </select>
                     </label>
                   </div>
                 </section>

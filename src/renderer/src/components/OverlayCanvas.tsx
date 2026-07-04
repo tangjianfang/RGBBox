@@ -68,6 +68,7 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
     // ── Frame subscription (IPC callback, no React state) ────────────────
     const unsubscribe = window.rgbbox.onOverlayFrame((frame: RgbFrame) => {
       glRef.current?.setGap((frame.showGap ?? false) ? 0.06 : 0.0)
+      glRef.current?.setRenderStyle(frame.renderStyle ?? 'smooth')
       glRef.current?.drawFrame(frame)
     })
 

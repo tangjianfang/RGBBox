@@ -364,7 +364,8 @@ export const defaultProfile: Profile = {
     brightnessLimit: 1.0,
     saturationBoost: 1.5,
     usePerformanceGuard: true,
-    showGap: false
+    showGap: false,
+    renderStyle: 'smooth'
   },
   scenes: [
     {

@@ -81,6 +81,7 @@ export function extractWallPanelFrame(
     rows: outRows,
     pixels,
     generatedAt: virtualFrame.generatedAt,
-    showGap: virtualFrame.showGap
+    showGap: virtualFrame.showGap,
+    renderStyle: virtualFrame.renderStyle
   }
 }

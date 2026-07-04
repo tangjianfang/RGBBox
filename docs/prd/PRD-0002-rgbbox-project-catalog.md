@@ -947,6 +947,35 @@
   - [ ] 手动验证：LED 效果 overlay（Workspace 视图的现有灯效叠加）功能不受本次改动影响
 - **R31.10** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build`/`yarn test` 均通过；等待用户实机播放音频 + 多显示器环境下的最终视觉验收）
 
+### R32. 全部内置灯效渲染风格改为"平滑"（默认新模式 + 特殊效果保留像素颗粒感）
+
+> 目标：响应用户 2026-07-04 需求——"能否把 45/49 种内置效果全部改造成无像素级别效果、以（更高）分辨率展示灯效，但不能占用电脑性能"。评估结论（已与用户确认）：**不需要改造任何效果算法本身**——45/49 种效果都只是往 `columns × rows` 的 `RgbFrame` 里填色，真正把它画成离散色块的是唯一共享的 GPU 渲染器 [previewGl.ts](../../src/renderer/src/gl/previewGl.ts)。只需在这一处把 `NEAREST` 纹理过滤改成 `LINEAR` + 连续采样（不再 `floor()` 到格子中心），GPU 就会在相邻格子间自动做双线性插值渲染出平滑光带——CPU 计算量（仍是 `columns×rows` 个格子）和 GPU 开销（仍是 1 次 draw call、纹理大小不变，只是过滤模式不同）都**几乎不变**。
+> **风险等级：L2**（`SamplingSettings`/`RgbFrame` 类型新增字段；`previewGl.ts` 着色器改动影响全部效果+预览+overlay 的默认视觉；新增用户可见设置项）。
+> **触发场景**：用户确认接受评估方案后明确指示：①开关默认到新（平滑）模式；②投屏/overlay 输出 + 应用内 RGB 画布预览都要平滑；③先做开关方便对比，效果好的话后续可只保留新模式，特殊灯效单独适配像素颗粒感。
+
+- **R32.1** **类型层**：`src/shared/types.ts` 的 `SamplingSettings` 新增可选字段 `renderStyle?: 'pixel' | 'smooth'`；`RgbFrame` 同步新增 `renderStyle?: 'pixel' | 'smooth'`（沿用 `showGap` 的"profile 设置 → 每帧写入 RgbFrame → 渲染器读取"传播模式）。新增 `PIXEL_STYLE_EFFECTS: ReadonlySet<EffectKind>`（初始集合：`starlight`/`matrix-rain`/`glitch`/`crystal`/`random-color`——这几种效果的观感依赖离散颗粒/色块边界，平滑插值会把它们"糊"成灰蒙蒙一片，因此无论全局设置如何都强制按 `pixel` 渲染）+ `resolveFrameRenderStyle(preference, activeEffectKind)` helper：命中例外集合则强制 `pixel`，否则取用户全局偏好（缺省 `'smooth'`）。
+- **R32.2** **默认值**：`src/shared/defaultProfile.ts` 的 `sampling.renderStyle` 设为 `'smooth'`（新建 profile 默认已是新模式）；老 profile 因字段可选、`resolveFrameRenderStyle` 缺省兜底为 `'smooth'`，无需迁移脚本。
+- **R32.3** **渲染器改动**：`previewGl.ts` 片元着色器新增 `uSmooth` uniform：`uSmooth>0.5` 时按连续 `gridPos`（`clamp` 到半格内，避免纹理边缘伪影）采样，不做 gap 挖空（平滑光带本身没有缝隙概念）；`uSmooth≈0` 时保留原有 `floor()` + gap 挖空的离散像素逻辑。新增 `setRenderStyle(style)` 方法：仅在样式**真的发生变化**时才切换纹理 `MIN/MAG_FILTER`（`LINEAR` vs `NEAREST`）+ 写 uniform，避免每帧重复设置 GL 状态的浪费。
+- **R32.4** **应用范围（投屏/overlay + 应用内预览都平滑）**：
+  - **R32.4.1** `PreviewGrid.tsx`（应用内 RGB 画布预览）新增 `renderStyle` prop（默认 `'smooth'`），通过 `useEffect` 调用 `glRef.current?.setRenderStyle(...)`；同时修了一个连带的既有小 bug——`showGap`/`renderStyle` 的 prop-driven effect 在 GL 上下文重建（`ResizeObserver` 触发）后不会自动重新应用，新增 `showGapRef`/`renderStyleRef` + `applyCurrentSettings()` 在每次 `initGl()` 后立即补齐，避免窗口缩放后设置被静默重置。
+  - **R32.4.2** `OverlayCanvas.tsx`（投屏 / LED overlay 输出）在既有 `onOverlayFrame` 回调里新增 `glRef.current?.setRenderStyle(frame.renderStyle ?? 'smooth')`，与 `setGap` 并列，每帧读取 `RgbFrame.renderStyle`。
+  - **R32.4.3** `App.tsx`：`onWorkerMessage`（CPU 效果 worker 路径）与 `handleFrame3D`（GPU 3D 效果路径）在写 `frame.showGap` 的同一处新增 `frame.renderStyle = resolveFrameRenderStyle(profile.sampling.renderStyle, activeLayer(profile)?.kind)`（用当前激活图层的 `kind` 判断是否命中例外集合）；`<PreviewGrid>` 的 `renderStyle` prop 同样调用 `resolveFrameRenderStyle`；`extractSubFrame()`（联动多屏）透传 `virtualFrame.renderStyle`。
+  - **R32.4.4** `src/engine/videoWallFrame.ts` 的 `extractWallPanelFrame()` 透传 `virtualFrame.renderStyle`（与既有 `showGap` 透传并列）。
+- **R32.5** **用户可见设置**：`App.tsx` 工作区设置面板新增下拉框（`sampling.renderStyle`，位置紧邻既有"显示格子线"开关），两个选项"平滑（过渡混合）"/"像素（离散 LED）"；`setSamplingValue` 签名放宽为 `number | boolean | string` 以支持字符串枚举值。新增 i18n key：`sampling.renderStyle` / `sampling.renderStyle.smooth` / `sampling.renderStyle.pixel`（中英双语）。
+- **R32.6** **两阶段计划（呼应用户"先开关对比，效果好后续只保留新模式"）**：本次先落地**开关 + 默认平滑 + 例外集合**（阶段一）。阶段二（**不在本次范围**，需用户实际比对效果后再开一个新 R-N）：若确认平滑模式全面优于像素模式，再评估是否移除开关、把 `pixel` 降级为"仅例外效果内部使用的隐藏值"。
+- **R32.7** **不动**：45/49 种效果算法本身（`src/engine/effects.ts`）——本条完全不改效果计算逻辑；`showGap` 的既有行为/含义不变（`pixel` 模式下仍可选是否显示格子线；`smooth` 模式下 `uGap` 不再生效，UI 上"显示格子线"开关在 `smooth` 模式下应视为无效，本次未做 UI 层面禁用/置灰处理，留作后续小修）；R29/R30/R31 全部不受影响。
+- **R32.8** **受影响文件**：`src/shared/types.ts`（新字段 + `PIXEL_STYLE_EFFECTS` + `resolveFrameRenderStyle`）、`src/shared/defaultProfile.ts`（默认值）、`src/renderer/src/gl/previewGl.ts`（着色器 + `setRenderStyle`）、`src/renderer/src/components/PreviewGrid.tsx`（prop + 重建时重新应用）、`src/renderer/src/components/OverlayCanvas.tsx`（每帧应用）、`src/renderer/src/App.tsx`（写入 `frame.renderStyle` + UI 设置项 + `setSamplingValue` 签名）、`src/engine/videoWallFrame.ts`（透传）、`src/renderer/src/i18n/index.tsx`（3 个新 key × 中英双语）。
+- **R32.9** **验收点**：
+  - [ ] `yarn typecheck` 通过
+  - [ ] `yarn build` 通过
+  - [ ] `yarn test` 全量通过，无新增失败
+  - [ ] 手动验证：新建 profile 默认即为"平滑"模式，应用内预览与投屏输出的灯效都呈现连续过渡光带（非色块）
+  - [ ] 手动验证：设置面板切换到"像素"模式后，预览与投屏都立刻变回离散色块（含格子线开关生效）
+  - [ ] 手动验证：`starlight`/`matrix-rain`/`glitch`/`crystal`/`random-color` 在全局"平滑"模式下仍然保持离散颗粒感（不受全局设置影响）
+  - [ ] 手动验证：窗口拖拽缩放后设置不丢失（验证 R32.4.1 的重建重应用修复）
+  - [ ] 手动验证：CPU 效果和 GPU 3D 效果两条路径下切换设置均生效
+- **R32.10** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build`/`yarn test` 均通过；等待用户实机视觉验收 + 决定是否进入 R32.6 阶段二）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

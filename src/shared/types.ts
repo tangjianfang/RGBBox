@@ -155,6 +155,17 @@ export interface SamplingSettings {
   saturationBoost: number
   usePerformanceGuard: boolean
   showGap: boolean
+  /**
+   * R32: how the LED grid is rendered.
+   * - 'smooth' (default): bilinear-blended between cells — looks like a
+   *   continuous, diffused light bar rather than discrete blocks. Same
+   *   `columns × rows` compute cost as 'pixel'; only the GPU sampling/filter
+   *   mode changes (near-zero extra cost).
+   * - 'pixel': the original discrete flat-color LED block look.
+   * Certain effects (see `PIXEL_STYLE_EFFECTS`) force 'pixel' regardless of
+   * this setting because their visual identity depends on crisp cell edges.
+   */
+  renderStyle?: 'pixel' | 'smooth'
 }
 
 export interface RgbColor {
@@ -171,6 +182,37 @@ export interface RgbFrame {
   generatedAt: number
   /** When true the WebGL renderer shows inter-cell gap lines (propagated from sampling.showGap). */
   showGap?: boolean
+  /** R32: propagated from `sampling.renderStyle` (resolved against the active effect's pixel-style override). */
+  renderStyle?: 'pixel' | 'smooth'
+}
+
+/**
+ * R32: effects whose visual identity depends on crisp, discrete grid cells —
+ * these always render in 'pixel' style regardless of the global
+ * `sampling.renderStyle` setting, because bilinear-blending them would blur
+ * away the effect (e.g. `random-color` would average neighbouring random
+ * colours into grey mush; `matrix-rain`/`glitch`/`crystal`/`starlight` rely
+ * on distinct sparkle/block edges for their look).
+ *
+ * This is an initial, easily-adjustable set — add/remove kinds here as
+ * needed after visually comparing smooth vs pixel per effect.
+ */
+export const PIXEL_STYLE_EFFECTS: ReadonlySet<EffectKind> = new Set<EffectKind>([
+  'starlight',
+  'matrix-rain',
+  'glitch',
+  'crystal',
+  'random-color',
+])
+
+/** Resolve the effective per-frame render style: the active effect's forced
+ *  pixel-style override (if any) wins over the user's global preference. */
+export function resolveFrameRenderStyle(
+  preference: 'pixel' | 'smooth' | undefined,
+  activeEffectKind: EffectKind | null | undefined
+): 'pixel' | 'smooth' {
+  if (activeEffectKind && PIXEL_STYLE_EFFECTS.has(activeEffectKind)) return 'pixel'
+  return preference ?? 'smooth'
 }
 
 export interface ScreenCaptureRequest {
