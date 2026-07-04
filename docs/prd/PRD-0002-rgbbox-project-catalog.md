@@ -1056,6 +1056,25 @@
   - [ ] 手动验证：场景有 ≥2 个启用图层（哪怕其中一个是 rainbow）时，预览面板保持 CPU 网格混合渲染，不出现"缺图层"的失真画面
 - **R35.9.5** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped，1 个已知无关 flaky；等待用户按 R35.9.2 的操作前提重新验收）
 
+### R36. 3D 效果（球体脉冲等）投屏也用全分辨率直渲染（不再走 LED 网格降采样）
+
+> 目标：响应用户"球体脉冲也实现这个平滑效果，方便验证"。
+> **调研发现**：`sphere-pulse`（球体脉冲）属于 `Effect3DKind`——和 45/49 个 CPU 网格效果是完全不同的家族。它的**应用内预览**（`Preview3D.tsx`）本来就是用 `Effect3DGl` 光线步进着色器直接画在 canvas 原生分辨率上（`src/renderer/src/gl/effect3dGl.ts` 早已是"每物理像素求值"的 GPU 直渲染架构，等于 R35 想给 2D 效果做的事情，3D 效果这边一直都有）——所以应用内预览端**本来就已经很平滑**，不需要改。**真正的差距在投屏/overlay**：`Preview3D` 每帧画完全分辨率画面后，会额外调用 `gl.readLEDs(columns, rows)` 把画面**降采样**成和 2D 效果一样的 `RgbFrame`（LED 网格），这份降采样帧才是推给 overlay 窗口的内容——也就是说，3D 效果在**应用内预览里全分辨率平滑**，但**投到物理显示器上时和其他效果一样被压成网格**，这才是用户说"方便验证"时大概率会看到差异的地方。
+> **风险等级：L1**（新增 BroadcastChannel 通道 + overlay 端多一条直渲染分支，不改现有 LED 网格投屏路径的默认行为——3D 广播缺失时无缝回退原路径）。
+
+- **R36.1** **架构**：复用 R31 音频投屏验证过的模式——同源 `BroadcastChannel`（新增 `EFFECT3D_CHANNEL = 'rgbbox-3d-effect'`，定义在 `effect3dGl.ts`）传输**轻量状态**（`{kind, t, params, detail, extra}` 四组 uniform 数值），不传像素帧。`Preview3D.tsx` 每帧 `gl.draw()` 之后顺带 `channel.postMessage(...)`；`OverlayCanvas.tsx` 订阅该 channel，收到消息时懒创建/按需重建自己的 `Effect3DGl` 实例（复用现有类，未新增渲染代码），用**自己画布的原生分辨率**独立跑同一个光线步进着色器——每块物理显示器各自全分辨率渲染，不需要任何像素级数据同步，天然支持不同分辨率/宽高比的多屏。
+- **R36.2** **新旧路径切换（零配置，自动检测）**：`OverlayCanvas.tsx` 记录"最近一次收到 3D 广播的时间戳"，`onOverlayFrame`（原 LED 网格推送路径）收到新帧时，如果最近 500ms 内有 3D 广播到达，直接跳过网格绘制（避免降采样画面覆盖/闪烁更清晰的直渲染画面）；超过 500ms 无 3D 广播（比如切回 2D 效果）则自动恢复网格路径——不需要用户手动切换模式。
+- **R36.3** **不动**：`Effect3DGl`/`effect3dGl.ts` 的着色器本身；`readLEDs()` 降采样与 `handleFrame3D` 推送逻辑（仍然保留——如果 overlay 窗口因为某些原因收不到 3D 广播，网格路径仍是可靠的兜底）；2D 效果的 R32–R35 全部行为不变。
+- **R36.4** **受影响文件**：`src/renderer/src/gl/effect3dGl.ts`（新增 `EFFECT3D_CHANNEL` + `Effect3DMessage` 类型）、`src/renderer/src/components/Preview3D.tsx`（每帧广播）、`src/renderer/src/components/OverlayCanvas.tsx`（订阅 + 直渲染分支 + 网格路径抑制）。
+- **R36.5** **验收点**：
+  - [ ] `yarn typecheck` 通过
+  - [ ] `yarn build` 通过
+  - [ ] `yarn test` 全量通过
+  - [ ] 手动验证：给某个显示器开启 overlay 灯效叠加，图层切到 `sphere-pulse`（或其他 3D 效果）后，该物理显示器上呈现和应用内预览一样的全分辨率光线步进画面（无网格颗粒感）
+  - [ ] 手动验证：切回任意 2D 效果后，overlay 在 ~0.5 秒内自动恢复原有 LED 网格渲染，无残留 3D 画面
+  - [ ] 手动验证：多显示器同时开 overlay 时，每块屏幕独立按自己分辨率渲染，无黑边/拉伸异常
+- **R36.6** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped/0 失败；等待用户实机多屏验收）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

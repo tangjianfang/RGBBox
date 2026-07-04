@@ -1,7 +1,7 @@
 import { useEffect, useRef, type JSX } from 'react'
 import type { EffectLayer, RgbFrame } from '../../../shared/types'
 import { is3DEffect } from '../../../shared/types'
-import { Effect3DGl } from '../gl/effect3dGl'
+import { EFFECT3D_CHANNEL, Effect3DGl } from '../gl/effect3dGl'
 import type { Effect3DKind } from '../../../shared/types'
 
 interface Preview3DProps {
@@ -50,6 +50,10 @@ export function Preview3D({ layer, columns, rows, onFrame }: Preview3DProps): JS
     if (!canvas || !is3DEffect(layer.kind)) return
 
     const pr = window.devicePixelRatio || 1
+    // R36: broadcast this effect's live uniforms so any open overlay window
+    // can render the identical raymarched scene at its own full resolution
+    // instead of the readLEDs()-downsampled LED grid (see effect3dGl.ts).
+    const channel = new BroadcastChannel(EFFECT3D_CHANNEL)
 
     /** Initialise (or re-initialise) the WebGL context. */
     const initGl = (): Effect3DGl | null => {
@@ -94,6 +98,7 @@ export function Preview3D({ layer, columns, rows, onFrame }: Preview3DProps): JS
           (p.scanWidth     as number) ?? 0.5,
         ]
         gl.draw(t, params, detail, extra)
+        channel.postMessage({ kind: layerRef.current.kind as Effect3DKind, t, params, detail, extra })
         const pixels = gl.readLEDs(colsRef.current, rowsRef.current)
         onFrameRef.current({ columns: colsRef.current, rows: rowsRef.current, pixels, generatedAt: Date.now() })
         rafRef.current = requestAnimationFrame(loop)
@@ -117,6 +122,7 @@ export function Preview3D({ layer, columns, rows, onFrame }: Preview3DProps): JS
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
       ro.disconnect()
+      channel.close()
       glRef.current?.dispose()
       glRef.current = null
     }

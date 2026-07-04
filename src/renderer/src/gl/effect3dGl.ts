@@ -13,6 +13,26 @@
 
 import type { Effect3DKind } from '../../../shared/types'
 
+/**
+ * R36: same-origin BroadcastChannel name used by `Preview3D` to stream the
+ * live shader state (kind + uniforms) to any open overlay windows, so they
+ * can run their own `Effect3DGl` instance and render the identical
+ * raymarched scene at their own full physical resolution — instead of
+ * receiving the `readLEDs()`-downsampled `RgbFrame` (LED grid quantized,
+ * same as any 2D effect). This is the same pattern R31 used for audio
+ * visualizer projection.
+ */
+export const EFFECT3D_CHANNEL = 'rgbbox-3d-effect'
+
+export interface Effect3DMessage {
+  kind: Effect3DKind
+  t: number
+  params: [number, number, number, number]
+  detail: [number, number, number, number]
+  extra: [number, number, number, number]
+}
+
+
 // ── Vertex shader (shared by all effects) ──────────────────────────────────
 
 const VS = /* glsl */`
