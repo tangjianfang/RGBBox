@@ -902,7 +902,7 @@
   - [ ] 手动验证：任一可视化模式点击"投屏"后，目标显示器物理画面（或浮窗预览）出现对应可视化内容
   - [ ] 手动验证：窗口最大化/还原后可视化 canvas 无裁切/模糊
   - [ ] 播放 EQ 效果保持现状（10 段增益调节实时生效）
-- **R29.9** **状态**：✅（2026-07-04 实施完成。R29.1 决定不引入 howler（理由见上）；R29.2 新增 wavesurfer.js 第 7 种可视化模式；R29.3 投屏改为复用现有 overlay IPC （而非新 IPC）；R29.4 ResizeObserver 修复最大化自适应；R29.5 布局重组为工具栏 + 抽屉。**证据**：`yarn typecheck` 通过；`yarn build` 通过（`out/renderer` 产物含 `wavesurfer.js` 打包，index chunk 从 2,056.44 kB 增至 2,122.33 kB）；`yarn vitest run tests/renderer/components/AudioStudioView.test.tsx` 1 passed / 4 skipped；`yarn test`（全量）436 passed / 41 skipped，0 失败。)
+- **R29.9** **状态**：⚠️（2026-07-04 首次实施完成，但用户验收反馈 R29.3 的 LED 网格降采样方案"效果极差、没有动感"——**R29.3 已被 R31 取代**，见下方 R31。R29.1/R29.2/R29.4/R29.5 保持 ✅ 不受影响。**证据（R29.1/29.2/29.4/29.5 部分）**：`yarn typecheck` 通过；`yarn build` 通过（`out/renderer` 产物含 `wavesurfer.js` 打包，index chunk 从 2,056.44 kB 增至 2,122.33 kB）；`yarn vitest run tests/renderer/components/AudioStudioView.test.tsx` 1 passed / 4 skipped；`yarn test`（全量）436 passed / 41 skipped，0 失败。)
 
 ### R30. 工作区预览一致性 + 局部推送边框 + 自定义区域拖拽修复
 
@@ -922,6 +922,30 @@
   - [ ] 手动验证：局部推送 overlay 窗口在高 DPI 显示器上无可见边框/缝隙
   - [ ] 手动验证：自定义区域拖拽到显示器边缘时框选矩形完整可见；x/y/width/height 标签显示为百分比且含义清晰
 - **R30.7** **状态**：✅（2026-07-04 实施完成。**R30.1 根因**：`src/renderer/src/gl/previewGl.ts#updateLayout()` 对 overlay 与预览共用同一"正方形 cell + letterbox 居中"布局，导致联动多屏模式下任意分辨率不匹配的显示器在物理输出上出现黑边；修复为 overlay 路径（`this.overlay===true`）始终拉伸铺满整个画布（`uOrigin=(0,0)`, `uCellSize=(1/columns,1/rows)`），预览面板保留原有方形 cell 观感不变。**R30.2**：`src/main/overlayManager.ts` 的 `BrowserWindow` 增加 `thickFrame:false`（`hasShadow:false` 在 Windows 上文档标注无效，真正的边框来自 DWM thick-frame）+ `roundedCorners:false`（避免 Win11 圆角描边）。**R30.3**：`src/renderer/src/styles.css` 给 `.overlay-custom-selection` 加 `border-radius:3px`（避免父容器 `overflow:hidden + border-radius:4px` 在满尺寸时裁掉四角边框）+ `min-width/min-height:4px`；`DisplayMap.tsx` 的 x/y/width/height 输入改为 0–100 百分比 + 新增 i18n 标签（`overlay.custom.x/y/width/height`，中英双语）。**证据**：`yarn typecheck` 通过；`yarn build` 通过（`out/renderer` 产物生成）；`yarn vitest run tests/main/overlayManager.test.ts tests/renderer` → 23 files passed, 132 passed / 41 skipped；`yarn test`（全量）435 passed，仅 1 个与本次改动无关的 flaky（`tests/shared/logger.test.ts` 临时文件时序问题，单独重跑通过 16/16）。附带修复：`tests/main/overlayManager.test.ts` 的 electron mock 补全 `app`/`nativeImage`/`setIcon`（此前因 R25 引入的 `app.isPackaged` 未在 mock 中声明导致 24 个用例失败，属 R25 遗留测试债务，顺带补齐）。)
+
+### R31. 音频可视化投屏根本修复（取代 R29.3 的 LED 网格降采样方案）
+
+> 目标：响应用户 2026-07-04 验收反馈——R29.3 把可视化 canvas 降采样成 48×18 的 LED `RgbFrame` 网格再走 overlay 管线推送，用户验收为"效果极差、没有动感"。根本原因：LED overlay 管线（`previewGl.ts` 的方块 cell + gap 着色器）是为**物理灯带模拟**设计的粗粒度网格渲染器，不适合承载頻谱/示波器等需要平滑渐变与精细动态的图形动画——降采样到几十个色块必然丢失几乎全部视觉细节与"动感"。
+> **风险等级：L2**（新增 3 个 IPC 通道 `openAudioVizWindow`/`closeAudioVizWindow`/`getAudioVizWindowIds`；新增独立的投屏窗口类型；重构 6 个可视化绘制函数签名并抽成共享模块；渲染层新增 `BroadcastChannel` 跨窗口数据流）。
+> **触发场景**：2026-07-04 用户明确指出"这些波形...投屏到对应的显示器或多个显示器，而不是以效果图的那种方式根据像素的方式投屏显示"，并要求"先找出原因，再修复"。
+
+- **R31.1** **根因确认**：`src/renderer/src/gl/previewGl.ts` 的 GL 着色器把任意分辨率的 canvas 内容强制映射到 `uGrid=(columns,rows)` 个正方形/矩形色块（`fract(gridPos)` + `uGap` gap 遮罩），专为 LED 灯珠矩阵仿真设计；R29.3 把 720×160 的可视化 canvas 硬塞进 48×18＝864 个色块，频谱柱状图的渐变、发光、镜像反射等细节全部丢失，观感等同于把高清视频转成 30×20 的马赛克。**结论**：LED 网格管线不适合承载"投屏到显示器展示动画"这个需求，需要一条独立的、全分辨率的渲染路径。
+- **R31.2** **共享可视化绘制模块**：新增 `src/renderer/src/audio/visualizers.ts`，把原先内联在 `AudioStudioView.tsx` 里的 6 个绘制函数（`drawSpectrum`/`drawWaveform`/`drawSpectrogram`/`drawVUMeter`/`drawCircularSpectrum`/`drawWaveRing`）抽出并重构：入参从"直接传 `AnalyserNode`"改为"传已提取好的 `Uint8Array`（频域）/ `Float32Array`（时域）快照"，使同一套绘制代码既能在本地 studio 视图（持有真实 `AnalyserNode`）跑，也能在完全独立的 `AudioVizProjector` 投屏窗口（另一个 renderer 进程，没有 Web Audio graph）里跑，保证投屏画面与本地预览逐像素一致。
+- **R31.3** **独立投屏窗口（而非复用 LED overlay）**：`src/main/overlayManager.ts` 新增与 `overlayWindows` 完全独立的 `audioVizWindows` Map + `openAudioVizWindow`/`closeAudioVizWindow`/`getAudioVizWindowIds`/`closeAllAudioVizWindows`，复用抽出的 `applyWindowIcon()` helper，窗口本身 `frame:false`、`transparent:false`（不透明黑底，非 LED 透明叠加层）、`thickFrame:false`/`roundedCorners:false`（同 R30.2）、Windows 下 `setFullScreen(true)`。新增 IPC 通道 `openAudioVizWindow`/`closeAudioVizWindow`/`getAudioVizWindowIds`（`src/shared/ipc.ts` + `src/main/index.ts` + `src/preload/index.ts`），`window-all-closed` 时一并 `closeAllAudioVizWindows()`。
+- **R31.4** **数据面用 BroadcastChannel，不新增帧推送 IPC**：投屏窗口与主 studio 窗口是同源（同一 `file://`/dev-server origin）的两个 renderer 进程，可直接用标准 Web API `BroadcastChannel`（`rgbbox-audio-viz`）互发消息，完全绕开主进程——只有"开/关窗口"两个生命周期动作走 IPC，逐帧的频域/时域数据不占用任何新 IPC 通道。`AudioStudioView.tsx` 的 rAF 循环每帧提取一次 `freqData`/`timeData`，本地绘制 + （若正在投屏）`channel.postMessage({mode, freq, time})` 双复用同一份数据。
+- **R31.5** **多选投屏**：`projectDisplayIds: number[]`（原 R29.3 是单选 `projectDisplayId: number | null`）支持同时投屏到多个显示器；显示器选择弹层每项可独立勾选/取消，`stopProjecting(displayId?)` 支持关单个或关全部。
+- **R31.6** **新增组件**：`src/renderer/src/components/AudioVizProjector.tsx`——订阅 `BroadcastChannel`，`ResizeObserver` 保持 canvas 铺满整个物理显示器，复用 `drawVisualizerFrame()` 全分辨率绘制；`waveform` 模式（wavesurfer.js 波形）不支持投屏（依赖本地 `<audio>` 元素，跨进程无法共享，已在 handler 里显式跳过并在 R29.2/R29.3 文案中注明）。`src/renderer/src/main.tsx` 新增 `?audioviz=true&displayId=X` 路由分支。
+- **R31.7** **不动**：R29.1（不引入 Howler.js）、R29.2（wavesurfer.js 波形模式本身）、R29.4（ResizeObserver 最大化修复）、R29.5（EQ/生成器抽屉布局）、R30 全部条款；`overlayWindows`/LED 效果 overlay 管线的现有行为完全不受影响（新 Map 独立维护）。
+- **R31.8** **受影响文件**：新增 `src/renderer/src/audio/visualizers.ts`、`src/renderer/src/components/AudioVizProjector.tsx`；修改 `src/renderer/src/components/AudioStudioView.tsx`（移除内联绘制函数，接入共享模块 + 多选投屏 + BroadcastChannel）、`src/main/overlayManager.ts`（`applyWindowIcon` helper + `audioVizWindows` 全套）、`src/main/index.ts`（新 IPC handler + quit 清理）、`src/preload/index.ts`（新 API）、`src/shared/ipc.ts`（3 个新通道）、`src/renderer/src/main.tsx`（audioviz 路由）、`src/renderer/src/styles.css`（`.audioviz-mode` body 样式）。
+- **R31.9** **验收点**：
+  - [ ] `yarn typecheck` 通过
+  - [ ] `yarn build` 通过
+  - [ ] `yarn test` 全量通过，无新增失败
+  - [ ] 手动验证：任一可视化模式点击"投屏到显示器"，选中的物理显示器上出现与本地预览**逐帧同步、平滑、无马赛克**的动画（非色块网格）
+  - [ ] 手动验证：可同时勾选多个显示器，全部实时同步显示相同动画
+  - [ ] 手动验证：投屏窗口 ESC 可退出（主进程 `before-input-event` 处理）；关闭 studio 播放/暂停后投屏画面停止更新但窗口不崩溃
+  - [ ] 手动验证：LED 效果 overlay（Workspace 视图的现有灯效叠加）功能不受本次改动影响
+- **R31.10** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build`/`yarn test` 均通过；等待用户实机播放音频 + 多显示器环境下的最终视觉验收）
 
 ## 4. 受影响文件
 

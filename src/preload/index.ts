@@ -44,6 +44,13 @@ const api = {
     ipcRenderer.invoke(ipcChannels.setOverlayConfig, displayId, config),
   getOverlayDisplayIds: (): Promise<number[]> =>
     ipcRenderer.invoke(ipcChannels.getOverlayDisplayIds),
+  // R29.3 (revised): audio visualizer projector windows
+  openAudioVizWindow: (displayId: number): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.openAudioVizWindow, displayId),
+  closeAudioVizWindow: (displayId: number): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.closeAudioVizWindow, displayId),
+  getAudioVizWindowIds: (): Promise<number[]> =>
+    ipcRenderer.invoke(ipcChannels.getAudioVizWindowIds),
   getDesktopAudioSourceId: (): Promise<string | null> =>
     ipcRenderer.invoke(ipcChannels.getDesktopAudioSourceId),
   getDesktopAudioSources: (): Promise<DesktopAudioSource[]> =>

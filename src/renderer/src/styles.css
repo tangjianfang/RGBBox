@@ -50,6 +50,15 @@ body.overlay-mode {
   background: transparent;
 }
 
+/* R29.3 (revised): audio visualizer projector window — full-resolution,
+   opaque (unlike the transparent LED overlay above). */
+body.audioviz-mode {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #080d11;
+}
+
 button,
 input {
   font: inherit;

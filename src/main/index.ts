@@ -14,7 +14,7 @@ import { MODELS_MANIFEST } from '../shared/modelsManifest'
 import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
 import type { DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
-import { closeAllOverlays, closeOverlay, getOverlayDisplayIds, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
+import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOverlay, getAudioVizWindowIds, getOverlayDisplayIds, openAudioVizWindow, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
@@ -235,6 +235,20 @@ function registerIpc(): void {
   })
   ipcMain.handle(ipcChannels.getOverlayDisplayIds, () => {
     return getOverlayDisplayIds()
+  })
+
+  // R29.3 (revised): audio visualizer projector windows — full-resolution,
+  // separate from the LED overlay pipeline above.
+  ipcMain.handle(ipcChannels.openAudioVizWindow, (_event, displayId: number) => {
+    log.info('AudioViz', `Opening audio visualizer projector for display ${displayId}`)
+    return openAudioVizWindow(displayId, isDevelopment, process.env.ELECTRON_RENDERER_URL)
+  })
+  ipcMain.handle(ipcChannels.closeAudioVizWindow, (_event, displayId: number) => {
+    log.info('AudioViz', `Closing audio visualizer projector for display ${displayId}`)
+    return closeAudioVizWindow(displayId)
+  })
+  ipcMain.handle(ipcChannels.getAudioVizWindowIds, () => {
+    return getAudioVizWindowIds()
   })
 
   // Return the first screen's desktopCapturer sourceId for system audio loopback (legacy)
@@ -713,6 +727,7 @@ app.on('before-quit', () => {
 app.on('window-all-closed', () => {
   log.info('App', 'All windows closed')
   closeAllOverlays()
+  closeAllAudioVizWindows()
   if (process.platform !== 'darwin') {
     app.quit()
   }

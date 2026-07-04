@@ -66,6 +66,13 @@ export const ipcChannels = {
   videoOpenFolder: 'rgbbox:video:open-folder',
   // System display list (for multi-monitor spectrum pop-out)
   getDisplays: 'rgbbox:system:get-displays',
+  // R29.3 (revised): dedicated full-resolution "project audio visualizer to
+  // display" windows — distinct from the LED overlay pipeline (openOverlay/
+  // pushFrameToDisplay) so the smooth canvas animation is shown as-is instead
+  // of being downsampled into a blocky LED grid.
+  openAudioVizWindow: 'rgbbox:audioviz:open',
+  closeAudioVizWindow: 'rgbbox:audioviz:close',
+  getAudioVizWindowIds: 'rgbbox:audioviz:get-ids',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

@@ -54,6 +54,16 @@ function computeRegionBounds(
   }
 }
 
+/** Apply the RGBBox app icon to a BrowserWindow (dev path vs packaged resourcesPath). */
+function applyWindowIcon(win: BrowserWindow): void {
+  const isDev = !app.isPackaged
+  const iconPath = process.platform === 'win32'
+    ? (isDev ? join(__dirname, '../../build/icon.ico') : join(process.resourcesPath, 'icon.ico'))
+    : (isDev ? join(__dirname, '../../build/icon.png') : join(process.resourcesPath, 'icon.png'))
+  const img = nativeImage.createFromPath(iconPath)
+  if (!img.isEmpty()) win.setIcon(img)
+}
+
 export function openOverlay(
   displayId: number,
   isDevelopment: boolean,
@@ -105,16 +115,7 @@ export function openOverlay(
   // skipTaskbar=true hides them from the taskbar, the Alt-Tab thumbnail and
   // window-grouping heuristics still fall back to the PE icon when the
   // runtime override is missing.
-  {
-    const isDev = !app.isPackaged
-    const iconPath = process.platform === 'win32'
-      ? (isDev ? join(__dirname, '../../build/icon.ico') : join(process.resourcesPath, 'icon.ico'))
-      : (isDev ? join(__dirname, '../../build/icon.png') : join(process.resourcesPath, 'icon.png'))
-    const img = nativeImage.createFromPath(iconPath)
-    if (!img.isEmpty()) {
-      win.setIcon(img)
-    }
-  }
+  applyWindowIcon(win)
 
   // Cover taskbar: defer setAlwaysOnTop until after the window is fully loaded
   // so Windows assigns the correct z-order. screen-saver level sits above the taskbar.
@@ -205,5 +206,103 @@ export function pushFrameToDisplay(displayId: number, frame: RgbFrame): void {
   const win = overlayWindows.get(displayId)
   if (win && !win.isDestroyed()) {
     win.webContents.send('overlay:frame', frame)
+  }
+}
+
+// ─── R29.3 (revised): audio visualizer projector windows ────────────────────
+// Deliberately separate from `overlayWindows` above: those exist to render
+// LED-grid `RgbFrame`s (coarse, block-sampled, meant for physical LED strip
+// simulation). Audio visualizer projection instead shows the exact same
+// smooth canvas animation as the studio view at full display resolution —
+// conflating the two caused the "effect极差/无动感" (poor quality / no
+// motion) complaint when frames were force-downsampled into the LED pipeline.
+// Frame *data* (frequency/time-domain arrays) is streamed renderer→renderer
+// via a same-origin `BroadcastChannel` (see AudioVizProjector.tsx), not IPC —
+// only window open/close needs the main process.
+const audioVizWindows = new Map<number, BrowserWindow>()
+
+export function getAudioVizWindowIds(): number[] {
+  return [...audioVizWindows.keys()]
+}
+
+export function isAudioVizWindowOpen(displayId: number): boolean {
+  const win = audioVizWindows.get(displayId)
+  return win !== undefined && !win.isDestroyed()
+}
+
+export function openAudioVizWindow(displayId: number, isDevelopment: boolean, devUrl?: string): boolean {
+  if (isAudioVizWindowOpen(displayId)) return true
+
+  const display = screen.getAllDisplays().find((d) => d.id === displayId)
+  if (!display) return false
+  const b = display.bounds
+
+  const win = new BrowserWindow({
+    x: b.x,
+    y: b.y,
+    width: b.width,
+    height: b.height,
+    frame: false,
+    transparent: false,
+    alwaysOnTop: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    thickFrame: false,
+    roundedCorners: false,
+    backgroundColor: '#080d11',
+    focusable: true,
+    resizable: false,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.mjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false
+    }
+  })
+
+  applyWindowIcon(win)
+
+  win.once('ready-to-show', () => {
+    win.show()
+    if (process.platform === 'win32') win.setFullScreen(true)
+    win.setAlwaysOnTop(true, 'screen-saver')
+    win.moveTop()
+    win.focus()
+  })
+
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.key !== 'Escape') return
+    event.preventDefault()
+    if (win.isFullScreen()) {
+      win.setFullScreen(false)
+      return
+    }
+    closeAudioVizWindow(displayId)
+  })
+
+  const query = `audioviz=true&displayId=${displayId}`
+  if (isDevelopment && devUrl) {
+    win.loadURL(`${devUrl}?${query}`)
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'), { search: query })
+  }
+
+  audioVizWindows.set(displayId, win)
+  win.on('closed', () => { audioVizWindows.delete(displayId) })
+  return true
+}
+
+export function closeAudioVizWindow(displayId: number): boolean {
+  const win = audioVizWindows.get(displayId)
+  if (!win || win.isDestroyed()) return false
+  win.close()
+  return true
+}
+
+export function closeAllAudioVizWindows(): void {
+  for (const [, win] of audioVizWindows) {
+    if (!win.isDestroyed()) win.close()
   }
 }
