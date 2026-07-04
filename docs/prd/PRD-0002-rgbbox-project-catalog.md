@@ -1075,6 +1075,30 @@
   - [ ] 手动验证：多显示器同时开 overlay 时，每块屏幕独立按自己分辨率渲染，无黑边/拉伸异常
 - **R36.6** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped/0 失败；等待用户实机多屏验收）
 
+### R37. 批量把内置效果移植到 GPU 直渲染（第一批 10 个 + 通用化 uniform 架构）
+
+> 目标：响应用户"下一步按阶段或一次性完成所有的灯效的修改"。R35 只有 `rainbow` 一个 POC 效果，且 uniform 布局写死成 4 个 float，无法承载其他效果的参数形状（颜色、更多数值参数）。本条先把架构通用化，再批量移植第一批效果。
+> **风险等级：L1**（`effectGl.ts` 内部扩展，不改类型/IPC；`GPU_DIRECT_EFFECTS` 只增不减，未移植效果继续走原 CPU 网格路径，零回归风险）。
+> **范围决策（分阶段，而非一次性全部）**：45/49 个内置效果里，一次性把全部效果都翻译成 GLSL 并逐一肉眼校验正确性，在没有可视化联调环境的情况下风险过高（部分效果几十行三角函数+噪声，容易出现符号/系数抄写错误）。采用"分批次交付、每批验证"的方式，本次交付**第一批 10 个**，其余效果按复杂度分类记录在案，供后续批次继续推进。
+
+- **R37.1** **架构通用化**：`effectGl.ts` 的 uniform 布局从"每效果固定 4 个具名 float"改为通用的 `uniform float uP[8]`（8 个数值槽位）+ `uColor0`/`uColor1`（两个 vec3 颜色槽位），`paramsFor(layer)` 按 `layer.kind` 把具名参数（`speed`/`color`/`angle`/…）映射进这套通用槽位——新增一个效果只需要在 `EFFECT_FS` 加一段着色器 + 在 `paramsFor` 加一个 case，不需要再改 `EffectGl` 类本身。新增 GLSL 共享 helper：`normCoords`（对应 `effects.ts#normCoords`）、`hash1`/`hash2`（对应 `hash`/`hash2`，用于 `breathing` 的逐格闪烁噪声）。
+- **R37.2** **本批移植的 10 个效果**（连同 R35 的 `rainbow`，`GPU_DIRECT_EFFECTS` 现共 11 个）：`wave`、`zone-gradient`、`plasma`、`vortex`、`tunnel`、`neon-pulse`、`spectrum`、`comet`、`explode`、`breathing`。选择依据：这批效果都是**纯 (x,y,now,参数) 函数**，不依赖跨帧状态缓存、不依赖 `columns`/`rows` 网格计数做特征尺寸缩放——翻译成 GLSL 是逐行机械替换（`Math.sin→sin`、`Math.atan2→atan`、`hexToRgb`→JS 侧转 0–1 vec3 再传 uniform），正确性风险最低。
+- **R37.3** **暂不移植 + 原因分类**（供后续批次参考，未在本条实施）：
+  - **离散颗粒感是设计意图**（维持 CPU 网格路径，不移植）：`starlight`、`matrix-rain`、`glitch`、`random-color`（与 R32 的 `PIXEL_STYLE_EFFECTS` 例外名单一致）。
+  - **依赖外部图像/像素数据，非公式化效果**（不适合移植）：`custom-paint`、`image-paint`、`screen-ambient`。
+  - **需要跨帧衰减包络，依赖实时音频输入**（需要额外把音频包络值接进 GPU 路径的 uniform，本批未做）：`audio-beat`、`audio-equalizer`。
+  - **引用 LED 网格 `columns`/`rows` 做特征尺寸缩放**（需要把 `columns`/`rows` 作为新 uniform 从 `App.tsx`→`PreviewGrid`→`EffectGl` 一路穿透，本批未做该管线扩展）：`fire`（还额外有逐列缓存优化，GPU 版本可以直接内联去掉缓存）、`crystal`（3×3 Voronoi 邻域）、`lightning`、`lightning-leader`、`matrix-rain`（已在上面归类为离散效果）。
+  - **依赖 fbm2/valueNoise2（分形噪声）+ 更复杂的 GLSL 移植量**（架构上完全可行，但本批优先做最简单的一批，噪声版 helper 留到下一批统一加）：`nebula`、`fluid-flow`、`mirror-symmetry`、`black-hole`、`spiral-galaxy`、`orion-nebula`、`hurricane-eye`、`icosahedral-virus`（还需要移植二十面体顶点/边常量数组）、`protein-folding`、`mitosis-spindle`、`synapse-pulse`、`quantum-collapse`、`microvilli-field`、`eclipse-alignment`、`comet-tail`、`magnetosphere-aurora`、`wave-diffraction`、`vortex-flame`、`tokamak-plasma`、`dna-helix`、`pulsar-beacon`、`solar-system`（这几个虽不用 fbm，但代码量/循环较大，归入下一批一并处理噪声 helper 时顺带完成）。
+- **R37.4** **不动**：`src/engine/effects.ts` 的 CPU 实现完全不动（未移植效果、以及已移植效果的 CPU 版本都保留——`GPU_DIRECT_EFFECTS` 只影响"应用内预览"这一条渲染路径，overlay/video-wall/worker 仍用 CPU 网格路径，与 R35 范围一致）。
+- **R37.5** **受影响文件**：`src/renderer/src/gl/effectGl.ts`（架构通用化 + 10 个新效果着色器 + `paramsFor` 扩展）。
+- **R37.6** **验收点**：
+  - [ ] `yarn typecheck` 通过
+  - [ ] `yarn build` 通过
+  - [ ] `yarn test` 全量通过
+  - [ ] 手动验证：把当前场景改为单一启用图层，依次切到这 10 个新效果 + rainbow，应用内预览均呈现连续无格子感的动画，且视觉上和切换前的 CPU 网格版本"神似"（颜色/运动节奏/整体形态一致，只是更平滑）
+  - [ ] 手动验证：切到未移植效果（如 `fire`、`nebula`）时正常回退到 CPU 网格渲染，无崩溃/黑屏
+- **R37.7** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped，1 个已知无关 flaky；等待用户逐个效果实机视觉验收，确认无误后再排期下一批）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |
