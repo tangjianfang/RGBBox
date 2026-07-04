@@ -1038,6 +1038,24 @@
   - [ ] 手动验证：窗口缩放后 GPU 直渲染画面正常重建（不留黑屏/旧内容）
 - **R35.8** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped/0 失败；等待用户对 `rainbow` POC 效果的实机视觉+性能验收，再决定是否进入 R35.5 阶段二）
 
+### R35.9（补丁）GPU 直渲染门控接错图层，导致 POC 从未真正触发
+
+> **触发场景**：用户反馈"彩虹效果还是一样，还是受网格密度设置影响"——说明 R35 的 GPU 直渲染分支从未被激活，用户看到的始终是旧的 CPU 网格渲染。
+> **根因**：`App.tsx` 判断"是否走 GPU 直渲染"用的是 `activeLayer(profile)`——这个函数返回**场景里第一个 `enabled` 的图层**，跟用户在"效果"选择器里实际编辑的图层（`selectedLayer`，按 `selectedLayerId` 匹配）不是一回事。默认 profile 的场景（`scene-desk`）本来就同时启用了 3 个图层（`aurora` + `fire` + `neon-pulse`，不同混合模式叠加）——如果用户改的不是排在最前面的那个图层，`activeLayer(profile).kind` 永远不会变成 `'rainbow'`，`isGpuDirectEffect` 判断恒为 false，GPU 分支从未执行过，CPU 网格管线全程原样运行（且仍然是 3 层混合，不是纯彩虹）。
+> **额外发现的正确性问题**：即便图层判断修好了，GPU 直渲染路径本身只渲染**单个**效果，如果场景里同时有多个 `enabled` 图层混合叠加，直接单独渲染选中的那个图层会让画面"缺了其他图层"，比 CPU 混合结果更失真、更容易误导用户。
+> **风险等级：L1**（`App.tsx` 内判断逻辑修正，不改渲染代码/着色器本身）。
+
+- **R35.9.1** **修复**：新增 `gpuDirectLayer` 计算（`useMemo`），门控条件改为：① 场景当前**只有唯一一个** `enabled` 图层；② 且该图层就是 `selectedLayer`（用户实际正在编辑/选中的那个）；③ 且其 `kind` 命中 `GPU_DIRECT_EFFECTS`。三者同时满足才走 GPU 直渲染，否则回退 CPU 网格（含多图层混合场景，保证画面不失真）。
+- **R35.9.2** **用户操作前提（非代码问题）**：默认 profile 的 `scene-desk` 场景默认启用 3 个图层；要看到 `rainbow` 的 GPU 直渲染效果，需要先在工作区图层面板里**关闭其余图层**（只保留改成 rainbow 的那一个 `enabled`），否则会因为 R35.9.1 的"仅单图层"保护而继续走 CPU 路径——这是刻意的正确性保护，不是新 bug。
+- **R35.9.3** **受影响文件**：`src/renderer/src/App.tsx`（`gpuDirectLayer` 门控逻辑）。
+- **R35.9.4** **验收点**：
+  - [ ] `yarn typecheck` 通过
+  - [ ] `yarn build` 通过
+  - [ ] `yarn test` 全量通过
+  - [ ] 手动验证：场景只保留 1 个启用图层且设为 `rainbow` 时，预览面板切换到 GPU 直渲染（连续无格子感）
+  - [ ] 手动验证：场景有 ≥2 个启用图层（哪怕其中一个是 rainbow）时，预览面板保持 CPU 网格混合渲染，不出现"缺图层"的失真画面
+- **R35.9.5** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped，1 个已知无关 flaky；等待用户按 R35.9.2 的操作前提重新验收）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

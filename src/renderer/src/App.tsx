@@ -1012,6 +1012,22 @@ export function App(): JSX.Element {
     return scene.layers.find((l) => l.id === selectedLayerId) ?? activeLayer(profile)
   }, [profile, scene, selectedLayerId])
 
+  // R35 follow-up: the GPU-direct preview path only produces a *correct*
+  // picture when exactly one layer is enabled — it renders that single
+  // effect in isolation, so if other layers are also enabled and blended in
+  // (the default scene ships 3: aurora+fire+neon-pulse) a solo GPU render
+  // would silently omit them and mislead the user. Gate on `selectedLayer`
+  // (what the Effects picker actually edits — the earlier `activeLayer()`
+  // check looked at the scene's first *enabled* layer instead, which is a
+  // different layer whenever the user edits anything but that one, and was
+  // why switching to 'rainbow' appeared to do nothing).
+  const gpuDirectLayer = useMemo(() => {
+    if (!scene || !selectedLayer) return null
+    const enabledLayers = scene.layers.filter((l) => l.enabled)
+    const isSoloEnabled = enabledLayers.length === 1 && enabledLayers[0].id === selectedLayer.id
+    return isSoloEnabled && isGpuDirectEffect(selectedLayer.kind) ? selectedLayer : null
+  }, [scene, selectedLayer])
+
   const favoriteEffectPresets = useMemo(() => {
     return favoriteEffectKinds
       .map((kind) => effectPresets.find((preset) => preset.kind === kind))
@@ -2217,7 +2233,7 @@ export function App(): JSX.Element {
                       frameRef={frameRef}
                       showGap={profile.sampling.showGap ?? false}
                       renderStyle={resolveFrameRenderStyle(profile.sampling.renderStyle, activeLayer(profile)?.kind)}
-                      gpuLayer={isGpuDirectEffect(activeLayer(profile)?.kind) ? activeLayer(profile) : null}
+                      gpuLayer={gpuDirectLayer}
                       onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
                       displayCount={scene?.linkedDisplays ? topology.displays.length : 1}
                     />
