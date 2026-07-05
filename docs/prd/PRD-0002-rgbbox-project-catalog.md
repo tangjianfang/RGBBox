@@ -1336,6 +1336,24 @@
   - [ ] 手动验证：用户实机确认"最小化+overlay"场景画面是否依然卡顿（如果仍卡顿，说明是本工具测不出的呈现层问题，需要另外排查）
 - **R47.7** **状态**：✅ 代码 + 自动化验证均已完成，CPU/计算层面的 5 个场景全部通过；🔄 呈现层"是否真的流畅"仍需用户肉眼确认
 
+### R48. 自动化性能自测试增强——呈现层帧时序指标 + 判据收紧 + 多次采样统计 + 模块抽离 + 重跑稳定性
+
+> 起源：R47 验证（独立第三方跑 `--perf-selftest`）发现 4 个问题——(1) PRD R47.4 的"overlay 进程 CPU 几乎不变 0.380→0.387"无法稳定复现（实测为 0.368→0.649，反而涨）；(2) 场景 4 判据过松，overlay 计算真被跳过也照样 PASS；(3) 连续快速重跑 `--perf-selftest` 时第 2 次出现 exit 0 无报告（1/3 命中）；(4) 最关键——CPU% 是代理指标，测不出合成器/显卡驱动层面的限流，而用户"画面卡顿"反馈恰恰可能落在这个盲区。本条逐项修。
+
+- **R48.1** **呈现层帧时序指标（本条核心，直接回答"画面卡不卡"）**：在 overlay 窗口侧新增帧到达时序采集——`OverlayCanvas` 在 `onOverlayFrame` 回调里记录每帧 `performance.now()` 到达时间，维护到达间隔滚动缓冲 + 帧计数 + 首尾时间戳。新增两条**仅自测试用** IPC 通道：`perfSelfTestCollectOverlayTiming`（main→overlay，主进程带 `requestId` 请求当前时序快照）+ `perfSelfTestOverlayTimingReport`（overlay→main，回带 `{requestId, stats}` 后清空缓冲，使每个场景独立）。harness 在 overlay 场景采样末尾 `collect` 一次，得到 overlay 真实帧交付节奏：`framesReceived` / `elapsedMs` / `intervalP50/P95/max/mean`。由此可算"交付帧率"（framesReceived ÷ elapsedMs × 1000）并对比 visible-vs-minimized——这是**唯一能客观回答"最小化时 overlay 画面是否还在正常出帧"的指标**，CPU 正常但合成器限流时它会暴露出来。OverlayCanvas 的时序采集始终启用（成本仅 `performance.now()` 差值 + 小环形缓冲），仅 collect 请求由 harness 触发，正常使用零开销。
+- **R48.2** **收紧判据**：场景 4 旧判据 `总CPU delta < max(5%, baseline×0.5)` 过松（overlay 从 0.4% 掉到 0% 即计算被跳过也照样 PASS，假通过风险）。改成两条独立判据且都过才 PASS：(a) overlay 进程自身 CPU 不低于可见时的 50%；(b) overlay 交付帧率不低于可见时的 60%。任一跌破即 FAIL——分别覆盖"计算被跳过"和"画面被限流"两种失效模式。
+- **R48.3** **多次采样统计**：原 harness 每场景只报告 6 样本算术平均，单次数字噪声大（R47.4 的 "0.380→0.387" 实测复现为 0.368→0.649）。改成每场景报告 6 样本的 **中位数 + p25/p75 + min/max**，逐进程同样取中位数。PRD 措辞从精确单次数字改为量级区间，不再过度声称精度。
+- **R48.4** **抽模块**：把 `runPerfSelfTest` 及辅助（`PerfSample`/`delay`/`sampleProcessCpuOnce`/`sampleAveraged`/帧时序采集/判据/报告写入）从 `src/main/index.ts`（CLAUDE.md 标记的 P0/P1 集中点）抽到独立模块 `src/main/perfSelfTest.ts`，主进程仅留条件入口 + `deps` 闭包（`getMainWindow` / `log` 经 `getLogger()`）。主入口回归精简，harness 逻辑可独立演进/单测。
+- **R48.5** **重跑稳定性**：连续快速重跑 `--perf-selftest` 时第 2 次 exit 0 无报告（实测 1/3 命中）。三处加固：(a) `--perf-selftest` 在场时**跳过 `requestSingleInstanceLock`**，移除单实例锁这一变量（自测试本就用独立 `--user-data-dir`，锁无意义且可能误退）；(b) 加**启动看门狗**——`app.whenReady` 后若 N 秒内 `runPerfSelfTest` 未开始，记错误并强制退出，避免静默挂起；(c) 报告写入失败时记错误而非静默吞掉。
+- **R48.6** **受影响文件**：`src/main/perfSelfTest.ts`（新增）、`src/main/index.ts`（抽离 + 入口 + 看门狗 + 单实例锁跳过）、`src/main/overlayManager.ts`（新增 `getOverlayWindow` 导出，供 harness 取 overlay 窗口 webContents）、`src/shared/ipc.ts`（2 新通道）、`src/shared/types.ts`（`OverlayFrameTiming` 类型）、`src/preload/index.ts`（`onPerfSelfTestCollectTiming` + `reportPerfSelfTestTiming`）、`src/renderer/src/components/OverlayCanvas.tsx`（帧到达时序采集 + 响应 collect）、`tests/integration/ipcChannels.test.ts`（新通道映射）、`docs/prd/PRD-0002-rgbbox-project-catalog.md`（R48）。
+- **R48.7** **验收点**：
+  - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过（无回归）— typecheck `Done in 14.80s`；build `Done in 17.20s`（out/main+preload+renderer 全产出）；test `38 files, 436 passed | 41 skipped`（含新增 ipcChannels.test.ts 两通道映射）
+  - [x] `--perf-selftest` 连跑 3 次稳定出报告（不再出现 exit 0 无报告）— 3 次独立 `--user-data-dir` 临时目录连跑，均 `exit=0` 且生成 `perf-selftest-report.json`，R48.5 跳过单实例锁 + 30s 看门狗生效
+  - [x] overlay 场景报告含帧时序 stats（`framesReceived > 0`、`intervalP95` 有值）— 场景 3：framesReceived=123、intervalP95=43.8ms、deliveryFps=31.8；场景 4（minimized）：framesReceived=75、intervalP95=45.8ms、deliveryFps=30.8
+  - [x] 场景 4 判据用 overlay 进程 CPU + 交付帧率双判据，能区分"计算被跳过"与"画面被限流"— verdict 行：`overlay-process CPU visible=0.38% -> minimized=0.40% (>=50%? yes); delivery fps visible=31.8 -> minimized=30.8 (>=60%? yes) => PASS (computation AND presentation held up)`；近 idle 用绝对抖动判定（≤0.1+0.1），非 idle 用相对阈值
+  - [x] PRD 措辞改为量级区间，不再写"0.380→0.387 几乎不变"这种单次精确数字 — verdict 用 `median + [p25 p75]` 区间（如 baseline `2.13% [p25=1.79 p75=2.30]`），perProcessMedian 取中位数，三次 run overlay CPU 落在 0.38%–0.41% 量级而非单点
+- **R48.8** **状态**：✅ 已实施（2026-07-06）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

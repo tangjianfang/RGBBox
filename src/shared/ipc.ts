@@ -21,6 +21,19 @@ export const ipcChannels = {
   // R42/R43 tick-loop gate) unaware an overlay existed, invalidating the
   // "minimized + overlay" self-test scenario. Never sent during normal use.
   perfSelfTestToggleOverlay: 'rgbbox:system:perf-selftest-toggle-overlay',
+  // R48.1: main → overlay-renderer push, ONLY sent by the --perf-selftest
+  // harness. Asks the overlay window for a snapshot of its frame-arrival
+  // timing (inter-frame intervals, frames received, elapsed) collected since
+  // the previous collect — the only signal that can answer "is the overlay
+  // still being delivered frames at the right cadence when the main window is
+  // minimized", since CPU% can't see compositor/GPU frame throttling. The
+  // overlay replies via perfSelfTestOverlayTimingReport with the same
+  // requestId, then clears its buffer so each scenario is measured
+  // independently. Never sent during normal use.
+  perfSelfTestCollectOverlayTiming: 'rgbbox:perf-selftest:collect-overlay-timing',
+  // R48.1: overlay-renderer → main, fire-and-forget, ONLY sent in response to
+  // a perfSelfTestCollectOverlayTiming request. Carries { requestId, stats }.
+  perfSelfTestOverlayTimingReport: 'rgbbox:perf-selftest:overlay-timing-report',
   // Renderer → main: push a rendered frame to any open overlay windows (fire-and-forget)
   overlayPushFrame: 'rgbbox:overlay:push-frame',
   // Renderer → main: push a rendered frame to ONE specific display overlay (for linked-display mode)

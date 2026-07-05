@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
-import type { CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest } from '../shared/types'
+import type { CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -36,6 +36,18 @@ const api = {
     ipcRenderer.on(ipcChannels.perfSelfTestToggleOverlay, handler)
     return () => ipcRenderer.off(ipcChannels.perfSelfTestToggleOverlay, handler)
   },
+  // R48.1: ONLY used by the --perf-selftest harness — main asks the overlay
+  // window for a frame-arrival timing snapshot (carrying a requestId to
+  // correlate the reply). The overlay computes stats from its onOverlayFrame
+  // interval buffer, sends them back via reportPerfSelfTestTiming, then clears
+  // its buffer so each scenario is measured independently.
+  onPerfSelfTestCollectTiming: (callback: (requestId: number) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, requestId: number): void => callback(requestId)
+    ipcRenderer.on(ipcChannels.perfSelfTestCollectOverlayTiming, handler)
+    return () => ipcRenderer.off(ipcChannels.perfSelfTestCollectOverlayTiming, handler)
+  },
+  reportPerfSelfTestTiming: (report: OverlayFrameTiming): void =>
+    ipcRenderer.send(ipcChannels.perfSelfTestOverlayTimingReport, report),
 
   // Push a rendered frame to any open overlay windows (fire-and-forget)
   pushFrameToOverlays: (frame: RgbFrame): void =>

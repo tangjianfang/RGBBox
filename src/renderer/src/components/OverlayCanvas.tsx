@@ -27,6 +27,19 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
   const effect3dKindRef = useRef<Effect3DKind | null>(null)
   const last3dAtRef     = useRef(0)
 
+  // R48.1: frame-arrival timing accumulator. Always running (cost is one
+  // performance.now() diff + a capped push per frame), but only read when the
+  // --perf-selftest harness sends a collect request — zero overhead in normal
+  // use. Lets the harness measure the overlay's actual presentation cadence
+  // (inter-frame p95/max, delivery fps), which CPU% can't see.
+  const timingAccRef = useRef({
+    intervals: [] as number[],
+    prevArrival: null as number | null,
+    firstArrival: null as number | null,
+    lastArrival: null as number | null,
+    framesReceived: 0,
+  })
+
   // Esc key: close this overlay
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
@@ -107,10 +120,24 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
 
     // ── Frame subscription (IPC callback, no React state) ────────────────
     const unsubscribe = window.rgbbox.onOverlayFrame((frame: RgbFrame) => {
+      // R48.1: stamp arrival time for the harness's presentation-layer cadence
+      // measurement. Done before the 3D-skip short-circuit so timing reflects
+      // actual frame delivery, not whether we drew it.
+      const now = performance.now()
+      const acc = timingAccRef.current
+      if (acc.firstArrival == null) acc.firstArrival = now
+      acc.lastArrival = now
+      acc.framesReceived++
+      if (acc.prevArrival != null) {
+        acc.intervals.push(now - acc.prevArrival)
+        if (acc.intervals.length > 1000) acc.intervals.shift()
+      }
+      acc.prevArrival = now
+
       // R36: while a 3D effect is actively broadcasting its own full-resolution
       // render (above), skip drawing the LED-grid-quantized frame so it doesn't
       // flicker/overwrite the sharper direct render.
-      if (performance.now() - last3dAtRef.current < EFFECT3D_FRESHNESS_MS) return
+      if (now - last3dAtRef.current < EFFECT3D_FRESHNESS_MS) return
       glRef.current?.setGap((frame.showGap ?? false) ? 0.06 : 0.0)
       glRef.current?.setRenderStyle(frame.renderStyle ?? 'smooth')
       glRef.current?.drawFrame(frame)
@@ -125,6 +152,43 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
       effect3dGlRef.current?.dispose()
       effect3dGlRef.current = null
     }
+  }, [])
+
+  // R48.1: respond to the --perf-selftest harness's collect-timing request.
+  // Computes a snapshot of the frame-arrival buffer, reports it back via the
+  // dedicated IPC channel, then clears the buffer so the next scenario is
+  // measured independently. Inert in normal use — only fires when the harness
+  // explicitly asks.
+  useEffect(() => {
+    return window.rgbbox.onPerfSelfTestCollectTiming((requestId: number) => {
+      const acc = timingAccRef.current
+      const sorted = acc.intervals.slice().sort((a, b) => a - b)
+      const pct = (p: number): number => {
+        if (sorted.length === 0) return 0
+        const idx = Math.min(sorted.length - 1, Math.floor(sorted.length * p))
+        return sorted[idx] ?? 0
+      }
+      const elapsedMs = acc.firstArrival != null && acc.lastArrival != null
+        ? acc.lastArrival - acc.firstArrival
+        : 0
+      window.rgbbox.reportPerfSelfTestTiming({
+        requestId,
+        framesReceived: acc.framesReceived,
+        elapsedMs,
+        intervalP50Ms: pct(0.5),
+        intervalP95Ms: pct(0.95),
+        intervalMaxMs: sorted.length ? sorted[sorted.length - 1] : 0,
+        intervalMeanMs: sorted.length
+          ? sorted.reduce((a, b) => a + b, 0) / sorted.length
+          : 0,
+      })
+      // Reset for the next measurement window.
+      acc.intervals = []
+      acc.prevArrival = null
+      acc.firstArrival = null
+      acc.lastArrival = null
+      acc.framesReceived = 0
+    })
   }, [])
 
 

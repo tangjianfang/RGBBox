@@ -22,6 +22,13 @@ export function getOverlayDisplayIds(): number[] {
   return [...overlayWindows.keys()]
 }
 
+// R48.1: used by the --perf-selftest harness to reach a specific overlay
+// window's webContents (to send a frame-timing collect request and receive
+// the report). Returns undefined if no overlay is open for that display.
+export function getOverlayWindow(displayId: number): BrowserWindow | undefined {
+  return overlayWindows.get(displayId)
+}
+
 export function isOverlayOpen(displayId: number): boolean {
   const win = overlayWindows.get(displayId)
   return win !== undefined && !win.isDestroyed()

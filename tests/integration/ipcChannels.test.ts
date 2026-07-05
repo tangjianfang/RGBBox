@@ -100,7 +100,8 @@ describe('integration: IPC channel <-> preload API', () => {
   it('exposes a method for every send-channel (fire-and-forget)', () => {
     const sendMapping: Array<[string, string]> = [
       [ipcChannels.overlayPushFrame, 'pushFrameToOverlays'],
-      [ipcChannels.overlayPushFrameForDisplay, 'pushFrameToDisplay']
+      [ipcChannels.overlayPushFrameForDisplay, 'pushFrameToDisplay'],
+      [ipcChannels.perfSelfTestOverlayTimingReport, 'reportPerfSelfTestTiming']
     ]
     for (const [channel, methodName] of sendMapping) {
       expect(typeof api[methodName], `api.${methodName} for channel ${channel}`).toBe('function')
@@ -115,6 +116,7 @@ describe('integration: IPC channel <-> preload API', () => {
       [ipcChannels.displayTopologyChanged, 'onDisplayTopologyChanged'],
       [ipcChannels.mainWindowVisibilityChanged, 'onMainWindowVisibilityChanged'],
       [ipcChannels.perfSelfTestToggleOverlay, 'onPerfSelfTestToggleOverlay'],
+      [ipcChannels.perfSelfTestCollectOverlayTiming, 'onPerfSelfTestCollectTiming'],
       [ipcChannels.modelDownloadProgress, 'onModelDownloadProgress']
     ]
     for (const [channel, methodName] of pushMapping) {

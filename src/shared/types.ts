@@ -117,6 +117,29 @@ export interface ProcessCpuSample {
   name?: string
 }
 
+/**
+ * R48.1: frame-arrival timing snapshot reported by an overlay window back to
+ * the --perf-selftest harness. Captures the overlay's *presentation-layer*
+ * cadence — the only signal that can detect compositor/GPU frame throttling
+ * that CPU% (R46/R47) is blind to. The overlay accumulates inter-frame
+ * intervals from `onOverlayFrame` arrivals; the harness requests a snapshot per
+ * scenario, the overlay reports then clears its buffer so each scenario is
+ * measured independently.
+ */
+export interface OverlayFrameTiming {
+  /** Matches the requestId of the collect request, for correlation. */
+  requestId: number
+  /** Frames received since the previous collect (or overlay open). */
+  framesReceived: number
+  /** Wall-clock ms between the first and last frame in this window. */
+  elapsedMs: number
+  /** Inter-frame interval (ms) percentiles over the window. 0 if <2 frames. */
+  intervalP50Ms: number
+  intervalP95Ms: number
+  intervalMaxMs: number
+  intervalMeanMs: number
+}
+
 export interface FrameMetrics {
   timestamp: number
   workerProcessMs: number

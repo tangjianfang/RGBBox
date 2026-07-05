@@ -14,6 +14,7 @@ import { MODELS_MANIFEST } from '../shared/modelsManifest'
 import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
 import type { DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
+import { runPerfSelfTest } from './perfSelfTest'
 import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOverlay, getAudioVizWindowIds, getOverlayDisplayIds, openAudioVizWindow, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
@@ -24,7 +25,12 @@ const log = initLogger(join(app.getPath('userData'), 'logs'), { minLevel: 'debug
 
 // ── Single instance lock ──────────────────────────────────────────────────
 log.info('App', `RGBBox starting, version=${app.getVersion()}, platform=${process.platform}`)
-const gotSingleLock = app.requestSingleInstanceLock()
+// R48.5: the --perf-selftest harness runs with an isolated --user-data-dir, so
+// the single-instance lock serves no purpose there and (under rapid re-launch)
+// has been observed to make a second run exit 0 immediately with no report.
+// Skip the lock entirely when the harness flag is present.
+const isPerfSelfTestRun = process.argv.includes('--perf-selftest')
+const gotSingleLock = isPerfSelfTestRun || app.requestSingleInstanceLock()
 
 // Register media:// as a privileged scheme so the renderer can load local
 // audio files from any origin (http://localhost in dev, file:// in prod).
@@ -683,140 +689,10 @@ function createTray(): void {
   tray.on('double-click', toggleMainWindow)
 }
 
-// ── R46: automated CPU/IO performance self-test ────────────────────────────
-// Answers "does this fix actually work?" with real Electron process metrics
-// instead of a human reading Task Manager — run via:
-//   node_modules/.bin/electron . --perf-selftest
-// It drives the exact scenarios reported across R38/R42-R45 (idle workspace,
-// minimized, minimized+overlay, hidden-to-tray) using real BrowserWindow
-// minimize()/restore()/hide()/show() calls and real openOverlay()/closeOverlay()
-// calls (so genuine renderer/GPU work happens, not a simulation), samples
-// `app.getAppMetrics()` (per-OS-process CPU%) across each one, writes a JSON
-// report + human-readable verdicts to the log directory, then quits itself.
-// Caveat: CPU% is a proxy, not a substitute for actually watching the overlay
-// render — a process could show low CPU while still failing to *present*
-// frames (a compositor/GPU scheduling issue), so a "PASS" here means "this
-// scenario isn't burning CPU it doesn't need to", not "the picture is 100%
-// smooth". Only gated behind an explicit CLI flag; never runs in normal use.
-interface PerfSample {
-  label: string
-  atMs: number
-  totalCpuPercent: number
-  perProcess: Array<{ pid: number; type: string; cpuPercent: number }>
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function sampleProcessCpuOnce(): { total: number; perProcess: PerfSample['perProcess'] } {
-  const perProcess = app.getAppMetrics().map((m) => ({ pid: m.pid, type: m.type, cpuPercent: m.cpu.percentCPUUsage }))
-  const total = perProcess.reduce((sum, p) => sum + p.cpuPercent, 0)
-  return { total, perProcess }
-}
-
-/** Samples repeatedly over a short window and averages, to smooth over one-off spikes/noise. */
-async function sampleAveraged(label: string, sampleCount = 6, intervalMs = 400): Promise<PerfSample> {
-  const totals: number[] = []
-  let lastPerProcess: PerfSample['perProcess'] = []
-  for (let i = 0; i < sampleCount; i++) {
-    await delay(intervalMs)
-    const { total, perProcess } = sampleProcessCpuOnce()
-    totals.push(total)
-    lastPerProcess = perProcess
-  }
-  const avg = totals.reduce((a, b) => a + b, 0) / totals.length
-  return { label, atMs: Date.now(), totalCpuPercent: avg, perProcess: lastPerProcess }
-}
-
-async function runPerfSelfTest(): Promise<void> {
-  const results: PerfSample[] = []
-  try {
-    log.info('PerfSelfTest', 'Starting automated performance self-test (--perf-selftest)')
-    // Prime app.getAppMetrics(): Electron measures CPU% over the interval
-    // since the previous call for each process, so the very first reading
-    // needs a throwaway call to establish that baseline window.
-    sampleProcessCpuOnce()
-    await delay(2500) // let the renderer finish mounting / the tick loop settle
-
-    results.push(await sampleAveraged('1-workspace-visible-no-overlay'))
-
-    mainWindow?.minimize()
-    results.push(await sampleAveraged('2-minimized-no-overlay'))
-
-    mainWindow?.restore()
-    await delay(500)
-    const topology = getDisplayTopology()
-    const primary = topology.displays.find((d) => d.primary) ?? topology.displays[0]
-    if (primary) {
-      // R46: route through the renderer's own handleToggleOverlay (via IPC
-      // push) instead of calling openOverlay() directly from main — the
-      // latter left the renderer's overlayDisplayIds state (and thus the
-      // R42/R43 tick-loop gate) unaware an overlay existed, which silently
-      // invalidated the "minimized + overlay" scenario in an earlier run of
-      // this harness (it looked like overlay computation was being paused
-      // when minimized, but it was actually the gate correctly seeing zero
-      // known overlays and pausing as designed).
-      mainWindow?.webContents.send(ipcChannels.perfSelfTestToggleOverlay, primary.id)
-      await delay(2000) // let the renderer's openOverlay() invoke + overlay window load complete
-    } else {
-      log.warn('PerfSelfTest', 'No display found — skipping overlay-dependent scenarios')
-    }
-    results.push(await sampleAveraged('3-workspace-visible-with-overlay'))
-
-    if (primary) {
-      mainWindow?.minimize()
-      results.push(await sampleAveraged('4-minimized-with-overlay'))
-      mainWindow?.restore()
-      await delay(500)
-      mainWindow?.webContents.send(ipcChannels.perfSelfTestToggleOverlay, primary.id)
-      await delay(500)
-    }
-
-    mainWindow?.hide()
-    results.push(await sampleAveraged('5-hidden-to-tray-no-overlay'))
-    mainWindow?.show()
-    await delay(300)
-
-    const verdicts: string[] = []
-    const byLabel = (l: string): PerfSample | undefined => results.find((r) => r.label === l)
-    const baseline = byLabel('1-workspace-visible-no-overlay')
-    const minNoOverlay = byLabel('2-minimized-no-overlay')
-    if (baseline && minNoOverlay) {
-      const pass = minNoOverlay.totalCpuPercent < Math.max(3, baseline.totalCpuPercent * 0.4)
-      verdicts.push(`[R42/R45] minimize (no overlay) should drop CPU close to 0: baseline=${baseline.totalCpuPercent.toFixed(1)}% -> minimized=${minNoOverlay.totalCpuPercent.toFixed(1)}% => ${pass ? 'PASS' : 'FAIL'}`)
-    }
-    const hidden = byLabel('5-hidden-to-tray-no-overlay')
-    if (baseline && hidden) {
-      const pass = hidden.totalCpuPercent < Math.max(3, baseline.totalCpuPercent * 0.4)
-      verdicts.push(`[R44] hide-to-tray (no overlay) should drop CPU close to 0: baseline=${baseline.totalCpuPercent.toFixed(1)}% -> hidden=${hidden.totalCpuPercent.toFixed(1)}% => ${pass ? 'PASS' : 'FAIL'}`)
-    }
-    const withOverlay = byLabel('3-workspace-visible-with-overlay')
-    const minWithOverlay = byLabel('4-minimized-with-overlay')
-    if (withOverlay && minWithOverlay) {
-      const delta = Math.abs(minWithOverlay.totalCpuPercent - withOverlay.totalCpuPercent)
-      const pass = delta < Math.max(5, withOverlay.totalCpuPercent * 0.5)
-      verdicts.push(`[R38/R45] overlay computation should NOT drop when main window minimizes: visible=${withOverlay.totalCpuPercent.toFixed(1)}% -> minimized=${minWithOverlay.totalCpuPercent.toFixed(1)}% => ${pass ? 'PASS (CPU stayed comparable — computation not skipped; does NOT confirm visual smoothness, only that work is still happening)' : 'FAIL (CPU dropped a lot — computation is likely being throttled while minimized)'}`)
-    }
-
-    const report = { generatedAt: new Date().toISOString(), results, verdicts }
-    const reportPath = join(app.getPath('userData'), 'logs', 'perf-selftest-report.json')
-    await writeFile(reportPath, JSON.stringify(report, null, 2), 'utf-8')
-    log.info('PerfSelfTest', `Report written to ${reportPath}`)
-    for (const r of results) {
-      log.info('PerfSelfTest', `${r.label}: total=${r.totalCpuPercent.toFixed(1)}% | ` + r.perProcess.map((p) => `${p.type}#${p.pid}=${p.cpuPercent.toFixed(1)}%`).join(', '))
-    }
-    for (const v of verdicts) {
-      log.info('PerfSelfTest', v)
-    }
-  } catch (err) {
-    log.error('PerfSelfTest', `Self-test failed: ${String(err)}`)
-  } finally {
-    log.flushSync()
-    isQuitting = true
-    app.quit()
-  }
-}
+// ── R48.4: the automated perf self-test harness now lives in its own module
+// (`./perfSelfTest`). See there for the scenarios, CPU sampling, R48.1
+// overlay frame-timing collection, R48.2 tightened verdicts, and R48.3
+// median/p25/p75 stats. Triggered below from app.whenReady.
 
 app.whenReady().then(() => {
   // Force dark theme so native title bar and system chrome match the dark UI
@@ -896,8 +772,22 @@ app.whenReady().then(() => {
   log.info('App', 'Application ready — main window and tray created')
 
   if (process.argv.includes('--perf-selftest')) {
+    // R48.5: watchdog — if the renderer never reaches ready-to-show (e.g. a
+    // GPU-init race on rapid re-launch), the harness would otherwise hang
+    // silently. Force a logged quit after 30s so the run is never mistaken
+    // for a slow success.
+    const watchdog = setTimeout(() => {
+      log.error('PerfSelfTest', 'Watchdog: harness did not start within 30s (ready-to-show never fired), forcing quit')
+      log.flushSync()
+      isQuitting = true
+      app.exit(1)
+    }, 30000)
     mainWindow?.once('ready-to-show', () => {
-      void runPerfSelfTest()
+      clearTimeout(watchdog)
+      void runPerfSelfTest({ getMainWindow: () => mainWindow }).finally(() => {
+        isQuitting = true
+        app.quit()
+      })
     })
   }
 
