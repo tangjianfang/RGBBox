@@ -627,8 +627,16 @@ const EFFECT_FS: Record<string, string> = {
       float colorSpread = uP[4];
       vec2 n = normCoords(vUV, uAspect);
       float t = uTime * speed;
-      float swirl = atan(n.y, n.x) / 3.14159265;
       float radius = length(n);
+      // R41 fix: the CPU original used atan(y,x)/pi ("swirl") directly as a
+      // linear hue/warp offset. atan2 has a branch cut at angle=±pi (screen
+      // left, y≈0) where it jumps by 2 (from 1 to -1) — at full GPU pixel
+      // resolution this shows up as a hard visible seam (reported: "looks
+      // misaligned on the left"). sin(angle) == n.y/radius has the exact
+      // same -1..1 range and similar per-angle variation but is perfectly
+      // continuous around the full circle (no branch cut), so it's a
+      // seamless drop-in replacement for "swirl" here.
+      float swirl = n.y / max(0.02, radius);
       float warpX = n.x + sin(n.y * 4.0 + t * 1.4) * 0.18 + swirl * 0.08 + sin(radius * 6.0 + t * 0.7) * 0.06;
       float warpY = n.y + cos(n.x * 3.2 - t * 1.1) * 0.18 - radius * 0.12 + cos(radius * 5.0 - t * 0.5) * 0.05;
       float cloud = fbm2(vec2(warpX * 3.0 + t * 0.7, warpY * 3.0 - t * 0.45), 5);
@@ -760,7 +768,14 @@ const EFFECT_FS: Record<string, string> = {
       float radius = length(n);
       float angle = atan(n.y, n.x);
       float spiral = angle + radius * (9.0 + density * 6.0) - t * 3.2;
-      float bands = pow(0.5 + 0.5 * sin(spiral * 2.7 + fbm2(vec2(n.x * 5.0, n.y * 5.0), 3) * 2.0), 3.4);
+      // R41 fix: CPU original multiplied the wrapped angle by 2.7 (non-integer)
+      // before sin(), which creates a hard seam at angle=±pi (screen left)
+      // once rendered continuously at full GPU resolution — a non-integer
+      // multiple of a value that jumps by 2*pi never lines back up. Using an
+      // integer coefficient (3.0 instead of 2.7, ~11% denser bands, visually
+      // indistinguishable) keeps sin(spiral*3.0+...) perfectly continuous
+      // around the full circle.
+      float bands = pow(0.5 + 0.5 * sin(spiral * 3.0 + fbm2(vec2(n.x * 5.0, n.y * 5.0), 3) * 2.0), 3.4);
       float eye = ss3(0.13, 0.06, radius);
       float eyeWall = exp(-pow((radius - 0.16) / 0.045, 2.0));
       float cloudFalloff = ss3(0.72, 0.12, radius);

@@ -1183,6 +1183,30 @@
   - [ ] 手动验证：折叠按钮能收起/展开采样面板；3 个 Tab 切换正常，各 Tab 控件均可正常读写 `profile.sampling.*`；折叠/Tab 状态刷新页面后保留
 - **R40.5** **状态**：🔄（代码已实施；等待用户实机验收布局与折叠/Tab 交互）
 
+### R41. 修复 GPU 直渲染效果的"接缝"错位 + 效果库整体卡顿
+
+> 触发场景：用户反馈"全息投影、极光、DNA 双螺旋等效果视觉效果很差"，"飓风眼的左边中间有一条错位的效果，类似的其它效果可能也有这种情况"，"感觉所有的效果都有点卡顿，不是 100% 丝滑"。
+> **风险等级：L1**（`effectGl.ts` 内两处公式微调 + `EffectsView.tsx` 增加可见性检测，不改数据结构/对外接口）。
+
+- **R41.1** **根因 1：`atan2` 分支切割导致的接缝**——`hurricane-eye` 和 `nebula` 的 CPU 原始公式里，把 `atan(y, x)`（值域 -π..π，在负 x 轴/屏幕左侧发生 -π→π 的跳变）乘以一个**非整数**系数后再传入 `sin()`/用于色相计算：
+  - `hurricane-eye`：`sin(spiral * 2.7 + ...)`，`spiral` 里含 1 倍角度项，2.7 不是整数 → 角度跳变 2π 时，`spiral*2.7` 跳变 5.4π，不是 2π 的整数倍，`sin()` 结果不连续，在角度=π（画面左边中线）处出现硬接缝。
+  - `nebula`：`swirl = atan(y,x)/π` 直接线性用作色相偏移（`swirl*45`）和噪声坐标偏移（`swirl*0.08`），`swirl` 本身在该处从 1 跳变到 -1，色相偏移量跳变 90°（`mod 360` 不能吸收），同样在左边线出现接缝。
+  - 这个缺陷**原始 CPU 算法就存在**（在 45/49 效果的网格采样、且经过 R34 平滑插值的情况下被"抹掉"到不明显），只是移植成 GPU 全分辨率逐像素渲染后，接缝从"网格插值模糊"变成了"精确到像素的硬边界"，才变得刺眼。
+  - **审查结论**：逐一检查全部 28 个已移植效果里所有 `atan(` 调用，只有这两处存在"非整数系数 × 角度"的问题；`vortex`/`spiral-galaxy`/`black-hole`/`vortex-flame`/`tokamak-plasma` 虽然也用 `atan`，但角度前的系数都是整数（2、3、4、2×3、5、9），跳变量是 2π 的整数倍，天然连续；`pulsar-beacon` 用 `atan(sin(Δ), cos(Δ))` 的标准"角度差归一化"写法从设计上就避开了这个问题；`mirror-symmetry`/`magnetosphere-aurora` 因为只用 `abs()`/`sin²`/`abs(sin())`，同样不受影响。
+- **R41.2** **修复**：
+  - `hurricane-eye`：把系数从 `2.7` 调整为整数 `3.0`（螺旋纹路密度只变化约 11%，视觉上不可分辨），彻底消除接缝。
+  - `nebula`：把 `swirl = atan(y,x)/π` 替换成 `swirl = n.y / max(0.02, radius)`（即 `sin(angle)`，值域同样是 -1..1，但绕圆一周连续、无分支切割），在色相偏移和噪声坐标偏移两处直接替换，视觉特征基本不变（原本就是次要的修饰项）。
+  - 均不改动 `src/engine/effects.ts` 的 CPU 实现（该函数的网格+插值渲染路径本来就不会明显暴露这个接缝，没有改动的必要）。
+- **R41.3** **根因 2：效果库卡顿疑似 WebGL 上下文数量逼近浏览器上限**——R39 把分类改成了 Tab，但科学可视化等分类里同时挂载的 GPU 直渲染卡片（`EffectCardGpu`/`EffectCard3D`）仍可能达到十几个，每张卡片各自持有一个独立 WebGL context；Chromium 对单进程内同时存活的 WebGL context 数量有上限，逼近上限时会强制丢弃最旧的 context，表现为"画面局部损坏/卡顿/看起来不对"——这也可能是用户看到"全息投影/极光/DNA 双螺旋看起来差"的部分原因（这几个效果恰好都在卡片数量较多的分类里）。
+- **R41.4** **修复**：给 `EffectCard`/`EffectCard3D`/`EffectCardGpu` 统一加 `useCardVisible()`（`IntersectionObserver`，`rootMargin: 150px`）——卡片滚出可视区域时，`requestAnimationFrame` 循环停止且 GL 卡片会 `dispose()` 掉自己的 WebGL context；滚回可视区域再重新创建。这样同时存活的 WebGL context 数量从"当前 Tab 全部卡片"降到"当前视口内实际可见的几张卡片"，从根源上降低同时运行的渲染负载和 WebGL context 占用。
+- **R41.5** **受影响文件**：`src/renderer/src/gl/effectGl.ts`（`hurricane-eye`/`nebula` 两处公式）、`src/renderer/src/components/EffectsView.tsx`（新增 `useCardVisible` hook，三个卡片组件接入）。
+- **R41.6** **验收点**：
+  - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（435 passed / 41 skipped，1 个已知无关 flaky）
+  - [x] 离线校验：headless-gl 重新编译全部 28 个着色器（含本次改动的 2 个），零错误
+  - [ ] 手动验证：`hurricane-eye`/`nebula` 画面左侧中线不再有可见接缝/错位
+  - [ ] 手动验证：效果库滚动浏览多个分类时，整体不再感觉卡顿；`hologram`/`aurora`/`dna-helix` 单独查看时观感正常
+- **R41.7** **状态**：🔄（代码已实施并通过离线着色器编译校验；等待用户实机确认接缝已消除、卡顿是否缓解）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

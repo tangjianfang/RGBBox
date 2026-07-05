@@ -1,5 +1,5 @@
 import { Star } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useEffect, useMemo, useRef, useState, type JSX, type RefObject } from 'react'
 import { effectPresets } from '../../../shared/defaultProfile'
 import { renderEffectPixel } from '../../../engine/effects'
 import { EFFECT_3D_KINDS } from '../../../shared/types'
@@ -7,6 +7,39 @@ import type { Effect3DKind, EffectKind, EffectLayer } from '../../../shared/type
 import { Effect3DGl } from '../gl/effect3dGl'
 import { EffectGl, isGpuDirectEffect } from '../gl/effectGl'
 import { useI18n } from '../i18n'
+
+/**
+ * R41: each card owns its own canvas/WebGL context and `requestAnimationFrame`
+ * loop. A category tab can still hold 15-20 cards (R39 already cut this down
+ * from ~55), and browsers cap the number of *simultaneously live* WebGL
+ * contexts per process (Chromium silently force-loses the oldest ones past
+ * the limit) — approaching that cap causes exactly the "everything looks a
+ * bit off / stutters" symptom reported. This hook pauses/tears down a card's
+ * rendering (and, for GL cards, its context) whenever the card scrolls out
+ * of view, so only the handful of cards actually on screen stay active.
+ */
+function useCardVisible(): [RefObject<HTMLDivElement | null>, boolean] {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    if (typeof IntersectionObserver === 'undefined') {
+      // No IntersectionObserver support (e.g. some test environments) — fail open.
+      setVisible(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setVisible(entry.isIntersecting),
+      { rootMargin: '150px 0px', threshold: 0 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return [containerRef, visible]
+}
 
 interface EffectCardProps {
   preset: (typeof effectPresets)[number]
@@ -18,11 +51,13 @@ interface EffectCardProps {
 
 function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite }: EffectCardProps): JSX.Element {
   const { t } = useI18n()
+  const [containerRef, visible] = useCardVisible()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const animRef = useRef<number | null>(null)
   const startRef = useRef(performance.now())
 
   useEffect(() => {
+    if (!visible) return
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -77,10 +112,11 @@ function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite }: 
     return () => {
       if (animRef.current !== null) cancelAnimationFrame(animRef.current)
     }
-  }, [preset])
+  }, [preset, visible])
 
   return (
     <div
+      ref={containerRef}
       className={`effect-card ${selected ? 'selected' : ''}`}
     >
       <button className="effect-card-main" type="button" onClick={() => onSelect(preset.kind)}>
@@ -109,12 +145,14 @@ function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite }: 
  */
 function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite }: EffectCardProps): JSX.Element {
   const { t } = useI18n()
+  const [containerRef, visible] = useCardVisible()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const glRef     = useRef<Effect3DGl | null>(null)
   const animRef   = useRef<number | null>(null)
   const startRef  = useRef(performance.now())
 
   useEffect(() => {
+    if (!visible) return
     const canvas = canvasRef.current
     if (!canvas) return
     canvas.width  = 80
@@ -141,10 +179,11 @@ function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite }
       glRef.current?.dispose()
       glRef.current = null
     }
-  }, [preset])
+  }, [preset, visible])
 
   return (
     <div
+      ref={containerRef}
       className={`effect-card ${selected ? 'selected' : ''}`}
     >
       <button className="effect-card-main" type="button" onClick={() => onSelect(preset.kind)}>
@@ -177,12 +216,14 @@ function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite }
  */
 function EffectCardGpu({ preset, selected, favorite, onSelect, onToggleFavorite }: EffectCardProps): JSX.Element {
   const { t } = useI18n()
+  const [containerRef, visible] = useCardVisible()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const glRef = useRef<EffectGl | null>(null)
   const animRef = useRef<number | null>(null)
   const startRef = useRef(performance.now())
 
   useEffect(() => {
+    if (!visible) return
     const canvas = canvasRef.current
     if (!canvas) return
     canvas.width = 240
@@ -213,10 +254,10 @@ function EffectCardGpu({ preset, selected, favorite, onSelect, onToggleFavorite 
       glRef.current?.dispose()
       glRef.current = null
     }
-  }, [preset])
+  }, [preset, visible])
 
   return (
-    <div className={`effect-card ${selected ? 'selected' : ''}`}>
+    <div ref={containerRef} className={`effect-card ${selected ? 'selected' : ''}`}>
       <button className="effect-card-main" type="button" onClick={() => onSelect(preset.kind)}>
         <canvas ref={canvasRef} aria-hidden="true" />
         <div className="effect-card-info">
