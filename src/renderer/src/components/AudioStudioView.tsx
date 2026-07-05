@@ -808,7 +808,21 @@ function saveCache(cache: AudioStudioCache): void {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export function AudioStudioView(): JSX.Element {
+interface AudioStudioViewProps {
+  /**
+   * R42: whether this view is the one currently visible on screen. App.tsx
+   * keeps AudioStudioView mounted at all times (instead of unmounting like
+   * other views) so audio playback keeps going when the user switches tabs
+   * -- but the spectrum/waveform canvas draw loop below has no such
+   * requirement and was running its requestAnimationFrame loop unconditionally
+   * (CSS `display:none` does not pause rAF, only document-level hidden does),
+   * burning CPU in the background on every other tab. Defaults to true so
+   * ad-hoc usages/tests that don't pass it keep the old (always-drawing) behaviour.
+   */
+  visible?: boolean
+}
+
+export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.Element {
   const { t } = useI18n()
 
   const cached = useMemo(() => loadCache(), [])
@@ -1058,7 +1072,7 @@ export function AudioStudioView(): JSX.Element {
 
   // Visualization loop with HiDPI support + live resize handling
   useEffect(() => {
-    if ((!isPlaying && !previewPlaying) || !analyserRef.current) return
+    if ((!isPlaying && !previewPlaying) || !analyserRef.current || !visible) return
     const specCanvas = spectrumCanvasRef.current
     const waveCanvas = waveformCanvasRef.current
     const analyser = analyserRef.current
@@ -1119,7 +1133,7 @@ export function AudioStudioView(): JSX.Element {
       cancelAnimationFrame(animFrameRef.current)
       ro.disconnect()
     }
-  }, [isPlaying, previewPlaying, vizMode, vizFullscreen])
+  }, [isPlaying, previewPlaying, vizMode, vizFullscreen, visible])
 
   // ESC exits the in-app visualizer fullscreen
   useEffect(() => {

@@ -1207,6 +1207,24 @@
   - [ ] 手动验证：效果库滚动浏览多个分类时，整体不再感觉卡顿；`hologram`/`aurora`/`dna-helix` 单独查看时观感正常
 - **R41.7** **状态**：🔄（代码已实施并通过离线着色器编译校验；等待用户实机确认接缝已消除、卡顿是否缓解）
 
+### R42. 无人消费画面时暂停渲染，降低常驻 CPU 占用
+
+> 触发场景：用户反馈"CPU 都一直在 11% 左右，太高了吧。有没有必要进行重构或优化"、"最小化或最小化到托盘之后，CPU 也很高。在没有渲染的情况下要停止后台一直渲染"。
+> **风险等级：L1**（只增加"跳过计算"的早退条件，不改变有人消费画面时的行为；受 R38 保护的"overlay 打开时最小化也要流畅"场景完全不受影响）。
+
+- **R42.1** **根因 1：2D 效果的 worker tick 循环和当前 view/窗口可见性完全无关**——驱动 CPU 效果计算的 `setInterval` 循环（`App.tsx` 里那个给 `previewEngineWorker` 发送 tick 的 `useEffect`）依赖数组是 `[profile, status.running, selectedLayerId, automationEnabled, automationMode, automatedParams]`，**不包含 `currentView`**，也不检查窗口是否可见——只要引擎开关 `status.running` 为真（默认就是真），无论用户在看"工作区"还是"效果库/音频工作站/设置"等其它 tab，也无论主窗口是否已经最小化/隐藏到托盘，都会持续按配置的 FPS 计算完整网格的效果像素（`fire`/`aurora`/`lightning` 这类复杂效果本身就不便宜）——这正是"CPU 一直卡在 11% 左右，不管在干嘛"的直接原因。
+- **R42.2** **修复**：在 `onTick`（`setInterval` 回调）最前面加一个早退条件——当"没有 overlay 窗口在投屏"**且**（"主窗口不可见（`document.hidden`，最小化/隐藏到托盘都会触发）" **或** "当前 view 不是 workspace"）时，直接 `return`，跳过整次 worker tick（不计算、不 `postMessage`）。判断条件每次 tick 都重新读取（`overlayIdsRef`/`currentViewRef`/`document.hidden` 都是零成本的引用读取），不需要重建 worker 或清空/重启 `setInterval`，切 tab、最小化/还原、开关 overlay 都会在下一次 tick（≤ 1 帧间隔）内自动生效。特别保留：**只要有 overlay 窗口在投屏，无论主窗口是否可见、当前 view 是什么，都继续正常计算**——这是 R38 明确要保证流畅的场景，不受本条影响。
+- **R42.3** **根因 2：`AudioStudioView` 的频谱/波形绘制循环和"音频 tab 是否可见"无关**——`App.tsx` 为了让音频播放在切换 tab 后也不中断，把 `AudioStudioView` 设计成**始终挂载**（用 CSS `display:none` 隐藏，而不是像其它 view 那样条件渲染/卸载）。但其内部频谱/波形 canvas 的绘制循环（`requestAnimationFrame`）只判断"是否在播放"，没有判断"这个 tab 当前是否可见"——`display:none` 并不会暂停 `requestAnimationFrame`（rAF 只在整个文档级别被隐藏时才会暂停，元素级别的隐藏不影响它），所以只要播放过音频，切到其它任何 tab 后，频谱/波形绘制仍在后台持续跑，这是另一处"不管在干嘛 CPU 都掉不下来"的来源。
+- **R42.4** **修复**：给 `AudioStudioView` 增加一个可选的 `visible` prop（默认 `true`，不影响其它零散用法/测试），`App.tsx` 传入 `currentView === 'audio'`；绘制循环的 `useEffect` 早退条件里加上 `!visible`，依赖数组同步加入 `visible`。切走音频 tab 后，频谱/波形绘制立即停止（音频播放本身不受影响，只停止不必要的画面绘制）；切回音频 tab 立即恢复。
+- **R42.5** **不受影响/未处理**：`MiniGamesView`/`VideoStudioView` 本来就是条件渲染（切走会整体卸载，rAF 自然停止），不需要改。`AudioStudioView` 里 100ms 一次的播放进度 `setInterval`（只做轻量 `setState`，不做画布绘制）成本可忽略，未处理。3D 效果（`Preview3D.tsx` 用 `requestAnimationFrame` 驱动）在"3D 效果 + overlay 打开 + 主窗口最小化"这个组合场景下，rAF 会因为文档隐藏而暂停，overlay 可能停止更新——这是先于本次改动就存在的已知边界情况，本条未处理，记录在案供后续评估。
+- **R42.6** **受影响文件**：`src/renderer/src/App.tsx`（新增 `currentViewRef`，`onTick` 早退条件，`AudioStudioView` 调用处传 `visible`）、`src/renderer/src/components/AudioStudioView.tsx`（新增 `visible` prop，绘制循环早退条件）。
+- **R42.7** **验收点**：
+  - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（435 passed / 41 skipped，1 个已知无关 flaky）
+  - [ ] 手动验证：任务管理器观察——引擎运行中但停留在"效果库/设置"等非 workspace tab 且未开 overlay 时，CPU 明显下降接近空闲
+  - [ ] 手动验证：最小化主窗口（无 overlay）后 CPU 明显下降；开启 overlay 后最小化，CPU 保持运行且投屏依旧流畅（不回归 R38）
+  - [ ] 手动验证：播放音频后切到其它 tab，CPU 下降且音频播放不中断；切回音频 tab 频谱/波形正常恢复绘制
+- **R42.8** **状态**：🔄（代码已实施；等待用户用任务管理器实机对比修复前后的 CPU 占用）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

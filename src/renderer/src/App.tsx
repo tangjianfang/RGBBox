@@ -664,6 +664,11 @@ export function App(): JSX.Element {
   overlayIdsRef.current = overlayDisplayIds
   const topologyRef = useRef<DisplayTopology | null>(topology)
   topologyRef.current = topology
+  // R42: lets the tick loop below know the latest view/visibility without
+  // being a useEffect dependency (adding currentView there would tear down
+  // and recreate the worker on every tab switch).
+  const currentViewRef = useRef<View>(currentView)
+  currentViewRef.current = currentView
   // audioRef: always points to the latest AudioData without being a useEffect dependency.
   // If audio were in the dependency array, the engine effect would restart every rAF tick
   // (~16ms), resetting tickPending and clearing the setInterval before it ever fires — making
@@ -957,6 +962,20 @@ export function App(): JSX.Element {
     let timerId = 0
     const onTick = (): void => {
       if (cancelled) return
+      // R42: nobody is consuming a frame right now — skip the (potentially
+      // expensive, e.g. fire/aurora/lightning on a large grid) worker tick
+      // entirely instead of computing frames nobody sees. Frames are needed
+      // when either (a) an overlay window is projecting onto a real display
+      // (regardless of main-window visibility — this is the one case that
+      // must keep running even minimised, per R38), or (b) the in-app
+      // workspace preview is actually the visible tab AND the window itself
+      // is visible (not minimised/hidden to tray). This is re-evaluated on
+      // every tick (cheap ref/property reads only), so it reacts immediately
+      // to tab switches, minimise/restore and overlay open/close without
+      // tearing down/recreating the worker.
+      if (overlayIdsRef.current.length === 0 && (document.hidden || currentViewRef.current !== 'workspace')) {
+        return
+      }
       if (!tickPending) {
         tickPending = true
         // tick() may cancel mid-way (cancelled flag); if it does WITHOUT posting
@@ -2470,7 +2489,7 @@ export function App(): JSX.Element {
         )}
 
         <div style={{ display: currentView === 'audio' ? undefined : 'none' }}>
-          <AudioStudioView />
+          <AudioStudioView visible={currentView === 'audio'} />
         </div>
 
         {currentView === 'video' && (
