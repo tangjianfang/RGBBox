@@ -114,6 +114,19 @@ function createMainWindow(): void {
     mainWindow = null
   })
 
+  // R43: tell the renderer definitively when the window stops/starts being
+  // visible to the user, so it can pause the effect-computation tick loop
+  // (see App.tsx) instead of relying on document.hidden — which, after R38
+  // disabled Chromium's occluded-window backgrounding, no longer reliably
+  // reflects minimize state.
+  const sendVisibility = (visible: boolean): void => {
+    mainWindow?.webContents.send(ipcChannels.mainWindowVisibilityChanged, visible)
+  }
+  mainWindow.on('minimize', () => sendVisibility(false))
+  mainWindow.on('restore', () => sendVisibility(true))
+  mainWindow.on('hide', () => sendVisibility(false))
+  mainWindow.on('show', () => sendVisibility(true))
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }

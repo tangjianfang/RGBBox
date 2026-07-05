@@ -1225,6 +1225,25 @@
   - [ ] 手动验证：播放音频后切到其它 tab，CPU 下降且音频播放不中断；切回音频 tab 频谱/波形正常恢复绘制
 - **R42.8** **状态**：🔄（代码已实施；等待用户用任务管理器实机对比修复前后的 CPU 占用）
 
+### R43. R42 在最小化场景未生效 + 补充"无启用图层"与音频分析节流
+
+> 触发场景：用户验证 R42 后反馈"最小化或关闭主窗口到右下角还是没有降低 CPU"、"没有勾选任何效果层（不需要灯效）时，RGB 画布预览没有停止，CPU 没有降下来"、"开启音频采集 CPU 从 4.5% 涨到 9% 左右"。
+> **风险等级：L1**（新增一个 IPC 通道 + 两处早退条件 + 一处状态更新节流，均不改变有人消费画面/数据时的行为）。
+
+- **R43.1** **根因 1：R42 依赖的 `document.hidden` 被 R38 自己废掉了**——R42 判断"窗口是否可见"用的是 `document.hidden`（Page Visibility API）。但 R38 为了修复"最小化后投屏卡顿"，加了 Chromium 命令行开关 `disable-backgrounding-occluded-windows` 专门禁用"遮挡/最小化窗口"的降级追踪——这个开关很可能**连带**关闭了驱动 `document.visibilityState` 更新的同一套遮挡检测机制，导致主窗口最小化后 `document.hidden` 不再可靠地变成 `true`，R42 的早退条件因此永远判断"窗口可见"，从未真正跳过 tick。这是一个典型的"两个修复互相踩踏"：R38 为了让某个场景流畅而关闭的机制，恰好是 R42 判断"该不该省电"所依赖的信号源。
+- **R43.2** **修复**：不再依赖 `document.hidden`，改为主进程通过新增 IPC 通道 `mainWindowVisibilityChanged` 主动推送——监听 `BrowserWindow` 原生的 `minimize`/`restore`/`hide`/`show` 事件（这几个事件是 Electron/Chromium 内部状态，不受任何"禁用遮挡追踪"的命令行开关影响，是最可靠的真相来源），推给渲染进程维护一个 `windowVisibleRef`，`onTick` 里用它替换 `document.hidden`。
+- **R43.3** **根因 2：R42 的早退条件没有考虑"场景里有没有启用任何图层"**——R42 只判断"是否在 workspace tab 且窗口可见"或"是否有 overlay"，即使满足这两个条件之一，只要场景里 0 个图层 `enabled`，其实也没有任何画面需要计算，但 tick 仍然全速运行。
+- **R43.4** **修复**：`onTick` 里新增判断——当前场景 `scene.layers.some(l => l.enabled)` 为假时，在**刚好多跑一次**之后（保证预览从"上一次点亮的画面"正确变黑，而不是永远冻结在最后一帧亮着的画面）暂停后续 tick，直到重新启用图层。
+- **R43.5** **根因 3：音频分析每 16ms 触发一次 React 状态更新，导致整个 App 组件树以 ~60Hz 频率重渲染**——`useAudioAnalyzer` 里 `setInterval(tick, 16)` 每次都调用 `setAudioData(...)`，即使这份数据只是拿去更新头部 3 个 VU 表小色块和诊断页的一行文字。React 状态更新在这种"大型单体组件"结构下，60Hz 触发意味着 60Hz 的 diff/reconcile 开销，这正是"开音频 CPU 从 4.5% 涨到 9%"的主要来源。
+- **R43.6** **修复**：分析计算（`bass`/`mid`/`high`/`freqBands` 的 EMA 平滑、`beat` 瞬态检测的衰减状态）依旧每 16ms 跑一次以保证平滑观感不变；但 `setAudioData`（触发重渲染的那一步）节流到约每 3 次 tick 才发一次（~20Hz，重渲染频率降到 1/3）。`beat` 是瞬态尖峰，节流窗口内取最大值再发出，避免跳过的两次 tick 里出现的鼓点被"漏掉"。
+- **R43.7** **受影响文件**：`src/shared/ipc.ts`（新增 `mainWindowVisibilityChanged` 通道）、`src/preload/index.ts`（新增 `onMainWindowVisibilityChanged`）、`src/main/index.ts`（监听 `minimize`/`restore`/`hide`/`show` 并推送）、`src/renderer/src/App.tsx`（`windowVisibleRef` 替换 `document.hidden`，新增"无启用图层"早退）、`src/renderer/src/hooks/useAudioAnalyzer.ts`（`setAudioData` 节流）、`tests/renderer/hooks/useAudioAnalyzer.test.ts`（3 处等待时间从 50ms 调到 150ms 以适配新的节流节奏）、`tests/integration/ipcChannels.test.ts`（补充新通道的映射断言）。
+- **R43.8** **验收点**：
+  - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（436 passed / 41 skipped，0 失败）
+  - [ ] 手动验证：最小化主窗口（无 overlay）后，任务管理器里 CPU 明显下降；有 overlay 时最小化仍保持流畅投屏（不回归 R38）
+  - [ ] 手动验证：场景内全部图层取消勾选后，RGB 画布预览变黑且 CPU 下降；重新勾选任意图层后画面和 CPU 恢复正常
+  - [ ] 手动验证：开启音频采集后 CPU 涨幅比修复前更小；音频响应类效果（`audio-beat`/`audio-equalizer`）观感无明显变化
+- **R43.9** **状态**：🔄（代码已实施，`yarn test` 436 passed/0 失败；等待用户用任务管理器实机对比修复前后的 CPU 占用）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

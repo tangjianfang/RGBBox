@@ -92,6 +92,15 @@ const api = {
     return () => ipcRenderer.off(ipcChannels.displayTopologyChanged, handler)
   },
 
+  // R43: fired when the main window is minimized/restored/hidden/shown —
+  // definitive signal from the main process (see ipc.ts for why
+  // document.hidden isn't relied on for this).
+  onMainWindowVisibilityChanged: (callback: (visible: boolean) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, visible: boolean): void => callback(visible)
+    ipcRenderer.on(ipcChannels.mainWindowVisibilityChanged, handler)
+    return () => ipcRenderer.off(ipcChannels.mainWindowVisibilityChanged, handler)
+  },
+
   // Power save blocker
   getPowerSaveBlock: (): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.getPowerSaveBlock),

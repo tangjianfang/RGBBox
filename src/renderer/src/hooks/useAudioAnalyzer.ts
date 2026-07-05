@@ -182,6 +182,18 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
         const MID_END  = Math.round(4000 / binHz)  // ~250 – 4000 Hz
 
         // Use setInterval instead of requestAnimationFrame so it continues when window is minimized
+        // R43: analysis runs every tick (needed for correct EMA smoothing /
+        // beat-decay behaviour), but the React state update (setAudioData) —
+        // which re-renders the whole App tree just to move 3 small VU-meter
+        // bars — is throttled to ~1-in-3 ticks (~20 Hz) instead of every tick
+        // (~60 Hz). This was a measurable chunk of "CPU goes up ~4.5% when
+        // audio capture is on". `beat` is transient (a sharp percussive
+        // spike), so the max seen across the skipped ticks is kept and
+        // emitted instead of whatever the last-sampled tick happened to see,
+        // so short beats between emits aren't dropped.
+        const EMIT_EVERY_N_TICKS = 3
+        let ticksSinceEmit = 0
+        let maxBeatSinceEmit = 0
         const tick = () => {
           if (cancelled) return
           analyser.getByteFrequencyData(dataArray)
@@ -205,6 +217,7 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
           // Transient beat: sharp positive rise in bass
           const beat = Math.max(0, (bass - prevBassRef.current) * 5)
           prevBassRef.current = bass * 0.85 + prevBassRef.current * 0.15
+          maxBeatSinceEmit = Math.max(maxBeatSinceEmit, beat)
 
           // Per-band FFT: take the max bin value within each log-spaced band,
           // then apply asymmetric EMA (fast attack / slow decay) so bars rise
@@ -220,10 +233,15 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
             return next
           })
 
-          setAudioData({ active: true, bass, mid, high, level, beat, freqBands })
+          ticksSinceEmit += 1
+          if (ticksSinceEmit >= EMIT_EVERY_N_TICKS) {
+            ticksSinceEmit = 0
+            setAudioData({ active: true, bass, mid, high, level, beat: maxBeatSinceEmit, freqBands })
+            maxBeatSinceEmit = 0
+          }
         }
 
-        intervalRef.current = window.setInterval(tick, 16) // ~60fps, but survives minimize
+        intervalRef.current = window.setInterval(tick, 16) // ~60fps analysis, survives minimize
       })
       .catch((err: unknown) => {
         if (!cancelled) setAudioData({ ...INACTIVE, error: classifyAudioError(err) })

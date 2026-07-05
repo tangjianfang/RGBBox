@@ -86,11 +86,14 @@ describe('renderer/hooks/useAudioAnalyzer', () => {
 
   it('transitions to active:true once getUserMedia + first tick fire', async () => {
     const { result } = renderHook(() => useAudioAnalyzer(true, ''))
-    // Wait for microtasks to settle (getUserMedia then setInterval start)
+    // Wait for microtasks to settle (getUserMedia then setInterval start) and
+    // at least one throttled state emit (R43: state updates are throttled to
+    // ~1-in-3 ticks / ~20Hz to cut React re-render churn, analysis itself
+    // still runs every 16ms tick).
     await act(async () => {
       await Promise.resolve()
       await Promise.resolve()
-      await new Promise((r) => setTimeout(r, 50))
+      await new Promise((r) => setTimeout(r, 150))
     })
     expect(result.current.active).toBe(true)
     // No error set
@@ -135,7 +138,7 @@ describe('renderer/hooks/useAudioAnalyzer', () => {
       initialProps: { en: true }
     })
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 50))
+      await new Promise((r) => setTimeout(r, 150))
     })
     expect(result.current.active).toBe(true)
     rerender({ en: false })
@@ -165,7 +168,7 @@ describe('renderer/hooks/useAudioAnalyzer', () => {
   it('emits freqBands with 32 entries that are all in [0, 1] once active', async () => {
     const { result } = renderHook(() => useAudioAnalyzer(true, ''))
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 50))
+      await new Promise((r) => setTimeout(r, 150))
     })
     expect(result.current.active).toBe(true)
     expect(result.current.freqBands).toHaveLength(32)

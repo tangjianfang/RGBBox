@@ -41,6 +41,14 @@ export const ipcChannels = {
   selectCaptureSource: 'rgbbox:video:select-capture-source',
   // Main → renderer: display added/removed/metrics-changed (hotplug)
   displayTopologyChanged: 'rgbbox:system:display-topology-changed',
+  // R43: main → renderer, fired on minimize/restore/hide/show of the main
+  // window. Page Visibility API (document.hidden) turned out unreliable for
+  // this after R38 disabled Chromium's occlusion/backgrounding tracking
+  // (disable-backgrounding-occluded-windows) — that flag apparently also
+  // stops visibilitychange from firing reliably for minimize. The main
+  // process always knows this state definitively via native BrowserWindow
+  // events, so it's pushed explicitly instead.
+  mainWindowVisibilityChanged: 'rgbbox:system:main-window-visibility-changed',
   // Named profile management
   listProfiles: 'rgbbox:profiles:list',
   loadProfileById: 'rgbbox:profiles:load',
