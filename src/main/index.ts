@@ -52,6 +52,19 @@ if (!gotSingleLock) {
 // any window show/hide UX.
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+// R45: Windows-specific — Chromium's "Native Window Occlusion" feature polls
+// the OS for whether a window is actually covered/minimized and throttles
+// compositing for it independently of the generic backgrounding switches
+// above. Because Electron's multiple BrowserWindows (main + overlay) share
+// one GPU/compositor process, this has been reported (and matches user
+// testing here: the overlay display kept rendering fine while the main
+// window was minimized right after R38, but visibly stuttered once R43/R44
+// also stopped the *tick loop* itself from being throttled — i.e. the CPU
+// work was happening, but presentation to the overlay window was still being
+// throttled by this separate occlusion mechanism) to also affect sibling
+// windows' presentation rate, not just the occluded/minimized one. Disabling
+// it removes that whole code path.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
 
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL)
 

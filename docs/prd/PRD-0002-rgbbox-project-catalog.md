@@ -1258,6 +1258,28 @@
   - [ ] 手动验证：托盘右键菜单"显示/隐藏主界面"和双击托盘图标，两种方式切换可见性都能正确影响 CPU
 - **R44.5** **状态**：🔄（代码已实施；等待用户实机确认关闭到托盘场景 CPU 是否下降）
 
+### R45. 彻底清空闲置态残留 CPU/IO + Windows 遮挡机制导致的 overlay 卡顿 + 记录高负载架构建议
+
+> 触发场景：用户反馈"没有显示器渲染的情况下，最小化还有 2% 左右 CPU 消耗和大量 IO，最好能降到 0"；"有显示器渲染的情况下，最小化之后正在渲染的显示器会变得非常卡顿"；"有渲染的情况下 CPU 还能到 78% 以上，希望能架构级优化"。
+> **风险等级：L1**（新增/调整早退条件与命令行开关，不改变有人消费数据时的行为；架构级优化本条只记录方案，不在本条实施）。
+
+- **R45.1** **根因 1（残留 CPU/IO）：诊断页指标轮询和主窗口可见性/当前 view 完全无关**——`App.tsx` 里有一个 1 秒一次的 `setInterval`，无条件地（空依赖数组，从挂载到卸载一直跑）执行 `setEngineMetrics(...)`（触发整个 App 组件重渲染）+ `window.rgbbox.getCaptureProviderStatus()`（一次 IPC 往返）。这两个值只在"诊断"页面里显示，其余任何场景（包括最小化、隐藏到托盘）都不需要它们，但一直在后台以 1Hz 运行——这正是用户看到的"最小化后仍有 IO"的来源之一。
+  - **修复**：改为 `currentView !== 'diagnostics'` 时直接不启动这个 `setInterval`（依赖数组从 `[]` 改为 `[currentView]`），只有真正停留在诊断页时才轮询。
+- **R45.2** **根因 2（残留 CPU）：音频分析在无人消费数据时仍在跑**——`useAudioAnalyzer` 的 16ms 分析循环设计上"不受最小化影响"（这是特意的，为了让 overlay 上的音频响应效果在最小化时也能继续更新），但如果**根本没有 overlay 在投屏、且主窗口也不在显示工作区**，这份数据完全没有消费者，却仍在全速跑 FFT 分析 + 状态更新。
+  - **修复**：新增 `useAudioAnalyzer(enabled, deviceId, shouldAnalyze)` 第三个参数，`App.tsx` 按"有 overlay 在投屏，或者（主窗口可见且当前在工作区 tab）"计算出 `audioShouldAnalyze` 传入；hook 内部用一个 ref 让 tick 函数在 `shouldAnalyze=false` 时直接跳过 FFT 读取和状态更新（`getUserMedia` 流/`AudioContext` 本身不销毁——避免每次最小化/还原都重新申请麦克风/桌面音频权限、造成短暂音频中断；只暂停实际分析计算这一步，这部分才是消耗 CPU 的地方）。
+  - **范围说明**：这里选择"暂停分析"而不是"完全释放 `getUserMedia` 流/关闭 `AudioContext`"——闲置时的 `MediaStream`/`AudioContext` 本身（不主动读取数据）CPU 成本可以忽略不计，真正的成本在于每 16ms 做一次 `getByteFrequencyData` + 32 个频段的扫描 + React 状态更新，这些已经被跳过；完全释放流会带来"每次最小化/还原都要重新握手"的延迟和麦克风占用指示器闪烁，暂不做，如果后续验证仍有不可忽略的残留 CPU 再考虑。
+- **R45.3** **根因 3（有 overlay 时最小化导致 overlay 本身卡顿）：Windows 独立的"原生窗口遮挡检测"未被禁用**——R38 禁用的 `disable-renderer-backgrounding`/`disable-backgrounding-occluded-windows` 只覆盖 Chromium 通用的"渲染进程降级"机制。Windows 版 Chromium 另外还有一个独立特性 `CalculateNativeWinOcclusion`（原生窗口遮挡检测），专门通过操作系统级别查询窗口是否被遮挡/最小化来决定是否降低合成/呈现频率——这个特性不受 R38 那两个开关控制。由于 Electron 里同一个 app 的多个 `BrowserWindow`（主窗口 + overlay 窗口）共享同一个 GPU/合成进程，这个独立的遮挡检测**很可能**波及到了主窗口以外的其它窗口（overlay）的呈现频率，导致"主窗口最小化后，明明 overlay 该有的计算都还在跑（R42/R43/R44 已确保 tick 不被跳过），但 overlay 呈现出来的画面依然卡顿"。
+  - **修复**：追加命令行开关 `app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')`，彻底关闭这条独立的遮挡检测路径。
+- **R45.4** **点 3（有渲染时 CPU 78%+）：架构级根因分析 + 后续方案记录（本条不实施）**——审查后确认：即使某个 2D 效果已经在 R37 移植成 GPU 直渲染（`isGpuDirectEffect`），**overlay/video-wall 投屏管线依然完全走 CPU 逐像素 JS 计算**（`previewEngineWorker.ts` 调 `renderEffectPixel`），R37 的 GPU 直渲染目前只服务于应用内"RGB 画布预览"这一条路径。当有 overlay 打开时，CPU worker 必须为每一个 tick、每一个网格像素跑一遍 JS 版效果公式（`fire`/`aurora`/`lightning` 这类本身较重），网格越大（用户可以在采样设置里调到很高）、FPS 越高、overlay 数量越多，CPU 占用越高——这很可能是"78%+"的主因，而不是某个孤立的低效代码点。
+  - **可行的后续方案（未实施，供下一次迭代评估）**：参考 R36 给 3D 效果做的"GPU 渲染 + `readLEDs()` 回读"模式（`Effect3DGl.readLEDs(columns, rows)`），给 `EffectGl`（2D GPU 直渲染类）也加一个离屏渲染 + 像素回读方法，让"整个场景只有一个已移植为 GPU 的效果单独启用"这种场景（和现有 `gpuDirectLayer` 判定条件一致）也能跳过 CPU worker，直接从 GPU 回读像素喂给 `distributeFrameToOverlays`。**已知风险**：3D 效果目前就是用 `requestAnimationFrame` 驱动这条回读循环的，而 rAF 在主窗口最小化时会暂停（这是浏览器级别行为，不受任何"禁用遮挡/降级"开关影响）——如果 2D 效果也照搬这个模式，会导致"GPU 直渲染效果 + overlay + 主窗口最小化"这个组合下 overlay 画面冻结，这本身也是 3D 效果目前就存在、尚未修复的已知缺口（见 R42.5）。要完整实现，需要额外把这条回读循环也改成 `setInterval` 驱动（而不是 rAF）才能在最小化时继续工作，工作量和验证成本都不小，建议作为独立 R-N 专门排期、并在有实机验证条件时再做。
+- **R45.5** **受影响文件**：`src/renderer/src/App.tsx`（诊断轮询门控、`windowVisible` 状态、`audioShouldAnalyze` 计算）、`src/renderer/src/hooks/useAudioAnalyzer.ts`（新增 `shouldAnalyze` 参数）、`src/main/index.ts`（新增 `disable-features=CalculateNativeWinOcclusion` 开关）。
+- **R45.6** **验收点**：
+  - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（436 passed / 41 skipped，0 失败）
+  - [ ] 手动验证：无 overlay 时最小化，任务管理器 CPU 应接近 0%，且不再有周期性 IO 尖峰
+  - [ ] 手动验证：有 overlay 投屏时最小化主窗口，overlay 画面不再卡顿
+  - [ ] 手动验证：开启音频采集但无 overlay、且不在工作区 tab 时，CPU 应比 R43 状态更低
+- **R45.7** **状态**：🔄（代码已实施；点 3 架构方案已记录待排期；等待用户实机验证前两点）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

@@ -47,10 +47,18 @@ function classifyAudioError(error: unknown): AudioCaptureError {
   return 'capture-failed'
 }
 
-export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
+export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze = true): AudioData {
   const [audioData, setAudioData] = useState<AudioData>(INACTIVE)
   const prevBassRef = useRef(0)
   const intervalRef = useRef<number | null>(null)
+  // R45: mirrors `shouldAnalyze` into a ref so the tick loop (a setInterval
+  // closure that must NOT be torn down/recreated just because visibility
+  // toggled — that would drop and reconnect the getUserMedia stream/
+  // AudioContext on every minimize/restore) can skip its actual FFT work
+  // when nothing needs the data (no overlay projecting it, main window not
+  // showing the workspace tab), without touching the enabled/deviceId effect.
+  const shouldAnalyzeRef = useRef(shouldAnalyze)
+  shouldAnalyzeRef.current = shouldAnalyze
   // Per-band EMA: fast attack (0.75), slow decay (0.20) → VU-meter "peak hold" feel.
   // Prevents the harsh instant-drop that makes equalizer bars jittery.
   const smoothedBandsRef = useRef<number[]>(new Array(NUM_BANDS).fill(0))
@@ -196,6 +204,14 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = ''): AudioData {
         let maxBeatSinceEmit = 0
         const tick = () => {
           if (cancelled) return
+          // R45: nobody needs this data right now (no overlay projecting an
+          // audio-reactive effect, main window not showing the workspace
+          // tab) — skip the FFT read + band math entirely instead of
+          // grinding through it 60x/sec for nothing. The getUserMedia
+          // stream/AudioContext stay alive (so resuming is instant, no
+          // reconnect/permission-prompt flicker), only the actual analysis
+          // work pauses.
+          if (!shouldAnalyzeRef.current) return
           analyser.getByteFrequencyData(dataArray)
 
           let bassSum = 0

@@ -654,7 +654,19 @@ export function App(): JSX.Element {
   })
   const [powerSaveBlock, setPowerSaveBlock] = useState(false)
   const [autoLaunch, setAutoLaunch] = useState(false)
-  const audio = useAudioAnalyzer(audioEnabled, audioDeviceId)
+  // R45: reactive counterpart of windowVisibleRef (declared below) — a plain
+  // ref wouldn't cause `audioShouldAnalyze` to recompute when visibility
+  // changes, since nothing else re-renders App at that moment. Minimize/
+  // restore/hide/show are rare, low-frequency events, so the extra re-render
+  // here is negligible.
+  const [windowVisible, setWindowVisible] = useState(true)
+  // R45: pause the (getUserMedia + AnalyserNode) audio pipeline's actual FFT
+  // analysis/state-update work when nothing needs the data — mirrors the
+  // R42/R43 "is anyone consuming a frame" gate used for the effect tick loop.
+  // Audio-reactive effects (audio-beat/audio-equalizer) still need live data
+  // while an overlay is projecting them, regardless of main-window visibility.
+  const audioShouldAnalyze = overlayDisplayIds.length > 0 || (windowVisible && currentView === 'workspace')
+  const audio = useAudioAnalyzer(audioEnabled, audioDeviceId, audioShouldAnalyze)
 
   // ── Engine Worker ─────────────────────────────────────────────────────────
   // Created once; the render loop sends work to it and receives frames via
@@ -677,6 +689,7 @@ export function App(): JSX.Element {
   useEffect(() => {
     return window.rgbbox.onMainWindowVisibilityChanged((visible) => {
       windowVisibleRef.current = visible
+      setWindowVisible(visible)
     })
   }, [])
   // audioRef: always points to the latest AudioData without being a useEffect dependency.
@@ -813,13 +826,20 @@ export function App(): JSX.Element {
   useEffect(() => { localStorage.setItem('rgbbox:selectedLayerId', selectedLayerId) }, [selectedLayerId])
   useEffect(() => { localStorage.setItem('rgbbox:overlayConfigs', JSON.stringify(overlayConfigs)) }, [overlayConfigs])
 
+  // R45: engineMetrics/captureProvider are only ever displayed in the
+  // Diagnostics view (see the `diag.*` rows below), but this interval used to
+  // run unconditionally forever — a 1 Hz IPC round-trip (getCaptureProviderStatus)
+  // plus a React state update (re-rendering the whole App tree) even while
+  // minimized/hidden with nothing being rendered. Gated on the Diagnostics tab
+  // actually being the visible one.
   useEffect(() => {
+    if (currentView !== 'diagnostics') return undefined
     const timer = window.setInterval(() => {
       setEngineMetrics(metricsCollectorRef.current.snapshot())
       void window.rgbbox.getCaptureProviderStatus().then(setCaptureProvider)
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [currentView])
 
   // Enumerate audio input and output devices (labels populated after first getUserMedia permission)
   useEffect(() => {
