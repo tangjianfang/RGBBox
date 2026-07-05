@@ -825,19 +825,42 @@ input:not([type]):focus {
   align-items: center;
   border-bottom: 1px solid #26343c;
   display: flex;
+  gap: 16px;
   justify-content: space-between;
   padding: 10px 0;
+}
+
+.diagnostics-list dt {
+  color: #8aa2ad;
+  flex-shrink: 0;
 }
 
 .diagnostics-list dd {
   color: #f2fbfd;
   margin: 0;
+  text-align: right;
 }
 
 /* R46: per-process CPU breakdown table (Diagnostics view) */
 .process-cpu-table {
   border-collapse: collapse;
+  table-layout: fixed;
   width: 100%;
+}
+
+.process-cpu-table th:nth-child(1),
+.process-cpu-table td:nth-child(1) {
+  width: 58%;
+}
+
+.process-cpu-table th:nth-child(2),
+.process-cpu-table td:nth-child(2) {
+  width: 20%;
+}
+
+.process-cpu-table th:nth-child(3),
+.process-cpu-table td:nth-child(3) {
+  width: 22%;
 }
 
 .process-cpu-table th {
@@ -855,6 +878,12 @@ input:not([type]):focus {
   color: #f2fbfd;
   font-size: 13px;
   padding: 8px 6px;
+}
+
+.process-cpu-table .process-cpu-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .process-cpu-table .process-cpu-high {
@@ -1707,6 +1736,23 @@ input:not([type]):focus {
   padding: 24px;
   scrollbar-width: thin;
   scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
+}
+
+/* R46: two independent panels (metrics list + per-process CPU table) side by
+   side on wide windows instead of both being squeezed into one fixed
+   560px-wide column stacked on top of each other — that cramped layout was
+   the "布局错位/挤压在一起" the metrics list + new CPU table complaint. */
+.diagnostics-grid {
+  align-items: start;
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+}
+
+@media (max-width: 900px) {
+  .diagnostics-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── Workspace three-column inner layout ────────────────────────────────── */

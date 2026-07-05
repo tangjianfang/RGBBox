@@ -29,6 +29,13 @@ const api = {
   // R46: per-process CPU% breakdown (main/renderer/gpu-process/utility)
   getProcessCpuSamples: (): Promise<ProcessCpuSample[]> =>
     ipcRenderer.invoke(ipcChannels.getProcessCpuSamples),
+  // R46: ONLY sent by the --perf-selftest harness — asks the renderer to
+  // toggle the overlay for a display through its own normal open/close path.
+  onPerfSelfTestToggleOverlay: (callback: (displayId: number) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, displayId: number): void => callback(displayId)
+    ipcRenderer.on(ipcChannels.perfSelfTestToggleOverlay, handler)
+    return () => ipcRenderer.off(ipcChannels.perfSelfTestToggleOverlay, handler)
+  },
 
   // Push a rendered frame to any open overlay windows (fire-and-forget)
   pushFrameToOverlays: (frame: RgbFrame): void =>

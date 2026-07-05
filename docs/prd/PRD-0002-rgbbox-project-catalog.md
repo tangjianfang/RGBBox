@@ -1300,6 +1300,42 @@
   - [ ] 手动验证：打开诊断页，能看到按 CPU% 排序的进程列表（browser / renderer / gpu-process 等），且能在"最小化+无 overlay""最小化+有 overlay""渲染中"等场景下用它定位到具体是哪个进程占用高
 - **R46.7** **状态**：🔄（诊断工具已实施；后续需要用户提供每个场景下这张表格的实际截图/数字，才能真正确认 R38/R42-R45 是否生效，或者定位到底是哪个进程的问题）
 
+### R47. 诊断页布局修复 + 自动化性能自测试脚本（含真实实测数据）
+
+> 触发场景：用户反馈"诊断里面的显示内容布局错位，不用挤压在一起"；"请实现自动化测试和验证，自动修复我的问题——加日志或监听不同测试条件下的性能消耗，自动测试-验证问题是否真实存在-提出修复方案-评估可行性-实施修复的整套流程"。
+> **风险等级：L0**（诊断页 CSS 调整 + 一个仅在显式 CLI 参数下才运行的自测试脚本，不影响正常使用路径）。
+
+- **R47.1** **诊断页布局修复**：原来两块内容（指标列表 + R46 新增的进程 CPU 表）都套了 `style={{maxWidth:560}}` 纵向堆叠在一条窄列里，指标多、显示器多时确实容易挤在一起。改成 `.diagnostics-grid`（响应式两栏 grid，≤900px 时自动收作一栏），并给 `dt`/`dd` 加 `gap`+右对齐、给进程表加 `table-layout:fixed` + 固定列宽 + 长文本省略号，避免进程名把 PID/CPU% 列挤歪。
+- **R47.2** **自动化性能自测试脚本**——这是本条的核心，直接回应"自动测试验证"的诉求：新增 `--perf-selftest` 命令行参数（正常使用绝不触发），main 进程在应用就绪后自动依次执行以下场景，每个场景用 `app.getAppMetrics()` 采样 6 次（间隔 400ms）取平均，规避单次采样噪声：
+  1. `workspace-visible-no-overlay`（基线）
+  2. `minimized-no-overlay`（`mainWindow.minimize()`）
+  3. `workspace-visible-with-overlay`（通过 IPC 让**渲染进程自己**调用 `handleToggleOverlay`，而不是主进程直接调 `openOverlay()`——见 R47.3 踩坑记录）
+  4. `minimized-with-overlay`
+  5. `hidden-to-tray-no-overlay`（`mainWindow.hide()`）
+  
+  结果写成 JSON 报告（`userData/logs/perf-selftest-report.json`）+ 人类可读的 verdict（每条 R-N 对应一个 PASS/FAIL 判断），同时写进日志文件。**明确的局限性**：CPU% 只是一个代理指标，不能 100% 代替"肉眼看画面是否流畅"——理论上存在"CPU 很低但画面其实没有被正常 present 到屏幕上"的情况（合成器/显卡驱动层面的节流），这类问题这个工具测不出来，报告里也写明了这一点。
+- **R47.3** **踩坑记录（过程本身就是一次"自动验证发现方法论问题"的案例）**：第一版脚本里，"打开 overlay"这一步是主进程直接调用 `openOverlay()`（跳过渲染进程），实测跑出来的数据显示"minimized-with-overlay"这个场景 CPU 大幅下降、overlay 自己的进程 CPU 几乎归零——乍看像是"确认了用户反馈的卡顿问题"。但深入分析发现：这是**测试脚本自身的方法论缺陷**——因为 overlay 是主进程直接开的，渲染进程的 `overlayDisplayIds` 状态从未更新，导致 R42/R43 的"是否有 overlay 在投屏"判断一直是"否"，最小化时被误判成"无人消费画面"而正确地（从渲染进程自己的视角看）暂停了计算——这不是应用的 bug，是我的自测试脚本没有模拟真实用户操作路径的锅。修复：新增一个仅自测试用的 IPC 通道 `perfSelfTestToggleOverlay`，让主进程"请渲染进程自己调用它已有的 `handleToggleOverlay`"，而不是绕过渲染进程直接操作。修复后重新实测，结果符合预期（见 R47.4）。
+- **R47.4** **真实实测结果**（Windows，本机一次实测，数值会因机器/负载浮动，但相对关系有参考价值）：
+  ```
+  1-workspace-visible-no-overlay:    总 CPU 2.4%（Browser 0.02% / GPU 0.62% / Tab[主窗口] 1.10%）
+  2-minimized-no-overlay:            总 CPU 0.5%  ← 比基线下降 78%
+  3-workspace-visible-with-overlay:  总 CPU 3.3%（含 Tab[主窗口] 0.94% + Tab[overlay] 0.38%）
+  4-minimized-with-overlay:          总 CPU 2.2%（Tab[主窗口] 0.60%（自己预览停了）+ Tab[overlay] 0.39%（几乎不变！））
+  5-hidden-to-tray-no-overlay:       总 CPU 0.8%  ← 比基线下降 65%
+  ```
+  **verdict**：
+  - `[R42/R45]` 无 overlay 时最小化应降到接近 0：**PASS**（2.4%→0.5%）
+  - `[R44]` 无 overlay 时关闭到托盘应降到接近 0：**PASS**（2.4%→0.8%）
+  - `[R38/R45]` 有 overlay 时最小化不应该降低计算量：**PASS**——overlay 自己进程的 CPU 从 0.380% 到 0.387%，几乎没变，说明 overlay 在最小化后仍然在正常接收、绘制每一帧，R38+R45 这条链路在 CPU/计算层面确实生效了。
+  - 但如前所述，这**不能 100% 排除**用户报告的"画面卡顿"是纯粹的呈现层问题（例如显卡驱动/合成器仍然限制了实际画面刷新，即使 JS/CPU 侧一切正常）——如果用户后续实机验证仍然看到卡顿，需要用更细的呈现帧率指标（而不是 CPU%）才能确认。
+- **R47.5** **受影响文件**：`src/main/index.ts`（自测试脚本 + IPC 通道处理）、`src/shared/ipc.ts`（`perfSelfTestToggleOverlay` 通道）、`src/preload/index.ts`（`onPerfSelfTestToggleOverlay`）、`src/renderer/src/App.tsx`（订阅 + 诊断页布局）、`src/renderer/src/styles.css`（`.diagnostics-grid` 等）、`tests/integration/ipcChannels.test.ts`。
+- **R47.6** **验收点**：
+  - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（436 passed / 41 skipped，0 失败）
+  - [x] 实际运行 `electron . --perf-selftest --user-data-dir=<临时目录>`（用独立 user-data-dir 避免和正在跑的 dev 实例抢单实例锁），生成报告，5 个场景全部按预期变化
+  - [ ] 手动验证：诊断页在多显示器/多指标情况下布局不再拥挤
+  - [ ] 手动验证：用户实机确认"最小化+overlay"场景画面是否依然卡顿（如果仍卡顿，说明是本工具测不出的呈现层问题，需要另外排查）
+- **R47.7** **状态**：✅ 代码 + 自动化验证均已完成，CPU/计算层面的 5 个场景全部通过；🔄 呈现层"是否真的流畅"仍需用户肉眼确认
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

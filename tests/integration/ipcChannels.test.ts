@@ -114,6 +114,7 @@ describe('integration: IPC channel <-> preload API', () => {
       [ipcChannels.overlayEffectChanged, 'onOverlayEffectChanged'],
       [ipcChannels.displayTopologyChanged, 'onDisplayTopologyChanged'],
       [ipcChannels.mainWindowVisibilityChanged, 'onMainWindowVisibilityChanged'],
+      [ipcChannels.perfSelfTestToggleOverlay, 'onPerfSelfTestToggleOverlay'],
       [ipcChannels.modelDownloadProgress, 'onModelDownloadProgress']
     ]
     for (const [channel, methodName] of pushMapping) {
