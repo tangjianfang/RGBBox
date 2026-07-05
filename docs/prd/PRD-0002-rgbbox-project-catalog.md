@@ -1123,6 +1123,34 @@
   - [ ] 手动验证：单独启用这 10 个效果逐一切换，视觉上与切换前的 CPU 网格版本"神似"（结构/配色/运动节奏一致，仅更平滑），无黑屏/颜色错误/闪烁异常
 - **R37-B2.7** **状态**：🔄（代码 + 离线着色器编译校验已完成并通过；等待用户实机视觉验收，尤其是 `black-hole`/`nebula`/`spiral-galaxy` 这几个多层颜色叠加 + 噪声效果）
 
+### R37-B3. GPU 直渲染第三批：7 个无网格依赖效果 + uP 槽位扩容
+
+> 承接 R37-B2，本条完成第三批移植，并把通用参数数组 `uP` 从 8 槽扩到 12 槽（`aurora` 需要 9 个具名参数，超过原有上限）。
+> **风险等级：L1**。
+
+- **R37-B3.1** **本批移植的 7 个效果**：`aurora`、`eclipse-alignment`、`comet-tail`、`magnetosphere-aurora`、`wave-diffraction`、`vortex-flame`、`tokamak-plasma`。`GPU_DIRECT_EFFECTS` 现共 **28** 个（第一批 11 + 第二批 10 + 第三批 7）。全部复用 R37-B2 已有的 helper（`fbm2`/`ss3`/`colorScale3`/`colorAdd3`/`thermalColor`），未新增 helper。`aurora`/`vortex-flame` 里 CPU 版依赖网格整数坐标 `context.x`/`context.y` 做逐帧闪烁噪声种子，GPU 版沿用 R37-B2 的"细分伪网格坐标"近似（`floor(vUV * vec2(220, 140))`）。
+- **R37-B3.2** **架构变更**：`uniform float uP[8]` → `uniform float uP[12]`（21 处着色器声明 + `EffectGl` 内的 `Float32Array(8)`/`floats.slice(0, 8)` 同步改为 12），为参数较多的效果留出余量，其余已移植效果的行为不受影响（多余槽位保持 0）。
+- **R37-B3.3** **明确排除、留给未来批次**（原因见文件头注释）：
+  - `ripple` —— 点击产生的"波纹爆发"（`burstAge`/`burstCx`/`burstCy`）目前只在 CPU worker 管线里按帧合成进 `layer.parameters`，GPU 直渲染路径读的是原始 `selectedLayer`，还没有把这个点击态穿透进去，移植后点击交互会失效，故未移植。
+  - `fire`/`crystal`/`lightning`/`lightning-leader` —— 依赖 LED 网格 `columns`/`rows`（做火焰柱宽度、Voronoi 邻域、闪电通道宽度的网格相对缩放），需要新增 `uColumns`/`uRows` uniform 并在 `App.tsx`/`PreviewGrid.tsx` 打通，属于架构改动，未在本批做。
+  - `icosahedral-virus`/`protein-folding`/`mitosis-spindle`/`synapse-pulse`/`microvilli-field` —— CPU 版对每像素循环 10～46 个采样点（部分还需要二十面体顶点/边常量数组 + `pointSegmentDistance`），翻译成 GLSL 循环的工作量和出错面显著更大，留待后续单独一批，并建议移植后先用 headless-gl 编译校验 + 逐效果人工视觉比对。
+- **R37-B3.4** **验证**：`yarn typecheck`/`yarn build` 通过；额外用 headless-gl 临时脚本对全部 **28** 个着色器（一、二、三批合计）逐一编译 + 链接，零错误，随后删除临时文件（同 R37-B2.3 的约定）。
+- **R37-B3.5** **受影响文件**：`src/renderer/src/gl/effectGl.ts`。
+- **R37-B3.6** **状态**：🔄（代码 + 离线编译校验完成；等待用户视觉验收）
+
+### R38. 修复主窗口最小化后投屏效果卡顿
+
+> 触发场景：用户反馈"主窗口最小化之后，投屏到显示器的效果很卡顿，关闭主窗口界面到右下角托盘就不卡顿"。
+> **风险等级：L1**（Chromium 命令行开关，全局生效，不改变任何窗口显示/隐藏 UX，可逆）。
+
+- **R38.1** **根因**：主窗口和 overlay 窗口都已经设置了 `backgroundThrottling: false`（分别见 `src/main/index.ts` 和 `src/main/overlayManager.ts`），这只能防止 Electron/Chromium 对**定时器**（`setInterval`/`setTimeout`）的节流。但 OS 级"最小化"会触发 Chromium 更底层的 renderer-backgrounding 机制（整个渲染进程的任务调度优先级被下调），这个机制不受 `backgroundThrottling` 控制，而 `mainWindow.hide()`（关闭到托盘走的路径）不会触发同样的降级——这正好解释了"最小化卡顿、隐藏到托盘不卡顿"的现象差异。
+- **R38.2** **修复**：在 `app.whenReady()` 之前追加两个 Chromium 命令行开关：`disable-renderer-backgrounding`、`disable-backgrounding-occluded-windows`，全局禁用该降级行为。不改变任何窗口显示/隐藏/最小化的 UX——用户点击最小化按钮依然是正常的 OS 最小化，只是渲染进程不再被降级调度。
+- **R38.3** **受影响文件**：`src/main/index.ts`。
+- **R38.4** **验收点**：
+  - [x] `yarn typecheck`/`yarn build` 通过
+  - [ ] 手动验证：开启 overlay 投屏，最小化主窗口，投屏效果不再卡顿/掉帧
+- **R38.5** **状态**：🔄（代码已实施；等待用户实机验证最小化场景下投屏是否流畅）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

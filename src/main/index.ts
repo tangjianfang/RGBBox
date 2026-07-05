@@ -39,6 +39,20 @@ if (!gotSingleLock) {
   process.exit(0)
 }
 
+// R38: When the main window is OS-minimized (as opposed to Electron's own
+// `.hide()`, used by the close-to-tray flow), Chromium's renderer-backgrounding
+// heuristics kick in and aggressively downgrade the whole renderer process's
+// scheduling priority — throttling the worker/tick pipeline that feeds frames
+// to overlay windows and causing visible stutter on the projected displays,
+// even though the overlay windows themselves have `backgroundThrottling:
+// false`. `.hide()` does not trigger the same downgrade, which is why
+// "hide to tray" stays smooth. These switches disable that backgrounding
+// behaviour app-wide (must be set before `app.whenReady()`), so minimizing
+// behaves the same as hiding from a performance standpoint without changing
+// any window show/hide UX.
+app.commandLine.appendSwitch('disable-renderer-backgrounding')
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL)
 
 let mainWindow: BrowserWindow | null = null

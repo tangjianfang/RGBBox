@@ -11,7 +11,7 @@
  *
  * R37 generalises the R35 POC (which only had 'rainbow', with a fixed
  * 4-float uniform layout) to a flexible per-effect uniform scheme: up to 8
- * generic floats (`uP[0..7]`) + up to 2 explicit colours (`uColor0`,
+ * generic floats (`uP[0..11]`) + up to 2 explicit colours (`uColor0`,
  * `uColor1`), covering the parameter shapes used across the CPU effect
  * catalogue.
  *
@@ -21,6 +21,13 @@
  * exactly for both ascending AND descending edge order (GLSL's built-in
  * `smoothstep` has undefined behaviour when edge0 > edge1, which several CPU
  * effects rely on for inverted falloffs).
+ *
+ * Batch 3 ports 7 more pure-formula effects using the same helpers (no new
+ * helpers needed) — the remaining un-ported effects all need either grid
+ * `columns`/`rows` uniforms (fire/crystal/lightning/lightning-leader), a
+ * click-burst cross-frame uniform (ripple), or per-pixel loops over dozens of
+ * sample points + icosahedron constants (icosahedral-virus/protein-folding/
+ * mitosis-spindle/synapse-pulse/microvilli-field), deferred to a future batch.
  *
  * Deliberately NOT ported (see PRD-0002 R37 for full reasoning):
  *  - starlight / matrix-rain / glitch / random-color: discrete/particle look
@@ -65,7 +72,16 @@ export const GPU_DIRECT_EFFECTS: ReadonlySet<string> = new Set([
   'orion-nebula',
   'hurricane-eye',
   'quantum-collapse',
-  'black-hole'
+  'black-hole',
+  // Batch 3 (R37): remaining pure-formula effects (no grid columns/rows
+  // dependency, no loop-over-many-samples, no click/audio cross-frame state)
+  'aurora',
+  'eclipse-alignment',
+  'comet-tail',
+  'magnetosphere-aurora',
+  'wave-diffraction',
+  'vortex-flame',
+  'tokamak-plasma'
 ])
 
 export function isGpuDirectEffect(kind: string | undefined): boolean {
@@ -178,7 +194,7 @@ const GLSL_HELPERS = /* glsl */`
 `
 
 // ── Per-effect fragment shaders ──────────────────────────────────────────
-// Each takes the same uniform set (uTime, uAspect, uP[0..7], uColor0, uColor1)
+// Each takes the same uniform set (uTime, uAspect, uP[0..11], uColor0, uColor1)
 // so the driver class below doesn't need per-effect uniform plumbing beyond
 // this table. `paramsFor()` maps each layer's named parameters into this
 // generic slot layout.
@@ -188,7 +204,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -206,7 +222,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     uniform vec3 uColor0;
     varying vec2 vUV;
     ${GLSL_HELPERS}
@@ -229,7 +245,7 @@ const EFFECT_FS: Record<string, string> = {
   'zone-gradient': /* glsl */`
     precision mediump float;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     uniform vec3 uColor0;
     uniform vec3 uColor1;
     varying vec2 vUV;
@@ -245,7 +261,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -271,7 +287,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -299,7 +315,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -328,7 +344,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -352,7 +368,7 @@ const EFFECT_FS: Record<string, string> = {
   spectrum: /* glsl */`
     precision mediump float;
     uniform float uTime;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -377,7 +393,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     uniform vec3 uColor0;
     varying vec2 vUV;
     ${GLSL_HELPERS}
@@ -421,7 +437,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     uniform vec3 uColor0;
     varying vec2 vUV;
     ${GLSL_HELPERS}
@@ -462,7 +478,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     uniform vec3 uColor0;
     varying vec2 vUV;
     ${GLSL_HELPERS}
@@ -498,7 +514,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -529,7 +545,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -560,7 +576,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -600,7 +616,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -640,7 +656,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -670,7 +686,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -701,7 +717,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -731,7 +747,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -761,7 +777,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -794,7 +810,7 @@ const EFFECT_FS: Record<string, string> = {
     precision mediump float;
     uniform float uTime;
     uniform float uAspect;
-    uniform float uP[8];
+    uniform float uP[12];
     varying vec2 vUV;
     ${GLSL_HELPERS}
     void main() {
@@ -819,6 +835,241 @@ const EFFECT_FS: Record<string, string> = {
       col = colorAdd3(col, hslToRgb(210.0 + hueShift, 0.85, 0.72), lensRing * intensity);
       col = colorAdd3(col, hslToRgb(192.0 + hueShift, 1.0, 0.62), jet * intensity);
       if (eventHorizon > 0.5) col = vec3(0.0, 0.0, 0.0078);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // ── Batch 3 (R37): remaining pure-formula effects ─────────────────────
+
+  // 'aurora': uP0=speed, uP1=intensity, uP2=hueShift, uP3=curtainHeight,
+  //           uP4=ribbonFrequency, uP5=shimmerIntensity, uP6=baseHue, uP7=colorSpread, uP8=softEdge
+  aurora: /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uP[12];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float hueShift = uP[2];
+      float curtainHeight = uP[3];
+      float ribbonFrequency = uP[4];
+      float shimmerIntensity = uP[5];
+      float baseHue = uP[6];
+      float colorSpread = uP[7];
+      float softEdge = uP[8];
+      float hFraction = vUV.x;
+      float vFraction = vUV.y;
+      float curtainRaw = clamp(1.0 - vFraction * (1.4 / max(0.1, curtainHeight)), 0.0, 1.0);
+      float curtainPow = max(0.25, softEdge);
+      float curtain = curtainRaw * curtainRaw * curtainRaw * (curtainRaw * (curtainRaw * 6.0 - 15.0) + 10.0) * pow(curtainRaw, curtainPow * 0.3);
+      float t = uTime * speed;
+      float phaseModA = sin(t * 0.31 + hFraction * 2.1) * 1.4;
+      float phaseModB = cos(t * 0.47 + hFraction * 1.6) * 0.9;
+      float w1 = sin(hFraction * 3.14159265 * 2.7 * ribbonFrequency + t * 0.9 + phaseModA) * 0.5 + 0.5;
+      float w2 = sin(hFraction * 3.14159265 * 5.1 * ribbonFrequency - t * 1.4 + phaseModB) * 0.5 + 0.5;
+      float depthLayer = sin(hFraction * 3.14159265 * 7.4 * ribbonFrequency + t * 1.8 + vFraction * 3.5) * 0.3 + 0.3;
+      float w4 = cos(hFraction * 3.14159265 * 3.3 - t * 0.5) * 0.5 + 0.5;
+      vec2 cellApprox = floor(vUV * vec2(220.0, 140.0));
+      float grain = hash2(cellApprox.x + floor(t * 14.0), cellApprox.y + floor(t * 22.0));
+      float shimmer = (depthLayer * 0.6 + grain * 0.4) * shimmerIntensity;
+      float blended = w1 * 0.34 + w2 * 0.26 + shimmer * 0.16 + w4 * 0.18 + depthLayer * 0.06;
+      float edgeDist = abs(hFraction - 0.5) * 2.0;
+      float depthHueShift = vFraction * 15.0;
+      float hue = mod(baseHue + blended * colorSpread + edgeDist * colorSpread * 0.62 + depthHueShift + hueShift + 720.0, 360.0);
+      float topRim = exp(-vFraction * 12.0) * 0.35;
+      float brightness = curtain * intensity * (0.35 + blended * 0.55) * (0.65 + w4 * 0.35);
+      float finalL = min(0.88, pow(brightness * 0.75 + topRim * curtain, 1.05));
+      vec3 col = hslToRgb(hue, 0.96, finalL);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'eclipse-alignment': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'eclipse-alignment': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[12];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float time = uTime * speed;
+      float moonX = sin(time * 6.28318530718) * 0.34;
+      float moonY = sin(time * 12.56637061436 + 0.7) * 0.045;
+      float sunR = length(n);
+      float moonR = length(n - vec2(moonX, moonY));
+      float sunDisk = ss3(0.34, 0.31, sunR);
+      float moonDisk = ss3(0.32, 0.29, moonR);
+      float corona = exp(-pow((sunR - 0.34) / (0.085 + density * 0.04), 2.0)) * (0.55 + fbm2(vec2(n.x * 9.0 - time, n.y * 9.0 + time), 4) * 0.55);
+      float diamond = exp(-pow(moonR - 0.31, 2.0) / 0.0007) * exp(-pow(sunR - 0.34, 2.0) / 0.0009);
+      vec3 col = colorScale3(hslToRgb(42.0 + hueShift, 1.0, 0.58), sunDisk * (1.0 - moonDisk) * intensity);
+      col = colorAdd3(col, hslToRgb(210.0 + hueShift, 0.68, 0.72), corona * intensity * ss3(0.32, 0.05, abs(moonX)));
+      col = colorAdd3(col, vec3(1.0), diamond * intensity * 0.68);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'comet-tail': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'comet-tail': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[12];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float time = uTime * speed;
+      float orbitAngle = time * 6.28318530718;
+      float headX = cos(orbitAngle) * 0.46;
+      float headY = sin(orbitAngle) * 0.26;
+      float awayLen = max(0.001, length(vec2(headX, headY)));
+      float awayX = headX / awayLen;
+      float awayY = headY / awayLen;
+      float relX = n.x - headX;
+      float relY = n.y - headY;
+      float tailAxis = relX * awayX + relY * awayY;
+      float crossDist = abs(relX * awayY - relY * awayX);
+      float tail = exp(-tailAxis * (3.0 - density)) * exp(-pow(crossDist / (0.055 + tailAxis * 0.12), 2.0)) * ss3(0.0, 0.08, tailAxis);
+      float ionTail = exp(-tailAxis * 2.2) * exp(-pow(crossDist / 0.032, 2.0)) * ss3(0.02, 0.12, tailAxis);
+      float nucleus = exp(-((relX * relX + relY * relY) / 0.003));
+      vec3 col = colorScale3(hslToRgb(38.0 + hueShift, 0.86, 0.62), tail * intensity * 0.56);
+      col = colorAdd3(col, hslToRgb(196.0 + hueShift, 0.95, 0.58), ionTail * intensity * 0.78);
+      col = colorAdd3(col, vec3(1.0), nucleus * intensity);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'magnetosphere-aurora': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'magnetosphere-aurora': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[12];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float time = uTime * speed;
+      float radius = length(n);
+      float earth = ss3(0.16, 0.13, radius);
+      float theta = atan(n.y, n.x);
+      float dipoleR = 0.20 / max(0.08, sin(theta) * sin(theta) + 0.18);
+      float fieldLine = exp(-pow((radius - dipoleR) / (0.018 + density * 0.01), 2.0)) * ss3(0.72, 0.18, radius);
+      float bowShock = exp(-pow((length(vec2(n.x + 0.34, n.y * 0.72)) - 0.52) / 0.035, 2.0)) * ss3(-0.18, -0.65, n.x);
+      float auroraOval = exp(-pow((radius - 0.20) / 0.018, 2.0)) * pow(abs(sin(theta)), 2.6);
+      float solarWind = pow(0.5 + 0.5 * sin((n.x * 12.0 + time * 8.0 + fbm2(vec2(n.x * 5.0, n.y * 5.0), 3) * 2.0) * 3.14159265), 3.0) * ss3(0.62, -0.48, n.x) * 0.18;
+      vec3 col = colorScale3(hslToRgb(210.0 + hueShift, 0.72, 0.42), fieldLine * intensity * 0.36);
+      col = colorAdd3(col, hslToRgb(128.0 + hueShift, 0.96, 0.58), auroraOval * intensity);
+      col = colorAdd3(col, hslToRgb(194.0 + hueShift, 0.86, 0.56), bowShock * intensity * 0.52);
+      col = colorAdd3(col, hslToRgb(36.0 + hueShift, 0.80, 0.52), earth * intensity * 0.58 + solarWind * intensity);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'wave-diffraction': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'wave-diffraction': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[12];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float time = uTime * speed;
+      float wavelength = 18.0 + density * 14.0;
+      float barrier = exp(-pow((n.x + 0.12) / 0.012, 2.0)) * (1.0 - exp(-pow((abs(n.y) - 0.16) / 0.045, 2.0)));
+      vec2 slitA = vec2(-0.12, -0.16);
+      vec2 slitB = vec2(-0.12, 0.16);
+      float incident = pow(0.5 + 0.5 * sin((n.x + time) * wavelength), 5.0) * ss3(-0.12, -0.68, n.x);
+      float distanceA = length(n - slitA);
+      float distanceB = length(n - slitB);
+      float waveA = sin(distanceA * wavelength - time * 9.0);
+      float waveB = sin(distanceB * wavelength - time * 9.0);
+      float interference = pow(abs((waveA + waveB) * 0.5), 4.0) * ss3(-0.08, 0.55, n.x);
+      float slitGlow = exp(-pow(distanceA / 0.05, 2.0)) + exp(-pow(distanceB / 0.05, 2.0));
+      vec3 col = colorScale3(hslToRgb(204.0 + hueShift, 0.86, 0.50), (incident + interference) * intensity * 0.62);
+      col = colorAdd3(col, hslToRgb(46.0 + hueShift, 1.0, 0.58), slitGlow * intensity * 0.34);
+      col = colorAdd3(col, vec3(0.22), barrier * intensity);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'vortex-flame': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'vortex-flame': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[12];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float time = uTime * speed;
+      float yNorm = n.y + 0.5;
+      float taper = 0.08 + yNorm * (0.35 + density * 0.16);
+      float swirlCenter = sin(yNorm * 8.0 - time * 5.0) * (0.10 + yNorm * 0.10);
+      float radius = abs(n.x - swirlCenter) / max(0.03, taper);
+      float angle = atan(yNorm * 1.6, n.x - swirlCenter);
+      float helix = pow(0.5 + 0.5 * sin(angle * 5.0 + yNorm * 26.0 - time * 9.0 + fbm2(vec2(n.x * 6.0, n.y * 6.0), 3) * 2.0), 3.0);
+      float plume = ss3(1.25, 0.12, radius) * ss3(0.02, 0.95, yNorm);
+      vec2 cellApprox = floor(vUV * vec2(220.0, 140.0));
+      float ember = pow(hash2(cellApprox.x * 5.0 + floor(time * 28.0), cellApprox.y * 7.0), 18.0) * ss3(0.8, 0.12, radius);
+      float temperature = clamp((plume * (0.45 + helix * 0.8) + ember * 0.8) * intensity, 0.0, 1.0);
+      vec3 col = colorAdd3(thermalColor(temperature), hslToRgb(210.0 + hueShift, 0.8, 0.45), plume * (1.0 - yNorm) * 0.16);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+
+  // 'tokamak-plasma': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
+  'tokamak-plasma': /* glsl */`
+    precision mediump float;
+    uniform float uTime;
+    uniform float uAspect;
+    uniform float uP[12];
+    varying vec2 vUV;
+    ${GLSL_HELPERS}
+    void main() {
+      float speed = uP[0];
+      float intensity = uP[1];
+      float density = uP[2];
+      float hueShift = uP[3];
+      vec2 n = normCoords(vUV, uAspect);
+      float time = uTime * speed;
+      float radius = length(vec2(n.x / 0.78, n.y / 0.42));
+      float torus = exp(-pow((radius - 0.55) / (0.09 + density * 0.025), 2.0));
+      float angle = atan(n.y / 0.42, n.x / 0.78);
+      float magneticLine = pow(0.5 + 0.5 * sin(angle * 9.0 + radius * 18.0 - time * 9.0), 5.0);
+      float plasmaNoise = fbm2(vec2(n.x * 10.0 + time * 2.0, n.y * 10.0 - time), 4);
+      float hotCore = exp(-pow(radius / 0.34, 2.0)) * 0.36;
+      float limiter = exp(-pow((radius - 0.72) / 0.018, 2.0)) * 0.18;
+      float brightness = clamp((torus * (0.46 + magneticLine * 0.72 + plasmaNoise * 0.28) + hotCore + limiter) * intensity, 0.0, 1.0);
+      float hue = hueShift + magneticLine * 86.0 - radius * 45.0 + plasmaNoise * 32.0;
+      vec3 col = hslToRgb(hue, 0.96, brightness * 0.68);
       gl_FragColor = vec4(col, 1.0);
     }
   `
@@ -914,6 +1165,32 @@ function paramsFor(layer: EffectLayer): EffectParams {
       return { floats: [Number(p.speed ?? 0.34), Number(p.intensity ?? 0.88), Number(p.density ?? 0.60), Number(p.hueShift ?? 260)] }
     case 'black-hole':
       return { floats: [Number(p.speed ?? 0.34), Number(p.intensity ?? 0.92), Number(p.density ?? 0.62), Number(p.hueShift ?? 0)] }
+    case 'aurora':
+      return {
+        floats: [
+          Number(p.speed ?? 0.12),
+          Number(p.intensity ?? 0.88),
+          Number(p.hueShift ?? 0),
+          Number(p.curtainHeight ?? 1.0),
+          Number(p.ribbonFrequency ?? 1.0),
+          Number(p.shimmerIntensity ?? 0.35),
+          Number(p.baseHue ?? 130),
+          Number(p.colorSpread ?? 90),
+          Number(p.softEdge ?? 0.75)
+        ]
+      }
+    case 'eclipse-alignment':
+      return { floats: [Number(p.speed ?? 0.20), Number(p.intensity ?? 0.88), Number(p.density ?? 0.56), Number(p.hueShift ?? 0)] }
+    case 'comet-tail':
+      return { floats: [Number(p.speed ?? 0.30), Number(p.intensity ?? 0.88), Number(p.density ?? 0.58), Number(p.hueShift ?? 0)] }
+    case 'magnetosphere-aurora':
+      return { floats: [Number(p.speed ?? 0.24), Number(p.intensity ?? 0.86), Number(p.density ?? 0.58), Number(p.hueShift ?? 0)] }
+    case 'wave-diffraction':
+      return { floats: [Number(p.speed ?? 0.36), Number(p.intensity ?? 0.84), Number(p.density ?? 0.62), Number(p.hueShift ?? 0)] }
+    case 'vortex-flame':
+      return { floats: [Number(p.speed ?? 0.46), Number(p.intensity ?? 0.90), Number(p.density ?? 0.60), Number(p.hueShift ?? 0)] }
+    case 'tokamak-plasma':
+      return { floats: [Number(p.speed ?? 0.34), Number(p.intensity ?? 0.90), Number(p.density ?? 0.62), Number(p.hueShift ?? 280)] }
     default:
       return { floats: [] }
   }
@@ -1024,8 +1301,8 @@ export class EffectGl {
     gl.uniform1f(this.uAspect, this.canvasW > 0 && this.canvasH > 0 ? this.canvasW / this.canvasH : 1)
     const { floats, color0, color1 } = paramsFor(layer)
     if (this.uP) {
-      const padded = new Float32Array(8)
-      padded.set(floats.slice(0, 8))
+      const padded = new Float32Array(12)
+      padded.set(floats.slice(0, 12))
       gl.uniform1fv(this.uP, padded)
     }
     if (this.uColor0 && color0) gl.uniform3f(this.uColor0, color0[0], color0[1], color0[2])
