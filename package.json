@@ -1,6 +1,6 @@
 {
   "name": "rgbbox",
-  "version": "0.3.40",
+  "version": "0.3.43",
   "description": "Local-first desktop RGB lighting controller with multi-display screen sampling.",
   "author": "RGBBox Contributors",
   "homepage": "https://github.com/tangjianfang/RGBBox",
