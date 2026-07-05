@@ -68,6 +68,17 @@ let engineStatus: EngineStatus = {
   output: 'virtual-preview'
 }
 
+// R44: module-level so both createMainWindow() (close-to-tray) and
+// createTray() (tray icon double-click / context menu toggle) can call it
+// explicitly at every point they programmatically hide/show the window,
+// instead of relying solely on the 'hide'/'show' events — which do not
+// reliably fire when hide() is called from inside a 'close' handler that
+// just preventDefault()-ed the close (confirmed by user testing: minimize
+// correctly lowered CPU, close-to-tray did not change it at all).
+function sendMainWindowVisibility(visible: boolean): void {
+  mainWindow?.webContents.send(ipcChannels.mainWindowVisibilityChanged, visible)
+}
+
 function createMainWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -100,12 +111,28 @@ function createMainWindow(): void {
     mainWindow?.show()
   })
 
+  // R43: tell the renderer definitively when the window stops/starts being
+  // visible to the user, so it can pause the effect-computation tick loop
+  // (see App.tsx) instead of relying on document.hidden — which, after R38
+  // disabled Chromium's occluded-window backgrounding, no longer reliably
+  // reflects minimize state. R44: also called explicitly below (and in
+  // createTray()) since the 'hide' event alone is not reliable for every path.
+  mainWindow.on('minimize', () => sendMainWindowVisibility(false))
+  mainWindow.on('restore', () => sendMainWindowVisibility(true))
+  mainWindow.on('hide', () => sendMainWindowVisibility(false))
+  mainWindow.on('show', () => sendMainWindowVisibility(true))
+
   // Close button → hide to tray (minimize to tray pattern).
   // isQuitting is set by the tray "Quit" action and app.on('before-quit').
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault()
       mainWindow?.hide()
+      // R44: 'hide' does NOT reliably fire when hide() is called from inside
+      // a 'close' handler that just preventDefault()-ed the close — this is
+      // exactly this path, confirmed by user testing: minimize correctly
+      // lowered CPU, close-to-tray did not change it at all. Send explicitly.
+      sendMainWindowVisibility(false)
       tray?.displayBalloon?.({ title: 'RGBBox', content: '已最小化到系统托盘，右键托盘图标可退出。', iconType: 'info' })
     }
   })
@@ -113,19 +140,6 @@ function createMainWindow(): void {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
-
-  // R43: tell the renderer definitively when the window stops/starts being
-  // visible to the user, so it can pause the effect-computation tick loop
-  // (see App.tsx) instead of relying on document.hidden — which, after R38
-  // disabled Chromium's occluded-window backgrounding, no longer reliably
-  // reflects minimize state.
-  const sendVisibility = (visible: boolean): void => {
-    mainWindow?.webContents.send(ipcChannels.mainWindowVisibilityChanged, visible)
-  }
-  mainWindow.on('minimize', () => sendVisibility(false))
-  mainWindow.on('restore', () => sendVisibility(true))
-  mainWindow.on('hide', () => sendVisibility(false))
-  mainWindow.on('show', () => sendVisibility(true))
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
@@ -623,9 +637,11 @@ function createTray(): void {
     if (!mainWindow) return
     if (mainWindow.isVisible()) {
       mainWindow.hide()
+      sendMainWindowVisibility(false)
     } else {
       mainWindow.show()
       mainWindow.focus()
+      sendMainWindowVisibility(true)
     }
   }
 

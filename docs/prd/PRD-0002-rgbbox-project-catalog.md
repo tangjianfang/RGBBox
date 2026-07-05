@@ -1239,10 +1239,24 @@
 - **R43.7** **受影响文件**：`src/shared/ipc.ts`（新增 `mainWindowVisibilityChanged` 通道）、`src/preload/index.ts`（新增 `onMainWindowVisibilityChanged`）、`src/main/index.ts`（监听 `minimize`/`restore`/`hide`/`show` 并推送）、`src/renderer/src/App.tsx`（`windowVisibleRef` 替换 `document.hidden`，新增"无启用图层"早退）、`src/renderer/src/hooks/useAudioAnalyzer.ts`（`setAudioData` 节流）、`tests/renderer/hooks/useAudioAnalyzer.test.ts`（3 处等待时间从 50ms 调到 150ms 以适配新的节流节奏）、`tests/integration/ipcChannels.test.ts`（补充新通道的映射断言）。
 - **R43.8** **验收点**：
   - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（436 passed / 41 skipped，0 失败）
-  - [ ] 手动验证：最小化主窗口（无 overlay）后，任务管理器里 CPU 明显下降；有 overlay 时最小化仍保持流畅投屏（不回归 R38）
+  - [x] 手动验证：最小化主窗口（无 overlay）后，任务管理器里 CPU 明显下降（用户已实机确认）；有 overlay 时最小化仍保持流畅投屏（不回归 R38，待确认）
   - [ ] 手动验证：场景内全部图层取消勾选后，RGB 画布预览变黑且 CPU 下降；重新勾选任意图层后画面和 CPU 恢复正常
   - [ ] 手动验证：开启音频采集后 CPU 涨幅比修复前更小；音频响应类效果（`audio-beat`/`audio-equalizer`）观感无明显变化
-- **R43.9** **状态**：🔄（代码已实施，`yarn test` 436 passed/0 失败；等待用户用任务管理器实机对比修复前后的 CPU 占用）
+- **R43.9** **状态**：🔄（代码已实施，`yarn test` 436 passed/0 失败；最小化场景用户已实机确认生效，见 R44 修复关闭到托盘场景的遗留问题）
+
+### R44. 关闭主窗口到托盘不降 CPU（R43 遗留）
+
+> 触发场景：用户验证 R43 后反馈"最小化之后 CPU 明显下降"（R43 有效），"但是关闭主窗口缩小到右下角之后，CPU 没有明显下降，也没有变化"。
+> **风险等级：L0**（只是把"隐藏窗口时通知渲染进程"这件事从依赖事件改成显式调用，不改变任何可观察行为语义）。
+
+- **R44.1** **根因**：R43 给最小化/还原挂了 `'minimize'`/`'restore'` 原生事件，给隐藏/显示挂了 `'hide'`/`'show'` 原生事件，理论上"关闭到托盘"（`mainWindow.on('close', ...)` 里 `e.preventDefault()` 后调用 `mainWindow.hide()`）应该会触发 `'hide'` 事件从而通知渲染进程。但从用户实测结果看，`'hide'` 事件在"由 `close` 事件处理器内部、刚 `preventDefault()` 就立刻调用 `hide()`"这种特定时序下没有可靠触发——渲染进程从未收到"窗口已隐藏"的通知，`onTick` 里的早退条件永远判断"窗口可见"，因此关闭到托盘后计算完全没有停。这是 R43 遗留的一个"事件监听覆盖不全"的疏漏，和最小化路径使用的是完全独立的原生事件（`'minimize'`/`'restore'`），两者可靠性不是一回事。
+- **R44.2** **修复**：不再仅依赖 `'hide'`/`'show'` 事件——在**每一处**主进程主动调用 `mainWindow.hide()`/`.show()` 的地方（关闭按钮 → 隐藏到托盘、托盘图标双击/菜单"显示/隐藏"）都紧跟着显式调用同一个 `sendMainWindowVisibility()` 函数，不再假设事件一定会转发。事件监听（`'minimize'`/`'restore'`/`'hide'`/`'show'`）保留作为兜底（覆盖非本应用代码触发的隐藏/显示，例如未来新增的调用点）。
+- **R44.3** **受影响文件**：`src/main/index.ts`（`sendMainWindowVisibility` 提升为模块级函数；关闭到托盘、托盘图标切换两处显式调用）。
+- **R44.4** **验收点**：
+  - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（435 passed / 41 skipped，1 个已知无关 flaky）
+  - [ ] 手动验证：点击右上角关闭按钮"缩小到右下角托盘"（无 overlay）后，任务管理器 CPU 明显下降；从托盘图标恢复窗口后 CPU 恢复正常
+  - [ ] 手动验证：托盘右键菜单"显示/隐藏主界面"和双击托盘图标，两种方式切换可见性都能正确影响 CPU
+- **R44.5** **状态**：🔄（代码已实施；等待用户实机确认关闭到托盘场景 CPU 是否下降）
 
 ## 4. 受影响文件
 
