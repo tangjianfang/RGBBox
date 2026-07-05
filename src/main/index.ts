@@ -12,7 +12,7 @@ import { ipcChannels } from '../shared/ipc'
 import { initLogger } from '../shared/logger'
 import { MODELS_MANIFEST } from '../shared/modelsManifest'
 import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
-import type { DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, RgbFrame, ScreenCaptureRequest } from '../shared/types'
+import type { DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
 import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOverlay, getAudioVizWindowIds, getOverlayDisplayIds, openAudioVizWindow, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
@@ -253,6 +253,16 @@ function registerIpc(): void {
     return captured ?? null
   })
   ipcMain.handle(ipcChannels.getCaptureProviderStatus, () => getCaptureProviderStatus())
+
+  // R46: per-process CPU% breakdown for objective diagnostics (see ipc.ts).
+  ipcMain.handle(ipcChannels.getProcessCpuSamples, (): ProcessCpuSample[] => {
+    return app.getAppMetrics().map((m) => ({
+      pid: m.pid,
+      type: m.type,
+      cpuPercent: m.cpu.percentCPUUsage,
+      name: m.name
+    }))
+  })
 
   // Renderer → main: push a rendered frame to open overlay windows (fire-and-forget)
   ipcMain.on(ipcChannels.overlayPushFrame, (_event, frame: RgbFrame) => {

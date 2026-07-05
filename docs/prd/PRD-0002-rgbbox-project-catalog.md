@@ -1280,6 +1280,26 @@
   - [ ] 手动验证：开启音频采集但无 overlay、且不在工作区 tab 时，CPU 应比 R43 状态更低
 - **R45.7** **状态**：🔄（代码已实施；点 3 架构方案已记录待排期；等待用户实机验证前两点）
 
+### R46. 承认 R38/R42-R45 均未经充分验证 + 新增客观分进程 CPU 诊断工具
+
+> 触发场景：用户反馈"我反馈的问题不止这些，重新帮我把我反馈的问题和测试条件一一列出来。我认为我反馈的问题，你都没有解决，解决问题思路都有问题"。
+> **风险等级：L0**（只新增一个只读诊断接口和诊断页展示，不改变任何现有行为）。
+
+- **R46.1** **问题**：R38、R42、R43、R44、R45 五轮修复里，除了"最小化后 CPU 下降"这一条被用户明确确认生效之外，其余全部是"改代码 → 让用户重启验证 → 没收到确认或用户反馈依然不行 → 再猜一版"的模式。由于本 agent 无法在当前环境里实际运行 Electron 应用、打开任务管理器观察，所有修复都基于**读代码 + 对 Chromium/Electron 行为的推理**，没有真正的证据闭环——这正是用户指出的"解决问题思路有问题"。
+- **R46.2** **完整问题清单**（按用户反馈的时间顺序整理，供后续逐条验证核对，详见对话记录）：
+  1. overlay 投屏卡顿于主窗口最小化时（对比"关闭到托盘"不卡）→ R38
+  2. CPU 常驻 ~11%，最小化/托盘后仍高 → R42
+  3. 音频采集开关 CPU 4.5%→9%；取消勾选全部效果图层预览不停止；最小化/托盘 CPU 不降 → R43
+  4. 最小化 CPU 确认下降；关闭到托盘 CPU 无变化 → R44
+  5. 无 overlay 时最小化应比托盘更低（目前还有 ~2% + 大量 IO）；有 overlay 时最小化画面变卡顿；有渲染时 CPU 78%+ → R45（前两点已修，第三点只记录方案未实施）
+- **R46.3** **改进方向**：与其继续"猜测 Chromium 内部机制 → 盲改 → 等反馈"，新增一个**客观诊断工具**——用 Electron 自带的 `app.getAppMetrics()`（返回主进程/每个渲染进程/GPU 进程/工具进程各自的 CPU 占用百分比），暴露到"诊断"页面，用一张按 CPU 占用排序的表格展示。这样下一次复现任何一个场景时，可以直接看"到底是哪个进程在吃 CPU"（例如：如果是 GPU 进程在最小化后仍然很高，说明 `CalculateNativeWinOcclusion` 那个开关没有生效；如果是某个 renderer 进程持续高，说明 JS 侧的门控没生效；如果 main/"browser" 进程高，问题在主进程），而不是依赖一个笼统的、Windows 任务管理器里还经常需要展开子进程树才能看到的聚合数字。
+- **R46.4** **实现**：新增 IPC 通道 `getProcessCpuSamples`（`src/shared/ipc.ts`），主进程 handler 直接包装 `app.getAppMetrics()`（`src/main/index.ts`），新类型 `ProcessCpuSample`（`src/shared/types.ts`），预加载脚本暴露方法（`src/preload/index.ts`），诊断页新增一张表格（复用 R45 已经做好的、仅在诊断页可见时才轮询的 1Hz 定时器，不新增额外的后台轮询）。
+- **R46.5** **受影响文件**：`src/shared/ipc.ts`、`src/shared/types.ts`、`src/main/index.ts`、`src/preload/index.ts`、`src/renderer/src/App.tsx`、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`tests/integration/ipcChannels.test.ts`。
+- **R46.6** **验收点**：
+  - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（436 passed / 41 skipped，0 失败）
+  - [ ] 手动验证：打开诊断页，能看到按 CPU% 排序的进程列表（browser / renderer / gpu-process 等），且能在"最小化+无 overlay""最小化+有 overlay""渲染中"等场景下用它定位到具体是哪个进程占用高
+- **R46.7** **状态**：🔄（诊断工具已实施；后续需要用户提供每个场景下这张表格的实际截图/数字，才能真正确认 R38/R42-R45 是否生效，或者定位到底是哪个进程的问题）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |

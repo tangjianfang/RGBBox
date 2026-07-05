@@ -100,6 +100,23 @@ export interface CaptureProviderStatus {
   lastError?: string
 }
 
+/**
+ * R46: one entry per OS process Electron's `app.getAppMetrics()` reports
+ * (main/"browser", one per renderer BrowserWindow, the shared GPU process,
+ * utility processes, etc). Exposed to the Diagnostics view so CPU
+ * investigations are based on objective per-process numbers instead of a
+ * single aggregate Task Manager figure (which on Windows groups every
+ * Electron-owned process under one collapsible tree that's easy to
+ * misread).
+ */
+export interface ProcessCpuSample {
+  pid: number
+  type: string
+  cpuPercent: number
+  /** Present for renderer processes when Electron can resolve it. */
+  name?: string
+}
+
 export interface FrameMetrics {
   timestamp: number
   workerProcessMs: number

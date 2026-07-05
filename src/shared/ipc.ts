@@ -9,6 +9,10 @@ export const ipcChannels = {
   // Capture only the screen sample (no render); used when engine runs in renderer worker
   captureScreenSample: 'rgbbox:engine:capture-screen-sample',
   getCaptureProviderStatus: 'rgbbox:capture:get-provider-status',
+  // R46: per-OS-process CPU% breakdown (main/renderer/gpu-process/utility) via
+  // Electron's app.getAppMetrics() — lets CPU investigations be based on
+  // which process is actually consuming CPU instead of one aggregate number.
+  getProcessCpuSamples: 'rgbbox:system:get-process-cpu-samples',
   // Renderer → main: push a rendered frame to any open overlay windows (fire-and-forget)
   overlayPushFrame: 'rgbbox:overlay:push-frame',
   // Renderer → main: push a rendered frame to ONE specific display overlay (for linked-display mode)

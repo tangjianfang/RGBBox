@@ -59,6 +59,7 @@ describe('integration: IPC channel <-> preload API', () => {
       [ipcChannels.renderPreviewFrame, 'renderPreviewFrame'],
       [ipcChannels.captureScreenSample, 'captureScreenSample'],
       [ipcChannels.getCaptureProviderStatus, 'getCaptureProviderStatus'],
+      [ipcChannels.getProcessCpuSamples, 'getProcessCpuSamples'],
       [ipcChannels.openOverlay, 'openOverlay'],
       [ipcChannels.closeOverlay, 'closeOverlay'],
       [ipcChannels.setOverlayConfig, 'setOverlayConfig'],

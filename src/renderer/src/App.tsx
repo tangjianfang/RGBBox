@@ -1,7 +1,7 @@
 import { Activity, Box, ChevronDown, ChevronUp, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Mic, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload, Video } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
-import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame, Scene, VideoWallLayout } from '../../shared/types'
+import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, Scene, VideoWallLayout } from '../../shared/types'
 import { is3DEffect, resolveFrameRenderStyle } from '../../shared/types'
 import { isGpuDirectEffect } from './gl/effectGl'
 import { extractWallPanelFrame } from '../../engine/videoWallFrame'
@@ -568,6 +568,11 @@ export function App(): JSX.Element {
   const [status, setStatus] = useState<EngineStatus>({ running: true, fps: 30, output: 'virtual-preview' })
   const [captureProvider, setCaptureProvider] = useState<CaptureProviderStatus | null>(null)
   const [engineMetrics, setEngineMetrics] = useState<EngineMetrics>(EMPTY_ENGINE_METRICS)
+  // R46: objective per-process CPU% breakdown for the Diagnostics view (see
+  // ipc.ts#getProcessCpuSamples) — lets CPU investigations point at a
+  // specific process (main/renderer/gpu-process/utility) instead of relying
+  // on a single aggregate Task Manager number.
+  const [processCpuSamples, setProcessCpuSamples] = useState<ProcessCpuSample[]>([])
   const [version, setVersion] = useState('0.1.0')
   const [savedProfiles, setSavedProfiles] = useState<ProfileMeta[]>([])
   // Ref lets the auto-save effect read savedProfiles without listing it as a dep
@@ -837,6 +842,7 @@ export function App(): JSX.Element {
     const timer = window.setInterval(() => {
       setEngineMetrics(metricsCollectorRef.current.snapshot())
       void window.rgbbox.getCaptureProviderStatus().then(setCaptureProvider)
+      void window.rgbbox.getProcessCpuSamples().then(setProcessCpuSamples)
     }, 1000)
     return () => window.clearInterval(timer)
   }, [currentView])
@@ -2688,6 +2694,43 @@ export function App(): JSX.Element {
                   </div>
                 ))}
               </dl>
+            </div>
+            {/* R46: objective per-process CPU% breakdown — see PRD-0002 R46.
+                Lets CPU investigations point at a specific OS process
+                (main/renderer/gpu-process/utility) instead of one aggregate
+                Task Manager number, which on Windows groups every
+                Electron-owned process under one collapsible tree. */}
+            <div className="panel" style={{ maxWidth: 560, marginTop: 16 }}>
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">{t('diag.processCpu.eyebrow')}</p>
+                  <h3>{t('diag.processCpu.title')}</h3>
+                </div>
+              </div>
+              <table className="process-cpu-table">
+                <thead>
+                  <tr>
+                    <th>{t('diag.processCpu.type')}</th>
+                    <th>PID</th>
+                    <th>{t('diag.processCpu.cpu')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {processCpuSamples.length === 0 ? (
+                    <tr><td colSpan={3}>{t('diag.waiting')}</td></tr>
+                  ) : (
+                    [...processCpuSamples]
+                      .sort((a, b) => b.cpuPercent - a.cpuPercent)
+                      .map((p) => (
+                        <tr key={p.pid}>
+                          <td>{p.type}{p.name ? ` (${p.name})` : ''}</td>
+                          <td>{p.pid}</td>
+                          <td className={p.cpuPercent > 20 ? 'process-cpu-high' : ''}>{p.cpuPercent.toFixed(1)}%</td>
+                        </tr>
+                      ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         )}

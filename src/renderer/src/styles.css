@@ -834,6 +834,34 @@ input:not([type]):focus {
   margin: 0;
 }
 
+/* R46: per-process CPU breakdown table (Diagnostics view) */
+.process-cpu-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.process-cpu-table th {
+  border-bottom: 1px solid #26343c;
+  color: #9fb7c1;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 6px;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.process-cpu-table td {
+  border-bottom: 1px solid #1d2d35;
+  color: #f2fbfd;
+  font-size: 13px;
+  padding: 8px 6px;
+}
+
+.process-cpu-table .process-cpu-high {
+  color: #ff8a65;
+  font-weight: 600;
+}
+
 /* ── Layer row (new design with enable dot + delete) ────────────────────── */
 
 .layer-row {
