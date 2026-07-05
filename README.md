@@ -39,15 +39,23 @@ One day, while passing by an Apple smart home store with my son, we spotted an L
 - WebGL-accelerated canvas preview renderer with inter-cell gap lines.
 - Overlay windows for each physical display, pushed from the virtual canvas frame, with fullscreen/preset/custom region controls.
 - Capture provider architecture with Electron `desktopCapturer` fallback and diagnostics for active provider, capture time, and fallback state; native DXGI/ScreenCaptureKit providers are scaffolded for future builds.
-- Runtime telemetry in diagnostics: average/p95 frame time, worker render time, capture time, output enqueue time, and dropped tick count.
+- Runtime telemetry in diagnostics: average/p95 frame time, worker render time, capture time, output enqueue time, and dropped tick count; per-process CPU breakdown (Browser / GPU / Utility / Tab) for objective idle-cost verification; `--perf-selftest` harness that auto-runs 5 idle / minimize / overlay / tray scenarios with PASS/FAIL verdicts and writes a JSON report to `userData/logs/perf-selftest-report.json`.
 - Audio capture: microphone or system audio loopback (Windows), 32 log-spaced FFT bands, and visible capture failure state.
 - Audio Studio with playlist, generators, scenes and premium visualizers (spectrum / oscilloscope / spectrogram / VU meter) that support an in-app fullscreen mode.
 - Video Studio: any-camera capture (resolution/frame-rate/hardware parameters), photo & video recording, screen/window source capture via `desktopCapturer`, a mainstream-format video player, live colour filters and in-app fullscreen.
 - Gaussian Splat model viewer with cinematic rendering (PMREM image-based lighting, ACES tone-mapping, reflective ground + contact shadow, additive LED bloom halos, auto-rotate and live exposure/glow controls), on-demand model downloads, local cache detection, user model import, and LED mapping editor.
 - Single-player mini games theme with a playable local balloon tower-defense arena in the renderer.
 - FPS estimation hint in the resolution slider (calibrated for complex effects).
-- setInterval-based engine tick (continues when window is minimised).
+- `setInterval`-based engine tick that **pauses when no consumer is active** — idle when the workspace is hidden or minimized and no overlay window is open, keeps rendering as soon as an overlay becomes visible (the overlay tick-loop gate introduced to keep idle CPU near zero).
 - Full Chinese/English UI toggle (persisted to localStorage).
+
+### Recent stability improvements (R38–R48, since v0.3.8)
+
+- **Background / minimized CPU & presentation stability (R38–R45)**: R38 fixed minimize stutter; R41 eliminated the `atan2` seam in hurricane-eye / nebula; R42 pauses frame computation when nothing consumes it; R43 fixed R42's minimize detection and throttles audio state updates; R44 addressed the close-to-tray case where CPU still wouldn't drop; R45 killed the residual idle CPU/IO and disabled Windows native window occlusion for overlays (the architectural follow-up — moving overlay rendering to a true GPU compositing surface — is documented but not yet implemented).
+- **Objective per-process CPU diagnostics (R46)**: the diagnostics page now reports Browser / GPU / Utility / Tab CPU percentages individually via `app.getAppMetrics()`, replacing the previous "total CPU" view that couldn't distinguish a quiet renderer from a runaway GPU process. Earlier R38/R42–R45 fixes are explicitly marked as not having been verified before that.
+- **Automated performance self-test harness (R47)**: `--perf-selftest` CLI flag auto-runs the four reported scenarios — workspace idle, main minimized, main minimized with overlay open, hidden to tray — and writes `userData/logs/perf-selftest-report.json` with PASS/FAIL verdicts. Drive the *real* `BrowserWindow.minimize()` / `hide()` and the real overlay spawn path so the numbers are trustworthy.
+- **Harness hardening (R48)**: added overlay **frame-arrival timing** (the only signal that catches compositor/GPU frame throttling CPU% is blind to); tightened the scenario-4 verdict to **dual criterion** — overlay process CPU ≥ 50% of visible AND delivery fps ≥ 60% of visible, so "computation skipped" and "presentation throttled" failures no longer false-pass; multi-sample stats (median + p25/p75 + min/max) instead of single averages; extracted `src/main/perfSelfTest.ts` as a standalone module; fixed the rapid-rerun exit-0-no-report flakiness by skipping `requestSingleInstanceLock` and adding a 30 s watchdog.
+- **Self-check evidence**: `yarn typecheck` / `yarn build` / `yarn test` all green; `--perf-selftest` × 3 stable reports, all three verdicts PASS.
 
 ### Scripts
 
@@ -125,13 +133,21 @@ RGBBox 是一个**本地优先**的 Electron 桌面客户端，专为多屏 RGB 
 - WebGL 加速画布预览，支持格子间隔线显示。
 - 每个物理显示器对应一个悬浮窗，从虚拟画布帧推送，支持全屏/预设/自定义区域控制。
 - 捕获后端架构，Electron `desktopCapturer` 回退方案，含活跃后端/捕获耗时/回退状态诊断；Windows DXGI / macOS ScreenCaptureKit 原生后端已为未来版本预留脚手架。
-- 运行时遥测诊断：平均/P95 帧耗时、Worker 渲染耗时、捕获耗时、输出耗时、丢帧 tick 计数。
+- 运行时遥测诊断：平均/P95 帧耗时、Worker 渲染耗时、捕获耗时、输出耗时、丢帧 tick 计数；按进程 CPU 诊断（Browser / GPU / Utility / Tab），用于客观验证空闲态开销；`--perf-selftest` 自测 harness，自动跑 5 个 idle / 最小化 / overlay / 隐藏托盘场景，输出 PASS/FAIL 判据，JSON 报告写入 `userData/logs/perf-selftest-report.json`。
 - 音频捕获：麦克风或系统音频回环（Windows），32 对数间隔 FFT 频段，并可显示捕获失败状态。
 - 高斯泼溅模型查看器，支持按需下载模型、本地缓存检测、用户导入及 LED 映射编辑器。
 - 单机小游戏模块，内置可运行的气球塔防竞技场。
 - 分辨率滑块内置 FPS 估算提示（针对复杂特效进行校准）。
-- 基于 setInterval 的引擎 tick（窗口最小化时继续运行）。
+- 基于 setInterval 的引擎 tick，**无消费者时自动暂停** —— 工作区隐藏 / 最小化且无悬浮窗可见时不渲染（保持空闲 CPU 接近 0）；一旦有悬浮窗可见就恢复渲染（R42 引入的 tick-loop gate）。
 - 完整的中英文 UI 切换（通过 localStorage 持久化）。
+
+### 近期稳定性改进（R38–R48，自 v0.3.8 起）
+
+- **后台 / 最小化时 CPU 与画面稳定性（R38–R45）**：R38 修复 minimize 时的 stutter；R41 消除 hurricane-eye / nebula 的 `atan2` seam；R42 没有消费者时暂停帧计算；R43 修正 R42 的 minimize 检测 + 限流 audio 状态更新；R44 解决 close-to-tray 时 CPU 仍降不下来的问题；R45 消除残余空闲 CPU/IO，禁用 Windows native window occlusion 对 overlay 的影响（真正的 GPU 合成层方案已记录但尚未实施）。
+- **按进程 CPU 诊断（R46）**：诊断页现在通过 `app.getAppMetrics()` 分别报告 Browser / GPU / Utility / Tab 各自的 CPU%，替代原先的"总 CPU"视图（后者区分不出 renderer 安静 vs GPU 进程失控）。R38/R42–R45 那几轮 fix 也明确标注为此前未经充分验证。
+- **自动化性能自测试 harness（R47）**：`--perf-selftest` 命令行 flag 自动跑四个报告场景（idle / 主窗口最小化 / 主窗口最小化+overlay / 隐藏到托盘），写 `userData/logs/perf-selftest-report.json`，附 PASS/FAIL 判据。驱动真实的 `BrowserWindow.minimize()` / `hide()` 与真实的 overlay 生成路径，数字可信。
+- **Harness 增强（R48）**：新增 overlay **帧到达时序指标**（唯一能检测合成器/GPU 限流的信号，CPU% 看不到）；场景 4 判据收紧为**双判据**——overlay 进程自身 CPU ≥ 可见时 50% **且** 交付帧率 ≥ 可见时 60%——"计算被跳过"与"画面被限流"两类失效不再假通过；统计改为多次采样（中位数 + p25/p75 + min/max）；抽到 `src/main/perfSelfTest.ts` 独立模块；修复快速重跑 exit-0 无报告的 1/3 flaky（跳过单实例锁 + 30s 看门狗）。
+- **自检证据**：`yarn typecheck` / `yarn build` / `yarn test` 全过；`--perf-selftest` × 3 稳定出报告，三项 verdict 全 PASS。
 
 ### 开发脚本
 

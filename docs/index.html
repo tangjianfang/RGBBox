@@ -1824,8 +1824,8 @@
         <span class="feature-tag zh">性能</span><span class="feature-tag en">Performance</span>
         <div class="feature-icon">⚡</div>
         <h3 class="zh">Web Worker 渲染引擎</h3><h3 class="en">Web Worker Engine</h3>
-        <p class="zh">帧渲染在 Worker 线程完成，WebGL 加速画布预览，保证流畅的 60fps 体验，支持窗口最小化时持续运行。</p>
-        <p class="en">Frame rendering in a Worker thread, WebGL-accelerated canvas, smooth 60fps with the engine continuing when the window is minimised.</p>
+        <p class="zh">帧渲染在 Worker 线程完成，WebGL 加速画布预览；引擎在无消费者时（工作区隐藏 / 最小化且无悬浮窗可见）自动暂停，空闲 CPU 接近 0。</p>
+        <p class="en">Frame rendering in a Worker thread, WebGL-accelerated canvas; the engine auto-pauses when no consumer is active (workspace hidden or minimized with no overlay) to keep idle CPU near zero.</p>
       </div>
       <div class="feature-card">
         <span class="feature-tag zh">自动化</span><span class="feature-tag en">Automation</span>
@@ -1858,9 +1858,9 @@
       <div class="feature-card">
         <span class="feature-tag zh">诊断</span><span class="feature-tag en">Diagnostics</span>
         <div class="feature-icon">📊</div>
-        <h3 class="zh">运行时遥测诊断</h3><h3 class="en">Runtime Telemetry</h3>
-        <p class="zh">实时监控平均/P95 帧耗时、Worker 渲染耗时、捕获耗时、输出耗时及丢帧 tick 计数。</p>
-        <p class="en">Live monitoring of avg/P95 frame time, worker render time, capture time, output time, and dropped tick count.</p>
+        <h3 class="zh">运行时遥测 &amp; 自动化性能自测</h3><h3 class="en">Runtime Telemetry &amp; Self-Test</h3>
+        <p class="zh">实时监控平均/P95 帧耗时、Worker 渲染耗时、捕获耗时、输出耗时及丢帧 tick 计数；按进程 CPU 诊断（Browser / GPU / Utility / Tab）客观衡量空闲开销；<code>--perf-selftest</code> 命令行 flag 自动跑 idle / 最小化 / 最小化+overlay / 隐藏托盘四场景，含帧到达时序指标与 PASS/FAIL 判据，输出 JSON 报告到 <code>userData/logs/</code>。</p>
+        <p class="en">Live monitoring of avg/P95 frame time, worker render time, capture time, output time, and dropped tick count; per-process CPU breakdown (Browser / GPU / Utility / Tab) for objective idle-cost verification; the <code>--perf-selftest</code> CLI flag auto-runs the four idle / minimize / overlay / tray scenarios with frame-arrival timing and PASS/FAIL verdicts, writing a JSON report to <code>userData/logs/</code>.</p>
       </div>
       <div class="feature-card">
         <span class="feature-tag zh">小游戏</span><span class="feature-tag en">Mini Games</span>

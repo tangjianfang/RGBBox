@@ -1354,6 +1354,28 @@
   - [x] PRD 措辞改为量级区间，不再写"0.380→0.387 几乎不变"这种单次精确数字 — verdict 用 `median + [p25 p75]` 区间（如 baseline `2.13% [p25=1.79 p75=2.30]`），perProcessMedian 取中位数，三次 run overlay CPU 落在 0.38%–0.41% 量级而非单点
 - **R48.8** **状态**：✅ 已实施（2026-07-06）
 
+### R49. 文档同步到 v0.3.43（README + GitHub Pages 双语）
+
+> 起源：v0.3.43 draft release 已创建（2026-07-06），但 `README.md`（en/zh）与 `docs/index.html`（GitHub Pages 产品页）均停留在 v0.3.8 时代，**两处与现实现冲突**：(1) README en/zh 两条 bullet 写"setInterval-based engine tick (continues when window is minimised)"——R42 已反转，引擎**没有消费者时暂停**而非最小化继续运行；(2) docs/index.html 第 1827/1828 行 Web Worker Engine 卡描述同样写"supports 窗口最小化时持续运行"——同错；(3) README 与 GitHub Page 的 Diagnostics 卡仅写 Runtime Telemetry（avg/P95 帧耗时），没提 R46 新增的**按进程 CPU 诊断**与 R47/R48 的**自动化性能自测试 harness**。本条只动文档，不动代码。
+
+- **R49.1** **README 英文版**：
+  - 第 49 行 bullet 改写：`setInterval-based engine tick that pauses when no consumer is active (idle when workspace is hidden / minimized with no overlay, keeps rendering when overlay window is visible)` —— 反映 R42 的 gate-on-consumers 语义，不再误导。
+  - 第 42 行 bullet 改写：`Runtime telemetry in diagnostics: average/p95 frame time, worker render time, capture time, output enqueue time, and dropped tick count; per-process CPU breakdown (Browser/GPU/Utility/Tab) for objective idle-cost verification; --perf-selftest harness that auto-runs 5 idle/minimize/overlay/tray scenarios with PASS/FAIL verdicts and writes a JSON report to userData/logs/.`
+- **R49.2** **README 中文版**：与 R49.1 逐句对应——第 133 行 tick 改写（"无消费者时暂停（工作区隐藏 / 最小化且无悬浮窗时不渲染；有悬浮窗可见时继续）"）；第 128 行诊断 bullet 同步扩展为含按进程 CPU + `--perf-selftest` 自测 harness。
+- **R49.3** **新增"近期稳定性改进"段落（README 英文 + 中文）**：放在 "Current implementation" / "已实现功能" 末尾、`### Scripts` 之前，标题 `### Recent stability improvements (R38–R48, since v0.3.8)` / `### 近期稳定性改进（R38–R48，自 v0.3.8 起）`，要点：后台 / 最小化时 CPU 与画面稳定性（R38–R45）；按进程 CPU 诊断与承认前几轮未经充分验证（R46）；诊断页布局 + 自动化 perf-selftest harness（R47）；harness 增强——帧到达时序指标 + 双判据 + 多次采样 + 模块抽离 + 重跑稳定性（R48）；自检证据一行（typecheck/build/test 通过，3× perf-selftest 全 PASS）。
+- **R49.4** **docs/index.html**：
+  - 第 1826 行卡 `<h3>Web Worker Engine</h3>` 下两个 `<p>` 改写，去掉"supports 窗口最小化时持续运行 / engine continuing when the window is minimised"，改为"`Web Worker 渲染线程 + WebGL 加速画布；引擎在无消费者（工作区隐藏 / 最小化且无悬浮窗）时自动暂停以降低空闲 CPU。`" / "`Web Worker render thread with WebGL-accelerated canvas; the engine auto-pauses when no consumer is active (workspace hidden or minimized with no overlay) to keep idle CPU near zero.`"。
+  - 第 1861–1863 行 Diagnostics 卡扩写为 3 行功能点（不引入新卡以免破坏 grid 布局）：(a) 运行时遥测：avg/P95 帧耗时、worker render / capture / output / 丢帧 tick（同现描述）；(b) 按进程 CPU 诊断：Browser / GPU / Utility / Tab 各自的 CPU%，用于客观验证 idle 成本；(c) `--perf-selftest` 自测：命令行 flag 跑 idle / 最小化 / 最小化+overlay / 隐藏托盘 四场景 + 帧到达时序指标 + PASS/FAIL 判据 + JSON 报告。
+- **R49.5** **验收点**：
+  - [x] README en/zh 第 49 / 133 行 bullet 不再写"setInterval tick 最小化继续" — grep `continues when window is minimised` / `最小化时持续运行` 在两文件中均 0 命中
+  - [x] README en/zh 第 42 / 128 行 bullet 包含 per-process CPU + perf-selftest harness — en `per-process CPU breakdown (Browser/GPU/Utility/Tab)` + `--perf-selftest harness`，zh 对应 `按进程 CPU 诊断` + `--perf-selftest` 自测 harness
+  - [x] README en/zh 出现新段落"Recent stability improvements (R38–R48)" / "近期稳定性改进（R38–R48）" — 各 1 处
+  - [x] docs/index.html 第 1827/1828 行不再写"最小化时持续运行" — 改为"无消费者时自动暂停，空闲 CPU 接近 0"
+  - [x] docs/index.html Diagnostics 卡含 3 项：遥测 + 按进程 CPU + `--perf-selftest` — 卡片 h3 改为 `Runtime Telemetry & Self-Test`，内文含三个功能点
+  - [x] `yarn typecheck` / `yarn build` 不变（仅文档改动，回归为零）— `yarn typecheck` `Done in 5.10s`，三文件改动：README.md +24 行、docs/index.html +5/-5、PRD +22 行
+- **R49.6** **受影响文件**：`README.md`、`docs/index.html`、`docs/prd/PRD-0002-rgbbox-project-catalog.md`。
+- **R49.7** **状态**：✅ 已实施（2026-07-06）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |
