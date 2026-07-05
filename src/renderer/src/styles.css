@@ -1302,6 +1302,56 @@ input:not([type]):focus {
   text-transform: uppercase;
 }
 
+/* R39: category tab bar — replaces stacking every category's card grid at
+   once, so only the active tab's effects are mounted/animating. */
+.effects-category-tabs {
+  border-bottom: 1px solid #1d2d35;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 2px;
+}
+
+.effects-category-tab {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px 8px 0 0;
+  color: #8aa2ad;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 500;
+  gap: 6px;
+  padding: 8px 14px;
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+
+.effects-category-tab:hover {
+  background: #131d23;
+  color: #d3eef2;
+}
+
+.effects-category-tab.active {
+  background: #131d23;
+  border-color: #26343c;
+  border-bottom-color: #131d23;
+  color: #7de8cc;
+  margin-bottom: -1px;
+}
+
+.effects-category-tab-count {
+  background: rgb(138 162 173 / 15%);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+}
+
+.effects-category-tab.active .effects-category-tab-count {
+  background: rgb(70 198 168 / 20%);
+  color: #7de8cc;
+}
+
 .effects-card-grid {
   display: grid;
   gap: 14px;
@@ -2179,6 +2229,39 @@ input:not([type]):focus {
 }
 
 /* ── Sampling panel (full-width below preview+map) ──────────────────────── */
+
+/* R40: collapse toggle button (in the panel header) + tab bar, so the panel
+   only needs to show one small group of controls at a time. */
+.sampling-collapse-btn {
+  gap: 6px;
+}
+
+.sampling-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.sampling-tab {
+  background: #101820;
+  border: 1px solid #243640;
+  border-radius: 999px;
+  color: #8aa2ad;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+
+.sampling-tab:hover {
+  color: #d3eef2;
+}
+
+.sampling-tab.active {
+  background: #15342d;
+  border-color: #46c6a8;
+  color: #80f0d1;
+}
 
 .sampling-controls {
   display: grid;

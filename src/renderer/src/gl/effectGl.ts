@@ -10,7 +10,7 @@
  * function of (x, y, now, params), i.e. shader-shaped).
  *
  * R37 generalises the R35 POC (which only had 'rainbow', with a fixed
- * 4-float uniform layout) to a flexible per-effect uniform scheme: up to 8
+ * 4-float uniform layout) to a flexible per-effect uniform scheme: up to 12
  * generic floats (`uP[0..11]`) + up to 2 explicit colours (`uColor0`,
  * `uColor1`), covering the parameter shapes used across the CPU effect
  * catalogue.

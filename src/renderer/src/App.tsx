@@ -1,4 +1,4 @@
-import { Activity, Box, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Mic, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload, Video } from 'lucide-react'
+import { Activity, Box, ChevronDown, ChevronUp, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Mic, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload, Video } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProfileMeta, RgbFrame, Scene, VideoWallLayout } from '../../shared/types'
@@ -1054,6 +1054,19 @@ export function App(): JSX.Element {
   // Advanced mode falls back to the old independent sliders.
   const [gridAdvanced, setGridAdvanced] = useState(() => localStorage.getItem('rgbbox:gridAdvanced') === '1')
   useEffect(() => { localStorage.setItem('rgbbox:gridAdvanced', gridAdvanced ? '1' : '0') }, [gridAdvanced])
+
+  // R40: the sampling panel used to stack every control (resolution, aspect,
+  // smoothing, saturation, brightness, fps, toggles, render style) in one
+  // long full-width block below the preview/map row, pushing the display
+  // topology map far down the page. Split into collapsible tabs so only one
+  // small group of controls is visible at a time (persisted like the other
+  // panel-shape preferences above).
+  const [samplingCollapsed, setSamplingCollapsed] = useState(() => localStorage.getItem('rgbbox:samplingCollapsed') === '1')
+  useEffect(() => { localStorage.setItem('rgbbox:samplingCollapsed', samplingCollapsed ? '1' : '0') }, [samplingCollapsed])
+  const [samplingTab, setSamplingTab] = useState<'resolution' | 'appearance' | 'performance'>(
+    () => (localStorage.getItem('rgbbox:samplingTab') as 'resolution' | 'appearance' | 'performance') || 'resolution'
+  )
+  useEffect(() => { localStorage.setItem('rgbbox:samplingTab', samplingTab) }, [samplingTab])
 
   // Display aspect ratio: virtual-desktop ratio in linked mode, primary display otherwise
   const displayAspectRatioRef = useRef<number>(16 / 9)
@@ -2274,125 +2287,165 @@ export function App(): JSX.Element {
                   )}
                 </section>
 
-                {/* Sampling settings — spans both columns */}
+                {/* Sampling settings — spans both columns; R40: collapsible + tabbed to
+                    reduce the vertical footprint so the display topology map above has
+                    more room without excessive scrolling. */}
                 <section className="panel sampling-panel">
                   <div className="panel-header">
                     <div>
                       <p className="eyebrow">{t('sampling.eyebrow')}</p>
                       <h3>{t('sampling.title')}</h3>
                     </div>
-                    <span className="chip">{t('sampling.title')}</span>
+                    <button
+                      className="aspect-lock-btn sampling-collapse-btn"
+                      type="button"
+                      onClick={() => setSamplingCollapsed((v) => !v)}
+                      title={t(samplingCollapsed ? 'sampling.expand' : 'sampling.collapse')}
+                    >
+                      {samplingCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                      <span>{t(samplingCollapsed ? 'sampling.expand' : 'sampling.collapse')}</span>
+                    </button>
                   </div>
-                  <div className="sampling-controls">
-                    {/* ── Auto density mode (default) ── */}
-                    {!gridAdvanced ? (
-                      <>
-                        <label className="control-line">
-                          <span>{t('sampling.resolution')}</span>
-                          <input min={8} max={320} type="range"
-                            value={Math.max(profile.sampling.columns, profile.sampling.rows)}
-                            onChange={(e) => setGridDensity(Number(e.target.value))} />
-                          <strong>{profile.sampling.columns} × {profile.sampling.rows}</strong>
-                        </label>
-                        {(() => {
-                          const px = profile.sampling.columns * profile.sampling.rows
-                          // Empirical throughput after per-column precompute optimisation:
-                          // ~250,000 pixels/sec for complex effects (fire/aurora/lightning)
-                          // on a modern CPU in a single Web Worker.
-                          const estFps = Math.min(60, Math.round(250_000 / px))
-                          const slow = estFps < 15
-                          return (
-                            <div className={`grid-fps-hint${slow ? ' grid-fps-hint--warn' : ''}`}>
-                              ~{estFps}&nbsp;{t(slow ? 'sampling.fpsSlow' : 'sampling.fpsOk')}
-                            </div>
-                          )
-                        })()}
-                        <div className="aspect-lock-row">
-                          <button className="aspect-lock-btn" onClick={matchDisplayRatio} type="button">
-                            <Monitor size={12} />
-                            <span>{t('sampling.matchRatio')}</span>
-                          </button>
-                          <button className="aspect-lock-btn" onClick={() => setGridAdvanced(true)} type="button">
-                            <span>{t('sampling.advanced')}</span>
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      /* ── Manual mode (advanced) ── */
-                      <>
-                        <label className="control-line">
-                          <span>{t('sampling.columns')}</span>
-                          <input min={1} max={960} type="range" value={profile.sampling.columns}
-                            onChange={(e) => setColumns(Number(e.target.value))} />
-                          <strong>{profile.sampling.columns}</strong>
-                        </label>
-                        <div className="aspect-lock-row">
+                  {!samplingCollapsed && (
+                    <>
+                      <div className="sampling-tabs" role="tablist">
+                        {(['resolution', 'appearance', 'performance'] as const).map((tab) => (
                           <button
-                            className={`aspect-lock-btn${aspectLocked ? ' locked' : ''}`}
-                            title={t('sampling.aspectLock')}
-                            onClick={toggleAspectLock}
+                            key={tab}
                             type="button"
+                            role="tab"
+                            aria-selected={samplingTab === tab}
+                            className={`sampling-tab${samplingTab === tab ? ' active' : ''}`}
+                            onClick={() => setSamplingTab(tab)}
                           >
-                            {aspectLocked ? <Link2 size={12} /> : <Link2Off size={12} />}
-                            <span>{t('sampling.aspectLock')}</span>
+                            {t(`sampling.tab.${tab}` as Parameters<typeof t>[0])}
                           </button>
-                          <button className="aspect-lock-btn locked" onClick={() => { setGridAdvanced(false); matchDisplayRatio() }} type="button">
-                            <span>{t('sampling.autoGrid')}</span>
-                          </button>
-                        </div>
-                        <label className="control-line">
-                          <span>{t('sampling.rows')}</span>
-                          <input min={1} max={540} type="range" value={profile.sampling.rows}
-                            onChange={(e) => setRows(Number(e.target.value))} />
-                          <strong>{profile.sampling.rows}</strong>
-                        </label>
-                      </>
-                    )}
-                    <label className="control-line">
-                      <span>{t('sampling.smooth')}</span>
-                      <input min={0} max={0.9} step={0.05} type="range" value={profile.sampling.smoothing}
-                        onChange={(e) => setSamplingValue('smoothing', Number(e.target.value))} />
-                      <strong>{profile.sampling.smoothing.toFixed(2)}</strong>
-                    </label>
-                    <label className="control-line">
-                      <span>{t('sampling.saturation')}</span>
-                      <input min={0.5} max={3} step={0.1} type="range" value={profile.sampling.saturationBoost ?? 1.5}
-                        onChange={(e) => setSamplingValue('saturationBoost', Number(e.target.value))} />
-                      <strong>{(profile.sampling.saturationBoost ?? 1.5).toFixed(1)}×</strong>
-                    </label>
-                    <label className="control-line">
-                      <span>{t('sampling.brightness')}</span>
-                      <input min={0.1} max={2} step={0.05} type="range" value={profile.sampling.brightnessLimit}
-                        onChange={(e) => setSamplingValue('brightnessLimit', Number(e.target.value))} />
-                      <strong>{Math.round(profile.sampling.brightnessLimit * 100)}%</strong>
-                    </label>
-                    <label className="control-line">
-                      <span>{t('sampling.fps')}</span>
-                      <input min={15} max={60} step={15} type="range" value={profile.sampling.fps}
-                        onChange={(e) => setSamplingValue('fps', Number(e.target.value))} />
-                      <strong>{profile.sampling.fps}</strong>
-                    </label>
-                    <label className="toggle-line sampling-toggle">
-                      <input checked={profile.sampling.usePerformanceGuard} type="checkbox"
-                        onChange={(e) => setSamplingValue('usePerformanceGuard', e.target.checked)} />
-                      <span>{t('sampling.perfGuard')}</span>
-                    </label>
-                    <label className="toggle-line sampling-toggle">
-                      <input checked={profile.sampling.showGap ?? false} type="checkbox"
-                        onChange={(e) => setSamplingValue('showGap', e.target.checked)} />
-                      <span>{t('sampling.showGap')}</span>
-                    </label>
-                    <label className="control-line">
-                      <span>{t('sampling.renderStyle')}</span>
-                      <select
-                        value={profile.sampling.renderStyle ?? 'smooth'}
-                        onChange={(e) => setSamplingValue('renderStyle', e.target.value)}
-                      >
-                        <option value="smooth">{t('sampling.renderStyle.smooth')}</option>
-                        <option value="pixel">{t('sampling.renderStyle.pixel')}</option>
-                      </select>
-                    </label>
-                  </div>
+                        ))}
+                      </div>
+                      <div className="sampling-controls">
+                        {samplingTab === 'resolution' && (
+                          <>
+                            {/* ── Auto density mode (default) ── */}
+                            {!gridAdvanced ? (
+                              <>
+                                <label className="control-line">
+                                  <span>{t('sampling.resolution')}</span>
+                                  <input min={8} max={320} type="range"
+                                    value={Math.max(profile.sampling.columns, profile.sampling.rows)}
+                                    onChange={(e) => setGridDensity(Number(e.target.value))} />
+                                  <strong>{profile.sampling.columns} × {profile.sampling.rows}</strong>
+                                </label>
+                                {(() => {
+                                  const px = profile.sampling.columns * profile.sampling.rows
+                                  // Empirical throughput after per-column precompute optimisation:
+                                  // ~250,000 pixels/sec for complex effects (fire/aurora/lightning)
+                                  // on a modern CPU in a single Web Worker.
+                                  const estFps = Math.min(60, Math.round(250_000 / px))
+                                  const slow = estFps < 15
+                                  return (
+                                    <div className={`grid-fps-hint${slow ? ' grid-fps-hint--warn' : ''}`}>
+                                      ~{estFps}&nbsp;{t(slow ? 'sampling.fpsSlow' : 'sampling.fpsOk')}
+                                    </div>
+                                  )
+                                })()}
+                                <div className="aspect-lock-row">
+                                  <button className="aspect-lock-btn" onClick={matchDisplayRatio} type="button">
+                                    <Monitor size={12} />
+                                    <span>{t('sampling.matchRatio')}</span>
+                                  </button>
+                                  <button className="aspect-lock-btn" onClick={() => setGridAdvanced(true)} type="button">
+                                    <span>{t('sampling.advanced')}</span>
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              /* ── Manual mode (advanced) ── */
+                              <>
+                                <label className="control-line">
+                                  <span>{t('sampling.columns')}</span>
+                                  <input min={1} max={960} type="range" value={profile.sampling.columns}
+                                    onChange={(e) => setColumns(Number(e.target.value))} />
+                                  <strong>{profile.sampling.columns}</strong>
+                                </label>
+                                <div className="aspect-lock-row">
+                                  <button
+                                    className={`aspect-lock-btn${aspectLocked ? ' locked' : ''}`}
+                                    title={t('sampling.aspectLock')}
+                                    onClick={toggleAspectLock}
+                                    type="button"
+                                  >
+                                    {aspectLocked ? <Link2 size={12} /> : <Link2Off size={12} />}
+                                    <span>{t('sampling.aspectLock')}</span>
+                                  </button>
+                                  <button className="aspect-lock-btn locked" onClick={() => { setGridAdvanced(false); matchDisplayRatio() }} type="button">
+                                    <span>{t('sampling.autoGrid')}</span>
+                                  </button>
+                                </div>
+                                <label className="control-line">
+                                  <span>{t('sampling.rows')}</span>
+                                  <input min={1} max={540} type="range" value={profile.sampling.rows}
+                                    onChange={(e) => setRows(Number(e.target.value))} />
+                                  <strong>{profile.sampling.rows}</strong>
+                                </label>
+                              </>
+                            )}
+                          </>
+                        )}
+                        {samplingTab === 'appearance' && (
+                          <>
+                            <label className="control-line">
+                              <span>{t('sampling.smooth')}</span>
+                              <input min={0} max={0.9} step={0.05} type="range" value={profile.sampling.smoothing}
+                                onChange={(e) => setSamplingValue('smoothing', Number(e.target.value))} />
+                              <strong>{profile.sampling.smoothing.toFixed(2)}</strong>
+                            </label>
+                            <label className="control-line">
+                              <span>{t('sampling.saturation')}</span>
+                              <input min={0.5} max={3} step={0.1} type="range" value={profile.sampling.saturationBoost ?? 1.5}
+                                onChange={(e) => setSamplingValue('saturationBoost', Number(e.target.value))} />
+                              <strong>{(profile.sampling.saturationBoost ?? 1.5).toFixed(1)}×</strong>
+                            </label>
+                            <label className="control-line">
+                              <span>{t('sampling.brightness')}</span>
+                              <input min={0.1} max={2} step={0.05} type="range" value={profile.sampling.brightnessLimit}
+                                onChange={(e) => setSamplingValue('brightnessLimit', Number(e.target.value))} />
+                              <strong>{Math.round(profile.sampling.brightnessLimit * 100)}%</strong>
+                            </label>
+                            <label className="control-line">
+                              <span>{t('sampling.renderStyle')}</span>
+                              <select
+                                value={profile.sampling.renderStyle ?? 'smooth'}
+                                onChange={(e) => setSamplingValue('renderStyle', e.target.value)}
+                              >
+                                <option value="smooth">{t('sampling.renderStyle.smooth')}</option>
+                                <option value="pixel">{t('sampling.renderStyle.pixel')}</option>
+                              </select>
+                            </label>
+                            <label className="toggle-line sampling-toggle">
+                              <input checked={profile.sampling.showGap ?? false} type="checkbox"
+                                onChange={(e) => setSamplingValue('showGap', e.target.checked)} />
+                              <span>{t('sampling.showGap')}</span>
+                            </label>
+                          </>
+                        )}
+                        {samplingTab === 'performance' && (
+                          <>
+                            <label className="control-line">
+                              <span>{t('sampling.fps')}</span>
+                              <input min={15} max={60} step={15} type="range" value={profile.sampling.fps}
+                                onChange={(e) => setSamplingValue('fps', Number(e.target.value))} />
+                              <strong>{profile.sampling.fps}</strong>
+                            </label>
+                            <label className="toggle-line sampling-toggle">
+                              <input checked={profile.sampling.usePerformanceGuard} type="checkbox"
+                                onChange={(e) => setSamplingValue('usePerformanceGuard', e.target.checked)} />
+                              <span>{t('sampling.perfGuard')}</span>
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </section>
               </div>
             </div>

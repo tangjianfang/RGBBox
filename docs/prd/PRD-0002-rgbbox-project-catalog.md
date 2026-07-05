@@ -1151,6 +1151,38 @@
   - [ ] 手动验证：开启 overlay 投屏，最小化主窗口，投屏效果不再卡顿/掉帧
 - **R38.5** **状态**：🔄（代码已实施；等待用户实机验证最小化场景下投屏是否流畅）
 
+### R39. 效果库改为分类 Tab + GPU 直渲染卡片预览（解决卡顿/不丝滑）
+
+> 触发场景：用户反馈"现在的灯效也太多了，能不能分类也做成一个大 table，来切换灯效"和"效果库中预览的灯效有些卡顿，不丝滑"。
+> **风险等级：L1**（仅 `EffectsView.tsx` + 对应 CSS/i18n，不改数据结构）。
+
+- **R39.1** **根因**：改造前 `EffectsView` 把全部 7 个分类（约 55 个效果卡片）一次性全部挂载并各自跑自己的 `requestAnimationFrame` 循环；其中走 CPU 路径的卡片（`EffectCard`）每帧要在 48×27 网格上调用 `renderEffectPixel` 再逐格 `fillRect`，几十个卡片同时进行时占满主线程，这正是"卡顿"的来源；而 48×27 网格本身在 240×135 画布上被放大显示，边缘再怎么优化也是"色块"观感，这是"不丝滑"的来源。
+- **R39.2** **分类改为 Tab**：把原本纵向堆叠的 7 个分类 section 改成一个 Tab 栏（`.effects-category-tabs`），一次只挂载/渲染当前选中分类的卡片网格，未选中分类的卡片完全不创建（组件不挂载→不占用 canvas/`requestAnimationFrame`），从根本上减少同时运行的动画数量。
+- **R39.3** **GPU 直渲染卡片**：新增 `EffectCardGpu` 组件，对 `isGpuDirectEffect(kind)` 为真的效果（当前 28 个，见 R37 三批）复用 `gl/effectGl.ts` 的 `EffectGl` 做全分辨率逐像素渲染，而不是 CPU 粗网格。这类卡片的预览观感和主界面"RGB 画布预览"一致（连续、无色块），且把颜色计算从主线程 JS 挪到了 GPU，间接也让"卡顿"问题好转。
+  - 效果卡片渲染优先级：3D 效果（`EFFECT_3D_KINDS`）→ `EffectCard3D`；GPU 直渲染 2D 效果 → `EffectCardGpu`；其余仍走原 `EffectCard`（CPU 网格）。
+- **R39.4** **受影响文件**：`src/renderer/src/components/EffectsView.tsx`、`src/renderer/src/styles.css`（新增 `.effects-category-tabs`/`.effects-category-tab` 样式）。
+- **R39.5** **验收点**：
+  - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（435 passed / 41 skipped，1 个已知无关 flaky）
+  - [ ] 手动验证：切换效果库分类 Tab，只有当前 Tab 的卡片在动画；GPU 直渲染的卡片（如 rainbow/plasma/nebula）观感明显比 CPU 网格卡片平滑；整体切换/滚动效果库不再感觉卡顿
+- **R39.6** **状态**：🔄（代码已实施；等待用户实机视觉+流畅度验收）
+
+### R40. 采样设置面板改为可折叠 + Tab 分组（缩小占用空间）
+
+> 触发场景：用户反馈"采样设置的设置界面占用比例比较大...让显示器拓扑一栏显示方便一些。或者也做成一个可以折叠或者 tab 栏"。
+> **风险等级：L0**（纯 UI 重排 + 新增本地 UI 偏好持久化，不改 `Profile`/`SamplingSettings` 数据结构，所有既有 `sampling.*` 字段读写路径不变）。
+
+- **R40.1** **改造**：`sampling-panel` 的 panel-header 新增一个折叠/展开按钮（`ChevronUp`/`ChevronDown`），折叠后面板只剩标题行；展开状态下，原本平铺的全部控件（分辨率/宽高比、平滑度、饱和度、亮度、帧率、性能守护、格线开关、渲染风格）拆分为 3 个 Tab：
+  - **分辨率**（`sampling.tab.resolution`）：网格密度/列数行数、比例锁定、匹配显示器比例
+  - **画质**（`sampling.tab.appearance`）：平滑度、饱和度、亮度、渲染风格、格线开关
+  - **性能**（`sampling.tab.performance`）：帧率、性能守护开关
+  一次只渲染一个 Tab 的控件，整体可见高度从"全部 ~11 项堆叠"降到"单 Tab 最多 5 项"。
+- **R40.2** **状态持久化**：折叠状态（`rgbbox:samplingCollapsed`）和当前 Tab（`rgbbox:samplingTab`）存 `localStorage`，与既有的 `rgbbox:gridAdvanced`/`rgbbox:aspectLock` 偏好一致，跨会话保留、不写入 Profile。
+- **R40.3** **受影响文件**：`src/renderer/src/App.tsx`（新增状态 + JSX 重排）、`src/renderer/src/styles.css`（新增 `.sampling-tabs`/`.sampling-tab`/`.sampling-collapse-btn`）、`src/renderer/src/i18n/index.tsx`（新增 `sampling.tab.*`/`sampling.collapse`/`sampling.expand` 中英文案）。
+- **R40.4** **验收点**：
+  - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过
+  - [ ] 手动验证：折叠按钮能收起/展开采样面板；3 个 Tab 切换正常，各 Tab 控件均可正常读写 `profile.sampling.*`；折叠/Tab 状态刷新页面后保留
+- **R40.5** **状态**：🔄（代码已实施；等待用户实机验收布局与折叠/Tab 交互）
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |
