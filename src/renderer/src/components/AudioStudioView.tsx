@@ -2137,7 +2137,9 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                   {(() => {
                     const cur = EQ_PRESETS.find(p => p.id === eqPresetId)
                       || eqCustomPresets.find(p => p.id === eqPresetId)
-                    return cur ? cur.description : ''
+                    if (!cur) return ''
+                    const isZh = t('audio.eq.lang') === 'zh'
+                    return isZh ? cur.descriptionZh : cur.description
                   })()}
                 </p>
 

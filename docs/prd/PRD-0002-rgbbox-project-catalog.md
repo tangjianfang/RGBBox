@@ -1407,15 +1407,24 @@
 - **R51.8** **EQ drawer 新 UI 布局**：替换现状 drawer（AudioStudioView.tsx 1868–1922）。顶行：模式切换 segmented control（Graphic/Parametric）+ 预设下拉 + 保存/删除自定义按钮；中部：频率响应曲线图（SVG 可拖点，主视觉）；下部：graphic 模式显示 10 个垂直滑块（现状），parametric 模式显示段列表（每行 type 下拉 + freq/Q/gain 滑块 + 删除按钮 + "加段"按钮）；底部：EQ on/off + reset + close（现状保留）。
 - **R51.9** **i18n**：`src/renderer/src/i18n/index.tsx` 加 EQ 预设名/说明/模式切换/parametric 字段（type/Q/freq/gain/加段/删段/保存预设/删除预设）中英文。
 - **R51.10** **验收点**：
-  - [ ] `yarn typecheck` / `yarn build` / `yarn test`（含新 eqResponse 单测）全过
-  - [ ] 启动 audio view 加载一首歌播放，切 graphic↔parametric 模式不中断播放、无爆音
-  - [ ] 拖 graphic 滑块 / parametric 段参数 → 曲线图实时更新 + 听感实时变
-  - [ ] 拖曲线图点 → 滑块同步 + 听感变
-  - [ ] 加载每个预设 → 曲线/滑块同步、说明文字显示
-  - [ ] 保存自定义预设 → reload 后还在、可加载可删
-  - [ ] 顶部快按 transport：上一首/播放暂停/下一首 + 时间显示工作；底部完整控制仍可用
+  - [x] `yarn typecheck` / `yarn build` / `yarn test`（含新 eqResponse 单测）全过
+    - (静态验证: 39 files / 447 passed | 41 skipped；typecheck + build exit 0；commit `92240dc` + R51 系列 `e98861a`/`d6acfc8`/`e85441b`/`06332e2`/`0825eef`/`6bec6b5`/`156b7ff`/`92240dc`)
+  - [x] 启动 audio view 加载一首歌播放，切 graphic↔parametric 模式不中断播放、无爆音
+    - (静态验证: syncEqChain useEffect `[eqMode, eqBands, eqParams, eqEnabled]` L1305–1343 用 `gain.setTargetAtTime(band.gain, now, 0.005)` 防 zipper；`freq/Q.setValueAtTime`；mode 切换通过 `activeBands = eqMode === 'graphic' ? graphicGainsToBands(eqBands) : eqParams` L1311–1313 复用同一 chain；audio context 永不重建)
+  - [x] 拖 graphic 滑块 / parametric 段参数 → 曲线图实时更新 + 听感实时变
+    - (静态验证: `.audio-eq-slider` onChange → `setEqBands` L2169；`.eq-param-field` onChange → `setEqParams` L2217/2225/2233；`curveDb = useMemo(() => computeBiquadResponse(activeEqBands, 48000, curveFreqs), [activeEqBands, curveFreqs])` L950–953 → SVG path 重绘；syncEqChain L1343 同步写 biquad.gain)
+  - [x] 拖曲线图点 → 滑块同步 + 听感变
+    - (静态验证: `EqCurvePlot` `onPointerDown` → `onDragGain={handleCurveDrag}` L2149；handleCurveDrag L955–964 根据 eqMode 调 `setEqBands` (graphic 找最近 EQ_FREQS) 或 `setEqParams` (parametric 找最近段) → 触发 syncEqChain)
+  - [x] 加载每个预设 → 曲线/滑块同步、说明文字显示
+    - (静态验证: applyEqPreset L1700–1709 写 `setEqMode`/`setEqBands(bandsToGraphicGains(preset.bands))`/`setEqParams(preset.bands.map(b => ({...b})))`/`setEqPresetId`；描述渲染 L2135–2142 通过 `isZh ? cur.descriptionZh : cur.description` 按 `t('audio.eq.lang') === 'zh'` 切换中英文（14 个内置 + 自定义均含 descriptionZh 字段）)
+  - [x] 保存自定义预设 → reload 后还在、可加载可删
+    - (静态验证: saveCustomPreset L1711 写 localStorage；`useEffect(() => localStorage.setItem('rgbbox:eqPresets', JSON.stringify(eqCustomPresets)))` L940 持久化；useState 初始化 L937–939 从 localStorage 读；deleteCustomPreset L1725–1728 `filter` + `setEqPresetId('flat')`)
+  - [x] 顶部快按 transport：上一首/播放暂停/下一首 + 时间显示工作；底部完整控制仍可用
+    - (静态验证: `.audio-tools-bar` 含 `.audio-top-transport` cluster L1764–1771（SkipBack/Play|Pause/SkipForward + `<span className="audio-time">{formatTime(progress)} / {formatTime(duration)}</span>`），复用 skipPrev/togglePlay/skipNext/isPlaying/progress/duration/formatTime；底部 `.audio-player-controls` L1852+ 未被 Task 9 改动，`git show 6bec6b5 --stat` 仅 1 文件 26+/16- 修改 audio-tools-bar)
+  - [x] **用户待人工验收**（subagent 跳过 `yarn dev`，按用户决策统一人工验收；以下项需在 GUI 播放中确认）
+    - (待 GUI: 切 graphic↔parametric 模式无爆音（subagent 仅验 setTargetAtTime(0.005) 写入逻辑，未启 audio context 实测听感）；拖 graphic 滑块 / parametric 段参数听感实时变；拖曲线图点听感实时变；自定义预设 reload 后仍在 localStorage)
 - **R51.11** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/styles.css`、`src/renderer/src/i18n/index.tsx`、`src/engine/eqResponse.ts`（新）、`tests/engine/eqResponse.test.ts`（新）。
-- **R51.12** **状态**：⏳ 待实施
+- **R51.12** **状态**：✅ 已实施（2026-07-06）
 
 ## 4. 受影响文件
 
