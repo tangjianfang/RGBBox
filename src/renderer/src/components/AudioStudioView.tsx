@@ -1347,14 +1347,16 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     prev.connect(exit)
   }, [eqMode, eqBands, eqParams, eqEnabled])
 
-  // Progress tracking
+  // Progress tracking — 每次读 audioElementRef.current，避免闭包捕获旧 audio 元素
   useEffect(() => {
-    if (!isPlaying || !audioElementRef.current) return
-    const el = audioElementRef.current
+    if (!isPlaying) return
     const update = () => {
-      setProgress(el.currentTime)
-      setDuration(el.duration || 0)
+      const el = audioElementRef.current
+      if (!el) return
+      setProgress(el.currentTime || 0)
+      setDuration(isFinite(el.duration) ? el.duration : 0)
     }
+    update()
     const interval = setInterval(update, 100)
     return () => clearInterval(interval)
   }, [isPlaying])
@@ -1487,6 +1489,10 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     // media:// is a corsEnabled privileged scheme — crossOrigin needed for Web Audio API
     audio.crossOrigin = 'anonymous'
     audioElementRef.current = audio
+
+    audio.addEventListener('loadedmetadata', () => {
+      if (isFinite(audio.duration)) setDuration(audio.duration)
+    })
 
     const source = ctx.createMediaElementSource(audio)
     source.connect(gainNodeRef.current!)
@@ -1695,7 +1701,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   }, [lastGeneratedBuffer, generateAudio, exportFormat, genConfig.bitDepth])
 
   const formatTime = (s: number): string => {
-    if (!isFinite(s)) return '0:00'
+    if (!isFinite(s) || s <= 0) return '0:00'
     const m = Math.floor(s / 60)
     const sec = Math.floor(s % 60)
     return `${m}:${sec.toString().padStart(2, '0')}`
@@ -1772,25 +1778,72 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
               {isPlaying ? <Pause size={15} /> : <Play size={15} />}
             </button>
             <button type="button" className="audio-btn-icon" title={t('audio.next')} onClick={skipNext}><SkipForward size={15} /></button>
-            <span className="audio-time">{formatTime(progress)} / {formatTime(duration)}</span>
+            <button
+              type="button"
+              className={`audio-btn-sm ${playMode === 'loop' ? 'active' : ''}`}
+              onClick={() => setPlayMode(playMode === 'loop' ? 'sequential' : 'loop')}
+              title={t('audio.loop')}
+            ><RefreshCw size={13} /></button>
+            <button
+              type="button"
+              className={`audio-btn-sm ${playMode === 'shuffle' ? 'active' : ''}`}
+              onClick={() => setPlayMode(playMode === 'shuffle' ? 'sequential' : 'shuffle')}
+              title={t('audio.shuffle')}
+            ><Shuffle size={13} /></button>
+            <input
+              type="range"
+              className="audio-progress-bar"
+              min={0}
+              max={isFinite(duration) && duration > 0 ? duration : 1}
+              step={0.1}
+              value={progress}
+              onChange={(e) => seek(Number(e.target.value))}
+            />
+            <span className="audio-time">{formatTime(progress)} / {isFinite(duration) && duration > 0 ? formatTime(duration) : '--:--'}</span>
+            <span className="audio-now-playing-label">{currentTrackIndex >= 0 && playlist[currentTrackIndex] ? playlist[currentTrackIndex].name : ''}</span>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="audio-top-controls">
+            <button type="button" className="audio-btn-icon" onClick={() => setMuted(!muted)} title={t('audio.volume')}>
+              {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            </button>
+            <input
+              type="range"
+              className="audio-slider"
+              min={0} max={1} step={0.01}
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              title={t('audio.volume')}
+            />
+            <span className="audio-value">{Math.round(volume * 100)}%</span>
+            <span className="audio-label">{t('audio.balance')}</span>
+            <input
+              type="range"
+              className="audio-slider"
+              min={-1} max={1} step={0.01}
+              value={balance}
+              onChange={(e) => setBalance(Number(e.target.value))}
+            />
+            <span className="audio-value">{balance < 0 ? `L${Math.round(-balance * 50)}` : balance > 0 ? `R${Math.round(balance * 50)}` : 'C'}</span>
+            <button
+              type="button"
+              className={`audio-btn-icon${showLyrics ? ' active' : ''}`}
+              title={t('audio.lyrics.title')}
+              onClick={() => setShowLyrics(v => !v)}
+            ><FileText size={14} /></button>
+          </div>
+          <div className="audio-top-drawers">
             <button
               type="button"
               className={`audio-btn ${eqEnabled ? 'active' : ''}`}
               onClick={() => setEqExpanded(true)}
               title={t('audio.eq.title')}
-            >
-              {t('audio.eq.title')}
-            </button>
+            >{t('audio.eq.title')}</button>
             <button
               type="button"
               className="audio-btn"
               onClick={() => setGenExpanded(true)}
               title={t('audio.tab.generator')}
-            >
-              {t('audio.tab.generator')}
-            </button>
+            >{t('audio.tab.generator')}</button>
           </div>
         </div>
       </header>
@@ -1853,129 +1906,42 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             })}
           </div>
 
-          {/* Player controls */}
-          <div className="audio-player-controls">
-            {/* Current track name */}
-            {currentTrackIndex >= 0 && playlist[currentTrackIndex] && (
-              <div className="audio-now-playing">
-                <span className="audio-now-playing-label">{playlist[currentTrackIndex].name}</span>
-              </div>
-            )}
-
-            <div className="audio-transport">
-              <div className="audio-play-mode">
+          {/* R52.1: 歌词面板从底部播放器迁到左栏底部 */}
+          {showLyrics && (
+            <div className="audio-lyrics-panel">
+              <div className="audio-lyrics-header">
+                <span className="audio-lyrics-title">{t('audio.lyrics.title')}</span>
                 <button
                   type="button"
-                  className={`audio-btn-sm ${playMode === 'loop' ? 'active' : ''}`}
-                  onClick={() => setPlayMode(playMode === 'loop' ? 'sequential' : 'loop')}
-                  title={t('audio.loop')}
+                  className="audio-btn-sm"
+                  onClick={() => lrcFileInputRef.current?.click()}
+                  title={t('audio.lyrics.load')}
                 >
-                  <RefreshCw size={13} />
-                </button>
-                <button
-                  type="button"
-                  className={`audio-btn-sm ${playMode === 'shuffle' ? 'active' : ''}`}
-                  onClick={() => setPlayMode(playMode === 'shuffle' ? 'sequential' : 'shuffle')}
-                  title={t('audio.shuffle')}
-                >
-                  <Shuffle size={13} />
+                  <Plus size={12} /> {t('audio.lyrics.load')}
                 </button>
               </div>
-              <button type="button" className="audio-btn-sm" onClick={skipPrev}><SkipBack size={14} /></button>
-              <button type="button" className="audio-btn-play" onClick={togglePlay}>
-                {isPlaying ? <Pause size={18} /> : <Play size={18} />}
-              </button>
-              <button type="button" className="audio-btn-sm" onClick={skipNext}><SkipForward size={14} /></button>
-            </div>
-
-            <div className="audio-progress-row">
-              <span className="audio-time">{formatTime(progress)}</span>
-              <input
-                type="range"
-                className="audio-progress-bar"
-                min={0}
-                max={duration || 1}
-                step={0.1}
-                value={progress}
-                onChange={(e) => seek(Number(e.target.value))}
-              />
-              <span className="audio-time">{formatTime(duration)}</span>
-            </div>
-
-            <div className="audio-controls-row">
-              <button type="button" className="audio-btn-icon" onClick={() => setMuted(!muted)}>
-                {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-              </button>
-              <input
-                type="range"
-                className="audio-slider"
-                min={0}
-                max={1}
-                step={0.01}
-                value={volume}
-                onChange={(e) => setVolume(Number(e.target.value))}
-                title={t('audio.volume')}
-              />
-              <span className="audio-label">{t('audio.balance')}</span>
-              <input
-                type="range"
-                className="audio-slider"
-                min={-1}
-                max={1}
-                step={0.01}
-                value={balance}
-                onChange={(e) => setBalance(Number(e.target.value))}
-              />
-              {/* LRC lyrics button */}
-              <button
-                type="button"
-                className={`audio-btn-icon${showLyrics ? ' active' : ''}`}
-                title={t('audio.lyrics.title')}
-                onClick={() => setShowLyrics(v => !v)}
-              >
-                <FileText size={14} />
-              </button>
-              <input
-                ref={lrcFileInputRef}
-                type="file"
-                accept=".lrc,.txt"
-                style={{ display: 'none' }}
-                onChange={handleLrcFile}
-              />
-            </div>
-
-            {/* Lyrics panel */}
-            {showLyrics && (
-              <div className="audio-lyrics-panel">
-                <div className="audio-lyrics-header">
-                  <span className="audio-lyrics-title">{t('audio.lyrics.title')}</span>
-                  <button
-                    type="button"
-                    className="audio-btn-sm"
-                    onClick={() => lrcFileInputRef.current?.click()}
-                    title={t('audio.lyrics.load')}
-                  >
-                    <Plus size={12} /> {t('audio.lyrics.load')}
-                  </button>
-                </div>
-                <div ref={lyricsContainerRef} className="audio-lyrics-scroll">
-                  {lrcLines.length === 0 ? (
-                    <p className="audio-lyrics-empty">{t('audio.lyrics.empty')}</p>
-                  ) : (
-                    lrcLines.map((line, i) => (
-                      <div
-                        key={i}
-                        className={`audio-lyric-line${i === activeLrcIndex ? ' active' : ''}`}
-                        onClick={() => seek(line.time)}
-                      >
-                        {line.text}
-                      </div>
-                    ))
-                  )}
-                </div>
+              <div ref={lyricsContainerRef} className="audio-lyrics-scroll">
+                {lrcLines.length === 0 ? (
+                  <p className="audio-lyrics-empty">{t('audio.lyrics.empty')}</p>
+                ) : (
+                  lrcLines.map((line, i) => (
+                    <div
+                      key={i}
+                      className={`audio-lyric-line${i === activeLrcIndex ? ' active' : ''}`}
+                      onClick={() => seek(line.time)}
+                    >{line.text}</div>
+                  ))
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+          <input
+            ref={lrcFileInputRef}
+            type="file"
+            accept=".lrc,.txt"
+            style={{ display: 'none' }}
+            onChange={handleLrcFile}
+          />
         </div>
 
         {/* Right Panel - Studio Functions */}

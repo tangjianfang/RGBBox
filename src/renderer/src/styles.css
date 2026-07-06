@@ -3079,7 +3079,59 @@ input:not([type]):focus {
    scenes/export tabs) declutters the main working area. */
 .audio-tools-bar {
   display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.audio-top-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.audio-top-transport .audio-progress-bar {
+  width: 160px;
+  min-width: 100px;
+}
+.audio-top-transport .audio-now-playing-label {
+  opacity: 0.7;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+.audio-top-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.audio-top-controls .audio-slider { width: 80px; }
+.audio-top-drawers {
+  display: flex;
   gap: 8px;
+  margin-left: auto;
+}
+.audio-value {
+  font-size: 11px;
+  font-family: monospace;
+  opacity: 0.75;
+  min-width: 34px;
+}
+.audio-lyrics-panel {
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding: 8px;
+  max-height: 160px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.audio-lyrics-scroll {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
 }
 
 .audio-drawer-backdrop {
@@ -4548,15 +4600,6 @@ input:not([type]):focus {
   letter-spacing: 0.2px;
 }
 
-.audio-lyrics-panel {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  padding-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 180px;
-}
-
 .audio-lyrics-header {
   display: flex;
   align-items: center;
@@ -4571,16 +4614,6 @@ input:not([type]):focus {
   text-transform: uppercase;
   letter-spacing: 0.6px;
   flex: 1;
-}
-
-.audio-lyrics-scroll {
-  flex: 1;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
 .audio-lyric-line {
@@ -5111,7 +5144,5 @@ input:not([type]):focus {
 .eq-param-field span { font-size: 9px; }
 .eq-add-band { margin-top: 6px; }
 
-/* R51.1: 顶部快按 transport cluster */
-.audio-tools-bar { justify-content: space-between; }
-.audio-top-transport { display: flex; align-items: center; gap: 6px; }
+/* R51.1/R52.1: 顶部 transport cluster（R52.1 全合并后由 .audio-tools-bar 主规则承载）*/
 .audio-top-transport .audio-time { font-size: 12px; color: rgba(138, 162, 173, 0.85); }
