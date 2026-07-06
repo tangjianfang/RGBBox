@@ -236,6 +236,7 @@ export function drawWaveform(canvas: HTMLCanvasElement, timeData: Float32Array, 
   fillGrad.addColorStop(1, 'rgba(79, 195, 247, 0)')
   ctx.fillStyle = fillGrad
   ctx.fill()
+  ctx.shadowBlur = 0
 
   // Center line
   ctx.strokeStyle = 'rgba(79, 195, 247, 0.12)'
