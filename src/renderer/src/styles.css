@@ -99,7 +99,7 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: clamp(180px, 22vw, 260px) 1fr;
   height: calc(100vh - 40px);
   margin-top: 40px;
   overflow: hidden;
@@ -289,7 +289,11 @@ button {
 .content-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(320px, 1.5fr) minmax(260px, 0.85fr);
+  grid-template-columns: 1.618fr 1fr;
+}
+
+.content-grid > * {
+  min-width: 0;
 }
 
 .sampling-panel {
