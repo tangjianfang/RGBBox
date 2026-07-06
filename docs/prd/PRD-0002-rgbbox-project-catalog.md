@@ -1376,6 +1376,47 @@
 - **R49.6** **受影响文件**：`README.md`、`docs/index.html`、`docs/prd/PRD-0002-rgbbox-project-catalog.md`。
 - **R49.7** **状态**：✅ 已实施（2026-07-06）
 
+### R50. UI 布局基础设施（黄金分割 + 底部自适应 + 采样面板高度 bug）
+
+> 起源：用户反馈 5 项 UI 优化（R51 同源），其中第 1/2/5 项属「全局布局基础设施」，回归面广，单独成条先行。第 1 项——底部拉伸窗口时内容区栏部分内容只显示一部分（溢出截断）；第 2 项——采样设置展开与收起时显示栏大小一样（应不同）；第 5 项——部分 UI 布局不合理，按人体工程学 + 黄金分割法重排。本条**纯 CSS + 极小 JSX（className）改动**，不动业务逻辑 / IPC / 引擎 / 3D / audio graph。设计稿：`docs/superpowers/specs/2026-07-06-ui-optimization-design.md` §2。
+
+- **R50.1** **侧栏 vs 主区比例**：`.app-shell` 的 `grid-template-columns` 从固定 `240px 1fr` 改为 `clamp(180px, 22vw, 260px) 1fr`（响应式侧栏，22vw 在常见 1920 宽被 clamp 到 260px 上限，侧栏约为主区 0.13–0.17 的视觉比例）。
+- **R50.2** **内容区左右栏黄金分割**：`.content-grid` 的 `grid-template-columns` 从 `minmax(320px, 1.5fr) minmax(260px, 0.85fr)`（≈1.76:1）改为 `1.618fr 1fr`（φ:1），并去掉 minmax 约束改为 `min-width: 0` 让子项可收缩。
+- **R50.3** **底部自适应（第 1 项）**：根因在内部——各 `.panel`/`.preview-panel` 有固定 `min-height`（200/320px），flex/grid 子项默认 `min-height: auto` 无法收缩。修复（保持 `.app-shell` 高度 `calc(100vh - 40px)` 不变，配合 `margin-top: 40px` 让位 fixed titlebar）：`.workspace-main` 加 `min-height: 0`；`.preview-panel`/`.panel` 的 `min-height` 改 `0` + 加 `flex: 1 1 auto`；每个 view 根容器加 `display: flex; flex-direction: column; min-height: 0`，内容区 `flex: 1 1 auto; min-height: 0; overflow: auto`。效果：底部拉伸时按 flex 分配剩余空间，超出由内容区自身滚动，不再被父容器截断。
+- **R50.4** **采样面板高度 bug（第 2 项）**：CSS 特异性问题——`.sampling-panel { min-height: unset }` 被后定义、等特异性的 `.panel { min-height: 200px }` 覆盖。修复：`App.tsx` 采样面板 className 加 `.collapsed` 区分（JS 已有 `samplingCollapsed` state）；styles.css 提升特异性为 `section.sampling-panel { min-height: 0 }`，`.sampling-panel.collapsed { min-height: 0; height: auto }`（收起仅标题行高度），`.sampling-panel:not(.collapsed) { min-height: 0; height: auto }`（展开按内容自适应）。收起/展开高度明显不同。
+- **R50.5** **验收点**：
+  - [ ] `yarn typecheck` / `yarn build` / `yarn test` 全过
+  - [ ] 逐个进入 9 个 view，底部内容不被截断（缩小窗口到底部仍可滚动/自适应）
+  - [ ] 采样面板收起/展开高度明显不同（收起≈标题行高，展开=标题+tabs+控件）
+  - [ ] 各 view 布局未被破坏（侧栏、内容左右栏比例、预览区）
+  - [ ] 内容左右栏比例 ≈ 1.618:1（黄金分割）
+- **R50.6** **受影响文件**：`src/renderer/src/styles.css`（主要）、`src/renderer/src/App.tsx`（仅采样面板 className 加 `.collapsed`）。
+- **R50.7** **状态**：⏳ 待实施
+
+### R51. AudioStudio 顶部 transport + EQ 双模式（graphic / parametric + 曲线图 + 预设 + 自定义）
+
+> 起源：用户反馈第 3/4 项。第 3 项——音频工作站播放器控制放到 top 区域方便顺手控制；第 4 项——EQ 拖动曲线即时生效 + 提供高级/经典 EQ 算法曲线（有参考性）+ 支持自定义 EQ 曲线。本条集中在 `AudioStudioView.tsx` 的 EQ drawer + 顶部工具栏，不动 audio 播放引擎（wavesurfer）/ 可视化 / overlay / IPC / 引擎 / 其他 view。设计稿：`docs/superpowers/specs/2026-07-06-ui-optimization-design.md` §3。
+
+- **R51.1** **顶部快按 transport（第 3 项）**：`audio-tools-bar` 改 `display: flex; justify-content: space-between`，左侧加 transport cluster（`SkipBack / Play|Pause / SkipForward` + `time / duration` 文字），右侧保留 EQ/Generator 按钮。复用现有 `skipPrev`/`togglePlay`/`skipNext`/`isPlaying`/`progress`/`duration`，无新逻辑。底部 `audio-player-controls`（进度/音量/平衡/模式/歌词/曲名）原样保留。
+- **R51.2** **EQ 数据模型**：统一为 `EqBand[] = { id, type: 'peaking'|'lowshelf'|'highshelf'|'notch'|'lowpass'|'highpass'|'bandpass', freq, gain, Q }`，模式 `EqMode = 'graphic' | 'parametric'`。Graphic 模式 10 段固定 ISO 频率（`EQ_FREQS`）、`type='peaking'`/`Q=1.41` 锁定，UI 是 10 个垂直滑块（现状保留）；Parametric 模式 N 段（默认 6，可增减 1–12），每段 type/freq/gain/Q 全可调。
+- **R51.3** **音频图动态化**：利用 `BiquadFilterNode` 的 `type`/`frequency`/`Q`/`gain` 可直接 `setTargetAtTime`/`setValueAtTime` 实时改、无需重建 node。改 gain/freq/Q/type → 直接写现有 node（`setTargetAtTime(timeConst=0.005)`，无 zipper 噪声）；加段 → 创建新 BiquadFilter 插入 chain；减段 → `disconnect()` 移除并重连前后；切 graphic↔parametric → 复用同一 chain，仅段数/type/Q 约束不同。`useEffect` 监听 `bands` 变化做 diff（按 id 增删节点；属性变化直接写）。现状 `ensureAudioContext` 内建一次固定 10 个 peaking 的逻辑改为按 `EqBand[]` 动态维护。
+- **R51.4** **频率响应曲线图（核心新视觉）**：SVG `<path>`，X 轴 log 频率 20Hz–20kHz，Y 轴 -24..+24 dB。按 Web Audio `BiquadFilter` 标准二阶节系数公式算每段频率响应（复数乘法累乘传递函数 `H(f)` → `20*log10|H|` dB），叠加每段单独浅色响应曲线 + 总和深色粗曲线（参考性）。可拖点改 gain：graphic 模式拖最近 ISO 频段，parametric 模式拖最近段；拖动即时写 node + 重绘曲线 + 联动滑块。
+- **R51.5** **频率响应纯函数 + 单测先行**：新建 `src/engine/eqResponse.ts`（纯 TS、无 DOM，符合 engine 层约定），导出 `computeBiquadResponse(type, freq, Q, gain, sampleRate, freqPoints): number[]`。新建 `tests/engine/eqResponse.test.ts` 单测验证曲线计算与 Web Audio 实际响应一致（这是阶段 2 最大单点风险，必须先单测稳定再接 UI）。
+- **R51.6** **预设库（经典 + 高级，带说明，有参考性）**：内置 `const EQ_PRESETS: EqPreset[]`，每个含 `name` + `description`（中英文，说明用途/参考）。Graphic 经典：Flat / Pop / Rock / Jazz / Vocal / Bass Boost / Treble Boost / Loudness / Smile Curve。Parametric 参考（工程手法）：HPF @40Hz（去低频隆隆声）/ LPF @18kHz（去高频噪）/ Notch @50Hz Q=5（去电源嗡声）/ Presence @3kHz Q=1（提升人声存在感）/ De-ess @6kHz Q=4（齿音抑制）。
+- **R51.7** **自定义预设**：用户当前设置 → "保存预设" → 输入名 → 存 localStorage `rgbbox:eqPresets`。预设下拉显示「内置」+「我的」（自定义可删）。加载预设 → 写入 `eqBands`/`eqParams` state → 自动触发 audio graph 更新。
+- **R51.8** **EQ drawer 新 UI 布局**：替换现状 drawer（AudioStudioView.tsx 1868–1922）。顶行：模式切换 segmented control（Graphic/Parametric）+ 预设下拉 + 保存/删除自定义按钮；中部：频率响应曲线图（SVG 可拖点，主视觉）；下部：graphic 模式显示 10 个垂直滑块（现状），parametric 模式显示段列表（每行 type 下拉 + freq/Q/gain 滑块 + 删除按钮 + "加段"按钮）；底部：EQ on/off + reset + close（现状保留）。
+- **R51.9** **i18n**：`src/renderer/src/i18n/index.tsx` 加 EQ 预设名/说明/模式切换/parametric 字段（type/Q/freq/gain/加段/删段/保存预设/删除预设）中英文。
+- **R51.10** **验收点**：
+  - [ ] `yarn typecheck` / `yarn build` / `yarn test`（含新 eqResponse 单测）全过
+  - [ ] 启动 audio view 加载一首歌播放，切 graphic↔parametric 模式不中断播放、无爆音
+  - [ ] 拖 graphic 滑块 / parametric 段参数 → 曲线图实时更新 + 听感实时变
+  - [ ] 拖曲线图点 → 滑块同步 + 听感变
+  - [ ] 加载每个预设 → 曲线/滑块同步、说明文字显示
+  - [ ] 保存自定义预设 → reload 后还在、可加载可删
+  - [ ] 顶部快按 transport：上一首/播放暂停/下一首 + 时间显示工作；底部完整控制仍可用
+- **R51.11** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/styles.css`、`src/renderer/src/i18n/index.tsx`、`src/engine/eqResponse.ts`（新）、`tests/engine/eqResponse.test.ts`（新）。
+- **R51.12** **状态**：⏳ 待实施
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |
