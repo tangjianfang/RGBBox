@@ -305,7 +305,7 @@ button {
   background: #131d23;
   border: 1px solid #26343c;
   border-radius: 12px;
-  min-height: 200px;
+  min-height: 0;
   padding: 16px;
   transition: border-color 200ms ease, box-shadow 200ms ease;
 }
@@ -316,12 +316,12 @@ button {
 }
 
 .preview-panel {
-  min-height: 320px;
+  min-height: 0;
 }
 
 .controls-panel,
 .diagnostics-panel {
-  min-height: 260px;
+  min-height: 0;
 }
 
 .panel-header {
@@ -1797,10 +1797,15 @@ input:not([type]):focus {
   flex: 1;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
   overflow-y: auto;
   padding: 20px 22px;
   scrollbar-width: thin;
   scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
+}
+
+.workspace-main > * {
+  min-height: 0;
 }
 
 /* ── FX sidebar header ──────────────────────────────────────────────────── */
