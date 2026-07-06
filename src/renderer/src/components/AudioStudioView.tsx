@@ -1709,7 +1709,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
 
   // R51.7: 保存当前参数为自定义预设
   const saveCustomPreset = useCallback(() => {
-    const name = window.prompt(t('audio.eq.presetName' as any))
+    const name = window.prompt(t('audio.eq.presetName'))
     if (!name) return
     const bands = eqMode === 'graphic' ? graphicGainsToBands(eqBands) : eqParams
     const preset: EqPreset = {
@@ -1762,11 +1762,11 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             keeping the main view focused on playback + visualization. */}
         <div className="audio-tools-bar">
           <div className="audio-top-transport">
-            <button type="button" className="audio-btn-icon" title={t('audio.prev' as any)} onClick={skipPrev}><SkipBack size={15} /></button>
-            <button type="button" className="audio-btn-icon" title={isPlaying ? t('audio.pause' as any) : t('audio.play' as any)} onClick={togglePlay}>
+            <button type="button" className="audio-btn-icon" title={t('audio.prev')} onClick={skipPrev}><SkipBack size={15} /></button>
+            <button type="button" className="audio-btn-icon" title={isPlaying ? t('audio.pause') : t('audio.play')} onClick={togglePlay}>
               {isPlaying ? <Pause size={15} /> : <Play size={15} />}
             </button>
-            <button type="button" className="audio-btn-icon" title={t('audio.next' as any)} onClick={skipNext}><SkipForward size={15} /></button>
+            <button type="button" className="audio-btn-icon" title={t('audio.next')} onClick={skipNext}><SkipForward size={15} /></button>
             <span className="audio-time">{formatTime(progress)} / {formatTime(duration)}</span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -1774,17 +1774,17 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
               type="button"
               className={`audio-btn ${eqEnabled ? 'active' : ''}`}
               onClick={() => setEqExpanded(true)}
-              title={t('audio.eq.title' as any)}
+              title={t('audio.eq.title')}
             >
-              {t('audio.eq.title' as any)}
+              {t('audio.eq.title')}
             </button>
             <button
               type="button"
               className="audio-btn"
               onClick={() => setGenExpanded(true)}
-              title={t('audio.tab.generator' as any)}
+              title={t('audio.tab.generator')}
             >
-              {t('audio.tab.generator' as any)}
+              {t('audio.tab.generator')}
             </button>
           </div>
         </div>
