@@ -5094,3 +5094,24 @@ input:not([type]):focus {
     transform: translateY(0);
   }
 }
+
+/* R51.8: EQ drawer 新布局 — 模式切换 + 曲线图 + 段列表 */
+.eq-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.eq-mode-switch { display: inline-flex; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; overflow: hidden; }
+.eq-mode-btn { padding: 4px 10px; background: transparent; border: none; color: rgba(220, 230, 235, 0.7); cursor: pointer; font-size: 12px; }
+.eq-mode-btn.active { background: rgba(78, 201, 176, 0.18); color: #4ec9b0; }
+.eq-preset-select { background: #1a2229; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #dce6eb; padding: 4px 8px; font-size: 12px; flex: 1; min-width: 120px; }
+.eq-preset-desc { font-size: 11px; color: rgba(138, 162, 173, 0.85); margin: 0 0 10px; line-height: 1.4; }
+.eq-curve-plot { background: #0f1418; border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; margin-bottom: 12px; }
+.eq-param-list { display: flex; flex-direction: column; gap: 6px; }
+.eq-param-row { display: grid; grid-template-columns: 90px 1fr 1fr 1fr 24px; gap: 6px; align-items: center; font-size: 11px; }
+.eq-param-type { background: #1a2229; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: #dce6eb; padding: 2px 4px; font-size: 11px; }
+.eq-param-field { display: flex; flex-direction: column; gap: 1px; font-size: 10px; color: rgba(138, 162, 173, 0.85); }
+.eq-param-field input[type="range"] { width: 100%; }
+.eq-param-field span { font-size: 9px; }
+.eq-add-band { margin-top: 6px; }
+
+/* R51.1: 顶部快按 transport cluster */
+.audio-tools-bar { justify-content: space-between; }
+.audio-top-transport { display: flex; align-items: center; gap: 6px; }
+.audio-top-transport .audio-time { font-size: 12px; color: rgba(138, 162, 173, 0.85); }

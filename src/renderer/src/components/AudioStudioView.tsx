@@ -10,7 +10,11 @@ import {
   type VisualizerMode
 } from '../audio/visualizers'
 import { useI18n } from '../i18n'
-import { type EqBand, type EqMode, EQ_GRAPHIC_FREQS, graphicGainsToBands } from '../../../engine/eqResponse'
+import {
+  type EqBand, type EqMode, type EqPreset,
+  EQ_GRAPHIC_FREQS, EQ_PRESETS, graphicGainsToBands, bandsToGraphicGains,
+  computeBiquadResponse, logFreqPoints,
+} from '../../../engine/eqResponse'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -807,6 +811,72 @@ function saveCache(cache: AudioStudioCache): void {
   } catch { /* ignore */ }
 }
 
+// R51.4: EQ 频率响应曲线图 SVG，可拖点改 gain。
+function EqCurvePlot({
+  freqs, db, bands, onDragGain,
+}: {
+  freqs: number[]
+  db: number[]
+  bands: EqBand[]
+  onDragGain: (freqHz: number, newGain: number) => void
+}) {
+  const W = 360, H = 140, padL = 28, padR = 8, padT = 10, padB = 18
+  const fMin = 20, fMax = 20000
+  const dbMin = -24, dbMax = 24
+  const x = (f: number): number => padL + (Math.log(f) - Math.log(fMin)) / (Math.log(fMax) - Math.log(fMin)) * (W - padL - padR)
+  const y = (v: number): number => padT + (1 - (Math.max(dbMin, Math.min(dbMax, v)) - dbMin) / (dbMax - dbMin)) * (H - padT - padB)
+  const path = freqs.map((f, i) => `${i === 0 ? 'M' : 'L'}${x(f).toFixed(1)},${y(db[i]).toFixed(1)}`).join(' ')
+  const zeroY = y(0)
+
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>): void => {
+    const svg = e.currentTarget
+    svg.setPointerCapture(e.pointerId)
+    const rect = svg.getBoundingClientRect()
+    const scaleX = W / rect.width
+    const drag = (ev: PointerEvent): void => {
+      const px = (ev.clientX - rect.left) * scaleX
+      if (px < padL) return
+      const tNorm = (px - padL) / (W - padL - padR)
+      const freqHz = fMin * Math.pow(fMax / fMin, tNorm)
+      const scaleY = H / rect.height
+      const py = (ev.clientY - rect.top) * scaleY
+      const gain = dbMax - (py - padT) / (H - padT - padB) * (dbMax - dbMin)
+      onDragGain(freqHz, gain)
+    }
+    const up = (ev: PointerEvent): void => {
+      svg.removeEventListener('pointermove', drag)
+      svg.removeEventListener('pointerup', up)
+      svg.releasePointerCapture(ev.pointerId)
+    }
+    svg.addEventListener('pointermove', drag)
+    svg.addEventListener('pointerup', up)
+    drag(e.nativeEvent)
+  }
+
+  return (
+    <svg
+      className="eq-curve-plot"
+      viewBox={`0 0 ${W} ${H}`}
+      onPointerDown={onPointerDown}
+      style={{ width: '100%', height: 150, cursor: 'pointer' }}
+    >
+      <line x1={padL} y1={zeroY} x2={W - padR} y2={zeroY} stroke="rgba(138,162,173,0.25)" strokeDasharray="3 3" />
+      {[100, 1000, 10000].map(f => (
+        <g key={f}>
+          <line x1={x(f)} y1={padT} x2={x(f)} y2={H - padB} stroke="rgba(138,162,173,0.12)" />
+          <text x={x(f)} y={H - 4} fill="rgba(138,162,173,0.6)" fontSize="9" textAnchor="middle">
+            {f >= 1000 ? `${f / 1000}k` : f}
+          </text>
+        </g>
+      ))}
+      <path d={path} fill="none" stroke="#4ec9b0" strokeWidth="2" />
+      {bands.map(b => (
+        <circle key={b.id} cx={x(b.freq)} cy={y(b.gain)} r="5" fill="#e6c07b" stroke="#1a1f24" strokeWidth="1" />
+      ))}
+    </svg>
+  )
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 interface AudioStudioViewProps {
@@ -862,8 +932,38 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     { id: 'p6', type: 'highpass', freq: 30, gain: 0, Q: 0.7 },
   ])
   const [eqExpanded, setEqExpanded] = useState(false)
-  // setEqMode / setEqParams will be wired to UI controls in Task 8 (R51.4 EQ drawer).
-  void setEqMode; void setEqParams
+  // R51.7: EQ 预设库状态 — 内置 14 个 + 用户自定义（localStorage 持久化）
+  const [eqPresetId, setEqPresetId] = useState<string>('flat')
+  const [eqCustomPresets, setEqCustomPresets] = useState<EqPreset[]>(() => {
+    try { return JSON.parse(localStorage.getItem('rgbbox:eqPresets') || '[]') } catch { return [] }
+  })
+  useEffect(() => { localStorage.setItem('rgbbox:eqPresets', JSON.stringify(eqCustomPresets)) }, [eqCustomPresets])
+
+  // R51.4: 曲线图数据（128 个对数频率采样点）
+  const activeEqBands = useMemo(
+    () => eqEnabled
+      ? (eqMode === 'graphic' ? graphicGainsToBands(eqBands) : eqParams)
+      : [],
+    [eqEnabled, eqMode, eqBands, eqParams],
+  )
+  const curveFreqs = useMemo(() => logFreqPoints(128), [])
+  const curveDb = useMemo(
+    () => computeBiquadResponse(activeEqBands, 48000, curveFreqs),
+    [activeEqBands, curveFreqs],
+  )
+
+  const handleCurveDrag = useCallback((freqHz: number, newGain: number) => {
+    const clamped = Math.max(-24, Math.min(24, newGain))
+    if (eqMode === 'graphic') {
+      let nearest = 0, min = Infinity
+      EQ_FREQS.forEach((f, i) => { if (Math.abs(f - freqHz) < min) { min = Math.abs(f - freqHz); nearest = i } })
+      setEqBands(prev => { const next = [...prev]; next[nearest] = clamped; return next })
+    } else {
+      let nearest = 0, min = Infinity
+      eqParams.forEach((b, i) => { if (Math.abs(b.freq - freqHz) < min) { min = Math.abs(b.freq - freqHz); nearest = i } })
+      setEqParams(prev => prev.map((b, i) => i === nearest ? { ...b, gain: clamped } : b))
+    }
+  }, [eqMode, EQ_FREQS, eqParams])
 
   // Generator state
   const [genConfig, setGenConfig] = useState<GeneratorConfig>(cached.genConfig || DEFAULT_GENERATOR_CONFIG)
@@ -1596,6 +1696,37 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
+  // R51.7: 应用 EQ 预设（设置 mode/bands 并记录当前 preset id）
+  const applyEqPreset = useCallback((preset: EqPreset) => {
+    setEqMode(preset.mode)
+    if (preset.mode === 'graphic') {
+      setEqBands(bandsToGraphicGains(preset.bands))
+    } else {
+      setEqParams(preset.bands.map(b => ({ ...b })))
+    }
+    setEqPresetId(preset.id)
+  }, [])
+
+  // R51.7: 保存当前参数为自定义预设
+  const saveCustomPreset = useCallback(() => {
+    const name = window.prompt(t('audio.eq.presetName' as any))
+    if (!name) return
+    const bands = eqMode === 'graphic' ? graphicGainsToBands(eqBands) : eqParams
+    const preset: EqPreset = {
+      id: `c-${Date.now()}`, name, nameZh: name,
+      description: 'User custom preset.', descriptionZh: '用户自定义预设。',
+      mode: eqMode, bands, builtin: false,
+    }
+    setEqCustomPresets(prev => [...prev, preset])
+    setEqPresetId(preset.id)
+  }, [eqMode, eqBands, eqParams, t])
+
+  // R51.7: 删除自定义预设（切回 flat）
+  const deleteCustomPreset = useCallback((id: string) => {
+    setEqCustomPresets(prev => prev.filter(p => p.id !== id))
+    setEqPresetId('flat')
+  }, [])
+
   const filteredScenes = useMemo(
     () => SCENE_PRESETS.filter(s => s.category === sceneCategory),
     [sceneCategory]
@@ -1908,8 +2039,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             ))}
           </div>
 
-          {/* EQ drawer (R29.5: opened via the "EQ" toolbar button in the
-              header instead of being mixed inline with scenes/export) */}
+          {/* EQ drawer (R51.8: full rewrite — mode switch + curve plot + preset library + custom save/delete) */}
           {eqExpanded && (
             <div className="audio-drawer-backdrop" onClick={() => setEqExpanded(false)}>
               <div className="audio-drawer" onClick={(e) => e.stopPropagation()}>
@@ -1928,41 +2058,195 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                     </button>
                   </div>
                 </div>
-                <div className="audio-eq-grid">
-                  {EQ_FREQS.map((freq, i) => (
-                    <div key={freq} className="audio-eq-band">
-                      <span className="audio-eq-freq">{freq >= 1000 ? `${freq / 1000}k` : freq}</span>
-                      <input
-                        type="range"
-                        className="audio-eq-slider"
-                        min={-12}
-                        max={12}
-                        step={0.5}
-                        value={eqBands[i]}
-                        style={{ writingMode: 'vertical-lr', direction: 'rtl', height: 80, width: 20 }}
-                        onChange={(e) => {
-                          const val = Number(e.target.value)
-                          setEqBands(prev => { const next = [...prev]; next[i] = val; return next })
-                        }}
-                      />
-                      <span className="audio-eq-db">{eqBands[i] > 0 ? `+${eqBands[i]}` : eqBands[i]}</span>
-                      <button
-                        type="button"
-                        className="audio-btn-icon"
-                        title="Reset"
-                        onClick={() => setEqBands(prev => { const next = [...prev]; next[i] = 0; return next })}
-                      >×</button>
-                    </div>
-                  ))}
+
+                {/* R51.4 + R51.7: mode switch + preset select + save/delete */}
+                <div className="eq-toolbar">
+                  <div className="eq-mode-switch">
+                    <button
+                      type="button"
+                      className={`eq-mode-btn ${eqMode === 'graphic' ? 'active' : ''}`}
+                      onClick={() => setEqMode('graphic')}
+                      title={'Graphic (10-band)'}
+                    >
+                      {'Graphic'}
+                    </button>
+                    <button
+                      type="button"
+                      className={`eq-mode-btn ${eqMode === 'parametric' ? 'active' : ''}`}
+                      onClick={() => setEqMode('parametric')}
+                      title={'Parametric (free bands)'}
+                    >
+                      {'Parametric'}
+                    </button>
+                  </div>
+                  <select
+                    className="eq-preset-select"
+                    value={eqPresetId}
+                    onChange={(e) => {
+                      const id = e.target.value
+                      const found = EQ_PRESETS.find(p => p.id === id)
+                        || eqCustomPresets.find(p => p.id === id)
+                      if (found) applyEqPreset(found)
+                    }}
+                  >
+                    <optgroup label={'Built-in'}>
+                      {EQ_PRESETS.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </optgroup>
+                    {eqCustomPresets.length > 0 && (
+                      <optgroup label={'Custom'}>
+                        {eqCustomPresets.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
                   <button
                     type="button"
                     className="audio-btn-sm"
-                    style={{ gridColumn: '1 / -1', marginTop: 4 }}
-                    onClick={() => setEqBands(new Array(10).fill(0))}
+                    title={'Save preset'}
+                    onClick={saveCustomPreset}
                   >
-                    {t('audio.eq.reset')}
+                    <Plus size={12} />
                   </button>
+                  {eqCustomPresets.some(p => p.id === eqPresetId) && (
+                    <button
+                      type="button"
+                      className="audio-btn-icon"
+                      title={'Delete preset'}
+                      onClick={() => deleteCustomPreset(eqPresetId)}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
                 </div>
+
+                {/* 当前预设描述 */}
+                <p className="eq-preset-desc">
+                  {(() => {
+                    const cur = EQ_PRESETS.find(p => p.id === eqPresetId)
+                      || eqCustomPresets.find(p => p.id === eqPresetId)
+                    return cur ? cur.description : ''
+                  })()}
+                </p>
+
+                {/* R51.4: 频率响应曲线图（拖动即改 gain） */}
+                <EqCurvePlot
+                  freqs={curveFreqs}
+                  db={curveDb}
+                  bands={activeEqBands}
+                  onDragGain={handleCurveDrag}
+                />
+
+                {/* Graphic 模式：10 段竖滑块 */}
+                {eqMode === 'graphic' && (
+                  <>
+                    <div className="audio-eq-grid">
+                      {EQ_FREQS.map((freq, i) => (
+                        <div key={freq} className="audio-eq-band">
+                          <span className="audio-eq-freq">{freq >= 1000 ? `${freq / 1000}k` : freq}</span>
+                          <input
+                            type="range"
+                            className="audio-eq-slider"
+                            min={-12}
+                            max={12}
+                            step={0.5}
+                            value={eqBands[i]}
+                            style={{ writingMode: 'vertical-lr', direction: 'rtl', height: 80, width: 20 }}
+                            onChange={(e) => {
+                              const val = Number(e.target.value)
+                              setEqBands(prev => { const next = [...prev]; next[i] = val; return next })
+                            }}
+                          />
+                          <span className="audio-eq-db">{eqBands[i] > 0 ? `+${eqBands[i]}` : eqBands[i]}</span>
+                          <button
+                            type="button"
+                            className="audio-btn-icon"
+                            title={'Reset band'}
+                            onClick={() => setEqBands(prev => { const next = [...prev]; next[i] = 0; return next })}
+                          >×</button>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="audio-btn-sm"
+                      style={{ marginTop: 6 }}
+                      onClick={() => setEqBands(new Array(10).fill(0))}
+                    >
+                      {t('audio.eq.reset')}
+                    </button>
+                  </>
+                )}
+
+                {/* Parametric 模式：自由段（type/freq/gain/Q + add/delete） */}
+                {eqMode === 'parametric' && (
+                  <>
+                    <div className="eq-param-list">
+                      {eqParams.map((band, i) => (
+                        <div key={band.id} className="eq-param-row">
+                          <select
+                            className="eq-param-type"
+                            value={band.type}
+                            onChange={(e) => setEqParams(prev => prev.map((b, j) => j === i ? { ...b, type: e.target.value as typeof band.type } : b))}
+                          >
+                            <option value="peaking">Peaking</option>
+                            <option value="lowshelf">Low Shelf</option>
+                            <option value="highshelf">High Shelf</option>
+                            <option value="notch">Notch</option>
+                            <option value="lowpass">Low Pass</option>
+                            <option value="highpass">High Pass</option>
+                            <option value="bandpass">Band Pass</option>
+                          </select>
+                          <label className="eq-param-field">
+                            <span>{`Freq ${band.freq.toFixed(0)}Hz`}</span>
+                            <input
+                              type="range" min={20} max={20000} step={1}
+                              value={band.freq}
+                              onChange={(e) => setEqParams(prev => prev.map((b, j) => j === i ? { ...b, freq: Number(e.target.value) } : b))}
+                            />
+                          </label>
+                          <label className="eq-param-field">
+                            <span>{`Gain ${band.gain > 0 ? '+' : ''}${band.gain.toFixed(1)}dB`}</span>
+                            <input
+                              type="range" min={-24} max={24} step={0.5}
+                              value={band.gain}
+                              onChange={(e) => setEqParams(prev => prev.map((b, j) => j === i ? { ...b, gain: Number(e.target.value) } : b))}
+                            />
+                          </label>
+                          <label className="eq-param-field">
+                            <span>{`Q ${band.Q.toFixed(2)}`}</span>
+                            <input
+                              type="range" min={0.1} max={20} step={0.05}
+                              value={band.Q}
+                              onChange={(e) => setEqParams(prev => prev.map((b, j) => j === i ? { ...b, Q: Number(e.target.value) } : b))}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="audio-btn-icon"
+                            title={'Delete band'}
+                            disabled={eqParams.length <= 1}
+                            onClick={() => setEqParams(prev => prev.length > 1 ? prev.filter((_, j) => j !== i) : prev)}
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="audio-btn-sm eq-add-band"
+                      onClick={() => setEqParams(prev => [
+                        ...prev,
+                        { id: `u-${Date.now()}`, type: 'peaking', freq: 1000, gain: 0, Q: 1 },
+                      ])}
+                    >
+                      <Plus size={12} /> {'Add band'}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}
