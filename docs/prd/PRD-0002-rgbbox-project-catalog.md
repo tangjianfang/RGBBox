@@ -1426,6 +1426,44 @@
 - **R51.11** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/styles.css`、`src/renderer/src/i18n/index.tsx`、`src/engine/eqResponse.ts`（新）、`tests/engine/eqResponse.test.ts`（新）。
 - **R51.12** **状态**：✅ 已实施（2026-07-06）
 
+### R52 AudioStudio 第二轮优化 ⏳
+
+> 起源：用户 R50/R51 完成后提出的 5 项音频工作站优化（2026-07-06）。
+> 设计稿：`docs/superpowers/specs/2026-07-06-audio-studio-r2-design.md`
+> 实施计划：`docs/superpowers/plans/2026-07-06-audio-studio-r2.md`
+
+| 子条款 | 内容 | 类型 | 状态 |
+|---|---|---|---|
+| R52.1 | 顶部 transport 全合并 + 删底部 `audio-player-controls` | 重构 | ⏳ |
+| R52.2 | 文件表独立高度 + 修复拖拽添加文件/文件夹 | bug+布局 | ⏳ |
+| R52.3 | 图表区占满右栏全高（删底部 scenes/export tabs） | 布局 | ⏳ |
+| R52.4 | 场景/导出并入 Generator 抽屉 sub-tab | 重构 | ⏳ |
+| R52.5 | 6 图表数值叠加（纯函数 + 单测先行） | 新功能 | ⏳ |
+| R52.6 | 6 图表美化变体（每图 1 个，投屏可关数值） | 新功能 | ⏳ |
+| R52.7 | 投屏区域选择（复用 DisplayMap 8 选项，A 方案） | 新功能 | ⏳ |
+| R52.8 | 修复播放时间 0:00 + 音量/平衡数值标签 | bug+小特性 | ⏳ |
+| R52.9 | i18n 新 key（EN+ZH） | 收尾 | ⏳ |
+| R52.10 | 验收点（静态 + 用户人工） | 收尾 | ⏳ |
+| R52.11 | 受影响文件清单 | 收尾 | ⏳ |
+| R52.12 | 状态标记 | 收尾 | ⏳ |
+
+**R52.10 验收点：**
+- [ ] `yarn typecheck` exit 0
+- [ ] `yarn build` exit 0
+- [ ] `yarn test` 全过，`tests/engine/audioMetrics.test.ts` 通过
+- [ ] 顶部 transport 含走带/进度条/时间/音量(带%)/平衡(带 L/R)/播放模式/曲名；底部播放器已删
+- [ ] 拖拽音频文件/文件夹到左栏可添加并播放
+- [ ] 文件表独立占满左栏高度；图表区独立占满右栏全高
+- [ ] Scenes/Export 已并入 Generator 抽屉 sub-tab，右栏无底部 tabs
+- [ ] 6 图表角落有轻量数值（classic）；art 风格变体可切换
+- [ ] 投屏 picker 有 8 区域选项 + 自定义拖框；projector 按 region 布局
+- [ ] 文件播放时间正常推进；duration NaN 显示 `--:--`
+- [ ] 用户人工 GUI 验收通过
+
+**R52.11 受影响文件：**
+`src/engine/audioMetrics.ts`(新)、`tests/engine/audioMetrics.test.ts`(新)、`src/renderer/src/audio/visualizers.ts`、`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/components/AudioVizProjector.tsx`、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`docs/prd/PRD-0002-rgbbox-project-catalog.md`。
+不动：`package.json` scripts 段、`src/main/index.ts`、`src/preload/index.ts`。
+
 ## 4. 受影响文件
 
 | 文件 | 操作 | 说明 |
