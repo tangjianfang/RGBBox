@@ -7,7 +7,8 @@ import {
   createVuPeakState,
   drawVisualizerFrame,
   drawWaveform,
-  type VisualizerMode
+  type VisualizerMode,
+  type VizDrawOpts,
 } from '../audio/visualizers'
 import { useI18n } from '../i18n'
 import {
@@ -986,6 +987,9 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
 
   // Visualizer mode
   const [vizMode, setVizMode] = useState<VisualizerMode>('spectrum')
+  // R52.6: art-style + showMetrics state; setters prefixed `_` until Task 8 wires UI controls.
+  const [vizStyle, _setVizStyle] = useState<'classic' | 'art'>('classic')
+  const [vizShowMetrics, _setVizShowMetrics] = useState(true)
   // In-app fullscreen for the visualizer
   const [vizFullscreen, setVizFullscreen] = useState(false)
   const [displays, setDisplays] = useState<Array<{ id: number; label: string; bounds: { x: number; y: number; width: number; height: number }; primary: boolean }>>([])
@@ -1223,10 +1227,11 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
         analyser.getFloatTimeDomainData(timeData)
 
         if (specCanvas) {
-          drawVisualizerFrame(specCanvas, vizMode, freqData, timeData, spectrogramBufferRef.current, vuPeakRef.current)
+          const vizOpts: VizDrawOpts = { showMetrics: vizShowMetrics, style: vizStyle, sampleRate: 48000, fftSize: 2048 }
+          drawVisualizerFrame(specCanvas, vizMode, freqData, timeData, spectrogramBufferRef.current, vuPeakRef.current, vizOpts)
         }
         // `waveCanvas` only exists in the DOM for 'oscilloscope' mode (see JSX below).
-        if (waveCanvas) drawWaveform(waveCanvas, timeData)
+        if (waveCanvas) drawWaveform(waveCanvas, timeData, { showMetrics: vizShowMetrics, style: vizStyle })
 
         // R29.3 (revised): while projecting, broadcast the raw analyser data to
         // any open AudioVizProjector windows — they run the exact same draw
@@ -1243,7 +1248,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
       cancelAnimationFrame(animFrameRef.current)
       ro.disconnect()
     }
-  }, [isPlaying, previewPlaying, vizMode, vizFullscreen, visible])
+  }, [isPlaying, previewPlaying, vizMode, vizFullscreen, vizShowMetrics, vizStyle, visible])
 
   // ESC exits the in-app visualizer fullscreen
   useEffect(() => {

@@ -11,6 +11,8 @@
  * real smooth animation instead of a blocky LED-grid downsample.
  */
 
+import { peakFrequency, rmsLevel, dominantFrequency, lufsShortEstimate } from '../../../engine/audioMetrics'
+
 export type VisualizerMode = 'spectrum' | 'oscilloscope' | 'spectrogram' | 'vuMeter' | 'circular' | 'waveRing' | 'waveform'
 
 export const SPECTRUM_BARS = 64 // Optimal bar count for visual clarity
@@ -23,6 +25,53 @@ export interface AudioVizMessage {
   mode: VisualizerMode
   freq: Uint8Array
   time: Float32Array
+}
+
+export interface VizDrawOpts {
+  showMetrics?: boolean
+  style?: 'classic' | 'art'
+  sampleRate?: number   // 默认 48000
+  fftSize?: number      // 默认 2048
+}
+
+export type RegionPreset =
+  | 'fullscreen' | 'top-third' | 'middle-third' | 'bottom-third'
+  | 'left-third' | 'center-third' | 'right-third' | 'custom'
+
+export interface RegionRect { x: number; y: number; w: number; h: number }
+
+export function regionPresetToRect(preset: RegionPreset, custom?: RegionRect): RegionRect {
+  switch (preset) {
+    case 'fullscreen': return { x: 0, y: 0, w: 1, h: 1 }
+    case 'top-third': return { x: 0, y: 0, w: 1, h: 1 / 3 }
+    case 'middle-third': return { x: 0, y: 1 / 3, w: 1, h: 1 / 3 }
+    case 'bottom-third': return { x: 0, y: 2 / 3, w: 1, h: 1 / 3 }
+    case 'left-third': return { x: 0, y: 0, w: 1 / 3, h: 1 }
+    case 'center-third': return { x: 1 / 3, y: 1 / 3, w: 1 / 3, h: 1 / 3 }
+    case 'right-third': return { x: 2 / 3, y: 0, w: 1 / 3, h: 1 }
+    case 'custom': return custom ?? { x: 0, y: 0, w: 1, h: 1 }
+    default: return { x: 0, y: 0, w: 1, h: 1 }
+  }
+}
+
+/** 通用角落小字 overlay（不喧宾夺主）。 */
+function drawMetricsOverlay(ctx: CanvasRenderingContext2D, _width: number, lines: string[]): void {
+  if (lines.length === 0) return
+  ctx.save()
+  ctx.font = '10px sans-serif'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  ctx.fillStyle = 'rgba(230,192,123,0.7)'
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], 8, 8 + i * 13)
+  }
+  ctx.restore()
+}
+
+function fmtHz(hz: number): string {
+  if (hz <= 0) return '0Hz'
+  if (hz < 1000) return `${Math.round(hz)}Hz`
+  return `${(hz / 1000).toFixed(1)}k`
 }
 
 export interface VuPeakState {
@@ -41,7 +90,7 @@ export function createSpectrogramBuffer(): Uint8Array[] {
 }
 
 /** Premium gradient spectrum with glow, rounded caps, and mirror reflection */
-export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array): void {
+export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, opts?: VizDrawOpts): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   const dpr = window.devicePixelRatio || 1
@@ -106,6 +155,13 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array): v
     ctx.closePath()
     ctx.fill()
 
+    // Art variant: bright top highlight cap
+    if (opts?.style === 'art') {
+      ctx.shadowBlur = 0
+      ctx.fillStyle = `hsla(${hue2}, 100%, 85%, 0.9)`
+      ctx.fillRect(x, y, barWidth, 2)
+    }
+
     // Mirror reflection (subtle, fading)
     ctx.shadowBlur = 0
     const reflH = barH * 0.35
@@ -124,11 +180,16 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array): v
   ctx.lineTo(width, mainHeight)
   ctx.stroke()
 
+  if (opts?.showMetrics) {
+    const { freqHz, db } = peakFrequency(freqData, opts.sampleRate ?? 48000, opts.fftSize ?? 2048)
+    drawMetricsOverlay(ctx, width, [`${fmtHz(freqHz)}  ${db.toFixed(1)}dB`])
+  }
+
   ctx.restore()
 }
 
 /** Premium waveform with gradient stroke and subtle fill */
-export function drawWaveform(canvas: HTMLCanvasElement, timeData: Float32Array): void {
+export function drawWaveform(canvas: HTMLCanvasElement, timeData: Float32Array, opts?: VizDrawOpts): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   const dpr = window.devicePixelRatio || 1
@@ -152,6 +213,8 @@ export function drawWaveform(canvas: HTMLCanvasElement, timeData: Float32Array):
   ctx.lineWidth = 1.8
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
+
+  if (opts?.style === 'art') { ctx.shadowBlur = 12; ctx.shadowColor = 'rgba(129,212,250,0.8)' }
 
   // Draw waveform path
   ctx.beginPath()
@@ -182,6 +245,11 @@ export function drawWaveform(canvas: HTMLCanvasElement, timeData: Float32Array):
   ctx.lineTo(width, height / 2)
   ctx.stroke()
 
+  if (opts?.showMetrics) {
+    const r = rmsLevel(timeData)
+    drawMetricsOverlay(ctx, width, [`RMS ${(r * 100).toFixed(0)}`])
+  }
+
   ctx.restore()
 }
 
@@ -189,7 +257,8 @@ export function drawWaveform(canvas: HTMLCanvasElement, timeData: Float32Array):
 export function drawSpectrogram(
   canvas: HTMLCanvasElement,
   freqData: Uint8Array,
-  spectrogramBuffer: Uint8Array[]
+  spectrogramBuffer: Uint8Array[],
+  opts?: VizDrawOpts,
 ): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -219,12 +288,19 @@ export function drawSpectrogram(
       const binIdx = Math.floor((height - 1 - row) * binsPerPixel * 0.75)
       const value = frame[binIdx] / 255
       if (value < 0.02) continue
+      // Art variant: perceptually linear (log-feel) color map.
+      const v = opts?.style === 'art' ? Math.pow(value, 0.6) : value
       // Heat map: dark blue → cyan → yellow → red → white
-      const h = 240 - value * 240
-      const l = 10 + value * 55
+      const h = 240 - v * 240
+      const l = 10 + v * 55
       ctx.fillStyle = `hsl(${h}, 90%, ${l}%)`
       ctx.fillRect(x, row, colWidth + 0.5, 1)
     }
+  }
+
+  if (opts?.showMetrics) {
+    const f = dominantFrequency(freqData, opts.sampleRate ?? 48000, opts.fftSize ?? 2048)
+    drawMetricsOverlay(ctx, width, [`dom ${fmtHz(f)}`])
   }
 
   ctx.restore()
@@ -234,7 +310,8 @@ export function drawSpectrogram(
 export function drawVUMeter(
   canvas: HTMLCanvasElement,
   timeData: Float32Array,
-  peakHoldRef: VuPeakState
+  peakHoldRef: VuPeakState,
+  opts?: VizDrawOpts,
 ): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -294,6 +371,13 @@ export function drawVUMeter(
     ctx.fillStyle = grad
     ctx.fillRect(24, y, fillWidth, meterHeight)
 
+    // Art variant: glowing end-dot at the bar tip
+    if (opts?.style === 'art') {
+      ctx.shadowBlur = 10; ctx.shadowColor = '#eab308'
+      ctx.beginPath(); ctx.arc(24 + fillWidth, y + meterHeight / 2, 3, 0, Math.PI * 2); ctx.fill()
+      ctx.shadowBlur = 0
+    }
+
     // Peak hold indicator
     const peakX = 24 + peak * meterWidth
     ctx.fillStyle = peak > 0.9 ? '#ef4444' : '#ffffff'
@@ -330,11 +414,16 @@ export function drawVUMeter(
     ctx.fillText(`${db}`, mx, height - 2)
   }
 
+  if (opts?.showMetrics) {
+    const l = lufsShortEstimate(timeData)
+    drawMetricsOverlay(ctx, width, [`LUFS ${l.toFixed(1)}`])
+  }
+
   ctx.restore()
 }
 
 /** Circular spectrum: bars radiate outward from center in a 360° ring */
-export function drawCircularSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array): void {
+export function drawCircularSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, opts?: VizDrawOpts): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   const dpr = window.devicePixelRatio || 1
@@ -384,11 +473,24 @@ export function drawCircularSpectrum(canvas: HTMLCanvasElement, freqData: Uint8A
   ctx.arc(cx, cy, radius, 0, Math.PI * 2)
   ctx.fill()
 
+  // Art variant: soft glow ring around the center circle
+  if (opts?.style === 'art') {
+    ctx.shadowBlur = 20; ctx.shadowColor = 'rgba(129,212,250,0.6)'
+    ctx.strokeStyle = 'rgba(129,212,250,0.4)'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.stroke()
+    ctx.shadowBlur = 0
+  }
+
+  if (opts?.showMetrics) {
+    const { freqHz } = peakFrequency(freqData, opts.sampleRate ?? 48000, opts.fftSize ?? 2048)
+    drawMetricsOverlay(ctx, w, [`${fmtHz(freqHz)}`])
+  }
+
   ctx.restore()
 }
 
 /** Wave ring: oscilloscope waveform drawn as a circle */
-export function drawWaveRing(canvas: HTMLCanvasElement, timeData: Float32Array): void {
+export function drawWaveRing(canvas: HTMLCanvasElement, timeData: Float32Array, opts?: VizDrawOpts): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   const dpr = window.devicePixelRatio || 1
@@ -429,12 +531,31 @@ export function drawWaveRing(canvas: HTMLCanvasElement, timeData: Float32Array):
   ctx.closePath()
   ctx.stroke()
 
+  // Art variant: outer double-ring at 1.15× radius, thin violet stroke
+  if (opts?.style === 'art') {
+    ctx.strokeStyle = 'rgba(171,71,188,0.35)'; ctx.lineWidth = 1
+    ctx.beginPath()
+    for (let i = 0; i < 360; i++) {
+      const idx = Math.min(Math.floor(i * (bufferLength / 360)), bufferLength - 1)
+      const r = baseRadius * 1.15 + (timeData[idx] ?? 0) * amplitude
+      const a = (i / 360) * Math.PI * 2 - Math.PI / 2
+      const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
+    }
+    ctx.closePath(); ctx.stroke()
+  }
+
   // Glow fill
   const fillGrad = ctx.createRadialGradient(cx, cy, baseRadius * 0.5, cx, cy, baseRadius + amplitude)
   fillGrad.addColorStop(0, 'rgba(79, 195, 247, 0.05)')
   fillGrad.addColorStop(1, 'rgba(79, 195, 247, 0)')
   ctx.fillStyle = fillGrad
   ctx.fill()
+
+  if (opts?.showMetrics) {
+    const r = rmsLevel(timeData)
+    drawMetricsOverlay(ctx, w, [`${(r * 100).toFixed(0)}`])
+  }
 
   ctx.restore()
 }
@@ -449,26 +570,27 @@ export function drawVisualizerFrame(
   freqData: Uint8Array,
   timeData: Float32Array,
   spectrogramBuffer: Uint8Array[],
-  vuPeak: VuPeakState
+  vuPeak: VuPeakState,
+  opts?: VizDrawOpts,
 ): void {
   switch (mode) {
     case 'spectrum':
-      drawSpectrum(canvas, freqData)
+      drawSpectrum(canvas, freqData, opts)
       break
     case 'oscilloscope':
-      drawWaveform(canvas, timeData)
+      drawWaveform(canvas, timeData, opts)
       break
     case 'spectrogram':
-      drawSpectrogram(canvas, freqData, spectrogramBuffer)
+      drawSpectrogram(canvas, freqData, spectrogramBuffer, opts)
       break
     case 'vuMeter':
-      drawVUMeter(canvas, timeData, vuPeak)
+      drawVUMeter(canvas, timeData, vuPeak, opts)
       break
     case 'circular':
-      drawCircularSpectrum(canvas, freqData)
+      drawCircularSpectrum(canvas, freqData, opts)
       break
     case 'waveRing':
-      drawWaveRing(canvas, timeData)
+      drawWaveRing(canvas, timeData, opts)
       break
   }
 }
