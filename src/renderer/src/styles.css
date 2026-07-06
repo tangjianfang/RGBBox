@@ -3021,6 +3021,7 @@ input:not([type]):focus {
   width: 280px;
   min-width: 240px;
   gap: 12px;
+  min-height: 0;
   overflow: hidden;
   background: rgba(18, 22, 28, 0.6);
   backdrop-filter: blur(20px);
@@ -3033,6 +3034,7 @@ input:not([type]):focus {
 
 .audio-left-panel .audio-playlist {
   flex: 1;
+  min-height: 0;
   max-height: none;
   overflow-y: auto;
 }

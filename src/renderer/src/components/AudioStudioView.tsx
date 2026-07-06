@@ -1389,10 +1389,12 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     setPlaylist(prev => [...prev, ...newTracks])
   }, [t])
 
-  // Fallback for drag-and-drop: use File objects (blob URLs), with path extraction when available
+  // R52.2: Electron 41 已移除 File.path → 有 nativePath 走 media:// 持久化路径；
+  // 无 nativePath 时用 URL.createObjectURL 兜底（仅本会话可播，不持久化）。
   const handleFileSelect = useCallback((files: FileList | null, folderName?: string) => {
     if (!files) return
-    const entries: Array<{ path: string; name: string; folder?: string }> = []
+    const pathEntries: Array<{ path: string; name: string; folder?: string }> = []
+    const blobEntries: Array<{ name: string; url: string; folder?: string }> = []
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       if (!/\.(wav|flac|mp3|aac|m4a|ogg|opus|weba)$/i.test(file.name)) continue
@@ -1400,12 +1402,32 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
       if (nativePath) {
         const relPath = (file as any).webkitRelativePath as string | undefined
         const folder = relPath ? relPath.split('/')[0] : folderName
-        entries.push({ path: nativePath, name: file.name, folder })
+        pathEntries.push({ path: nativePath, name: file.name, folder })
+      } else {
+        // Electron 41: File.path 已废弃 → blob URL 兜底（本会话可播，不持久化到磁盘路径）
+        const blobUrl = URL.createObjectURL(file)
+        const relPath = (file as any).webkitRelativePath as string | undefined
+        const folder = relPath ? relPath.split('/')[0] : folderName
+        blobEntries.push({ name: file.name, url: blobUrl, folder })
       }
-      // Files without .path (browser security context) are skipped — they can't persist
     }
-    if (entries.length > 0) {
-      addTracksFromPaths(entries, folderName)
+    if (pathEntries.length > 0) addTracksFromPaths(pathEntries, folderName)
+    if (blobEntries.length > 0) {
+      const groupName = folderName || t('audio.defaultGroup')
+      const newTracks: TrackItem[] = blobEntries.map((e, i) => ({
+        id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+        name: e.name,
+        duration: 0,
+        url: e.url,
+        group: e.folder || groupName,
+      }))
+      const newGroupNames = [...new Set(newTracks.map(tr => tr.group))]
+      setGroups(prev => {
+        const existing = new Set(prev.map(g => g.name))
+        const toAdd = newGroupNames.filter(n => !existing.has(n))
+        return [...prev, ...toAdd.map(name => ({ name, collapsed: false }))]
+      })
+      setPlaylist(prev => [...prev, ...newTracks])
     }
   }, [addTracksFromPaths, t])
 
@@ -1426,22 +1448,32 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     e.preventDefault()
     e.stopPropagation()
     const items = e.dataTransfer.items
-    if (items) {
-      const files: File[] = []
-      let folderName = ''
-      const processEntry = (entry: any): Promise<void> => {
-        return new Promise((resolve) => {
-          if (entry.isFile) {
-            entry.file((file: File) => { files.push(file); resolve() })
-          } else if (entry.isDirectory) {
-            if (!folderName) folderName = entry.name
-            const reader = entry.createReader()
+    const AUDIO_RE = /\.(wav|flac|mp3|aac|m4a|ogg|opus|weba)$/i
+    const MAX_FILES = 100
+    let folderName = ''
+    const files: File[] = []
+    const processEntry = (entry: any): Promise<void> => {
+      return new Promise((resolve) => {
+        if (files.length >= MAX_FILES) { resolve(); return }
+        if (entry.isFile) {
+          entry.file((file: File) => {
+            if (AUDIO_RE.test(file.name) && files.length < MAX_FILES) files.push(file)
+            resolve()
+          })
+        } else if (entry.isDirectory) {
+          if (!folderName) folderName = entry.name
+          const reader = entry.createReader()
+          const readBatch = (): void => {
             reader.readEntries((entries: any[]) => {
-              Promise.all(entries.map(processEntry)).then(() => resolve())
+              if (entries.length === 0) { resolve(); return }
+              Promise.all(entries.map(processEntry)).then(readBatch)
             })
-          } else { resolve() }
-        })
-      }
+          }
+          readBatch()
+        } else { resolve() }
+      })
+    }
+    if (items) {
       const entries: any[] = []
       for (let i = 0; i < items.length; i++) {
         const entry = items[i].webkitGetAsEntry?.()
@@ -1453,6 +1485,9 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             const dt = new DataTransfer()
             files.forEach(f => dt.items.add(f))
             handleFileSelect(dt.files, folderName || undefined)
+            if (files.length >= MAX_FILES) {
+              // 静默截断（无 toast 组件，沿用现状）
+            }
           }
         })
       } else {
