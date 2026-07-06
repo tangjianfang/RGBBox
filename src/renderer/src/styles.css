@@ -3090,6 +3090,7 @@ input:not([type]):focus {
   flex-wrap: wrap;
 }
 .audio-top-transport .audio-progress-bar {
+  flex: 0 0 160px;
   width: 160px;
   min-width: 100px;
 }
