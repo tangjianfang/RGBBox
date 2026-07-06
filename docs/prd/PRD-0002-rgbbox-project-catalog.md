@@ -1380,18 +1380,18 @@
 
 > 起源：用户反馈 5 项 UI 优化（R51 同源），其中第 1/2/5 项属「全局布局基础设施」，回归面广，单独成条先行。第 1 项——底部拉伸窗口时内容区栏部分内容只显示一部分（溢出截断）；第 2 项——采样设置展开与收起时显示栏大小一样（应不同）；第 5 项——部分 UI 布局不合理，按人体工程学 + 黄金分割法重排。本条**纯 CSS + 极小 JSX（className）改动**，不动业务逻辑 / IPC / 引擎 / 3D / audio graph。设计稿：`docs/superpowers/specs/2026-07-06-ui-optimization-design.md` §2。
 
-- **R50.1** **侧栏 vs 主区比例**：`.app-shell` 的 `grid-template-columns` 从固定 `240px 1fr` 改为 `clamp(180px, 22vw, 260px) 1fr`（响应式侧栏，22vw 在常见 1920 宽被 clamp 到 260px 上限，侧栏约为主区 0.13–0.17 的视觉比例）。
-- **R50.2** **内容区左右栏黄金分割**：`.content-grid` 的 `grid-template-columns` 从 `minmax(320px, 1.5fr) minmax(260px, 0.85fr)`（≈1.76:1）改为 `1.618fr 1fr`（φ:1），并去掉 minmax 约束改为 `min-width: 0` 让子项可收缩。
+- **R50.1** **侧栏 vs 主区比例**：`.app-shell` 的 `grid-template-columns` 从固定 `240px 1fr` 改为 `clamp(180px, 22vw, 260px) 1fr`（响应式侧栏，22vw 在常见 1920 宽被 clamp 到 260px 上限，侧栏约为主区 0.13–0.17 的视觉比例）。✅ 已实施（2026-07-06，commit `9d842a1`）。
+- **R50.2** **内容区左右栏黄金分割**：`.content-grid` 的 `grid-template-columns` 从 `minmax(320px, 1.5fr) minmax(260px, 0.85fr)`（≈1.76:1）改为 `1.618fr 1fr`（φ:1），并去掉 minmax 约束改为 `.content-grid > * { min-width: 0 }` 让子项可收缩。✅ 已实施（2026-07-06，commit `9d842a1`）。
 - **R50.3** **底部自适应（第 1 项）**：根因在内部——各 `.panel`/`.preview-panel` 有固定 `min-height`（200/320px），flex/grid 子项默认 `min-height: auto` 无法收缩。修复（保持 `.app-shell` 高度 `calc(100vh - 40px)` 不变，配合 `margin-top: 40px` 让位 fixed titlebar）：`.workspace-main` 加 `min-height: 0`；`.preview-panel`/`.panel` 的 `min-height` 改 `0`；`.workspace-main > *` 加 `min-height: 0`。效果：底部拉伸时 flex/grid 子项可收缩，超出由内容区自身滚动，不再被父容器截断。✅ 已实施（2026-07-06，commit `11b6f5c`）。
-- **R50.4** **采样面板高度 bug（第 2 项）**：CSS 特异性问题——`.sampling-panel { min-height: unset }` 被后定义、等特异性的 `.panel { min-height: 200px }` 覆盖。修复：`App.tsx` 采样面板 className 加 `.collapsed` 区分（JS 已有 `samplingCollapsed` state）；styles.css 提升特异性为 `section.sampling-panel { min-height: 0 }`，`.sampling-panel.collapsed { min-height: 0; height: auto }`（收起仅标题行高度），`.sampling-panel:not(.collapsed) { min-height: 0; height: auto }`（展开按内容自适应）。收起/展开高度明显不同。
+- **R50.4** **采样面板高度 bug（第 2 项）**：根因——`.sampling-panel { min-height: unset }` 被后定义、等特异性的 `.panel { min-height: 200px }` 覆盖，`.panel` 固定 min-height 把收起/展开都顶到同一高度。R50.3 把 `.panel` 的 `min-height` 改 `0` 已消除根因（采样面板作为 `.content-grid` 的 grid item，`grid-column: 1 / -1`、行高 auto，收起时 `{!samplingCollapsed && (...)}` 隐藏 body → 高度≈标题行；展开 → 标题+tabs+控件，两者自然不同）。R50.4 进一步把 `.sampling-panel` 特异性提升为 `section.sampling-panel`（0,0,1,1 > `.panel` 的 0,0,1,0），将误导性的 `min-height: unset` 改为显式 `0`，`@media (max-width: 960px)` 断点同步特异性，作为清理与加固。实施中判定原计划的 `App.tsx` className `.collapsed` 改动为冗余（R50.3 已修根因），已撤回，最终未改 `App.tsx`。✅ 已实施（2026-07-06，commit `da3ff79`）。
 - **R50.5** **验收点**：
-  - [ ] `yarn typecheck` / `yarn build` / `yarn test` 全过
-  - [ ] 逐个进入 9 个 view，底部内容不被截断（缩小窗口到底部仍可滚动/自适应）
-  - [ ] 采样面板收起/展开高度明显不同（收起≈标题行高，展开=标题+tabs+控件）
-  - [ ] 各 view 布局未被破坏（侧栏、内容左右栏比例、预览区）
-  - [ ] 内容左右栏比例 ≈ 1.618:1（黄金分割）
-- **R50.6** **受影响文件**：`src/renderer/src/styles.css`（主要）、`src/renderer/src/App.tsx`（仅采样面板 className 加 `.collapsed`）。
-- **R50.7** **状态**：🔄 实施中（R50.3 已完成，R50.1/2/4 待后续任务）
+  - [x] `yarn typecheck` / `yarn build` / `yarn test` 全过 — 证据：`yarn typecheck` Done 5.24s；`yarn build` ✓ built in 7.57s（renderer 102.29 kB css 等）；`yarn test` 38 文件 / 436 passed | 41 skipped（2026-07-06）
+  - [ ] 逐个进入 9 个 view，底部内容不被截断（缩小窗口到底部仍可滚动/自适应）— 待最终统一人工 GUI 验收
+  - [ ] 采样面板收起/展开高度明显不同（收起≈标题行高，展开=标题+tabs+控件）— 待最终统一人工 GUI 验收
+  - [ ] 各 view 布局未被破坏（侧栏、内容左右栏比例、预览区）— 待最终统一人工 GUI 验收
+  - [ ] 内容左右栏比例 ≈ 1.618:1（黄金分割）— 待最终统一人工 GUI 验收
+- **R50.6** **受影响文件**：`src/renderer/src/styles.css`（R50.1–R50.4 全部 CSS 改动集中于此）。原计划 R50.4 含 `App.tsx` className `.collapsed` 改动，实施中判定为冗余（R50.3 已修根因）已撤回，最终未修改 `App.tsx`。
+- **R50.7** **状态**：🔄 代码自检通过（typecheck/build/test 全过，commits `9d842a1`/`11b6f5c`/`da3ff79`），4 项 GUI 验收点待最终统一人工验收。
 
 ### R51. AudioStudio 顶部 transport + EQ 双模式（graphic / parametric + 曲线图 + 预设 + 自定义）
 
