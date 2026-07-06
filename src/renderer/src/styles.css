@@ -296,9 +296,9 @@ button {
   min-width: 0;
 }
 
-.sampling-panel {
+section.sampling-panel {
   grid-column: 1 / -1;
-  min-height: unset;
+  min-height: 0;
 }
 
 .panel {
@@ -2399,7 +2399,7 @@ input:not([type]):focus {
     flex-direction: column;
   }
 
-  .sampling-panel {
+  section.sampling-panel {
     grid-column: 1;
   }
 
