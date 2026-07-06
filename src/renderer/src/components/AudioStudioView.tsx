@@ -10,6 +10,7 @@ import {
   type VisualizerMode
 } from '../audio/visualizers'
 import { useI18n } from '../i18n'
+import { type EqBand, type EqMode, EQ_GRAPHIC_FREQS, graphicGainsToBands } from '../../../engine/eqResponse'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -845,10 +846,24 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
   const [balance, setBalance] = useState(cached.balance ?? 0)
-  const EQ_FREQS = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const
+  const EQ_FREQS = EQ_GRAPHIC_FREQS
   const [eqEnabled, setEqEnabled] = useState(false)
+  const [eqMode, setEqMode] = useState<EqMode>(() =>
+    (localStorage.getItem('rgbbox:eqMode') as EqMode) || 'graphic')
+  useEffect(() => { localStorage.setItem('rgbbox:eqMode', eqMode) }, [eqMode])
+  // graphic 模式用 eqBands(10 gains)，parametric 模式用 eqParams(EqBand[])
   const [eqBands, setEqBands] = useState<number[]>(() => new Array(10).fill(0))
+  const [eqParams, setEqParams] = useState<EqBand[]>(() => [
+    { id: 'p1', type: 'peaking', freq: 100, gain: 0, Q: 1 },
+    { id: 'p2', type: 'peaking', freq: 500, gain: 0, Q: 1 },
+    { id: 'p3', type: 'peaking', freq: 2000, gain: 0, Q: 1 },
+    { id: 'p4', type: 'peaking', freq: 6000, gain: 0, Q: 1 },
+    { id: 'p5', type: 'peaking', freq: 10000, gain: 0, Q: 1 },
+    { id: 'p6', type: 'highpass', freq: 30, gain: 0, Q: 0.7 },
+  ])
   const [eqExpanded, setEqExpanded] = useState(false)
+  // setEqMode / setEqParams will be wired to UI controls in Task 8 (R51.4 EQ drawer).
+  void setEqMode; void setEqParams
 
   // Generator state
   const [genConfig, setGenConfig] = useState<GeneratorConfig>(cached.genConfig || DEFAULT_GENERATOR_CONFIG)
@@ -894,6 +909,8 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   const gainNodeRef = useRef<GainNode | null>(null)
   const pannerRef = useRef<StereoPannerNode | null>(null)
   const eqNodesRef = useRef<BiquadFilterNode[]>([])
+  const eqEntryPointRef = useRef<AudioNode | null>(null)
+  const eqExitPointRef = useRef<AudioNode | null>(null)
   const spectrumCanvasRef = useRef<HTMLCanvasElement>(null)
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null)
   // R29.2: wavesurfer.js container + instance for the 'waveform' visualizer mode
@@ -1006,22 +1023,15 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     const panner = ctx.createStereoPanner()
     panner.pan.setValueAtTime(balance, ctx.currentTime)
     gain.connect(panner)
-    // Build 10-band EQ chain between panner and analyser
-    const eqNodes: BiquadFilterNode[] = EQ_FREQS.map((freq) => {
-      const f = ctx.createBiquadFilter()
-      f.type = 'peaking'
-      f.frequency.value = freq
-      f.Q.value = 1.41
-      f.gain.value = 0
-      return f
-    })
-    eqNodesRef.current = eqNodes
-    let eqPrev: AudioNode = panner
-    for (const node of eqNodes) {
-      eqPrev.connect(node)
-      eqPrev = node
-    }
-    eqPrev.connect(analyser)
+    // R51.3: EQ chain 改为 EqBand[] 驱动，初始建 graphic 10 段（占位），后续 useEffect diff 维护。
+    // 这里只建一个空起点 node（gain=1 pass-through），实际 EQ 节点由 syncEqChain 动态插入。
+    const eqPassThrough = ctx.createGain()
+    eqPassThrough.gain.value = 1
+    eqNodesRef.current = [] // EQ 节点列表初始为空
+    panner.connect(eqPassThrough)
+    eqPassThrough.connect(analyser)
+    eqEntryPointRef.current = eqPassThrough  // EQ 链插入点（panner 之后）
+    eqExitPointRef.current = analyser         // EQ 链终点（biquad 链汇入 analyser；analyser→destination 不动）
     analyser.connect(ctx.destination)
     audioContextRef.current = ctx
     analyserRef.current = analyser
@@ -1191,11 +1201,46 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     }
   }, [balance])
 
+  // R51.3: 监听 mode/bands/params/enabled 变化，同步 EQ chain（diff 增删节点 + 实时写属性）。
   useEffect(() => {
-    eqNodesRef.current.forEach((node, i) => {
-      node.gain.setTargetAtTime(eqEnabled ? eqBands[i] : 0, audioContextRef.current?.currentTime ?? 0, 0.01)
+    const ctx = audioContextRef.current
+    const entry = eqEntryPointRef.current
+    const exit = eqExitPointRef.current
+    if (!ctx || !entry || !exit) return
+
+    const activeBands = eqEnabled
+      ? (eqMode === 'graphic' ? graphicGainsToBands(eqBands) : eqParams)
+      : []
+
+    // 复用现有节点数量对齐（增删）
+    while (eqNodesRef.current.length > activeBands.length) {
+      const node = eqNodesRef.current.pop()!
+      node.disconnect()
+    }
+    while (eqNodesRef.current.length < activeBands.length) {
+      const f = ctx.createBiquadFilter()
+      eqNodesRef.current.push(f)
+    }
+
+    // 写属性（type/freq/Q 直接 setValueAtTime，gain 用 setTargetAtTime 防 zipper）
+    const now = ctx.currentTime
+    activeBands.forEach((band, i) => {
+      const node = eqNodesRef.current[i]
+      if (node.type !== band.type) node.type = band.type
+      node.frequency.setValueAtTime(band.freq, now)
+      node.Q.setValueAtTime(band.Q, now)
+      node.gain.setTargetAtTime(band.gain, now, 0.005)
     })
-  }, [eqBands, eqEnabled])
+
+    // 重新串联：entry → nodes[0..n] → exit
+    try { entry.disconnect() } catch { /* may not be connected */ }
+    let prev: AudioNode = entry
+    for (const node of eqNodesRef.current) {
+      prev.connect(node)
+      prev = node
+    }
+    prev.connect(exit)
+  }, [eqMode, eqBands, eqParams, eqEnabled])
 
   // Progress tracking
   useEffect(() => {
