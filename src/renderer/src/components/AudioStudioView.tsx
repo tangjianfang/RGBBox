@@ -2076,17 +2076,17 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                       type="button"
                       className={`eq-mode-btn ${eqMode === 'graphic' ? 'active' : ''}`}
                       onClick={() => setEqMode('graphic')}
-                      title={'Graphic (10-band)'}
+                      title={t('audio.eq.graphicDesc')}
                     >
-                      {'Graphic'}
+                      {t('audio.eq.graphic')}
                     </button>
                     <button
                       type="button"
                       className={`eq-mode-btn ${eqMode === 'parametric' ? 'active' : ''}`}
                       onClick={() => setEqMode('parametric')}
-                      title={'Parametric (free bands)'}
+                      title={t('audio.eq.parametricDesc')}
                     >
-                      {'Parametric'}
+                      {t('audio.eq.parametric')}
                     </button>
                   </div>
                   <select
@@ -2099,13 +2099,13 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                       if (found) applyEqPreset(found)
                     }}
                   >
-                    <optgroup label={'Built-in'}>
+                    <optgroup label={t('audio.eq.builtin')}>
                       {EQ_PRESETS.map(p => (
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </optgroup>
                     {eqCustomPresets.length > 0 && (
-                      <optgroup label={'Custom'}>
+                      <optgroup label={t('audio.eq.custom')}>
                         {eqCustomPresets.map(p => (
                           <option key={p.id} value={p.id}>{p.name}</option>
                         ))}
@@ -2115,7 +2115,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                   <button
                     type="button"
                     className="audio-btn-sm"
-                    title={'Save preset'}
+                    title={t('audio.eq.savePreset')}
                     onClick={saveCustomPreset}
                   >
                     <Plus size={12} />
@@ -2124,7 +2124,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                     <button
                       type="button"
                       className="audio-btn-icon"
-                      title={'Delete preset'}
+                      title={t('audio.eq.deletePreset')}
                       onClick={() => deleteCustomPreset(eqPresetId)}
                     >
                       <Trash2 size={12} />
@@ -2173,7 +2173,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                           <button
                             type="button"
                             className="audio-btn-icon"
-                            title={'Reset band'}
+                            title={t('audio.eq.resetBand')}
                             onClick={() => setEqBands(prev => { const next = [...prev]; next[i] = 0; return next })}
                           >×</button>
                         </div>
@@ -2236,7 +2236,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                           <button
                             type="button"
                             className="audio-btn-icon"
-                            title={'Delete band'}
+                            title={t('audio.eq.deleteBand')}
                             disabled={eqParams.length <= 1}
                             onClick={() => setEqParams(prev => prev.length > 1 ? prev.filter((_, j) => j !== i) : prev)}
                           >
@@ -2253,7 +2253,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                         { id: `u-${Date.now()}`, type: 'peaking', freq: 1000, gain: 0, Q: 1 },
                       ])}
                     >
-                      <Plus size={12} /> {'Add band'}
+                      <Plus size={12} /> {t('audio.eq.addBand')}
                     </button>
                   </>
                 )}
