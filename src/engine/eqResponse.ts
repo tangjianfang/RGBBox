@@ -123,3 +123,136 @@ export function logFreqPoints(n: number): number[] {
   if (n <= 1) return [20]
   return Array.from({ length: n }, (_, i) => 20 * Math.pow(1000, i / (n - 1)))
 }
+
+export type EqMode = 'graphic' | 'parametric'
+
+export interface EqPreset {
+  id: string
+  name: string
+  nameZh: string
+  description: string
+  descriptionZh: string
+  mode: EqMode
+  bands: EqBand[]
+  builtin: boolean
+}
+
+// ISO 10 段频率（graphic 模式固定）
+export const EQ_GRAPHIC_FREQS = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const
+
+// graphic 模式增益数组 → EqBand[]
+export function graphicGainsToBands(gains: number[]): EqBand[] {
+  return EQ_GRAPHIC_FREQS.map((freq, i) => ({
+    id: `g-${i}`, type: 'peaking' as const, freq, gain: gains[i] ?? 0, Q: 1.41,
+  }))
+}
+
+// graphic 模式 EqBand[] → 增益数组（供 10 滑块 UI 用）
+export function bandsToGraphicGains(bands: EqBand[]): number[] {
+  return EQ_GRAPHIC_FREQS.map((f) => bands.find(b => b.freq === f && b.type === 'peaking')?.gain ?? 0)
+}
+
+export const genId = () => `u-${Math.floor(performance.now() * 1000)}-${Math.floor(Math.random() * 1e6)}`
+
+// 内置预设库（经典 graphic + 参考 parametric，附说明）
+export const EQ_PRESETS: EqPreset[] = [
+  {
+    id: 'flat', name: 'Flat', nameZh: '平坦',
+    description: 'Neutral response, no coloration.',
+    descriptionZh: '中性响应，不染色。',
+    mode: 'graphic', builtin: true,
+    bands: graphicGainsToBands(new Array(10).fill(0)),
+  },
+  {
+    id: 'pop', name: 'Pop', nameZh: '流行',
+    description: 'Boosted vocals and presence, slightly cut bass.',
+    descriptionZh: '提升人声与存在感，略微削减低音。',
+    mode: 'graphic', builtin: true,
+    bands: graphicGainsToBands([-1, 2, 4, 4, 1, -1, -1, 0, 1, 2]),
+  },
+  {
+    id: 'rock', name: 'Rock', nameZh: '摇滚',
+    description: 'Scooped mids, strong lows and highs for guitars/drums.',
+    descriptionZh: '中频凹陷，强化高低频，适合吉他/鼓。',
+    mode: 'graphic', builtin: true,
+    bands: graphicGainsToBands([4, 3, 0, -1, -2, -1, 2, 4, 5, 5]),
+  },
+  {
+    id: 'jazz', name: 'Jazz', nameZh: '爵士',
+    description: 'Warm mids, smooth highs, gentle bass.',
+    descriptionZh: '温暖中频，顺滑高频，温和低音。',
+    mode: 'graphic', builtin: true,
+    bands: graphicGainsToBands([3, 2, 1, 2, -1, -1, 0, 1, 2, 3]),
+  },
+  {
+    id: 'vocal', name: 'Vocal', nameZh: '人声',
+    description: 'Presence boost around 2-4kHz for vocal clarity.',
+    descriptionZh: '2-4kHz 存在感提升，人声清晰。',
+    mode: 'graphic', builtin: true,
+    bands: graphicGainsToBands([-2, -1, 0, 2, 4, 4, 3, 1, 0, -1]),
+  },
+  {
+    id: 'bass-boost', name: 'Bass Boost', nameZh: '低音增强',
+    description: 'Strong low-frequency lift for headphone impact.',
+    descriptionZh: '强力低频提升，增强耳机冲击感。',
+    mode: 'graphic', builtin: true,
+    bands: graphicGainsToBands([6, 5, 4, 2, 0, 0, 0, 0, 0, 0]),
+  },
+  {
+    id: 'treble-boost', name: 'Treble Boost', nameZh: '高音增强',
+    description: 'Air and detail above 4kHz.',
+    descriptionZh: '4kHz 以上空气感与细节。',
+    mode: 'graphic', builtin: true,
+    bands: graphicGainsToBands([0, 0, 0, 0, 0, 1, 3, 5, 6, 6]),
+  },
+  {
+    id: 'loudness', name: 'Loudness', nameZh: '响度补偿',
+    description: 'Classic loudness curve: boosted lows and highs at low volume.',
+    descriptionZh: '经典响度曲线：小音量下强化高低频。',
+    mode: 'graphic', builtin: true,
+    bands: graphicGainsToBands([5, 4, 2, 0, -1, -1, 0, 2, 4, 5]),
+  },
+  {
+    id: 'smile', name: 'Smile Curve', nameZh: '微笑曲线',
+    description: 'Scooped mids, the classic V shape for master bus.',
+    descriptionZh: '中频凹陷，经典 V 形母带曲线。',
+    mode: 'graphic', builtin: true,
+    bands: graphicGainsToBands([4, 3, 1, -1, -2, -2, -1, 1, 3, 4]),
+  },
+  // Parametric 参考（工程手法）
+  {
+    id: 'p-hpf40', name: 'HPF 40Hz', nameZh: '高通 40Hz',
+    description: 'High-pass at 40Hz to remove subsonic rumble.',
+    descriptionZh: '40Hz 高通，去除次声隆隆声。',
+    mode: 'parametric', builtin: true,
+    bands: [{ id: 'p1', type: 'highpass', freq: 40, gain: 0, Q: 0.7 }],
+  },
+  {
+    id: 'p-lpf18k', name: 'LPF 18kHz', nameZh: '低通 18kHz',
+    description: 'Low-pass at 18kHz to tame high-frequency noise.',
+    descriptionZh: '18kHz 低通，抑制高频噪声。',
+    mode: 'parametric', builtin: true,
+    bands: [{ id: 'p1', type: 'lowpass', freq: 18000, gain: 0, Q: 0.7 }],
+  },
+  {
+    id: 'p-notch50', name: 'Notch 50Hz', nameZh: '陷波 50Hz',
+    description: 'Notch at 50Hz Q=5 to remove mains hum.',
+    descriptionZh: '50Hz Q=5 陷波，去除电源嗡声。',
+    mode: 'parametric', builtin: true,
+    bands: [{ id: 'p1', type: 'notch', freq: 50, gain: 0, Q: 5 }],
+  },
+  {
+    id: 'p-presence', name: 'Presence 3kHz', nameZh: '存在感 3kHz',
+    description: 'Peaking +4dB at 3kHz Q=1 to lift vocal presence.',
+    descriptionZh: '3kHz Q=1 提升 +4dB，提升人声存在感。',
+    mode: 'parametric', builtin: true,
+    bands: [{ id: 'p1', type: 'peaking', freq: 3000, gain: 4, Q: 1 }],
+  },
+  {
+    id: 'p-deess', name: 'De-ess 6kHz', nameZh: '齿音抑制 6kHz',
+    description: 'Peaking -5dB at 6kHz Q=4 to tame sibilance.',
+    descriptionZh: '6kHz Q=4 衰减 -5dB，抑制齿音。',
+    mode: 'parametric', builtin: true,
+    bands: [{ id: 'p1', type: 'peaking', freq: 6000, gain: -5, Q: 4 }],
+  },
+]
