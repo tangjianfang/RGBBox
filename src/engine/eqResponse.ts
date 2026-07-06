@@ -75,6 +75,10 @@ function biquadResponse(band: EqBand, sampleRate: number, freqHz: number): Compl
       b0 = alpha; b1 = 0; b2 = -alpha
       a0 = 1 + alpha; a1 = -2 * cos; a2 = 1 - alpha
       break
+    default: {
+      const _exhaustive: never = type
+      throw new Error(`unhandled EqFilterType: ${_exhaustive}`)
+    }
   }
 
   // 归一化（a0 通常已在公式中处理，但显式归一更稳）
@@ -108,11 +112,14 @@ export function computeBiquadResponse(
     for (const band of bands) {
       h = cmul(h, biquadResponse(band, sampleRate, f))
     }
+    // |H|=0（如 deep notch / Nyquist 处 lowpass）→ log10(0)=-∞；用 1e-12 钳到 -240dB，
+    // 避免 SVG path 出现 Infinity。这是绘图安全下限，不是物理 dB 值。
     return 20 * Math.log10(Math.hypot(h.re, h.im) || 1e-12)
   })
 }
 
 // 频率响应曲线采样点（对数 20Hz..20kHz，n 个点），供 UI 复用。
 export function logFreqPoints(n: number): number[] {
+  if (n <= 1) return [20]
   return Array.from({ length: n }, (_, i) => 20 * Math.pow(1000, i / (n - 1)))
 }
