@@ -1761,22 +1761,32 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             now live behind their own toolbar buttons and open as drawers,
             keeping the main view focused on playback + visualization. */}
         <div className="audio-tools-bar">
-          <button
-            type="button"
-            className={`audio-btn ${eqEnabled ? 'active' : ''}`}
-            onClick={() => setEqExpanded(true)}
-            title={t('audio.eq.title')}
-          >
-            {t('audio.eq.title')}
-          </button>
-          <button
-            type="button"
-            className="audio-btn"
-            onClick={() => setGenExpanded(true)}
-            title={t('audio.tab.generator')}
-          >
-            {t('audio.tab.generator')}
-          </button>
+          <div className="audio-top-transport">
+            <button type="button" className="audio-btn-icon" title={t('audio.prev' as any)} onClick={skipPrev}><SkipBack size={15} /></button>
+            <button type="button" className="audio-btn-icon" title={isPlaying ? t('audio.pause' as any) : t('audio.play' as any)} onClick={togglePlay}>
+              {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+            </button>
+            <button type="button" className="audio-btn-icon" title={t('audio.next' as any)} onClick={skipNext}><SkipForward size={15} /></button>
+            <span className="audio-time">{formatTime(progress)} / {formatTime(duration)}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className={`audio-btn ${eqEnabled ? 'active' : ''}`}
+              onClick={() => setEqExpanded(true)}
+              title={t('audio.eq.title' as any)}
+            >
+              {t('audio.eq.title' as any)}
+            </button>
+            <button
+              type="button"
+              className="audio-btn"
+              onClick={() => setGenExpanded(true)}
+              title={t('audio.tab.generator' as any)}
+            >
+              {t('audio.tab.generator' as any)}
+            </button>
+          </div>
         </div>
       </header>
 
