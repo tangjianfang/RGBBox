@@ -3107,16 +3107,15 @@ input:not([type]):focus {
   gap: 6px;
 }
 .audio-top-controls .audio-slider { width: 80px; }
+.audio-top-controls .audio-value {
+  font-family: monospace;
+  opacity: 0.75;
+  min-width: 34px;
+}
 .audio-top-drawers {
   display: flex;
   gap: 8px;
   margin-left: auto;
-}
-.audio-value {
-  font-size: 11px;
-  font-family: monospace;
-  opacity: 0.75;
-  min-width: 34px;
 }
 .audio-lyrics-panel {
   border-top: 1px solid rgba(255,255,255,0.08);
