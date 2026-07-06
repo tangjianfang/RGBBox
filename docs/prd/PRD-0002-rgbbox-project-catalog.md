@@ -1382,7 +1382,7 @@
 
 - **R50.1** **侧栏 vs 主区比例**：`.app-shell` 的 `grid-template-columns` 从固定 `240px 1fr` 改为 `clamp(180px, 22vw, 260px) 1fr`（响应式侧栏，22vw 在常见 1920 宽被 clamp 到 260px 上限，侧栏约为主区 0.13–0.17 的视觉比例）。
 - **R50.2** **内容区左右栏黄金分割**：`.content-grid` 的 `grid-template-columns` 从 `minmax(320px, 1.5fr) minmax(260px, 0.85fr)`（≈1.76:1）改为 `1.618fr 1fr`（φ:1），并去掉 minmax 约束改为 `min-width: 0` 让子项可收缩。
-- **R50.3** **底部自适应（第 1 项）**：根因在内部——各 `.panel`/`.preview-panel` 有固定 `min-height`（200/320px），flex/grid 子项默认 `min-height: auto` 无法收缩。修复（保持 `.app-shell` 高度 `calc(100vh - 40px)` 不变，配合 `margin-top: 40px` 让位 fixed titlebar）：`.workspace-main` 加 `min-height: 0`；`.preview-panel`/`.panel` 的 `min-height` 改 `0` + 加 `flex: 1 1 auto`；每个 view 根容器加 `display: flex; flex-direction: column; min-height: 0`，内容区 `flex: 1 1 auto; min-height: 0; overflow: auto`。效果：底部拉伸时按 flex 分配剩余空间，超出由内容区自身滚动，不再被父容器截断。
+- **R50.3** **底部自适应（第 1 项）**：根因在内部——各 `.panel`/`.preview-panel` 有固定 `min-height`（200/320px），flex/grid 子项默认 `min-height: auto` 无法收缩。修复（保持 `.app-shell` 高度 `calc(100vh - 40px)` 不变，配合 `margin-top: 40px` 让位 fixed titlebar）：`.workspace-main` 加 `min-height: 0`；`.preview-panel`/`.panel` 的 `min-height` 改 `0`；`.workspace-main > *` 加 `min-height: 0`。效果：底部拉伸时 flex/grid 子项可收缩，超出由内容区自身滚动，不再被父容器截断。✅ 已实施（2026-07-06，commit `11b6f5c`）。
 - **R50.4** **采样面板高度 bug（第 2 项）**：CSS 特异性问题——`.sampling-panel { min-height: unset }` 被后定义、等特异性的 `.panel { min-height: 200px }` 覆盖。修复：`App.tsx` 采样面板 className 加 `.collapsed` 区分（JS 已有 `samplingCollapsed` state）；styles.css 提升特异性为 `section.sampling-panel { min-height: 0 }`，`.sampling-panel.collapsed { min-height: 0; height: auto }`（收起仅标题行高度），`.sampling-panel:not(.collapsed) { min-height: 0; height: auto }`（展开按内容自适应）。收起/展开高度明显不同。
 - **R50.5** **验收点**：
   - [ ] `yarn typecheck` / `yarn build` / `yarn test` 全过
@@ -1391,7 +1391,7 @@
   - [ ] 各 view 布局未被破坏（侧栏、内容左右栏比例、预览区）
   - [ ] 内容左右栏比例 ≈ 1.618:1（黄金分割）
 - **R50.6** **受影响文件**：`src/renderer/src/styles.css`（主要）、`src/renderer/src/App.tsx`（仅采样面板 className 加 `.collapsed`）。
-- **R50.7** **状态**：⏳ 待实施
+- **R50.7** **状态**：🔄 实施中（R50.3 已完成，R50.1/2/4 待后续任务）
 
 ### R51. AudioStudio 顶部 transport + EQ 双模式（graphic / parametric + 曲线图 + 预设 + 自定义）
 
