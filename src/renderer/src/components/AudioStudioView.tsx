@@ -1185,8 +1185,8 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
       try {
         localStorage.setItem('rgbbox:audioVizRegion', JSON.stringify({ preset: projectRegion, rect }))
       } catch { /* ignore */ }
-      setProjectDisplayIds((prev) => prev.includes(displayId) ? prev : [...prev, displayId])
       await window.rgbbox.openAudioVizWindow(displayId)
+      setProjectDisplayIds((prev) => prev.includes(displayId) ? prev : [...prev, displayId])
     } catch { /* ignore */ }
   }, [projectRegion, projectCustom])
 
@@ -1200,6 +1200,16 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     void window.rgbbox.closeAudioVizWindow(displayId)
     setProjectDisplayIds((prev) => prev.filter((id) => id !== displayId))
   }, [])
+
+  // ESC cancels the custom region selection overlay.
+  useEffect(() => {
+    if (!pickingCustom) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPickingCustom(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [pickingCustom])
 
   // Visualization loop with HiDPI support + live resize handling
   useEffect(() => {
@@ -2062,7 +2072,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                       </button>
                     )
                   })}
-                  <button type="button" className="audio-btn-sm" onClick={() => setShowDisplayPicker(false)}>{t('audio.viz.cancel')}</button>
+                  <button type="button" className="audio-btn-sm" onClick={() => { setShowDisplayPicker(false); setPickingCustom(false) }}>{t('audio.viz.cancel')}</button>
                 </div>
               )}
             </div>

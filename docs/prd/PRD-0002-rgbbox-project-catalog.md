@@ -1440,7 +1440,7 @@
 | R52.4 | 场景/导出并入 Generator 抽屉 sub-tab | 重构 | ✅ |
 | R52.5 | 6 图表数值叠加（纯函数 + 单测先行） | 新功能 | ⏳ |
 | R52.6 | 6 图表美化变体（每图 1 个，投屏可关数值） | 新功能 | ⏳ |
-| R52.7 | 投屏区域选择（复用 DisplayMap 8 选项，A 方案） | 新功能 | ⏳ |
+| R52.7 | 投屏区域选择（复用 DisplayMap 8 选项，A 方案） | 新功能 | ✅ |
 | R52.8 | 修复播放时间 0:00 + 音量/平衡数值标签 | bug+小特性 | ⏳ |
 | R52.9 | i18n 新 key（EN+ZH） | 收尾 | ⏳ |
 | R52.10 | 验收点（静态 + 用户人工） | 收尾 | ⏳ |
@@ -1448,6 +1448,8 @@
 | R52.12 | 状态标记 | 收尾 | ⏳ |
 
 > R52.3/R52.4 证据（2026-07-07）：`yarn typecheck` exit 0；`yarn test` 458 passed | 41 skipped；`AudioStudioView.tsx` 已删除 `activeTab`/`StudioTab`，Scenes/Export 已迁入 Generator 抽屉 sub-tab；`styles.css` 新增 `.audio-gen-subtabs` 并移除已弃用的 `.audio-tabs`。
+>
+> R52.7 证据（2026-07-07）：`yarn typecheck` exit 0；`yarn test` 458 passed | 41 skipped；`AudioStudioView.tsx` 中 `projectToDisplay` 仅在 `openAudioVizWindow` 成功后写入 `projectDisplayIds`；picker Cancel 同时 `setPickingCustom(false)`；新增 Escape 监听取消自定义区域拖框。
 
 **R52.10 验收点：**
 - [ ] `yarn typecheck` exit 0
@@ -1458,7 +1460,7 @@
 - [ ] 文件表独立占满左栏高度；图表区独立占满右栏全高
 - [x] Scenes/Export 已并入 Generator 抽屉 sub-tab，右栏无底部 tabs
 - [ ] 6 图表角落有轻量数值（classic）；art 风格变体可切换
-- [ ] 投屏 picker 有 8 区域选项 + 自定义拖框；projector 按 region 布局
+- [x] 投屏 picker 有 8 区域选项 + 自定义拖框；projector 按 region 布局
 - [ ] 文件播放时间正常推进；duration NaN 显示 `--:--`
 - [ ] 用户人工 GUI 验收通过
 
