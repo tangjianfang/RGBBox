@@ -970,19 +970,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   const [genExpanded, setGenExpanded] = useState(false)
   // R52.3/R52.4: Generator drawer now hosts generator / scenes / export as sub-tabs.
   const [genSubTab, setGenSubTab] = useState<'generator' | 'scenes' | 'export'>('generator')
-  const GEN_SUBTAB_LABELS: Record<'generator' | 'scenes' | 'export', string> = {
-    generator: 'Generator',
-    scenes: 'Scenes',
-    export: 'Export',
-  }
-  const genSubTabLabel = (st: 'generator' | 'scenes' | 'export'): string => {
-    const translated = t(`audio.gen.subTab.${st}` as any)
-    // R52.8 will add real i18n keys; until then, always fall back to English literals.
-    if (translated && typeof translated === 'string' && !translated.startsWith('audio.gen.subTab.')) {
-      return translated
-    }
-    return GEN_SUBTAB_LABELS[st]
-  }
+  const genSubTabLabel = (st: 'generator' | 'scenes' | 'export') => t(`audio.gen.subTab.${st}` as any)
 
   // Scene state
   const [selectedScene, setSelectedScene] = useState<string | null>(null)
@@ -998,9 +986,9 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
 
   // Visualizer mode
   const [vizMode, setVizMode] = useState<VisualizerMode>('spectrum')
-  // R52.6: art-style + showMetrics state; setters prefixed `_` until Task 8 wires UI controls.
-  const [vizStyle, _setVizStyle] = useState<'classic' | 'art'>('classic')
-  const [vizShowMetrics, _setVizShowMetrics] = useState(true)
+  // R52.6: art-style + showMetrics state.
+  const [vizStyle, setVizStyle] = useState<'classic' | 'art'>('classic')
+  const [vizShowMetrics, setVizShowMetrics] = useState(true)
   // In-app fullscreen for the visualizer
   const [vizFullscreen, setVizFullscreen] = useState(false)
   const [displays, setDisplays] = useState<Array<{ id: number; label: string; bounds: { x: number; y: number; width: number; height: number }; primary: boolean }>>([])
@@ -2022,6 +2010,22 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
               ))}
               <button
                 type="button"
+                className={`audio-viz-fs-btn ${vizStyle === 'art' ? 'active' : ''}`}
+                title={t('audio.viz.style.art')}
+                onClick={() => setVizStyle(vizStyle === 'art' ? 'classic' : 'art')}
+              >
+                <RefreshCw size={14} />
+              </button>
+              <button
+                type="button"
+                className={`audio-viz-fs-btn ${vizShowMetrics ? 'active' : ''}`}
+                title={t('audio.viz.metrics')}
+                onClick={() => setVizShowMetrics(v => !v)}
+              >
+                <FileText size={14} />
+              </button>
+              <button
+                type="button"
                 className="audio-viz-fs-btn"
                 title={t(vizFullscreen ? 'audio.viz.exitFullscreen' : 'audio.viz.fullscreen')}
                 onClick={() => setVizFullscreen(v => !v)}
@@ -2042,7 +2046,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                   border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: 8, zIndex: 100,
                   minWidth: 200
                 }}>
-                  <p style={{ fontSize: 11, marginBottom: 6, opacity: 0.7 }}>Display region</p>
+                  <p style={{ fontSize: 11, marginBottom: 6, opacity: 0.7 }}>{t('audio.viz.region')}</p>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, marginBottom: 8 }}>
                     {(['fullscreen','top-third','middle-third','bottom-third','left-third','center-third','right-third','custom'] as RegionPreset[]).map(preset => (
                       <button
