@@ -967,10 +967,18 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   const [genExpanded, setGenExpanded] = useState(false)
   // R52.3/R52.4: Generator drawer now hosts generator / scenes / export as sub-tabs.
   const [genSubTab, setGenSubTab] = useState<'generator' | 'scenes' | 'export'>('generator')
+  const GEN_SUBTAB_LABELS: Record<'generator' | 'scenes' | 'export', string> = {
+    generator: 'Generator',
+    scenes: 'Scenes',
+    export: 'Export',
+  }
   const genSubTabLabel = (st: 'generator' | 'scenes' | 'export'): string => {
     const translated = t(`audio.gen.subTab.${st}` as any)
-    // R52.8 will add real i18n keys; until then, fall back to English literals.
-    return translated.startsWith('audio.gen.subTab.') ? (st === 'generator' ? 'Generator' : st === 'scenes' ? 'Scenes' : 'Export') : translated
+    // R52.8 will add real i18n keys; until then, always fall back to English literals.
+    if (translated && typeof translated === 'string' && !translated.startsWith('audio.gen.subTab.')) {
+      return translated
+    }
+    return GEN_SUBTAB_LABELS[st]
   }
 
   // Scene state
