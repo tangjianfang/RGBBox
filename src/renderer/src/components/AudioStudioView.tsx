@@ -19,7 +19,6 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-type StudioTab = 'scenes' | 'export'
 type PlayMode = 'sequential' | 'loop' | 'shuffle'
 type NoiseType = 'white' | 'pink' | 'brown'
 type GeneratorType = 'sine' | 'sweep' | 'noise' | 'eq-test' | 'surround' | 'bass-boost' | 'spatial' | 'multichannel'
@@ -77,7 +76,6 @@ interface AudioStudioCache {
   balance: number
   genConfig: GeneratorConfig
   exportFormat: ExportFormat
-  activeTab: StudioTab
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -899,12 +897,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
 
   const cached = useMemo(() => loadCache(), [])
 
-  // Tab state
-  // R29.5: 'generator' used to be a tab here; it is now opened via its own
-  // drawer (see `genExpanded`), so guard against a stale cached value.
-  const [activeTab, setActiveTab] = useState<StudioTab>(
-    cached.activeTab === 'scenes' || cached.activeTab === 'export' ? cached.activeTab : 'scenes'
-  )
+  // Tab state — scenes/export now live as Generator drawer sub-tabs (R52.3/R52.4).
 
   // Player state
   const [playlist, setPlaylist] = useState<TrackItem[]>([])
@@ -972,6 +965,13 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   const [previewPlaying, setPreviewPlaying] = useState(false)
   const [previewLoop, setPreviewLoop] = useState(false)
   const [genExpanded, setGenExpanded] = useState(false)
+  // R52.3/R52.4: Generator drawer now hosts generator / scenes / export as sub-tabs.
+  const [genSubTab, setGenSubTab] = useState<'generator' | 'scenes' | 'export'>('generator')
+  const genSubTabLabel = (st: 'generator' | 'scenes' | 'export'): string => {
+    const translated = t(`audio.gen.subTab.${st}` as any)
+    // R52.8 will add real i18n keys; until then, fall back to English literals.
+    return translated.startsWith('audio.gen.subTab.') ? (st === 'generator' ? 'Generator' : st === 'scenes' ? 'Scenes' : 'Export') : translated
+  }
 
   // Scene state
   const [selectedScene, setSelectedScene] = useState<string | null>(null)
@@ -1057,7 +1057,6 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
       balance,
       genConfig,
       exportFormat,
-      activeTab,
     })
     // Persist file paths to disk via main process for cross-session restore
     const pathEntries = playlist
@@ -1072,7 +1071,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     if (pathEntries.length > 0) {
       window.rgbbox.audioSavePaths(pathEntries)
     }
-  }, [isRestored, playlist, groups, playMode, volume, balance, genConfig, exportFormat, activeTab])
+  }, [isRestored, playlist, groups, playMode, volume, balance, genConfig, exportFormat])
 
   // Restore audio file paths from main process on mount
   useEffect(() => {
@@ -2042,19 +2041,6 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             )}
           </div>
 
-          <div className="audio-tabs">
-            {(['scenes', 'export'] as StudioTab[]).map(tab => (
-              <button
-                key={tab}
-                type="button"
-                className={`audio-tab ${activeTab === tab ? 'active' : ''}`}
-                onClick={() => setActiveTab(tab)}
-              >
-                {t(`audio.tab.${tab}` as any)}
-              </button>
-            ))}
-          </div>
-
           {/* EQ drawer (R51.8: full rewrite — mode switch + curve plot + preset library + custom save/delete) */}
           {eqExpanded && (
             <div className="audio-drawer-backdrop" onClick={() => setEqExpanded(false)}>
@@ -2280,7 +2266,21 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                     <X size={16} />
                   </button>
                 </div>
+                <div className="audio-gen-subtabs">
+                  {(['generator', 'scenes', 'export'] as const).map(st => (
+                    <button
+                      key={st}
+                      type="button"
+                      className={`audio-tab ${genSubTab === st ? 'active' : ''}`}
+                      onClick={() => setGenSubTab(st)}
+                    >
+                      {genSubTabLabel(st)}
+                    </button>
+                  ))}
+                </div>
                 <div className="audio-panel audio-panel-scroll">
+                  {genSubTab === 'generator' && (
+                    <>
                   <div className="audio-gen-grid">
                   <div className="audio-gen-section audio-gen-full">
                     <label className="audio-field-label">{t('audio.gen.type')}</label>
@@ -2502,122 +2502,118 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                   <Download size={14} /> {t('audio.export')}
                 </button>
               </div>
-                </div>
-              </div>
-            </div>
-          )}
+                    </>
+                  )}
+                  {genSubTab === 'scenes' && (
+                    <>
+                      <div className="audio-scene-categories">
+                        {(['instrument', 'vocal', 'game', 'environment', 'mix'] as SceneCategory[]).map(cat => (
+                          <button
+                            key={cat}
+                            type="button"
+                            className={`audio-tab ${sceneCategory === cat ? 'active' : ''}`}
+                            onClick={() => setSceneCategory(cat)}
+                          >
+                            {t(`audio.category.${cat}` as any)}
+                          </button>
+                        ))}
+                      </div>
 
-          {/* Scenes Tab */}
-          {activeTab === 'scenes' && (
-            <div className="audio-panel audio-panel-scroll">
-              <div className="audio-scene-categories">
-                {(['instrument', 'vocal', 'game', 'environment', 'mix'] as SceneCategory[]).map(cat => (
-                  <button
-                    key={cat}
-                    type="button"
-                    className={`audio-tab ${sceneCategory === cat ? 'active' : ''}`}
-                    onClick={() => setSceneCategory(cat)}
-                  >
-                    {t(`audio.category.${cat}` as any)}
-                  </button>
-                ))}
-              </div>
+                      <div className="audio-scene-grid">
+                        {filteredScenes.map(scene => (
+                          <div
+                            key={scene.id}
+                            className={`audio-scene-card ${selectedScene === scene.id ? 'selected' : ''}`}
+                            onClick={() => setSelectedScene(scene.id)}
+                          >
+                            <h4>{t(scene.labelKey as any)}</h4>
+                            <p>{scene.description}</p>
+                            <div className="audio-scene-actions">
+                              <button
+                                type="button"
+                                className="audio-btn-sm"
+                                onClick={(e) => { e.stopPropagation(); previewGenerated(scene.id) }}
+                                disabled={generating}
+                              >
+                                <Play size={12} /> {t('audio.preview')}
+                              </button>
+                              <button
+                                type="button"
+                                className={`audio-btn-sm ${previewLoop ? 'active' : ''}`}
+                                onClick={(e) => { e.stopPropagation(); setPreviewLoop(!previewLoop) }}
+                                title={t('audio.previewLoop')}
+                              >
+                                <Repeat size={11} />
+                              </button>
+                              <button
+                                type="button"
+                                className="audio-btn-sm"
+                                onClick={(e) => { e.stopPropagation(); exportAudio(scene.id) }}
+                                disabled={generating}
+                              >
+                                <Download size={12} /> {t('audio.export')}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {genSubTab === 'export' && (
+                    <div className="audio-export-section">
+                      <h3>{t('audio.export.title')}</h3>
+                      <p className="audio-export-desc">{t('audio.export.desc')}</p>
 
-              <div className="audio-scene-grid">
-                {filteredScenes.map(scene => (
-                  <div
-                    key={scene.id}
-                    className={`audio-scene-card ${selectedScene === scene.id ? 'selected' : ''}`}
-                    onClick={() => setSelectedScene(scene.id)}
-                  >
-                    <h4>{t(scene.labelKey as any)}</h4>
-                    <p>{scene.description}</p>
-                    <div className="audio-scene-actions">
+                      <div className="audio-gen-section">
+                        <label className="audio-field-label">{t('audio.export.format')}</label>
+                        <div className="audio-export-formats">
+                          <button
+                            type="button"
+                            className={`audio-gen-type-btn ${exportFormat === 'wav' ? 'active' : ''}`}
+                            onClick={() => setExportFormat('wav')}
+                          >
+                            WAV
+                          </button>
+                          <button
+                            type="button"
+                            className={`audio-gen-type-btn ${exportFormat === 'flac' ? 'active' : ''}`}
+                            onClick={() => setExportFormat('flac')}
+                          >
+                            FLAC
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="audio-export-specs">
+                        <div className="audio-spec-item">
+                          <span>{t('audio.gen.sampleRate')}</span>
+                          <span>{genConfig.sampleRate} Hz</span>
+                        </div>
+                        <div className="audio-spec-item">
+                          <span>{t('audio.gen.bitDepth')}</span>
+                          <span>{genConfig.bitDepth}-bit</span>
+                        </div>
+                        <div className="audio-spec-item">
+                          <span>{t('audio.gen.channels')}</span>
+                          <span>{genConfig.channels === 1 ? 'Mono' : 'Stereo'}</span>
+                        </div>
+                        <div className="audio-spec-item">
+                          <span>{t('audio.export.quality')}</span>
+                          <span>{t('audio.export.lossless')}</span>
+                        </div>
+                      </div>
+
                       <button
                         type="button"
-                        className="audio-btn-sm"
-                        onClick={(e) => { e.stopPropagation(); previewGenerated(scene.id) }}
-                        disabled={generating}
+                        className="audio-btn audio-btn-primary"
+                        onClick={() => exportAudio()}
+                        disabled={!lastGeneratedBuffer && generating}
                       >
-                        <Play size={12} /> {t('audio.preview')}
-                      </button>
-                      <button
-                        type="button"
-                        className={`audio-btn-sm ${previewLoop ? 'active' : ''}`}
-                        onClick={(e) => { e.stopPropagation(); setPreviewLoop(!previewLoop) }}
-                        title={t('audio.previewLoop')}
-                      >
-                        <Repeat size={11} />
-                      </button>
-                      <button
-                        type="button"
-                        className="audio-btn-sm"
-                        onClick={(e) => { e.stopPropagation(); exportAudio(scene.id) }}
-                        disabled={generating}
-                      >
-                        <Download size={12} /> {t('audio.export')}
+                        <Download size={14} /> {t('audio.export.download')}
                       </button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Export Tab */}
-          {activeTab === 'export' && (
-            <div className="audio-panel">
-              <div className="audio-export-section">
-                <h3>{t('audio.export.title')}</h3>
-                <p className="audio-export-desc">{t('audio.export.desc')}</p>
-
-                <div className="audio-gen-section">
-                  <label className="audio-field-label">{t('audio.export.format')}</label>
-                  <div className="audio-export-formats">
-                    <button
-                      type="button"
-                      className={`audio-gen-type-btn ${exportFormat === 'wav' ? 'active' : ''}`}
-                      onClick={() => setExportFormat('wav')}
-                    >
-                      WAV
-                    </button>
-                    <button
-                      type="button"
-                      className={`audio-gen-type-btn ${exportFormat === 'flac' ? 'active' : ''}`}
-                      onClick={() => setExportFormat('flac')}
-                    >
-                      FLAC
-                    </button>
-                  </div>
+                  )}
                 </div>
-
-                <div className="audio-export-specs">
-                  <div className="audio-spec-item">
-                    <span>{t('audio.gen.sampleRate')}</span>
-                    <span>{genConfig.sampleRate} Hz</span>
-                  </div>
-                  <div className="audio-spec-item">
-                    <span>{t('audio.gen.bitDepth')}</span>
-                    <span>{genConfig.bitDepth}-bit</span>
-                  </div>
-                  <div className="audio-spec-item">
-                    <span>{t('audio.gen.channels')}</span>
-                    <span>{genConfig.channels === 1 ? 'Mono' : 'Stereo'}</span>
-                  </div>
-                  <div className="audio-spec-item">
-                    <span>{t('audio.export.quality')}</span>
-                    <span>{t('audio.export.lossless')}</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="audio-btn audio-btn-primary"
-                  onClick={() => exportAudio()}
-                  disabled={!lastGeneratedBuffer && generating}
-                >
-                  <Download size={14} /> {t('audio.export.download')}
-                </button>
               </div>
             </div>
           )}

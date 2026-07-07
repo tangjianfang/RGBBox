@@ -3043,14 +3043,6 @@ input:not([type]):focus {
   flex-wrap: wrap;
 }
 
-.audio-player-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
 .audio-right-panel {
   display: flex;
   flex-direction: column;
@@ -3266,13 +3258,22 @@ input:not([type]):focus {
   grid-column: 1 / -1;
 }
 
-.audio-tabs {
+/* R52.3/R52.4: Generator drawer sub-tab switch (generator / scenes / export) */
+.audio-gen-subtabs {
   display: flex;
   gap: 4px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 12px;
-  padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 8px;
+}
+.audio-gen-subtabs .audio-tab {
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  opacity: 0.6;
+}
+.audio-gen-subtabs .audio-tab.active {
+  opacity: 1;
+  border-bottom: 2px solid var(--accent, #4fc3f7);
 }
 
 .audio-tab {
@@ -3311,11 +3312,6 @@ input:not([type]):focus {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-}
-
-.audio-play-mode {
-  display: flex;
-  gap: 4px;
 }
 
 .audio-btn {
@@ -3465,20 +3461,6 @@ input:not([type]):focus {
   letter-spacing: -0.01em;
 }
 
-.audio-transport {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  padding: 10px 0;
-}
-
-.audio-progress-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .audio-time {
   font-size: 11px;
   color: rgba(200, 220, 229, 0.45);
@@ -3492,12 +3474,6 @@ input:not([type]):focus {
   height: 4px;
   accent-color: #4fc3f7;
   border-radius: 2px;
-}
-
-.audio-controls-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .audio-slider {
@@ -4584,13 +4560,6 @@ input:not([type]):focus {
 }
 
 /* ── Audio: Now Playing & Lyrics ─────────────────────────────────────────── */
-.audio-now-playing {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 4px 2px;
-}
-
 .audio-now-playing-label {
   flex: 1;
   font-size: 12px;
