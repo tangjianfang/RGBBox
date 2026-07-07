@@ -1,10 +1,14 @@
-import { useEffect, useRef, type JSX } from 'react'
+import { useEffect, useRef, useState, type JSX } from 'react'
 import {
   AUDIO_VIZ_CHANNEL,
   createSpectrogramBuffer,
   createVuPeakState,
   drawVisualizerFrame,
-  type AudioVizMessage
+  regionPresetToRect,
+  type AudioVizMessage,
+  type RegionPreset,
+  type RegionRect,
+  type VizDrawOpts,
 } from '../audio/visualizers'
 import { useI18n } from '../i18n'
 
@@ -12,20 +16,37 @@ interface Props {
   displayId: number
 }
 
+interface RegionState { preset: RegionPreset; rect: RegionRect }
+
+function loadRegion(): RegionRect {
+  try {
+    const raw = localStorage.getItem('rgbbox:audioVizRegion')
+    if (!raw) return { x: 0, y: 0, w: 1, h: 1 }
+    const s = JSON.parse(raw) as RegionState
+    return regionPresetToRect(s.preset, s.rect)
+  } catch { return { x: 0, y: 0, w: 1, h: 1 } }
+}
+
 /**
- * R29.3 (revised): full-resolution audio visualizer projector window.
- *
- * Renders the exact same canvas animation as the studio view's local
- * visualizer — not a downsampled LED grid — by receiving live
- * frequency/time-domain snapshots from the main studio window over a
- * same-origin `BroadcastChannel` (no main-process IPC hop needed for the
- * per-frame data; only window open/close goes through IPC).
+ * R29.3 (revised) + R52.7: full-resolution audio visualizer projector window.
+ * R52.7 A-scheme: overlay window covers the full display; the canvas is laid
+ * out inside the region rect (read from localStorage, written by the studio
+ * view). Pure renderer — no main/preload change.
  */
 export function AudioVizProjector({ displayId }: Props): JSX.Element {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const spectrogramBufferRef = useRef<Uint8Array[]>(createSpectrogramBuffer())
   const vuPeakRef = useRef(createVuPeakState())
+  const [region, setRegion] = useState<RegionRect>(() => loadRegion())
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent): void => {
+      if (e.key === 'rgbbox:audioVizRegion') setRegion(loadRegion())
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -42,11 +63,14 @@ export function AudioVizProjector({ displayId }: Props): JSX.Element {
     const ro = new ResizeObserver(resize)
     ro.observe(canvas)
 
+    // 投屏艺术品模式：不显示数值，art 风格
+    const opts: VizDrawOpts = { showMetrics: false, style: 'art' }
+
     const channel = new BroadcastChannel(AUDIO_VIZ_CHANNEL)
     channel.onmessage = (event: MessageEvent<AudioVizMessage>) => {
       const { mode, freq, time } = event.data
-      if (mode === 'waveform') return // not projectable — rendered by wavesurfer.js locally only
-      drawVisualizerFrame(canvas, mode, freq, time, spectrogramBufferRef.current, vuPeakRef.current)
+      if (mode === 'waveform') return
+      drawVisualizerFrame(canvas, mode, freq, time, spectrogramBufferRef.current, vuPeakRef.current, opts)
     }
 
     return () => {
@@ -56,10 +80,17 @@ export function AudioVizProjector({ displayId }: Props): JSX.Element {
   }, [displayId])
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#080d11' }}>
+    <div style={{ position: 'fixed', inset: 0, background: '#000' }}>
       <canvas
         ref={canvasRef}
-        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
+        style={{
+          position: 'absolute',
+          left: `${region.x * 100}%`,
+          top: `${region.y * 100}%`,
+          width: `${region.w * 100}%`,
+          height: `${region.h * 100}%`,
+          display: 'block',
+        }}
       />
       <div style={{
         position: 'absolute',

@@ -7,8 +7,11 @@ import {
   createVuPeakState,
   drawVisualizerFrame,
   drawWaveform,
+  regionPresetToRect,
   type VisualizerMode,
   type VizDrawOpts,
+  type RegionPreset,
+  type RegionRect,
 } from '../audio/visualizers'
 import { useI18n } from '../i18n'
 import {
@@ -1005,6 +1008,11 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   // R29.3 (revised): displays currently receiving the projected visualizer
   // animation (multi-select — project to one or several displays at once).
   const [projectDisplayIds, setProjectDisplayIds] = useState<number[]>([])
+  // R52.7 A-scheme: region preset + custom rect for projected visualizer
+  const [projectRegion, setProjectRegion] = useState<RegionPreset>('fullscreen')
+  const [projectCustom, setProjectCustom] = useState<RegionRect>({ x: 0, y: 0, w: 1, h: 1 })
+  const [pickingCustom, setPickingCustom] = useState(false)
+  const customPickStartRef = useRef<{ x: number; y: number } | null>(null)
 
   // Lyrics state
   const [lrcLines, setLrcLines] = useState<LrcLine[]>([])
@@ -1172,13 +1180,15 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
         setShowDisplayPicker(true)
         return
       }
-      setProjectDisplayIds((prev) => {
-        if (prev.includes(displayId)) return prev
-        return [...prev, displayId]
-      })
+      const rect = regionPresetToRect(projectRegion, projectCustom)
+      // A 方案：region 经 localStorage 传给 projector（纯渲染层，不动主进程/preload）
+      try {
+        localStorage.setItem('rgbbox:audioVizRegion', JSON.stringify({ preset: projectRegion, rect }))
+      } catch { /* ignore */ }
+      setProjectDisplayIds((prev) => prev.includes(displayId) ? prev : [...prev, displayId])
       await window.rgbbox.openAudioVizWindow(displayId)
     } catch { /* ignore */ }
-  }, [])
+  }, [projectRegion, projectCustom])
 
   const stopProjecting = useCallback((displayId?: number) => {
     if (displayId === undefined) {
@@ -1803,7 +1813,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="audio-studio-view">
+    <div className="audio-studio-view" style={{ position: 'relative' }}>
       <header className="workspace-header">
         <div>
           <p className="eyebrow">{t('audio.eyebrow')}</p>
@@ -2019,8 +2029,24 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
               {showDisplayPicker && (
                 <div className="audio-display-picker" style={{
                   position: 'absolute', top: 30, right: 0, background: 'var(--surface-2, #1e2535)',
-                  border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: 8, zIndex: 100
+                  border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: 8, zIndex: 100,
+                  minWidth: 200
                 }}>
+                  <p style={{ fontSize: 11, marginBottom: 6, opacity: 0.7 }}>Display region</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, marginBottom: 8 }}>
+                    {(['fullscreen','top-third','middle-third','bottom-third','left-third','center-third','right-third','custom'] as RegionPreset[]).map(preset => (
+                      <button
+                        key={preset}
+                        type="button"
+                        className={`audio-btn-sm ${projectRegion === preset ? 'active' : ''}`}
+                        style={{ fontSize: 10, padding: '4px 6px' }}
+                        onClick={() => { setProjectRegion(preset); setPickingCustom(preset === 'custom') }}
+                        title={t(`overlay.region.${preset === 'top-third' ? 'top' : preset === 'middle-third' ? 'middle' : preset === 'bottom-third' ? 'bottom' : preset === 'left-third' ? 'left' : preset === 'center-third' ? 'center' : preset === 'right-third' ? 'right' : preset === 'custom' ? 'custom' : 'fullscreen'}` as any)}
+                      >
+                        {t(`overlay.region.${preset === 'top-third' ? 'top' : preset === 'middle-third' ? 'middle' : preset === 'bottom-third' ? 'bottom' : preset === 'left-third' ? 'left' : preset === 'center-third' ? 'center' : preset === 'right-third' ? 'right' : preset === 'custom' ? 'custom' : 'fullscreen'}` as any)}
+                      </button>
+                    ))}
+                  </div>
                   <p style={{ fontSize: 11, marginBottom: 6, opacity: 0.7 }}>{t('audio.viz.selectDisplay')}</p>
                   {displays.map(d => {
                     const active = projectDisplayIds.includes(d.id)
@@ -2627,6 +2653,29 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
           )}
         </div>
       </div>
+      {pickingCustom && projectRegion === 'custom' && (
+        <div
+          style={{ position: 'absolute', inset: 0, zIndex: 90, cursor: 'crosshair', background: 'rgba(0,0,0,0.3)' }}
+          onMouseDown={(e) => {
+            const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+            customPickStartRef.current = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }
+          }}
+          onMouseUp={(e) => {
+            const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+            const ex = (e.clientX - r.left) / r.width
+            const ey = (e.clientY - r.top) / r.height
+            const s = customPickStartRef.current
+            setPickingCustom(false)
+            if (!s) return
+            const x = Math.max(0, Math.min(s.x, ex))
+            const y = Math.max(0, Math.min(s.y, ey))
+            const w = Math.min(1, Math.max(0.02, Math.abs(ex - s.x)))
+            const h = Math.min(1, Math.max(0.02, Math.abs(ey - s.y)))
+            if (w < 0.02 || h < 0.02) { setProjectRegion('fullscreen'); return }
+            setProjectCustom({ x, y, w, h })
+          }}
+        />
+      )}
     </div>
   )
 }
