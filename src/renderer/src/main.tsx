@@ -10,6 +10,12 @@ const params = new URLSearchParams(window.location.search)
 const isOverlay = params.get('overlay') === 'true'
 const isAudioViz = params.get('audioviz') === 'true'
 const overlayDisplayId = Number(params.get('displayId') ?? 0)
+// R65: whether this overlay window was created opaque (fullscreen region —
+// see overlayManager.ts#openOverlay) rather than transparent (non-fullscreen
+// preset-third/custom region, which needs to show the desktop through its
+// letterbox bars). Read from the URL because `transparent` is a BrowserWindow
+// creation-time-only property the renderer process has no other way to see.
+const overlayOpaque = params.get('opaque') === '1'
 
 const root = ReactDOM.createRoot(document.getElementById('root')!)
 
@@ -24,7 +30,7 @@ if (isAudioViz) {
   // (960px / 640px) exceeds the partial-region overlay window dimensions.
   document.documentElement.style.overflow = 'hidden'
   document.body.classList.add('overlay-mode')
-  root.render(<OverlayCanvas displayId={overlayDisplayId} />)
+  root.render(<OverlayCanvas displayId={overlayDisplayId} opaque={overlayOpaque} />)
 } else {
   root.render(
     <React.StrictMode>

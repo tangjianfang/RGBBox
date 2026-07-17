@@ -13,6 +13,15 @@ beforeEach(() => {
 })
 
 describe('renderer/hooks/useModelStore', () => {
+  it('does not load models or subscribe to progress when disabled', () => {
+    const { result } = renderHook(() => useModelStore(false))
+
+    expect(result.current.loading).toBe(false)
+    expect(result.current.models).toEqual([])
+    expect(window.rgbbox.modelGetCachedPaths).not.toHaveBeenCalled()
+    expect(window.rgbbox.onModelDownloadProgress).not.toHaveBeenCalled()
+  })
+
   it('starts in loading state and resolves to the manifest list', async () => {
     const { result } = renderHook(() => useModelStore())
     // After mount, loading eventually flips false and models are populated

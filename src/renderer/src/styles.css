@@ -352,7 +352,11 @@ section.sampling-panel {
 }
 
 .preview-frame {
-  aspect-ratio: 16 / 9;
+  /* R61: was a hardcoded `aspect-ratio: 16/9` here — the box now always gets
+     its aspect ratio from the `aspectRatio` prop (PreviewGrid.tsx/Preview3D.tsx
+     inline style), computed from the actual target display/topology, so the
+     in-app preview matches the real overlay output's proportions instead of
+     silently distorting on any non-16:9 display. */
   background: #0b1014;
   border: 1px solid #253740;
   border-radius: 8px;
@@ -375,6 +379,59 @@ section.sampling-panel {
 
 .preview-frame canvas {
   display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.preview-header-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.preview-fullscreen-btn {
+  align-items: center;
+  background: #162228;
+  border: 1px solid #2a3d46;
+  border-radius: 6px;
+  color: #a8e2f0;
+  cursor: pointer;
+  display: flex;
+  height: 26px;
+  justify-content: center;
+  transition: background 150ms ease, border-color 150ms ease;
+  width: 26px;
+}
+
+.preview-fullscreen-btn:hover {
+  background: #1d2e36;
+  border-color: #3a606e;
+}
+
+/*
+ * R64: diagnostic "预览全屏" mode — lets the in-app preview fill the entire
+ * physical screen (via the native Fullscreen API on this wrapper, with a
+ * CSS-only fallback state for the rare case that API is unavailable) so it
+ * can be A/B compared against the real overlay-window projection at the same
+ * physical resolution. When active, the wrapped `.preview-frame` drops its
+ * aspect-ratio box constraint and stretches edge-to-edge — deliberately the
+ * SAME "stretch to fill" behaviour a fullscreen overlay uses (R30.1), so this
+ * is an apples-to-apples comparison, not a different rendering mode.
+ */
+.preview-fullscreen-wrap.is-fullscreen {
+  align-items: center;
+  background: #05080a;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 1000;
+}
+
+.preview-fullscreen-wrap.is-fullscreen .preview-frame {
+  aspect-ratio: unset;
+  border-radius: 0;
   height: 100%;
   width: 100%;
 }
@@ -2998,6 +3055,19 @@ input:not([type]):focus {
 
 /* ── Audio Studio ────────────────────────────────────────────────────────── */
 
+/* R60: AudioStudioView stays permanently mounted (its wrapper in App.tsx just
+   toggles `display:none`, see R42) instead of being conditionally rendered
+   like the other views. As a bare flex item with no sizing of its own, that
+   wrapper only ever sized to its content ("auto"), so `.audio-studio-view`'s
+   own `height:100%` below had nothing definite to resolve against and was a
+   no-op — the whole view (and everything inside it) was never actually
+   height-bounded by `.workspace`, letting content silently overflow and get
+   clipped instead of triggering the inner overflow:auto scroll areas. */
+.audio-view-wrapper {
+  flex: 1;
+  min-height: 0;
+}
+
 .audio-studio-view {
   display: flex;
   flex-direction: column;
@@ -3049,7 +3119,12 @@ input:not([type]):focus {
   flex: 1;
   min-width: 0;
   gap: 14px;
-  overflow: hidden;
+  /* R55.4: was `overflow:hidden` — at the OS-enforced minimum window size
+     the mode-bar + canvas combined content can exceed the available height;
+     hidden silently clipped the bottom of the visualizer (“底部有一些图形
+     就显示不全了”). Scroll instead of clip so the bottom is always reachable. */
+  overflow-y: auto;
+  overflow-x: hidden;
   background: rgba(18, 22, 28, 0.6);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -3067,55 +3142,99 @@ input:not([type]):focus {
   scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
 }
 
-/* R29.5: EQ / Generator toolbar buttons in the header, and the drawer
-   overlay both are opened into. Moving these two out of the always-visible
-   right-panel flow (they used to sit between the visualizer and the
-   scenes/export tabs) declutters the main working area. */
-.audio-tools-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.audio-top-transport {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.audio-top-transport .audio-progress-bar {
-  flex: 0 0 160px;
-  width: 160px;
-  min-width: 100px;
-}
-.audio-top-transport .audio-now-playing-label {
-  opacity: 0.7;
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 180px;
-}
-.audio-top-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.audio-top-controls .audio-slider { width: 80px; }
-.audio-top-controls .audio-value {
-  font-family: monospace;
-  opacity: 0.75;
-  min-width: 34px;
-}
+/* R29.5: EQ / Generator drawer-toggle buttons in the header. */
 .audio-top-drawers {
   display: flex;
   gap: 8px;
-  margin-left: auto;
 }
+
+/* R54.3: fixed 2-row transport bar (replaces the old single `flex-wrap: wrap`
+   .audio-tools-bar, which reflowed onto an unpredictable number of lines at
+   different window widths, shifting the rest of the layout up/down). Row 1
+   (controls) never wraps — it's a horizontally scrollable strip instead — so
+   the bar's total height stays constant regardless of window size. */
+.audio-transport-bar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 10px 14px;
+  background: rgba(18, 22, 28, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.audio-transport-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+.audio-transport-row-controls {
+  gap: 10px;
+  height: 30px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
+}
+.audio-transport-row-controls .audio-btn-icon,
+.audio-transport-row-controls .audio-btn-sm { flex-shrink: 0; }
+.audio-transport-row-controls .audio-progress-bar {
+  flex: 1 1 140px;
+  width: 140px;
+  min-width: 90px;
+}
+.audio-transport-row-controls .audio-time { flex-shrink: 0; }
+.audio-transport-row-controls .audio-slider { width: 80px; flex-shrink: 0; }
+.audio-transport-row-controls .audio-value {
+  font-family: monospace;
+  opacity: 0.75;
+  min-width: 34px;
+  flex-shrink: 0;
+}
+.audio-transport-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+.audio-transport-row-nowplaying {
+  gap: 8px;
+  height: 26px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
+}
+.audio-transport-row-nowplaying .audio-now-playing-label { min-width: 60px; }
+.audio-transport-row-nowplaying .audio-btn-icon { flex-shrink: 0; }
+.audio-transport-row-nowplaying .audio-slider { width: 72px; flex-shrink: 0; }
+.audio-transport-row-nowplaying .audio-label { flex-shrink: 0; }
+.audio-transport-row-nowplaying .audio-value {
+  font-family: monospace;
+  opacity: 0.75;
+  min-width: 30px;
+  flex-shrink: 0;
+}
+.audio-now-playing-icon {
+  flex-shrink: 0;
+  color: #46c6a8;
+  opacity: 0.9;
+}
+/* R55.2: the playlist above uses `flex:1` (i.e. flex-basis 0%), which
+   contributes nothing towards flexbox's negative-space distribution when the
+   left panel is short on room — all of the shrinkage was landing on this
+   panel instead (since its flex-basis is content-based/`auto`), squeezing it
+   down to near-zero height ("每次打开被缩放到看不见"). `flex-shrink: 0` keeps
+   it pinned at its intended (up to 160px) height; the playlist's own
+   `overflow-y: auto` above absorbs any remaining space pressure instead. */
 .audio-lyrics-panel {
   border-top: 1px solid rgba(255,255,255,0.08);
   padding: 8px;
   max-height: 160px;
+  flex-shrink: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -3131,7 +3250,10 @@ input:not([type]):focus {
 .audio-drawer-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(6, 9, 12, 0.55);
+  /* R58.x: was rgba(6,9,12,0.55) — dimmed/grayed out the visualizer behind the
+     drawer. Per user feedback ("不要把波形文件置灰，正常显示就行") keep this fully
+     transparent; it still exists purely to catch click-outside-to-close. */
+  background: transparent;
   display: flex;
   justify-content: flex-end;
   z-index: 200;
@@ -3163,33 +3285,9 @@ input:not([type]):focus {
 }
 
 /* EQ (previously unstyled — the band grid fell back to default block layout) */
-.audio-eq-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px 8px;
-}
-
-.audio-eq-band {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 4px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.audio-eq-freq {
-  font-size: 10px;
-  color: rgba(200, 220, 229, 0.5);
-}
-
-.audio-eq-db {
-  font-size: 10px;
-  color: rgba(200, 220, 229, 0.7);
-  font-variant-numeric: tabular-nums;
-}
+/* R57.2: the 10 vertical bar-slider grid removed from JSX (superseded by the
+   draggable curve, per user feedback that it was redundant/meaningless) —
+   .audio-eq-grid/.audio-eq-band/.audio-eq-freq/.audio-eq-db no longer used. */
 
 /* Group styles */
 .audio-group {
@@ -3335,6 +3433,15 @@ input:not([type]):focus {
   transform: translateY(-0.5px);
 }
 
+/* R55.1: EQ/Generator header buttons now toggle their drawer open/closed on
+   each click — give a clear pressed/active visual so it's obvious which
+   state you're in (this class previously had no matching rule). */
+.audio-btn.active {
+  background: rgba(79, 195, 247, 0.16);
+  border-color: rgba(79, 195, 247, 0.4);
+  color: #cdeeff;
+}
+
 .audio-btn-primary {
   background: rgba(79, 195, 247, 0.15);
   border-color: rgba(79, 195, 247, 0.3);
@@ -3417,7 +3524,18 @@ input:not([type]):focus {
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.2);
   scrollbar-width: thin;
-  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
+  scrollbar-color: rgba(138, 162, 173, 0.4) transparent;
+}
+
+/* R55.3: the global scrollbar thumb (rgba .18 opacity) reads as basically
+   invisible against this panel's dark background, making a genuinely
+   scrollable long playlist look like it has no scrollbar at all ("没有上下
+   滚动条，无法看清楚全部文件"). Give this specific list a more visible thumb. */
+.audio-playlist::-webkit-scrollbar-thumb {
+  background: rgba(138, 162, 173, 0.4);
+}
+.audio-playlist::-webkit-scrollbar-thumb:hover {
+  background: rgba(138, 162, 173, 0.6);
 }
 
 .audio-empty {
@@ -3534,9 +3652,10 @@ input:not([type]):focus {
 }
 
 .audio-canvas-spectrum {
-  flex: 1;
-  height: auto;
-  min-height: 0;
+  flex: 1 1 0;
+  width: 100%;
+  height: 0;
+  min-height: 140px;
   box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.3), 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
@@ -3552,9 +3671,9 @@ input:not([type]):focus {
 /* R29.2: wavesurfer.js container for the 'waveform' visualizer mode */
 .audio-waveform-container {
   width: 100%;
-  flex: 1;
-  height: auto;
-  min-height: 0;
+  flex: 1 1 0;
+  height: 0;
+  min-height: 140px;
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.04);
@@ -4496,8 +4615,8 @@ input:not([type]):focus {
 }
 
 .audio-visualizers-fullscreen .audio-canvas-spectrum {
-  flex: 1;
-  height: auto;
+  flex: 1 1 0;
+  height: 0;
   min-height: 0;
 }
 
@@ -5122,4 +5241,4 @@ input:not([type]):focus {
 .eq-add-band { margin-top: 6px; }
 
 /* R51.1/R52.1: 顶部 transport cluster（R52.1 全合并后由 .audio-tools-bar 主规则承载）*/
-.audio-top-transport .audio-time { font-size: 12px; color: rgba(138, 162, 173, 0.85); }
+.audio-time { font-size: 12px; color: rgba(138, 162, 173, 0.85); }

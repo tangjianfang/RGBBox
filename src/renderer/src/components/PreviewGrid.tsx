@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import type { EffectLayer, RgbFrame } from '../../../shared/types'
-import { EffectGl } from '../gl/effectGl'
+import { EFFECT2D_CHANNEL, EffectGl } from '../gl/effectGl'
 import { PreviewGl } from '../gl/previewGl'
 
 interface PreviewGridProps {
@@ -29,6 +29,16 @@ interface PreviewGridProps {
    * display slots (shown at 1/N, 2/N, … of the canvas width).
    */
   displayCount?: number
+  /**
+   * R61: aspect ratio (width/height) the preview box should be locked to.
+   * Defaults to 16/9 (matches the previous hardcoded CSS value) when not
+   * provided. The overlay window always renders at the exact physical
+   * target-display resolution/aspect; since both renderers stretch the same
+   * frame to fill their own canvas edge-to-edge, a preview box with the wrong
+   * aspect ratio makes the in-app preview look visibly different from what
+   * actually appears on the real display whenever that display isn't 16:9.
+   */
+  aspectRatio?: number
 }
 
 /**
@@ -57,7 +67,7 @@ function initGl(canvas: HTMLCanvasElement): PreviewGl | null {
   }
 }
 
-export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth', gpuLayer = null, onRippleClick, displayCount = 1 }: PreviewGridProps): JSX.Element {
+export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth', gpuLayer = null, onRippleClick, displayCount = 1, aspectRatio = 16 / 9 }: PreviewGridProps): JSX.Element {
   const canvasRef  = useRef<HTMLCanvasElement | null>(null)
   const glRef      = useRef<PreviewGl | null>(null)
   const effectGlRef = useRef<EffectGl | null>(null)
@@ -89,6 +99,7 @@ export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth',
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const effect2dChannel = new BroadcastChannel(EFFECT2D_CHANNEL)
 
     // Apply the current gap/render-style setting to a freshly (re)created GL
     // context. Needed because the canvas-init effect below runs with `[]`
@@ -136,7 +147,10 @@ export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth',
             console.warn('[PreviewGrid] EffectGl init failed:', err)
           }
         }
-        effectGlRef.current?.render(layer, performance.now() / 1000)
+          const time = performance.now() / 1000
+          if (effectGlRef.current?.render(layer, time)) {
+            effect2dChannel.postMessage({ layer, t: time })
+          }
         if (!startedRef.current) {
           startedRef.current = true
           setStarted(true)
@@ -158,6 +172,7 @@ export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth',
 
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      effect2dChannel.close()
       ro.disconnect()
       glRef.current?.dispose()
       effectGlRef.current?.dispose()
@@ -169,7 +184,7 @@ export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth',
   }, [])
 
   return (
-    <div className="preview-frame">
+    <div className="preview-frame" style={{ aspectRatio }}>
       <canvas
         ref={canvasRef}
         aria-label="RGB preview canvas"

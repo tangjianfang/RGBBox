@@ -8,7 +8,27 @@
 // file via `setupRendererMocks()` from `tests/renderer/_helpers.tsx`.
 
 import '@testing-library/jest-dom/vitest'
-import { vi } from 'vitest'
+import { beforeEach, vi } from 'vitest'
+
+class MockBroadcastChannel {
+  static channels = new Map<string, Set<MockBroadcastChannel>>()
+  onmessage: ((event: MessageEvent) => void) | null = null
+  constructor(public readonly name: string) {
+    const channels = MockBroadcastChannel.channels.get(name) ?? new Set<MockBroadcastChannel>()
+    channels.add(this)
+    MockBroadcastChannel.channels.set(name, channels)
+  }
+  postMessage(data: unknown): void {
+    for (const channel of MockBroadcastChannel.channels.get(this.name) ?? []) {
+      if (channel !== this) channel.onmessage?.({ data } as MessageEvent)
+    }
+  }
+  close(): void {
+    MockBroadcastChannel.channels.get(this.name)?.delete(this)
+  }
+}
+
+;(globalThis as any).BroadcastChannel = MockBroadcastChannel
 
 // ─── i18n (return key as-is, deterministic) ───────────────────────────────
 vi.mock('../../src/renderer/src/i18n', () => ({
@@ -64,18 +84,57 @@ vi.mock('lucide-react', () => {
 class MockEffect3DGl {
   public kind = 'sphere-pulse'
   public loaded = true
+  static instances: MockEffect3DGl[] = []
+  constructor() { MockEffect3DGl.instances.push(this) }
   init = vi.fn().mockResolvedValue(undefined)
   draw = vi.fn().mockReturnValue(true)
   render = vi.fn().mockReturnValue(true)
   resize = vi.fn()
   dispose = vi.fn()
+}
+class MockEffectGl {
+  static instances: MockEffectGl[] = []
+  init = vi.fn().mockResolvedValue(undefined)
+  draw = vi.fn().mockReturnValue(true)
+  render = vi.fn().mockReturnValue(true)
+  resize = vi.fn()
+  dispose = vi.fn()
+  constructor() { MockEffectGl.instances.push(this) }
 }
 class MockPreviewGl {
+  static instances: MockPreviewGl[] = []
   init = vi.fn().mockResolvedValue(undefined)
   draw = vi.fn().mockReturnValue(true)
+  drawFrame = vi.fn().mockReturnValue(true)
   render = vi.fn().mockReturnValue(true)
+  setGap = vi.fn()
+  setRenderStyle = vi.fn()
+  setFit = vi.fn()
   resize = vi.fn()
   dispose = vi.fn()
+  constructor() { MockPreviewGl.instances.push(this) }
 }
-vi.mock('../../src/renderer/src/gl/effect3dGl', () => ({ Effect3DGl: MockEffect3DGl }))
-vi.mock('../../src/renderer/src/gl/previewGl', () => ({ PreviewGl: MockPreviewGl }))
+(globalThis as any).__rgbboxTestMocks = { MockEffectGl, MockPreviewGl }
+
+beforeEach(() => {
+  MockBroadcastChannel.channels.clear()
+  MockEffect3DGl.instances = []
+  MockEffectGl.instances = []
+  MockPreviewGl.instances = []
+})
+vi.mock('../../src/renderer/src/gl/effect3dGl', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/renderer/src/gl/effect3dGl')>()
+  return { ...actual, Effect3DGl: MockEffect3DGl }
+})
+vi.mock('../../src/renderer/src/gl/effectGl', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/renderer/src/gl/effectGl')>()
+  return { ...actual, EffectGl: MockEffectGl }
+})
+// R63: partial mock — keep `PreviewGl` stubbed (no real WebGL context needed
+// for component tests), but pass through the module's other real named
+// exports (e.g. `computeContainLayout`, a pure function with no GL/DOM
+// dependency) unmodified, so tests can exercise the actual implementation.
+vi.mock('../../src/renderer/src/gl/previewGl', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/renderer/src/gl/previewGl')>()
+  return { ...actual, PreviewGl: MockPreviewGl }
+})

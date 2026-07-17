@@ -701,14 +701,19 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
 
   // Grant media + display-capture permissions so the Video Studio can access
-  // cameras, microphones and screen/window sources. All other permissions are
+  // cameras, microphones and screen/window sources. Also grant 'fullscreen' —
+  // R64.7: Chromium's Element.requestFullscreen() (used by the RGB preview /
+  // audio visualizer / video studio fullscreen toggles) is itself gated by
+  // Electron's permission system; without an explicit allow here it was
+  // silently denied (the returned promise never settles), making every
+  // in-app "全屏" button visibly do nothing. All other permissions remain
   // denied (tighter than Electron's permissive default).
-  const MEDIA_PERMISSIONS = new Set(['media', 'audioCapture', 'videoCapture', 'display-capture'])
+  const ALLOWED_PERMISSIONS = new Set(['media', 'audioCapture', 'videoCapture', 'display-capture', 'fullscreen'])
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(MEDIA_PERMISSIONS.has(permission))
+    callback(ALLOWED_PERMISSIONS.has(permission))
   })
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-    return MEDIA_PERMISSIONS.has(permission)
+    return ALLOWED_PERMISSIONS.has(permission)
   })
 
   // Modern screen/window capture path. The Video Studio calls
@@ -748,10 +753,14 @@ app.whenReady().then(() => {
       // Path is stored as query param ?p= to avoid Windows drive-letter mangling
       // e.g. media://local?p=C%3A%5CUsers%5C...  →  C:\Users\...
       const filePath = new URL(request.url).searchParams.get('p') ?? ''
-      console.log('[media://] filePath:', filePath)
+      // R53.8: was console.log — on Windows, the terminal's active codepage
+      // (often GBK/936, not UTF-8) mangles non-ASCII (e.g. Chinese) file paths
+      // into mojibake. The shared file logger always writes UTF-8 to disk
+      // regardless of terminal codepage, so route through it instead.
+      log.debug('MediaProtocol', `filePath: ${filePath}`)
       const data = await readFile(filePath)
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-      console.log('[media://] serving', data.byteLength, 'bytes, ext:', ext)
+      log.debug('MediaProtocol', `serving ${data.byteLength} bytes, ext: ${ext}`)
       return new Response(data, {
         headers: {
           'Content-Type': AUDIO_MIME[ext] ?? 'audio/octet-stream',
@@ -759,7 +768,7 @@ app.whenReady().then(() => {
         },
       })
     } catch (err) {
-      console.error('[media://] error:', request.url, err)
+      log.error('MediaProtocol', `error serving ${request.url}: ${err instanceof Error ? err.message : String(err)}`)
       return new Response('File not found', { status: 404 })
     }
   })

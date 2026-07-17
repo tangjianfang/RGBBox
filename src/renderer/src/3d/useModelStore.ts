@@ -68,10 +68,10 @@ async function fetchLedMap(fileName: string): Promise<LedMap | null> {
 
 // ---------------------------------------------------------------------------
 
-export function useModelStore() {
+export function useModelStore(enabled = true) {
   const [bundledModels, setBundledModels] = useState<SplatModel[]>([])
   const [importedModels, setImportedModels] = useState<SplatModel[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(enabled)
   // Track blob: URLs created for imported files so we can revoke on unmount.
   const blobUrls = useRef<string[]>([])
 
@@ -79,6 +79,7 @@ export function useModelStore() {
 
   // ── Initial load: build model list from manifest + cached paths ──────────
   const load = useCallback(async () => {
+    if (!enabled) return
     setLoading(true)
 
     // Ask main process which models are already cached (file:// URLs).
@@ -100,10 +101,11 @@ export function useModelStore() {
 
     setBundledModels(resolved)
     setLoading(false)
-  }, [])
+  }, [enabled])
 
   // ── Listen to download progress from main process ────────────────────────
   useEffect(() => {
+    if (!enabled) return undefined
     const unsubscribe = window.rgbbox.onModelDownloadProgress((p) => {
       setBundledModels((prev) =>
         prev.map((m) => {
@@ -120,18 +122,25 @@ export function useModelStore() {
       )
     })
     return unsubscribe
-  }, [])
+  }, [enabled])
 
   useEffect(() => {
+    if (!enabled) {
+      setBundledModels([])
+      setImportedModels([])
+      setLoading(false)
+      return undefined
+    }
     void load()
     const urls = blobUrls.current
     return () => {
       for (const url of urls) URL.revokeObjectURL(url)
     }
-  }, [load])
+  }, [enabled, load])
 
   // ── Trigger on-demand download for a bundled model ───────────────────────
   const downloadModel = useCallback(async (name: string): Promise<void> => {
+    if (!enabled) return
     // Optimistically set status to downloading
     setBundledModels((prev) =>
       prev.map((m) =>
@@ -153,7 +162,7 @@ export function useModelStore() {
         )
       )
     }
-  }, [])
+  }, [enabled])
 
   // ── Import a user-picked .splat file ─────────────────────────────────────
   const importFile = useCallback((file: File): SplatModel => {

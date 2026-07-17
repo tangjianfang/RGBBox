@@ -2,11 +2,21 @@ import { useCallback, useEffect, useRef, type JSX } from 'react'
 import { effectPresets } from '../../../shared/defaultProfile'
 import type { Effect3DKind, RgbFrame } from '../../../shared/types'
 import { EFFECT3D_CHANNEL, Effect3DGl, type Effect3DMessage } from '../gl/effect3dGl'
+import { EFFECT2D_CHANNEL, EffectGl, type Effect2DMessage } from '../gl/effectGl'
 import { PreviewGl } from '../gl/previewGl'
 import { useI18n } from '../i18n'
 
 interface Props {
   displayId: number
+  /**
+   * R65: true for fullscreen-region overlays (window created opaque —
+   * `overlayManager.ts#openOverlay`'s `transparent:false` path), false for
+   * non-fullscreen preset-third/custom regions (window created transparent,
+   * needed so their letterbox bars — R63 — show the desktop through). Drives
+   * which `PreviewGl` rendering path this canvas uses: opaque overlays reuse
+   * the exact same `overlay=false` path as the in-app "RGB 画布预览" panel.
+   */
+  opaque?: boolean
 }
 
 // Effect list passed to the native context menu
@@ -17,8 +27,17 @@ const OVERLAY_EFFECTS = effectPresets.map((p) => ({ kind: p.kind, label: p.label
 // single dropped message doesn't cause a visible flash back to the grid, but
 // short enough that switching to a 2D effect resumes normal rendering quickly.
 const EFFECT3D_FRESHNESS_MS = 500
+const EFFECT2D_FRESHNESS_MS = 500
 
-export function OverlayCanvas({ displayId }: Props): JSX.Element {
+export function getOverlayCanvasBackingSize(cssWidth: number, cssHeight: number, devicePixelRatio: number): { width: number; height: number } {
+  const pixelRatio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1
+  return {
+    width: Math.floor(cssWidth * pixelRatio),
+    height: Math.floor(cssHeight * pixelRatio),
+  }
+}
+
+export function OverlayCanvas({ displayId, opaque = false }: Props): JSX.Element {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const glRef     = useRef<PreviewGl | null>(null)
@@ -26,6 +45,8 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
   const effect3dGlRef  = useRef<Effect3DGl | null>(null)
   const effect3dKindRef = useRef<Effect3DKind | null>(null)
   const last3dAtRef     = useRef(0)
+  const effect2dGlRef    = useRef<EffectGl | null>(null)
+  const last2dAtRef      = useRef(0)
 
   // R48.1: frame-arrival timing accumulator. Always running (cost is one
   // performance.now() diff + a capped push per frame), but only read when the
@@ -62,16 +83,20 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
     if (!canvas) return
 
     // ── Helper: set canvas physical size then (re-)create the GL context ──
-    // Overlay canvas covers the entire display, so no devicePixelRatio scaling
-    // is applied — we want 1 CSS pixel = 1 physical pixel here.
     const initGl = (): PreviewGl | null => {
-      const w = canvas.offsetWidth  || window.innerWidth
-      const h = canvas.offsetHeight || window.innerHeight
-      if (!w || !h) return null
-      canvas.width  = w
-      canvas.height = h
+      const cssWidth = canvas.offsetWidth  || window.innerWidth
+      const cssHeight = canvas.offsetHeight || window.innerHeight
+      if (!cssWidth || !cssHeight) return null
+      const { width, height } = getOverlayCanvasBackingSize(cssWidth, cssHeight, window.devicePixelRatio || 1)
+      if (!width || !height) return null
+      canvas.width  = width
+      canvas.height = height
       try {
-        return new PreviewGl(canvas, true /* overlay */)
+        // R65: opaque (fullscreen) overlays use the exact same `overlay=false`
+        // rendering path as the in-app preview panel — no alpha context, no GL
+        // blending, opaque background. Only non-fullscreen regions still need
+        // the transparent/alpha-blended `overlay=true` path (R63 letterbox).
+        return new PreviewGl(canvas, !opaque)
       } catch (err) {
         console.warn('[OverlayCanvas] WebGL init failed:', err)
         return null
@@ -91,6 +116,8 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
       effect3dGlRef.current?.dispose()
       effect3dGlRef.current = null
       effect3dKindRef.current = null
+      effect2dGlRef.current?.dispose()
+      effect2dGlRef.current = null
     })
     ro.observe(canvas)
 
@@ -118,6 +145,25 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
       last3dAtRef.current = performance.now()
     }
 
+    const effect2dChannel = opaque ? new BroadcastChannel(EFFECT2D_CHANNEL) : null
+    if (effect2dChannel) {
+      effect2dChannel.onmessage = (event: MessageEvent<Effect2DMessage>) => {
+        const c = canvasRef.current
+        if (!c) return
+        if (!effect2dGlRef.current) {
+          try {
+            effect2dGlRef.current = new EffectGl(c)
+          } catch (err) {
+            console.warn('[OverlayCanvas] EffectGl init failed:', err)
+            effect2dGlRef.current = null
+          }
+        }
+        if (effect2dGlRef.current?.render(event.data.layer, event.data.t)) {
+          last2dAtRef.current = performance.now()
+        }
+      }
+    }
+
     // ── Frame subscription (IPC callback, no React state) ────────────────
     const unsubscribe = window.rgbbox.onOverlayFrame((frame: RgbFrame) => {
       // R48.1: stamp arrival time for the harness's presentation-layer cadence
@@ -138,8 +184,10 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
       // render (above), skip drawing the LED-grid-quantized frame so it doesn't
       // flicker/overwrite the sharper direct render.
       if (now - last3dAtRef.current < EFFECT3D_FRESHNESS_MS) return
+      if (now - last2dAtRef.current < EFFECT2D_FRESHNESS_MS) return
       glRef.current?.setGap((frame.showGap ?? false) ? 0.06 : 0.0)
       glRef.current?.setRenderStyle(frame.renderStyle ?? 'smooth')
+      glRef.current?.setFit(frame.regionFit ?? 'stretch')
       glRef.current?.drawFrame(frame)
     })
 
@@ -147,12 +195,15 @@ export function OverlayCanvas({ displayId }: Props): JSX.Element {
       ro.disconnect()
       unsubscribe()
       effect3dChannel.close()
+      effect2dChannel?.close()
       glRef.current?.dispose()
       glRef.current = null
       effect3dGlRef.current?.dispose()
       effect3dGlRef.current = null
+      effect2dGlRef.current?.dispose()
+      effect2dGlRef.current = null
     }
-  }, [])
+  }, [opaque])
 
   // R48.1: respond to the --perf-selftest harness's collect-timing request.
   // Computes a snapshot of the frame-arrival buffer, reports it back via the

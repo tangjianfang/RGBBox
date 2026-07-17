@@ -159,6 +159,45 @@ describe('main/overlayManager', () => {
     })
   })
 
+  describe('R65: overlay window opacity (fullscreen = opaque, non-fullscreen = transparent)', () => {
+    it('creates an opaque, non-transparent window for a fullscreen region', () => {
+      mockScreenDisplays.push({ id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 } })
+      openOverlay(1, false, undefined, { region: 'fullscreen' })
+      const win = mockBrowserWindowInstances[0]
+      expect(win.opts.transparent).toBe(false)
+      expect(win.opts.backgroundColor).toBe('#05080a')
+    })
+
+    it('creates a transparent window for a non-fullscreen preset-third region', () => {
+      mockScreenDisplays.push({ id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 } })
+      openOverlay(1, false, undefined, { region: 'top-third' })
+      const win = mockBrowserWindowInstances[0]
+      expect(win.opts.transparent).toBe(true)
+      expect(win.opts.backgroundColor).toBe('#00000000')
+    })
+
+    it('creates a transparent window for a custom region', () => {
+      mockScreenDisplays.push({ id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 } })
+      openOverlay(1, false, undefined, { region: 'custom', custom: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } })
+      const win = mockBrowserWindowInstances[0]
+      expect(win.opts.transparent).toBe(true)
+    })
+
+    it('passes opaque=1 in the loaded query string for a fullscreen region, opaque=0 otherwise', () => {
+      mockScreenDisplays.push({ id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 } })
+      openOverlay(1, true, 'http://localhost:5173', { region: 'fullscreen' })
+      const win = mockBrowserWindowInstances[0]
+      expect(win.loadURL).toHaveBeenCalledWith(expect.stringContaining('opaque=1'))
+    })
+
+    it('passes opaque=0 in the loaded query string for a non-fullscreen region', () => {
+      mockScreenDisplays.push({ id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 } })
+      openOverlay(1, true, 'http://localhost:5173', { region: 'custom', custom: { x: 0, y: 0, width: 0.5, height: 0.5 } })
+      const win = mockBrowserWindowInstances[0]
+      expect(win.loadURL).toHaveBeenCalledWith(expect.stringContaining('opaque=0'))
+    })
+  })
+
   describe('openOverlay', () => {
     it('returns false when displayId is unknown', () => {
       mockScreenDisplays.length = 0
@@ -190,12 +229,11 @@ describe('main/overlayManager', () => {
       expect(win.loadURL).not.toHaveBeenCalled()
     })
 
-    it('sets transparent + frameless + skipTaskbar', () => {
+    it('sets frameless + skipTaskbar (R65: transparent depends on region — see the dedicated describe block above)', () => {
       mockScreenDisplays.push({ id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 } })
       openOverlay(1, false, undefined, { region: 'fullscreen' })
       const win = mockBrowserWindowInstances[0]
       expect(win.opts.frame).toBe(false)
-      expect(win.opts.transparent).toBe(true)
       expect(win.opts.skipTaskbar).toBe(true)
       expect(win.opts.resizable).toBe(false)
       expect(win.opts.show).toBe(false) // hidden until ready-to-show

@@ -122,6 +122,48 @@ function buildProgram(gl: WebGLRenderingContext): WebGLProgram {
   return p
 }
 
+/**
+ * R63: pure "contain" (letterbox, aspect-preserving) layout math — computes
+ * the `uOrigin`/`uCellSize` uniform values that map the full canvas UV space
+ * onto the largest possible axis-aligned rectangle (centred) that both fits
+ * inside the canvas AND preserves the source grid's own aspect ratio
+ * (columns:rows). Used by non-fullscreen overlay regions so the COMPLETE
+ * effect is shown, undistorted, instead of being stretched (distorted) to
+ * fill an arbitrary window aspect ratio, or cropped (an earlier, incorrect
+ * fix attempt) to show only part of the effect.
+ *
+ * Exported as a standalone pure function (no GL/DOM dependency) so it can be
+ * unit-tested directly — see `tests/renderer/gl/previewGl.test.ts`.
+ */
+export function computeContainLayout(
+  columns: number,
+  rows: number,
+  canvasW: number,
+  canvasH: number
+): { originX: number; originY: number; cellW: number; cellH: number } {
+  const gridAspect   = columns / Math.max(1, rows)
+  const canvasAspect = canvasW / Math.max(1, canvasH)
+
+  let imgWidthUV: number
+  let imgHeightUV: number
+  if (canvasAspect > gridAspect) {
+    // Canvas is relatively wider than the grid → full height, pillarbox left/right.
+    imgHeightUV = 1
+    imgWidthUV  = gridAspect / canvasAspect
+  } else {
+    // Canvas is relatively taller than (or equal to) the grid → full width, letterbox top/bottom.
+    imgWidthUV  = 1
+    imgHeightUV = canvasAspect / gridAspect
+  }
+
+  return {
+    originX: (1 - imgWidthUV) / 2,
+    originY: (1 - imgHeightUV) / 2,
+    cellW:   imgWidthUV / columns,
+    cellH:   imgHeightUV / rows,
+  }
+}
+
 // ── Public class ──────────────────────────────────────────────────────────
 
 export class PreviewGl {
@@ -140,6 +182,13 @@ export class PreviewGl {
   /** Tracks the last-applied render style so setRenderStyle() can skip
    *  redundant texParameteri calls when called every frame with the same value. */
   private currentRenderStyle: 'pixel' | 'smooth' = 'pixel'
+  /**
+   * R63: 'stretch' fills the canvas edge-to-edge (correct for fullscreen
+   * overlays, whose window aspect already matches the frame content).
+   * 'contain' letterboxes the frame to show the COMPLETE effect undistorted
+   * — used for non-fullscreen overlay regions. See `computeContainLayout()`.
+   */
+  private fit: 'stretch' | 'contain' = 'stretch'
   /** True when this instance is used in a transparent overlay window. */
   private readonly overlay: boolean
   private canvasW = 0
@@ -247,14 +296,26 @@ export class PreviewGl {
    * feedback: this made the two views look visibly different (different
    * aspect/distortion), especially now that 'smooth' style is meant to make
    * them match. Fix: ALWAYS stretch to fill the canvas edge-to-edge, for
-   * both preview and overlay — the two renderers now use the exact same UV
-   * mapping formula, so for the common single/primary-display case the
-   * preview and the physical output are geometrically identical (only the
-   * physical pixel resolution differs, which is expected/unavoidable).
+   * both preview and fullscreen overlay — the two renderers now use the
+   * exact same UV mapping formula, so for the common single/primary-display
+   * case the preview and the physical output are geometrically identical
+   * (only the physical pixel resolution differs, which is expected).
+   *
+   * R63: a non-fullscreen overlay region (`setFit('contain')`) instead uses
+   * `computeContainLayout()` — its window aspect ratio is arbitrary and
+   * unrelated to the frame's own aspect ratio, so stretching would distort
+   * the whole effect. 'contain' letterboxes it instead, showing the complete
+   * effect undistorted.
    */
   private updateLayout(columns: number, rows: number): void {
     const { gl, canvasW, canvasH } = this
     if (!canvasW || !canvasH) return
+    if (this.fit === 'contain') {
+      const { originX, originY, cellW, cellH } = computeContainLayout(columns, rows, canvasW, canvasH)
+      gl.uniform2f(this.uOrigin, originX, originY)
+      gl.uniform2f(this.uCellSize, cellW, cellH)
+      return
+    }
     gl.uniform2f(this.uOrigin, 0, 0)
     gl.uniform2f(this.uCellSize, 1 / columns, 1 / rows)
   }
@@ -312,5 +373,21 @@ export class PreviewGl {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter)
     gl.useProgram(this.prog)
     gl.uniform1f(this.uSmooth, style === 'smooth' ? 1.0 : 0.0)
+  }
+
+  /**
+   * R63: switch between 'stretch' (fill the canvas edge-to-edge — correct
+   * for fullscreen overlays) and 'contain' (letterboxed, aspect-preserving —
+   * shows the complete effect undistorted, for non-fullscreen overlay
+   * regions). Cheap to call every frame — skips work when unchanged; forces
+   * a layout uniform recompute on the next drawFrame() when it does change
+   * (same technique as resize()), since the grid resolution itself may not
+   * have changed even though the fit mode did.
+   */
+  setFit(fit: 'stretch' | 'contain'): void {
+    if (fit === this.fit) return
+    this.fit = fit
+    this.texCols = 0
+    this.texRows = 0
   }
 }

@@ -48,6 +48,13 @@
 import { hexToRgb } from '../../../engine/color'
 import type { EffectLayer } from '../../../shared/types'
 
+export const EFFECT2D_CHANNEL = 'rgbbox-2d-effect'
+
+export interface Effect2DMessage {
+  layer: EffectLayer
+  t: number
+}
+
 /** Effect kinds that have a GPU-direct shader implementation (grows over time). */
 export const GPU_DIRECT_EFFECTS: ReadonlySet<string> = new Set([
   // Batch 1 (R37): pure trig/hue formulas, no noise dependency

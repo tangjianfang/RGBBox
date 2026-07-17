@@ -8,6 +8,7 @@
  */
 import { app, BrowserWindow, nativeImage, screen } from 'electron'
 import { join } from 'node:path'
+import { regionToNormalizedRect, isFullscreenRegion } from '../engine/overlayRegionFrame'
 import type { OverlayConfig, RgbFrame } from '../shared/types'
 
 const overlayWindows = new Map<number, BrowserWindow>()
@@ -34,30 +35,23 @@ export function isOverlayOpen(displayId: number): boolean {
   return win !== undefined && !win.isDestroyed()
 }
 
-/** Compute the pixel bounds for an overlay window given a region config and display bounds. */
+/**
+ * Compute the pixel bounds for an overlay window given a region config and
+ * display bounds. R63: shares the exact same region-fraction math as
+ * `cropFrameToRegion()` (via `regionToNormalizedRect()`) so a window's
+ * physical position/size and the frame content pushed into it can never
+ * drift apart into two different "cropping rules".
+ */
 function computeRegionBounds(
   b: { x: number; y: number; width: number; height: number },
   config: OverlayConfig
 ): { x: number; y: number; width: number; height: number } {
-  switch (config.region) {
-    case 'top-third':    return { x: b.x, y: b.y,                               width: b.width, height: Math.round(b.height / 3) }
-    case 'middle-third': return { x: b.x, y: b.y + Math.round(b.height / 3),    width: b.width, height: Math.round(b.height / 3) }
-    case 'bottom-third': return { x: b.x, y: b.y + Math.round(b.height * 2 / 3), width: b.width, height: Math.round(b.height / 3) }
-    case 'left-third':   return { x: b.x,                               y: b.y, width: Math.round(b.width / 3),     height: b.height }
-    case 'center-third': return { x: b.x + Math.round(b.width / 3),    y: b.y, width: Math.round(b.width / 3),     height: b.height }
-    case 'right-third':  return { x: b.x + Math.round(b.width * 2 / 3), y: b.y, width: Math.round(b.width / 3),    height: b.height }
-    case 'custom': {
-      const c = config.custom ?? { x: 0, y: 0, width: 1, height: 1 }
-      return {
-        x: Math.round(b.x + c.x * b.width),
-        y: Math.round(b.y + c.y * b.height),
-        width:  Math.max(1, Math.round(c.width  * b.width)),
-        height: Math.max(1, Math.round(c.height * b.height))
-      }
-    }
-    case 'fullscreen':
-    default:
-      return { x: b.x, y: b.y, width: b.width, height: b.height }
+  const r = regionToNormalizedRect(config)
+  return {
+    x: Math.round(b.x + r.x * b.width),
+    y: Math.round(b.y + r.y * b.height),
+    width:  Math.max(1, Math.round(r.width  * b.width)),
+    height: Math.max(1, Math.round(r.height * b.height))
   }
 }
 
@@ -85,15 +79,23 @@ export function openOverlay(
 
   const effectiveConfig: OverlayConfig = config ?? { region: 'fullscreen' }
   const bounds = computeRegionBounds(display.bounds, effectiveConfig)
-  const isFullscreen = effectiveConfig.region === 'fullscreen'
+  const isFullscreen = isFullscreenRegion(effectiveConfig)
 
+  // R65: a fullscreen overlay's content always covers 100% of its own window
+  // (R30.1's "always stretch to fill") — there is nothing behind it that
+  // ever needs to show through, so it uses the exact same OPAQUE rendering
+  // path as the in-app "RGB 画布预览" (see OverlayCanvas.tsx's `opaque` prop
+  // / `PreviewGl(overlay=false)`), instead of the transparent/alpha-blended
+  // window this overlay type has historically always used. Only non-
+  // fullscreen regions (preset thirds / custom, letterboxed via R63) still
+  // need a transparent window so their letterbox bars show the desktop.
   const win = new BrowserWindow({
     x: bounds.x,
     y: bounds.y,
     width: bounds.width,
     height: bounds.height,
     frame: false,
-    transparent: true,
+    transparent: !isFullscreen,
     alwaysOnTop: false,
     skipTaskbar: true,
     hasShadow: false,
@@ -103,7 +105,7 @@ export function openOverlay(
     // rounded-corner rendering, not from `hasShadow`. Disable both explicitly.
     thickFrame: false,
     roundedCorners: false,
-    backgroundColor: '#00000000',
+    backgroundColor: isFullscreen ? '#05080a' : '#00000000',
     focusable: true,
     resizable: false,
     // Keep hidden until ready-to-show so the loading window cannot
@@ -149,7 +151,7 @@ export function openOverlay(
     closeOverlay(displayId)
   })
 
-  const query = `overlay=true&displayId=${displayId}`
+  const query = `overlay=true&displayId=${displayId}&opaque=${isFullscreen ? '1' : '0'}`
   if (isDevelopment && devUrl) {
     win.loadURL(`${devUrl}?${query}`)
   } else {

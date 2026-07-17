@@ -224,6 +224,19 @@ export interface RgbFrame {
   showGap?: boolean
   /** R32: propagated from `sampling.renderStyle` (resolved against the active effect's pixel-style override). */
   renderStyle?: 'pixel' | 'smooth'
+  /**
+   * R63: how an overlay window should map this (uncropped) frame onto its own
+   * canvas. 'stretch' (default when omitted) fills the canvas edge-to-edge —
+   * correct for fullscreen overlays, whose window aspect already matches the
+   * frame's content (R30.1). 'contain' letterboxes the frame, preserving its
+   * aspect ratio and showing the COMPLETE effect undistorted — used for
+   * non-fullscreen overlay regions (a preset third / a custom drag-selected
+   * rectangle), whose window aspect ratio is arbitrary and unrelated to the
+   * frame's own aspect ratio; stretching the whole effect into such a window
+   * would distort it, and cropping a sub-region (an earlier, incorrect fix
+   * attempt) would show only part of the effect instead of the whole thing.
+   */
+  regionFit?: 'stretch' | 'contain'
 }
 
 /**

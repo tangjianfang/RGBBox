@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Download, FileText, FolderOpen, Maximize2, Minimize2, Monitor, Pause, Play, Plus, RefreshCw, Repeat, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, FileText, FolderOpen, Maximize2, Minimize2, Monitor, Music, Pause, Play, Plus, RefreshCw, Repeat, Shuffle, SkipBack, SkipForward, Square, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import {
@@ -813,7 +813,16 @@ function saveCache(cache: AudioStudioCache): void {
   } catch { /* ignore */ }
 }
 
-// R51.4: EQ 频率响应曲线图 SVG，可拖点改 gain。
+// R51.4/R55.5: EQ 频率响应曲线图 SVG，可拖点改 gain。
+// R55.5 changes: gain range tightened to the professional-EQ-standard ±12dB
+// (was ±24dB, which didn't match the graphic-mode sliders' own -12..12 range
+// and let curve-drags write out-of-range values onto them); drag is now
+// clamped to stay inside the plotted axes (can't drag past 20Hz/20kHz or
+// past ±12dB); dragged gain snaps to the same 0.5dB step the sliders use
+// (previously wrote raw, many-decimal pixel-math floats — "小数点的什么值");
+// X-axis gridlines now use the same 10 standard ISO EQ bands as graphic mode
+// (EQ_GRAPHIC_FREQS) instead of 3 arbitrary values, and the dB axis now has
+// visible labeled gridlines (it previously had none beyond the 0dB line).
 function EqCurvePlot({
   freqs, db, bands, onDragGain,
 }: {
@@ -822,30 +831,51 @@ function EqCurvePlot({
   bands: EqBand[]
   onDragGain: (freqHz: number, newGain: number) => void
 }) {
-  const W = 360, H = 140, padL = 28, padR = 8, padT = 10, padB = 18
+  const W = 360, H = 150, padL = 30, padR = 8, padT = 10, padB = 18
   const fMin = 20, fMax = 20000
-  const dbMin = -24, dbMax = 24
+  const dbMin = -12, dbMax = 12
+  const plotX0 = padL, plotX1 = W - padR
+  const plotY0 = padT, plotY1 = H - padB
   const x = (f: number): number => padL + (Math.log(f) - Math.log(fMin)) / (Math.log(fMax) - Math.log(fMin)) * (W - padL - padR)
   const y = (v: number): number => padT + (1 - (Math.max(dbMin, Math.min(dbMax, v)) - dbMin) / (dbMax - dbMin)) * (H - padT - padB)
   const path = freqs.map((f, i) => `${i === 0 ? 'M' : 'L'}${x(f).toFixed(1)},${y(db[i]).toFixed(1)}`).join(' ')
-  const zeroY = y(0)
+  // 常用 EQ 曲线频段（与 graphic 模式 10 段一致）作为坐标参考网格线
+  const bandFreqs = EQ_GRAPHIC_FREQS as readonly number[]
+  const labeledBandFreqs = new Set([62.5, 250, 1000, 4000])
+  const dbTicks = [-12, -6, 0, 6, 12]
 
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>): void => {
     const svg = e.currentTarget
     svg.setPointerCapture(e.pointerId)
+    svg.style.cursor = 'grabbing' // R56.2: visible "grabbing" feedback while dragging
+    // R57.3: dragging fast across the page can otherwise highlight/select
+    // nearby text ("有时候拖动的时候会变成一个高亮，选中的文本要优化") — suppress
+    // text selection for the duration of the drag, restore on release.
+    const prevUserSelect = document.body.style.userSelect
+    document.body.style.userSelect = 'none'
     const rect = svg.getBoundingClientRect()
     const scaleX = W / rect.width
+    const scaleY = H / rect.height
     const drag = (ev: PointerEvent): void => {
-      const px = (ev.clientX - rect.left) * scaleX
-      if (px < padL) return
+      // R55.5/R57.1: clamp the drag point to stay inside the plotted axes
+      // area — dragging past the edges (or releasing the mouse there) always
+      // resolves to the nearest boundary value, never an out-of-range one
+      // ("拖出了曲线范围...自动设置为边界值即可，而不是显示拖到外面去").
+      const px = Math.max(plotX0, Math.min(plotX1, (ev.clientX - rect.left) * scaleX))
+      const py = Math.max(plotY0, Math.min(plotY1, (ev.clientY - rect.top) * scaleY))
       const tNorm = (px - padL) / (W - padL - padR)
       const freqHz = fMin * Math.pow(fMax / fMin, tNorm)
-      const scaleY = H / rect.height
-      const py = (ev.clientY - rect.top) * scaleY
-      const gain = dbMax - (py - padT) / (H - padT - padB) * (dbMax - dbMin)
+      const rawGain = dbMax - (py - padT) / (H - padT - padB) * (dbMax - dbMin)
+      // R55.5: snap to the same 0.5dB step the sliders use — "自动适配适应"
+      // so the value released always lands on a clean, readable number
+      // instead of a raw multi-decimal pixel-math float.
+      const gain = Math.max(dbMin, Math.min(dbMax, Math.round(rawGain * 2) / 2))
       onDragGain(freqHz, gain)
     }
     const up = (ev: PointerEvent): void => {
+      drag(ev) // R57.1: commit+clamp the final release position too
+      svg.style.cursor = 'grab'
+      document.body.style.userSelect = prevUserSelect
       svg.removeEventListener('pointermove', drag)
       svg.removeEventListener('pointerup', up)
       svg.releasePointerCapture(ev.pointerId)
@@ -860,17 +890,37 @@ function EqCurvePlot({
       className="eq-curve-plot"
       viewBox={`0 0 ${W} ${H}`}
       onPointerDown={onPointerDown}
-      style={{ width: '100%', height: 150, cursor: 'pointer' }}
+      style={{ width: '100%', height: 160, cursor: 'grab', touchAction: 'none', userSelect: 'none' }}
     >
-      <line x1={padL} y1={zeroY} x2={W - padR} y2={zeroY} stroke="rgba(138,162,173,0.25)" strokeDasharray="3 3" />
-      {[100, 1000, 10000].map(f => (
-        <g key={f}>
-          <line x1={x(f)} y1={padT} x2={x(f)} y2={H - padB} stroke="rgba(138,162,173,0.12)" />
-          <text x={x(f)} y={H - 4} fill="rgba(138,162,173,0.6)" fontSize="9" textAnchor="middle">
-            {f >= 1000 ? `${f / 1000}k` : f}
+      {/* dB (Y) axis: labeled gridlines every 6dB across the ±12dB range */}
+      {dbTicks.map(v => (
+        <g key={`db-${v}`}>
+          <line
+            x1={padL} y1={y(v)} x2={W - padR} y2={y(v)}
+            stroke={v === 0 ? 'rgba(138,162,173,0.3)' : 'rgba(138,162,173,0.1)'}
+            strokeDasharray={v === 0 ? '3 3' : undefined}
+          />
+          <text x={padL - 4} y={y(v) + 3} fill="rgba(200,220,229,0.65)" fontSize="9" textAnchor="end" fontFamily="monospace">
+            {v > 0 ? `+${v}` : v}
           </text>
         </g>
       ))}
+      {/* Frequency (X) axis: standard 10-band ISO EQ centers as reference gridlines */}
+      {bandFreqs.map(f => (
+        <g key={`f-${f}`}>
+          <line x1={x(f)} y1={padT} x2={x(f)} y2={H - padB} stroke="rgba(138,162,173,0.12)" />
+          {labeledBandFreqs.has(f) && (
+            <text x={x(f)} y={H - 5} fill="rgba(200,220,229,0.65)" fontSize="9" textAnchor="middle">
+              {f >= 1000 ? `${f / 1000}k` : Math.round(f)}
+            </text>
+          )}
+        </g>
+      ))}
+      {/* R56.3: explicit range endpoints — the audible-range boundaries (20Hz
+          on the left, 20kHz on the right) are not exactly on an ISO band
+          gridline, so they were never labeled anywhere on the axis before. */}
+      <text x={padL} y={H - 5} fill="rgba(200,220,229,0.85)" fontSize="9" fontWeight="700" textAnchor="start">20</text>
+      <text x={W - padR} y={H - 5} fill="rgba(200,220,229,0.85)" fontSize="9" fontWeight="700" textAnchor="end">20k</text>
       <path d={path} fill="none" stroke="#4ec9b0" strokeWidth="2" />
       {bands.map(b => (
         <circle key={b.id} cx={x(b.freq)} cy={y(b.gain)} r="5" fill="#e6c07b" stroke="#1a1f24" strokeWidth="1" />
@@ -936,21 +986,38 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   })
   useEffect(() => { localStorage.setItem('rgbbox:eqPresets', JSON.stringify(eqCustomPresets)) }, [eqCustomPresets])
 
-  // R51.4: 曲线图数据（128 个对数频率采样点）
-  const activeEqBands = useMemo(
-    () => eqEnabled
-      ? (eqMode === 'graphic' ? graphicGainsToBands(eqBands) : eqParams)
-      : [],
-    [eqEnabled, eqMode, eqBands, eqParams],
+  // R51.4/R56.1: 曲线图数据（128 个对数频率采样点）
+  // R56.1: this used to be gated by `eqEnabled` (EQ master on/off) — so when
+  // the EQ toggle was off, dragging the curve still updated `eqBands`/
+  // `eqParams` (which the sliders read from, so the sliders visibly moved),
+  // but `activeEqBands` was forced to `[]` here, making `curveDb` a flat/
+  // unbypassed response regardless of what you dragged — the curve itself
+  // never appeared to change ("曲线一点变化没有，只有下面的数据和滑动条发生变化").
+  // The curve should always show the currently configured bands so dragging
+  // is immediately visible; whether the EQ is actually applied to playback
+  // is a separate concern already handled independently by `syncEqChain`
+  // below (which computes its own `eqEnabled`-gated band list for the audio
+  // graph and does not read this memo).
+  const displayEqBands = useMemo(
+    () => (eqMode === 'graphic' ? graphicGainsToBands(eqBands) : eqParams),
+    [eqMode, eqBands, eqParams],
   )
   const curveFreqs = useMemo(() => logFreqPoints(128), [])
   const curveDb = useMemo(
-    () => computeBiquadResponse(activeEqBands, 48000, curveFreqs),
-    [activeEqBands, curveFreqs],
+    () => computeBiquadResponse(displayEqBands, 48000, curveFreqs),
+    [displayEqBands, curveFreqs],
   )
 
   const handleCurveDrag = useCallback((freqHz: number, newGain: number) => {
-    const clamped = Math.max(-24, Math.min(24, newGain))
+    // R55.5: ±12dB matches the graphic-mode sliders and the curve plot's own
+    // axis range (both changed from ±24dB for a more realistic, professional
+    // EQ range and to keep curve-drag values consistent with slider values).
+    const clamped = Math.max(-12, Math.min(12, newGain))
+    // R57.1: dragging the curve is an unambiguous signal the user wants to
+    // hear the change — previously the EQ master on/off switch was a
+    // separate, easy-to-miss step, so configuring the curve while it was off
+    // had "zero effect" on playback ("设完之后，当前的音频文件没有一点效果").
+    setEqEnabled(true)
     if (eqMode === 'graphic') {
       let nearest = 0, min = Infinity
       EQ_FREQS.forEach((f, i) => { if (Math.abs(f - freqHz) < min) { min = Math.abs(f - freqHz); nearest = i } })
@@ -1028,6 +1095,13 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   const previewSourceRef = useRef<AudioBufferSourceNode | null>(null)
   const playModeRef = useRef<PlayMode>(playMode)
   const playlistRef = useRef<TrackItem[]>(playlist)
+  // R53: authoritative duration for the currently loaded track, once known via
+  // decodeAudioData (see playTrack). Some wav files carry an incorrect RIFF
+  // `data` chunk size, so <audio>.duration itself is unreliable for them — the
+  // progress-tracking interval below must prefer this value over el.duration
+  // once it's available, or it stomps the correction back to the wrong value
+  // within 100ms. Reset to null whenever a new track starts loading.
+  const correctedDurationRef = useRef<number | null>(null)
   const spectrogramBufferRef = useRef<Uint8Array[]>(createSpectrogramBuffer())
   const vuPeakRef = useRef(createVuPeakState())
   // R29.3 (revised): mirrors `projectDisplayIds` state into a ref so the rAF
@@ -1199,14 +1273,18 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [pickingCustom])
 
-  // Visualization loop with HiDPI support + live resize handling
+  // R54.2: keep the visualizer canvases' backing-buffer resolution in sync
+  // with their on-screen box size at all times — independent of playback
+  // state. This used to live inside the isPlaying-gated draw-loop effect
+  // below, which meant the canvas only re-synced its resolution while audio
+  // was actively playing; toggling in-app fullscreen (or resizing the main
+  // window) while paused left the backing buffer at its old resolution, so
+  // the browser had to stretch/blur the last-rendered frame to fit the new
+  // box size instead of ever adapting to it.
   useEffect(() => {
-    if ((!isPlaying && !previewPlaying) || !analyserRef.current || !visible) return
     const specCanvas = spectrumCanvasRef.current
     const waveCanvas = waveformCanvasRef.current
-    const analyser = analyserRef.current
 
-    // Set up HiDPI canvas rendering
     const setupCanvas = (canvas: HTMLCanvasElement | null) => {
       if (!canvas) return
       const dpr = window.devicePixelRatio || 1
@@ -1219,16 +1297,21 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     setupCanvas(specCanvas)
     setupCanvas(waveCanvas)
 
-    // R29.4: window maximize/restore (or any container resize) previously left
-    // the canvas backing-buffer at its old size until vizMode/isPlaying changed
-    // again, causing blurry/clipped rendering. A ResizeObserver keeps the
-    // backing buffer in sync with the element's actual on-screen size at all times.
     const ro = new ResizeObserver(() => {
       setupCanvas(specCanvas)
       setupCanvas(waveCanvas)
     })
     if (specCanvas) ro.observe(specCanvas)
     if (waveCanvas) ro.observe(waveCanvas)
+    return () => ro.disconnect()
+  }, [vizMode, vizFullscreen])
+
+  // Visualization loop with HiDPI support + live resize handling
+  useEffect(() => {
+    if ((!isPlaying && !previewPlaying) || !analyserRef.current || !visible) return
+    const specCanvas = spectrumCanvasRef.current
+    const waveCanvas = waveformCanvasRef.current
+    const analyser = analyserRef.current
 
     const draw = () => {
       if (vizMode !== 'waveform') {
@@ -1261,7 +1344,6 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     animFrameRef.current = requestAnimationFrame(draw)
     return () => {
       cancelAnimationFrame(animFrameRef.current)
-      ro.disconnect()
     }
   }, [isPlaying, previewPlaying, vizMode, vizFullscreen, vizShowMetrics, vizStyle, visible])
 
@@ -1369,7 +1451,10 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
       const el = audioElementRef.current
       if (!el) return
       setProgress(el.currentTime || 0)
-      setDuration(isFinite(el.duration) ? el.duration : 0)
+      // R53: prefer the decodeAudioData-corrected duration once known — el.duration
+      // is unreliable for wav files with a bad `data` chunk size.
+      const corrected = correctedDurationRef.current
+      setDuration(corrected != null ? corrected : (isFinite(el.duration) ? el.duration : 0))
     }
     update()
     const interval = setInterval(update, 100)
@@ -1539,10 +1624,51 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     // media:// is a corsEnabled privileged scheme — crossOrigin needed for Web Audio API
     audio.crossOrigin = 'anonymous'
     audioElementRef.current = audio
+    correctedDurationRef.current = null // R53: new track — clear any previous correction
+    setDuration(0) // R53.9: don't carry over the previous track's duration while loading
 
+    // R53.9: don't push `audio.duration` into UI state here — for wav files with
+    // a bad RIFF `data` chunk size it's often wrong/Infinity, and setting it here
+    // then correcting it moments later (once decodeAudioData resolves below)
+    // made the transport progress bar visibly flash/reset with a bogus value
+    // first. Just remember it as a last-resort fallback in case decoding fails.
+    let fallbackDuration = 0
     audio.addEventListener('loadedmetadata', () => {
-      if (isFinite(audio.duration)) setDuration(audio.duration)
+      if (isFinite(audio.duration)) fallbackDuration = audio.duration
     })
+
+    // R53: some wav files carry an incorrect/placeholder RIFF `data` chunk
+    // size (streaming encoders write size=0 or a bogus value). The media://
+    // protocol handler serves the whole file in one shot with no HTTP Range
+    // support, so Chromium can't fall back to a byte-range duration probe the
+    // way it would against a real HTTP server — <audio>.duration ends up
+    // wrong/Infinity/NaN for those files. decodeAudioData fully decodes the
+    // sample data (ignores the chunk's stated size), so its .duration is
+    // always authoritative; use it to correct the displayed duration once
+    // available. Decode-only — playback still goes through the <audio>
+    // element/MediaElementAudioSourceNode above, unchanged.
+    if (typeof fetch === 'function') {
+      fetch(track.url)
+        .then(res => res.arrayBuffer())
+        .then(buf => ctx.decodeAudioData(buf))
+        .then(decoded => {
+          if (audioElementRef.current !== audio) return // track switched while decoding
+          if (isFinite(decoded.duration) && decoded.duration > 0) {
+            correctedDurationRef.current = decoded.duration
+            setDuration(decoded.duration)
+          }
+        })
+        .catch(() => {
+          // R53.9: decodeAudioData failed (e.g. an unsupported/corrupted file) —
+          // fall back to whatever <audio> reported via loadedmetadata rather
+          // than leaving the transport stuck at 0/'--:--' forever.
+          if (audioElementRef.current !== audio) return
+          if (fallbackDuration > 0) {
+            correctedDurationRef.current = fallbackDuration
+            setDuration(fallbackDuration)
+          }
+        })
+    }
 
     const source = ctx.createMediaElementSource(audio)
     source.connect(gainNodeRef.current!)
@@ -1757,8 +1883,10 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
-  // R51.7: 应用 EQ 预设（设置 mode/bands 并记录当前 preset id）
+  // R51.7/R57.1: 应用 EQ 预设（设置 mode/bands 并记录当前 preset id）；选预设同样
+  // 视为"想要听到效果"的明确意图，自动打开 EQ 总开关。
   const applyEqPreset = useCallback((preset: EqPreset) => {
+    setEqEnabled(true)
     setEqMode(preset.mode)
     if (preset.mode === 'graphic') {
       setEqBands(bandsToGraphicGains(preset.bands))
@@ -1767,6 +1895,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     }
     setEqPresetId(preset.id)
   }, [])
+
 
   // R51.7: 保存当前参数为自定义预设
   const saveCustomPreset = useCallback(() => {
@@ -1807,6 +1936,9 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   const showFrequencyPresets = genConfig.type === 'sine'
   const isSweepType = genConfig.type === 'sweep'
   const isNoiseType = genConfig.type === 'noise'
+  // R58: 供 EQ 预设名称/滤波器类型/参数标签统一走中英双语展示。
+  const isZh = t('audio.eq.lang') === 'zh'
+  const eqFilterTypeLabel = (type: EqBand['type']): string => t(`audio.eq.filterType.${type}` as any)
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -1821,82 +1953,95 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             player/visualizer/scenes/export flow, which felt cluttered. They
             now live behind their own toolbar buttons and open as drawers,
             keeping the main view focused on playback + visualization. */}
-        <div className="audio-tools-bar">
-          <div className="audio-top-transport">
-            <button type="button" className="audio-btn-icon" title={t('audio.prev')} onClick={skipPrev}><SkipBack size={15} /></button>
-            <button type="button" className="audio-btn-icon" title={isPlaying ? t('audio.pause') : t('audio.play')} onClick={togglePlay}>
-              {isPlaying ? <Pause size={15} /> : <Play size={15} />}
-            </button>
-            <button type="button" className="audio-btn-icon" title={t('audio.next')} onClick={skipNext}><SkipForward size={15} /></button>
-            <button
-              type="button"
-              className={`audio-btn-sm ${playMode === 'loop' ? 'active' : ''}`}
-              onClick={() => setPlayMode(playMode === 'loop' ? 'sequential' : 'loop')}
-              title={t('audio.loop')}
-            ><RefreshCw size={13} /></button>
-            <button
-              type="button"
-              className={`audio-btn-sm ${playMode === 'shuffle' ? 'active' : ''}`}
-              onClick={() => setPlayMode(playMode === 'shuffle' ? 'sequential' : 'shuffle')}
-              title={t('audio.shuffle')}
-            ><Shuffle size={13} /></button>
-            <input
-              type="range"
-              className="audio-progress-bar"
-              min={0}
-              max={isFinite(duration) && duration > 0 ? duration : 1}
-              step={0.1}
-              value={progress}
-              onChange={(e) => seek(Number(e.target.value))}
-            />
-            <span className="audio-time">{formatTime(progress)} / {isFinite(duration) && duration > 0 ? formatTime(duration) : '--:--'}</span>
-            <span className="audio-now-playing-label">{currentTrackIndex >= 0 && playlist[currentTrackIndex] ? playlist[currentTrackIndex].name : ''}</span>
-          </div>
-          <div className="audio-top-controls">
-            <button type="button" className="audio-btn-icon" onClick={() => setMuted(!muted)} title={t('audio.volume')}>
-              {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-            </button>
-            <input
-              type="range"
-              className="audio-slider"
-              min={0} max={1} step={0.01}
-              value={volume}
-              onChange={(e) => setVolume(Number(e.target.value))}
-              title={t('audio.volume')}
-            />
-            <span className="audio-value">{Math.round(volume * 100)}%</span>
-            <span className="audio-label">{t('audio.balance')}</span>
-            <input
-              type="range"
-              className="audio-slider"
-              min={-1} max={1} step={0.01}
-              value={balance}
-              onChange={(e) => setBalance(Number(e.target.value))}
-            />
-            <span className="audio-value">{balance < 0 ? `L${Math.round(-balance * 50)}` : balance > 0 ? `R${Math.round(balance * 50)}` : 'C'}</span>
-            <button
-              type="button"
-              className={`audio-btn-icon${showLyrics ? ' active' : ''}`}
-              title={t('audio.lyrics.title')}
-              onClick={() => setShowLyrics(v => !v)}
-            ><FileText size={14} /></button>
-          </div>
-          <div className="audio-top-drawers">
-            <button
-              type="button"
-              className={`audio-btn ${eqEnabled ? 'active' : ''}`}
-              onClick={() => setEqExpanded(true)}
-              title={t('audio.eq.title')}
-            >{t('audio.eq.title')}</button>
-            <button
-              type="button"
-              className="audio-btn"
-              onClick={() => setGenExpanded(true)}
-              title={t('audio.tab.generator')}
-            >{t('audio.tab.generator')}</button>
-          </div>
+        <div className="audio-top-drawers">
+          <button
+            type="button"
+            className={`audio-btn ${eqEnabled ? 'active' : ''}`}
+            onClick={() => setEqExpanded(v => !v)}
+            title={t('audio.eq.title')}
+          >{t('audio.eq.title')}</button>
+          <button
+            type="button"
+            className={`audio-btn ${genExpanded ? 'active' : ''}`}
+            onClick={() => setGenExpanded(v => !v)}
+            title={t('audio.tab.generator')}
+          >{t('audio.tab.generator')}</button>
         </div>
       </header>
+
+      {/* R54.3/R55.1: fixed 2-row transport bar. Previously all of this lived in
+          one `flex-wrap: wrap` row, so at narrow/stretched window widths the
+          controls would reflow onto a variable, unpredictable number of lines
+          — pushing the playlist/visualizer area below it up and down and
+          making the layout feel broken ("动态拉伸会组件显示不合理"). This is
+          now a fixed-height 2-row block: row 1 is pure transport (never
+          wraps — scrolls horizontally instead); row 2 groups now-playing name
+          + volume/balance/lyrics-toggle together, per user request. */}
+      <div className="audio-transport-bar">
+        <div className="audio-transport-row audio-transport-row-controls">
+          <button type="button" className="audio-btn-icon" title={t('audio.prev')} onClick={skipPrev}><SkipBack size={15} /></button>
+          <button type="button" className="audio-btn-icon" title={isPlaying ? t('audio.pause') : t('audio.play')} onClick={togglePlay}>
+            {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+          </button>
+          <button type="button" className="audio-btn-icon" title={t('audio.next')} onClick={skipNext}><SkipForward size={15} /></button>
+          <button
+            type="button"
+            className={`audio-btn-sm ${playMode === 'loop' ? 'active' : ''}`}
+            onClick={() => setPlayMode(playMode === 'loop' ? 'sequential' : 'loop')}
+            title={t('audio.loop')}
+          ><RefreshCw size={13} /></button>
+          <button
+            type="button"
+            className={`audio-btn-sm ${playMode === 'shuffle' ? 'active' : ''}`}
+            onClick={() => setPlayMode(playMode === 'shuffle' ? 'sequential' : 'shuffle')}
+            title={t('audio.shuffle')}
+          ><Shuffle size={13} /></button>
+          <input
+            type="range"
+            className="audio-progress-bar"
+            min={0}
+            max={isFinite(duration) && duration > 0 ? duration : 1}
+            step={0.1}
+            value={progress}
+            onChange={(e) => seek(Number(e.target.value))}
+          />
+          <span className="audio-time">{formatTime(progress)} / {isFinite(duration) && duration > 0 ? formatTime(duration) : '--:--'}</span>
+        </div>
+        <div className="audio-transport-row audio-transport-row-nowplaying">
+          <Music size={13} className="audio-now-playing-icon" />
+          <span className="audio-now-playing-label">
+            {currentTrackIndex >= 0 && playlist[currentTrackIndex] ? playlist[currentTrackIndex].name : t('audio.nowPlaying.none')}
+          </span>
+          <span className="audio-transport-divider" />
+          <button type="button" className="audio-btn-icon" onClick={() => setMuted(!muted)} title={t('audio.volume')}>
+            {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+          </button>
+          <input
+            type="range"
+            className="audio-slider"
+            min={0} max={1} step={0.01}
+            value={volume}
+            onChange={(e) => setVolume(Number(e.target.value))}
+            title={t('audio.volume')}
+          />
+          <span className="audio-value">{Math.round(volume * 100)}%</span>
+          <span className="audio-label">{t('audio.balance')}</span>
+          <input
+            type="range"
+            className="audio-slider"
+            min={-1} max={1} step={0.01}
+            value={balance}
+            onChange={(e) => setBalance(Number(e.target.value))}
+          />
+          <span className="audio-value">{balance < 0 ? `L${Math.round(-balance * 50)}` : balance > 0 ? `R${Math.round(balance * 50)}` : 'C'}</span>
+          <button
+            type="button"
+            className={`audio-btn-icon${showLyrics ? ' active' : ''}`}
+            title={t('audio.lyrics.title')}
+            onClick={() => setShowLyrics(v => !v)}
+          ><FileText size={14} /></button>
+        </div>
+      </div>
 
       <div className="audio-studio-layout">
         {/* Left Panel - Playlist */}
@@ -2093,6 +2238,9 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
           {eqExpanded && (
             <div className="audio-drawer-backdrop" onClick={() => setEqExpanded(false)}>
               <div className="audio-drawer" onClick={(e) => e.stopPropagation()}>
+                {/* R58.x: drag-to-move was reverted per user feedback — repeatedly
+                    clicking made the panel drift off-screen/get lost with no way
+                    to bring it back. Fixed docked position every time now. */}
                 <div className="audio-drawer-header">
                   <h3>{t('audio.eq.title')}</h3>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2141,13 +2289,13 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                   >
                     <optgroup label={t('audio.eq.builtin')}>
                       {EQ_PRESETS.map(p => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
+                        <option key={p.id} value={p.id}>{isZh ? p.nameZh : p.name}</option>
                       ))}
                     </optgroup>
                     {eqCustomPresets.length > 0 && (
                       <optgroup label={t('audio.eq.custom')}>
                         {eqCustomPresets.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
+                          <option key={p.id} value={p.id}>{isZh ? p.nameZh : p.name}</option>
                         ))}
                       </optgroup>
                     )}
@@ -2178,7 +2326,6 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                     const cur = EQ_PRESETS.find(p => p.id === eqPresetId)
                       || eqCustomPresets.find(p => p.id === eqPresetId)
                     if (!cur) return ''
-                    const isZh = t('audio.eq.lang') === 'zh'
                     return isZh ? cur.descriptionZh : cur.description
                   })()}
                 </p>
@@ -2187,49 +2334,25 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                 <EqCurvePlot
                   freqs={curveFreqs}
                   db={curveDb}
-                  bands={activeEqBands}
+                  bands={displayEqBands}
                   onDragGain={handleCurveDrag}
                 />
 
-                {/* Graphic 模式：10 段竖滑块 */}
+                {/* R57.2: the 10 vertical graphic-mode bar sliders used to live
+                    here, duplicating exactly what the curve above already does
+                    (and drifting out of sync with it) — removed per user
+                    feedback ("下面那些柱状滑动条显示有什么意义？没什么一点意义"). The curve
+                    itself is now the only graphic-mode edit surface; only the
+                    reset button remains. */}
                 {eqMode === 'graphic' && (
-                  <>
-                    <div className="audio-eq-grid">
-                      {EQ_FREQS.map((freq, i) => (
-                        <div key={freq} className="audio-eq-band">
-                          <span className="audio-eq-freq">{freq >= 1000 ? `${freq / 1000}k` : freq}</span>
-                          <input
-                            type="range"
-                            className="audio-eq-slider"
-                            min={-12}
-                            max={12}
-                            step={0.5}
-                            value={eqBands[i]}
-                            style={{ writingMode: 'vertical-lr', direction: 'rtl', height: 80, width: 20 }}
-                            onChange={(e) => {
-                              const val = Number(e.target.value)
-                              setEqBands(prev => { const next = [...prev]; next[i] = val; return next })
-                            }}
-                          />
-                          <span className="audio-eq-db">{eqBands[i] > 0 ? `+${eqBands[i]}` : eqBands[i]}</span>
-                          <button
-                            type="button"
-                            className="audio-btn-icon"
-                            title={t('audio.eq.resetBand')}
-                            onClick={() => setEqBands(prev => { const next = [...prev]; next[i] = 0; return next })}
-                          >×</button>
-                        </div>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      className="audio-btn-sm"
-                      style={{ marginTop: 6 }}
-                      onClick={() => setEqBands(new Array(10).fill(0))}
-                    >
-                      {t('audio.eq.reset')}
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    className="audio-btn-sm"
+                    style={{ marginTop: 6 }}
+                    onClick={() => setEqBands(new Array(10).fill(0))}
+                  >
+                    {t('audio.eq.reset')}
+                  </button>
                 )}
 
                 {/* Parametric 模式：自由段（type/freq/gain/Q + add/delete） */}
@@ -2241,38 +2364,38 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                           <select
                             className="eq-param-type"
                             value={band.type}
-                            onChange={(e) => setEqParams(prev => prev.map((b, j) => j === i ? { ...b, type: e.target.value as typeof band.type } : b))}
+                            onChange={(e) => { setEqEnabled(true); setEqParams(prev => prev.map((b, j) => j === i ? { ...b, type: e.target.value as typeof band.type } : b)) }}
                           >
-                            <option value="peaking">Peaking</option>
-                            <option value="lowshelf">Low Shelf</option>
-                            <option value="highshelf">High Shelf</option>
-                            <option value="notch">Notch</option>
-                            <option value="lowpass">Low Pass</option>
-                            <option value="highpass">High Pass</option>
-                            <option value="bandpass">Band Pass</option>
+                            <option value="peaking">{eqFilterTypeLabel('peaking')}</option>
+                            <option value="lowshelf">{eqFilterTypeLabel('lowshelf')}</option>
+                            <option value="highshelf">{eqFilterTypeLabel('highshelf')}</option>
+                            <option value="notch">{eqFilterTypeLabel('notch')}</option>
+                            <option value="lowpass">{eqFilterTypeLabel('lowpass')}</option>
+                            <option value="highpass">{eqFilterTypeLabel('highpass')}</option>
+                            <option value="bandpass">{eqFilterTypeLabel('bandpass')}</option>
                           </select>
                           <label className="eq-param-field">
-                            <span>{`Freq ${band.freq.toFixed(0)}Hz`}</span>
+                            <span>{`${t('audio.eq.freq')} ${band.freq.toFixed(0)}Hz`}</span>
                             <input
                               type="range" min={20} max={20000} step={1}
                               value={band.freq}
-                              onChange={(e) => setEqParams(prev => prev.map((b, j) => j === i ? { ...b, freq: Number(e.target.value) } : b))}
+                              onChange={(e) => { setEqEnabled(true); setEqParams(prev => prev.map((b, j) => j === i ? { ...b, freq: Number(e.target.value) } : b)) }}
                             />
                           </label>
                           <label className="eq-param-field">
-                            <span>{`Gain ${band.gain > 0 ? '+' : ''}${band.gain.toFixed(1)}dB`}</span>
+                            <span>{`${t('audio.eq.gain')} ${band.gain > 0 ? '+' : ''}${band.gain.toFixed(1)}dB`}</span>
                             <input
-                              type="range" min={-24} max={24} step={0.5}
+                              type="range" min={-12} max={12} step={0.5}
                               value={band.gain}
-                              onChange={(e) => setEqParams(prev => prev.map((b, j) => j === i ? { ...b, gain: Number(e.target.value) } : b))}
+                              onChange={(e) => { setEqEnabled(true); setEqParams(prev => prev.map((b, j) => j === i ? { ...b, gain: Number(e.target.value) } : b)) }}
                             />
                           </label>
                           <label className="eq-param-field">
-                            <span>{`Q ${band.Q.toFixed(2)}`}</span>
+                            <span>{`${t('audio.eq.q' as any)} ${band.Q.toFixed(2)}`}</span>
                             <input
                               type="range" min={0.1} max={20} step={0.05}
                               value={band.Q}
-                              onChange={(e) => setEqParams(prev => prev.map((b, j) => j === i ? { ...b, Q: Number(e.target.value) } : b))}
+                              onChange={(e) => { setEqEnabled(true); setEqParams(prev => prev.map((b, j) => j === i ? { ...b, Q: Number(e.target.value) } : b)) }}
                             />
                           </label>
                           <button
@@ -2290,10 +2413,13 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                     <button
                       type="button"
                       className="audio-btn-sm eq-add-band"
-                      onClick={() => setEqParams(prev => [
-                        ...prev,
-                        { id: `u-${Date.now()}`, type: 'peaking', freq: 1000, gain: 0, Q: 1 },
-                      ])}
+                      onClick={() => {
+                        setEqEnabled(true)
+                        setEqParams(prev => [
+                          ...prev,
+                          { id: `u-${Date.now()}`, type: 'peaking', freq: 1000, gain: 0, Q: 1 },
+                        ])
+                      }}
                     >
                       <Plus size={12} /> {t('audio.eq.addBand')}
                     </button>

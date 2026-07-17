@@ -444,6 +444,39 @@
   - [ ] README 顶部有徽章 + 截图画廊 + 下载入口
 - **R13.8** **状态**: ⏳
 
+### R67. 全屏投影仍与 RGB 虚拟画布全屏不一致的根因：2D GPU-direct 预览绕过网格，但 overlay 仍显示网格降采样帧
+
+> 触发场景：用户 2026-07-18 复测 R66 后反馈：显示器设为"全屏"开启叠加投影，仍与 RGB 虚拟画布的全屏效果不一样；用户明确怀疑显示器投影可能是按预设网格渲染，导致与真实虚拟画布显示效果不一致，要求确认并删除该网格限制。
+
+- **R67.1** **根因**：用户怀疑方向成立，但限定在 **2D GPU-direct 效果**。`PreviewGrid.tsx` 在单一启用图层且效果属于 `GPU_DIRECT_EFFECTS` 时，会使用 `EffectGl` 在预览 canvas 上按物理像素逐片元直渲染，完全绕过 `sampling.columns × sampling.rows` 的 LED 网格；而全屏 overlay 目前仍主要接收 worker 输出的 `RgbFrame`，该帧已经被 `previewEngine.ts` 采样成 `columns × rows` 网格，再由 `PreviewGl` 放大到显示器。于是同一个效果在"RGB 虚拟画布全屏"中是连续高分辨率 shader 图像，在"显示器全屏投影"中却是低维 LED 网格放大图，颜色过渡、细节和运动观感必然不一致。3D 效果已有 `EFFECT3D_CHANNEL` 机制让 overlay 本地全分辨率重渲染；2D GPU-direct 效果缺少对应通道。
+- **R67.2** **修复方案**：为 2D GPU-direct 效果新增 overlay 直渲染通道：`effectGl.ts` 暴露 `EFFECT2D_CHANNEL` 与 `Effect2DMessage`；`PreviewGrid.tsx` 在 GPU-direct 路径每帧广播当前 `EffectLayer` 与时间戳；`OverlayCanvas.tsx` 在 `opaque=true`（全屏 overlay）时订阅该通道并用本地 `EffectGl` 在自己的物理 backing buffer 上重渲染，短时间内跳过 worker 网格 `RgbFrame` 覆盖。非全屏/透明区域暂不启用该直渲染路径，避免改变 R63 的 contain/透明区域语义。
+- **R67.3** **不动**：CPU worker 网格帧继续保留，供未移植 GPU-direct 的效果、混合多图层、非全屏区域、LED/视频墙采样等路径使用；`previewGl.ts` 的 LED 网格 renderer 不删除；R62/R63/R65/R66 的 DPR、区域 fit、opaque overlay、目标显示器宽高比修复不回退。
+- **R67.4** **受影响文件**：`src/renderer/src/gl/effectGl.ts`、`src/renderer/src/components/PreviewGrid.tsx`、`src/renderer/src/components/OverlayCanvas.tsx`、`tests/renderer/gl/effectGl.test.ts`、`tests/renderer/components/OverlayCanvas.test.tsx`、`tests/renderer/setup.ts`、`docs/prd/PRD-0002-rgbbox-project-catalog.md`。
+- **R67.5** **验收点**：
+  - [x] `yarn vitest run tests/renderer/gl/effectGl.test.ts tests/renderer/components/OverlayCanvas.test.tsx` 通过（2 files passed；7 passed / 4 skipped）。
+  - [x] `yarn typecheck` 通过。
+  - [x] `yarn vitest run tests/renderer/components/PreviewGrid.test.tsx` 通过（1 file passed；5 passed）。
+  - [x] `yarn vitest run tests/engine tests/main tests/renderer` 不回归（36 files passed；320 passed / 41 skipped；历史 `ECONNREFUSED :3000` 噪声仍存在但 summary 全绿）。
+  - [x] `yarn build` 通过。
+  - [ ] 手动验证：单独启用一个 GPU-direct 2D 效果（如 rainbow/plasma/aurora 等），对目标显示器开启全屏 overlay，真实投影应与"RGB 画布预览"全屏一样是连续高分辨率效果，不再退回粗网格/色块观感。
+  - [ ] 手动验证：切到未 GPU-direct 移植的效果或启用多图层混合时，overlay 仍正常走原网格帧路径，无黑屏/崩溃。
+- **R67.6** **状态**：🔄（代码已实施。**证据**：先运行新增 `effectGl.test.ts` 红灯，确认 `EFFECT2D_CHANNEL` 为 `undefined`；实现通道契约后目标测试转绿；新增 `OverlayCanvas` 组件红灯确认 2D GPU-direct 广播不会创建 `EffectGl` 实例；实现 `PreviewGrid` 广播 + 全屏 `OverlayCanvas` 本地 `EffectGl` 直渲染后转绿。自动验证见 R67.5；用户实机复测 pending。）
+
+### R68. 临时屏蔽 3D 模型查看器入口与启动副作用
+
+> 触发场景：用户 2026-07-18 明确要求："3D 模型查看器 这个功能先屏蔽吧，现在没有用。"本条只做临时屏蔽，不删除源码，便于后续重新启用。
+
+- **R68.1** **目标**：从主界面隐藏 `model3d` 视图入口，并防止历史 `localStorage.rgbbox:view === 'model3d'` 让应用启动后停留在被屏蔽页面；同时禁用模型查看器的启动期模型清单/缓存 IPC 查询，避免一个不可见功能继续消耗启动资源。
+- **R68.2** **修复方案**：新增单一开关 `MODEL3D_VIEW_ENABLED = false`；App 初始化/持久化视图时将被屏蔽的 `model3d` 归一化为 `workspace`；侧边栏不再渲染 3D 模型查看器按钮；`useModelStore(enabled)` 支持禁用模式，禁用时返回空列表、`loading=false`、不订阅下载进度、不调用 `modelGetCachedPaths`/`modelDownload`。
+- **R68.3** **不动**：不删除 `src/renderer/src/3d/*`、`SplatViewer`/`LEDMapper`、模型 manifest、主进程模型下载 IPC、模型相关测试；3D 灯效预览（`Preview3D` / `Effect3DGl`）不是本条目标，继续保留。
+- **R68.4** **受影响文件**：`src/renderer/src/App.tsx`、`src/renderer/src/3d/useModelStore.ts`、`tests/renderer/hooks/useModelStore.test.ts`、`docs/prd/PRD-0002-rgbbox-project-catalog.md`。
+- **R68.5** **验收点**：
+  - [x] `yarn vitest run tests/renderer/hooks/useModelStore.test.ts` 通过（1 file passed；10 passed；覆盖禁用模式不触发模型 IPC）。
+  - [x] `yarn typecheck` 通过。
+  - [x] `yarn build` 通过（main/preload/renderer production build 完成）。
+  - [ ] 手动验证：侧边栏不再出现"3D 模型查看器"入口；历史停留在 `model3d` 的用户启动后回到工作区。
+- **R68.6** **状态**：✅（代码已实施。**证据**：新增禁用模式测试先红灯，失败点为 `useModelStore(false)` 仍 `loading=true`；实现 `enabled` 参数与 App 侧屏蔽开关后测试转绿；`yarn vitest run tests/renderer/hooks/useModelStore.test.ts` / `yarn typecheck` / `yarn build` 均通过。手动实机视觉确认仍建议发布后复测。）
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
@@ -1469,6 +1502,306 @@
 **R52.11 受影响文件：**
 `src/engine/audioMetrics.ts`(新)、`tests/engine/audioMetrics.test.ts`(新)、`src/renderer/src/audio/visualizers.ts`、`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/components/AudioVizProjector.tsx`、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`docs/prd/PRD-0002-rgbbox-project-catalog.md`。
 不动：`package.json` scripts 段、`src/main/index.ts`、`src/preload/index.ts`。
+
+### R53. 部分 WAV 文件播放时长（duration）显示不准确
+
+> 触发场景：用户 2026-07-17 反馈"我测试发现一些音频格式wave，没有显示准确的音频有效时间"——播放某些 `.wav` 文件时顶部 transport 的时长/进度条上限不准确。
+> **风险等级：L1**（仅新增渲染层内的一次性 `decodeAudioData` 校正逻辑，不改变现有 `<audio>` 元素播放链路，不触碰 `src/main/index.ts`）。
+
+- **R53.1** **根因**：时长显示依赖 `HTMLAudioElement` 的 `loadedmetadata` 事件读取 `audio.duration`（`AudioStudioView.tsx` `playTrack`）。部分 wav 文件（常见于流式录制/某些编码器）的 RIFF `data` chunk 大小字段本身写错（占位值或 0），Chromium 在这种情况下通常需要对资源发起 HTTP Range 探测才能反推出准确时长；而 `media://` 协议处理器（`src/main/index.ts` `protocol.handle('media', ...)`）一次性把整份文件读入内存返回、不支持 `Range`/206 分段响应，Chromium 无法做探测回退，只能采用文件里写错的时长字段，导致 `audio.duration` 不准确（可能是 `Infinity`、`NaN` 或偏差很大的数值）。
+- **R53.2** **修复**：在 `playTrack` 中，`loadedmetadata` 监听之外新增一次性权威时长校正——用 `fetch(track.url)` 取完整字节 + `ctx.decodeAudioData()` 完整解码。`decodeAudioData` 是逐帧解出真实采样帧数计算时长，不依赖文件头里可能写错的 chunk size 字段，因此结果始终准确；解码完成后若 `audioElementRef.current` 仍指向同一个 `audio` 实例（避免中途切歌应用到旧值）且时长为有限正数，则用它覆盖 `duration` state。仅用于计算时长，不复用该解码结果做实际播放——播放路径仍是原有的 `<audio>` 元素 + `MediaElementAudioSourceNode`，不做双播放链路改动。
+- **R53.3** **不动**：`src/main/index.ts` 的 `media://` 协议处理器（本次不新增 Range/206 支持——涉及主进程 P0 集中点，风险更高；渲染层的 decode 校正已能覆盖用户反馈场景，如后续出现超大 wav 文件因完整 decode 带来的内存/性能问题，再单独评估 Range 支持）；现有播放/进度追踪逻辑（`timeupdate`/interval）不改。
+- **R53.4** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`。
+- **R53.5（用户 2026-07-17 复测反馈"未解决，问题还存在"后追加）第二根因**：R53.2 首次实施只在 decode 完成时 `setDuration(decoded.duration)` 一次，但既有的"Progress tracking" `useEffect`（`isPlaying` 时每 100ms 跑一次的 `setInterval`）里无条件 `setDuration(isFinite(el.duration) ? el.duration : 0)`——每 100ms 都会用 `<audio>` 元素自身（依然不准）的 `duration` 把刚校正好的值覆盖回去，导致修复在 UI 上观察不到任何效果。**修复**：新增 `correctedDurationRef`（记录当前曲目 decodeAudioData 校正后的权威时长，`playTrack` 加载新曲目时清空为 `null`），progress-tracking interval 与 `loadedmetadata` 监听均改为「若 ref 已有值则优先用 ref，否则退回 `el.duration`」，避免被覆盖。
+- **R53.6** **验收点**：
+  - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过
+  - [ ] 手动验证：播放此前显示时长不准的 wav 文件，顶部 transport 时长与进度条上限恢复准确，且播放过程中不会被重新冲回错误值
+  - [ ] 手动验证：正常 wav / mp3 / flac 等格式播放时长显示不受影响（无闪烁/无回退到错误值）
+  - [ ] 手动验证：快速切歌时不出现"上一首解码结果覆盖当前歌曲时长"的竞态
+- **R53.7** **状态**：🔄（首次实施代码已提交但用户复测反馈无效；已定位第二根因（progress-tracking interval 覆盖）并修复：新增 `correctedDurationRef`，interval/loadedmetadata 均优先读取该 ref。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer/components/AudioStudioView.test.tsx` 1 passed / 4 skipped。用户人工复测 pending。）
+- **R53.8（用户 2026-07-17 第二轮复测反馈）中文路径日志乱码**：`[media://] filePath: ...` 日志在终端里把中文文件名打印成乱码（如 `榛勫嚡鑺?鐒氭儏`）。**根因**：`src/main/index.ts` 的 `protocol.handle('media', ...)` 直接用 `console.log`/`console.error` 打印文件路径——JS 字符串本身（UTF-16）没有损坏，问题在于 Windows 终端（`conhost`/未设 `chcp 65001` 的 PowerShell）默认代码页多为 GBK(936)，不按 UTF-8 显示 Node 输出的中文，纯属终端显示层乱码，不影响实际读文件（`readFile(filePath)` 用的是原始字符串，与打印无关），但会干扰调试可读性。**修复**：把这两处 `console.log`/`console.error` 改为项目自带的 `log.debug`/`log.error`（`src/shared/logger.ts`，写入 `<userData>/logs/rgbbox.log`，文件始终以 UTF-8 写入，不受终端代码页影响）。
+- **R53.9（用户 2026-07-17 第二轮复测反馈）打开音频文件（尤其 wav）时进度条闪两次、第一次显示错误信息**：**根因**：R53.2/R53.5 的实现是"先把 `<audio>` 自身可能错误的 `duration` 显示出来（`loadedmetadata`），过一会儿 decodeAudioData 解码完成后再纠正一次"——这个"先错后对"的两段式更新在 UI 上表现为顶部 transport 的时长/进度条先跳一次错误值、马上又跳一次正确值，即用户描述的"出 2 次进度条，第一次不正确"。**修复**：`playTrack` 加载新曲目时立即 `setDuration(0)`（避免残留上一首时长，且不再显示未经校正的猜测值）；`loadedmetadata` 不再直接写入 UI 状态，只记入一个局部 `fallbackDuration` 变量；只有 `decodeAudioData` 解码成功时才写入 `duration`（一次到位、不会再跳变）；仅当解码失败（极少数无法解码的文件）时才回退使用 `fallbackDuration`，避免转盘永远卡在 `--:--`。
+- **R53.10** **受影响文件（更新）**：`src/renderer/src/components/AudioStudioView.tsx`、`src/main/index.ts`（仅 `media://` 协议处理器的日志调用，未改协议行为）。
+- **R53.11** **验收点（更新）**：
+  - [x] `yarn typecheck` / `yarn build` / `yarn test`（`tests/renderer/components/AudioStudioView.test.tsx` + `tests/main`）通过
+  - [ ] 手动验证：播放中文文件名的 wav，`<userData>/logs/rgbbox.log` 中文件路径显示正常（非乱码）
+  - [ ] 手动验证：打开/播放 wav 文件时，顶部 transport 时长只出现一次（正确值），不再先闪一次错误值
+  - [ ] 手动验证：正常 wav / mp3 / flac 等格式播放时长显示不受影响
+  - [ ] 手动验证：快速切歌时长显示正确切换，无残留上一首时长
+- **R53.12** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0（`out/main`/`out/renderer` 产物生成）；`yarn vitest run tests/renderer/components/AudioStudioView.test.tsx tests/main` 56 passed / 4 skipped。用户人工复测 pending。）
+
+### R54. AudioStudio 布局自适应：文件列表底部高度 + 图表全屏/窗口自适应 + 顶部固定 2 行 transport
+
+> 触发场景：用户 2026-07-17 反馈三点布局问题：① 音频文件列表未自适应主界面底部高度；② 可视化图表未自适应高度、全屏/取消全屏也不自适应；③ 播放器控制/进度/文件名区域未固定在顶部，窗口变化时组件动态拉伸导致显示不合理，要求顶部固定 2 行显示，且正在播放的文件名要更醒目。
+> **风险等级：L1**（仅渲染层 `AudioStudioView.tsx` + `styles.css` + i18n 新 key，不改播放/引擎逻辑，不触碰 `src/main/index.ts`）。
+
+- **R54.1** **根因（文件列表未适配底部高度）**：`.audio-left-panel .audio-playlist` 本身已是 `flex:1; min-height:0; overflow-y:auto`，理论上会撑满左栏——真正问题在于头部 `.audio-tools-bar` 用的是 `flex-wrap: wrap` 单行容器，塞了走带/进度条/时间/曲名/音量/平衡/歌词按钮/EQ/生成器等一大堆控件，在不同窗口宽度下会被迫换成不同行数（2 行、3 行、4 行不等），导致 `.audio-studio-layout`（`flex:1`）实际可用高度随窗口宽度变化而不稳定，文件列表因此显得"没有自适应到底部"。
+- **R54.2** **根因（图表全屏/窗口不自适应）**：`AudioStudioView.tsx` 里唯一负责同步 canvas backing-buffer 分辨率的 `ResizeObserver` 被建在"仅当 `isPlaying || previewPlaying` 为真"才会执行的绘制循环 `useEffect` 内部——如果用户在**暂停状态**下切换全屏（或缩放主窗口），该 effect 整个提前 return，`ResizeObserver` 从未被创建/生效，canvas 的实际绘图缓冲区分辨率停留在旧尺寸，浏览器只能把上一帧内容拉伸/模糊填充到新的 CSS 盒子里，视觉上就是"没有自适应"。**修复**：把 `setupCanvas` + `ResizeObserver` 抽成一个独立的、不受 `isPlaying`/`previewPlaying` 门控的 `useEffect`（依赖 `[vizMode, vizFullscreen]`），始终保持 backing buffer 与实际展示盒子同步；原绘制循环 `useEffect` 只保留 `requestAnimationFrame` 部分。
+- **R54.3** **修复（顶部固定 2 行 transport）**：拆分原来揉在一起的 `.audio-tools-bar`（`flex-wrap:wrap`，会随宽度变换行数）——`workspace-header` 现在只保留标题 + EQ/生成器抽屉按钮（原 `.audio-top-drawers`，单行不换行）；新增独立的 `.audio-transport-bar` 固定区块，内含两行 `.audio-transport-row`：第 1 行（走带按钮/进度条/时间/音量/平衡/歌词按钮，`flex-wrap: nowrap` + `overflow-x: auto`，宽度不够时横向滚动而不是换行，保证行数恒定）+ 第 2 行（正在播放的曲名，独占一行，字号从 12px/opacity 0.7 提升为 13.5px/700 字重/`#8fe9d2` 高亮色 + `Music` 图标，更加醒目）。两行高度固定（30px + 20px），使整个 transport 区块高度恒定，不再随窗口宽度变化而让下方文件列表/图表区域的可用高度跟着抖动。
+- **R54.4** **不动**：`.audio-left-panel`/`.audio-right-panel`/`.audio-studio-layout` 的 flex 撑满逻辑本身（复盘确认无误，未改）；EQ/Generator 抽屉浮层逻辑；播放/进度追踪/decodeAudioData 时长校正逻辑（R53）；`src/main/index.ts` 未改动。
+- **R54.5** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/styles.css`、`src/renderer/src/i18n/index.tsx`（新增 `audio.nowPlaying.none`）。
+- **R54.6** **验收点**：
+  - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过
+  - [ ] 手动验证：拖动/最大化窗口时，左侧文件列表始终撑满到主窗口底部，无多余空白
+  - [ ] 手动验证：暂停状态下切换可视化图表全屏/取消全屏，画面立即按新尺寸清晰重绘（不模糊/不留边）；窗口拖拽缩放时同样实时适配
+  - [ ] 手动验证：顶部 transport 始终固定 2 行显示，任意窗口宽度下都不会变成 3 行/4 行；控件较多时改为该行内部横向滚动
+  - [ ] 手动验证：正在播放的文件名清晰醒目，肉眼可一眼分辨
+- **R54.7** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared` 105 passed / 41 skipped，0 失败。用户人工复测 pending。）
+
+### R55. AudioStudio 第三轮：布局细节修复 + EQ 曲线专业化
+
+> 触发场景：用户 2026-07-17 在 R54 基础上继续反馈：① 音量/平衡/歌词按钮应与曲名同行；② 歌词面板打开时被压缩到看不见；③ 播放列表过长时无可见滚动条；④ 窗口拉伸到最小时可视化图表底部裁切；⑤ EQ/生成器按钮应可点击切换开关；⑥ EQ 曲线的拖动范围/精度/坐标可读性需要专业化整理（限定在频谱范围内拖动、拖动后自动吸附到干净数值、增益范围改为 ±12dB、坐标数值清晰、以常用 EQ 频段为参考网格）。
+> **风险等级：L1**（仅渲染层 `AudioStudioView.tsx` + `styles.css`，不改播放引擎/EQ 音频处理链路的计算逻辑本身，只调整交互范围与显示格式）。
+
+- **R55.1** **EQ/生成器按钮改为真正的开关**：`onClick={() => setEqExpanded(true)}` / `setGenExpanded(true)}` 只会打开、永远不会通过再次点击同一按钮关闭。改为 `setEqExpanded(v => !v)` / `setGenExpanded(v => !v)`；生成器按钮新增 `genExpanded` 驱动的 `active` 高亮，并补上此前从未生效过的 `.audio-btn.active` CSS 规则（该 class 挂了很久但没有对应样式）。
+- **R55.2** **音量/平衡/歌词按钮迁移到"正在播放"行**：拆出 `.audio-transport-row-controls`（第 1 行，仅走带/进度/时间）与 `.audio-transport-row-nowplaying`（第 2 行，现在承载：音符图标 + 曲名 + 分隔线 + 静音/音量/平衡/歌词开关）。第 2 行改为可横向滚动（`overflow-x:auto`，与第 1 行一致的固定行高策略），确保总行数恒定为 2 行不变。
+- **R55.3** **歌词面板打开后被压缩到看不见 — 根因**：`.audio-left-panel` 是 flex column，`.audio-playlist` 用 `flex:1`（即 `flex-basis:0%`），在空间不足时 flexbox 的"负空间收缩"分配是按 flex-basis 加权的——basis 为 0 的播放列表几乎不承担任何收缩，导致所有收缩压力全部压在 `.audio-lyrics-panel`（`flex-basis:auto`）身上，被挤压到接近 0 高度。**修复**：给 `.audio-lyrics-panel` 加 `flex-shrink:0`，固定在其 `max-height:160px` 以内，收缩压力改由播放列表自身的 `overflow-y:auto` 吸收。
+- **R55.4** **播放列表无可见滚动条**：`.audio-playlist` 沿用的是全局滚动条主题（thumb 透明度仅 0.18），在深色背景下几乎不可见。给 `.audio-playlist` 单独提高 thumb 不透明度（0.4，hover 0.6）+ `scrollbar-color` 同步调整，使滚动条清晰可辨。
+- **R55.5** **窗口拉伸到最小时可视化图表底部被裁切**：`.audio-right-panel` 原为 `overflow:hidden`，在系统允许的最小窗口尺寸下模式栏 + 画布所需高度可能超出可用空间，`hidden` 会直接裁掉底部内容。改为 `overflow-y:auto`（裁切→可滚动，任何情况下都能滚到底部看到全部内容）；同时给 `.audio-canvas-spectrum`/`.audio-waveform-container` 加 `min-height:140px` 下限，避免画布在极端挤压下被压成不可用的几像素高。
+- **R55.6** **EQ 曲线专业化整理**（`EqCurvePlot`）：
+  - 增益范围由 ±24dB 收紧为 ±12dB（与 graphic 模式滑块的 `-12..12` 范围保持一致；此前两者不一致是"数值看不懂"的根本原因之一——曲线拖动能写出滑块范围之外、且与滑块步进不一致的值）；parametric 模式的增益滑块同步从 `-24..24` 改为 `-12..12`。
+  - 拖动被限制在坐标轴绘图区域内（横向 clamp 到 20Hz–20kHz 对应的像素范围，纵向 clamp 到 ±12dB 对应的像素范围），无法再拖出频谱范围外插出无意义的值。
+  - 拖动释放的增益值吸附到 0.5dB 步进（与滑块 step 一致），不再写入连续像素运算得出的多位小数（即"点击曲线下面出现小数点的什么值"的根因）。
+  - 新增清晰可读的 dB（Y）轴刻度线 + 数值标签（-12/-6/0/+6/+12，等宽字体，更高对比度），此前只有一条不带数值的 0dB 虚线。
+  - 频率（X）轴参考网格线改为与 graphic 模式一致的 10 个标准 ISO EQ 频段（`EQ_GRAPHIC_FREQS`：31/62/125/250/500/1k/2k/4k/8k/16k），并在其中挑选 5 个不拥挤的频段（62/250/1k/4k/16k）显示文字标签，替换此前语义随意的 `[100, 1000, 10000]`。
+  - graphic 模式 10 个竖滑块下方的数值展示统一改为 `.toFixed(1)`（此前曲线拖动写入的原始浮点数会直接原样显示，如 `-13.428395182`）。
+- **R55.7** **不动**：EQ 音频处理链路本身（`syncEqChain`/biquad node 参数写入方式）、`computeBiquadResponse` 频响计算逻辑、预设库数值（复核确认所有内置预设增益幅度 ≤6dB，均在新的 ±12dB 范围内，无需迁移）、`src/main/index.ts` 未改动。
+- **R55.8** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/styles.css`。
+- **R55.9** **验收点**：
+  - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过
+  - [ ] 手动验证：点击 EQ/生成器按钮，第二次点击同一按钮能关闭抽屉
+  - [ ] 手动验证：音量/平衡/歌词开关与曲名显示在同一行（第 2 行），走带控件独占第 1 行，任意窗口宽度下总高度恒定
+  - [ ] 手动验证：打开歌词面板，面板本身可见（不再被压缩到 0 高度），播放列表在空间不足时自身滚动
+  - [ ] 手动验证：加载很多首歌曲后播放列表可见滚动条，可上下滚动看到全部文件
+  - [ ] 手动验证：把主窗口拖到系统允许的最小尺寸，可视化图表底部内容可通过滚动看全，不再被裁切
+  - [ ] 手动验证：EQ 曲线拖动被限制在坐标轴范围内；拖动松手后数值是干净的 0.5dB 步进；坐标轴有清晰的 dB/频率刻度数字
+  - [ ] 手动验证：graphic 模式 10 段滑块下方数值始终是一位小数格式，不再出现原始长小数
+- **R55.10** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared tests/engine/eqResponse.test.ts` 149 passed / 41 skipped，0 失败。用户人工复测 pending。）
+
+### R56. EQ 曲线拖动手感 + 曲线不随拖动实时变化的根因修复
+
+> 触发场景：用户 2026-07-17 在 R55 基础上继续反馈：拖动 EQ 曲线时鼠标应变成手型；曲线本身在拖动时"一点变化没有，只有下面的数据和滑动条发生变化"；20Hz–20kHz（用户口误写作 20GHz）的频率范围边界没有在坐标轴上标出来。
+> **风险等级：L1**（仅 `AudioStudioView.tsx` 内 `EqCurvePlot` 组件与其上游的一个 `useMemo` 依赖，不改变 EQ 音频处理链路 `syncEqChain` 的门控逻辑）。
+
+- **R56.1** **根因（曲线拖动时不变化）**：驱动曲线绘制的 `curveDb`（进而 `EqCurvePlot` 的 `db`/`bands` props）来自 `activeEqBands`，而 `activeEqBands` 之前的计算是 `eqEnabled ? (...) : []`——只要 EQ 总开关（`eqEnabled`）当前是关闭状态，无论怎么拖动曲线，`activeEqBands` 恒为 `[]`，`curveDb` 恒为一条平的 0dB 响应线，曲线绘制因此完全不随拖动变化；但拖动本身写入的是 `eqBands`/`eqParams` state（10 段竖滑块/参数段读的正是这两个 state），所以滑块和下方数值仍然会正确变化——这正是用户描述的"曲线不变、只有下面数据变"的精确根因。真正驱动实际音频处理的 `syncEqChain` 副作用另有一套自己独立计算的 `activeBands`（同样按 `eqEnabled` 门控，未受影响），因此曲线显示与是否总开关无关是安全的——开关仍然完全控制音频是否真的被处理，只是"预览曲线"改为始终跟手。**修复**：新增不受 `eqEnabled` 门控的 `displayEqBands`（`eqMode==='graphic' ? graphicGainsToBands(eqBands) : eqParams`，始终反映当前配置），`curveDb`/`EqCurvePlot bands` 均改用它。
+- **R56.2** **鼠标手型反馈**：`EqCurvePlot` 的 SVG 内联样式由 `cursor:'pointer'` 改为 `cursor:'grab'`（常态，手型），按下拖动时（`onPointerDown`）临时置为 `cursor:'grabbing'`（抓取中），松手（`up`）恢复 `grab`；同时补上 `touchAction:'none'`（避免触屏/触控板上的滚动手势与拖拽冲突）。
+- **R56.3** **20Hz–20kHz 范围边界未标出**：此前的频率轴刻度只标注 10 个 ISO 标准频段（62/250/1k/4k/16k 有文字，其余仅有网格线），恰好都不落在图表最左（20Hz）/最右（20kHz）的物理边界上，导致音频可听全频范围的起止点在坐标轴上从未被显式标出。新增两个显式端点文字标签："20"（左边界）与"20k"（右边界），加粗、更高对比度；为避免与相邻的 16k 刻度文字拥挤重叠，16k 的文字标签移除（网格线保留），只保留 62/250/1k/4k 四个中段标签 + 新的两个端点标签。
+- **R56.4** **不动**：`syncEqChain` 音频处理门控逻辑（`eqEnabled` 仍完整控制是否真的处理音频，未被本条改动触及）；EQ 增益范围/拖动吸附/坐标轴其余样式（R55.6 已完成，未重复改动）。
+- **R56.5** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`。
+- **R56.6** **验收点**：
+  - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过
+  - [ ] 手动验证：无论 EQ 总开关是否打开，拖动曲线时曲线本身实时跟随鼠标变化（不再只有滑块/数值变化）
+  - [ ] 手动验证：鼠标悬停在曲线图上呈手型（grab），按下拖动时变成抓取中（grabbing）手型
+  - [ ] 手动验证：坐标轴左右两端能看到明确的 "20" / "20k" 频率边界标签
+  - [ ] 手动验证：EQ 总开关关闭时，曲线仍可编辑预览，但实际播放声音不受 EQ 影响（确认门控未被破坏）
+- **R56.7** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/engine/eqResponse.test.ts` 116 passed / 41 skipped，0 失败。用户人工复测 pending。）
+
+### R57. EQ 曲线拖动细节收尾：无效果根因 + 移除多余滑块 + 抽屉可拖动 + 文本高亮抑制
+
+> 触发场景：用户 2026-07-17 在 R56 基础上继续反馈五点：① 拖出曲线范围后应自动落到边界值而非"显示拖到外面去"；② 设置好 EQ 曲线后，当前播放的音频文件"没有一点效果"；③ 曲线下方的 10 个柱状滑动条没有意义，要求删除；④ 希望 EQ 曲线设置的抽屉子窗口可以拖动移动；⑤ 拖动时有时会出现文本高亮选中，需要优化。
+> **风险等级：L1**（仅 `AudioStudioView.tsx` + `styles.css`，EQ 音频处理链路 `syncEqChain` 本身的连接逻辑未改动，只是新增"编辑即自动开启"的调用）。
+
+- **R57.1** **根因（设置曲线后播放没有效果）**：EQ 是否真正处理音频，由独立的总开关 `eqEnabled` 门控（`syncEqChain` 副作用），R56 特意让曲线预览不再受此门控（可在关闭状态下预览/配置），但这也让"配置曲线"和"是否真的在处理音频"这两件事在体验上彻底脱节——用户拖动曲线配置好之后，如果没有额外去点头部那个不起眼的"开/关"按钮，播放的音频确实是**零变化**，这完全符合预期（EQ 处于 bypass），但不符合用户直觉。**修复**：把"编辑 EQ 视为想要听到效果的明确意图"——曲线拖动（`handleCurveDrag`）、应用预设（`applyEqPreset`）、parametric 模式的 type/freq/gain/Q 编辑与"加段"，均在触发时顺带 `setEqEnabled(true)`，无需用户再单独点开关；开关按钮本身仍保留，可随时手动关闭做 A/B 对比。
+- **R57.2** **删除曲线下方的 10 个柱状滑动条（graphic 模式）**：这组滑块只是 `eqBands` 的另一套输入控件，曲线已经可以直接拖动配置，两者是重复且容易脱节的两套 UI（真实体验中用户很难看出两者关联）。移除 `.audio-eq-grid`（10 段竖滑块 + 每段独立 reset 按钮）整块 JSX 与对应 CSS，graphic 模式下只保留曲线本身 + 一个"重置全部"按钮。
+- **R57.3** **拖动时文本被意外高亮选中**：曲线拖动和（新增的）抽屉头部拖动均在 `pointerdown` 时把 `document.body.style.userSelect` 设为 `'none'`（并记录原值），`pointerup` 时还原——避免快速拖动鼠标扫过页面其它文字时被意外选中高亮。
+- **R57.4** **EQ 抽屉可拖动移动**：EQ 抽屉头部（`.audio-drawer-header`）新增可拖拽区域（排除头部里的开/关、关闭按钮，点击这两个按钮不会触发拖动）；拖动时抽屉从 CSS 默认的右侧边缘停靠切换为 `position:fixed` 的显式像素坐标（限制在视口范围内，不会被拖出屏幕外）。为了让"拖动移动"在视觉上有意义，抽屉同时从贴边通栏的 `height:100%` 改为有上限的浮动卡片（`max-height:min(680px,85vh)`，四周圆角描边），仅作用于 EQ 抽屉（新增 `.audio-drawer-floating`/`.audio-drawer-drag-handle` 类），Generator 抽屉保持原有贴边行为不变。
+- **R57.5** **曲线拖出范围后的边界值收敛（细节加固）**：R55/R56 已把拖动过程中的每个像素点 clamp 在坐标轴范围内；本次额外在 `pointerup` 时再提交一次最终位置（同样经过 clamp），确保释放瞬间的最后一个坐标也被收敛到边界值，不依赖"释放前最后一次 pointermove 是否恰好落在范围内"这一时序假设。
+- **R57.6** **不动**：`syncEqChain` 的节点连接/断开与属性写入逻辑本身（未改动，仅新增了触发它重新运行的 `setEqEnabled(true)` 调用）；EQ 预设库数值；`src/main/index.ts` 未改动。
+- **R57.7** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/styles.css`。
+- **R57.8** **验收点**：
+  - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过
+  - [ ] 手动验证：EQ 总开关处于关闭状态时，拖动曲线/应用预设/编辑 parametric 参数会自动打开开关，播放的音频能听到效果
+  - [ ] 手动验证：曲线下方不再出现 10 个柱状滑动条，graphic 模式仅保留曲线 + 重置按钮
+  - [ ] 手动验证：拖动曲线拖出坐标轴范围再松手，数值落在边界（不出现越界/无意义值）
+  - [ ] 手动验证：拖动 EQ 抽屉头部（非开关/关闭按钮区域）可以把整个抽屉移动到任意屏幕位置，且不会被拖出可视区域
+  - [ ] 手动验证：拖动曲线或拖动抽屉过程中，页面其它文字不会被意外高亮选中
+- **R57.9** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/engine/eqResponse.test.ts` 116 passed / 41 skipped，0 失败。用户人工复测 pending。）
+
+### R58. EQ 预设/参数字段补齐中英双语
+
+> 触发场景：用户 2026-07-17 反馈"EQ预设的EQ参数能不能设置个中英文对应的呀？现在全是英文。"
+> **风险等级：L0**（纯展示层文案替换 + 新增 i18n key，无行为/数据结构变化）。
+
+- **R58.1** **根因**：`EQ_PRESETS`/`eqCustomPresets` 数据结构本就带有 `name`（英文）+ `nameZh`（中文）两个字段（描述文字 `description`/`descriptionZh` 也早已按 `t('audio.eq.lang')==='zh'` 双语切换），但预设下拉框 `<option>{p.name}</option>` 一直只用了英文字段 `p.name`，从未使用 `nameZh`；parametric 模式的滤波器类型下拉框（Peaking/Low Shelf/High Shelf/Notch/Low Pass/High Pass/Band Pass）与 Freq/Gain/Q 参数标签则是硬编码英文字符串，完全没有接入 i18n。
+- **R58.2** **修复**：新增 `isZh`/`eqFilterTypeLabel` 派生值；预设下拉框按 `isZh ? p.nameZh : p.name` 切换；滤波器类型 7 个选项改为 `t('audio.eq.filterType.*')`；Freq/Gain 复用既有但此前从未被使用的 `audio.eq.freq`/`audio.eq.gain` key，Q 新增 `audio.eq.q`。均补齐中英文双语文案。
+- **R58.3** **不动**：预设数据结构、EQ 处理链路、曲线绘制逻辑均未改动，纯文案接入。
+- **R58.4** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/i18n/index.tsx`（新增 `audio.eq.q`、`audio.eq.filterType.peaking/lowshelf/highshelf/notch/lowpass/highpass/bandpass` × 中英双语）。
+- **R58.5** **验收点**：
+  - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过
+  - [ ] 手动验证：中文语言下，EQ 预设下拉框、滤波器类型下拉框、Freq/Gain/Q 标签均显示中文；切到英文语言下均显示英文
+- **R58.6** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared/i18n.test.ts` 105 passed / 41 skipped，0 失败。用户人工复测 pending。）
+
+### R59. 回退 EQ 抽屉拖动功能 + 抽屉不再遮灰背景可视化
+
+> 触发场景：用户 2026-07-17 反馈 R57.4 引入的 EQ 抽屉拖动功能实际体验很差："现在 EQ 界面多点几次，几次窗口弹来弹去，后面就不显示了。显示到哪里去不知道了，估计被隐藏掉了"，明确要求"还是不要做支持拖动的功能吧，每次点开就在下面显示固定位置就行"；并顺带反馈"也不要把波形文件置灰，正常显示就行"（EQ/生成器抽屉打开时，背后的可视化画面被半透明黑色遮罩变暗）。
+> **风险等级：L0**（纯回退+样式调整，恢复到 R57 之前的固定停靠行为，无新逻辑）。
+
+- **R59.1** **回退拖动功能**：移除 `eqDrawerRef`/`eqDrawerPos` state、`onEqDrawerHeaderPointerDown` 拖拽处理函数、`.audio-drawer-floating`/`.audio-drawer-drag-handle` CSS 类；EQ 抽屉 JSX 恢复为 R57 之前的固定停靠面板（`.audio-drawer` 贴右边缘、`height:100%`），每次打开都在同一固定位置显示，不再有"拖着拖着位置飞出屏幕外找不回来"的问题。
+- **R59.2** **抽屉不再遮灰背后内容**：`.audio-drawer-backdrop` 的 `background` 由 `rgba(6,9,12,0.55)`（半透明黑遮罩，导致背后的频谱/波形可视化被"置灰"变暗）改为 `transparent`——遮罩层依旧存在（用于承接"点击外部关闭"的点击事件），但不再有任何视觉变暗效果；EQ/Generator 两个抽屉共用该背景层，均生效。
+- **R59.3** **不动**：EQ 曲线拖动/自动开启/坐标轴等 R55–R58 的其余修复均未受影响；`syncEqChain` 音频处理逻辑未改动。
+- **R59.4** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/styles.css`。
+- **R59.5** **验收点**：
+  - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过
+  - [ ] 手动验证：多次快速打开/关闭 EQ 抽屉，面板始终出现在同一固定位置，不会消失或跑出可视区域
+  - [ ] 手动验证：打开 EQ 或生成器抽屉时，背后的频谱/波形可视化画面保持正常亮度，不被遮灰变暗
+- **R59.6** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer` 104 passed / 41 skipped（1 个 `useAudioAnalyzer.test.ts` timing 相关用例首次跑失败，单独重跑 `yarn vitest run tests/renderer/hooks/useAudioAnalyzer.test.ts` 9/9 全过，确认为已知 timing flaky、与本次改动无关，未触碰该文件）。用户人工复测 pending。）
+
+### R60. AudioStudio 布局根因修复：视图挂载容器缺少高度约束
+
+> 触发场景：用户 2026-07-18 反馈两点仍未解决：① 音频文件列表依然没有上下滚动条，文件太多时看不到/选不到下面的文件；② 最大化窗口时频谱显示正常，但从最大化恢复到之前的窗口大小/位置后，频谱图表显示不全（只显示了一半），要求频谱图表能随主窗口大小自适应。R54/R55 已经针对 canvas flex-grow、`.audio-lyrics-panel` 收缩规则、`.audio-playlist` 滚动条可见度等做过多轮局部修复，但用户反馈问题依旧存在，提示存在更上层的根因未被发现。
+> **风险等级：L1**（`src/renderer/src/App.tsx` 中 `AudioStudioView` 常驻挂载的包裹 `div` 补一个 CSS class；不改变"始终挂载以保持音频播放不中断"的 R42 设计本身）。
+
+- **R60.1** **根因**：`AudioStudioView` 为了让音频播放在切换 tab 后不中断，被设计成始终挂载在 `App.tsx` 中，仅用一层 `<div style={{ display: currentView === 'audio' ? undefined : 'none' }}>` 包裹来控制显隐（不像其它 view 那样用 `{currentView === 'x' && <Component/>}` 条件渲染/卸载）。这个包裹 `div` 是 `.workspace`（`display:flex;flex-direction:column`）的直接子元素，但它自身**没有设置任何 `flex`/`height` 属性**——作为一个普通的 flex item，它的高度默认按内容自身大小（`auto`）撑开，完全不会拉伸去填满 `.workspace` 剩余的可用高度。而 `AudioStudioView` 的根元素 `.audio-studio-view` 依赖 `height:100%` 来撑满可用空间——但 CSS 规范中，百分比高度只有在**父容器拥有确定（definite）高度**时才会生效，父容器高度为 `auto` 时，百分比高度会被当作 `auto` 处理（等于没设）。也就是说，这层包裹 `div` 从未真正给 `AudioStudioView` 提供一个确定的高度边界，导致整个音频工作站视图（文件列表、频谱图表在内）从未被真正"框住"过——内容可以无限制地按自身大小撑开，一旦超出 `.workspace` 的可视区域，就被 `.workspace` 的 `overflow:hidden` 直接裁掉（而不是触发内部各处本该生效的 `overflow:auto` 滚动条）。这正好同时解释了两个现象：① 文件列表内容一旦超出实际可视高度，本该由 `.audio-playlist` 自身的 `overflow-y:auto` 顶上，但由于整条链路都不是"确定高度"，实际观感就是"看不到滚动条、看不到下面的文件"；② 窗口从最大化恢复到较小尺寸后，因为整条链路本来就没跟 `.workspace` 的真实高度联动，画面在恢复瞬间还停留在按跟内容自身大小算出的（可能对应此前窗口尺寸下）位置，被直接裁切成"只显示了一半"。R54/R55 此前的多轮修复（canvas flex-grow、`.audio-lyrics-panel` 收缩、滚动条可见度等）都是在**假设整条容器链路本身高度受控**的前提下做的局部调整，从未真正生效，因为最上层这个包裹 `div` 从一开始就没有把高度约束传递下去。
+- **R60.2** **修复**：给这层包裹 `div` 加上 `.audio-view-wrapper` class（`flex:1; min-height:0;`），让它作为 `.workspace` 列方向 flex 布局里的一个正常 flex item，正确拉伸填满可用高度；`AudioStudioView` 根元素的 `height:100%` 从此有了一个真正确定高度的父容器可以解析，整条子树（文件列表、频谱/波形画布、抽屉等）第一次真正被"框住"，R54/R55 此前的内部 flex/overflow 修复才第一次真正对得上号并生效。
+- **R60.3** **不动**：`AudioStudioView` 始终挂载以保持音频播放不中断的设计（R42）本身未改动，只是给包裹层补上缺失的尺寸约束；`AudioStudioView` 内部所有子组件/CSS 均未改动。
+- **R60.4** **受影响文件**：`src/renderer/src/App.tsx`、`src/renderer/src/styles.css`。
+- **R60.5** **验收点**：
+  - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过
+  - [ ] 手动验证：加载大量音频文件后，文件列表出现可见的上下滚动条，可以滚动查看/选择列表末尾的文件
+  - [ ] 手动验证：频谱/波形图表在窗口最大化、还原、任意拖拽调整大小后都能正确铺满右栏，不再出现"只显示了一半"的裁切
+  - [ ] 手动验证：切换到其它 tab 再切回音频工作站，播放不中断，布局依旧正确
+- **R60.6** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared` 138 passed / 41 skipped，0 失败。用户人工复测 pending。）
+
+### R61. 灯效虚拟预览与实际投影输出不一致的根因修复：预览面板宽高比写死 16:9
+
+> 触发场景：用户 2026-07-18 反馈"为什么虚拟输出的 RGB 画布预览效果，当真正投影到显示器之后，效果完全失真了？为什么不能做到一模一样的效果？"要求 review 灯效模块。
+> **风险等级：L1**（`src/renderer/src/App.tsx`/`PreviewGrid.tsx`/`Preview3D.tsx` 新增一个可选 prop + 移除一处写死的 CSS 值，不改变渲染 shader/引擎计算逻辑本身）。
+
+- **R61.1** **根因**：R30.1 已经把预览（`PreviewGl` `overlay=false`）与实际投影输出（`PreviewGl` `overlay=true`，overlay 窗口）统一成同一套"整幅拉伸铺满自身画布（stretch-to-fill）"UV 映射逻辑，理论上二者对同一份 `RgbFrame` 应该是几何一致的。但 overlay 窗口的画布尺寸/宽高比**始终等于目标物理显示器的真实分辨率**（`src/main/overlayManager.ts` `openOverlay` 用 `display.bounds` 的真实宽高建窗口），而应用内预览面板的容器 `.preview-frame` 在 CSS 里被**写死 `aspect-ratio: 16 / 9`**（`src/renderer/src/styles.css`），与目标显示器的真实宽高比毫无关系。只要用户的显示器不是 16:9（常见的 16:10 笔记本屏、21:9 带鱼屏、4:3、竖屏旋转、或多屏联动时的虚拟画布），同一份 `RgbFrame` 在预览里按 16:9 拉伸、在 overlay 里按显示器真实比例拉伸，两边的拉伸幅度不同，视觉上就是用户描述的"完全失真"——这与灯效算法本身、GPU 着色器逻辑、`smooth`/`pixel` 渲染风格等均无关，纯粹是预览容器的宽高比来源错误。
+- **R61.2** **修复**：`App.tsx` 新增 `previewAspectRatio`（复用已有的 `displayAspectRatioRef` 同款计算逻辑——联动多屏用虚拟画布 `virtualBounds` 宽高比，否则用主显示器真实宽高比——但改为响应式 `useMemo` 而非仅写入 ref，好让它能驱动预览容器的 CSS 值）；`PreviewGrid`/`Preview3D` 新增可选 `aspectRatio` prop（默认 `16/9`，向后兼容），把 `.preview-frame` 容器的宽高比改为内联样式 `style={{ aspectRatio }}`（内联样式天然覆盖 CSS 类里任何同名声明），从写死的 16:9 换成"当前实际投影目标显示器的真实宽高比"。`styles.css` 移除 `.preview-frame` 里写死的 `aspect-ratio: 16 / 9`（保留其余定位/背景/边框样式不变）。
+- **R61.3** **不动**：`previewGl.ts` 的 GL 着色器/`updateLayout()` 拉伸逻辑本身（复盘确认无误，R30.1 已经是正确的"整幅拉伸"实现，未再改动）；`overlayManager.ts` 的窗口创建逻辑（本就正确按显示器真实分辨率建窗口，未改动）；`previewEngine.ts` 逐像素渲染引擎、`sampling.columns`/`sampling.rows` 网格分辨率与显示器宽高比之间既有的"手动匹配显示器比例"（`matchDisplayRatio`）功能均未改动——本条修复解决的是"预览容器本身的显示比例"，与"灯效网格分辨率是否需要手动匹配显示器比例"是两个独立问题，互不冲突。
+- **R61.4** **受影响文件**：`src/renderer/src/App.tsx`、`src/renderer/src/components/PreviewGrid.tsx`、`src/renderer/src/components/Preview3D.tsx`、`src/renderer/src/styles.css`。
+- **R61.5** **验收点**：
+  - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过
+  - [ ] 手动验证：在非 16:9 显示器（如 16:10 笔记本屏、21:9 带鱼屏、竖屏旋转等）上，应用内 RGB 画布预览的宽高比例与实际投影到该显示器后的效果观感一致（不再有额外的失真差异）
+  - [ ] 手动验证：多屏联动（`linkedDisplays`）场景下，预览宽高比随虚拟画布 `virtualBounds` 变化正确更新
+  - [ ] 手动验证：3D 灯效（`is3DEffect`）预览同样按目标显示器真实宽高比显示，不再固定 16:9
+  - [ ] 手动验证：插拔/切换主显示器后，预览面板宽高比能正确更新（不需要重启应用）
+- **R61.6** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/engine/previewEngine.test.ts` 124 passed / 41 skipped，0 失败。用户人工复测 pending。）
+
+### R62. 灯效投影全屏输出色彩与分辨率失真根因修复：overlay canvas 未按 DPR 建物理 backing buffer
+
+> 触发场景：用户 2026-07-18 复测 R61 后反馈“还没有解决根本原因啊，在预览画布上显示很真实，但是投影到显示器之后，全屏效果下，色彩和分辨率明显都失真的。”
+> **风险等级：L1**（局限于 renderer overlay 画布初始化与测试；不改 IPC、主进程窗口生命周期、效果引擎或 profile schema）。
+
+- **R62.1** **根因假设**：R61 修正的是预览容器宽高比，但实际投影窗口的 [OverlayCanvas.tsx](../../src/renderer/src/components/OverlayCanvas.tsx) 仍用 `canvas.offsetWidth/offsetHeight` 直接设置 `canvas.width/height`，并注释为“不做 devicePixelRatio scaling”。在 Electron/Chromium 中 `offsetWidth` 是 CSS/DIP 像素，高 DPI 显示器（Windows 125%/150%/200%、Retina）上真实物理像素数为 `CSS px × window.devicePixelRatio`；因此全屏 overlay 的 WebGL backing buffer 低于物理屏幕分辨率，会被系统 compositor 放大，造成投影端明显模糊、细节丢失。预览画布 [PreviewGrid.tsx](../../src/renderer/src/components/PreviewGrid.tsx) 已按 `offsetWidth * devicePixelRatio` 建 backing buffer，所以预览端更清晰，二者不一致。
+- **R62.2** **修复**：抽出 `getOverlayCanvasBackingSize(cssWidth, cssHeight, devicePixelRatio)` helper；OverlayCanvas 初始化/ResizeObserver 重建 GL 时使用 `Math.floor(cssSize * DPR)` 设置 `canvas.width/height`，与 PreviewGrid/Preview3D 的 backing buffer 策略一致；保留 CSS `width/height:100%` 不变，使 DOM 布局仍按目标显示器 DIP 尺寸铺满。
+- **R62.3** **色彩处理边界**：本条优先修复已定位的分辨率根因；如果 DPR 修复后仍存在明显颜色偏差，再追加后续 R-N 针对 transparent overlay / WebGL alpha / compositor 合成做独立验证与修复，避免把两个变量混在一次修改里。
+- **R62.4** **不动**：`previewGl.ts` shader、`updateLayout()`、`overlayManager.ts` 窗口创建、`extractSubFrame()`/视频墙采样、CPU/GPU 效果算法均不改动。
+- **R62.5** **受影响文件**：`src/renderer/src/components/OverlayCanvas.tsx`、`tests/renderer/components/OverlayCanvas.test.tsx`、`docs/prd/PRD-0002-rgbbox-project-catalog.md`。
+- **R62.6** **验收点**：
+  - [x] `yarn vitest run tests/renderer/components/OverlayCanvas.test.tsx` 通过，覆盖 DPR=1.5 时 backing buffer 放大到物理像素
+  - [x] `yarn typecheck` 通过
+  - [x] `yarn build` 通过
+  - [ ] 手动验证：Windows 高 DPI 显示器全屏投影不再被系统二次放大导致模糊；预览画布与实际投影的清晰度明显更接近
+- **R62.7** **状态**：🔄（代码已实施。**证据**：`yarn vitest run tests/renderer/components/OverlayCanvas.test.tsx` → 1 file passed, 4 passed / 4 skipped；`yarn typecheck` exit 0；`yarn build` exit 0。用户高 DPI 多显示器实机复测 pending。）
+
+### R63. 灯效虚拟预览与"自定义区域/预设分区"投屏颜色/图案严重不符的根因修复：区域配置只改窗口位置，从未影响帧内容渲染方式
+
+> 触发场景：用户 2026-07-18 复测 R62 后提供截图反馈——预览画布是彩虹螺旋，"自定义区域"投屏窗口显示的却是完全不同的渐变图案/颜色排布，明确指出"感觉是两种不同的换算规则或者画布"，并强调"跟分辨率没关系"。
+> **风险等级：L2**（改变非 fullscreen overlay 的实际显示内容——用户可见输出行为变化；新增共享引擎模块，被 main 与 renderer 同时消费）。
+> **实施时修订（2026-07-18）**：第一版修复（裁切虚拟画布对应子区域）被用户明确否决——"就算是区域显示，应该显示的也是一整个效果，而不是截取了部分效果展示"。裁切方向本身就是错的：region 窗口应该展示**完整**效果（按比例收缩，不失真、不裁切），而不是虚拟画布的一个局部放大。已撤回裁切实现，改为下方 R63.2 描述的 letterbox（`contain`）渲染方案。
+
+- **R63.1** **根因**：`OverlayConfig`（`region: 'fullscreen' | 'top-third' | ... | 'custom'`）此前**只控制 overlay 窗口在物理显示器上的位置/尺寸**（`overlayManager.ts#computeRegionBounds`），从未影响推送给该窗口的 `RgbFrame` 该如何渲染——无论窗口区域是全屏还是一个很小的自定义方框，`distributeFrameToOverlays()`（`App.tsx`）广播的都是**完整**的虚拟画布；`OverlayCanvas.tsx` 的 `PreviewGl`（`overlay=true`）又固定"整幅拉伸铺满自身画布"（R30.1）。二者叠加的结果：一个尺寸/宽高比与虚拟画布完全不同的小型自定义区域窗口，会把**整张**彩虹螺旋图硬挤压/拉伸进自己的小方框——螺旋的角度、色相分布因挤压彻底变形，视觉上像是"完全不同的图案和颜色"，与分辨率/DPI 无关（R62 修复的是另一个独立问题）。`top-third`/`left-third` 等预设分区同样受影响。
+- **R63.2** **修复（修订版：letterbox，不裁切）**：
+  - `src/engine/overlayRegionFrame.ts` 只保留 `regionToNormalizedRect(config?)`——把 `OverlayConfig.region` 换算成归一化 `{x,y,width,height}` 矩形，供 `overlayManager.ts#computeRegionBounds` 计算窗口物理位置/尺寸（此部分未撤回，纯粹是窗口几何计算，与本次视觉 bug 无关，继续复用）。**已删除** 第一版新增的 `cropFrameToRegion()`（裁切帧像素内容）——方向错误，予以撤回。
+  - `src/shared/types.ts#RgbFrame` 新增可选字段 `regionFit?: 'stretch' | 'contain'`（沿用 `showGap`/`renderStyle` 的"profile/配置 → 每帧写入 RgbFrame → 渲染器读取"传播模式）。
+  - `src/renderer/src/gl/previewGl.ts` 新增纯函数 `computeContainLayout(columns, rows, canvasW, canvasH)`：计算"保持源网格宽高比、居中、尽可能大"的 letterbox 布局（`object-fit: contain` 的等价 UV 数学），复用既有的 `uOrigin`/`uCellSize` uniform 与"网格外区域按 `uBgAlpha` 显示背景/透明"着色器逻辑，**零着色器改动**。`PreviewGl` 新增 `fit` 字段 + `setFit('stretch' | 'contain')` 方法（值不变时跳过，值改变时强制下一帧重算布局）；`updateLayout()` 按 `fit` 分支：`'stretch'`（默认，用于 fullscreen overlay）保持 R30.1 的整幅拉伸；`'contain'`（用于非 fullscreen 区域）改用 `computeContainLayout()` 做居中 letterbox，展示**完整、不失真**的效果，多余空间因 overlay 透明背景（`uBgAlpha=0`）而显示为透明（不会有黑边色块）。
+  - `App.tsx#distributeFrameToOverlays()` 新增 `overlayConfigs` 参数：`regionFitFor(config)` 判断该 overlay 是否为 `fullscreen`（→`'stretch'`）或其它任意预设/自定义区域（→`'contain'`）；`frameForOverlay(baseFrame, config)` 仅在需要 `'contain'` 时才浅拷贝一份帧对象并打上 `regionFit` 标记（像素缓冲区不复制，零额外开销）；videoWall / linkedDisplays / 默认广播三条分支末尾统一调用。默认广播分支保留"全部 overlay 都是 fullscreen 时一次性广播"的快路径。
+  - `OverlayCanvas.tsx` 在既有 `onOverlayFrame` 回调里新增 `glRef.current?.setFit(frame.regionFit ?? 'stretch')`，与 `setGap`/`setRenderStyle` 并列，每帧读取。
+- **R63.3** **不动**：`previewGl.ts` 的 GL 着色器本身（零改动，只新增 uniform 计算分支）；`overlayManager.ts` 窗口生命周期管理、`DisplayMap.tsx` 拖拽框选 UI、`extractSubFrame()`/`extractWallPanelFrame()`/`extractWallPanelFrame` 的既有数学；R62 的 DPR backing-buffer 修复；`regionToNormalizedRect()`（继续用于窗口几何，未撤回）。
+- **R63.4** **受影响文件**：`src/engine/overlayRegionFrame.ts`（撤回 `cropFrameToRegion`，只保留 `regionToNormalizedRect`）、`tests/engine/overlayRegionFrame.test.ts`（同步移除对应测试）、`src/shared/types.ts`（`RgbFrame.regionFit`）、`src/renderer/src/gl/previewGl.ts`（`computeContainLayout` + `setFit` + `updateLayout` 分支）、`tests/renderer/gl/previewGl.test.ts`（新增 `computeContainLayout` 纯函数测试）、`tests/renderer/setup.ts`（`previewGl` 模块 mock 改为 partial mock，透传真实具名导出）、`src/renderer/src/components/OverlayCanvas.tsx`（`setFit` 调用）、`src/renderer/src/App.tsx`（`regionFitFor`/`frameForOverlay`/`distributeFrameToOverlays` 重写）。
+- **R63.5** **验收点**：
+  - [x] `yarn vitest run tests/engine/overlayRegionFrame.test.ts` 通过（`regionToNormalizedRect` 5 个用例；裁切相关用例已随撤回一并移除）
+  - [x] `yarn vitest run tests/renderer/gl/previewGl.test.ts` 通过（新增 3 个 `computeContainLayout` 用例：更宽画布 pillarbox、更高画布 letterbox、宽高比一致时零信箱）
+  - [x] `yarn vitest run tests/main/overlayManager.test.ts` 通过（27 个既有用例，窗口位置/尺寸数值不变）
+  - [x] `yarn typecheck` 通过
+  - [x] `yarn build` 通过
+  - [x] `yarn vitest run tests/engine tests/main tests/renderer`（全量相关套件）通过，无新增失败
+  - [ ] 手动验证：把 overlay 区域设为"自定义"一个显示器中央的小方框后，投屏窗口显示的是**完整**的彩虹螺旋效果（按比例缩小、居中，必要时有透明留白），不再是虚拟画布局部放大，也不再是整图硬拉伸变形
+  - [ ] 手动验证：`top-third`/`left-third` 等预设分区同样显示完整效果的 letterbox 缩略，不裁切、不拉伸变形
+  - [ ] 手动验证：全屏 overlay（`fullscreen`）行为不变，仍是整幅拉伸铺满
+- **R63.6** **状态**：🔄（代码已按修订版重新实施。**证据**：`yarn vitest run tests/engine/overlayRegionFrame.test.ts` → 5 passed；`yarn vitest run tests/renderer/gl/previewGl.test.ts` → 5 passed / 6 skipped；`yarn vitest run tests/main/overlayManager.test.ts` → 27 passed；`yarn vitest run tests/engine tests/main tests/renderer` → 34 files passed，303 passed / 41 skipped，0 失败；`yarn typecheck` exit 0；`yarn build` exit 0。用户实机复测 pending。）
+
+### R64. 预览 vs 投影渲染管线本质差异分析 + 新增"应用内预览全屏"对照实验功能
+
+> 触发场景：用户 2026-07-18 反馈 R61/R62/R63 三次修复都没有解决问题，明确要求：①先分析清楚"全屏投影到显示器"和"RGB 预览"各自的显示原理/算法是什么，本质差异在哪里；②给 RGB 画布预览增加一个"应用内全屏模式"，用于对比"预览最大化全屏"是否真实/不失真/丝滑，从而判断问题到底出在共享渲染管线还是 overlay 专属路径。
+> **风险等级：L1**（新增一个纯 UI 对照实验功能——预览面板全屏切换按钮，复用 `VideoStudioView.tsx`/`AudioStudioView.tsx` 已有的 `requestFullscreen`/`fullscreenchange`/CSS-fallback 模式；不改变 engine 计算逻辑、IPC、profile schema、overlay 管线本身）。
+
+- **R64.1** **两条管线的完整原理对比（本质分析，供后续排查参考）**：
+  - **共享部分（完全相同的代码，不存在"两套算法"）**：
+    1. 数据源相同——预览与投影用的是**同一份** `RgbFrame`（同一次 worker tick / 同一帧 `Effect3DGl.readLEDs()` 的结果），不是分别独立计算的。
+    2. 渲染器相同——预览（`PreviewGrid.tsx`/`Preview3D.tsx`，`overlay=false`）与投影（`OverlayCanvas.tsx`，`overlay=true`）用的是**同一个 `PreviewGl` 类、同一段 GLSL 着色器**（`src/renderer/src/gl/previewGl.ts`），纹理采样/`pixel`（NEAREST 离散色块）/`smooth`（LINEAR + quintic 平滑插值）逻辑完全一致；网格内有效果的像素，着色器里永远输出 `vec4(color, 1.0)`——不透明、逐帧同一套公式算出的同一个 RGB 值，色彩计算本身两边并无二致。
+  - **已确认且逐条修复的差异点**：
+    - 预览面板容器宽高比 vs 目标显示器真实宽高比（R61）；
+    - overlay canvas 的 backing buffer 是否按 `devicePixelRatio` 建立物理分辨率（R62）；
+    - 非全屏区域投影的拉伸/裁切/letterbox 方式（R63）。
+  - **尚未被验证、代码层面难以直接确认的差异点（本条新增分析）**：
+    1. **跨进程 IPC 传输**：投影路径经 `window.rgbbox.pushFrameToDisplay`/`pushFrameToOverlays` → `ipcRenderer` → 主进程 → `win.webContents.send('overlay:frame', frame)`，`RgbFrame`（含 `Uint8ClampedArray`）要做一次结构化克隆（structured clone）跨渲染进程传输；预览路径则是同一个渲染进程内的 ref 读取，没有序列化/反序列化。理论上结构化克隆对 `Uint8ClampedArray` 是精确复制、不应有精度损失，但从未被实测验证过。
+    2. **overlay 窗口本身是完全独立的呈现环境**：`overlayManager.ts#openOverlay()` 创建的是一个**无边框（`frame:false`）、透明（`transparent:true`）、常驻置顶（`alwaysOnTop`）、Windows 下对 `fullscreen` 区域会额外调用 `win.setFullScreen(true)`（独占全屏）**的独立 `BrowserWindow`；其 `PreviewGl` 实例用 `alpha:true` 的 WebGL 上下文 + `gl.BLEND`（`SRC_ALPHA, ONE_MINUS_SRC_ALPHA`）+ `uBgAlpha=0`（网格外/letterbox 区域透明）。这一整个"透明无边框独立窗口 + Windows DWM 合成 + 可能触发的独占全屏呈现路径"，与预览面板"应用主窗口里一个普通不透明 `<canvas>`"的呈现环境完全不同——是否存在色彩管理（ICC/HDR tone-mapping）、GPU 呈现路径（独占全屏 vs 窗口模式的不同 present 队列）差异，代码层面无法直接确认，需要实测排除。
+  - **结论**：与其继续"猜"这些尚未验证的差异点，不如先做一次受控对照实验——用**同一个不透明主窗口 + 同一套 `PreviewGl(overlay=false)`**，把预览面板通过标准 Fullscreen API 撑满整个物理屏幕分辨率，与真实 overlay 投影窗口做直接对比：
+    - 若"预览全屏"本身也不真实/有失真/不丝滑 → 问题出在共享渲染管线本身（网格分辨率、采样算法、宽高比计算等），需要继续深挖这部分；
+    - 若"预览全屏"清晰流畅，但真实 overlay 投影窗口依然不一样 → 问题出在 overlay 窗口专属的呈现路径（透明合成、独立窗口、独占全屏模式等），需要另开新的 R-N 单独排查（例如先尝试关闭 overlay 的 `transparent`/`alpha:true`，或改用普通置顶窗口而非 `setFullScreen(true)` 独占全屏做对比）。
+- **R64.2** **新增功能：预览面板"全屏"切换**：`src/renderer/src/App.tsx` 工作区视图的"RGB 画布预览"面板 header 新增一个全屏切换按钮（`Maximize2`/`Minimize2` 图标）；点击调用 `previewFullscreenWrapRef.current.requestFullscreen()`（原生 Fullscreen API，不支持时 CSS class 兜底），`document.fullscreenElement` 存在时点击/ESC 走 `document.exitFullscreen()`；`fullscreenchange` 事件同步 `previewFullscreen` state 驱动图标切换。全屏时 `.preview-frame` 的宽高比约束（`aspectRatio` prop/CSS）被移除，改为铺满整个屏幕、边到边拉伸——**刻意**与 fullscreen overlay 的"整幅拉伸铺满"（R30.1）保持一致的行为，确保是同一渲染模式下的对照，而不是引入第三种展示方式。复用 `VideoStudioView.tsx#toggleFullscreen`/`AudioStudioView.tsx` 已有的实现模式（原生 API + `fullscreenchange` 监听 + CSS-fallback + ESC 处理），未发明新模式。
+- **R64.3** **不动**：`previewGl.ts` 着色器/`updateLayout()`/`computeContainLayout()`（R63）；`overlayManager.ts` 窗口创建/生命周期；IPC 通道；engine 计算逻辑；profile schema。
+- **R64.4** **受影响文件**：`src/renderer/src/App.tsx`（`Maximize2`/`Minimize2` 图标导入、`previewFullscreenWrapRef`/`previewFullscreen` state、`togglePreviewFullscreen`、预览面板 JSX 包裹）、`src/renderer/src/styles.css`（`.preview-header-actions`/`.preview-fullscreen-btn`/`.preview-fullscreen-wrap.is-fullscreen`）、`src/renderer/src/i18n/index.tsx`（`preview.fullscreen`/`preview.exitFullscreen` 中英双语）、`docs/prd/PRD-0002-rgbbox-project-catalog.md`。
+- **R64.5** **验收点**：
+  - [x] `yarn typecheck` 通过
+  - [x] `yarn build` 通过
+  - [x] `yarn vitest run tests/renderer`（全量 renderer 套件）通过，无新增失败（本条为纯 UI 新增，沿用既有 App.tsx/VideoStudioView.tsx 的"Fullscreen API 类功能无专门单测"惯例——`happy-dom` 不支持 Fullscreen API，且 `tests/renderer/App.test.tsx` 本身注明 App 全量渲染因 3D/WebGL 依赖无法在测试环境完整挂载，只做模块形状校验，与 `VideoStudioView.tsx` 现有的全屏按钮同类功能保持一致的测试覆盖惯例）
+  - [ ] 手动验证：点击"预览全屏"按钮后，预览画面撑满整个物理屏幕（不是应用窗口内的一个面板），效果观感与之前面板内一致（无额外的信箱/裁切/拉伸变化）
+  - [ ] 手动验证：对比"预览全屏"与"真实投影到该显示器" —— 记录两者是否观感一致；若一致，说明 R61/R62/R63 已修复共享管线问题，投影残留问题落在 overlay 专属呈现路径，需要新开 R-N 排查透明合成/独占全屏；若仍不一致，说明共享管线本身还有未发现的 bug，需要继续排查
+  - [ ] 手动验证：ESC / 再次点击按钮可退出预览全屏，恢复原有面板布局
+- **R64.6** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer` → 22 files passed，109 passed / 41 skipped，0 失败。用户实机对照实验 pending，其结果将决定后续 R-N 的排查方向。）
+- **R64.7** **实施后修订：预览全屏按钮点击无反应的根因（真根因，非 UI 逻辑本身）**：用户反馈"RGB 画布预览的全屏功能无效"（点击无任何变化）。排查确认 `togglePreviewFullscreen()` 本身逻辑无误；真正根因在 `src/main/index.ts#app.whenReady()` 里的全局权限处理器——`session.defaultSession.setPermissionRequestHandler` / `setPermissionCheckHandler` 此前只放行 `MEDIA_PERMISSIONS`（`'media'`/`'audioCapture'`/`'videoCapture'`/`'display-capture'`），Electron 类型定义（`electron.d.ts`）确认 **`'fullscreen'` 本身就是受这套权限系统单独管控的一个受检权限类型**——Chromium 的 `Element.requestFullscreen()` 在 Electron 里会先过这层权限检查，未在白名单里的一律被拒绝，且被拒绝时返回的 Promise 往往既不 resolve 也不显式 reject（不会抛错、不会触发 `.catch()`），观感上就是"点了按钮，没有任何反应，控制台也没有报错"——与本条新增的 `togglePreviewFullscreen()` UI 逻辑无关，而是**应用启动时就设置的全局安全策略把 `Element.requestFullscreen()` 这个 Web API 整体锁死了**，同时也解释了 `VideoStudioView.tsx`/`AudioStudioView.tsx` 里已有的全屏按钮理论上同样会受影响（此前未被用户报告，可能是因为其 CSS-fallback 展开方式与真全屏观感接近，或极少被测试到这个失败路径）。修复：把 `MEDIA_PERMISSIONS` 改名为 `ALLOWED_PERMISSIONS` 并新增 `'fullscreen'`，两个处理器（Request + Check）都放行；不改变 media/display-capture 之外的其余权限仍然拒绝的既有安全策略。
+- **R64.8** **受影响文件（新增）**：`src/main/index.ts`（`MEDIA_PERMISSIONS` → `ALLOWED_PERMISSIONS`，新增 `'fullscreen'`）。
+- **R64.9** **验收点（新增）**：
+  - [x] `yarn typecheck` 通过
+  - [x] `yarn build` 通过
+  - [x] `yarn vitest run tests/main tests/renderer`（全量相关套件）通过，无新增失败
+  - [ ] 手动验证：点击"预览全屏"按钮后，预览画面确实进入操作系统级全屏（而不是无反应）
+  - [ ] 手动验证：`VideoStudioView`/`AudioStudioView` 已有的全屏按钮同样确认可正常进入全屏（顺带验证同一根因是否也影响了它们）
+- **R64.10** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/main tests/renderer` → 26 files passed，164 passed / 41 skipped，0 失败。`src/main/index.ts` 无专门单元测试覆盖此权限处理器（历史上该文件即无单测基础设施），依赖手动实机验证。用户实机复测 pending，其结果将决定后续 overlay 投影问题的排查方向。）
+
+### R65. 全屏投影改用与"RGB 画布预览全屏"一致的不透明渲染路径（阶段 1：方案 A）
+
+> 触发场景：用户 2026-07-18 要求"按照 RGB 画布预览的全屏效果来实现显示器的灯效投影，提供重构可行性方案"；AI 提出方案 A（按区域类型分流不透明/透明配置）+ 方案 B（合并 OverlayCanvas/PreviewGrid 重复渲染逻辑，作为后续阶段 2）；用户回复"可以，开始实施"，确认先做阶段 1（方案 A）。
+> **风险等级：L2**（改动 `overlayManager.ts`——项目文档标注的 P0 集中点——的 `BrowserWindow` 创建参数；改变全屏投影窗口的合成方式，属用户可见的显示器输出行为变更）。
+
+- **R65.1** **方案**：全屏（`region: 'fullscreen'`）overlay 窗口不再使用"无边框 + 透明（`transparent:true`）+ alpha 混合"的呈现方式——这套配置是为"局部区域投影需要透出桌面背景"（R63 的 letterbox 场景）设计的，全屏场景内容铺满整个窗口、背后完全看不到桌面，从未真正需要透明。改为与应用内"RGB 画布预览"完全一致的**不透明**渲染路径：`BrowserWindow` 创建时 `transparent:false` + 纯色 `backgroundColor`；`PreviewGl` 用 `overlay=false`（即与预览面板同一条代码路径：`alpha:false` 的 WebGL 上下文、不开 `gl.BLEND`、`uBgAlpha=1.0`）。非全屏区域（预设三分区/自定义区域）保持现状不变——它们必须透出桌面背景，透明配置是必要的。
+- **R65.2** **单一事实来源**：新增 `src/engine/overlayRegionFrame.ts#isFullscreenRegion(config?)`——判断一个 `OverlayConfig` 是否为"全屏"（`region==='fullscreen'` 或未传 config），供 `overlayManager.ts` 决定窗口透明度时调用，避免出现"判断全屏的逻辑分散在多处、后续改动容易漏改一处"的问题（与既有 `regionToNormalizedRect()` 同一个文件、同一设计哲学）。
+- **R65.3** **主进程改动**：`overlayManager.ts#openOverlay()` 的 `BrowserWindow` 选项从写死的 `transparent:true` 改为 `transparent: !isFullscreenRegion(effectiveConfig)`；`backgroundColor` 全屏时用不透明深色（`#05080a`，与项目其它不透明窗口背景色一致），非全屏保持 `#00000000`。加载 overlay 页面的 query string 新增 `opaque=${isFullscreenRegion(effectiveConfig) ? '1' : '0'}`，让渲染进程知道自己的窗口是不透明还是透明的（因为 Electron 的 `transparent` 是创建期属性，渲染进程本身拿不到，只能通过窗口加载时传入的参数得知）。
+- **R65.4** **渲染进程改动**：`main.tsx` 解析 URL 上的 `opaque` 参数，作为新 prop 传给 `<OverlayCanvas>`；`OverlayCanvas.tsx` 新增 `opaque` prop（默认 `false`，向后兼容），初始化 `PreviewGl` 时改为 `new PreviewGl(canvas, !opaque)`——全屏窗口传 `opaque=true` 时等价于 `overlay=false`，与 `PreviewGrid.tsx`（预览面板）完全同一套 GL 参数、同一条代码路径。
+- **R65.5** **不动**：`PreviewGl`/`previewGl.ts` 的类本身不改一行代码——`overlay` 参数早已支持"不透明"分支（就是预览面板一直在用的那条路径），本条纯粹是"让全屏 overlay 也选择走这条已存在的分支"，不新增渲染逻辑；`computeContainLayout()`/letterbox（R63）、非全屏区域的透明配置、`distributeFrameToOverlays()` 帧分发逻辑、`regionToNormalizedRect()`（窗口位置计算）均不改动。阶段 2（合并 `OverlayCanvas.tsx`/`PreviewGrid.tsx` 重复渲染逻辑）留作后续独立 R-N，视本阶段实测效果决定是否需要。
+- **R65.6** **受影响文件**：`src/engine/overlayRegionFrame.ts`（新增 `isFullscreenRegion`）、`tests/engine/overlayRegionFrame.test.ts`（新增用例）、`src/main/overlayManager.ts`（`openOverlay` 的 `transparent`/`backgroundColor`/query string）、`tests/main/overlayManager.test.ts`（新增用例覆盖 fullscreen vs 非 fullscreen 的 `transparent` 值 + query string）、`src/renderer/src/main.tsx`（解析 `opaque` 参数）、`src/renderer/src/components/OverlayCanvas.tsx`（`opaque` prop + `PreviewGl` 实例化改动）。
+- **R65.7** **验收点**：
+  - [x] `yarn vitest run tests/engine/overlayRegionFrame.test.ts` 通过（新增 `isFullscreenRegion` 用例）
+  - [x] `yarn vitest run tests/main/overlayManager.test.ts` 通过（新增全屏/非全屏 `transparent` 值断言；同步更新了一条断言"全屏 overlay 一律 transparent:true"的既有测试——该断言正是本条要修改的行为，已改写为"transparent 取决于 region"并移到新描述块验证）
+  - [x] `yarn typecheck` 通过
+  - [x] `yarn build` 通过
+  - [x] `yarn vitest run tests/engine tests/main tests/renderer`（全量相关套件）通过，无新增失败
+  - [ ] 手动验证：把某个显示器设为"全屏"投影，画面与"预览全屏"（R64）观感一致（同样清晰/丝滑/不失真）；如果一致，说明 R64 关于"透明合成路径"的假设成立
+  - [ ] 手动验证：非全屏（自定义区域/预设三分区）投影窗口行为不受影响，仍正确透出桌面背景（letterbox 部分）
+- **R65.8** **状态**：🔄（代码已实施。**证据**：`yarn vitest run tests/engine/overlayRegionFrame.test.ts` → 10 passed；`yarn vitest run tests/main/overlayManager.test.ts` → 32 passed；`yarn vitest run tests/engine tests/main tests/renderer` → 34 files passed，311 passed / 41 skipped，0 失败；`yarn typecheck` exit 0；`yarn build` exit 0。用户实机对照复测 pending：若全屏投影观感与"预览全屏"一致，验证 R64 假设成立；阶段 2（合并 OverlayCanvas/PreviewGrid 重复渲染逻辑）视本阶段实测效果决定是否另开 R-N。）
+
+### R66. 预览与全屏投影仍不一致的根因：预览宽高比一直按"主显示器"计算，从未考虑真正的投影目标显示器
+
+> 触发场景：用户 2026-07-18 反馈"在显示器设置全屏，然后开启叠加效果还是不一致"——即使 R65 已经把全屏 overlay 统一成与预览完全相同的不透明渲染路径，实际投影仍与预览不一致。系统性排查（追踪数据流而非继续猜测）发现新的、此前未被发现的根因。
+> **风险等级：L1**（纯计算逻辑修正——预览面板宽高比 + "匹配显示器比例"网格尺寸计算的输入源从"主显示器"改为"实际投影目标显示器"；不改变 IPC、overlay 窗口创建、GL 渲染路径本身）。
+
+- **R66.1** **根因**：R61 把预览面板的宽高比从写死的 16:9 改成"动态计算"，但计算逻辑（`App.tsx` 的 `displayAspectRatioRef`/`previewAspectRatio`）从一开始就写死为 **`topology.displays.find(d => d.primary)`——永远取主显示器**，完全没有考虑用户实际在 `DisplayMap` 里勾选打开了 overlay 投影的是哪一块显示器。而 `overlayManager.ts` 的真实投影窗口一直是按**实际目标显示器**的 `display.bounds` 正确取值的。只要用户的 RGB 效果不是投影到主显示器本身（非常常见——比如笔记本本身是主屏，效果投影到副屏/外接显示器），预览用的是主屏宽高比、真实投影用的是目标屏宽高比，两者不一致，同一份 `RgbFrame` 在两边被拉伸成不同形状——这与 R62（DPR）、R63（区域裁切/letterbox）、R65（透明合成路径）全部无关，是一个此前完全没被发现的独立变量，也解释了为什么把 R65 做完、两边渲染路径已经统一，画面依然对不上。
+- **R66.2** **修复**：新增纯函数 `src/engine/targetDisplayAspect.ts#resolveTargetDisplayAspect(topology, overlayDisplayIds, linkedDisplays)`，作为"预览应该匹配哪块显示器的宽高比"的唯一事实来源，判定顺序：① 联动多屏模式 → 虚拟画布宽高比（不变）；② 当前恰好只有一块显示器在投影（`overlayDisplayIds.length===1`）→ 取**该显示器自己的真实宽高比**（本条修复的核心——不再是主显示器）；③ 没有或有多块显示器同时投影（没有单一明确目标）→ 回退到主显示器宽高比（保留原有兜底行为）。`App.tsx` 的 `displayAspectRatioRef`（驱动"匹配显示器比例"网格尺寸按钮）和 `previewAspectRatio`（驱动预览面板宽高比 CSS）均改为调用这个函数，并把 `overlayDisplayIds` 补进 `previewAspectRatio` 的依赖数组（此前从未依赖它，切换投影目标显示器时预览比例不会更新）。
+- **R66.3** **不动**：`overlayManager.ts` 的窗口定位/尺寸计算（本就正确，未改动）；R62/R63/R65 的渲染路径统一工作；`extractSubFrame()`/`extractWallPanelFrame()`/联动多屏与视频墙的既有数学。
+- **R66.4** **受影响文件**：新增 `src/engine/targetDisplayAspect.ts`、`tests/engine/targetDisplayAspect.test.ts`；修改 `src/renderer/src/App.tsx`（`displayAspectRatioRef` 效果 + `previewAspectRatio` useMemo 改用新函数并补充依赖）。
+- **R66.5** **验收点**：
+  - [x] `yarn vitest run tests/engine/targetDisplayAspect.test.ts` 通过（6 个用例：null 兜底、联动模式、单一非主显示器投影目标、零/多投影目标回退主显示器、目标 id 未找到回退主显示器）
+  - [x] `yarn typecheck` 通过
+  - [x] `yarn build` 通过
+  - [x] `yarn vitest run tests/engine tests/main tests/renderer`（全量相关套件）通过，无新增失败
+  - [ ] 手动验证（关键）：在**非主显示器**上开启全屏投影，预览面板的宽高比与该显示器的真实宽高比一致，不再固定按主屏比例显示；投影画面与预览画面观感一致
+  - [ ] 手动验证：切换投影目标到不同宽高比的显示器时，预览面板宽高比能实时跟着变化
+  - [ ] 手动验证：联动多屏 / 未开启任何投影 / 同时投影多块显示器时，预览行为与之前一致（无回归）
+- **R66.6** **状态**：🔄（代码已实施。**证据**：`yarn vitest run tests/engine/targetDisplayAspect.test.ts` → 6 passed；`yarn vitest run tests/engine tests/main tests/renderer` → 35 files passed，317 passed / 41 skipped，0 失败；`yarn typecheck` exit 0；`yarn build` exit 0。用户实机复测 pending——这是当前最有希望解释"多轮修复后仍不一致"的根因，重点验证对象。）
 
 ## 4. 受影响文件
 

@@ -16,6 +16,14 @@ interface Preview3DProps {
    * The caller stores this in a ref and pushes it to overlay windows.
    */
   onFrame: (frame: RgbFrame) => void
+  /**
+   * R61: aspect ratio (width/height) the preview box should be locked to —
+   * see the matching prop on `PreviewGrid` for the full rationale (the real
+   * overlay output always matches the physical target display's aspect
+   * ratio, so a hardcoded 16:9 preview box looks visibly distorted relative
+   * to the real output on any non-16:9 display). Defaults to 16/9.
+   */
+  aspectRatio?: number
 }
 
 /**
@@ -28,7 +36,7 @@ interface Preview3DProps {
  *
  * Replaces PreviewGrid when `is3DEffect(layer.kind)` is true.
  */
-export function Preview3D({ layer, columns, rows, onFrame }: Preview3DProps): JSX.Element {
+export function Preview3D({ layer, columns, rows, onFrame, aspectRatio = 16 / 9 }: Preview3DProps): JSX.Element {
   const canvasRef  = useRef<HTMLCanvasElement | null>(null)
   const glRef      = useRef<Effect3DGl | null>(null)
   const rafRef     = useRef<number | null>(null)
@@ -131,7 +139,7 @@ export function Preview3D({ layer, columns, rows, onFrame }: Preview3DProps): JS
   }, [layer.kind])
 
   return (
-    <div className="preview-frame">
+    <div className="preview-frame" style={{ aspectRatio }}>
       <canvas ref={canvasRef} className="preview-3d" aria-label="3D RGB preview" />
     </div>
   )

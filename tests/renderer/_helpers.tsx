@@ -56,7 +56,9 @@ export function setupRendererMocks() {
     onOverlayFrame: vi.fn().mockReturnValue(() => undefined),
     onOverlayClosed: vi.fn().mockReturnValue(() => undefined),
     onOverlayEffectChanged: vi.fn().mockReturnValue(() => undefined),
-    onDisplayTopologyChanged: vi.fn().mockReturnValue(() => undefined)
+    onDisplayTopologyChanged: vi.fn().mockReturnValue(() => undefined),
+    onPerfSelfTestCollectTiming: vi.fn().mockReturnValue(() => undefined),
+    reportPerfSelfTestTiming: vi.fn().mockResolvedValue(undefined)
   }
   ;(globalThis as any).window.rgbbox = rgbbox
   return rgbbox

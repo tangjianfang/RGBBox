@@ -1,10 +1,11 @@
-import { Activity, Box, ChevronDown, ChevronUp, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Mic, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload, Video } from 'lucide-react'
+import { Activity, Box, ChevronDown, ChevronUp, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Maximize2, Mic, Minimize2, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload, Video } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, Scene, VideoWallLayout } from '../../shared/types'
 import { is3DEffect, resolveFrameRenderStyle } from '../../shared/types'
 import { isGpuDirectEffect } from './gl/effectGl'
 import { extractWallPanelFrame } from '../../engine/videoWallFrame'
+import { resolveTargetDisplayAspect } from '../../engine/targetDisplayAspect'
 import { useI18n } from './i18n'
 import { DisplayMap } from './components/DisplayMap'
 import { VideoWallEditor } from './components/VideoWallEditor'
@@ -27,6 +28,12 @@ const SplatViewer = lazy(() => import('./3d/SplatViewer').then((m) => ({ default
 const LEDMapper   = lazy(() => import('./3d/LEDMapper').then((m) => ({ default: m.LEDMapper })))
 
 type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics' | 'model3d' | 'games' | 'audio' | 'video' | 'architecture'
+
+const MODEL3D_VIEW_ENABLED = false
+
+function normalizeView(view: View | null): View {
+  return view === 'model3d' && !MODEL3D_VIEW_ENABLED ? 'workspace' : (view ?? 'workspace')
+}
 
 type RandomizerMode = 'subtle' | 'bold' | 'calm' | 'energy'
 type ScheduleBlockId = 'day' | 'evening' | 'night'
@@ -508,6 +515,34 @@ function displayAspect(displayId: number, topology: DisplayTopology | null): num
 }
 
 /**
+ * R63: whether an overlay's own {@link OverlayConfig} region calls for the
+ * "contain" (letterboxed, aspect-preserving) render fit instead of the
+ * default "stretch" fit. Only `fullscreen` (or no config at all) keeps
+ * 'stretch' — its window aspect already matches the frame's content. Every
+ * other preset region ('top-third', 'custom', ...) has a window aspect ratio
+ * unrelated to the frame's own aspect ratio, so stretching would distort the
+ * whole effect; those get 'contain' so the COMPLETE effect stays visible and
+ * undistorted (an earlier fix attempt instead cropped a sub-region, which
+ * was wrong — a region window should still show the whole effect, not part
+ * of it).
+ */
+function regionFitFor(config: OverlayConfig | undefined): 'stretch' | 'contain' {
+  return config && config.region !== 'fullscreen' ? 'contain' : 'stretch'
+}
+
+/**
+ * Stamp the render fit for a specific overlay onto a (possibly shared) base
+ * frame. Returns the SAME frame instance when 'stretch' applies (the common
+ * case) to avoid a per-overlay allocation; only clones (shallow — the pixel
+ * buffer is NOT copied) when the overlay needs 'contain'.
+ */
+function frameForOverlay(baseFrame: RgbFrame, config: OverlayConfig | undefined): RgbFrame {
+  const regionFit = regionFitFor(config)
+  if (regionFit === 'stretch') return baseFrame
+  return { ...baseFrame, regionFit }
+}
+
+/**
  * Distribute a freshly rendered virtual-canvas frame to the open overlay
  * windows. Selection order:
  *  1. `scene.videoWall` present → stitch each panel via {@link extractWallPanelFrame}
@@ -515,29 +550,40 @@ function displayAspect(displayId: number, topology: DisplayTopology | null): num
  *     matching panel fall back to {@link extractSubFrame} (or are skipped).
  *  2. `scene.linkedDisplays` with >1 display → per-display equal-width sub-frame.
  *  3. otherwise → broadcast the full frame to every overlay.
+ *
+ * R63: after computing the per-display base frame above, each overlay's own
+ * {@link OverlayConfig} region additionally selects a render FIT via
+ * {@link frameForOverlay} — 'stretch' for fullscreen overlays (unchanged),
+ * 'contain' (letterboxed) for any preset-third/custom region, so those
+ * windows show the COMPLETE effect undistorted instead of the whole frame
+ * squished into an arbitrary window aspect ratio. This does NOT crop the
+ * frame's pixel content — an earlier fix attempt did, which was wrong (a
+ * region window should show the whole effect, not a zoomed-in slice of it).
  */
 function distributeFrameToOverlays(
   frame: RgbFrame,
   scene: Scene | null,
   topology: DisplayTopology | null,
-  overlayIds: number[]
+  overlayIds: number[],
+  overlayConfigs: Record<number, OverlayConfig>
 ): void {
   if (overlayIds.length === 0) return
 
   const wall = scene?.videoWall
   if (wall && wall.panels.length > 0) {
     for (const displayId of overlayIds) {
+      const config = overlayConfigs[displayId]
       const panel = wall.panels.find((p) => p.displayId === displayId)
       if (panel) {
         const panelFrame = extractWallPanelFrame(frame, panel, wall, {
           panelAspect: displayAspect(displayId, topology)
         })
-        window.rgbbox.pushFrameToDisplay(displayId, panelFrame)
+        window.rgbbox.pushFrameToDisplay(displayId, frameForOverlay(panelFrame, config))
         continue
       }
       // No panel mapped to this overlay: degrade gracefully rather than blanking.
       const fallback = topology ? extractSubFrame(frame, displayId, topology) : null
-      if (fallback) window.rgbbox.pushFrameToDisplay(displayId, fallback)
+      if (fallback) window.rgbbox.pushFrameToDisplay(displayId, frameForOverlay(fallback, config))
     }
     return
   }
@@ -546,12 +592,23 @@ function distributeFrameToOverlays(
     // Linked-display mode: each overlay gets only its sub-region of the virtual canvas
     for (const displayId of overlayIds) {
       const subFrame = extractSubFrame(frame, displayId, topology)
-      if (subFrame) window.rgbbox.pushFrameToDisplay(displayId, subFrame)
+      if (subFrame) window.rgbbox.pushFrameToDisplay(displayId, frameForOverlay(subFrame, overlayConfigs[displayId]))
     }
     return
   }
 
-  window.rgbbox.pushFrameToOverlays(frame)
+  // Simple single-frame case: if every active overlay uses the plain
+  // fullscreen region, broadcast once (fast path, unchanged from before R63).
+  // Otherwise at least one overlay needs its own 'contain' fit stamped, so
+  // push per-display instead.
+  const needsPerDisplayFit = overlayIds.some((id) => regionFitFor(overlayConfigs[id]) === 'contain')
+  if (!needsPerDisplayFit) {
+    window.rgbbox.pushFrameToOverlays(frame)
+    return
+  }
+  for (const displayId of overlayIds) {
+    window.rgbbox.pushFrameToDisplay(displayId, frameForOverlay(frame, overlayConfigs[displayId]))
+  }
 }
 
 let _layerCounter = 100
@@ -609,7 +666,7 @@ export function App(): JSX.Element {
   )
   const [currentView, setCurrentView] = useState<View>(() => {
     const v = localStorage.getItem('rgbbox:view') as View | null
-    return v ?? 'workspace'
+    return normalizeView(v)
   })
   const [favoriteEffectKinds, setFavoriteEffectKinds] = useState<EffectKind[]>(() =>
     parseStoredEffectKinds(localStorage.getItem('rgbbox:favoriteEffects'))
@@ -681,6 +738,10 @@ export function App(): JSX.Element {
   overlayIdsRef.current = overlayDisplayIds
   const topologyRef = useRef<DisplayTopology | null>(topology)
   topologyRef.current = topology
+  // R63: lets distributeFrameToOverlays() apply each overlay's own region
+  // crop without needing overlayConfigs listed as a tick-loop effect dep.
+  const overlayConfigsRef = useRef<Record<number, OverlayConfig>>(overlayConfigs)
+  overlayConfigsRef.current = overlayConfigs
   // R42: lets the tick loop below know the latest view/visibility without
   // being a useEffect dependency (adding currentView there would tear down
   // and recreate the worker on every tab switch).
@@ -716,7 +777,7 @@ export function App(): JSX.Element {
    */
   const ledColorsRef = useRef<Uint8Array>(new Uint8Array(0))
 
-  const { models: splatModels, loading: splatLoading, importFile: importSplatFile, downloadModel: downloadSplatModel } = useModelStore()
+  const { models: splatModels, loading: splatLoading, importFile: importSplatFile, downloadModel: downloadSplatModel } = useModelStore(MODEL3D_VIEW_ENABLED)
   const [selectedModelIndex, setSelectedModelIndex] = useState(0)
   const [ledMapperOpen, setLedMapperOpen] = useState(false)
   const selectedModel = splatModels[selectedModelIndex] ?? null
@@ -827,7 +888,7 @@ export function App(): JSX.Element {
   }, [overlayDisplayIds])
 
   // ── Persist UI state to localStorage ────────────────────────────────────
-  useEffect(() => { localStorage.setItem('rgbbox:view', currentView) }, [currentView])
+  useEffect(() => { localStorage.setItem('rgbbox:view', normalizeView(currentView)) }, [currentView])
   useEffect(() => { localStorage.setItem('rgbbox:favoriteEffects', JSON.stringify(favoriteEffectKinds)) }, [favoriteEffectKinds])
   useEffect(() => { localStorage.setItem('rgbbox:allEffectsOpen', allEffectsOpen ? '1' : '0') }, [allEffectsOpen])
   useEffect(() => { localStorage.setItem('rgbbox:advancedControlsOpen', advancedControlsOpen ? '1' : '0') }, [advancedControlsOpen])
@@ -1002,7 +1063,7 @@ export function App(): JSX.Element {
       }
       ledColorsRef.current.set(frame.pixels)
       // Push to any open overlay windows (fire-and-forget, not awaited)
-      distributeFrameToOverlays(frame, scene, topologyRef.current, overlayIdsRef.current)
+      distributeFrameToOverlays(frame, scene, topologyRef.current, overlayIdsRef.current, overlayConfigsRef.current)
       metrics.outputMs = 0
       metrics.roundTripMs = lastPostAt > 0 ? performance.now() - lastPostAt : metrics.workerProcessMs
       metricsCollectorRef.current.add(metrics)
@@ -1077,7 +1138,7 @@ export function App(): JSX.Element {
       ledColorsRef.current = new Uint8Array(frame.pixels.length)
     }
     ledColorsRef.current.set(frame.pixels)
-    distributeFrameToOverlays(frame, scene, topologyRef.current, overlayIdsRef.current)
+    distributeFrameToOverlays(frame, scene, topologyRef.current, overlayIdsRef.current, overlayConfigsRef.current)
     const outputMs = 0
     metricsCollectorRef.current.add({
       timestamp: Date.now(),
@@ -1152,19 +1213,84 @@ export function App(): JSX.Element {
   )
   useEffect(() => { localStorage.setItem('rgbbox:samplingTab', samplingTab) }, [samplingTab])
 
-  // Display aspect ratio: virtual-desktop ratio in linked mode, primary display otherwise
+  // Display aspect ratio: virtual-desktop ratio in linked mode, otherwise the
+  // REAL target overlay display's aspect ratio when exactly one overlay is
+  // active (R66 — see targetDisplayAspect.ts for why this must NOT just
+  // always be the primary display), falling back to primary when there's no
+  // single unambiguous target.
   const displayAspectRatioRef = useRef<number>(16 / 9)
   useEffect(() => {
     if (!topology) return
     const s = profile ? activeScene(profile) : null
-    if (s?.linkedDisplays) {
-      const vb = topology.virtualBounds
-      displayAspectRatioRef.current = vb.width / Math.max(1, vb.height)
-    } else {
-      const primary = topology.displays.find((d) => d.primary) ?? topology.displays[0]
-      if (primary) displayAspectRatioRef.current = primary.bounds.width / Math.max(1, primary.bounds.height)
-    }
+    displayAspectRatioRef.current = resolveTargetDisplayAspect(topology, overlayIdsRef.current, Boolean(s?.linkedDisplays))
   })
+
+  // R61: the in-app "RGB 画布预览" panel used a CSS-hardcoded `aspect-ratio:
+  // 16/9` regardless of the actual target display's real aspect ratio. The
+  // overlay window, in contrast, always renders at the exact physical display
+  // resolution (whatever that is — 16:10, 21:9 ultrawide, 4:3, portrait, or a
+  // multi-display virtual span). Since both PreviewGl instances stretch the
+  // same RgbFrame to fill their own canvas edge-to-edge (R30.1), a preview box
+  // locked to 16:9 stretches the frame differently than the real output
+  // whenever the display isn't 16:9 — the two only "coincidentally" matched
+  // for 16:9 monitors. Computed the same way as `displayAspectRatioRef` above
+  // but as reactive state (not a ref) so it can actually drive a re-render /
+  // CSS value on the preview panel.
+  //
+  // R66: MUST also react to `overlayDisplayIds` — see `displayAspectRatioRef`
+  // above and `targetDisplayAspect.ts` for why "always use the primary
+  // display" was itself the remaining root cause of preview/overlay mismatch
+  // even after R62/R63/R65 unified the rest of the rendering pipeline.
+  const previewAspectRatio = useMemo(() => {
+    return resolveTargetDisplayAspect(topology, overlayDisplayIds, Boolean(scene?.linkedDisplays))
+  }, [topology, scene?.linkedDisplays, overlayDisplayIds])
+
+  // R64: diagnostic "预览全屏" mode — lets the user A/B compare the in-app
+  // preview (same PreviewGl/overlay=false pipeline, same opaque main window,
+  // no separate transparent BrowserWindow) blown up to the REAL physical
+  // screen resolution, against the actual overlay-window projection. If the
+  // fullscreen preview looks smooth/undistorted, the shared rendering/aspect
+  // pipeline is fine and the remaining discrepancy is specific to the overlay
+  // window's own presentation path (separate transparent/frameless
+  // BrowserWindow, alpha blending, Windows exclusive-fullscreen); if the
+  // fullscreen preview ALSO looks wrong, the shared pipeline itself still has
+  // a bug. Mirrors the existing `toggleFullscreen`/`fullscreenchange` pattern
+  // already used by VideoStudioView.tsx / AudioStudioView.tsx.
+  const previewFullscreenWrapRef = useRef<HTMLDivElement | null>(null)
+  const [previewFullscreen, setPreviewFullscreen] = useState(false)
+
+  const togglePreviewFullscreen = useCallback(() => {
+    const el = previewFullscreenWrapRef.current
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => { /* noop */ })
+      return
+    }
+    if (el?.requestFullscreen) {
+      el.requestFullscreen().catch(() => setPreviewFullscreen((v) => !v))
+    } else {
+      // No native Fullscreen API support — fall back to the CSS-driven overlay.
+      setPreviewFullscreen((v) => !v)
+    }
+  }, [])
+
+  // Keep local state in sync with the actual fullscreen element (handles ESC,
+  // which the native Fullscreen API intercepts itself before any keydown
+  // listener sees it).
+  useEffect(() => {
+    const onFsChange = (): void => {
+      setPreviewFullscreen(document.fullscreenElement === previewFullscreenWrapRef.current)
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
+
+  // ESC exits the CSS-overlay fullscreen fallback (native fullscreen handles ESC itself).
+  useEffect(() => {
+    if (!previewFullscreen || document.fullscreenElement) return undefined
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setPreviewFullscreen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [previewFullscreen])
 
   /** Snap columns/rows to display aspect ratio while keeping the long-edge count. */
   const matchDisplayRatio = useCallback(() => {
@@ -1610,10 +1736,12 @@ export function App(): JSX.Element {
             <Gauge size={18} />
             {t('nav.diagnostics')}
           </button>
-          <button className={`nav-item ${currentView === 'model3d' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('model3d')}>
-            <Box size={18} />
-            {t('model3d.eyebrow')}
-          </button>
+          {MODEL3D_VIEW_ENABLED && (
+            <button className={`nav-item ${currentView === 'model3d' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('model3d')}>
+              <Box size={18} />
+              {t('model3d.eyebrow')}
+            </button>
+          )}
           <button className={`nav-item ${currentView === 'architecture' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('architecture')}>
             <Cpu size={18} />
             {t('nav.architecture')}
@@ -2316,25 +2444,42 @@ export function App(): JSX.Element {
                       <p className="eyebrow">{t('preview.eyebrow')}</p>
                       <h3>{t('preview.title')}</h3>
                     </div>
-                    <span className="chip">{status.output}</span>
+                    <div className="preview-header-actions">
+                      <button
+                        className="preview-fullscreen-btn"
+                        title={t(previewFullscreen ? 'preview.exitFullscreen' : 'preview.fullscreen')}
+                        onClick={togglePreviewFullscreen}
+                        type="button"
+                      >
+                        {previewFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                      </button>
+                      <span className="chip">{status.output}</span>
+                    </div>
                   </div>
-                  {is3DEffect(activeLayer(profile).kind) ? (
-                    <Preview3D
-                      layer={activeLayer(profile)}
-                      columns={profile.sampling.columns}
-                      rows={profile.sampling.rows}
-                      onFrame={handleFrame3D}
-                    />
-                  ) : (
-                    <PreviewGrid
-                      frameRef={frameRef}
-                      showGap={profile.sampling.showGap ?? false}
-                      renderStyle={resolveFrameRenderStyle(profile.sampling.renderStyle, activeLayer(profile)?.kind)}
-                      gpuLayer={gpuDirectLayer}
-                      onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
-                      displayCount={scene?.linkedDisplays ? topology.displays.length : 1}
-                    />
-                  )}
+                  <div
+                    ref={previewFullscreenWrapRef}
+                    className={`preview-fullscreen-wrap${previewFullscreen ? ' is-fullscreen' : ''}`}
+                  >
+                    {is3DEffect(activeLayer(profile).kind) ? (
+                      <Preview3D
+                        layer={activeLayer(profile)}
+                        columns={profile.sampling.columns}
+                        rows={profile.sampling.rows}
+                        onFrame={handleFrame3D}
+                        aspectRatio={previewAspectRatio}
+                      />
+                    ) : (
+                      <PreviewGrid
+                        frameRef={frameRef}
+                        showGap={profile.sampling.showGap ?? false}
+                        renderStyle={resolveFrameRenderStyle(profile.sampling.renderStyle, activeLayer(profile)?.kind)}
+                        gpuLayer={gpuDirectLayer}
+                        onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
+                        displayCount={scene?.linkedDisplays ? topology.displays.length : 1}
+                        aspectRatio={previewAspectRatio}
+                      />
+                    )}
+                  </div>
                 </section>
 
                 <section className="panel map-panel">
@@ -2553,7 +2698,19 @@ export function App(): JSX.Element {
           <MiniGamesView />
         )}
 
-        <div style={{ display: currentView === 'audio' ? undefined : 'none' }}>
+        {/* R60: this wrapper stays mounted (display:none instead of unmounting)
+            so audio keeps playing across tab switches (R42) — but as a plain
+            block-level flex item with no `flex`/`min-height` of its own, it
+            sized to its content ("auto") instead of stretching to fill
+            `.workspace`'s available height. AudioStudioView's own root sets
+            `height:100%`, but that only resolves against a parent with a
+            *definite* height — an auto-sized parent makes it a no-op, so the
+            whole audio view (playlist/visualizer included) was never actually
+            height-bounded. That let content silently overflow `.workspace`'s
+            `overflow:hidden` and get clipped (the "频谱图表只显示了一半" bug after
+            un-maximizing) instead of properly triggering the intended inner
+            `overflow:auto` scrollbars (the "播放列表没有滚动条" bug). */}
+        <div className="audio-view-wrapper" style={{ display: currentView === 'audio' ? undefined : 'none' }}>
           <AudioStudioView visible={currentView === 'audio'} />
         </div>
 
@@ -2561,7 +2718,7 @@ export function App(): JSX.Element {
           <VideoStudioView />
         )}
 
-        {currentView === 'model3d' && (
+        {MODEL3D_VIEW_ENABLED && currentView === 'model3d' && (
           <div className="model3d-view">
             <header className="workspace-header">
               <div>
