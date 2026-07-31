@@ -477,6 +477,28 @@
   - [ ] 手动验证：侧边栏不再出现"3D 模型查看器"入口；历史停留在 `model3d` 的用户启动后回到工作区。
 - **R68.6** **状态**：✅（代码已实施。**证据**：新增禁用模式测试先红灯，失败点为 `useModelStore(false)` 仍 `loading=true`；实现 `enabled` 参数与 App 侧屏蔽开关后测试转绿；`yarn vitest run tests/renderer/hooks/useModelStore.test.ts` / `yarn typecheck` / `yarn build` 均通过。手动实机视觉确认仍建议发布后复测。）
 
+### R69. 阻止屏保/睡眠开关持久化到本地配置
+
+> 触发场景：用户 2026-07-31 反馈：状态栏“阻止屏保/睡眠”开关每次启动都回到关闭状态，说明当前 `powerSaveBlocker` 只保存在内存中，未写入本地配置。
+
+- **R69.1** **目标**：把“阻止屏保/睡眠”开关状态持久化到本地文件，应用启动时自动恢复，确保用户只需开启一次即可长期生效。
+- **R69.2** **修复方案**：
+  - 新增 `src/main/systemSettingsStore.ts`：用 `<userData>/config/system.json` 保存系统级设置（与 `profile.json` 分离，避免随工作区/预设切换而波动）。
+  - 提供 `loadSystemSettings()` / `saveSystemSettings(settings)`，读写失败时静默回退，不阻塞启动。
+  - `src/main/index.ts` 在 `app.whenReady` 初始化阶段调用 `loadSystemSettings()`；若 `powerSaveBlock === true`，立即 `powerSaveBlocker.start('prevent-display-sleep')` 并记录日志。
+  - `ipcMain.handle(ipcChannels.setPowerSaveBlock)` 在 toggles  blocker 后调用 `saveSystemSettings({ powerSaveBlock: enabled })`。
+  - `ipcMain.handle(ipcChannels.getPowerSaveBlock)` 保持返回当前 blocker 状态，渲染层 `App.tsx` 启动时通过该 IPC 读取并初始化 UI 开关（现有逻辑已满足，无需改动）。
+- **R69.3** **不动**：不改变 profile 结构；不改动 `autoLaunch` 的 OS 级持久化方式；不修改 `package.json` scripts、`src/preload/index.ts` 白名单。
+- **R69.4** **受影响文件**：`src/main/systemSettingsStore.ts`（新增）、`src/main/index.ts`、`docs/prd/PRD-0002-rgbbox-project-catalog.md`。
+- **R69.5** **验收点**：
+  - [x] 新增 `src/main/systemSettingsStore.ts`：`<userData>/config/system.json` 读写 + merge，缺失/损坏文件静默回退。
+  - [x] `src/main/index.ts` 启动时 `loadSystemSettings()` 并恢复 `powerSaveBlocker`；`setPowerSaveBlock` 后 `saveSystemSettings({ powerSaveBlock })`。
+  - [x] `yarn typecheck` 通过（`Done in 7.90s`）。
+  - [x] `yarn build` 通过（`out/main+preload+renderer` 全产出，`Done in 20.75s`）。
+  - [x] `yarn test` 通过（43 files / 484 passed / 41 skipped，无回归）。
+  - [ ] 用户实机验证：开启开关 → 退出 App → 重启后仍为“开”；关闭后跨重启保持“关”。
+- **R69.6** **状态**：✅（代码已实施。实机跨重启验证 pending 用户复测。）
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。

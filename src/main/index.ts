@@ -19,6 +19,7 @@ import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOv
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
+import { loadSystemSettings, saveSystemSettings } from './systemSettingsStore'
 
 // Initialize file logger — must be done after imports but before app.whenReady
 const log = initLogger(join(app.getPath('userData'), 'logs'), { minLevel: 'debug' })
@@ -210,13 +211,18 @@ function createMainWindow(): void {
 function registerIpc(): void {
   log.info('IPC', 'Registering IPC handlers')
   ipcMain.handle(ipcChannels.getPowerSaveBlock, () => powerSaveBlockerId !== null)
-  ipcMain.handle(ipcChannels.setPowerSaveBlock, (_event, enable: boolean) => {
+  ipcMain.handle(ipcChannels.setPowerSaveBlock, async (_event, enable: boolean) => {
     log.info('Power', `Power save block ${enable ? 'enabled' : 'disabled'}`)
     if (enable && powerSaveBlockerId === null) {
       powerSaveBlockerId = powerSaveBlocker.start('prevent-display-sleep')
     } else if (!enable && powerSaveBlockerId !== null) {
       powerSaveBlocker.stop(powerSaveBlockerId)
       powerSaveBlockerId = null
+    }
+    try {
+      await saveSystemSettings({ powerSaveBlock: powerSaveBlockerId !== null })
+    } catch (err) {
+      log.error('Power', `Failed to persist power save block setting: ${err instanceof Error ? err.message : String(err)}`)
     }
     return powerSaveBlockerId !== null
   })
@@ -776,6 +782,21 @@ app.whenReady().then(() => {
   void initializeCaptureProviders()
   log.info('App', 'Capture providers initialized')
   registerIpc()
+
+  // R69: restore the "prevent screensaver/sleep" setting from disk and start
+  // the power save blocker before the renderer asks for it.
+  void (async () => {
+    try {
+      const systemSettings = await loadSystemSettings()
+      if (systemSettings.powerSaveBlock && powerSaveBlockerId === null) {
+        powerSaveBlockerId = powerSaveBlocker.start('prevent-display-sleep')
+        log.info('Power', 'Restored power save blocker from system settings')
+      }
+    } catch (err) {
+      log.error('Power', `Failed to restore power save block setting: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  })()
+
   createMainWindow()
   createTray()
   log.info('App', 'Application ready — main window and tray created')
