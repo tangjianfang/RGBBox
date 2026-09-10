@@ -556,6 +556,19 @@
   - [ ] 手动验证：HLS 直播显示 LIVE、滑块不可拖；换源/切歌后时间、歌词、字幕、裁剪点全部归零；拖动进度条拇指无回跳
 - **R71.12** **状态**：✅（代码已实施，自动化验证全绿（证据见 R71.11）；实机手动验证项 pending 用户复测。）
 
+### R72. 播放器音量滑杆被全局 range 规则撑满整行（特异性覆盖修复）
+
+> 触发场景：2026-09-11 用户反馈"视频播放器的音量的进度条怎么那么长"。根因：全局规则 `input[type='range'] { width: 100% }`（styles.css:772）的选择器特异性为 `0-1-1`（元素 + 属性选择器），**高于**单类选择器 `.video-player-volume`（`width: 72px`）与 `.audio-slider`（`width: 100px`）的 `0-1-0`——两个定宽声明全部失效，滑杆被撑到 100% 宽。视频侧因 `flex-shrink: 0` 完全不收缩而异常显眼；音频侧（音量/平衡滑杆）同一根因，只是默认 `flex-shrink: 1` 被压缩后没那么夸张。
+> **风险等级：L1**（仅 CSS 选择器特异性提升，2 行改动；不动全局规则——其它滑杆可能依赖其 100% 默认宽度）。
+
+- **R72.1** **修复**：两处选择器限定为 `input[type='range'].video-player-volume`（`width: 72px`）与 `input[type='range'].audio-slider`（`width: 100px`），特异性 `0-1-2` 胜出全局规则；视觉回归风险为零（恢复两滑杆的设计宽度）。
+- **R72.2** **不动**：全局 `input[type='range']` 规则本身（`accent-color` 统一与多数滑杆的 100% 默认宽度依赖它）；`.video-player-seek` / `.audio-progress-bar`（本就 flex:1 铺满，行为不变）。
+- **R72.3** **受影响文件**：`src/renderer/src/styles.css`、`docs/prd/PRD-0002-rgbbox-project-catalog.md`。
+- **R72.4** **验收点**：
+  - [x] `yarn typecheck`（`Done in 7.28s`）/ `yarn test`（45 files / 499 passed / 41 skipped，无回归）/ `yarn build`（`Done in 22.20s`）全部通过
+  - [ ] 手动验证：视频控制条音量滑杆恢复 72px；音频传输条音量/平衡滑杆恢复 100px
+- **R72.5** **状态**：✅（代码已实施，自动化验证全绿（证据见 R72.4）；实机视觉复测 pending 用户。）
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。

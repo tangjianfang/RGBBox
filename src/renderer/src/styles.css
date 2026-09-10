@@ -3594,7 +3594,8 @@ input:not([type]):focus {
   border-radius: 2px;
 }
 
-.audio-slider {
+/* R72: qualified for the same specificity reason as .video-player-volume. */
+input[type='range'].audio-slider {
   width: 100px;
   height: 4px;
   accent-color: #4fc3f7;
@@ -4855,7 +4856,12 @@ input:not([type]):focus {
   color: #8fe9d2;
 }
 
-.video-player-volume {
+/* R72: the global `input[type='range'] { width: 100% }` rule (specificity
+   0-1-1) beat this single-class selector (0-1-0), stretching the volume
+   slider across the whole control row — flex-shrink: 0 meant it never gave
+   the space back. Qualifying the selector wins without touching the global
+   rule other sliders rely on. */
+input[type='range'].video-player-volume {
   width: 72px;
   height: 4px;
   cursor: pointer;
