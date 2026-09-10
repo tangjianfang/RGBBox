@@ -3,12 +3,14 @@ import ReactDOM from 'react-dom/client'
 import { App } from './App'
 import { AudioVizProjector } from './components/AudioVizProjector'
 import { OverlayCanvas } from './components/OverlayCanvas'
+import { ScreensaverView } from './components/ScreensaverView'
 import { I18nProvider } from './i18n'
 import './styles.css'
 
 const params = new URLSearchParams(window.location.search)
 const isOverlay = params.get('overlay') === 'true'
 const isAudioViz = params.get('audioviz') === 'true'
+const isScreensaver = params.get('screensaver') === '1'
 const overlayDisplayId = Number(params.get('displayId') ?? 0)
 // R65: whether this overlay window was created opaque (fullscreen region —
 // see overlayManager.ts#openOverlay) rather than transparent (non-fullscreen
@@ -29,6 +31,17 @@ if (isAudioViz) {
   root.render(
     <I18nProvider>
       <AudioVizProjector displayId={overlayDisplayId} />
+    </I18nProvider>
+  )
+} else if (isScreensaver) {
+  // R74: light-effect screensaver — opaque fullscreen, renders the saved
+  // workspace effect locally. Wrapped in I18nProvider for the ESC hint
+  // (R70.9 lesson: bare branches render raw keys).
+  document.documentElement.style.overflow = 'hidden'
+  document.body.classList.add('audioviz-mode')
+  root.render(
+    <I18nProvider>
+      <ScreensaverView displayId={overlayDisplayId} />
     </I18nProvider>
   )
 } else if (isOverlay) {

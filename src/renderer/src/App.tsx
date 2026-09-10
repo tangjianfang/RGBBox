@@ -1,4 +1,4 @@
-import { Activity, Box, ChevronDown, ChevronUp, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Maximize2, Mic, Minimize2, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload, Video } from 'lucide-react'
+import { Activity, Box, ChevronDown, ChevronUp, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Maximize2, Mic, Minimize2, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Timer, Trash2, Unlock, Upload, Video } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, Scene, VideoWallLayout } from '../../shared/types'
@@ -18,6 +18,8 @@ import { ImagePaintEditor } from './components/ImagePaintEditor'
 import { PreviewGrid } from './components/PreviewGrid'
 import { Preview3D } from './components/Preview3D'
 import { ArchitectureView } from './components/ArchitectureView'
+import { ShutdownTimerPanel } from './components/ShutdownTimerPanel'
+import { formatMediaTime } from '../../shared/timeFormat'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 import type { WorkerInput, WorkerOutput } from './workers/previewEngineWorker'
 import { useModelStore } from './3d/useModelStore'
@@ -716,6 +718,12 @@ export function App(): JSX.Element {
   })
   const [powerSaveBlock, setPowerSaveBlock] = useState(false)
   const [autoLaunch, setAutoLaunch] = useState(false)
+  // R73: scheduled-shutdown countdown (drives both the sidebar chip and the HUD panel)
+  const [shutdownInfo, setShutdownInfo] = useState<{ deadlineMs: number; totalMs: number; remainingMs: number } | null>(null)
+  const [shutdownPanelOpen, setShutdownPanelOpen] = useState(false)
+  // R74: light-effect screensaver settings mirror (main owns the idle watcher)
+  const [screensaverEnabled, setScreensaverEnabled] = useState(false)
+  const [screensaverMinutes, setScreensaverMinutes] = useState(5)
   // R45: reactive counterpart of windowVisibleRef (declared below) — a plain
   // ref wouldn't cause `audioShouldAnalyze` to recompute when visibility
   // changes, since nothing else re-renders App at that moment. Minimize/
@@ -729,6 +737,60 @@ export function App(): JSX.Element {
   // while an overlay is projecting them, regardless of main-window visibility.
   const audioShouldAnalyze = overlayDisplayIds.length > 0 || (windowVisible && currentView === 'workspace')
   const audio = useAudioAnalyzer(audioEnabled, audioDeviceId, audioShouldAnalyze)
+
+  // ── R73: scheduled shutdown ────────────────────────────────────────────────
+  // Restore any pending OS shutdown countdown (survives app restarts — the OS
+  // timer is authoritative), then tick the remaining time down once a second.
+  useEffect(() => {
+    let alive = true
+    void window.rgbbox.shutdownStatus().then((s) => {
+      if (alive && s.armed && s.deadlineMs != null) {
+        setShutdownInfo({ deadlineMs: s.deadlineMs, totalMs: 0, remainingMs: Math.max(0, s.deadlineMs - Date.now()) })
+      }
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => {
+    if (!shutdownInfo || shutdownInfo.remainingMs <= 0) return
+    const timer = window.setInterval(() => {
+      setShutdownInfo((prev) => {
+        if (!prev) return prev
+        const remainingMs = prev.deadlineMs - Date.now()
+        return remainingMs <= 0 ? null : { ...prev, remainingMs }
+      })
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [shutdownInfo?.deadlineMs])
+
+  const armShutdownTimer = useCallback(async (seconds: number): Promise<boolean> => {
+    const res = await window.rgbbox.shutdownArm(seconds)
+    if (res.ok && res.deadlineMs != null) {
+      setShutdownInfo({ deadlineMs: res.deadlineMs, totalMs: seconds * 1000, remainingMs: seconds * 1000 })
+      return true
+    }
+    return false
+  }, [])
+
+  const cancelShutdownTimer = useCallback(async (): Promise<void> => {
+    await window.rgbbox.shutdownCancel().catch(() => {})
+    setShutdownInfo(null)
+  }, [])
+
+  // ── R74: light-effect screensaver ──────────────────────────────────────────
+  useEffect(() => {
+    void window.rgbbox.screensaverGetSettings().then((s) => {
+      setScreensaverEnabled(s.enabled)
+      setScreensaverMinutes(s.idleMinutes)
+    }).catch(() => {})
+  }, [])
+
+  const applyScreensaverSettings = useCallback((patch: { enabled?: boolean; idleMinutes?: number }) => {
+    void window.rgbbox.screensaverSetSettings(patch).then((s) => {
+      setScreensaverEnabled(s.enabled)
+      setScreensaverMinutes(s.idleMinutes)
+    }).catch(() => {})
+  }, [])
 
   // ── Engine Worker ─────────────────────────────────────────────────────────
   // Created once; the render loop sends work to it and receives frames via
@@ -1827,6 +1889,51 @@ export function App(): JSX.Element {
           />
         </label>
 
+        {/* R73: scheduled shutdown — chip shows the countdown, click opens the HUD */}
+        <button
+          className="status-panel"
+          type="button"
+          style={{ cursor: 'pointer', background: 'transparent', border: 'none', textAlign: 'left', color: 'inherit', width: '100%' }}
+          onClick={() => setShutdownPanelOpen((v) => !v)}
+          title={t('shutdown.title')}
+        >
+          <div>
+            <span>{t('shutdown.label')}</span>
+            <strong>
+              {shutdownInfo && shutdownInfo.remainingMs > 0
+                ? formatMediaTime(Math.ceil(shutdownInfo.remainingMs / 1000))
+                : t('shutdown.off')}
+            </strong>
+          </div>
+          <Timer size={16} />
+        </button>
+
+        {/* R74: light-effect screensaver toggle + idle threshold */}
+        <label className="status-panel" style={{ cursor: 'pointer' }} title={t('screensaver.hint')}>
+          <div>
+            <span>{t('screensaver.label')}</span>
+            <strong>{screensaverEnabled ? t('screensaver.on') : t('screensaver.off')}</strong>
+          </div>
+          <input
+            type="checkbox"
+            checked={screensaverEnabled}
+            onChange={(e) => applyScreensaverSettings({ enabled: e.target.checked })}
+          />
+        </label>
+        {screensaverEnabled && (
+          <div className="status-panel screensaver-threshold" title={t('screensaver.hint')}>
+            <span>{t('screensaver.threshold')}</span>
+            <select
+              value={screensaverMinutes}
+              onChange={(e) => applyScreensaverSettings({ idleMinutes: Number(e.target.value) })}
+            >
+              {[1, 5, 10, 30].map((m) => (
+                <option key={m} value={m}>{m} {t('screensaver.minUnit')}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="sidebar-footer">
           <button
             className="lang-toggle-btn"
@@ -1839,6 +1946,18 @@ export function App(): JSX.Element {
           </button>
         </div>
       </aside>
+
+      {/* R73: scheduled-shutdown HUD (fixed card next to the sidebar) */}
+      {shutdownPanelOpen && (
+        <ShutdownTimerPanel
+          deadlineMs={shutdownInfo?.deadlineMs ?? null}
+          totalMs={shutdownInfo?.totalMs ?? 0}
+          remainingMs={shutdownInfo?.remainingMs ?? 0}
+          onArm={armShutdownTimer}
+          onCancel={cancelShutdownTimer}
+          onClose={() => setShutdownPanelOpen(false)}
+        />
+      )}
 
       <section className="workspace">
         {currentView === 'workspace' && (

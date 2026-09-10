@@ -129,6 +129,20 @@ const api = {
   setPowerSaveBlock: (enable: boolean): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.setPowerSaveBlock, enable),
 
+  // R73: OS-level scheduled shutdown (Windows-first)
+  shutdownArm: (seconds: number): Promise<{ ok: boolean; armed: boolean; deadlineMs?: number; error?: string }> =>
+    ipcRenderer.invoke(ipcChannels.shutdownArm, seconds),
+  shutdownCancel: (): Promise<{ ok: boolean; armed: boolean; error?: string }> =>
+    ipcRenderer.invoke(ipcChannels.shutdownCancel),
+  shutdownStatus: (): Promise<{ armed: boolean; deadlineMs?: number }> =>
+    ipcRenderer.invoke(ipcChannels.shutdownStatus),
+
+  // R74: light-effect screensaver
+  screensaverGetSettings: (): Promise<{ enabled: boolean; idleMinutes: number }> =>
+    ipcRenderer.invoke(ipcChannels.screensaverGetSettings),
+  screensaverSetSettings: (settings: { enabled?: boolean; idleMinutes?: number }): Promise<{ enabled: boolean; idleMinutes: number }> =>
+    ipcRenderer.invoke(ipcChannels.screensaverSetSettings, settings),
+
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.getAutoLaunch),

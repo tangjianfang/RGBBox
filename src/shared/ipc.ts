@@ -106,6 +106,13 @@ export const ipcChannels = {
   openAudioVizWindow: 'rgbbox:audioviz:open',
   closeAudioVizWindow: 'rgbbox:audioviz:close',
   getAudioVizWindowIds: 'rgbbox:audioviz:get-ids',
+  // R73: OS-level scheduled shutdown (Windows `shutdown /s /t`, cancel /a)
+  shutdownArm: 'rgbbox:system:shutdown-arm',
+  shutdownCancel: 'rgbbox:system:shutdown-cancel',
+  shutdownStatus: 'rgbbox:system:shutdown-status',
+  // R74: light-effect screensaver (idle-triggered fullscreen effect windows)
+  screensaverGetSettings: 'rgbbox:screensaver:get-settings',
+  screensaverSetSettings: 'rgbbox:screensaver:set-settings',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

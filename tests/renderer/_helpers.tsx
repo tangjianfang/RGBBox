@@ -54,6 +54,12 @@ export function setupRendererMocks() {
     openAudioVizWindow: vi.fn().mockResolvedValue(true),
     closeAudioVizWindow: vi.fn().mockResolvedValue(true),
     getAudioVizWindowIds: vi.fn().mockResolvedValue([]),
+    // R73/R74: scheduled shutdown + light-effect screensaver
+    shutdownArm: vi.fn().mockResolvedValue({ ok: true, armed: true, deadlineMs: Date.now() + 60000 }),
+    shutdownCancel: vi.fn().mockResolvedValue({ ok: true, armed: false }),
+    shutdownStatus: vi.fn().mockResolvedValue({ armed: false }),
+    screensaverGetSettings: vi.fn().mockResolvedValue({ enabled: false, idleMinutes: 5 }),
+    screensaverSetSettings: vi.fn().mockResolvedValue({ enabled: false, idleMinutes: 5 }),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),

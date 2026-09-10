@@ -4825,6 +4825,166 @@ input[type='range'].audio-slider {
   pointer-events: none;
 }
 
+/* ── R73: scheduled-shutdown HUD ─────────────────────────────────────── */
+.shutdown-panel {
+  position: fixed;
+  /* sidebar column is clamp(180px, 22vw, 260px) wide + its padding */
+  left: calc(clamp(180px, 22vw, 260px) + 16px);
+  bottom: 24px;
+  z-index: 120;
+  width: 264px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(79, 195, 247, 0.25);
+  background: linear-gradient(160deg, rgba(13, 20, 28, 0.97), rgba(18, 12, 28, 0.97));
+  box-shadow: 0 0 24px rgba(79, 195, 247, 0.12), 0 8px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.shutdown-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(200, 220, 229, 0.9);
+}
+
+.shutdown-panel-header span { flex: 1; }
+
+.shutdown-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.shutdown-close:hover { color: #fff; }
+
+.shutdown-ring-wrap {
+  position: relative;
+  width: 150px;
+  height: 150px;
+}
+
+.shutdown-ring {
+  filter: drop-shadow(0 0 8px rgba(79, 195, 247, 0.45));
+}
+
+.shutdown-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: rgba(200, 220, 229, 0.85);
+}
+
+.shutdown-countdown {
+  font-family: 'Consolas', 'JetBrains Mono', monospace;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #4fc3f7;
+  text-shadow: 0 0 12px rgba(79, 195, 247, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+.shutdown-ring-sub {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.shutdown-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  width: 100%;
+}
+
+.shutdown-presets button {
+  padding: 6px 0;
+  border-radius: 7px;
+  border: 1px solid rgba(79, 195, 247, 0.25);
+  background: rgba(79, 195, 247, 0.08);
+  color: rgba(220, 240, 250, 0.9);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.shutdown-presets button:hover:not(:disabled) {
+  background: rgba(79, 195, 247, 0.2);
+}
+
+.shutdown-custom {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.shutdown-custom input {
+  flex: 1;
+  min-width: 0;
+  border-radius: 7px;
+  border: 1px solid rgba(79, 195, 247, 0.25);
+  background: rgba(0, 0, 0, 0.35);
+  color: #e6f2f8;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.shutdown-arm,
+.shutdown-cancel {
+  width: 100%;
+  padding: 8px 0;
+  border-radius: 8px;
+  border: none;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shutdown-arm {
+  background: linear-gradient(90deg, #4fc3f7, #ab47bc);
+  color: #0a0e14;
+}
+
+.shutdown-cancel {
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
+
+.shutdown-error {
+  color: #f87171;
+  font-size: 11px;
+  margin: 0;
+}
+
+.shutdown-hint {
+  color: rgba(200, 220, 229, 0.5);
+  font-size: 10px;
+  margin: 0;
+  text-align: center;
+}
+
+/* ── R74: screensaver threshold row ──────────────────────────────────── */
+.screensaver-threshold select {
+  background: rgba(0, 0, 0, 0.35);
+  color: #e6f2f8;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  font-size: 11px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
 .video-player-btn-row {
   display: flex;
   align-items: center;

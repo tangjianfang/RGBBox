@@ -569,6 +569,39 @@
   - [ ] 手动验证：视频控制条音量滑杆恢复 72px；音频传输条音量/平衡滑杆恢复 100px
 - **R72.5** **状态**：✅（代码已实施，自动化验证全绿（证据见 R72.4）；实机视觉复测 pending 用户。）
 
+### R73. 高科技感定时关机（OS 级关机调度 + 环形倒计时 HUD）
+
+> 触发场景：用户 2026-09-11 需求——"增加一个高科技感的定时关机功能"。典型用法：挂机跑灯效/视频，到点自动关闭电脑。
+> **风险等级：L2**（新增 3 个 IPC 通道 + OS 级 `shutdown` 命令调度；Windows 优先实现，macOS 本条不实现（返回 unsupported，后续 R-N 再补））。
+
+- **R73.1** **主进程调度器**：新增 `src/main/shutdownScheduler.ts`：`armShutdown(seconds)` 用 `execFile('shutdown', ['/s','/f','/t',N,'/c','RGBBox'])`（Windows）预约 OS 关机；`cancelShutdown()` 用 `shutdown /a` 取消；`getShutdownStatus()` 返回 `{armed, deadlineMs}`。deadline 持久化到 `<userData>/config/system.json`（复用 R69 `systemSettingsStore`）——应用重启后若 deadline 仍在未来，状态栏恢复显示倒计时（OS 侧关机计划不受应用退出影响，属预期行为）。参数构造器 `buildShutdownArgs/buildCancelArgs` 纯函数导出供单测。
+- **R73.2** **IPC + preload**：新增 `rgbbox:system:shutdown-arm` / `shutdown-cancel` / `shutdown-status` 三通道（`src/shared/ipc.ts` + `src/main/index.ts` handler + `src/preload/index.ts` 白名单 `shutdownArm/shutdownCancel/shutdownStatus`）。
+- **R73.3** **高科技 HUD**：新增 `src/renderer/src/components/ShutdownTimerPanel.tsx`——SVG 环形倒计时（conic 进度 + 发光描边 + 等宽数字 `h:mm:ss`）、预设 15/30/60/120 分钟 + 自定义分钟输入、武装/取消按钮；武装中侧边栏行显示剩余时间（每秒刷新），点击重新打开面板。
+- **R73.4** **接线**：`App.tsx` 侧边栏（autoLaunch 面板之后）新增定时关机行 + 面板（fixed 定位浮层）；i18n `shutdown.*` 中英双语；`styles.css` `.shutdown-*`。
+- **R73.5** **不动**：托盘菜单、`package.json` scripts、R69 的 powerSaveBlocker 开关（相互独立；定时关机不自动打开阻止睡眠）。
+- **R73.6** **验收点**：
+  - [x] `yarn typecheck` 通过（`Done in 14.96s`）
+  - [x] `yarn test` 全量通过（47 files / **511 passed / 41 skipped，0 失败**，含新增 `tests/main/shutdownScheduler.test.ts` 6 用例）
+  - [x] `yarn build` 通过（`Done in 18.42s`）
+  - [ ] 手动：预设/自定义武装后侧边栏与 HUD 倒计时走秒、`shutdown /a` 生效（OS 提示消失）、重启应用倒计时恢复
+- **R73.7** **状态**：✅（代码已实施，自动化验证全绿（证据见 R73.6）；实机手动验证 pending 用户复测。）
+
+### R74. 灯效屏保（空闲触发全屏灯效替代黑屏/锁屏画面）
+
+> 触发场景：用户 2026-09-11 需求——"当阻塞锁屏，当收到锁屏信号时替换成自己设置的灯效作为屏保"。**技术边界（如实声明）**：Windows 的安全锁屏（Win+L / 系统锁屏）运行在 secure desktop，**任何应用都无法拦截或替换**——本条实现的是等价可达成行为：**到达空闲阈值时，在所有显示器打开全屏不透明灯效窗口 + 临时 `prevent-display-sleep` 保持屏幕常亮**，屏幕不进黑屏/锁屏画面而是显示用户配置的灯效；用户任意输入（鼠标/键盘，系统级 idle 重置）或按 ESC 即退出并恢复正常。
+> **风险等级：L2**（新增 4 个 IPC 通道 + 新窗口类型 + powerMonitor 轮询；复用 R31 audioViz 窗口模式与 R69 systemSettingsStore）。
+
+- **R74.1** **主进程管理器**：新增 `src/main/screensaverManager.ts`：设置 `{enabled, idleMinutes}` 持久化到 system.json；启用时每 20s 轮询 `powerMonitor.getSystemIdleState(idleMinutes*60)`，`idle` → 对每个显示器开屏保窗口（`frame:false`、不透明黑底、win 全屏、`screen-saver` 置顶、ESC 关闭——完整复刻 R31 `openAudioVizWindow` 模式，query 为 `screensaver=1&displayId=X`）+ 启动临时 `prevent-display-sleep` blocker；`active` → 关闭全部 + 停 blocker。`lock-screen` → 收起屏保（锁屏在 secure desktop，屏保不可见，先释放 GPU）；`unlock-screen` / `resume` → 重新评估。用户手动关窗（ESC）置抑制标志，直到下次 active 才允许再触发（防轮询间隙重开）。`window-all-closed` 时 `closeAllScreensaverWindows()`。空闲判定 `decideScreensaverAction()` 纯函数导出供单测。
+- **R74.2** **屏保渲染窗口**：`src/renderer/src/main.tsx` 新增 `?screensaver=1` 路由（包 I18nProvider，吸取 R70.9 教训）→ 新增 `ScreensaverView.tsx`：经新 IPC `getActiveProfile` 取当前已保存 profile（即用户在工作区调好的灯效，"自己设置的灯效"），30fps `setInterval` 调**现成的** `rgbbox.renderPreviewFrame(profile)` IPC（引擎纯函数、`now` 参数驱动时间），`PreviewGl` 平滑渲染全屏（与 overlay 同管线观感）；WebGL 不可用时回退 2D canvas 逐格绘制。底部 ESC 提示条（复用 `overlayHintFade`）。
+- **R74.3** **IPC + preload**：新增 `rgbbox:screensaver:get-settings` / `set-settings` / `rgbbox:profile:get-active` 通道 + preload 对应 API。
+- **R74.4** **接线与 UI**：`App.tsx` 侧边栏新增"灯效屏保"行（开关 + 启用时显示空闲阈值 select：1/5/10/30 分钟）；灯效来源固定为**当前已保存的工作区 profile**（不单设效果选择器，范围控制，后续可扩）；i18n `screensaver.*` 中英；`styles.css`。
+- **R74.5** **边界**：临时 blocker 与 R69 手动开关相互独立（各自 ID，屏保退出即停，不改用户手动开关状态）；屏保窗口不影响 overlay/audioViz 窗口；`--perf-selftest` 路径不受影响（屏保默认关闭）。
+- **R74.6** **验收点**：
+  - [x] `yarn typecheck` / `yarn build` 通过（同 R73.6 批次）
+  - [x] `yarn test` 全量通过（含新增 `tests/main/screensaverManager.test.ts` 6 用例：open/保持/手动关抑制/activity 关闭/locked 关闭/unknown 不动作）
+  - [ ] 手动：空闲到达阈值后全屏显示当前工作区灯效且屏幕不熄灭、动鼠标立即退出、ESC 退出、锁屏后解锁不残留窗口、重启后设置保留
+- **R74.7** **状态**：✅（代码已实施，自动化验证全绿（证据见 R74.6）；实机手动验证 pending 用户复测。）
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。

@@ -16,6 +16,8 @@ import type { DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProg
 import { getDisplayTopology } from './displayTopology'
 import { runPerfSelfTest } from './perfSelfTest'
 import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOverlay, getAudioVizWindowIds, getOverlayDisplayIds, openAudioVizWindow, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
+import { armShutdown, cancelShutdown, getShutdownStatus } from './shutdownScheduler'
+import { closeAllScreensaverWindows, disposeScreensaver, getScreensaverSettings, initScreensaver, setScreensaverSettings } from './screensaverManager'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
@@ -234,6 +236,16 @@ function registerIpc(): void {
     app.setLoginItemSettings({ openAtLogin: enable })
     return app.getLoginItemSettings().openAtLogin
   })
+
+  // R73: OS-level scheduled shutdown (Windows)
+  ipcMain.handle(ipcChannels.shutdownArm, (_event, seconds: number) => armShutdown(seconds))
+  ipcMain.handle(ipcChannels.shutdownCancel, () => cancelShutdown())
+  ipcMain.handle(ipcChannels.shutdownStatus, () => getShutdownStatus())
+
+  // R74: light-effect screensaver settings
+  ipcMain.handle(ipcChannels.screensaverGetSettings, () => getScreensaverSettings())
+  ipcMain.handle(ipcChannels.screensaverSetSettings, (_event, settings: { enabled?: boolean; idleMinutes?: number }) =>
+    setScreensaverSettings(settings, isDevelopment, process.env.ELECTRON_RENDERER_URL))
 
   ipcMain.handle(ipcChannels.appVersion, () => app.getVersion())
   ipcMain.handle(ipcChannels.getDisplayTopology, () => getDisplayTopology())
@@ -830,6 +842,10 @@ app.whenReady().then(() => {
   createTray()
   log.info('App', 'Application ready — main window and tray created')
 
+  // R74: restore the light-effect screensaver settings and start idle polling
+  // if it was left enabled (does NOT auto-open windows — the first poll decides).
+  void initScreensaver(isDevelopment, process.env.ELECTRON_RENDERER_URL)
+
   if (process.argv.includes('--perf-selftest')) {
     // R48.5: watchdog — if the renderer never reaches ready-to-show (e.g. a
     // GPU-init race on rapid re-launch), the harness would otherwise hang
@@ -878,12 +894,16 @@ app.on('before-quit', () => {
   log.info('App', 'Application quitting')
   log.flushSync()
   isQuitting = true
+  // R74: stop idle polling + close effect windows. The R73 OS shutdown timer
+  // (if armed) intentionally survives app quit — that is the feature.
+  disposeScreensaver()
 })
 
 app.on('window-all-closed', () => {
   log.info('App', 'All windows closed')
   closeAllOverlays()
   closeAllAudioVizWindows()
+  closeAllScreensaverWindows()
   if (process.platform !== 'darwin') {
     app.quit()
   }

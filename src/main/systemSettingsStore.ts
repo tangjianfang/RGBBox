@@ -11,6 +11,14 @@ import { join } from 'node:path'
  */
 export interface SystemSettings {
   powerSaveBlock?: boolean
+  /** R73: epoch ms of a pending OS shutdown (informational — the OS timer is authoritative) */
+  shutdownDeadline?: number
+  /** R74: light-effect screensaver config */
+  screensaver?: {
+    enabled: boolean
+    /** idle threshold in minutes before the effect screensaver takes over */
+    idleMinutes: number
+  }
 }
 
 const configDir = join(app.getPath('userData'), 'config')
