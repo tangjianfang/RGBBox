@@ -24,7 +24,13 @@ if (isAudioViz) {
   // opaque window, not the transparent LED overlay.
   document.documentElement.style.overflow = 'hidden'
   document.body.classList.add('audioviz-mode')
-  root.render(<AudioVizProjector displayId={overlayDisplayId} />)
+  // R70.9: the projector calls useI18n() for its ESC hint — without the
+  // provider the context default renders the raw key ('overlay.hint').
+  root.render(
+    <I18nProvider>
+      <AudioVizProjector displayId={overlayDisplayId} />
+    </I18nProvider>
+  )
 } else if (isOverlay) {
   // Prevent the OS-theme scrollbars that appear when body min-width/min-height
   // (960px / 640px) exceeds the partial-region overlay window dimensions.

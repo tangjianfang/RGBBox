@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import {
   AUDIO_VIZ_CHANNEL,
+  EMPTY_FREQ,
+  EMPTY_TIME,
   createSpectrogramBuffer,
   createVuPeakState,
   drawVisualizerFrame,
@@ -70,7 +72,9 @@ export function AudioVizProjector({ displayId }: Props): JSX.Element {
     channel.onmessage = (event: MessageEvent<AudioVizMessage>) => {
       const { mode, freq, time } = event.data
       if (mode === 'waveform') return
-      drawVisualizerFrame(canvas, mode, freq, time, spectrogramBufferRef.current, vuPeakRef.current, opts)
+      // R70.10: only the array(s) the current mode draws are transmitted —
+      // the other slot arrives as a zero-length placeholder.
+      drawVisualizerFrame(canvas, mode, freq ?? EMPTY_FREQ, time ?? EMPTY_TIME, spectrogramBufferRef.current, vuPeakRef.current, opts)
     }
 
     return () => {

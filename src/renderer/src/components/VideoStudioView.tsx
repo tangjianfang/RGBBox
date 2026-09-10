@@ -24,6 +24,7 @@ import Hls from 'hls.js'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useI18n } from '../i18n'
 import type { CaptureSource } from '../../../shared/types'
+import { formatMediaTime } from '../../../shared/timeFormat'
 
 type Mode = 'camera' | 'screen' | 'player'
 
@@ -208,15 +209,8 @@ function parseSubtitle(text: string, filename: string): SubCue[] {
   return parseSrt(text)  // default: SRT
 }
 
-/** Format seconds as m:ss or h:mm:ss */
-function formatPlayerTime(sec: number): string {
-  if (!isFinite(sec) || sec < 0) return '0:00'
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  const s = Math.floor(sec % 60)
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  return `${m}:${String(s).padStart(2, '0')}`
-}
+// R71.8: player timestamps use the shared formatMediaTime (this local copy
+// was the video-side twin of the audio view's hour-less formatter).
 
 export function VideoStudioView(): JSX.Element {
   const { t } = useI18n()
@@ -264,7 +258,13 @@ export function VideoStudioView(): JSX.Element {
   const [playerVolume, setPlayerVolume] = useState(1)
   const [playerMuted, setPlayerMuted] = useState(false)
   const [playerControlsVisible, setPlayerControlsVisible] = useState(true)
+  // R71.5: true while the source reports a live (non-finite) duration — the
+  // seek slider is disabled and the duration label shows LIVE instead of a
+  // bogus "0:00" (an Infinity max would fall back to the slider default).
+  const [playerLive, setPlayerLive] = useState(false)
   const controlsHideTimerRef = useRef<number | null>(null)
+  // R71.6: suspends timeupdate write-back while the user drags the seek slider.
+  const seekDraggingRef = useRef(false)
   const playerWrapRef = useRef<HTMLDivElement | null>(null)
   const subFileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -532,6 +532,20 @@ export function VideoStudioView(): JSX.Element {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
     setUsingHls(false)
     setPlayerUrl((prev) => { if (prev.startsWith('blob:')) URL.revokeObjectURL(prev); return '' })
+    // R71.4: everything keyed to the PREVIOUS source resets here, so opening
+    // a new video never shows its time/duration, never overlays the previous
+    // video's subtitles, and never keeps trim points from a longer video
+    // (which corrupted exports once R70.6's watchdog capped the run).
+    setPlayerPlaying(false)
+    setPlayerCurrentTime(0)
+    setPlayerDuration(0)
+    setPlayerLive(false)
+    setSubCues([])
+    setSubFilename('')
+    setCurrentSubText('')
+    setTrimMode(false)
+    setTrimStart(0)
+    setTrimEnd(0)
   }, [])
 
   const onPlayerFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -609,10 +623,20 @@ export function VideoStudioView(): JSX.Element {
     const onPause = () => setPlayerPlaying(false)
     const onEnded = () => setPlayerPlaying(false)
     const onTimeUpdate = () => {
-      setPlayerCurrentTime(el.currentTime)
-      setPlayerDuration(el.duration || 0)
+      // R71.6: while the user is dragging the seek slider, its own onChange
+      // drives the position — writing el.currentTime back here made the
+      // thumb snap backwards between input events.
+      if (!seekDraggingRef.current) setPlayerCurrentTime(el.currentTime)
+      // R71.5: a live stream reports Infinity — never let it reach the range
+      // input's max (an invalid max="Infinity" falls back to 100 and pins
+      // the thumb once the stream runs past that).
+      setPlayerDuration(isFinite(el.duration) ? el.duration : 0)
+      setPlayerLive(!isFinite(el.duration))
     }
-    const onDurationChange = () => setPlayerDuration(el.duration || 0)
+    const onDurationChange = () => {
+      setPlayerDuration(isFinite(el.duration) ? el.duration : 0)
+      setPlayerLive(!isFinite(el.duration))
+    }
     const onVolumeChange = () => {
       setPlayerVolume(el.volume)
       setPlayerMuted(el.muted)
@@ -680,17 +704,23 @@ export function VideoStudioView(): JSX.Element {
   const playerSeek = useCallback((time: number) => {
     const el = playerRef.current
     if (!el) return
+    // R71.7: covers the three seek paths R70.6 left open (arrow keys, the
+    // slider, ±10s buttons) — seeking mid-export pollutes the recording.
+    if (trimExporting) return
     el.currentTime = time
     setPlayerCurrentTime(time)
-  }, [])
+  }, [trimExporting])
 
   // Player toggle play/pause
   const togglePlayerPlay = useCallback(() => {
     const el = playerRef.current
     if (!el) return
+    // R70.6: pausing mid-trim-export would strand the export loop forever
+    // (currentTime never reaches trimEnd — see exportTrimmedClip).
+    if (trimExporting) return
     if (el.paused) void el.play()
     else el.pause()
-  }, [])
+  }, [trimExporting])
 
   // Player fullscreen (just the video wrapper)
   const togglePlayerFullscreen = useCallback(() => {
@@ -725,10 +755,21 @@ export function VideoStudioView(): JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [mode, togglePlayerPlay, playerSeek, togglePlayerFullscreen])
 
+  // R70.5: mirror the player URL so the unmount cleanup below can revoke the
+  // blob: URL — the functional-setState revoke inside clearPlayerSource never
+  // runs once the component is gone.
+  const playerUrlRef = useRef('')
+  useEffect(() => { playerUrlRef.current = playerUrl }, [playerUrl])
+
   // Full cleanup on unmount
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((tr) => tr.stop())
     if (hlsRef.current) hlsRef.current.destroy()
+    // R70.5: App.tsx unmounts this view on every tab switch — a detached,
+    // still-playing <video> keeps sounding until non-deterministic GC, and
+    // the un-revoked blob: URL pins the whole video File in the URL store.
+    playerRef.current?.pause()
+    if (playerUrlRef.current.startsWith('blob:')) URL.revokeObjectURL(playerUrlRef.current)
     if (recTimerRef.current) window.clearInterval(recTimerRef.current)
     if (controlsHideTimerRef.current) window.clearTimeout(controlsHideTimerRef.current)
   }, [])
@@ -803,12 +844,22 @@ export function VideoStudioView(): JSX.Element {
   }, [currentVideoIndex, clearPlayerSource])
 
   const removeVideoGroup = useCallback((groupName: string) => {
-    const selectedItem = currentVideoIndex >= 0 ? videoPlaylist[currentVideoIndex] : null
+    const playingItem = currentVideoIndex >= 0 ? videoPlaylist[currentVideoIndex] : null
+    const playingInGroup = playingItem?.group === groupName
+    // R70.3: shift the playing index down by however many removed items sat
+    // before it; playback only stops when the playing item itself is removed.
+    // (The old version left a stale index that could point past the end of
+    // the shrunken list, silently breaking the highlight and removeVideoItem.)
+    const removedBefore = playingItem && !playingInGroup
+      ? videoPlaylist.slice(0, currentVideoIndex).filter(v => v.group === groupName).length
+      : 0
     setVideoPlaylist(prev => prev.filter(v => v.group !== groupName))
     setVideoGroups(prev => prev.filter(g => g.name !== groupName))
-    if (selectedItem?.group === groupName) {
+    if (playingInGroup) {
       clearPlayerSource()
       setCurrentVideoIndex(-1)
+    } else if (removedBefore > 0) {
+      setCurrentVideoIndex(prev => prev - removedBefore)
     }
   }, [currentVideoIndex, videoPlaylist, clearPlayerSource])
 
@@ -833,6 +884,10 @@ export function VideoStudioView(): JSX.Element {
     if (end - start < 0.5) { alert('Please select at least 0.5 seconds'); return }
 
     setTrimExporting(true)
+    // R70.6: stop the canvas-capture tracks even if the export path throws —
+    // a leaked live stream keeps the canvas "captured" forever.
+    let canvasStream: MediaStream | null = null
+    let watchdog = 0
     try {
       const mimeType = trimQuality === 'lossless'
         ? (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm')
@@ -850,7 +905,7 @@ export function VideoStudioView(): JSX.Element {
       canvas.width = el.videoWidth || 1280
       canvas.height = el.videoHeight || 720
       const canvasCtx = canvas.getContext('2d')!
-      const canvasStream = canvas.captureStream(30)
+      canvasStream = canvas.captureStream(30)
       const chunks: Blob[] = []
       const recorder = new MediaRecorder(canvasStream, { mimeType })
       recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
@@ -858,19 +913,34 @@ export function VideoStudioView(): JSX.Element {
       await el.play()
       // Draw frames until we reach trimEnd
       let stopped = false
+      // R70.6: single finish path — natural end, watchdog timeout, or any
+      // future abort route all funnel through here so recorder.stop() always runs.
+      const finish = (): void => {
+        if (stopped) return
+        stopped = true
+        el.pause()
+        if (recorder.state !== 'inactive') {
+          try { recorder.stop() } catch { /* already inactive */ }
+        }
+      }
       const drawFrame = () => {
         if (stopped) return
         if (el.currentTime >= end) {
-          stopped = true
-          el.pause()
-          recorder.stop()
+          finish()
           return
         }
         canvasCtx.drawImage(el, 0, 0, canvas.width, canvas.height)
         requestAnimationFrame(drawFrame)
       }
+      // R70.6: watchdog — if playback stalls (or currentTime never reaches
+      // `end` for any other reason), flush the recorder instead of wedging
+      // the export button forever.
+      const expectedMs = ((end - start) / Math.max(el.playbackRate, 0.25) + 5) * 1000
+      watchdog = window.setTimeout(finish, expectedMs)
       drawFrame()
       await new Promise<void>(resolve => { recorder.onstop = () => resolve() })
+      window.clearTimeout(watchdog)
+      watchdog = 0
       const blob = new Blob(chunks, { type: mimeType || 'video/webm' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -879,6 +949,8 @@ export function VideoStudioView(): JSX.Element {
       a.click()
       setTimeout(() => URL.revokeObjectURL(url), 10_000)
     } finally {
+      if (watchdog) window.clearTimeout(watchdog)
+      canvasStream?.getTracks().forEach(tr => tr.stop())
       setTrimExporting(false)
     }
   }, [trimStart, trimEnd, trimQuality, mediaLoaded])
@@ -914,7 +986,10 @@ export function VideoStudioView(): JSX.Element {
         return null
       })
       .filter((e): e is { id: string; name: string; path: string; group: string } => e !== null)
-    if (pathEntries.length > 0) window.rgbbox.videoSavePaths(pathEntries)
+    // R70.4: save unconditionally — skipping the empty list meant deleting
+    // every video never reached disk, and the stale file resurrected them on
+    // the next launch. The main-process handler overwrites unconditionally.
+    window.rgbbox.videoSavePaths(pathEntries).catch(() => { /* persistence is best-effort */ })
   }, [videoIsRestored, videoPlaylist, videoGroups, playlistVisible])
 
   // Restore video playlist from main process on mount
@@ -998,8 +1073,9 @@ export function VideoStudioView(): JSX.Element {
                 </div>
               )}
 
-              {/* Subtitle overlay */}
-              {currentSubText && (
+              {/* Subtitle overlay (R71.4: gated on mediaLoaded so a stale last
+                  line doesn't hover over the empty-state placeholder) */}
+              {mediaLoaded && currentSubText && (
                 <div className="video-subtitle-overlay">
                   {currentSubText.split('\n').map((line, i) => <span key={i}>{line}</span>)}
                 </div>
@@ -1010,17 +1086,37 @@ export function VideoStudioView(): JSX.Element {
                 <div className={`video-player-controls-overlay${playerControlsVisible ? ' visible' : ''}`}>
                   {/* Progress bar */}
                   <div className="video-player-progress-row" onClick={(e) => e.stopPropagation()}>
-                    <span className="video-player-time">{formatPlayerTime(playerCurrentTime)}</span>
-                    <input
-                      type="range"
-                      className="video-player-seek"
-                      min={0}
-                      max={playerDuration || 1}
-                      step={0.1}
-                      value={playerCurrentTime}
-                      onChange={(e) => { e.stopPropagation(); playerSeek(Number(e.target.value)) }}
-                    />
-                    <span className="video-player-time">{formatPlayerTime(playerDuration)}</span>
+                    <span className="video-player-time">{formatMediaTime(playerCurrentTime)}</span>
+                    <div className="video-player-seek-wrap">
+                      <input
+                        type="range"
+                        className="video-player-seek"
+                        min={0}
+                        max={playerDuration > 0 ? playerDuration : 1}
+                        step={0.1}
+                        value={playerCurrentTime}
+                        disabled={playerLive}
+                        onPointerDown={() => { seekDraggingRef.current = true }}
+                        onPointerUp={() => { seekDraggingRef.current = false }}
+                        onPointerCancel={() => { seekDraggingRef.current = false }}
+                        onLostPointerCapture={() => { seekDraggingRef.current = false }}
+                        onChange={(e) => { e.stopPropagation(); playerSeek(Number(e.target.value)) }}
+                      />
+                      {/* R71.7: visual trim span — also makes it obvious when
+                          the points don't fit the current video. */}
+                      {trimMode && trimEnd > trimStart && playerDuration > 0 && (
+                        <div
+                          className="video-player-trim-mark"
+                          style={{
+                            left: `${(trimStart / playerDuration) * 100}%`,
+                            width: `${((trimEnd - trimStart) / playerDuration) * 100}%`,
+                          }}
+                        />
+                      )}
+                    </div>
+                    {/* R71.5: live streams have no finite end — show LIVE instead
+                        of "0:00" and keep the slider disabled. */}
+                    <span className="video-player-time">{playerLive ? 'LIVE' : formatMediaTime(playerDuration)}</span>
                   </div>
 
                   {/* Buttons row */}
@@ -1356,14 +1452,14 @@ export function VideoStudioView(): JSX.Element {
                     <>
                       <div className="video-row" style={{ gap: 6, marginBottom: 6 }}>
                         <button type="button" className="video-btn" onClick={() => setTrimPoint('start')}>
-                          {t('video.trim.setIn')} [{formatPlayerTime(trimStart)}]
+                          {t('video.trim.setIn')} [{formatMediaTime(trimStart)}]
                         </button>
                         <button type="button" className="video-btn" onClick={() => setTrimPoint('end')}>
-                          {t('video.trim.setOut')} [{formatPlayerTime(trimEnd)}]
+                          {t('video.trim.setOut')} [{formatMediaTime(trimEnd)}]
                         </button>
                       </div>
                       <div className="video-row" style={{ gap: 4, marginBottom: 6, fontSize: 11, opacity: 0.75 }}>
-                        <span>{t('video.trim.duration')}: {formatPlayerTime(Math.max(0, trimEnd - trimStart))}</span>
+                        <span>{t('video.trim.duration')}: {formatMediaTime(Math.max(0, trimEnd - trimStart))}</span>
                       </div>
                       <label className="video-field-label">{t('video.trim.quality')}</label>
                       <select

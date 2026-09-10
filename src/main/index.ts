@@ -1,5 +1,5 @@
 import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, screen, session, shell, Tray } from 'electron'
-import { access, mkdir, readdir, unlink } from 'node:fs/promises'
+import { access, mkdir, open, readdir, stat, unlink } from 'node:fs/promises'
 import { createWriteStream } from 'node:fs'
 import { get as httpGet } from 'node:http'
 import { get as httpsGet } from 'node:https'
@@ -20,6 +20,7 @@ import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile,
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
 import { loadSystemSettings, saveSystemSettings } from './systemSettingsStore'
+import { parseRangeHeader, resolveMediaMime } from './mediaProtocol'
 
 // Initialize file logger — must be done after imports but before app.whenReady
 const log = initLogger(join(app.getPath('userData'), 'logs'), { minLevel: 'debug' })
@@ -749,11 +750,7 @@ app.whenReady().then(() => {
 
   // Serve local audio files via the media:// custom scheme.
   // net.fetch does NOT support file:// — use readFile + Response instead.
-  const AUDIO_MIME: Record<string, string> = {
-    mp3: 'audio/mpeg', wav: 'audio/wav', flac: 'audio/flac',
-    aac: 'audio/aac', m4a: 'audio/mp4', ogg: 'audio/ogg',
-    opus: 'audio/opus', weba: 'audio/webm',
-  }
+  // R70.1: MIME table + Range parsing live in ./mediaProtocol (pure, tested).
   protocol.handle('media', async (request) => {
     try {
       // Path is stored as query param ?p= to avoid Windows drive-letter mangling
@@ -764,14 +761,46 @@ app.whenReady().then(() => {
       // into mojibake. The shared file logger always writes UTF-8 to disk
       // regardless of terminal codepage, so route through it instead.
       log.debug('MediaProtocol', `filePath: ${filePath}`)
+      const contentType = resolveMediaMime(filePath)
+      const size = (await stat(filePath)).size
+      const baseHeaders: Record<string, string> = {
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*',
+      }
+      // R70.1: serve Range requests as 206 partial reads — media elements
+      // seek by byte range, and re-reading a whole multi-GB file per seek
+      // both stalls playback and spikes main-process memory.
+      const range = parseRangeHeader(request.headers.get('range'), size)
+      if (range === 'unsatisfiable') {
+        return new Response('Range Not Satisfiable', {
+          status: 416,
+          headers: { 'Content-Range': `bytes */${size}` },
+        })
+      }
+      if (range) {
+        const length = range.end - range.start + 1
+        const fh = await open(filePath, 'r')
+        try {
+          const buf = Buffer.allocUnsafe(length)
+          const { bytesRead } = await fh.read(buf, 0, length, range.start)
+          log.debug('MediaProtocol', `serving ${bytesRead} bytes (206 ${range.start}-${range.start + Math.max(0, bytesRead - 1)}/${size})`)
+          return new Response(bytesRead === length ? buf : buf.subarray(0, bytesRead), {
+            status: 206,
+            headers: {
+              ...baseHeaders,
+              'Content-Length': String(bytesRead),
+              'Content-Range': `bytes ${range.start}-${range.start + Math.max(0, bytesRead - 1)}/${size}`,
+            },
+          })
+        } finally {
+          await fh.close()
+        }
+      }
       const data = await readFile(filePath)
-      const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-      log.debug('MediaProtocol', `serving ${data.byteLength} bytes, ext: ${ext}`)
+      log.debug('MediaProtocol', `serving ${data.byteLength} bytes, type: ${contentType}`)
       return new Response(data, {
-        headers: {
-          'Content-Type': AUDIO_MIME[ext] ?? 'audio/octet-stream',
-          'Access-Control-Allow-Origin': '*',
-        },
+        headers: { ...baseHeaders, 'Content-Length': String(data.byteLength) },
       })
     } catch (err) {
       log.error('MediaProtocol', `error serving ${request.url}: ${err instanceof Error ? err.message : String(err)}`)

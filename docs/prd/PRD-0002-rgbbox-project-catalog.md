@@ -499,6 +499,63 @@
   - [ ] 用户实机验证：开启开关 → 退出 App → 重启后仍为“开”；关闭后跨重启保持“关”。
 - **R69.6** **状态**：✅（代码已实施。实机跨重启验证 pending 用户复测。）
 
+### R70. 音频/视频播放器健全性修复批次（10 项确认缺陷 + 性能健壮性项）
+
+> 触发场景：2026-09-10 用户要求 review 音频和视频播放器功能的健全性。code-review（8 个查找角度 + 逐项对抗验证，24 个候选确认 10 项正确性缺陷，全部为 PRD 未记录的新发现）后用户指示"全部实现优化，一步到位"。
+> **风险等级：L1**（不新增 npm 依赖 / IPC 通道 / profile 字段；改动集中在播放器组件内部状态机与生命周期 + `media://` 协议响应增强；R29/R31/R42/R53/R54–R58 既有行为除缺陷本身外不回退）。
+
+- **R70.1** **media:// 协议：视频 MIME + HTTP Range**：现状 `src/main/index.ts` 的 handler MIME 表只有音频扩展名、fallback `audio/octet-stream`，而 `VideoStudioView` 播放列表项全走 `media://local?p=`（视频文件以 `audio/*` Content-Type 下发）；且完全不支持 Range 请求（seek = 整文件重读进内存）。修复：新增 `src/main/mediaProtocol.ts` 纯函数模块（`MEDIA_MIME` 音频+视频全表 + `parseRangeHeader()`），handler 统一返回 `Accept-Ranges: bytes` / `Content-Length`，对 `Range: bytes=start-end`（含开区间/后缀区间）返回 206 + `Content-Range` 并仅读取请求区间，无效区间返回 416；无 Range 时保持 200 全量。
+- **R70.2** **投屏数据流与 R42 visible 门控解耦**：R42.4 让可视化 rAF 循环在 `visible=false` 时整体早退，但 R31.4 的 BroadcastChannel 推送住在同一循环里 → 切走 tab 后投屏窗口冻结在最后一帧而音乐继续播。修复：循环改为「不可见且未投屏」才停止调度；不可见但投屏中时跳过本地 canvas 绘制、仍提取数据并推送给 projector（R42 的省 CPU 目标在不投屏时保持不变）。
+- **R70.3** **播放列表删除索引修正（音频+视频）**：`removeTrack`（Audio）删除正在播放曲目**之前**的曲目时不递减 `currentTrackIndex`（正在播放高亮/上一首/下一首/自动连播全部错位）；`removeVideoGroup`（Video）删除分组不修正 `currentVideoIndex`（索引越界、高亮失效、后续 `removeVideoItem` 走错分支）。修复：两处按「被删项位于当前播放项之前的数量」递减索引；`removeGroup`（Audio）/`removeVideoGroup`（Video）改为仅当正在播放的曲目/视频属于被删分组时才停止播放（原音频实现无条件停止所有播放，一并对齐视频侧语义）。
+- **R70.4** **清空播放列表持久化**：两个 studio 的保存 effect 均以 `if (pathEntries.length > 0)` 跳过空列表写入，而主进程 handler 是无条件覆盖 → 清空列表后重启条目"复活"。修复：去掉长度守卫，空列表也写入（`[]`）；保存/恢复 promise 补 `.catch`（音频侧 `audioGetSavedPaths` 恢复与 `audioOpenFiles/Folder` 原本缺失，失败会静默卡住恢复标志或抛未处理 rejection）。
+- **R70.5** **VideoStudioView 卸载清理**：切走 tab 整体卸载（R42.5 既有条件渲染架构）时不 `pause()` 也不 revoke `blob:` URL → 已分离的 `<video>` 声音残留到非确定性 GC、每打开一个本地文件泄漏一个 File 引用。修复：卸载清理里 `playerRef.current?.pause()` + 经 `playerUrlRef` 镜像 revoke blob URL。「回 tab 从头重播」属卸载架构本身，本条不改。
+- **R70.6** **裁剪导出防卡死 + 资源清理**：导出期间点击视频/暂停按钮/空格仍可暂停 → `currentTime` 永不到达 `trimEnd`、`recorder.onstop` 永不触发、导出按钮永久禁用；且 canvas-capture MediaStream track 从不 stop（每次导出泄漏）。修复：`togglePlayerPlay` 在 `trimExporting` 时忽略；新增按预期时长 +5s 的看门狗强制收尾；`finally` 中 stop 全部 track。
+- **R70.7** **生成器循环模式 Stop 失效**：`previewSourceRef.stop()` 触发 `onended`，其闭包仍见 `previewLoop=true` → 立即重启播放（按钮状态与实际相反，再次 Preview 叠加双音且无法停止）。修复：引入 preview 代际 token（Stop 时 +1，`onended` 校验代际不匹配即不再重启）；`previewLoop` 改经 ref 读取（播放中切换循环开关即时生效，不再受闭包快照限制）。
+- **R70.8** **频率读数 2× 错误**：绘制 opts 硬编码 `fftSize: 2048`，而 analyser 实际 `fftSize = 4096`，所有 peak/dominant 频率换算恰好翻倍（440Hz 正弦显示 ~880Hz）。修复：opts 改传 `analyser.fftSize` 与 `analyser.context.sampleRate` 真实值。
+- **R70.9** **投屏窗口 i18n**：`src/renderer/src/main.tsx` audioviz 分支未包 `I18nProvider`，`AudioVizProjector` 的 `t('overlay.hint')` 直接渲染裸 key 字符串。修复：该分支补 Provider 包裹。
+- **R70.10** **性能/健壮性次要项**（一次到位）：
+  - `playTrack` 每次切曲无条件 `fetch + decodeAudioData` 全量解码取时长（5 分钟曲目 ~115MB 瞬时 PCM、无缓存）：改为仅 `.wav` 走解码路径（R53 的坏 RIFF 场景），其余格式信任 `loadedmetadata` 时长（异常时仍回退解码）；解码结果按曲目 URL 缓存（上限 200 条 FIFO），重播不重解。
+  - `drawSpectrogram` 每帧全图逐格重绘（投屏分辨率下 ~2M 格/帧）：改为离屏 canvas 滚动 blit（每帧移位 1 列 + 绘制最新 1 列 + 1 次整图拷贝），buffer 不足/画布尺寸变化时一次性全量重绘；频谱指标 overlay 画在主画布保证无残影。
+  - `drawSpectrum` 每帧 64×2 个 `createLinearGradient` 分配：按 (bar 序号, 量化峰值) 缓存渐变对象，布局尺寸变化时整体失效；观感不变（峰值量化 12 级，渐变端点差异 ≤ 1/12 峰值高度）。
+  - rAF 循环每帧 new `Uint8Array`/`Float32Array` + 投屏时双数组全发（~36KB/帧）：分析缓冲改为每次 effect 复用、原地填充；按模式只 post 所需数组（freq 或 time），`AudioVizMessage` 两字段改可选，各绘制函数补空输入守卫。
+  - `EqCurvePlot` 拖拽缺 `pointercancel` 处理（手势被系统取消时全局 `userSelect='none'` 被永久锁定 + 监听器泄漏）：补齐与 `pointerup` 对称的清理。
+  - 快速切曲时 `audio.play()` AbortError 未捕获（3 处：playTrack/onended loop/togglePlay）：补 `.catch`。
+  - 生成器 pan/reverb 滑杆是无效果控件（写入 `panPosition`/`reverbMix` 字段没有任何生成算法读取）：移除该两个滑杆 UI（`GeneratorConfig` 类型字段保留，避免 localStorage 缓存迁移；i18n key 保留不删）。
+  - 隐藏 tab 时 10Hz 播放进度 `setInterval` 仍重渲染常驻 2821 行组件（与 rAF 的 visible 门控不对称）：进度 effect 补 `visible` 门控，切回时立即同步。
+- **R70.11** **不动**：EQ 链/预设体系（R51/R55–R58）、wavesurfer 波形模式（R29.2）、投屏窗口生命周期与 BroadcastChannel 通道名（R31）、R53 的 wav 时长纠偏语义（仅收窄触发条件到 wav + 异常元数据）、`package.json` scripts、preload 白名单、VideoStudioView 切 tab 卸载架构（R42.5）。
+- **R70.12** **受影响文件**：`src/main/mediaProtocol.ts`（新增）、`src/main/index.ts`（media:// handler）、`src/renderer/src/audio/visualizers.ts`、`src/renderer/src/main.tsx`、`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/components/VideoStudioView.tsx`、`tests/main/mediaProtocol.test.ts`（新增）、`tests/renderer/components/VideoStudioView.test.tsx`（+空列表持久化用例）、`tests/renderer/_helpers.tsx`（补 audioviz mock）。
+- **R70.13** **验收点**：
+  - [x] `yarn typecheck` 通过（`Done in 8.82s`，node + web 两套 tsconfig）
+  - [x] `yarn test` 全量通过：44 files / **495 passed / 41 skipped，0 失败**（较 R69 基线 484 → +11：`mediaProtocol.test.ts` 10 个新用例 + VideoStudioView 空列表持久化用例 1 个；`yarn vitest run tests/main/mediaProtocol.test.ts tests/renderer/components/VideoStudioView.test.tsx` 单独复核 15/15 通过）
+  - [x] `yarn build` 通过（`out/main+preload+renderer` 全产出，`Done in 15.92s`）
+  - [ ] 手动验证：视频播放列表点播 mp4/mkv 出画正常；大视频 seek 走 206 分片（日志可见）
+  - [ ] 手动验证：投屏后切走 tab，外接显示器动画持续不冻结；清空播放列表后重启不复活
+  - [ ] 手动验证：删除正在播放曲目之前的曲目/分组后高亮与上/下一首正确；生成器循环模式 Stop 立即静止
+- **R70.14** **状态**：✅（代码已实施，自动化验证全绿（证据见 R70.13）；实机手动验证项 pending 用户复测。）
+
+### R71. 播放器进度条与时间显示修复批次（含 R70.10 时长优化回退修复）
+
+> 触发场景：2026-09-11 用户要求专项 review 音频/视频播放器进度条与时间显示（UI 显示、准确性）。code-review 确认 10 项缺陷，其中 **3 项为 R70.10 时长优化引入的精度回退**（如实记录：wav 判定按 URL 漏掉拖拽文件、非 wav 时长冻结屏蔽 durationchange 精化、解码窗口 interval 闪现错误值）；另 2 个次要项（音频时间格式无小时档、两 view 重复实现格式化）。用户指示按推荐一步到位修复。
+> **风险等级：L1**（不新增 npm 依赖 / IPC 通道 / profile 字段；新增 1 个共享纯函数模块 + 少量 CSS；R53/R70 语义除回退部分外不动）。
+
+- **R71.1** **wav 解码判定改按文件名**：`needsDecode` 从 URL 正则 `\.wav(\?|$)` 改为 `track.name` 以 `.wav` 结尾——Electron 41 下拖拽添加的文件只有 `blob:` URL，URL 判定恰好漏掉 R53 要保护的坏 RIFF wav（错误有限时长还会被 `rememberDuration` 缓存整个会话）。
+- **R71.2** **非 wav 时长不再冻结/缓存**：删除 loadedmetadata 处对非 wav 的 `correctedDurationRef` 写入与缓存——时长持续跟随 `el.duration`（VBR mp3 经 durationchange 的精化不再被 10Hz interval 的 corrected 优先级永久屏蔽）；缓存仅保留解码得到的权威值；元数据无效（非有限/0）仍回退全量解码。
+- **R71.3** **解码窗口防闪现**：新增 `durationHoldRef`，全量解码进行中 10Hz interval 不推送 `el.duration`（R53.9 要避免的"先闪错值再跳变"从 interval 路径复现）；同步修正已过时的"media:// 一次性无 Range 支持"注释（R70.1 已支持 Range/206）。
+- **R71.4** **换源状态重置（双侧）**：音频 `playTrack` 补 `setProgress(0)` + 清空 LRC（`setLrcLines([])` / `setActiveLrcIndex(-1)`——旧曲歌词不再对照新曲进度高亮/错误 seek），`removeTrack`/`removeGroup` 停播路径同时清 progress/duration（无曲目时传输条不再残留 `4:32 / 4:45`）；视频 `clearPlayerSource` 统一重置 playerPlaying / playerCurrentTime / playerDuration / playerLive / 字幕三态（subCues/subFilename/currentSubText）/ 裁剪点三态（trimMode/trimStart/trimEnd），字幕浮层补 `mediaLoaded` 门控（不再悬浮在空态占位符上）。
+- **R71.5** **直播时长防护**：onTimeUpdate / onDurationChange 以 `isFinite` 守卫（HLS 直播 `duration=Infinity` 不再流入 `max="Infinity"` → 滑块被浏览器回退 max=100 钉死最右、时长显示 `0:00`）；新增 `playerLive` 状态：时长标签显示 `LIVE`，直播时禁用 seek 滑块（避免对 seekable 窗口外 seek 触发 hls.js fatal）。
+- **R71.6** **拖拽防抖动（双侧）**：进度滑块 pointerdown → pointerup / pointercancel / lostpointercapture 期间挂起 interval（音频）/ timeupdate（视频）的 currentTime 回写——受控滑块不再与回写循环竞争导致拇指回跳、数字抖动；提交仍走 onChange 实时 seek。
+- **R71.7** **裁剪导出守卫补全 + 可视化**：`playerSeek` 在 `trimExporting` 时整体忽略（覆盖键盘 ←/→、滑块拖动、±10s 按钮三条 R70.6 漏掉的路径，导出片段不再被污染）；进度条新增 trim 区间半透明金色标记（`.video-player-trim-mark`，用户可直观看到裁剪范围是否超出新视频）。
+- **R71.8** **时间格式化统一**：新增 `src/shared/timeFormat.ts` 的 `formatMediaTime()`（m:ss / h:mm:ss 双档位，负数/NaN/Infinity → `0:00`），两个 view 的私有 `formatTime` / `formatPlayerTime` 删除（音频侧 ≥60 分钟曲目不再显示 `75:23`）。
+- **R71.9** **不动**：R70 已修项（fftSize/播放列表索引/持久化/卸载清理/watchdog 本体/EQ 曲线拖拽）；R53 解码权威语义（仅收窄触发条件与防闪现）；EQ/生成器/投屏体系；`package.json` scripts、preload 白名单。
+- **R71.10** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/components/VideoStudioView.tsx`、`src/shared/timeFormat.ts`（新增）、`src/renderer/src/styles.css`（`.video-player-seek-wrap` / `.video-player-trim-mark`）、`tests/shared/timeFormat.test.ts`（新增）。
+- **R71.11** **验收点**：
+  - [x] `yarn typecheck` 通过（`Done in 12.56s`，node + web 两套 tsconfig）
+  - [x] `yarn test` 全量通过：45 files / **499 passed / 41 skipped，0 失败**（较 R70 基线 495 → +4：`tests/shared/timeFormat.test.ts` 4 个新用例，无回归）
+  - [x] `yarn build` 通过（`out/main+preload+renderer` 全产出，`Done in 20.53s`）
+  - [ ] 手动验证：拖入坏 RIFF wav 时长正确且无"先闪错值"；VBR mp3 时长随播放精化不再停在估算值
+  - [ ] 手动验证：HLS 直播显示 LIVE、滑块不可拖；换源/切歌后时间、歌词、字幕、裁剪点全部归零；拖动进度条拇指无回跳
+- **R71.12** **状态**：✅（代码已实施，自动化验证全绿（证据见 R71.11）；实机手动验证项 pending 用户复测。）
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。

@@ -4802,6 +4802,28 @@ input:not([type]):focus {
   border-radius: 2px;
 }
 
+/* R71.7: wrapper lets the trim span be positioned over the seek track. */
+.video-player-seek-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.video-player-seek-wrap .video-player-seek {
+  width: 100%;
+}
+
+.video-player-trim-mark {
+  position: absolute;
+  top: 50%;
+  height: 6px;
+  transform: translateY(-50%);
+  background: rgba(230, 192, 123, 0.55);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
 .video-player-btn-row {
   display: flex;
   align-items: center;

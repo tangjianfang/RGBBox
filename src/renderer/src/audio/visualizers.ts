@@ -23,9 +23,20 @@ export const AUDIO_VIZ_CHANNEL = 'rgbbox-audio-viz'
 
 export interface AudioVizMessage {
   mode: VisualizerMode
-  freq: Uint8Array
-  time: Float32Array
+  /**
+   * R70.10: only the array(s) the current mode actually draws are posted —
+   * frequency modes send `freq`, time-domain modes send `time`. The receiving
+   * projector passes a zero-length placeholder for the unused slot; every
+   * draw function guards against empty input.
+   */
+  freq?: Uint8Array
+  time?: Float32Array
 }
+
+/** R70.10: zero-length placeholders for the unused half of an AudioVizMessage
+ *  payload — every draw function guards against empty input. */
+export const EMPTY_FREQ = new Uint8Array(0)
+export const EMPTY_TIME = new Float32Array(0)
 
 export interface VizDrawOpts {
   showMetrics?: boolean
@@ -89,10 +100,26 @@ export function createSpectrogramBuffer(): Uint8Array[] {
   return []
 }
 
+// R70.10: per-bar gradient cache. 64 bars × 2 createLinearGradient calls per
+// frame at 60fps ≈ 7.7k gradient allocations/second on the studio canvas and
+// the same again in every projected window. A bar's gradients depend only on
+// (bar index, peak level, layout), so cache by that key and invalidate the
+// whole entry when the layout changes. Peak is quantized to 12 levels — the
+// gradient endpoint drift is ≤ 1/12 of the bar height, imperceptible.
+const SPECTRUM_GRAD_LEVELS = 12
+interface SpectrumGradCache {
+  width: number
+  mainHeight: number
+  barWidth: number
+  grads: Map<string, [CanvasGradient, CanvasGradient]> // [main, reflection]
+}
+const spectrumGradCache = new WeakMap<CanvasRenderingContext2D, SpectrumGradCache>()
+
 /** Premium gradient spectrum with glow, rounded caps, and mirror reflection */
 export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, opts?: VizDrawOpts): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
+  if (freqData.length === 0) return
   const dpr = window.devicePixelRatio || 1
   const width = canvas.width / dpr
   const height = canvas.height / dpr
@@ -110,6 +137,12 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, op
   const mirrorHeight = height * 0.18 // Reflection zone
   const mainHeight = height - mirrorHeight
 
+  let cache = spectrumGradCache.get(ctx)
+  if (!cache || cache.width !== width || cache.mainHeight !== mainHeight || cache.barWidth !== barWidth) {
+    cache = { width, mainHeight, barWidth, grads: new Map() }
+    spectrumGradCache.set(ctx, cache)
+  }
+
   for (let i = 0; i < barCount; i++) {
     // Map bar index to FFT bin using logarithmic scale (20Hz–20kHz)
     const loRatio = i / barCount
@@ -125,14 +158,29 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, op
     const x = i * (barWidth + gap)
     const y = mainHeight - barH
 
-    // Create vertical gradient: vibrant cyan → electric blue → magenta
-    const grad = ctx.createLinearGradient(x, mainHeight, x, y)
+    // R70.10: cached vertical gradients (vibrant cyan → electric blue → magenta
+    // for the bar, fading hue-matched for the reflection), keyed on the
+    // quantized peak so steady-state frames allocate nothing.
     const hue1 = 190 + (i / barCount) * 80 // cyan → blue
     const hue2 = 220 + (i / barCount) * 100 // blue → violet
-    const lightness = 50 + peak * 20
-    grad.addColorStop(0, `hsla(${hue1}, 90%, ${lightness}%, 0.85)`)
-    grad.addColorStop(0.5, `hsla(${(hue1 + hue2) / 2}, 85%, ${lightness + 5}%, 0.95)`)
-    grad.addColorStop(1, `hsla(${hue2}, 80%, ${lightness + 10}%, 1)`)
+    const qp = Math.min(SPECTRUM_GRAD_LEVELS, Math.round(peak * SPECTRUM_GRAD_LEVELS))
+    const cacheKey = `${i}:${qp}`
+    let grads = cache.grads.get(cacheKey)
+    if (!grads) {
+      const qPeak = qp / SPECTRUM_GRAD_LEVELS
+      const qBarH = qPeak * mainHeight * 0.92
+      const qy = mainHeight - qBarH
+      const lightness = 50 + qPeak * 20
+      const grad = ctx.createLinearGradient(x, mainHeight, x, qy)
+      grad.addColorStop(0, `hsla(${hue1}, 90%, ${lightness}%, 0.85)`)
+      grad.addColorStop(0.5, `hsla(${(hue1 + hue2) / 2}, 85%, ${lightness + 5}%, 0.95)`)
+      grad.addColorStop(1, `hsla(${hue2}, 80%, ${lightness + 10}%, 1)`)
+      const reflGrad = ctx.createLinearGradient(x, mainHeight, x, mainHeight + qBarH * 0.35)
+      reflGrad.addColorStop(0, `hsla(${hue1}, 70%, ${lightness}%, 0.25)`)
+      reflGrad.addColorStop(1, `hsla(${hue1}, 70%, ${lightness}%, 0)`)
+      grads = [grad, reflGrad]
+      cache.grads.set(cacheKey, grads)
+    }
 
     // Glow effect
     if (peak > 0.3) {
@@ -143,7 +191,7 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, op
     }
 
     // Draw bar with rounded top cap
-    ctx.fillStyle = grad
+    ctx.fillStyle = grads[0]
     ctx.beginPath()
     const radius = Math.min(barWidth / 2, 3)
     ctx.moveTo(x, mainHeight)
@@ -165,10 +213,7 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, op
     // Mirror reflection (subtle, fading)
     ctx.shadowBlur = 0
     const reflH = barH * 0.35
-    const reflGrad = ctx.createLinearGradient(x, mainHeight, x, mainHeight + reflH)
-    reflGrad.addColorStop(0, `hsla(${hue1}, 70%, ${lightness}%, 0.25)`)
-    reflGrad.addColorStop(1, `hsla(${hue1}, 70%, ${lightness}%, 0)`)
-    ctx.fillStyle = reflGrad
+    ctx.fillStyle = grads[1]
     ctx.fillRect(x, mainHeight + 1, barWidth, reflH)
   }
 
@@ -192,6 +237,7 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, op
 export function drawWaveform(canvas: HTMLCanvasElement, timeData: Float32Array, opts?: VizDrawOpts): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
+  if (timeData.length === 0) return // R70.10: mode only receives the arrays it draws
   const dpr = window.devicePixelRatio || 1
   const width = canvas.width / dpr
   const height = canvas.height / dpr
@@ -254,6 +300,17 @@ export function drawWaveform(canvas: HTMLCanvasElement, timeData: Float32Array, 
   ctx.restore()
 }
 
+// R70.10: offscreen backing canvas per spectrogram buffer. A scrolling
+// spectrogram only changes by one column per frame, yet the previous
+// implementation repainted every column × every row each frame (~2M
+// fillRect/frame at projection resolution). The accumulated image is kept on
+// an offscreen canvas: shift it left one pixel, paint only the newest column,
+// then blit it to the visible canvas in one drawImage (which also keeps the
+// fixed-position metrics overlay free of ghosting). A full repaint still
+// happens while the buffer is shorter than the canvas (initial fill) or when
+// the canvas was resized (history is preserved in the buffer).
+const spectrogramOffscreenMap = new WeakMap<Uint8Array[], { w: number; h: number; off: HTMLCanvasElement }>()
+
 /** Spectrogram: scrolling time-frequency heat map */
 export function drawSpectrogram(
   canvas: HTMLCanvasElement,
@@ -263,30 +320,38 @@ export function drawSpectrogram(
 ): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
+  if (freqData.length === 0) return
   const dpr = window.devicePixelRatio || 1
   const width = canvas.width / dpr
   const height = canvas.height / dpr
-  ctx.save()
-  ctx.scale(dpr, dpr)
 
   const bufferLength = freqData.length
 
-  // Add current frame to spectrogram buffer (sliding window)
+  // Add current frame to spectrogram buffer (sliding window). Always copy —
+  // callers reuse a single analyser snapshot buffer across frames (R70.10).
   spectrogramBuffer.push(new Uint8Array(freqData))
-  const maxCols = Math.ceil(width)
+
+  let state = spectrogramOffscreenMap.get(spectrogramBuffer)
+  if (!state || state.w !== canvas.width || state.h !== canvas.height) {
+    const off = document.createElement('canvas')
+    off.width = canvas.width
+    off.height = canvas.height
+    state = { w: canvas.width, h: canvas.height, off }
+    spectrogramOffscreenMap.set(spectrogramBuffer, state)
+  }
+  const off = state.off
+  const octx = off.getContext('2d')
+  if (!octx) return
+
+  const maxCols = off.width // one column per backing pixel
   while (spectrogramBuffer.length > maxCols) spectrogramBuffer.shift()
 
-  ctx.clearRect(0, 0, width, height)
-
-  // Draw the spectrogram columns (time → x, frequency → y)
-  const colWidth = Math.max(1, width / maxCols)
-  for (let col = 0; col < spectrogramBuffer.length; col++) {
-    const frame = spectrogramBuffer[col]
-    const x = col * colWidth
-    const binsPerPixel = bufferLength / height
-    for (let row = 0; row < height; row++) {
+  // Paint one spectrogram column (time → x, frequency → y) in backing pixels.
+  const drawColumn = (frame: Uint8Array, x: number): void => {
+    const binsPerPixel = bufferLength / off.height
+    for (let row = 0; row < off.height; row++) {
       // Map bottom of canvas to low frequencies (invert y)
-      const binIdx = Math.floor((height - 1 - row) * binsPerPixel * 0.75)
+      const binIdx = Math.floor((off.height - 1 - row) * binsPerPixel * 0.75)
       const value = frame[binIdx] / 255
       if (value < 0.02) continue
       // Art variant: perceptually linear (log-feel) color map.
@@ -294,10 +359,30 @@ export function drawSpectrogram(
       // Heat map: dark blue → cyan → yellow → red → white
       const h = 240 - v * 240
       const l = 10 + v * 55
-      ctx.fillStyle = `hsl(${h}, 90%, ${l}%)`
-      ctx.fillRect(x, row, colWidth + 0.5, 1)
+      octx.fillStyle = `hsl(${h}, 90%, ${l}%)`
+      octx.fillRect(x, row, 1, 1)
     }
   }
+
+  if (spectrogramBuffer.length < maxCols) {
+    // Initial fill / after a resize — paint every buffered column once.
+    octx.clearRect(0, 0, off.width, off.height)
+    for (let col = 0; col < spectrogramBuffer.length; col++) {
+      drawColumn(spectrogramBuffer[col], col)
+    }
+  } else {
+    // Steady state — scroll left one column, paint only the newest at the
+    // right edge (drawImage with the canvas as both source and destination
+    // snapshots the source first, per spec).
+    octx.drawImage(off, -1, 0)
+    octx.clearRect(off.width - 1, 0, 1, off.height)
+    drawColumn(spectrogramBuffer[spectrogramBuffer.length - 1], off.width - 1)
+  }
+
+  ctx.save()
+  ctx.scale(dpr, dpr)
+  ctx.clearRect(0, 0, width, height)
+  ctx.drawImage(off, 0, 0, width, height)
 
   if (opts?.showMetrics) {
     const f = dominantFrequency(freqData, opts.sampleRate ?? 48000, opts.fftSize ?? 2048)
@@ -316,6 +401,7 @@ export function drawVUMeter(
 ): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
+  if (timeData.length === 0) return // R70.10: mode only receives the arrays it draws
   const dpr = window.devicePixelRatio || 1
   const width = canvas.width / dpr
   const height = canvas.height / dpr
@@ -427,6 +513,7 @@ export function drawVUMeter(
 export function drawCircularSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, opts?: VizDrawOpts): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
+  if (freqData.length === 0) return // R70.10: mode only receives the arrays it draws
   const dpr = window.devicePixelRatio || 1
   const w = canvas.width / dpr
   const h = canvas.height / dpr
@@ -494,6 +581,7 @@ export function drawCircularSpectrum(canvas: HTMLCanvasElement, freqData: Uint8A
 export function drawWaveRing(canvas: HTMLCanvasElement, timeData: Float32Array, opts?: VizDrawOpts): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
+  if (timeData.length === 0) return // R70.10: mode only receives the arrays it draws
   const dpr = window.devicePixelRatio || 1
   const w = canvas.width / dpr
   const h = canvas.height / dpr

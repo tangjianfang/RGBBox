@@ -19,6 +19,7 @@ import {
   EQ_GRAPHIC_FREQS, EQ_PRESETS, graphicGainsToBands, bandsToGraphicGains,
   computeBiquadResponse, logFreqPoints,
 } from '../../../engine/eqResponse'
+import { formatMediaTime } from '../../../shared/timeFormat'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -872,16 +873,27 @@ function EqCurvePlot({
       const gain = Math.max(dbMin, Math.min(dbMax, Math.round(rawGain * 2) / 2))
       onDragGain(freqHz, gain)
     }
-    const up = (ev: PointerEvent): void => {
-      drag(ev) // R57.1: commit+clamp the final release position too
+    const cleanup = (ev: PointerEvent): void => {
       svg.style.cursor = 'grab'
       document.body.style.userSelect = prevUserSelect
       svg.removeEventListener('pointermove', drag)
       svg.removeEventListener('pointerup', up)
-      svg.releasePointerCapture(ev.pointerId)
+      svg.removeEventListener('pointercancel', cancel)
+      if (svg.hasPointerCapture(ev.pointerId)) svg.releasePointerCapture(ev.pointerId)
+    }
+    const up = (ev: PointerEvent): void => {
+      drag(ev) // R57.1: commit+clamp the final release position too
+      cleanup(ev)
+    }
+    // R70.10: the OS can abort a drag without a pointerup (Alt+Tab, touch
+    // palm rejection, device loss) — without this symmetric handler the app
+    // kept global userSelect:'none' and a live drag listener forever.
+    const cancel = (ev: PointerEvent): void => {
+      cleanup(ev)
     }
     svg.addEventListener('pointermove', drag)
     svg.addEventListener('pointerup', up)
+    svg.addEventListener('pointercancel', cancel)
     drag(e.nativeEvent)
   }
 
@@ -1093,6 +1105,16 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   const wavesurferRef = useRef<WaveSurfer | null>(null)
   const animFrameRef = useRef<number>(0)
   const previewSourceRef = useRef<AudioBufferSourceNode | null>(null)
+  // R70.7: generation token for the generator preview. stop() fires the
+  // source's onended, whose closure used to still see previewLoop=true and
+  // restart the tone — making Stop impossible in loop mode (and a second
+  // Preview layered a second, unstoppable source). Every onended closure
+  // captures the token and bails when Stop has bumped it since.
+  const previewGenRef = useRef(0)
+  // R70.7: loop toggle read through a ref so flipping it mid-playback takes
+  // effect on the current source's onended instead of the next one's.
+  const previewLoopRef = useRef(previewLoop)
+  useEffect(() => { previewLoopRef.current = previewLoop }, [previewLoop])
   const playModeRef = useRef<PlayMode>(playMode)
   const playlistRef = useRef<TrackItem[]>(playlist)
   // R53: authoritative duration for the currently loaded track, once known via
@@ -1102,6 +1124,27 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   // once it's available, or it stomps the correction back to the wrong value
   // within 100ms. Reset to null whenever a new track starts loading.
   const correctedDurationRef = useRef<number | null>(null)
+  // R71.3: true while a full decodeAudioData correction is in flight — the
+  // 10Hz progress interval must not push el.duration meanwhile (bad-RIFF wavs
+  // report a finite-but-wrong value there; showing it is the exact R53.9
+  // "flash a wrong value first" symptom).
+  const durationHoldRef = useRef(false)
+  // R71.6: true while the user is dragging the transport slider — the
+  // interval's write-back would otherwise fight the drag and snap the thumb
+  // back to the lagging el.currentTime between input events.
+  const progressDraggingRef = useRef(false)
+  // R70.10: per-URL cache of authoritative durations so replaying a track
+  // doesn't re-run the (wav-only) full decodeAudioData pass. FIFO-bounded —
+  // it's a nicety, not an LRU.
+  const durationCacheRef = useRef<Map<string, number>>(new Map())
+  const rememberDuration = useCallback((url: string, dur: number): void => {
+    const cache = durationCacheRef.current
+    if (cache.size >= 200) {
+      const oldest = cache.keys().next().value
+      if (oldest !== undefined) cache.delete(oldest)
+    }
+    cache.set(url, dur)
+  }, [])
   const spectrogramBufferRef = useRef<Uint8Array[]>(createSpectrogramBuffer())
   const vuPeakRef = useRef(createVuPeakState())
   // R29.3 (revised): mirrors `projectDisplayIds` state into a ref so the rAF
@@ -1146,9 +1189,10 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
         return null
       })
       .filter((entry): entry is { id: string; name: string; path: string; group: string } => entry !== null)
-    if (pathEntries.length > 0) {
-      window.rgbbox.audioSavePaths(pathEntries)
-    }
+    // R70.4: save unconditionally — skipping the empty list meant deleting
+    // every track never reached disk, and the stale file resurrected them on
+    // the next launch. The main-process handler overwrites unconditionally.
+    window.rgbbox.audioSavePaths(pathEntries).catch(() => { /* persistence is best-effort */ })
   }, [isRestored, playlist, groups, playMode, volume, balance, genConfig, exportFormat])
 
   // Restore audio file paths from main process on mount
@@ -1184,6 +1228,10 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
       }
       // Mark restore as done regardless — allows the save effect to start running
       setIsRestored(true)
+    }).catch(() => {
+      // R70.4: an IPC failure used to leave isRestored false forever, which
+      // silently disabled persistence for the whole session.
+      if (!cancelled) setIsRestored(true)
     })
     return () => { cancelled = true }
   }, [])
@@ -1308,35 +1356,53 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
 
   // Visualization loop with HiDPI support + live resize handling
   useEffect(() => {
-    if ((!isPlaying && !previewPlaying) || !analyserRef.current || !visible) return
+    if ((!isPlaying && !previewPlaying) || !analyserRef.current) return
     const specCanvas = spectrumCanvasRef.current
     const waveCanvas = waveformCanvasRef.current
     const analyser = analyserRef.current
+    // R70.10: allocate the analyser snapshots once per effect run and fill
+    // them in place — a fresh typed-array pair per frame was pure GC churn.
+    const freqData = new Uint8Array(analyser.frequencyBinCount)
+    const timeData = new Float32Array(analyser.fftSize)
 
     const draw = () => {
+      // R70.2: R42's `visible` early-return used to kill this whole loop —
+      // which also froze every projected AudioVizProjector window, since the
+      // BroadcastChannel post below is its only data source. When the tab is
+      // hidden but a projection is running, keep feeding the projector and
+      // skip only the local canvas work; when nothing consumes the data,
+      // stop scheduling (the same CPU saving R42 intended).
+      const projecting = projectDisplayIdsRef.current.length > 0
+      if (!visible && !projecting) return
       if (vizMode !== 'waveform') {
         // Extract analyser data once per frame — shared by local drawing AND
         // (when projecting) the BroadcastChannel payload sent to any open
         // AudioVizProjector windows, so the projected animation is pixel-for-
         // pixel identical to what's shown locally, not a downsampled approximation.
-        const freqData = new Uint8Array(analyser.frequencyBinCount)
         analyser.getByteFrequencyData(freqData)
-        const timeData = new Float32Array(analyser.fftSize)
         analyser.getFloatTimeDomainData(timeData)
 
-        if (specCanvas) {
-          const vizOpts: VizDrawOpts = { showMetrics: vizShowMetrics, style: vizStyle, sampleRate: 48000, fftSize: 2048 }
-          drawVisualizerFrame(specCanvas, vizMode, freqData, timeData, spectrogramBufferRef.current, vuPeakRef.current, vizOpts)
+        if (visible) {
+          if (specCanvas) {
+            // R70.8: pass the analyser's real fftSize/sampleRate — the previous
+            // hardcoded 2048 against the actual 4096-point FFT made every
+            // peak/dominant-frequency readout exactly 2× too high.
+            const vizOpts: VizDrawOpts = { showMetrics: vizShowMetrics, style: vizStyle, sampleRate: analyser.context.sampleRate, fftSize: analyser.fftSize }
+            drawVisualizerFrame(specCanvas, vizMode, freqData, timeData, spectrogramBufferRef.current, vuPeakRef.current, vizOpts)
+          }
+          // `waveCanvas` only exists in the DOM for 'oscilloscope' mode (see JSX below).
+          if (waveCanvas) drawWaveform(waveCanvas, timeData, { showMetrics: vizShowMetrics, style: vizStyle })
         }
-        // `waveCanvas` only exists in the DOM for 'oscilloscope' mode (see JSX below).
-        if (waveCanvas) drawWaveform(waveCanvas, timeData, { showMetrics: vizShowMetrics, style: vizStyle })
 
         // R29.3 (revised): while projecting, broadcast the raw analyser data to
         // any open AudioVizProjector windows — they run the exact same draw
         // functions at full display resolution, so the projected animation
         // looks identical to the local canvas instead of a blocky LED downsample.
-        if (projectDisplayIdsRef.current.length > 0) {
-          audioVizChannelRef.current?.postMessage({ mode: vizMode, freq: freqData, time: timeData })
+        // R70.10: post only the array(s) the projected mode actually draws.
+        if (projecting) {
+          const needsFreq = vizMode === 'spectrum' || vizMode === 'spectrogram' || vizMode === 'circular'
+          const needsTime = vizMode === 'oscilloscope' || vizMode === 'vuMeter' || vizMode === 'waveRing'
+          audioVizChannelRef.current?.postMessage({ mode: vizMode, freq: needsFreq ? freqData : undefined, time: needsTime ? timeData : undefined })
         }
       }
       animFrameRef.current = requestAnimationFrame(draw)
@@ -1446,20 +1512,30 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
 
   // Progress tracking — 每次读 audioElementRef.current，避免闭包捕获旧 audio 元素
   useEffect(() => {
-    if (!isPlaying) return
+    // R70.10: R42 keeps this view mounted (display:none) so playback survives
+    // tab switches — the 10Hz setState re-rendered the full 2821-line tree in
+    // the background for nobody. Gate on `visible`; the effect re-runs (and
+    // syncs via update()) the moment the tab becomes visible again.
+    if (!isPlaying || !visible) return
     const update = () => {
       const el = audioElementRef.current
       if (!el) return
-      setProgress(el.currentTime || 0)
+      // R71.6: don't fight the user's drag — while the transport slider is
+      // held, its own onChange drives progress; write-back here would snap
+      // the thumb back to the lagging el.currentTime between input events.
+      if (!progressDraggingRef.current) setProgress(el.currentTime || 0)
       // R53: prefer the decodeAudioData-corrected duration once known — el.duration
       // is unreliable for wav files with a bad `data` chunk size.
+      // R71.3: while a decode correction is in flight, don't push el.duration
+      // either (bad-RIFF wavs report a finite-but-wrong value there).
+      if (durationHoldRef.current) return
       const corrected = correctedDurationRef.current
       setDuration(corrected != null ? corrected : (isFinite(el.duration) ? el.duration : 0))
     }
     update()
     const interval = setInterval(update, 100)
     return () => clearInterval(interval)
-  }, [isPlaying])
+  }, [isPlaying, visible])
 
   // File loading — builds tracks using the custom media:// scheme so files can
   // be played from any renderer origin (http://localhost dev or file:// prod).
@@ -1534,13 +1610,13 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   const handleAddFiles = useCallback(() => {
     window.rgbbox.audioOpenFiles().then(result => {
       if (result.length > 0) addTracksFromPaths(result)
-    })
+    }).catch(() => { /* dialog cancelled / IPC failure — nothing to add */ })
   }, [addTracksFromPaths])
 
   const handleAddFolder = useCallback(() => {
     window.rgbbox.audioOpenFolder().then(result => {
       if (result.length > 0) addTracksFromPaths(result, result[0]?.folder)
-    })
+    }).catch(() => { /* dialog cancelled / IPC failure — nothing to add */ })
   }, [addTracksFromPaths])
 
   // Drag and drop
@@ -1626,29 +1702,48 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     audioElementRef.current = audio
     correctedDurationRef.current = null // R53: new track — clear any previous correction
     setDuration(0) // R53.9: don't carry over the previous track's duration while loading
+    setProgress(0) // R71.4: …nor its position — the old value briefly pinned a max=1 slider
+    // R71.4: the previous track's LRC has no binding to the new one — stale
+    // lines would highlight/scroll against the new track's progress and seek
+    // it to the old track's timestamps.
+    setLrcLines([])
+    setActiveLrcIndex(-1)
 
-    // R53.9: don't push `audio.duration` into UI state here — for wav files with
-    // a bad RIFF `data` chunk size it's often wrong/Infinity, and setting it here
-    // then correcting it moments later (once decodeAudioData resolves below)
-    // made the transport progress bar visibly flash/reset with a bogus value
-    // first. Just remember it as a last-resort fallback in case decoding fails.
+    // R53.9: don't push `audio.duration` into UI state here for wav files —
+    // for a bad RIFF `data` chunk size it's often wrong/Infinity, and setting
+    // it here then correcting it moments later (once decodeAudioData resolves
+    // below) made the transport progress bar visibly flash/reset with a bogus
+    // value first. Just remember it as a last-resort fallback in case decoding
+    // fails.
     let fallbackDuration = 0
-    audio.addEventListener('loadedmetadata', () => {
-      if (isFinite(audio.duration)) fallbackDuration = audio.duration
-    })
 
     // R53: some wav files carry an incorrect/placeholder RIFF `data` chunk
-    // size (streaming encoders write size=0 or a bogus value). The media://
-    // protocol handler serves the whole file in one shot with no HTTP Range
-    // support, so Chromium can't fall back to a byte-range duration probe the
-    // way it would against a real HTTP server — <audio>.duration ends up
+    // size (streaming encoders write size=0 or a bogus value). Even with the
+    // Range support the media:// handler gained in R70.1, Chromium's duration
+    // probe still trusts the RIFF chunk size, so <audio>.duration ends up
     // wrong/Infinity/NaN for those files. decodeAudioData fully decodes the
     // sample data (ignores the chunk's stated size), so its .duration is
     // always authoritative; use it to correct the displayed duration once
-    // available. Decode-only — playback still goes through the <audio>
-    // element/MediaElementAudioSourceNode above, unchanged.
-    if (typeof fetch === 'function') {
-      fetch(track.url)
+    // available. Decode-only — playback still goes through the
+    // <audio>/MediaElementAudioSourceNode path above, unchanged.
+    //
+    // R70.10: the full decode is expensive (~115MB transient PCM for a 5-min
+    // track) and used to run for EVERY format on EVERY track start. It now
+    // runs only for wav tracks or when metadata turns out invalid; decoded
+    // durations are cached per URL so replays don't re-decode.
+    //
+    // R71.1: wav detection uses the track NAME, not the URL — Electron 41
+    // removed File.path, so dragged-in files only ever get blob: URLs and a
+    // URL-extension test missed exactly the files R53 exists to fix.
+    const trackUrl: string = track.url
+    const isWav = /\.wav$/i.test(track.name)
+    const decodeForDuration = (): void => {
+      if (typeof fetch !== 'function') return
+      // R71.3: hold the interval back while the authoritative decode is in
+      // flight — bad-RIFF wavs report a finite-but-wrong el.duration during
+      // this window and pushing it is the R53.9 flash.
+      durationHoldRef.current = true
+      fetch(trackUrl)
         .then(res => res.arrayBuffer())
         .then(buf => ctx.decodeAudioData(buf))
         .then(decoded => {
@@ -1656,6 +1751,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
           if (isFinite(decoded.duration) && decoded.duration > 0) {
             correctedDurationRef.current = decoded.duration
             setDuration(decoded.duration)
+            rememberDuration(trackUrl, decoded.duration)
           }
         })
         .catch(() => {
@@ -1668,6 +1764,24 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             setDuration(fallbackDuration)
           }
         })
+        .finally(() => { durationHoldRef.current = false })
+    }
+    const cachedDuration = durationCacheRef.current.get(trackUrl)
+
+    audio.addEventListener('loadedmetadata', () => {
+      if (isFinite(audio.duration)) fallbackDuration = audio.duration
+      // R71.2: non-wav durations are NOT frozen/cached here any more — VBR
+      // mp3 estimates refine via durationchange and the 10Hz interval follows
+      // el.duration live. Only an invalid (non-finite/0) duration escalates
+      // to a full decode.
+      if (isWav || cachedDuration != null) return
+      if (!(isFinite(audio.duration) && audio.duration > 0)) decodeForDuration()
+    })
+    if (cachedDuration != null) {
+      correctedDurationRef.current = cachedDuration
+      setDuration(cachedDuration)
+    } else if (isWav) {
+      decodeForDuration()
     }
 
     const source = ctx.createMediaElementSource(audio)
@@ -1679,7 +1793,8 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
       const pl = playlistRef.current
       if (mode === 'loop') {
         audio.currentTime = 0
-        audio.play()
+        // R70.10: rapid track switches surface as AbortError here — expected.
+        audio.play().catch(() => { /* interrupted by a newer load */ })
       } else if (mode === 'shuffle') {
         const next = Math.floor(Math.random() * pl.length)
         playTrack(next)
@@ -1689,10 +1804,10 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
       }
     }
 
-    audio.play()
+    void audio.play().catch(() => { /* R70.10: AbortError on rapid switches */ })
     setCurrentTrackIndex(index)
     setIsPlaying(true)
-  }, [ensureAudioContext])
+  }, [ensureAudioContext, rememberDuration])
 
   const togglePlay = useCallback(() => {
     if (!audioElementRef.current) {
@@ -1703,7 +1818,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
       audioElementRef.current.pause()
       setIsPlaying(false)
     } else {
-      audioElementRef.current.play()
+      void audioElementRef.current.play().catch(() => { /* R70.10: rapid switches → AbortError */ })
       setIsPlaying(true)
     }
   }, [isPlaying, playlist, playTrack])
@@ -1734,23 +1849,45 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
       }
       setIsPlaying(false)
       setCurrentTrackIndex(-1)
+      // R71.4: with no track loaded the transport must not keep showing the
+      // stopped track's "4:32 / 4:45".
+      setProgress(0)
+      setDuration(0)
+    } else if (index < currentTrackIndex) {
+      // R70.3: a track ahead of the playing one just shifted into its slot —
+      // decrement so the highlight / prev / next / auto-advance keep pointing
+      // at the same (now earlier) track.
+      setCurrentTrackIndex(prev => prev - 1)
     }
   }, [currentTrackIndex])
 
   const removeGroup = useCallback((groupName: string) => {
+    const playingTrack = currentTrackIndex >= 0 ? playlistRef.current[currentTrackIndex] : null
+    const playingInGroup = playingTrack?.group === groupName
+    // R70.3: the playing index shifts down by however many removed tracks sat
+    // before it; playback only stops when the playing track itself is removed.
+    const removedBefore = playingTrack && !playingInGroup
+      ? playlistRef.current.slice(0, currentTrackIndex).filter(tr => tr.group === groupName).length
+      : 0
     setPlaylist(prev => {
       const toRemove = prev.filter(tr => tr.group === groupName)
       toRemove.forEach(tr => { if (tr.url) URL.revokeObjectURL(tr.url) })
       return prev.filter(tr => tr.group !== groupName)
     })
     setGroups(prev => prev.filter(g => g.name !== groupName))
-    if (audioElementRef.current) {
-      audioElementRef.current.pause()
-      audioElementRef.current.src = ''
+    if (playingInGroup) {
+      if (audioElementRef.current) {
+        audioElementRef.current.pause()
+        audioElementRef.current.src = ''
+      }
+      setIsPlaying(false)
+      setCurrentTrackIndex(-1)
+      setProgress(0) // R71.4: same reset as removeTrack's stop path
+      setDuration(0)
+    } else if (removedBefore > 0) {
+      setCurrentTrackIndex(prev => prev - removedBefore)
     }
-    setIsPlaying(false)
-    setCurrentTrackIndex(-1)
-  }, [])
+  }, [currentTrackIndex])
 
   const toggleGroupCollapse = useCallback((groupName: string) => {
     setGroups(prev => prev.map(g => g.name === groupName ? { ...g, collapsed: !g.collapsed } : g))
@@ -1835,22 +1972,30 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   // Preview with loop support
   const previewGenerated = useCallback(async (sceneId?: string) => {
     if (previewPlaying && previewSourceRef.current) {
-      previewSourceRef.current.stop()
+      // R70.7: bump the generation token first so the onended fired by stop()
+      // knows it was a real Stop, not natural end-of-buffer — the loop
+      // restart must not happen.
+      previewGenRef.current += 1
+      try { previewSourceRef.current.stop() } catch { /* already stopped */ }
+      previewSourceRef.current = null
       setPreviewPlaying(false)
       return
     }
     const buffer = await generateAudio(sceneId)
     if (!buffer) return
     const ctx = ensureAudioContext()
+    const gen = previewGenRef.current
 
     const playBuffer = (): void => {
       const source = ctx.createBufferSource()
       source.buffer = buffer
       source.connect(gainNodeRef.current!)
       source.onended = () => {
-        if (previewLoop) {
+        if (previewGenRef.current !== gen) return // superseded by Stop — don't restart
+        if (previewLoopRef.current) {
           playBuffer()
         } else {
+          previewSourceRef.current = null
           setPreviewPlaying(false)
         }
       }
@@ -1860,7 +2005,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
 
     playBuffer()
     setPreviewPlaying(true)
-  }, [previewPlaying, previewLoop, generateAudio, ensureAudioContext])
+  }, [previewPlaying, generateAudio, ensureAudioContext])
 
   // Export
   const exportAudio = useCallback(async (sceneId?: string) => {
@@ -1876,12 +2021,8 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     URL.revokeObjectURL(url)
   }, [lastGeneratedBuffer, generateAudio, exportFormat, genConfig.bitDepth])
 
-  const formatTime = (s: number): string => {
-    if (!isFinite(s) || s <= 0) return '0:00'
-    const m = Math.floor(s / 60)
-    const sec = Math.floor(s % 60)
-    return `${m}:${sec.toString().padStart(2, '0')}`
-  }
+  // R71.8: time formatting moved to the shared formatMediaTime (the local
+  // copy lacked the hour tier — a 75-minute track displayed "75:23").
 
   // R51.7/R57.1: 应用 EQ 预设（设置 mode/bands 并记录当前 preset id）；选预设同样
   // 视为"想要听到效果"的明确意图，自动打开 EQ 总开关。
@@ -2003,9 +2144,13 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             max={isFinite(duration) && duration > 0 ? duration : 1}
             step={0.1}
             value={progress}
+            onPointerDown={() => { progressDraggingRef.current = true }}
+            onPointerUp={() => { progressDraggingRef.current = false }}
+            onPointerCancel={() => { progressDraggingRef.current = false }}
+            onLostPointerCapture={() => { progressDraggingRef.current = false }}
             onChange={(e) => seek(Number(e.target.value))}
           />
-          <span className="audio-time">{formatTime(progress)} / {isFinite(duration) && duration > 0 ? formatTime(duration) : '--:--'}</span>
+          <span className="audio-time">{formatMediaTime(progress)} / {isFinite(duration) && duration > 0 ? formatMediaTime(duration) : '--:--'}</span>
         </div>
         <div className="audio-transport-row audio-transport-row-nowplaying">
           <Music size={13} className="audio-now-playing-icon" />
@@ -2620,33 +2765,11 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                     <span className="audio-value">{Math.round(genConfig.gain * 100)}%</span>
                   </div>
 
-                  <div className="audio-gen-section">
-                    <label className="audio-field-label">{t('audio.gen.pan')}</label>
-                    <input
-                      type="range"
-                      className="audio-slider"
-                      min={-1}
-                      max={1}
-                      step={0.01}
-                      value={genConfig.panPosition}
-                      onChange={(e) => setGenConfig(c => ({ ...c, panPosition: Number(e.target.value) }))}
-                    />
-                    <span className="audio-value">{genConfig.panPosition > 0 ? `R ${Math.round(genConfig.panPosition * 100)}%` : genConfig.panPosition < 0 ? `L ${Math.round(-genConfig.panPosition * 100)}%` : 'C'}</span>
-                  </div>
-
-                  <div className="audio-gen-section">
-                    <label className="audio-field-label">{t('audio.gen.reverb')}</label>
-                    <input
-                      type="range"
-                      className="audio-slider"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={genConfig.reverbMix}
-                      onChange={(e) => setGenConfig(c => ({ ...c, reverbMix: Number(e.target.value) }))}
-                    />
-                    <span className="audio-value">{Math.round(genConfig.reverbMix * 100)}%</span>
-                  </div>
+                  {/* R70.10: the pan/reverb sliders were removed — they wrote
+                      genConfig.panPosition/reverbMix, fields no generator
+                      algorithm ever read, so they did nothing. The config
+                      fields stay in the type so cached localStorage configs
+                      keep parsing. */}
                 </div>
 
               <div className="audio-gen-actions">

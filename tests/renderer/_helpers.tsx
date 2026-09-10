@@ -50,6 +50,10 @@ export function setupRendererMocks() {
     videoSavePaths: vi.fn().mockResolvedValue(undefined),
     videoOpenFiles: vi.fn().mockResolvedValue([]),
     videoOpenFolder: vi.fn().mockResolvedValue([]),
+    // R70: audio visualizer projector window lifecycle (R31 IPC surface)
+    openAudioVizWindow: vi.fn().mockResolvedValue(true),
+    closeAudioVizWindow: vi.fn().mockResolvedValue(true),
+    getAudioVizWindowIds: vi.fn().mockResolvedValue([]),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),
