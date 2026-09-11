@@ -74,7 +74,9 @@ vi.mock('lucide-react', () => {
     'UserMinus','UserPlus','Users','UserX','Video','VideoOff','Voicemail','Volume','Volume1',
     'Volume2','VolumeX','Watch','Wifi','WifiOff','Wind','X','XCircle','Youtube','Zap','ZoomIn','ZoomOut',
     'Gamepad2','FolderPlus','FolderMinus','FilePlus','FileMinus','FastForward','Rewind',
-    'CastOff','ScreenShare','BellRing','Clock2','Clock3','Clock4','PlaySquare'
+    'CastOff','ScreenShare','BellRing','Clock2','Clock3','Clock4','PlaySquare',
+    'MousePointer2','Grid3x3','Undo2','Redo2','Undo','Redo','Frame',
+    'ArrowUpRight','ArrowUpLeft','ArrowDownLeft','ArrowDownRight'
   ]
   for (const n of NAMES) icons[n] = catchAll
   return icons
