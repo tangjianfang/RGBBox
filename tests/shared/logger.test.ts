@@ -31,6 +31,21 @@ async function waitForFlush(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 20))
 }
 
+/**
+ * 轮询等待日志落盘（最多 timeoutMs）。固定 20ms sleep 在满并行套件下
+ * CPU 紧张时不够（读到空文件 → flaky）；改为按内容条件轮询。
+ */
+async function waitForContent(path: string, expected: string, timeoutMs = 4000): Promise<string> {
+  const start = Date.now()
+  for (;;) {
+    let content = ''
+    try { content = readFileSync(path, 'utf-8') } catch { /* not yet created */ }
+    if (content.includes(expected)) return content
+    if (Date.now() - start > timeoutMs) return content
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+}
+
 describe('shared/logger', () => {
   describe('Logger instance', () => {
     it('initializes log directory on initialize()', () => {
@@ -51,8 +66,7 @@ describe('shared/logger', () => {
       logger.info('A', 'info message')
       logger.warn('A', 'warn message')
       logger.error('A', 'error message')
-      await waitForFlush()
-      const content = readFileSync(logger.getLogFilePath(), 'utf-8')
+      const content = await waitForContent(logger.getLogFilePath(), 'error message')
       expect(content).not.toContain('debug message')
       expect(content).not.toContain('info message')
       expect(content).toContain('warn message')
@@ -66,8 +80,7 @@ describe('shared/logger', () => {
       logger.info('A', 'i')
       logger.warn('A', 'w')
       logger.error('A', 'e')
-      await waitForFlush()
-      const content = readFileSync(logger.getLogFilePath(), 'utf-8')
+      const content = await waitForContent(logger.getLogFilePath(), '[ERROR]')
       expect(content).toContain('d')
       expect(content).toContain('i')
       expect(content).toContain('w')

@@ -32,9 +32,6 @@
     "lucide-react": "1.14.0",
     "react": "19.2.5",
     "react-dom": "19.2.5",
-    "react-filerobot-image-editor": "^5.0.0-beta.159",
-    "react-konva": "^19.2.7",
-    "styled-components": "^6.5.3",
     "three": "0.184.0",
     "wavesurfer.js": "^7.12.8"
   },
