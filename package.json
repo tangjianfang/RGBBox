@@ -1,6 +1,6 @@
 {
   "name": "rgbbox",
-  "version": "0.3.45",
+  "version": "0.3.46",
   "description": "Local-first desktop RGB lighting controller with multi-display screen sampling.",
   "author": "RGBBox Contributors",
   "homepage": "https://github.com/tangjianfang/RGBBox",
@@ -32,6 +32,9 @@
     "lucide-react": "1.14.0",
     "react": "19.2.5",
     "react-dom": "19.2.5",
+    "react-filerobot-image-editor": "^5.0.0-beta.159",
+    "react-konva": "^19.2.7",
+    "styled-components": "^6.5.3",
     "three": "0.184.0",
     "wavesurfer.js": "^7.12.8"
   },
