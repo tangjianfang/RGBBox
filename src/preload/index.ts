@@ -142,6 +142,9 @@ const api = {
     ipcRenderer.invoke(ipcChannels.screensaverGetSettings),
   screensaverSetSettings: (settings: { enabled?: boolean; idleMinutes?: number }): Promise<{ enabled: boolean; idleMinutes: number }> =>
     ipcRenderer.invoke(ipcChannels.screensaverSetSettings, settings),
+  // R76: write a PNG dataURL to the OS clipboard (main-process nativeImage)
+  clipboardWriteImage: (dataUrl: string): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.clipboardWriteImage, dataUrl),
 
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>

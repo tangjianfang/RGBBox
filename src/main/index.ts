@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, screen, session, shell, Tray } from 'electron'
+import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, screen, session, shell, Tray } from 'electron'
 import { access, mkdir, open, readdir, stat, unlink } from 'node:fs/promises'
 import { createWriteStream } from 'node:fs'
 import { get as httpGet } from 'node:http'
@@ -246,6 +246,15 @@ function registerIpc(): void {
   ipcMain.handle(ipcChannels.screensaverGetSettings, () => getScreensaverSettings())
   ipcMain.handle(ipcChannels.screensaverSetSettings, (_event, settings: { enabled?: boolean; idleMinutes?: number }) =>
     setScreensaverSettings(settings, isDevelopment, process.env.ELECTRON_RENDERER_URL))
+
+  // R76: native clipboard write-image — deterministic replacement for the
+  // renderer's navigator.clipboard path (which failed in Electron practice);
+  // invalid input returns false instead of throwing.
+  ipcMain.handle(ipcChannels.clipboardWriteImage, (_event, dataUrl: unknown) => {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false
+    clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
+    return true
+  })
 
   ipcMain.handle(ipcChannels.appVersion, () => app.getVersion())
   ipcMain.handle(ipcChannels.getDisplayTopology, () => getDisplayTopology())

@@ -113,6 +113,9 @@ export const ipcChannels = {
   // R74: light-effect screensaver (idle-triggered fullscreen effect windows)
   screensaverGetSettings: 'rgbbox:screensaver:get-settings',
   screensaverSetSettings: 'rgbbox:screensaver:set-settings',
+  // R76: native clipboard write-image (Electron clipboard, deterministic
+  // replacement for renderer navigator.clipboard which failed in practice)
+  clipboardWriteImage: 'rgbbox:clipboard:write-image',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

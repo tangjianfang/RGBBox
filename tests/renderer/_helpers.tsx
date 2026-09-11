@@ -60,6 +60,8 @@ export function setupRendererMocks() {
     shutdownStatus: vi.fn().mockResolvedValue({ armed: false }),
     screensaverGetSettings: vi.fn().mockResolvedValue({ enabled: false, idleMinutes: 5 }),
     screensaverSetSettings: vi.fn().mockResolvedValue({ enabled: false, idleMinutes: 5 }),
+    // R76: native clipboard write-image
+    clipboardWriteImage: vi.fn().mockResolvedValue(true),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),
