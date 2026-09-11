@@ -617,6 +617,16 @@ const EN = {
   // R75.3: region snip
   'video.snip.button': 'Region snip (S)',
   'video.snip.hint': 'Drag to select · Enter confirm · Esc cancel',
+  // R75.4/R75.5: snapshot editor
+  'video.editor.title': 'Edit capture',
+  'video.editor.copy': 'Copy to clipboard',
+  'video.editor.copied': 'Copied to clipboard',
+  'video.editor.copyFail': 'Copy failed',
+  'video.editor.saved': 'Saved (PNG downloaded)',
+  'video.editor.close': 'Close without saving',
+  'video.editor.loading': 'Loading editor…',
+  'video.editor.error': 'Editor failed to load — use the download link beside the thumbnail instead',
+  'video.editor.hint': 'Annotate / crop / rotate, then Save to download. Close = keep original only.',
   'video.cameraSettings': 'Camera Settings',
   'video.device': 'Device',
   'video.noCamera': 'No camera found',
@@ -1277,6 +1287,16 @@ const ZH: TranslationTable = {
   // R75.3: 局部截图
   'video.snip.button': '局部截图 (S)',
   'video.snip.hint': '拖拽框选 · Enter 确认 · Esc 取消',
+  // R75.4/R75.5: 截图编辑器
+  'video.editor.title': '编辑截图',
+  'video.editor.copy': '复制到剪贴板',
+  'video.editor.copied': '已复制到剪贴板',
+  'video.editor.copyFail': '复制失败',
+  'video.editor.saved': '已保存（PNG 已下载）',
+  'video.editor.close': '关闭（不保存）',
+  'video.editor.loading': '编辑器加载中…',
+  'video.editor.error': '编辑器加载失败——请用缩略图旁的下载链接直接保存原图',
+  'video.editor.hint': '标注 / 裁剪 / 旋转后点保存下载；直接关闭则只保留原图。',
   'video.cameraSettings': '摄像头设置',
   'video.device': '设备',
   'video.noCamera': '未找到摄像头',

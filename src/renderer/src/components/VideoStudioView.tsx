@@ -29,6 +29,7 @@ import { usePreviewZoom } from './video/usePreviewZoom'
 import { PreviewZoomBar } from './video/PreviewZoomBar'
 import { freezeVideoFrame } from './video/frameCapture'
 import { RegionSnipOverlay } from './video/RegionSnipOverlay'
+import { SnapshotEditorModal } from './video/SnapshotEditorModal'
 import type { Rect } from './video/previewTransform'
 
 type Mode = 'camera' | 'screen' | 'player'
@@ -218,7 +219,7 @@ function parseSubtitle(text: string, filename: string): SubCue[] {
 // was the video-side twin of the audio view's hour-less formatter).
 
 export function VideoStudioView(): JSX.Element {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
 
   const [mode, setMode] = useState<Mode>('camera')
 
@@ -318,6 +319,24 @@ export function VideoStudioView(): JSX.Element {
 
   const filterStyle = useMemo(() => filterCss(filters), [filters])
 
+  // ── Snapshot editor (R75.4/R75.5) ────────────────────────────────────────
+  const [editorSource, setEditorSource] = useState<string | null>(null)
+  const [editorToastMsg, setEditorToastMsg] = useState('')
+  const editorToastTimerRef = useRef<number | null>(null)
+  const editorToast = useCallback((msg: string) => {
+    setEditorToastMsg(msg)
+    if (editorToastTimerRef.current) window.clearTimeout(editorToastTimerRef.current)
+    editorToastTimerRef.current = window.setTimeout(() => setEditorToastMsg(''), 2600)
+  }, [])
+
+  const downloadPng = useCallback((dataUrl: string, prefix: string) => {
+    // R75.2: 纯像素导出，无任何水印
+    const a = document.createElement('a')
+    a.href = dataUrl
+    a.download = `${prefix}-${Date.now()}.png`
+    a.click()
+  }, [])
+
   // ── Region snip (R75.3): freeze current frame, let the user drag a selection ──
   const [snipActive, setSnipActive] = useState(false)
   const [snipFrame, setSnipFrame] = useState<HTMLCanvasElement | null>(null)
@@ -350,11 +369,8 @@ export function VideoStudioView(): JSX.Element {
     ctx.drawImage(frame, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h)
     const url = out.toDataURL('image/png')
     setLastShot(url)
-    // R75.4 接入编辑器前的过渡行为：先直接下载原片
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `rgbbox-snip-${Date.now()}.png`
-    a.click()
+    // R75.3/R75.4: 框选确认后直接进入编辑器（微信流程）
+    setEditorSource(url)
   }, [snipFrame, cancelSnip])
 
   // R75.3: S 快捷键（camera/screen live 模式；player 模式在播放器快捷键 effect 里）
@@ -541,10 +557,8 @@ export function VideoStudioView(): JSX.Element {
     ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
     const url = canvas.toDataURL('image/png')
     setLastShot(url)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `rgbbox-photo-${Date.now()}.png`
-    a.click()
+    // R75.5: 拍照不再自动下载——直接进入编辑器（关闭=不保存，原图留在右栏缩略图）
+    setEditorSource(url)
   }, [mode, filterStyle, mirror])
 
   // ── Recording ──────────────────────────────────────────────────────────────
@@ -862,6 +876,7 @@ export function VideoStudioView(): JSX.Element {
     if (playerUrlRef.current.startsWith('blob:')) URL.revokeObjectURL(playerUrlRef.current)
     if (recTimerRef.current) window.clearInterval(recTimerRef.current)
     if (controlsHideTimerRef.current) window.clearTimeout(controlsHideTimerRef.current)
+    if (editorToastTimerRef.current) window.clearTimeout(editorToastTimerRef.current)
   }, [])
 
   // Built-in fullscreen via the native Fullscreen API on the studio container.
@@ -1711,12 +1726,26 @@ export function VideoStudioView(): JSX.Element {
           {lastShot && (
             <section className="video-panel">
               <h3 className="video-panel-title">{t('video.lastShot')}</h3>
-              <img className="video-last-shot" src={lastShot} alt="last capture" />
+              {/* R75.4: 点击缩略图可再次进入编辑器 */}
+              <button type="button" className="video-last-shot-btn" onClick={() => setEditorSource(lastShot)} title={t('video.editor.title')}>
+                <img className="video-last-shot" src={lastShot} alt="last capture" />
+              </button>
               <a className="video-btn" href={lastShot} download={`rgbbox-photo-${Date.now()}.png`}><Download size={14} /> {t('video.save')}</a>
             </section>
           )}
         </aside>
       </div>
+
+      {/* R75.4: 截图编辑器（拍照 / 局部截图 / 缩略图三入口） */}
+      <SnapshotEditorModal
+        source={editorSource ?? ''}
+        open={editorSource !== null}
+        lang={lang}
+        onClose={() => setEditorSource(null)}
+        onSaved={(url) => downloadPng(url, 'rgbbox-photo')}
+        toast={editorToast}
+      />
+      {editorToastMsg && <div className="video-editor-toast">{editorToastMsg}</div>}
     </div>
   )
 }

@@ -56,7 +56,7 @@ vi.mock('lucide-react', () => {
     'ChevronRight','ChevronUp','Circle','Clipboard','Clock','Cloud','CloudOff','Code','Codepen',
     'Coffee','Command','Compass','Copy','Cpu','Crop','Crosshair','Database','Delete','Disc',
     'Download','Droplet','Edit','Edit2','Eye','EyeOff','Facebook','File','FilePlus','FileText','Film',
-    'Filter','Flag','FlipHorizontal','FlipVertical','Folder','FolderOpen','Frown','Gift','GitBranch','GitCommit','GitMerge',
+    'Filter','Flag','FlipHorizontal','FlipVertical','Folder','FolderOpen','Frown','Frame','Gift','GitBranch','GitCommit','GitMerge',
     'GitPullRequest','Globe','Grid','Gauge','HardDrive','Hash','Headphones','Heart','HelpCircle',
     'Hexagon','Home','Image','Inbox','Info','Instagram','Italic','Key','Languages','Layers','Layout',
     'LifeBuoy','Link','Link2','Link2Off','Linkedin','List','Loader','Lock','LogIn','LogOut','Mail','Map','MapPin',
