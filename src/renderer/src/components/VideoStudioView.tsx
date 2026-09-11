@@ -16,7 +16,7 @@
 
 import {
   AppWindow, Camera, CameraOff, ChevronDown, ChevronRight, Circle, Download, FileText,
-  Film, FlipHorizontal, FolderOpen, Image as ImageIcon, Link as LinkIcon, Maximize2,
+  Film, FlipHorizontal, FolderOpen, Frame, Image as ImageIcon, Link as LinkIcon, Maximize2,
   Minimize2, Monitor, MonitorPlay, Pause, Play, Plus, RefreshCw, Scissors, SkipBack,
   SkipForward, Square, Trash2, Video, Volume2, VolumeX,
 } from 'lucide-react'
@@ -27,6 +27,9 @@ import type { CaptureSource } from '../../../shared/types'
 import { formatMediaTime } from '../../../shared/timeFormat'
 import { usePreviewZoom } from './video/usePreviewZoom'
 import { PreviewZoomBar } from './video/PreviewZoomBar'
+import { freezeVideoFrame } from './video/frameCapture'
+import { RegionSnipOverlay } from './video/RegionSnipOverlay'
+import type { Rect } from './video/previewTransform'
 
 type Mode = 'camera' | 'screen' | 'player'
 
@@ -314,6 +317,57 @@ export function VideoStudioView(): JSX.Element {
   const [trimQuality, setTrimQuality] = useState<'lossless' | 'high' | 'balanced'>('high')
 
   const filterStyle = useMemo(() => filterCss(filters), [filters])
+
+  // ── Region snip (R75.3): freeze current frame, let the user drag a selection ──
+  const [snipActive, setSnipActive] = useState(false)
+  const [snipFrame, setSnipFrame] = useState<HTMLCanvasElement | null>(null)
+  const startSnip = useCallback(() => {
+    if (snipActive) return
+    const source = mode === 'player' ? playerRef.current : videoRef.current
+    if (!source?.videoWidth) return
+    const frame = freezeVideoFrame(source, filterStyle, mirror && mode === 'camera')
+    if (!frame) return
+    if (mode === 'player') playerRef.current?.pause()
+    setSnipFrame(frame)
+    setSnipActive(true)
+  }, [snipActive, mode, filterStyle, mirror])
+
+  const cancelSnip = useCallback(() => {
+    setSnipActive(false)
+    setSnipFrame(null)
+  }, [])
+
+  const finishSnip = useCallback((sel: Rect) => {
+    const frame = snipFrame
+    cancelSnip()
+    if (!frame) return
+    const out = document.createElement('canvas')
+    out.width = sel.w
+    out.height = sel.h
+    const ctx = out.getContext('2d')
+    if (!ctx) return
+    // R75.2: 裁剪只搬运像素，绝不叠加任何文字/logo（无水印铁律）
+    ctx.drawImage(frame, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h)
+    const url = out.toDataURL('image/png')
+    setLastShot(url)
+    // R75.4 接入编辑器前的过渡行为：先直接下载原片
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `rgbbox-snip-${Date.now()}.png`
+    a.click()
+  }, [snipFrame, cancelSnip])
+
+  // R75.3: S 快捷键（camera/screen live 模式；player 模式在播放器快捷键 effect 里）
+  useEffect(() => {
+    if (mode === 'player' || !streaming || snipActive) return
+    const onKey = (e: KeyboardEvent): void => {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
+      if (e.key === 's' || e.key === 'S') { e.preventDefault(); startSnip() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mode, streaming, snipActive, startSnip])
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   const stopStream = useCallback(() => {
@@ -783,11 +837,13 @@ export function VideoStudioView(): JSX.Element {
         case 'ArrowDown': e.preventDefault(); setPlayerVolume(v => Math.max(0, v - 0.1)); break
         case 'm': case 'M': setPlayerMuted(v => !v); break
         case 'f': case 'F': togglePlayerFullscreen(); break
+        // R75.3: S 进入局部截图（框选覆盖层自身的 keydown 在 capture 阶段优先处理 ESC/Enter）
+        case 's': case 'S': startSnip(); break
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [mode, togglePlayerPlay, playerSeek, togglePlayerFullscreen])
+  }, [mode, togglePlayerPlay, playerSeek, togglePlayerFullscreen, startSnip])
 
   // R70.5: mirror the player URL so the unmount cleanup below can revoke the
   // blob: URL — the functional-setState revoke inside clearPlayerSource never
@@ -1105,6 +1161,23 @@ export function VideoStudioView(): JSX.Element {
                   loop={playerLoop}
                   playsInline
                 />
+                {/* R75.3: 冻结帧（框选期间画面静止） */}
+                {snipActive && snipFrame && (
+                  <canvas
+                    ref={(el) => {
+                      if (el && el.width !== snipFrame.width) {
+                        el.width = snipFrame.width
+                        el.height = snipFrame.height
+                        el.getContext('2d')?.drawImage(snipFrame, 0, 0)
+                      }
+                    }}
+                    className="video-preview-rect video-snip-freeze"
+                    style={{
+                      left: playerZoom.contentRect.x, top: playerZoom.contentRect.y,
+                      width: playerZoom.contentRect.w, height: playerZoom.contentRect.h,
+                    }}
+                  />
+                )}
               </div>
 
               {/* Empty-state overlay */}
@@ -1124,6 +1197,18 @@ export function VideoStudioView(): JSX.Element {
                   onReset={playerZoom.reset}
                   onOneToOne={playerZoom.oneToOne}
                   disabled={!mediaLoaded}
+                />
+              )}
+
+              {/* R75.3: 屏幕空间框选覆盖层 */}
+              {snipActive && snipFrame && (
+                <RegionSnipOverlay
+                  view={playerZoom.view}
+                  contentRect={playerZoom.contentRect}
+                  nativeSize={{ w: snipFrame.width, h: snipFrame.height }}
+                  wrapSize={playerZoom.containerSize}
+                  onConfirm={finishSnip}
+                  onCancel={cancelSnip}
                 />
               )}
 
@@ -1244,6 +1329,23 @@ export function VideoStudioView(): JSX.Element {
                   playsInline
                   muted
                 />
+                {/* R75.3: 冻结帧（进入框选时抓取，覆盖在层内继承同一缩放 transform） */}
+                {snipActive && snipFrame && (
+                  <canvas
+                    ref={(el) => {
+                      if (el && el.width !== snipFrame.width) {
+                        el.width = snipFrame.width
+                        el.height = snipFrame.height
+                        el.getContext('2d')?.drawImage(snipFrame, 0, 0)
+                      }
+                    }}
+                    className="video-preview-rect video-snip-freeze"
+                    style={{
+                      left: liveZoom.contentRect.x, top: liveZoom.contentRect.y,
+                      width: liveZoom.contentRect.w, height: liveZoom.contentRect.h,
+                    }}
+                  />
+                )}
               </div>
 
               {/* Empty-state overlay */}
@@ -1282,6 +1384,18 @@ export function VideoStudioView(): JSX.Element {
                   disabled={!streaming}
                 />
               )}
+
+              {/* R75.3: 屏幕空间框选覆盖层 */}
+              {snipActive && snipFrame && (
+                <RegionSnipOverlay
+                  view={liveZoom.view}
+                  contentRect={liveZoom.contentRect}
+                  nativeSize={{ w: snipFrame.width, h: snipFrame.height }}
+                  wrapSize={liveZoom.containerSize}
+                  onConfirm={finishSnip}
+                  onCancel={cancelSnip}
+                />
+              )}
             </div>
           )}
 
@@ -1317,6 +1431,7 @@ export function VideoStudioView(): JSX.Element {
               <>
                 <span className="video-transport-sep" />
                 <button type="button" className="video-btn" onClick={capturePhoto}><ImageIcon size={15} /> {t('video.photo')}</button>
+                <button type="button" className="video-btn" onClick={startSnip} disabled={snipActive} title={t('video.snip.hint')}><Frame size={15} /> {t('video.snip.button')}</button>
                 {mode !== 'player' && (
                   recording
                     ? <button type="button" className="video-btn video-btn-rec" onClick={stopRecording}><Square size={15} /> {t('video.recStop')}</button>

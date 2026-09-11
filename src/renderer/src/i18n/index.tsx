@@ -614,6 +614,9 @@ const EN = {
   'video.zoom.reset': 'Reset (fit window)',
   'video.zoom.oneToOne': '1:1 actual pixels',
   'video.zoom.hint': 'Double-click to reset',
+  // R75.3: region snip
+  'video.snip.button': 'Region snip (S)',
+  'video.snip.hint': 'Drag to select · Enter confirm · Esc cancel',
   'video.cameraSettings': 'Camera Settings',
   'video.device': 'Device',
   'video.noCamera': 'No camera found',
@@ -1271,6 +1274,9 @@ const ZH: TranslationTable = {
   'video.zoom.reset': '复位（适应窗口）',
   'video.zoom.oneToOne': '1:1 实际像素',
   'video.zoom.hint': '双击复位',
+  // R75.3: 局部截图
+  'video.snip.button': '局部截图 (S)',
+  'video.snip.hint': '拖拽框选 · Enter 确认 · Esc 取消',
   'video.cameraSettings': '摄像头设置',
   'video.device': '设备',
   'video.noCamera': '未找到摄像头',
