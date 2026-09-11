@@ -622,6 +622,25 @@
   - [ ] 手动：三模式 Ctrl+滚轮缩放流畅且锚点正确、双击复位、1:1 准确；放大 400% 后框选局部截图坐标精准；拍照→编辑→保存/复制剪贴板链路通；所有导出物无任何水印
 - **R75.10** **状态**：✅（代码已实施，自动化验证全绿（证据见 R75.9）；filerobot React 19 运行时链路 + 实机手动验证 pending 用户复测。）
 
+### R76. 截图/标注体验重做（微信式就地工具条，取代 R75.4/R75.5 的 filerobot 弹窗方案）
+
+> 触发场景：2026-09-12 用户实测 R75 后反馈"截图、编辑功能体验很差"。复盘确认的缺陷根因：① 编辑器内部大片白色（库 palette 约 80 个 key 仅覆盖 4 个，默认亮色）；② 中文翻译完全未生效（R75.4 翻译包 key 名与库实际 key（`cropTool`/`penTool`/`annotateTabLabel` 等）不匹配）；③ "复制到剪贴板"复制的是未编辑原图且 `navigator.clipboard` 在 Electron 渲染层实测失败；④ 保存后弹窗不关闭；⑤ 拍照/局部截图被强制弹入大编辑器；⑥ 框选交互别扭（手柄小、双击任意处误确认）；⑦ 弹窗布局与显示问题。**用户选定方向 A：微信式就地工具条（弃用 filerobot，自研轻量标注器），要求体验对齐并超越微信截图。**
+> **风险等级：L2**（移除 npm 依赖 `react-filerobot-image-editor` + `react-konva` + `styled-components`、新增 1 个 IPC 通道（主进程原生剪贴板写图）、用户可见 UI 行为重做）。R75.1 缩放套件与 R75.3 框选骨架保留并打磨；R75.4/R75.5 的弹窗编辑器方案由本条取代。
+
+- **R76.1** **`annotationModel.ts` 纯函数形状模型**（新增 `src/renderer/src/components/video/`）：形状类型 `rect | ellipse | arrow | pen | text | mosaic`（bbox 存储 + 各自专有字段）；操作：`addShape` / `updateShape` / `removeShape` / `hitTest`（顶层优先）/ `moveShape` / `resizeShape`（8 手柄）/ 撤销重做（快照数组 `undo`/`redo`/`canUndo`/`canRedo`）；无 DOM 依赖可单测。
+- **R76.2** **`AnnotateOverlay.tsx` 就地标注器**（新增）：图片停在原处（覆盖在预览区上、按 contain 适配），底部浮动微信式工具条。工具集：矩形/椭圆/箭头/画笔/文字/马赛克（像素化画笔——微信有而 filerobot 无，"超越"点）+ 撤销/重做 + 8 色色板 + 3 档粗细 + 选中移动/缩放/Delete 删除 + 尺寸标注。渲染用 canvas（马赛克采样与画笔性能所需），文字编辑用 DOM `<textarea>` 定位覆盖，命中检测走 R76.1 模型。快捷键：ESC 取消退出、Delete 删除选中、Ctrl+Z/Ctrl+Y 撤销重做（超越点）。工具条按钮：`✓ 保存`（下载 PNG）/ `复制`（走 R76.4 IPC）/ `×` 放弃。
+- **R76.3** **流程重做（三入口）**：**拍照恢复"咔嚓即下载"**（R75.5 行为回退），右栏缩略图 hover 出"编辑"按钮 → 进入 `AnnotateOverlay`；**局部截图确认后不再弹编辑器**——冻结画面停在原处 + 浮出工具条（微信流程），✓ 保存下载 / 复制 / × 放弃；缩略图"编辑"与截图标注共用同一组件。编辑产物一律不落任何水印（延续 R75.2 铁律）。
+- **R76.4** **剪贴板 IPC（确定性修复复制失败）**：新增通道 `rgbbox:clipboard:write-image`（`src/shared/ipc.ts` + `src/main/index.ts` handler 用 `clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))` + `src/preload/index.ts` 白名单 `clipboardWriteImage`）。渲染层 `navigator.clipboard` 路径废弃。`tests/renderer/_helpers.tsx` 补对应 mock。
+- **R76.5** **框选交互打磨**：手柄命中区 8px→16px；双击仅**选区内**=确认（选区外双击=新建选区，不再误确认）；框选期间底部常显提示条（拖拽框选 · Enter ✓ · Esc ×）；框选与标注共用同一套手柄渲染/命中逻辑。
+- **R76.6** **依赖与文件清理**：`yarn remove react-filerobot-image-editor react-konva styled-components`（renderer 主包瘦身，懒加载 chunk 消失）；删除 `SnapshotEditorModal.tsx`、`editorZh.ts` 及其测试；`tests/renderer/setup.ts` 清理相关 mock（如有）。
+- **R76.7** **不动**：R75.1 缩放套件（hook/控制条/数学模块）、R75.3 框选骨架与冻结帧机制、MediaRecorder 录制、视频裁剪导出、`media://` 协议、overlay/投屏、`package.json` scripts、R70–R72 已修项。
+- **R76.8** **受影响文件**：`src/renderer/src/components/video/annotationModel.ts`（新增）、`src/renderer/src/components/video/AnnotateOverlay.tsx`（新增）、`src/renderer/src/components/video/RegionSnipOverlay.tsx`（打磨）、`src/renderer/src/components/VideoStudioView.tsx`（流程重做）、`src/shared/ipc.ts`、`src/main/index.ts`、`src/preload/index.ts`、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`package.json`/`yarn.lock`（依赖移除）、删除 `video/SnapshotEditorModal.tsx`、`video/editorZh.ts`、`tests/renderer/components/SnapshotEditorModal.test.tsx`、新增 `tests/renderer/components/annotationModel.test.ts`、`tests/renderer/components/AnnotateOverlay.test.tsx`、`tests/renderer/_helpers.tsx`。
+- **R76.9** **验收点**：
+  - [ ] `yarn typecheck` / `yarn build` 通过（filerobot chunk 从产物消失）
+  - [ ] `yarn test` 全量通过，无回归（annotationModel + AnnotateOverlay 新用例）
+  - [ ] 手动：拍照直接下载；缩略图"编辑"进入就地标注；局部截图确认后就地浮出工具条（矩形/椭圆/箭头/画笔/文字/马赛克/撤销重做可用，选中可移动缩放删除）；✓ 保存 PNG 无水印；复制到剪贴板在微信/画图可粘贴；框选手柄好抓、选区外双击不再误确认
+- **R76.10** **状态**：⏳
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
