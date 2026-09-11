@@ -616,11 +616,11 @@
 - **R75.7** **不动**：R70–R72 已修项、MediaRecorder 录制管线本体、`media://` 协议（R70.1）、overlay/投屏体系、`package.json` scripts、preload 白名单（无新 IPC）。`package.json` 仅 dependencies +1。
 - **R75.8** **受影响文件**：`src/renderer/src/components/VideoStudioView.tsx`、`src/renderer/src/components/video/previewTransform.ts`（新增）、`src/renderer/src/components/video/usePreviewZoom.ts`（新增）、`src/renderer/src/components/video/RegionSnipOverlay.tsx`（新增）、`src/renderer/src/components/video/SnapshotEditorModal.tsx`（新增）、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`package.json`（+`react-filerobot-image-editor`）、`tests/renderer/components/previewTransform.test.ts`（新增）、`tests/renderer/components/SnapshotEditorModal.test.tsx`（新增，mock filerobot 模块）。
 - **R75.9** **验收点**：
-  - [ ] spike：`react-filerobot-image-editor` 在 React 19.2.5 + Electron 41 下挂载/标注/裁剪/保存全链路可用（不可用则触发回退流程）
-  - [ ] `yarn typecheck` / `yarn build` 通过
-  - [ ] `yarn test` 全量通过，无回归（`previewTransform` 纯函数单测 + 编辑器弹窗组件测试新增）
+  - [x] spike（编译级 + 官方声明）：安装 `react-filerobot-image-editor@5.0.0-beta.159`，其 peerDeps 为 **`react >=19.0.0`**（官方支持 React 19，R75.4 的兼容风险解除，回退预案不再需要）；另需显式补装其 peer 依赖 `react-konva@19.2.7`、`styled-components@6.5.3`（yarn 1 不自动装 peer，较 R75.8 预估多 2 个间接依赖，如实记录）；库自带 TS 类型，`yarn typecheck`/`yarn build` 通过且编辑器为独立懒加载 chunk（`out/renderer/assets/index-D-nqVtB2.js`，不进主包）。**运行时挂载/标注/裁剪/保存链路待用户实机验证。**
+  - [x] `yarn typecheck` 通过（node + web 双绿）；`yarn build` 通过（renderer 全产出，编辑器独立 chunk 1.86MB 懒加载）
+  - [x] `yarn test` 全量通过：**52 files / 536 passed / 41 skipped，0 失败**（较 R74 基线 47 files / 511 passed → +5 文件 +25 用例：`previewTransform.test.ts` 10 + `usePreviewZoom.test.tsx` 5 + `PreviewZoomBar.test.tsx` 2 + `RegionSnipOverlay.test.tsx` 4 + `SnapshotEditorModal.test.tsx` 4；连续两次全量复跑均绿，首跑 1 例失败为既有 flaky 用例，复跑未再现）
   - [ ] 手动：三模式 Ctrl+滚轮缩放流畅且锚点正确、双击复位、1:1 准确；放大 400% 后框选局部截图坐标精准；拍照→编辑→保存/复制剪贴板链路通；所有导出物无任何水印
-- **R75.10** **状态**：⏳
+- **R75.10** **状态**：✅（代码已实施，自动化验证全绿（证据见 R75.9）；filerobot React 19 运行时链路 + 实机手动验证 pending 用户复测。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
@@ -2054,3 +2054,5 @@
 | 2026-07-04 | 用户批准 R23（L2 走标准四步已由用户口述确认）；状态 ⏳ → 🔄；开始实施 | mike |
 | 2026-07-04 | 实施 R23：`package.json` `build.win` +2 键（`signAndEditExecutable:false`、`signtoolOptions:null`）+ `build.mac` +2 键（`identity:null`、`sign:null`）；R23.4 用户感知文案入 PRD；§8 已知问题同步登记历史失败 | Claude |
 | 2026-07-04 | 实施 R23 verify：`yarn dist` exit 0，`release/RGBBox-0.3.17-win.zip` ≈145 MB；winCodeSign 解码阶段 grep 输出 0 命中；`release/builder-debug.yml` 反查 `sign\|identity\|rcedit\|codeSign` 0 命中；状态 🔄 → ✅；§6 R23 行已挂证据 | Claude |
+| 2026-09-11 | 追加 R75（视频工作站预览缩放 + 框选局部截图 + 微信式图片编辑器 + 无水印铁律）；L2 风险；brainstorm 四项确认 + filerobot 选型经用户批准；状态 ⏳ | mike / Claude |
+| 2026-09-11 | 实施 R75：`video/` 新增 7 文件（previewTransform/usePreviewZoom/PreviewZoomBar/frameCapture/RegionSnipOverlay/SnapshotEditorModal/editorZh）；依赖 +react-filerobot-image-editor@5.0.0-beta.159（peerDeps react>=19，官方支持）+ peer 补装 react-konva/styled-components；typecheck/build 全绿、52 files / 536 passed（+25 新用例）；状态 ⏳ → ✅；待用户实机验收 | Claude |
