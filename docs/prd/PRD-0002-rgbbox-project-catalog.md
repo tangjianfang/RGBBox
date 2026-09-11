@@ -602,6 +602,26 @@
   - [ ] 手动：空闲到达阈值后全屏显示当前工作区灯效且屏幕不熄灭、动鼠标立即退出、ESC 退出、锁屏后解锁不残留窗口、重启后设置保留
 - **R74.7** **状态**：✅（代码已实施，自动化验证全绿（证据见 R74.6）；实机手动验证 pending 用户复测。）
 
+### R75. 视频工作站预览缩放套件 + 框选局部截图 + 微信式图片编辑器（含无水印铁律）
+
+> 触发场景：用户 2026-09-11 需求（brainstorm 四项确认）——① 预览窗口支持无极放大缩小/复位等视觉操作；② 录制、截图永不加水印（现状核实：代码本就无任何水印逻辑，固化为验收铁律）；③ 拍照后图片支持编辑（参考微信截图编辑，用户选型复用 `react-filerobot-image-editor`）；④ 预览窗口支持局部截图。缩放/框选覆盖摄像头/屏幕捕获/播放器三个模式。
+> **风险等级：L2**（新增 1 个 npm 依赖 `react-filerobot-image-editor`（约 +300~500KB，peerDeps 仅声明到 React 18，React 19.2.5 兼容性需 spike 验证）+ 用户可见行为变更（拍照不再自动下载，改为进编辑器）。纯 renderer 改动，无新 IPC / preload / engine 变更。
+
+- **R75.1** **预览缩放套件（三模式通用）**：新增 `src/renderer/src/components/video/` 目录：`usePreviewZoom.ts`（hook）+ 包裹层对现有 `<video>` 施加 CSS `transform: scale() translate()`。交互：Ctrl+滚轮以鼠标位置为锚点无级缩放（10%–800%，×1.1/格，无 Ctrl 的滚轮不缩放）；放大超出适配后拖拽平移；双击预览区复位"适应窗口"；悬浮控制条：`－` / `＋` / 百分比显示 / 复位（适应窗口）/ `1:1` 实际像素（1 视频像素 = 1 CSS 像素）。**缩放纯视觉**：拍照/录像/裁剪导出始终取原生分辨率全帧（验收明确，防"放大后拍照更大"误解）。播放器单击播放/暂停语义不变（双击引发的两次 toggle 相互抵消，双击仅做复位）。缩放数学（锚点缩放公式、fit 计算、边界 clamp、预览↔原生坐标映射）抽 `previewTransform.ts` 纯函数模块供单测。
+- **R75.2** **无水印铁律（验收条款）**：所有导出物（照片 PNG / 录像 webm|mp4 / 裁剪片段 / 编辑器输出）**永不叠加任何文字、logo、标识**。编辑器配置 `tabsIds: ['Annotate','Adjust']`，机制性排除库内置 Watermark / Filters 标签页。
+- **R75.3** **框选局部截图（三模式，冻结帧方案）**：传输条新增"局部截图"按钮 + 快捷键 `S`。进入时先抓当前帧画到静态 canvas 覆盖层（画面冻结——直播流框选时画面不再移动，对齐微信体验），拖拽矩形选区 + 8 手柄调整（ESC 取消、Enter/双击确认），实时显示选区原生像素尺寸（如 `640×360`）；确认后从冻结帧裁出选区（摄像头模式沿用现有滤镜+镜像逻辑，与整帧拍照一致）→ 直接进入编辑器。选区坐标经 `previewTransform` 从预览坐标系映射回视频原生坐标系（含缩放/镜像补偿）。
+- **R75.4** **图片编辑器（react-filerobot-image-editor）**：新增 `SnapshotEditorModal.tsx` 全屏弹窗，三个入口：拍照后 / 局部截图确认后 / 右栏"最近拍摄"缩略图点击。配置：`tabsIds: ['Annotate','Adjust']`（标注：矩形/椭圆/箭头/画笔/文字；调整：裁剪/旋转）、`defaultTabId: 'Annotate'`、`useBackendTranslations: false`（离线桌面应用禁止网络请求，库默认 true）、`translations` 自备中文语言包（跟随应用语言切换）、`theme.palette` 深色系对齐项目风格。保存输出 PNG 下载；保存旁新增"复制到剪贴板"按钮（`navigator.clipboard` + `ClipboardItem`，Chromium 支持，失败 toast 提示）。**已知取舍（如实记录）**：filerobot 无马赛克/像素化工具，v1 不含（微信套件其余工具齐全），记 §8 待扩；React 19 运行时兼容性为实施第一步 spike 验证项，若挂载/保存异常则回退 konva 自建方案，**回退前重新报用户确认**。
+- **R75.5** **拍照行为变更**：拍照不再"咔嚓即自动下载"，改为拍照 → 打开编辑器 → 编辑器内保存才下载 PNG；直接关闭弹窗 = 不保存（原图保留在右栏缩略图，可再进编辑器或点现有下载链接直接保存原片）。
+- **R75.6** **i18n + 样式**：`i18n/index.tsx` 新增 `video.zoom.*` / `video.snip.*` / `video.editor.*` 中英双语 key；`styles.css` 新增 `.video-zoom-*` / `.video-snip-*` / `.video-editor-modal` 等（含 R72 教训：新滑杆/输入避免与全局 `input[type='range']` 特异性冲突）。
+- **R75.7** **不动**：R70–R72 已修项、MediaRecorder 录制管线本体、`media://` 协议（R70.1）、overlay/投屏体系、`package.json` scripts、preload 白名单（无新 IPC）。`package.json` 仅 dependencies +1。
+- **R75.8** **受影响文件**：`src/renderer/src/components/VideoStudioView.tsx`、`src/renderer/src/components/video/previewTransform.ts`（新增）、`src/renderer/src/components/video/usePreviewZoom.ts`（新增）、`src/renderer/src/components/video/RegionSnipOverlay.tsx`（新增）、`src/renderer/src/components/video/SnapshotEditorModal.tsx`（新增）、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`package.json`（+`react-filerobot-image-editor`）、`tests/renderer/components/previewTransform.test.ts`（新增）、`tests/renderer/components/SnapshotEditorModal.test.tsx`（新增，mock filerobot 模块）。
+- **R75.9** **验收点**：
+  - [ ] spike：`react-filerobot-image-editor` 在 React 19.2.5 + Electron 41 下挂载/标注/裁剪/保存全链路可用（不可用则触发回退流程）
+  - [ ] `yarn typecheck` / `yarn build` 通过
+  - [ ] `yarn test` 全量通过，无回归（`previewTransform` 纯函数单测 + 编辑器弹窗组件测试新增）
+  - [ ] 手动：三模式 Ctrl+滚轮缩放流畅且锚点正确、双击复位、1:1 准确；放大 400% 后框选局部截图坐标精准；拍照→编辑→保存/复制剪贴板链路通；所有导出物无任何水印
+- **R75.10** **状态**：⏳
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
