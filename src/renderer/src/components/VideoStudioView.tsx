@@ -25,6 +25,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import { useI18n } from '../i18n'
 import type { CaptureSource } from '../../../shared/types'
 import { formatMediaTime } from '../../../shared/timeFormat'
+import { usePreviewZoom } from './video/usePreviewZoom'
+import { PreviewZoomBar } from './video/PreviewZoomBar'
 
 type Mode = 'camera' | 'screen' | 'player'
 
@@ -219,6 +221,9 @@ export function VideoStudioView(): JSX.Element {
 
   // ── Live preview ─────────────────────────────────────────────────────────
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  // R75.1: live preview zoom (camera / screen modes)
+  const liveWrapRef = useRef<HTMLDivElement | null>(null)
+  const liveZoom = usePreviewZoom(liveWrapRef)
   const streamRef = useRef<MediaStream | null>(null)
   const [streaming, setStreaming] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
@@ -266,6 +271,8 @@ export function VideoStudioView(): JSX.Element {
   // R71.6: suspends timeupdate write-back while the user drags the seek slider.
   const seekDraggingRef = useRef(false)
   const playerWrapRef = useRef<HTMLDivElement | null>(null)
+  // R75.1: player preview zoom
+  const playerZoom = usePreviewZoom(playerWrapRef)
   const subFileInputRef = useRef<HTMLInputElement | null>(null)
 
   // ── Subtitles ─────────────────────────────────────────────────────────────
@@ -595,6 +602,20 @@ export function VideoStudioView(): JSX.Element {
     if (mode === 'screen') void refreshSources()
   }, [mode, refreshDevices, refreshSources])
 
+  // R75.1: feed live video native size into the zoom hook (loadedmetadata for
+  // first frame, resize for resolution changes while streaming).
+  useEffect(() => {
+    const el = videoRef.current
+    if (!el) return
+    const onMeta = () => { if (el.videoWidth) liveZoom.setNativeSize({ w: el.videoWidth, h: el.videoHeight }) }
+    el.addEventListener('loadedmetadata', onMeta)
+    el.addEventListener('resize', onMeta)
+    return () => {
+      el.removeEventListener('loadedmetadata', onMeta)
+      el.removeEventListener('resize', onMeta)
+    }
+  }, [mode, streaming, liveZoom.setNativeSize])
+
   // Stop live capture whenever we switch away from a live mode.
   const prevModeRef = useRef<Mode>('camera')
   useEffect(() => {
@@ -606,6 +627,19 @@ export function VideoStudioView(): JSX.Element {
 
   // Player playback rate / loop
   useEffect(() => { if (playerRef.current) playerRef.current.playbackRate = playerRate }, [playerRate, playerUrl])
+
+  // R75.1: feed player video native size into the zoom hook (per source).
+  useEffect(() => {
+    const el = playerRef.current
+    if (!el) return
+    const onMeta = () => { if (el.videoWidth) playerZoom.setNativeSize({ w: el.videoWidth, h: el.videoHeight }) }
+    el.addEventListener('loadedmetadata', onMeta)
+    el.addEventListener('resize', onMeta)
+    return () => {
+      el.removeEventListener('loadedmetadata', onMeta)
+      el.removeEventListener('resize', onMeta)
+    }
+  }, [playerUrl, usingHls, playerZoom.setNativeSize])
 
   // Player volume/mute sync
   useEffect(() => {
@@ -1056,14 +1090,22 @@ export function VideoStudioView(): JSX.Element {
               onMouseEnter={resetControlsTimer}
               onClick={togglePlayerPlay}
             >
-              <video
-                ref={playerRef}
-                className="video-preview"
-                style={{ filter: filterStyle }}
-                src={playerUrl || undefined}
-                loop={playerLoop}
-                playsInline
-              />
+              <div className="video-zoom-layer" style={playerZoom.layerStyle} onDoubleClick={playerZoom.reset}>
+                <video
+                  ref={playerRef}
+                  className="video-preview video-preview-rect"
+                  style={{
+                    filter: filterStyle,
+                    left: playerZoom.contentRect.w > 0 ? playerZoom.contentRect.x : undefined,
+                    top: playerZoom.contentRect.w > 0 ? playerZoom.contentRect.y : undefined,
+                    width: playerZoom.contentRect.w > 0 ? playerZoom.contentRect.w : '100%',
+                    height: playerZoom.contentRect.h > 0 ? playerZoom.contentRect.h : '100%',
+                  }}
+                  src={playerUrl || undefined}
+                  loop={playerLoop}
+                  playsInline
+                />
+              </div>
 
               {/* Empty-state overlay */}
               {!mediaLoaded && (
@@ -1071,6 +1113,18 @@ export function VideoStudioView(): JSX.Element {
                   <Film size={40} />
                   <span>{streamError ? `⚠ ${streamError}` : t('video.player.empty')}</span>
                 </div>
+              )}
+
+              {/* R75.1: zoom control bar */}
+              {mediaLoaded && (
+                <PreviewZoomBar
+                  percent={playerZoom.percent}
+                  onZoomIn={() => playerZoom.zoomBy(1.1)}
+                  onZoomOut={() => playerZoom.zoomBy(1 / 1.1)}
+                  onReset={playerZoom.reset}
+                  onOneToOne={playerZoom.oneToOne}
+                  disabled={!mediaLoaded}
+                />
               )}
 
               {/* Subtitle overlay (R71.4: gated on mediaLoaded so a stale last
@@ -1173,15 +1227,24 @@ export function VideoStudioView(): JSX.Element {
             </div>
           ) : (
             /* ── Live preview (camera / screen) ────────────────────────── */
-            <div className="video-preview-wrap">
-              <video
-                ref={videoRef}
-                className="video-preview"
-                style={{ filter: filterStyle, transform: mirror && mode === 'camera' ? 'scaleX(-1)' : undefined }}
-                autoPlay
-                playsInline
-                muted
-              />
+            <div className="video-preview-wrap" ref={liveWrapRef}>
+              <div className="video-zoom-layer" style={liveZoom.layerStyle} onDoubleClick={liveZoom.reset}>
+                <video
+                  ref={videoRef}
+                  className="video-preview video-preview-rect"
+                  style={{
+                    filter: filterStyle,
+                    transform: mirror && mode === 'camera' ? 'scaleX(-1)' : undefined,
+                    left: liveZoom.contentRect.w > 0 ? liveZoom.contentRect.x : undefined,
+                    top: liveZoom.contentRect.w > 0 ? liveZoom.contentRect.y : undefined,
+                    width: liveZoom.contentRect.w > 0 ? liveZoom.contentRect.w : '100%',
+                    height: liveZoom.contentRect.h > 0 ? liveZoom.contentRect.h : '100%',
+                  }}
+                  autoPlay
+                  playsInline
+                  muted
+                />
+              </div>
 
               {/* Empty-state overlay */}
               {!streaming && (
@@ -1207,6 +1270,18 @@ export function VideoStudioView(): JSX.Element {
               >
                 {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
               </button>
+
+              {/* R75.1: zoom control bar */}
+              {streaming && (
+                <PreviewZoomBar
+                  percent={liveZoom.percent}
+                  onZoomIn={() => liveZoom.zoomBy(1.1)}
+                  onZoomOut={() => liveZoom.zoomBy(1 / 1.1)}
+                  onReset={liveZoom.reset}
+                  onOneToOne={liveZoom.oneToOne}
+                  disabled={!streaming}
+                />
+              )}
             </div>
           )}
 

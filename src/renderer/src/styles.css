@@ -4336,6 +4336,67 @@ input[type='range'].audio-slider {
   color: #fff;
 }
 
+/* R75.1: preview zoom layer + control bar */
+.video-zoom-layer {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+
+.video-preview-rect {
+  position: absolute;
+  object-fit: contain;
+}
+
+.video-zoom-bar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  z-index: 5;
+}
+
+.video-zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #c5f0e4;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.video-zoom-btn:hover:not(:disabled) {
+  border-color: #46c6a8;
+  color: #fff;
+}
+
+.video-zoom-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.video-zoom-pct {
+  min-width: 44px;
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #c5f0e4;
+  letter-spacing: 0.4px;
+}
+
 .video-transport {
   display: flex;
   align-items: center;
