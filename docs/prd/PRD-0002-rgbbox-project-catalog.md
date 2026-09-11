@@ -636,10 +636,10 @@
 - **R76.7** **不动**：R75.1 缩放套件（hook/控制条/数学模块）、R75.3 框选骨架与冻结帧机制、MediaRecorder 录制、视频裁剪导出、`media://` 协议、overlay/投屏、`package.json` scripts、R70–R72 已修项。
 - **R76.8** **受影响文件**：`src/renderer/src/components/video/annotationModel.ts`（新增）、`src/renderer/src/components/video/AnnotateOverlay.tsx`（新增）、`src/renderer/src/components/video/RegionSnipOverlay.tsx`（打磨）、`src/renderer/src/components/VideoStudioView.tsx`（流程重做）、`src/shared/ipc.ts`、`src/main/index.ts`、`src/preload/index.ts`、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`package.json`/`yarn.lock`（依赖移除）、删除 `video/SnapshotEditorModal.tsx`、`video/editorZh.ts`、`tests/renderer/components/SnapshotEditorModal.test.tsx`、新增 `tests/renderer/components/annotationModel.test.ts`、`tests/renderer/components/AnnotateOverlay.test.tsx`、`tests/renderer/_helpers.tsx`。
 - **R76.9** **验收点**：
-  - [ ] `yarn typecheck` / `yarn build` 通过（filerobot chunk 从产物消失）
-  - [ ] `yarn test` 全量通过，无回归（annotationModel + AnnotateOverlay 新用例）
+  - [x] `yarn typecheck` 通过（node + web 双绿）；`yarn build` 通过，且 filerobot 懒加载 chunk（R75 产物中 1.86MB 的 `index-D-nqVtB2.js`）从产物消失——renderer chunk 只剩单 index（2.32MB，较 R75 前基线仅 +~60KB 自研标注/缩放代码）
+  - [x] `yarn test` 全量通过：**53 files / 545 passed / 41 skipped，0 失败**（`--maxWorkers=4`，连续两次全绿；较 R75 基线 52/536 → +1 文件 +9 用例：`annotationModel.test.ts` 8 + `AnnotateOverlay.test.tsx` 5 − `SnapshotEditorModal.test.tsx` 4）。**如实记录**：默认满并行下套件存在 2 个与 R76 无关的既有 load-sensitive 用例随机失败（`tests/shared/logger.test.ts` minLevel 固定 20ms sleep、`tests/renderer/hooks/useAudioAnalyzer.test.ts` 150ms 激活等待——单跑均绿、限并发后全绿；logger 用例已顺带改为内容轮询加固，仅测试代码，产品行为零改动）
   - [ ] 手动：拍照直接下载；缩略图"编辑"进入就地标注；局部截图确认后就地浮出工具条（矩形/椭圆/箭头/画笔/文字/马赛克/撤销重做可用，选中可移动缩放删除）；✓ 保存 PNG 无水印；复制到剪贴板在微信/画图可粘贴；框选手柄好抓、选区外双击不再误确认
-- **R76.10** **状态**：⏳
+- **R76.10** **状态**：✅（代码已实施，自动化验证全绿（证据见 R76.9）；实机手动验证 pending 用户复测。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
@@ -2075,3 +2075,5 @@
 | 2026-07-04 | 实施 R23 verify：`yarn dist` exit 0，`release/RGBBox-0.3.17-win.zip` ≈145 MB；winCodeSign 解码阶段 grep 输出 0 命中；`release/builder-debug.yml` 反查 `sign\|identity\|rcedit\|codeSign` 0 命中；状态 🔄 → ✅；§6 R23 行已挂证据 | Claude |
 | 2026-09-11 | 追加 R75（视频工作站预览缩放 + 框选局部截图 + 微信式图片编辑器 + 无水印铁律）；L2 风险；brainstorm 四项确认 + filerobot 选型经用户批准；状态 ⏳ | mike / Claude |
 | 2026-09-11 | 实施 R75：`video/` 新增 7 文件（previewTransform/usePreviewZoom/PreviewZoomBar/frameCapture/RegionSnipOverlay/SnapshotEditorModal/editorZh）；依赖 +react-filerobot-image-editor@5.0.0-beta.159（peerDeps react>=19，官方支持）+ peer 补装 react-konva/styled-components；typecheck/build 全绿、52 files / 536 passed（+25 新用例）；状态 ⏳ → ✅；待用户实机验收 | Claude |
+| 2026-09-12 | 追加 R76（截图/标注体验重做：微信式就地工具条，取代 R75.4/R75.5 filerobot 弹窗）；L2 风险；7 项缺陷根因复盘 + 方向 A 经用户批准；状态 ⏳ | mike / Claude |
+| 2026-09-12 | 实施 R76：新增 `annotationModel.ts`（纯函数形状模型+历史栈，8 用例）+ `AnnotateOverlay.tsx`（canvas 就地标注：矩形/椭圆/箭头/画笔/文字/马赛克/撤销重做/✓保存/复制/×，5 用例）+ 剪贴板 IPC `rgbbox:clipboard:write-image`（clipboard.writeImage 原生实现）；拍照恢复直接下载、框选确认后就地标注、缩略图显式编辑按钮；框选手柄 16px/双击限选区内/提示条；移除 filerobot+react-konva+styled-components（chunk -1.86MB）；顺带加固 logger 测试竞态；53 files / 545 passed（--maxWorkers=4 连续两次全绿）；状态 ⏳ → ✅；待用户实机验收 | Claude |
