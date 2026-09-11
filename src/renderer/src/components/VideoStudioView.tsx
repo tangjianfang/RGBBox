@@ -17,7 +17,7 @@
 import {
   AppWindow, Camera, CameraOff, ChevronDown, ChevronRight, Circle, Download, FileText,
   Film, FlipHorizontal, FolderOpen, Frame, Image as ImageIcon, Link as LinkIcon, Maximize2,
-  Minimize2, Monitor, MonitorPlay, Pause, Play, Plus, RefreshCw, Scissors, SkipBack,
+  Minimize2, Monitor, MonitorPlay, Pause, Pencil, Play, Plus, RefreshCw, Scissors, SkipBack,
   SkipForward, Square, Trash2, Video, Volume2, VolumeX,
 } from 'lucide-react'
 import Hls from 'hls.js'
@@ -29,7 +29,7 @@ import { usePreviewZoom } from './video/usePreviewZoom'
 import { PreviewZoomBar } from './video/PreviewZoomBar'
 import { freezeVideoFrame } from './video/frameCapture'
 import { RegionSnipOverlay } from './video/RegionSnipOverlay'
-import { SnapshotEditorModal } from './video/SnapshotEditorModal'
+import { AnnotateOverlay } from './video/AnnotateOverlay'
 import type { Rect } from './video/previewTransform'
 
 type Mode = 'camera' | 'screen' | 'player'
@@ -219,7 +219,7 @@ function parseSubtitle(text: string, filename: string): SubCue[] {
 // was the video-side twin of the audio view's hour-less formatter).
 
 export function VideoStudioView(): JSX.Element {
-  const { t, lang } = useI18n()
+  const { t } = useI18n()
 
   const [mode, setMode] = useState<Mode>('camera')
 
@@ -319,8 +319,8 @@ export function VideoStudioView(): JSX.Element {
 
   const filterStyle = useMemo(() => filterCss(filters), [filters])
 
-  // ── Snapshot editor (R75.4/R75.5) ────────────────────────────────────────
-  const [editorSource, setEditorSource] = useState<string | null>(null)
+  // ── Snapshot annotate (R76: in-place annotator replaces R75 modal) ──────
+  const [annotateSource, setAnnotateSource] = useState<HTMLCanvasElement | string | null>(null)
   const [editorToastMsg, setEditorToastMsg] = useState('')
   const editorToastTimerRef = useRef<number | null>(null)
   const editorToast = useCallback((msg: string) => {
@@ -367,10 +367,9 @@ export function VideoStudioView(): JSX.Element {
     if (!ctx) return
     // R75.2: 裁剪只搬运像素，绝不叠加任何文字/logo（无水印铁律）
     ctx.drawImage(frame, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h)
-    const url = out.toDataURL('image/png')
-    setLastShot(url)
-    // R75.3/R75.4: 框选确认后直接进入编辑器（微信流程）
-    setEditorSource(url)
+    // R76.3: 框选确认后就地标注（微信流程）——不再下载、不弹窗
+    setLastShot(out.toDataURL('image/png'))
+    setAnnotateSource(out)
   }, [snipFrame, cancelSnip])
 
   // R75.3: S 快捷键（camera/screen live 模式；player 模式在播放器快捷键 effect 里）
@@ -557,9 +556,9 @@ export function VideoStudioView(): JSX.Element {
     ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
     const url = canvas.toDataURL('image/png')
     setLastShot(url)
-    // R75.5: 拍照不再自动下载——直接进入编辑器（关闭=不保存，原图留在右栏缩略图）
-    setEditorSource(url)
-  }, [mode, filterStyle, mirror])
+    // R76.3: 拍照恢复"咔嚓即下载"；要编辑时点右栏缩略图旁的编辑按钮
+    downloadPng(url, 'rgbbox-photo')
+  }, [mode, filterStyle, mirror, downloadPng])
 
   // ── Recording ──────────────────────────────────────────────────────────────
   const stopRecording = useCallback(() => {
@@ -1455,6 +1454,24 @@ export function VideoStudioView(): JSX.Element {
               </>
             )}
           </div>
+
+          {/* R76: in-place annotator（局部截图确认 / 缩略图编辑入口） */}
+          {annotateSource !== null && (
+            <AnnotateOverlay
+              source={annotateSource}
+              onClose={() => setAnnotateSource(null)}
+              onSave={(url) => {
+                downloadPng(url, 'rgbbox-annotated')
+                setAnnotateSource(null)
+                editorToast(t('video.annotate.saved' as never))
+              }}
+              onCopy={(url) => {
+                window.rgbbox.clipboardWriteImage(url)
+                  .then((ok) => editorToast(t((ok ? 'video.annotate.copied' : 'video.annotate.copyFail') as never)))
+                  .catch(() => editorToast(t('video.annotate.copyFail' as never)))
+              }}
+            />
+          )}
         </div>
 
         {/* ── Inspector ─────────────────────────────────────────────────── */}
@@ -1726,25 +1743,19 @@ export function VideoStudioView(): JSX.Element {
           {lastShot && (
             <section className="video-panel">
               <h3 className="video-panel-title">{t('video.lastShot')}</h3>
-              {/* R75.4: 点击缩略图可再次进入编辑器 */}
-              <button type="button" className="video-last-shot-btn" onClick={() => setEditorSource(lastShot)} title={t('video.editor.title')}>
-                <img className="video-last-shot" src={lastShot} alt="last capture" />
-              </button>
-              <a className="video-btn" href={lastShot} download={`rgbbox-photo-${Date.now()}.png`}><Download size={14} /> {t('video.save')}</a>
+              <img className="video-last-shot" src={lastShot} alt="last capture" />
+              {/* R76.3: 显式编辑入口（进就地标注器）+ 下载 */}
+              <div className="video-last-shot-row">
+                <button type="button" className="video-btn" onClick={() => setAnnotateSource(lastShot)} title={t('video.annotate.title')}>
+                  <Pencil size={14} /> {t('video.lastShotEdit')}
+                </button>
+                <a className="video-btn" href={lastShot} download={`rgbbox-photo-${Date.now()}.png`}><Download size={14} /> {t('video.save')}</a>
+              </div>
             </section>
           )}
         </aside>
       </div>
 
-      {/* R75.4: 截图编辑器（拍照 / 局部截图 / 缩略图三入口） */}
-      <SnapshotEditorModal
-        source={editorSource ?? ''}
-        open={editorSource !== null}
-        lang={lang}
-        onClose={() => setEditorSource(null)}
-        onSaved={(url) => downloadPng(url, 'rgbbox-photo')}
-        toast={editorToast}
-      />
       {editorToastMsg && <div className="video-editor-toast">{editorToastMsg}</div>}
     </div>
   )

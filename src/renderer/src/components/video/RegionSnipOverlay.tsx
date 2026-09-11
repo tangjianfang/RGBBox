@@ -5,6 +5,7 @@
  * 拖拽（新建/移动/缩放）与 ESC/Enter。选区状态用内容坐标存储，渲染时映射屏幕。
  */
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { useI18n } from '../../i18n'
 import {
   contentRectToScreen, contentToNative, nativeSelectionRect,
   screenToContent, type Pt, type Rect, type Size, type ViewTransform,
@@ -12,7 +13,8 @@ import {
 
 type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 const MIN_NATIVE = 8
-const HANDLE_HIT_PX = 12
+// R76.5: 8 → 16，好抓
+const HANDLE_HIT_PX = 16
 const HANDLERS: Array<{ id: Handle; fx: number; fy: number; cursor: string }> = [
   { id: 'nw', fx: 0, fy: 0, cursor: 'nwse-resize' }, { id: 'n', fx: 0.5, fy: 0, cursor: 'ns-resize' },
   { id: 'ne', fx: 1, fy: 0, cursor: 'nesw-resize' }, { id: 'e', fx: 1, fy: 0.5, cursor: 'ew-resize' },
@@ -43,6 +45,7 @@ function resizeRect(orig: Rect, handle: Handle, p: Pt): Rect {
 }
 
 export function RegionSnipOverlay({ view, contentRect, nativeSize, wrapSize, onConfirm, onCancel }: RegionSnipOverlayProps): JSX.Element {
+  const { t } = useI18n()
   const [sel, setSel] = useState<Rect | null>(null)
   const dragRef = useRef<DragSession | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -129,6 +132,7 @@ export function RegionSnipOverlay({ view, contentRect, nativeSize, wrapSize, onC
     : `M0 0H${wrapSize.w}V${wrapSize.h}H0Z`
 
   return (
+    <>
     <svg
       ref={svgRef}
       className="video-snip-svg"
@@ -138,7 +142,15 @@ export function RegionSnipOverlay({ view, contentRect, nativeSize, wrapSize, onC
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
-      onDoubleClick={(e) => { e.stopPropagation(); confirm() }}
+      onDoubleClick={(e) => {
+        e.stopPropagation()
+        // R76.5: 只在选区内双击=确认；选区外双击=清空重选（不再误确认）
+        if (sel) {
+          const p = toContent(e.clientX, e.clientY)
+          if (p.x >= sel.x && p.x <= sel.x + sel.w && p.y >= sel.y && p.y <= sel.y + sel.h) confirm()
+          else setSel(null)
+        }
+      }}
     >
       <path d={maskPath} fill="rgba(0,0,0,0.5)" fillRule="evenodd" />
       {screenSel && (
@@ -157,5 +169,8 @@ export function RegionSnipOverlay({ view, contentRect, nativeSize, wrapSize, onC
         </>
       )}
     </svg>
+    {/* R76.5: 常显操作提示条 */}
+    <div className="video-snip-hintbar">{t('video.snip.hint')}</div>
+    </>
   )
 }

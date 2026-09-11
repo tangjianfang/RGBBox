@@ -616,7 +616,7 @@ const EN = {
   'video.zoom.hint': 'Double-click to reset',
   // R75.3: region snip
   'video.snip.button': 'Region snip (S)',
-  'video.snip.hint': 'Drag to select · Enter confirm · Esc cancel',
+  'video.snip.hint': 'Drag to select · Enter save · Esc cancel',
   // R75.4/R75.5: snapshot editor
   'video.editor.title': 'Edit capture',
   'video.editor.copy': 'Copy to clipboard',
@@ -643,6 +643,11 @@ const EN = {
   'video.annotate.close': 'Discard and close (Esc)',
   'video.annotate.textPlaceholder': 'Type…',
   'video.annotate.hint': 'Pick a tool and draw · ✓ save · copy · × discard',
+  'video.annotate.title': 'Edit capture',
+  'video.annotate.saved': 'Saved (PNG downloaded)',
+  'video.annotate.copied': 'Copied to clipboard',
+  'video.annotate.copyFail': 'Copy failed',
+  'video.lastShotEdit': 'Edit',
   'video.cameraSettings': 'Camera Settings',
   'video.device': 'Device',
   'video.noCamera': 'No camera found',
@@ -1302,7 +1307,7 @@ const ZH: TranslationTable = {
   'video.zoom.hint': '双击复位',
   // R75.3: 局部截图
   'video.snip.button': '局部截图 (S)',
-  'video.snip.hint': '拖拽框选 · Enter 确认 · Esc 取消',
+  'video.snip.hint': '拖拽框选 · Enter 保存 · Esc 取消',
   // R75.4/R75.5: 截图编辑器
   'video.editor.title': '编辑截图',
   'video.editor.copy': '复制到剪贴板',
@@ -1329,6 +1334,11 @@ const ZH: TranslationTable = {
   'video.annotate.close': '放弃并关闭 (Esc)',
   'video.annotate.textPlaceholder': '输入文字…',
   'video.annotate.hint': '选工具直接画 · ✓ 保存 · 复制 · × 放弃',
+  'video.annotate.title': '编辑截图',
+  'video.annotate.saved': '已保存（PNG 已下载）',
+  'video.annotate.copied': '已复制到剪贴板',
+  'video.annotate.copyFail': '复制失败',
+  'video.lastShotEdit': '编辑',
   'video.cameraSettings': '摄像头设置',
   'video.device': '设备',
   'video.noCamera': '未找到摄像头',
