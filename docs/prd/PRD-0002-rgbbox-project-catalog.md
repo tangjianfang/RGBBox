@@ -767,6 +767,33 @@
   - **验收点**：trayMenu 3/3；全量 60 files / 608 passed / 0 失败；typecheck + build 0 error；实机中英文切换托盘菜单即时切换（待用户复测）。
   - **状态**：✅（自动化全绿；实机复测待用户确认。）
 
+### R81. 自定义全局截图热键（预设五选一）
+
+> 来源：2026-09-13 用户复测 R80 后需求「Alt+A 快捷键可以设置自定义吗？」；选型经用户确认（预设列表五选一）。**风险等级：L1**（设置持久化 + 热键重注册 + UI 行为，无新依赖）。
+- **R81.1** **设置项与持久化**：`system.json` 新增 `snip: { hotkey: string }`（默认 `Alt+A`）；启动时读取并注册；`PRESET_SNIP_HOTKEYS = ['Alt+A','Ctrl+Alt+A','Ctrl+Shift+S','F2','PrintScreen']` 白名单校验。
+- **R81.2** **snipManager**：抽 `applyHotkey()`（unregister 旧 → register 新 → `isRegistered` 校验，失败回滚旧键并回调 onConflict）；导出 `getSnipHotkeyPref/setSnipHotkeyPref`；托盘菜单标签经 `trayMenuLabels(locale, 当前键)` 跟随（R80.12 已预留参数）。
+- **R81.3** **IPC + UI**：`rgbbox:snip:get-hotkey` / `set-hotkey`（校验+注册+持久化+重建托盘菜单，返回 `{ok, hotkey}`）；App 状态面板（屏保开关下）加「全局截图热键」下拉行；冲突 → 气泡 + 选择回退。i18n zh/en。
+- **R81.4** **验收点**：预设白名单纯函数单测；切换热键后旧键失效新键生效 + 托盘标签跟随（实机）；全量回归 0 失败。
+- **R81.5** **状态**：⏳
+
+### R82. 本地 RapidOCR（PP-OCRv4 ONNX）替换/兜底 WinRT
+
+> 来源：2026-09-13 用户复测「OCR 识别成功率比较低，有没有速度快、识别率高的方案」；选型经用户确认（本地 RapidOCR，保留 WinRT 回退）。**风险等级：L2**（新 npm 依赖 onnxruntime-node + 模型资产 + 主进程推理管线）。
+- **R82.1** **依赖与模型**：`onnxruntime-node`（CPU）；模型 det（ch_PP-OCRv4_det_infer.onnx ~4.7MB）+ rec（ch_PP-OCRv4_rec_infer.onnx ~10.9MB）+ 字典 ppocr_keys_v1.txt，官方上游 Release 直链，首次 OCR 自动下载到 `userData/models/rapidocr/`（复用下载进度机制；期间 WinRT 兜底 + 一次气泡提示）；下载失败持续 WinRT。
+- **R82.2** **推理服务** `src/main/rapidOcrService.ts`：懒加载 session；nativeImage 解码 RGBA（零 canvas 依赖）；det 预处理（max-side 960 等比 + ImageNet 归一化 NCHW）→ DBNet 概率图 → 阈值 0.3 → 连通域 → bbox 映射回原图 + 比例扩边（截图文本轴对齐，不做多边形 unclip）；rec 预处理（h=48 等比、(x/255-0.5)/0.5）→ CTC 贪心解码（纯函数）；按行排序拼接。
+- **R82.3** **引擎路由**：`ocrService.recognizeImage` 优先 RapidOCR（模型就绪）→ 异常回退 WinRT；结果带 `engine` 标识；OCR 面板显示引擎名。IPC 签名不变（渲染层零改动除引擎展示）。
+- **R82.4** **验收点**：CTC 解码 + det 后处理纯函数单测（构造张量）；引擎路由单测（mock）；实机用低识别率样本对比 WinRT vs RapidOCR；全量回归 0 失败 + build 0 error（含 asarUnpack 原生模块）。
+- **R82.5** **状态**：⏳
+
+### R83. OCR 后 AI 整理（云 LLM，OpenAI 兼容协议）
+
+> 来源：2026-09-13 用户需求「识别结果有没有 AI 小模型进行集成」；选型经用户确认（云 LLM 后处理，需配 Key）。**风险等级：L2**（网络请求 + Key 持久化 + 新设置 UI）。
+- **R83.1** **设置项**：`system.json` 新增 `ai: { baseUrl, apiKey, model }`（默认建议 `https://open.bigmodel.cn/api/paas/v4` + `glm-4-flash`）；App 设置区「AI 整理」配置行（baseUrl/模型/Key 输入 + 保存）；Key 不入日志。
+- **R83.2** **服务与 IPC**：`src/main/aiCleanupService.ts`（node fetch，OpenAI chat/completions 协议；系统提示词=整理 OCR 文本恢复段落/去乱码/表格转 markdown、不新增内容；30s 超时）；`rgbbox:ai:cleanup-text` + `ai:get-settings` / `ai:set-settings`。
+- **R83.3** **UI**：OCR 结果面板加「AI 整理」按钮——已配 Key：调用并以结果替换文本区（可重新识别还原）；未配 Key：行内提示跳设置；失败行内提示不影响纯 OCR。
+- **R83.4** **验收点**：请求体构造/响应解析纯函数单测；未配 Key 路径组件测试；实机配 GLM Key 走通一次整理；全量回归 0 失败。
+- **R83.5** **状态**：⏳
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
