@@ -811,6 +811,16 @@
 - **R84.4** **验收点**：方向检测/翻译请求构造纯函数单测；组件测试（整图按钮直接识别、连续框选、翻译→显示原文往返）；全量回归 0 失败。
 - **R84.5** **状态**：✅（方向检测/翻译请求构造 3 用例 + 组件流 3 用例（整图直识不进框选、面板开后连续框选二轮替换结果、翻译→显示原文往返）；工具栏 ScanText(框选)+Scan(整图) 图标区分 + 面板整图按钮换 Scan；62 files / 626 passed 0 失败；typecheck + build 0 error；实机复测待用户。）
 
+### R85. 主界面重设计：Dashboard 首页 + 模块 Tab 标签页导航
+
+> 来源：2026-09-13 用户需求——功能模块越来越多，当前左 sidebar 菜单入口（8 个）复杂度变高；改造为「首页 dashboard 按重点/优先级展示各模块 + 点击模块在顶部开新 Tab 标签页（第一个 Tab 恒为 Dashboard，其余按模块名按需打开）」。**风险等级：L1**（纯 renderer UI 壳层重构，无新依赖、无新 IPC；但属用户可见行为变更，须走标准流程）。分支：`feat/dashboard-tab-shell`。
+- **R85.1** **Dashboard 首页**：新增 dashboard 作为首屏（恒为第一个 Tab），按重要性/优先级以模块卡片形式展示各功能模块入口及关键状态；具体卡片清单与排序见设计文档（`docs/superpowers/specs/2026-09-13-dashboard-tab-shell-design.md`）。
+- **R85.2** **顶部 Tab 栏**：顶部区域显示 Tab 栏；第一个 Tab 恒为 Dashboard（不可关闭），其余 Tab 仅在用户点击对应模块后按需打开，Tab 名为模块名；支持关闭非 Dashboard Tab。
+- **R85.3** **导航层约束**：不引入路由层（遵守 CLAUDE.md God Component 约定），仍基于 `type View` 联合 + 状态驱动；旧 `rgbbox:view` localStorage 迁移兼容。
+- **R85.4** **受影响文件**：`src/renderer/src/App.tsx`（导航壳层）、`src/renderer/src/styles.css`（布局样式）、`src/renderer/src/i18n/*`（zh+en 新字符串）、`tests/renderer/**`（组件测试）。设计定稿后在此更新。
+- **R85.5** **验收点**（设计定稿后细化）：Dashboard 按优先级展示模块卡片；点击卡片 → 顶部新开对应模块 Tab 并切换；关闭 Tab 回到 Dashboard；Dashboard Tab 不可关闭；旧 `rgbbox:view` 值不再导致落错视图；zh/en 文案齐全；全量回归 0 失败。
+- **R85.6** **状态**：🔄（设计阶段：brainstorming → spec → 实施计划 → 实施）。
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
