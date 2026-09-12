@@ -738,11 +738,12 @@
 - **R80.6** **SnipView 标注阶段**：`cropToDataUrl` 裁剪选区 → 就地 `AnnotateOverlay`（source=dataURL，全套标注/OCR/智能手势零改动）；✓ → `<a download>` 下载 + `snipFinish('save')`；复制 → `snipFinish('copy')`；两者随后 `snipCancel()`；×/ESC → 关标注器回拖选态（不退出会话）。
 - **R80.7** **托盘接线**：`createTray()` 菜单加「截图 (Alt+A)」项（在「显示 / 隐藏主界面」之后）。
 - **R80.8** **验收点**：
-  - [ ] snipManager 纯函数单测：display↔source 匹配 / 物理像素尺寸 / action 路由
-  - [ ] SnipView 组件测试：拉帧进选区态；拖选 ≥8px → AnnotateOverlay 挂载；<8px 回拖选态；ESC 分层（选区态退出会话、标注态先关标注器）；✓/复制 → snipFinish(正确 action) + snipCancel
-  - [ ] `yarn typecheck` + 全量 `yarn vitest run --maxWorkers=4` 0 失败 + `yarn build` 0 error
-  - [ ] 实机手动：多屏冻结、DPI 150% 选区像素准确、Alt+A 冲突降级气泡、secure desktop 黑帧可 ESC、托盘入口、最近拍摄入库（kind=annotated）
-- **R80.9** **状态**：🔄
+  - [x] snipManager 纯函数单测：display↔source 匹配 / 物理像素尺寸 / action 路由（tests/main/snipManager.test.ts 4/4）
+  - [x] SnipView 组件测试：拉帧进选区态；拖选 ≥8px → AnnotateOverlay 挂载；<8px 回拖选态；ESC 分层（选区态退出会话、标注态先关标注器）；右键退出；✓/复制 → snipFinish(正确 action) + snipCancel（tests/renderer/components/SnipView.test.tsx 8/8）
+  - [x] `yarn typecheck` 通过；全量 `yarn vitest run --maxWorkers=4`：**59 files / 604 passed / 41 skipped，0 失败**（较 R79.12 基线 592 → +12：snipManager 4 + SnipView 8）；`yarn build` 0 error
+  - [x] 实机端到端（CDP 驱动，单屏）：desktopCapturer 冻结真实桌面（图标/壁纸/任务栏清晰）→ 全屏窗口 + 暗幕 + 中文提示条 → 真实鼠标拖选 → AnnotateOverlay 就地挂载（选区内亮外暗 + 完整工具条）→ ESC 分层（1 次=关标注器回拖选、2 次=退出会话，窗口即时销毁，仅剩主窗口）——截图证据 `snip-select.png` / `snip-annotate.png`（本次验证后已清理）
+  - [ ] 实机复测（待用户）：多屏冻结、DPI 150% 选区像素准确、Alt+A 冲突降级气泡、托盘菜单入口、最近拍摄入库（kind=annotated）
+- **R80.9** **状态**：✅（自动化全绿 + 实机端到端验证（单屏）；多屏/DPI/热键冲突场景待用户复测确认。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
@@ -2189,3 +2190,4 @@
 | 2026-09-12 | 追加并实施 R79.10（用户复测缺陷"文字功能无法添加输入"）：systematic-debugging 四阶段定位实机焦点竞态根因（pointerdown 同步挂 textarea+autoFocus 被同一击 mousedown 默认焦点行为瞬时 blur → 空 commit → 卸载；CDP 临时插桩实证生命周期，单测假绿因 fireEvent 不模拟默认焦点行为）→ 修复 = onPointerDown preventDefault（根因）+ textarea ref rAF 补聚焦（双保险）；回归用例钉行为契约（defaultPrevented + 下一帧 activeElement）；实机 CDP 验证全绿（打字"ABC123"→Enter 提交→画布渲染，截图视觉确认）；57 files / 587 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户复测确认 | Claude |
 | 2026-09-12 | 追加并实施 R79.11（用户反馈"有输入文字点别处也要保存"）：根因 = R79.10 preventDefault 阻断默认焦点转移后，点击画布别处不再触发 onBlur 隐式提交 → 已输入文字被新 setTextInput 覆盖丢失；修复 = onPointerDown 显式 commitText（微信式点哪落哪，空输入不落形状）+ 调色板点击即时给选中标注上色；排版/排序确认 R78.1 已支持（对齐/字号/粗体/图层 4 向/旋转/双击再编辑/Ctrl+C-V）；57 files / 589 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机复测 | Claude |
 | 2026-09-12 | 追加并实施 R79.12（智能手势切换，用户反馈"编辑中拖动/调整其它形状要点击很多地方"）：模型层新增 hitShapeBorder 纯函数（bbox 边框带 tol 命中→角柄等比/边柄单轴，旋转逆变换，边段范围约束防命中延长线，pen/arrow 不参与，顶层优先）；交互层任意工具下悬停边框变方向 resize 光标 + 按下自动选中直接进入拉伸（免切工具），文字工具点中文字补齐 move 拖拽；拖完不换工具；57 files / 592 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机复测 | Claude |
+| 2026-09-12 | 实施 R80（独立全局截图工具，设计/计划文档随附）：snipManager（desktopCapturer 先截后开窗 + 每屏 frameless 全屏置顶窗口 + 会话互斥/显示器变化取消 + Alt+A 注册失败气泡降级）+ 3 条 snip IPC + preload API + 托盘「截图 (Alt+A)」菜单项 + SnipView（冻结帧全屏 → 暗幕拖选 ≥8px + 尺寸角标 → cropToDataUrl 裁剪 → AnnotateOverlay 全套标注零改动复用；✓=下载+落档 / 复制=剪贴板+落档；ESC 分层退出）；TDD 全程：snipManager 4 用例 + SnipView 8 用例；59 files / 604 passed（--maxWorkers=4）；实机 CDP 端到端验证（冻结→拖选→标注→ESC 分层→会话销毁，截图留证）；状态 🔄 → ✅；多屏/DPI/热键冲突待用户复测 | Claude |
