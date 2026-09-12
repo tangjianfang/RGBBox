@@ -69,7 +69,11 @@ try {
   if ($null -eq $engine) { Write-Output 'RGBBOX_OCR_ERR:nolangpack'; exit 0 }
 
   $file = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($img)) ([Windows.Storage.StorageFile])
-  $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($file)) ([Windows.Graphics.Imaging.BitmapDecoder])
+  # R79.1（实证修复）: PS 5.1 无法经 :: 调用返回 IAsyncOperation 的静态 WinRT 方法
+  # （BitmapDecoder::CreateAsync 无论传什么都报"找不到重载"）——改流式 + 反射直调。
+  $stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
+  $createMethod = [Windows.Graphics.Imaging.BitmapDecoder].GetMethods() | Where-Object { $_.Name -eq 'CreateAsync' -and $_.GetParameters().Count -eq 1 } | Select-Object -First 1
+  $decoder = Await ($createMethod.Invoke($null, @($stream))) ([Windows.Graphics.Imaging.BitmapDecoder])
   $soft = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
   if ($null -eq $soft) { Write-Output 'RGBBOX_OCR_ERR:decode'; exit 0 }
 
@@ -83,6 +87,15 @@ try {
 `
 }
 
+/**
+ * R79.1: 合并 CJK 字符之间的空格（WinRT OCR 对中文按词输出、词间带空格，
+ * 如"会 议 记 录"）；CJK 与拉丁数字边界的空格保留，其余空格原样不动。
+ */
+export function mergeCjkSpaces(text: string): string {
+  const cjk = '[\\u3400-\\u9FFF\\uF900-\\uFAFF]'
+  return text.replace(new RegExp(`(${cjk}) +(?=${cjk})`, 'g'), '$1')
+}
+
 export function parseOcrOutput(stdout: string): { ok: boolean; text: string; hint?: string } {
   const lines = stdout.split(/\r?\n/)
   const err = lines.find(l => l.startsWith('RGBBOX_OCR_ERR:'))
@@ -90,7 +103,7 @@ export function parseOcrOutput(stdout: string): { ok: boolean; text: string; hin
   const begin = lines.indexOf('RGBBOX_OCR_BEGIN')
   const end = lines.indexOf('RGBBOX_OCR_END')
   if (begin >= 0 && end > begin) {
-    return { ok: true, text: lines.slice(begin + 1, end).join('\n') }
+    return { ok: true, text: mergeCjkSpaces(lines.slice(begin + 1, end).join('\n')) }
   }
   return { ok: false, text: '', hint: 'engine' }
 }

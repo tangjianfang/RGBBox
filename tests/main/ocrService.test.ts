@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildOcrScript, parseOcrOutput, recognizeImage } from '../../src/main/ocrService'
+import { buildOcrScript, parseOcrOutput, recognizeImage, mergeCjkSpaces } from '../../src/main/ocrService'
 
 describe('ocrService pure', () => {
   it('buildOcrScript embeds the image path and the language fallback chain', () => {
@@ -14,9 +14,27 @@ describe('ocrService pure', () => {
     expect(script).toContain('RGBBOX_OCR_ERR')
   })
 
+  it('R79.1: decoder creation uses stream + reflection (PS 5.1 static async binding bug)', () => {
+    const script = buildOcrScript('C:\\tmp\\x.png')
+    expect(script).toContain('OpenAsync')
+    expect(script).toContain('$createMethod')
+    expect(script).toContain('.Invoke($null, @($stream))')
+    // 旧的直调方式必须已移除（它会报"找不到重载"）
+    expect(script).not.toContain('::CreateAsync($file)')
+    expect(script).not.toContain('::CreateAsync($stream)')
+  })
+
+  it('mergeCjkSpaces joins single-CJK char gaps but keeps CJK/Latin boundaries', () => {
+    expect(mergeCjkSpaces('会 议 记 录 2026')).toBe('会议记录 2026')
+    expect(mergeCjkSpaces('视 频 工作站 OCR 测 试')).toBe('视频工作站 OCR 测试')
+    expect(mergeCjkSpaces('Chinese Test 67890')).toBe('Chinese Test 67890')
+    expect(mergeCjkSpaces('hello  world')).toBe('hello  world')   // 非 CJK 不动
+    expect(mergeCjkSpaces('')).toBe('')
+  })
+
   it('parseOcrOutput: success block, error codes, empty and garbage', () => {
-    expect(parseOcrOutput('RGBBOX_OCR_BEGIN\n你好 world\nsecond line\nRGBBOX_OCR_END\n'))
-      .toEqual({ ok: true, text: '你好 world\nsecond line', hint: undefined })
+    expect(parseOcrOutput('RGBBOX_OCR_BEGIN\n会 议 记 录 2026\nsecond line\nRGBBOX_OCR_END\n'))
+      .toEqual({ ok: true, text: '会议记录 2026\nsecond line', hint: undefined })
     expect(parseOcrOutput('RGBBOX_OCR_ERR:nolangpack')).toMatchObject({ ok: false, hint: 'nolangpack' })
     expect(parseOcrOutput('RGBBOX_OCR_ERR:decode')).toMatchObject({ ok: false, hint: 'decode' })
     expect(parseOcrOutput('RGBBOX_OCR_BEGIN\nRGBBOX_OCR_END')).toEqual({ ok: true, text: '', hint: undefined })
