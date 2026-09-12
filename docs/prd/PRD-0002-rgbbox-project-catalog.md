@@ -730,8 +730,19 @@
 
 > 触发场景：2026-09-12 用户需求——截图做成独立功能：① 入口放右下角托盘菜单；② 带图片编辑全套逻辑；③ 启动截图时显示悬浮截图小工具；复用现有功能。可行性评估已完成（复用约 70%：AnnotateOverlay 标注全家桶 / RegionSnipOverlay 框选 / desktopCapturer / captureStore 缓存 / 剪贴板 IPC / R74 多显示器全屏窗口先例；新增主进程 SnipManager + `?snip=1` 路由）。已知边界：锁屏/UAC secure desktop 无法截取（系统限制）、多显示器 DPI 映射需处理。**经用户确认立项，R79 交付后实施；交互细节届时 brainstorm 补充。**
 > **风险等级：L2**（新窗口类型 + 托盘菜单 + 用户可见新功能）。
-- **R80.1–R80.x**：待 R79 交付后 brainstorm 细化（入口/热键/多显示器/窗口生命周期/缓存与剪贴板复用/验收点）。
-- **R80.2** **状态**：⏳
+- **R80.1** **交互决策**（2026-09-12 brainstorm 经用户确认）：托盘右键菜单「截图 (Alt+A)」+ 全局热键 `Alt+A` 双入口；所有显示器一起冻结；复制 = 剪贴板 + 存最近拍摄（不下载），✓ = 下载 PNG + 存最近拍摄（不写剪贴板）；悬浮工具 = 选区确认后 AnnotateOverlay 工具条就地出现（微信式）。设计文档：`docs/superpowers/specs/2026-09-12-r80-global-snip-design.md`；实施计划：`docs/superpowers/plans/2026-09-12-r80-global-snip.md`。
+- **R80.2** **主进程管理器**：新增 `src/main/snipManager.ts`：`startSnip()` 先 `desktopCapturer.getSources({types:['screen']})`（thumbnailSize 取各屏物理像素最大值）按 `source.display_id` 匹配 `screen.getAllDisplays()` 冻结全部屏，**先截后开窗**；每屏 frameless 全屏窗口（`setBounds(display.bounds)`、`alwaysOnTop('screen-saver')`、skipTaskbar、R74 模式）query `?snip=1&displayId=X`；会话互斥；任一窗口关闭 → 全部销毁；显示器增删/分辨率变化 → 会话取消。纯函数 `matchDisplayToSource` / `physicalThumbSize` / `resolveFinishAction` 导出供单测。
+- **R80.3** **热键**：`globalShortcut.register('Alt+A')` → `startSnip()`；注册后 `isRegistered` 为 false（被微信等占用）→ 托盘气泡提示降级；`before-quit` 注销。
+- **R80.4** **IPC + preload**（3 条新通道）：`rgbbox:snip:get-frame`（displayId → `{dataUrl}`）、`rgbbox:snip:finish`（`{dataUrl, action:'copy'|'save'}` → clipboard.writeImage + captureStore.addPng('annotated')）、`rgbbox:snip:cancel`（send，关全部）。`src/shared/ipc.ts` 加常量；preload 加 `snipGetFrame/snipFinish/snipCancel`。
+- **R80.5** **SnipView 选区阶段**：`main.tsx` 加 `?snip=1` 路由（包 I18nProvider，R70.9 教训）→ 新 `SnipView.tsx`：拉本屏冻结帧解码到物理像素 canvas 全屏绘制 → 暗幕挖洞拖选（SVG 承载事件，同 OCR 框选模式）+ W×H 尺寸角标 + 提示条；松手 ≥8px 物理像素 → 裁剪进标注，<8px 视为取消选择回拖选态；选区限本屏（跨屏拖动钳制）；ESC/右键 = 退出整个会话。
+- **R80.6** **SnipView 标注阶段**：`cropToDataUrl` 裁剪选区 → 就地 `AnnotateOverlay`（source=dataURL，全套标注/OCR/智能手势零改动）；✓ → `<a download>` 下载 + `snipFinish('save')`；复制 → `snipFinish('copy')`；两者随后 `snipCancel()`；×/ESC → 关标注器回拖选态（不退出会话）。
+- **R80.7** **托盘接线**：`createTray()` 菜单加「截图 (Alt+A)」项（在「显示 / 隐藏主界面」之后）。
+- **R80.8** **验收点**：
+  - [ ] snipManager 纯函数单测：display↔source 匹配 / 物理像素尺寸 / action 路由
+  - [ ] SnipView 组件测试：拉帧进选区态；拖选 ≥8px → AnnotateOverlay 挂载；<8px 回拖选态；ESC 分层（选区态退出会话、标注态先关标注器）；✓/复制 → snipFinish(正确 action) + snipCancel
+  - [ ] `yarn typecheck` + 全量 `yarn vitest run --maxWorkers=4` 0 失败 + `yarn build` 0 error
+  - [ ] 实机手动：多屏冻结、DPI 150% 选区像素准确、Alt+A 冲突降级气泡、secure desktop 黑帧可 ESC、托盘入口、最近拍摄入库（kind=annotated）
+- **R80.9** **状态**：🔄
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
