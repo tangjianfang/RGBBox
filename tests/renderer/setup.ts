@@ -76,7 +76,8 @@ vi.mock('lucide-react', () => {
     'Gamepad2','FolderPlus','FolderMinus','FilePlus','FileMinus','FastForward','Rewind',
     'CastOff','ScreenShare','BellRing','Clock2','Clock3','Clock4','PlaySquare',
     'MousePointer2','Grid3x3','Undo2','Redo2','Undo','Redo','Frame',
-    'ArrowUpRight','ArrowUpLeft','ArrowDownLeft','ArrowDownRight'
+    'ArrowUpRight','ArrowUpLeft','ArrowDownLeft','ArrowDownRight',
+    'AlignLeft','AlignCenter','AlignRight','ArrowUpToLine','ArrowDownToLine','ScanText'
   ]
   for (const n of NAMES) icons[n] = catchAll
   return icons

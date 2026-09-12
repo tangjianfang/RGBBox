@@ -4632,6 +4632,74 @@ input[type='range'].audio-slider {
   white-space: nowrap;
 }
 
+/* R78.1: 文字排版工具行（主工具条上方，条件渲染） */
+.video-annotate-toolbar2 {
+  position: absolute;
+  bottom: 86px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(13, 21, 25, 0.95);
+  backdrop-filter: blur(8px);
+}
+
+.video-annotate-fontsize {
+  background: rgba(5, 9, 11, 0.8);
+  color: #c5f0e4;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+/* R78.3: OCR 面板 */
+.video-annotate-ocr-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: min(360px, 80%);
+  max-height: 60%;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(13, 21, 25, 0.97);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  z-index: 5;
+}
+
+.video-annotate-ocr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.video-annotate-ocr-text {
+  flex: 1;
+  min-height: 120px;
+  resize: vertical;
+  background: rgba(5, 9, 11, 0.8);
+  color: #dff5ee;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+.video-annotate-ocr-loading { color: rgba(200, 220, 229, 0.6); font-size: 12px; }
+.video-annotate-ocr-meta { margin: 6px 0; font-size: 11px; color: rgba(200, 220, 229, 0.45); }
+.video-annotate-ocr-copyall { justify-content: center; }
+
 /* R76.5: snip hint bar */
 .video-snip-hintbar {
   position: absolute;

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup, fireEvent } from '@testing-library/react'
-import { AnnotateOverlay } from '../../../src/renderer/src/components/video/AnnotateOverlay'
+import { AnnotateOverlay, shouldCommitText } from '../../../src/renderer/src/components/video/AnnotateOverlay'
 import { setupRendererMocks } from '../_helpers'
 
 const png = 'data:image/png;base64,iVBORw0KGgo='
@@ -79,5 +79,35 @@ describe('AnnotateOverlay', () => {
     fireEvent.click(container.querySelector('.video-annotate-save')!)
     expect(onSave).toHaveBeenCalledTimes(1)
     expect(onSave.mock.calls[0][0]).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it('R78.1: shouldCommitText respects IME composition', () => {
+    expect(shouldCommitText({ key: 'Enter' })).toBe(true)
+    expect(shouldCommitText({ key: 'Enter', shiftKey: true })).toBe(false)
+    expect(shouldCommitText({ key: 'Enter', isComposing: true })).toBe(false)   // 输入法确认候选词
+    expect(shouldCommitText({ key: ' ' })).toBe(false)
+  })
+
+  it('R78.3: OCR button opens panel, result editable, copy-all writes clipboard text', async () => {
+    const mocks = setupRendererMocks()
+    mocks.ocrRecognize.mockResolvedValue({ ok: true, text: '识别结果 line1\nline2', hint: undefined })
+    const { container, findByTestId } = render(<AnnotateOverlay source={png} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    fireEvent.click(container.querySelector('.video-annotate-ocr')!)
+    const panel = await findByTestId('ocr-panel')
+    expect(panel).toBeTruthy()
+    const ta = panel.querySelector('.video-annotate-ocr-text') as HTMLTextAreaElement
+    expect(ta.value).toContain('识别结果')
+    fireEvent.change(ta, { target: { value: '编辑后' } })
+    fireEvent.click(panel.querySelector('.video-annotate-ocr-copyall')!)
+    await vi.waitFor(() => {
+      expect(mocks.clipboardWriteText).toHaveBeenCalledWith('编辑后')
+    })
+  })
+
+  it('R78.1: layer buttons are disabled without a selection', () => {
+    const { container } = render(<AnnotateOverlay source={png} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    const layerBtns = container.querySelectorAll('.video-annotate-layer')
+    expect(layerBtns.length).toBe(4)
+    layerBtns.forEach(b => expect((b as HTMLButtonElement).disabled).toBe(true))
   })
 })

@@ -13,14 +13,15 @@ import {
   useCallback, useEffect, useMemo, useRef, useState, type JSX,
 } from 'react'
 import {
-  ArrowUpRight, Check, Circle, Copy, Grid3x3, MousePointer2, Pencil,
-  Redo2, Square, Trash2, Type, Undo2, X,
+  AlignCenter, AlignLeft, AlignRight, ArrowDownToLine, ArrowUpRight, ArrowUpToLine,
+  Bold, Check, ChevronDown, ChevronUp, Circle, Copy, Grid3x3, MousePointer2, Pencil,
+  Redo2, Square, Trash2, Type, Undo2, X, ScanText,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { clampPan, clampScale, containRect, zoomAtPoint, type Pt, type Rect, type Size } from './previewTransform'
 import {
-  canRedo, canUndo, commit, handlesFor, hitTest, makeShape, moveShape,
-  redo, resizeShape, shapeBBox, undo,
+  canRedo, canUndo, commit, handlesFor, hitTestRotated, makeShape, moveShape,
+  redo, reorderShape, resizeShape, rotatePt, shapeBBox, undo,
   type Handle, type History, type Shape, type ShapeKind,
 } from './annotationModel'
 import { buildMosaicTile, renderAnnotations } from './annotationRender'
@@ -30,6 +31,11 @@ export interface AnnotateOverlayProps {
   onClose: () => void                  // × 放弃
   onSave: (dataUrl: string) => void    // ✓ 保存（View 负责下载）
   onCopy: (dataUrl: string) => void    // 复制（View 走 clipboardWriteImage IPC）
+}
+
+/** R78.1: Enter 提交判定（IME 组合中的 Enter/空格属于输入法，不提交）。 */
+export function shouldCommitText(ev: { key: string; shiftKey?: boolean; isComposing?: boolean }): boolean {
+  return ev.key === 'Enter' && !ev.shiftKey && ev.isComposing !== true
 }
 
 type Tool = 'select' | ShapeKind
@@ -44,12 +50,15 @@ const TOOLS: Array<{ id: Tool; icon: typeof Square; key: string }> = [
 ]
 const PALETTE = ['#ffffff', '#fe4d4d', '#ffa940', '#ffd666', '#46c6a8', '#40a9ff', '#9254de', '#14181f']
 const STROKES = [2, 4, 8]
+const FONT_SIZES = [12, 16, 20, 24, 32, 48]
 const HANDLE_HIT_PX = 16
+const ROTATE_OFFSET_PX = 22
 
 type DragState =
   | { kind: 'create'; start: Pt; draft: Shape }
   | { kind: 'move'; start: Pt; orig: Shape }
-  | { kind: 'resize'; handle: Handle; orig: Shape }
+  | { kind: 'resize'; handle: Handle; orig: Shape; proportional: boolean }
+  | { kind: 'rotate'; orig: Shape; centerScreen: Pt; startAngle: number }
   | { kind: 'pan'; lastScreen: Pt }   // R77.3: 放大后拖拽空白平移
 
 export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOverlayProps): JSX.Element {
@@ -97,9 +106,18 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [textInput, setTextInput] = useState<{ at: Pt; value: string } | null>(null)
   const [zoomState, setZoomState] = useState<{ z: number; offset: Pt } | null>(null)
-  const dragRef = useRef<DragState | null>(null)
   const [dragging, setDragging] = useState(false)   // 触发重绘
+  // R78.1: 文字排版默认值（作用于新建；选中文本时 applyTextProp 同步改选中项）
+  const [textDefault, setTextDefault] = useState<{ align: 'left' | 'center' | 'right'; bold: boolean }>({ align: 'left', bold: false })
+  // R78.1: Ctrl+V 落点（最近一次画布指针图像坐标）
+  const lastPtRef = useRef<Pt>({ x: 0, y: 0 })
+  // R78.1: 双击编辑已有文字时，提交时替换该形状而非新增
+  const replaceIdRef = useRef<string | null>(null)
+  // R78.3: OCR 面板
+  const [ocr, setOcr] = useState<{ status: 'idle' | 'running' | 'done' | 'failed'; text: string; hint?: string }>({ status: 'idle', text: '' })
+  const dragRef = useRef<DragState | null>(null)
   const shapes = hist.present
+  const selectedShape = shapes.find(s => s.id === selectedId) ?? null
 
   // R77.3: 视图 = contain-fit 矩形绕容器中心缩放 z + 平移 offset（zoom=null 即 fit）
   const fit: Rect = useMemo(
@@ -194,11 +212,21 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     return { x: clientX - (r?.left ?? 0), y: clientY - (r?.top ?? 0) }
   }, [])
 
-  /** 手柄屏幕命中（屏幕空间 16px）。 */
-  const hitHandle = useCallback((p: Pt): { shape: Shape; handle: Handle } | null => {
+  /** 手柄屏幕命中（屏幕空间 16px；R78.2: 过旋转变换 + 旋转柄）。 */
+  const hitHandle = useCallback((p: Pt): { shape: Shape; handle: Handle | 'rotate' } | null => {
     const sel = shapes.find(s => s.id === selectedId)
     if (!sel) return null
     const b = shapeBBox(sel)
+    const rot = sel.rotation ?? 0
+    const cScr: Pt = { x: (b.x + b.w / 2) * k + view.x, y: (b.y + b.h / 2) * k + view.y }
+    // 旋转柄：顶部中点沿旋转后上方偏移
+    if (sel.kind !== 'text') {
+      const rLocal: Pt = { x: cScr.x, y: (b.y) * k + view.y - ROTATE_OFFSET_PX }
+      const rPos = rot ? rotatePt(rLocal, cScr, rot) : rLocal
+      if (Math.abs(p.x - rPos.x) <= HANDLE_HIT_PX && Math.abs(p.y - rPos.y) <= HANDLE_HIT_PX) {
+        return { shape: sel, handle: 'rotate' }
+      }
+    }
     for (const h of handlesFor(sel)) {
       let hx = b.x * k + view.x, hy = b.y * k + view.y
       if (h === 'start') { hx = (sel.x1 ?? 0) * k + view.x; hy = (sel.y1 ?? 0) * k + view.y }
@@ -207,7 +235,8 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
         hx = (b.x + (h.includes('e') ? b.w : h === 'n' || h === 's' ? b.w / 2 : 0)) * k + view.x
         hy = (b.y + (h.includes('s') ? b.h : h === 'e' || h === 'w' ? b.h / 2 : 0)) * k + view.y
       }
-      if (Math.abs(p.x - hx) <= HANDLE_HIT_PX && Math.abs(p.y - hy) <= HANDLE_HIT_PX) return { shape: sel, handle: h }
+      const pos = rot ? rotatePt({ x: hx, y: hy }, cScr, rot) : { x: hx, y: hy }
+      if (Math.abs(p.x - pos.x) <= HANDLE_HIT_PX && Math.abs(p.y - pos.y) <= HANDLE_HIT_PX) return { shape: sel, handle: h }
     }
     return null
   }, [shapes, selectedId, k, view])
@@ -220,25 +249,47 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     if (e.button !== 0 || !base) return
     e.currentTarget.setPointerCapture?.(e.pointerId)
     const p = toImage(e.clientX, e.clientY)
-    if (tool === 'select') {
-      const hh = hitHandle(screenPt(e.clientX, e.clientY))
-      if (hh) {
-        dragRef.current = { kind: 'resize', handle: hh.handle, orig: hh.shape }
+    lastPtRef.current = p
+    const sp = screenPt(e.clientX, e.clientY)
+    // R78.2: 旋转柄/手柄优先（任意工具下都可直接抓选中形状的手柄）
+    const hh = hitHandle(sp)
+    if (hh) {
+      if (hh.handle === 'rotate') {
+        const b = shapeBBox(hh.shape)
+        const cScr: Pt = { x: (b.x + b.w / 2) * k + view.x, y: (b.y + b.h / 2) * k + view.y }
+        dragRef.current = {
+          kind: 'rotate', orig: hh.shape, centerScreen: cScr,
+          startAngle: (Math.atan2(sp.y - cScr.y, sp.x - cScr.x) * 180) / Math.PI,
+        }
         setDragging(d => !d)
         return
       }
-      const hit = hitTest(shapes, p)
+      // 角手柄等比、边手柄单轴
+      dragRef.current = { kind: 'resize', handle: hh.handle, orig: hh.shape, proportional: hh.handle.length === 2 }
+      setDragging(d => !d)
+      return
+    }
+    const hit = hitTestRotated(shapes, p)
+    if (tool === 'select') {
       setSelectedId(hit?.id ?? null)
       if (hit) {
         dragRef.current = { kind: 'move', start: p, orig: hit }
       } else if (z > 1.001) {
         // R77.3: 放大后选择工具拖拽空白 = 平移视图
-        dragRef.current = { kind: 'pan', lastScreen: screenPt(e.clientX, e.clientY) }
+        dragRef.current = { kind: 'pan', lastScreen: sp }
       }
       return
     }
     if (tool === 'text') {
+      // R78.2: 点中已有文字 → 选中编辑（双击进文字编辑在 onDoubleClick）
+      if (hit) { setSelectedId(hit.id); return }
       setTextInput({ at: p, value: '' })
+      return
+    }
+    // R78.2: 绘制工具点中已有形状 → 选中 + 拖动编辑（点空白才新建）
+    if (hit) {
+      setSelectedId(hit.id)
+      dragRef.current = { kind: 'move', start: p, orig: hit }
       return
     }
     // 绘制类：新建 draft（pen/mosaic 从单点起步）
@@ -267,8 +318,20 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
       const moved = moveShape(d.orig, p.x - d.start.x, p.y - d.start.y)
       setHist(h => ({ ...h, present: h.present.map(s => (s.id === moved.id ? moved : s)) }))
     } else if (d.kind === 'resize') {
-      const resized = resizeShape(d.orig, d.handle, p)
+      // 旋转形状：先把指针逆旋转到本地坐标系再缩放
+      let local = p
+      if (d.orig.rotation) {
+        const b = shapeBBox(d.orig)
+        local = rotatePt(p, { x: b.x + b.w / 2, y: b.y + b.h / 2 }, -d.orig.rotation)
+      }
+      const resized = resizeShape(d.orig, d.handle, local, { proportional: d.proportional })
       setHist(h => ({ ...h, present: h.present.map(s => (s.id === resized.id ? resized : s)) }))
+    } else if (d.kind === 'rotate') {
+      const sp = screenPt(e.clientX, e.clientY)
+      let deg = (d.orig.rotation ?? 0) + (Math.atan2(sp.y - d.centerScreen.y, sp.x - d.centerScreen.x) * 180) / Math.PI - d.startAngle
+      if (e.shiftKey) deg = Math.round(deg / 15) * 15
+      const rotated = { ...d.orig, rotation: ((deg % 360) + 360) % 360 }
+      setHist(h => ({ ...h, present: h.present.map(s => (s.id === rotated.id ? rotated : s)) }))
     } else if (d.kind === 'pan') {
       const sp = screenPt(e.clientX, e.clientY)
       const dx = sp.x - d.lastScreen.x
@@ -308,26 +371,51 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   const commitText = useCallback(() => {
     setTextInput(inp => {
       if (inp && inp.value.trim()) {
-        const fontSize = STROKES[strokeIdx] * 8 / k
+        const replaceId = replaceIdRef.current
+        replaceIdRef.current = null
+        const orig = replaceId ? hist.present.find(s => s.id === replaceId) : undefined
+        const fontSize = orig?.width ?? STROKES[strokeIdx] * 8 / k
         const s = makeShape('text', {
           x: inp.at.x, y: inp.at.y, w: Math.max(10, fontSize), h: fontSize * 1.2,
           // review-fix: 字号存 width（renderAnnotations 读 s.width；此前漏设 → 默认 3 → 8px 隐形字）
           width: Math.max(10, fontSize),
-          color, text: inp.value,
+          color: orig?.color ?? color, text: inp.value,
+          align: orig?.align ?? textDefault.align, bold: orig?.bold ?? textDefault.bold,
         })
-        setHist(h => commit(h, [...h.present, s]))
+        setHist(h => commit(h, replaceId ? h.present.map(x => (x.id === replaceId ? s : x)) : [...h.present, s]))
         setSelectedId(s.id)
+      } else {
+        replaceIdRef.current = null
       }
       return null
     })
-  }, [color, strokeIdx, k])
+  }, [color, strokeIdx, k, textDefault, hist.present])
 
-  // ── 快捷键：ESC 关闭 / Delete 删除 / Ctrl+Z·Y 撤销重做 ────────────────
+  /** R78.1: 把排版属性应用到选中的文字标注（无选中则记为下次默认）。 */
+  const applyTextProp = useCallback((patch: Partial<Shape>) => {
+    setTextDefault(d => ({ ...d, ...patch }) as { align: 'left' | 'center' | 'right'; bold: boolean })
+    if (selectedId) {
+      setHist(h => {
+        const next = h.present.map(s => (s.id === selectedId && s.kind === 'text' ? { ...s, ...patch } : s))
+        return { ...h, present: next }
+      })
+    }
+  }, [selectedId])
+
+  /** R78.1: 图层排序。 */
+  const doReorder = useCallback((dir: 'front' | 'back' | 'forward' | 'backward') => {
+    if (!selectedId) return
+    setHist(h => commit(h, reorderShape(h.present, selectedId, dir)))
+  }, [selectedId])
+
+  // ── 快捷键：ESC 关闭 / Delete 删除 / Ctrl+Z·Y 撤销重做 / Ctrl+C·V 文本 ──
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const tag = (e.target as HTMLElement).tagName
       const typing = tag === 'INPUT' || tag === 'TEXTAREA'
       if (e.key === 'Escape') {
+        // R78.1: IME 组合中的 ESC 属于输入法（关候选窗），不收输入框
+        if ((e as KeyboardEvent & { isComposing?: boolean }).isComposing) return
         e.stopPropagation()
         // R77.2: 文字输入中 ESC 只收起输入框，不再关闭整个标注器（丢标注）
         if (textInput) { setTextInput(null); return }
@@ -343,11 +431,24 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
         e.preventDefault(); setHist(h => undo(h)); setSelectedId(null)
       } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
         e.preventDefault(); setHist(h => redo(h)); setSelectedId(null)
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && selectedId) {
+        // R78.1: 选中文字标注 → 复制为剪贴板纯文本
+        const sel = shapes.find(s => s.id === selectedId)
+        if (sel?.kind === 'text' && sel.text) {
+          e.preventDefault()
+          void window.rgbbox.clipboardWriteText(sel.text)
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        // R78.1: 粘贴剪贴板文本 → 在鼠标位置建文字标注（进编辑态）
+        e.preventDefault()
+        void window.rgbbox.clipboardReadText().then((txt) => {
+          if (txt) setTextInput({ at: lastPtRef.current, value: txt })
+        }).catch(() => { /* best-effort */ })
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [onClose, selectedId, textInput])
+  }, [onClose, selectedId, textInput, shapes])
 
   // ── 导出（自然尺寸；无水印） ───────────────────────────────────────────
   const exportDataUrl = useCallback((): string => {
@@ -367,6 +468,24 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
 
   const doSave = (): void => { const url = exportDataUrl(); if (url) onSave(url) }
   const doCopy = (): void => { const url = exportDataUrl(); if (url) onCopy(url) }
+
+  // ── R78.3: OCR ─────────────────────────────────────────────────────────
+  const setOcrText = (v: string): void => setOcr(o => (o.status === 'done' ? { ...o, text: v } : o))
+  const runOcr = useCallback(() => {
+    setOcr({ status: 'running', text: '' })
+    window.rgbbox.ocrRecognize(exportDataUrl())
+      .then(r => setOcr(r.ok ? { status: 'done', text: r.text } : { status: 'failed', text: '', hint: r.hint }))
+      .catch(() => setOcr({ status: 'failed', text: '', hint: 'engine' }))
+  }, [exportDataUrl])
+
+  // ── R78.1: 文字工具行的当前值（选中项优先，否则默认值） ────────────────
+  const selText = selectedShape?.kind === 'text' ? selectedShape : null
+  const alignNow = selText?.align ?? textDefault.align
+  const boldNow = selText?.bold ?? textDefault.bold
+  const fontNow = (() => {
+    const css = selText ? Math.round(selText.width * k) : STROKES[strokeIdx] * 8
+    return FONT_SIZES.reduce((best, f) => (Math.abs(f - css) < Math.abs(best - css) ? f : best), FONT_SIZES[0])
+  })()
 
   const toolBtn = (id: Tool, Icon: typeof Square, key: string, idx: number) => (
     <button
@@ -389,8 +508,15 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onDoubleClick={(e) => {
+          const hit = hitTestRotated(shapes, toImage(e.clientX, e.clientY))
+          // R78.1: 双击文字标注 = 原地编辑（提交时替换）
+          if (hit?.kind === 'text' && hit.text) {
+            replaceIdRef.current = hit.id
+            setTextInput({ at: { x: hit.x, y: hit.y }, value: hit.text })
+            return
+          }
           // R77.3: 选择工具下双击空白 = 复位缩放
-          if (tool === 'select' && !hitTest(shapes, toImage(e.clientX, e.clientY))) setZoomState(null)
+          if (tool === 'select' && !hit) setZoomState(null)
         }}
       />
 
@@ -408,9 +534,42 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
           }}
           onChange={(e) => setTextInput({ ...textInput, value: e.target.value })}
           onBlur={commitText}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitText() } }}
+          onKeyDown={(e) => {
+            // R78.1: IME 组合中的按键（Enter/空格确认候选词）交给输入法，不提交
+            if (shouldCommitText({ key: e.key, shiftKey: e.shiftKey, isComposing: e.nativeEvent.isComposing })) {
+              e.preventDefault()
+              commitText()
+            }
+          }}
           placeholder={t('video.annotate.textPlaceholder' as never)}
         />
+      )}
+
+      {/* R78.3: OCR 面板 */}
+      {ocr.status !== 'idle' && (
+        <div className="video-annotate-ocr-panel" data-testid="ocr-panel">
+          <div className="video-annotate-ocr-head">
+            <span className="video-annotate-title">{t('video.annotate.ocr')}</span>
+            <button type="button" className="video-annotate-btn" title={t('video.annotate.ocrClose')} onClick={() => setOcr({ status: 'idle', text: '' })}><X size={14} /></button>
+          </div>
+          {ocr.status === 'running' && <p className="video-annotate-ocr-loading">{t('video.annotate.ocrRunning')}</p>}
+          {ocr.status === 'failed' && <p className="video-annotate-ocr-loading">{t(ocr.hint === 'nolangpack' ? 'video.annotate.ocrNoLang' : 'video.annotate.ocrFailed')}</p>}
+          {ocr.status === 'done' && (
+            <>
+              <textarea
+                className="video-annotate-ocr-text"
+                value={ocr.text}
+                onChange={(e) => setOcrText(e.target.value)}
+              />
+              <p className="video-annotate-ocr-meta">{ocr.text.split('\n').filter(l => l.trim()).length} {t('video.annotate.ocrLines')}</p>
+              <button
+                type="button"
+                className="video-btn video-annotate-ocr-copyall"
+                onClick={() => { void window.rgbbox.clipboardWriteText(ocr.text) }}
+              ><Copy size={13} /> {t('video.annotate.ocrCopyAll')}</button>
+            </>
+          )}
+        </div>
       )}
 
       {/* 工具条 */}
@@ -440,12 +599,43 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
           ><span className={`video-annotate-dot d${w}`} /></button>
         ))}
         <span className="video-annotate-sep" />
+        {/* R78.1: 图层排序（选中任意标注可用） */}
+        <button type="button" className="video-annotate-btn video-annotate-layer" title={t('video.annotate.layer.front')} disabled={!selectedId} onClick={() => doReorder('front')}><ArrowUpToLine size={14} /></button>
+        <button type="button" className="video-annotate-btn video-annotate-layer" title={t('video.annotate.layer.forward')} disabled={!selectedId} onClick={() => doReorder('forward')}><ChevronUp size={14} /></button>
+        <button type="button" className="video-annotate-btn video-annotate-layer" title={t('video.annotate.layer.backward')} disabled={!selectedId} onClick={() => doReorder('backward')}><ChevronDown size={14} /></button>
+        <button type="button" className="video-annotate-btn video-annotate-layer" title={t('video.annotate.layer.back')} disabled={!selectedId} onClick={() => doReorder('back')}><ArrowDownToLine size={14} /></button>
+        <span className="video-annotate-sep" />
         <button type="button" className="video-annotate-btn" title={t('video.annotate.delete')} disabled={!selectedId} onClick={() => { if (selectedId) { setHist(h => commit(h, h.present.filter(s => s.id !== selectedId))); setSelectedId(null) } }}><Trash2 size={15} /></button>
         <span className="video-annotate-flex" />
+        <button type="button" className="video-annotate-btn video-annotate-ocr" title={t('video.annotate.ocr')} disabled={ocr.status === 'running'} onClick={runOcr}><ScanText size={15} /></button>
         <button type="button" className="video-annotate-btn video-annotate-save" title={t('video.annotate.save')} onClick={doSave}><Check size={16} /></button>
         <button type="button" className="video-annotate-btn video-annotate-copy" title={t('video.annotate.copy')} onClick={doCopy}><Copy size={15} /></button>
         <button type="button" className="video-annotate-btn video-annotate-close" title={t('video.annotate.close')} onClick={onClose}><X size={16} /></button>
       </div>
+
+      {/* R78.1: 文字排版工具行（选中文字标注或文字工具激活时出现） */}
+      {(tool === 'text' || selectedShape?.kind === 'text') && (
+        <div className="video-annotate-toolbar2" onPointerDown={(e) => e.stopPropagation()}>
+          <button type="button" className={`video-annotate-btn${alignNow === 'left' ? ' active' : ''}`} title={t('video.annotate.align.left')} onClick={() => applyTextProp({ align: 'left' })}><AlignLeft size={14} /></button>
+          <button type="button" className={`video-annotate-btn${alignNow === 'center' ? ' active' : ''}`} title={t('video.annotate.align.center')} onClick={() => applyTextProp({ align: 'center' })}><AlignCenter size={14} /></button>
+          <button type="button" className={`video-annotate-btn${alignNow === 'right' ? ' active' : ''}`} title={t('video.annotate.align.right')} onClick={() => applyTextProp({ align: 'right' })}><AlignRight size={14} /></button>
+          <span className="video-annotate-sep" />
+          <select
+            className="video-annotate-fontsize"
+            title={t('video.annotate.fontSize')}
+            value={fontNow}
+            onChange={(e) => {
+              const css = Number(e.target.value)
+              if (selectedShape?.kind === 'text') {
+                setHist(h => ({ ...h, present: h.present.map(s => (s.id === selectedShape.id ? { ...s, width: css / k } : s)) }))
+              }
+            }}
+          >
+            {FONT_SIZES.map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
+          <button type="button" className={`video-annotate-btn${boldNow ? ' active' : ''}`} title={t('video.annotate.bold')} onClick={() => applyTextProp({ bold: !boldNow })}><Bold size={14} /></button>
+        </div>
+      )}
 
       <p className="video-annotate-hint">{t('video.annotate.hint')}</p>
     </div>
