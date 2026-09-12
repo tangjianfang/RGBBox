@@ -820,7 +820,7 @@
 - **R85.4** **导航层约束**：不引入路由层（遵守 CLAUDE.md God Component 约定），仍基于 `type View` 联合 + 状态驱动；旧 `rgbbox:view` 首启迁移为 [Dashboard, 旧模块]；`'profiles'` 维持无入口现状。
 - **R85.5** **受影响文件**：新增 `src/renderer/src/components/AppShell.tsx`、`TabBar.tsx`、`DashboardView.tsx`、`SettingsView.tsx`、`shellModules.ts`、`src/renderer/src/hooks/useTabNavigation.ts`；修改 `App.tsx`（删 sidebar JSX、接 AppShell/children）、`styles.css`（删 `.sidebar*`、增 `.app-shell/.tab-bar/.dashboard/.settings-view` 等）、`src/renderer/src/i18n/*`（zh+en）；新增 `tests/renderer/**` 对应测试。
 - **R85.6** **验收点**：①首屏 Dashboard 且状态区数据实时正确 ②卡片点击开 Tab/已开聚焦 ③关当前 Tab 回 Dashboard、Dashboard 恒在无 × ④重启恢复 tabs+active ⑤旧 `rgbbox:view` 迁移无感 ⑥设置 Tab 四组配置与迁移前行为等价（同 state/IPC） ⑦👤 菜单全灰置 ⑧sidebar CSS/JSX 无残留 ⑨zh/en 无缺 key ⑩`yarn test` 0 失败 + `yarn typecheck` 0 error。
-- **R85.7** **状态**：🔄（设计已确认（2026-09-13），spec 已提交，待实施计划 → 实施）。
+- **R85.7** **状态**：✅（设计 `docs/superpowers/specs/2026-09-13-dashboard-tab-shell-design.md` + 计划 `docs/superpowers/plans/2026-09-13-dashboard-tab-shell.md` 均经用户确认后按 TDD 执行；新增 `tabNavigation.ts`/`useTabNavigation.ts`/`shellModules.ts`/`TabBar`/`AppShell`/`DashboardView`/`SettingsView` + 7 个测试文件 48 用例（含注册表完整性守卫）；sidebar JSX/CSS/imports 全清；code-review 10 findings 全部修复（关机 chip 恒显恢复 R73 可武装、fps 改 metricsCollector 实时采样、菜单关闭/互斥、audio 门控、媒体查询残留、HUD 锚点、模块清单单一源、文案去重）；验收：`yarn test` 70 files / 675 passed 0 失败 + `yarn typecheck` 0 error + `yarn build` 成功；分支 `feat/dashboard-tab-shell`，实机复测待用户。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
