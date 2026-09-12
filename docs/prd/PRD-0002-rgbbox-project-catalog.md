@@ -659,6 +659,25 @@
   - [ ] 手动：拍照/局部截图/标注保存三类产出自动入列且**重启应用后列表仍在**；导入多张图片、单条删除、清空后胶片栏隐藏；标注器文字可见可编辑、马赛克涂抹生效；滚轮缩放细腻（×1.06）且锚点正确、放大拖拽平移、双击复位；导出仍无水印
 - **R77.7** **状态**：✅（代码已实施，自动化验证 + code review 全绿（证据见 R77.6）；实机手动验证 pending 用户复测。）
 
+### R78. 标注器文本系统重做 + 形状手势编辑 + 截图 OCR + 胶片栏窗口约束
+
+> 触发场景：2026-09-12 用户实测 R77 反馈四项——① 添加文本一直弹输入法但无法输入文字；文本需支持排版、排序、格式化数据复制粘贴。② 画完形状（框/箭头等）后再点应变为可拖拽/拉伸/缩放/改变方向（旋转）的手势编辑对象。③ 新增 OCR（识别率高、中英文，识别整理后可复制粘贴文本）。④ 胶片栏添加文件/拍照后无限变长，应与视觉窗口对齐限宽，超出后支持滚动条 / 上一张下一张 / 滚轮滑动三种交互。brainstorm 确认选型：OCR 用 Windows 原生 WinRT；排版做到对齐+字号+粗体+图层排序；复制粘贴为双向纯文本；胶片栏三种滑动方式全做。
+> **根因（复盘确认）**：文字无法输入——textarea 的 keydown 未判定 IME 组合状态（`isComposing`），中文输入法按 Enter/空格确认候选词被误判为"提交"→ 输入框立即关闭 → 反复弹输入法却打不了字；胶片栏无限变长——grid 布局下 flex 内容撑开列宽，滚动容器未被限宽（`min-width:0` 约束链缺失）。
+> **风险等级：L2**（+3 个 IPC 通道（剪贴板文本读写 ×2 + OCR ×1）、标注器交互大改、PowerShell 子进程调 WinRT OCR）。
+
+- **R78.1** **文本系统**：① IME 修复——textarea 与全局快捷键 keydown 均补 `e.nativeEvent.isComposing` 判定，组合中的 Enter/空格/ESC 交给输入法；② 排版——`Shape` 新增 `align`（左/中/右，多行逐行 measureText 偏移）与 `bold`（font `700`），工具条提供对齐三钮 / 字号六档（12–48）/ 粗体开关（作用于选中文字标注，或设为下次默认）；③ 图层排序——`reorderShape(shapes, id, 'front'|'back'|'forward'|'backward')` 纯函数 + 工具条四钮（选中任意标注可用）；④ 双向纯文本——选中文字标注 `Ctrl+C` → 主进程写文本剪贴板；标注器内 `Ctrl+V` → 读剪贴板在鼠标位置生成新文字标注（直接进入编辑态）；新增 `rgbbox:clipboard:write-text` / `read-text` 通道。
+- **R78.2** **形状手势编辑**：① 同工具点选——绘制工具下 pointerdown 命中已有形状即选中进入编辑（点空白才新建）；② 手柄语义——4 角手柄=等比缩放、4 边手柄=单轴拉伸；pen/mosaic 笔画按 bbox 比例映射支持缩放；text 等比缩放同步缩放字号；③ 旋转——选框上方旋转柄拖动绕中心自由旋转（Shift 吸附 15°），`Shape.rotation?` 字段，渲染与命中均过旋转变换（命中做逆旋转精确判定，角/边/旋转手柄屏幕位同样过变换）。
+- **R78.3** **截图 OCR（Windows 原生 WinRT）**：主进程新增 `src/main/ocrService.ts`——PowerShell 子进程（`-NoProfile -NonInteractive`，超时 30s，临时文件即用即删）调 `Windows.Media.Ocr`（微软引擎、离线、零 npm 依赖）；引擎选择 `TryCreateFromUserProfileLanguages()`（中文系统即 zh+en 混识别），用户语言不含 zh 时尝试 `zh-Hans`/`zh-Hant`/`en`（AvailableLanguages 允许才建）；引擎不可用/语言包缺失返回 `{ok:false, hint}`（提示装语言包）。IPC `rgbbox:ocr:recognize`（dataUrl → `{ok, text, hint?}`）。标注器工具条新增「识别文字」按钮 → 右侧浮动面板：识别中 loading、结果可编辑 textarea、行数统计、「复制全部」（走 write-text IPC）。非 Windows 平台返回 unsupported（mac 后续 R-N 可接 Vision）。脚本组装与输出解析为纯函数导出供单测（真实识别率以实机验收为准）。
+- **R78.4** **胶片栏窗口约束与导航**：修布局根因（`.video-layout`/`.video-stage` 子项补 `min-width: 0` 链、胶片栏 `max-width: 100%` + 显式 `flex-wrap: nowrap`）——胶片栏最大宽度=视觉窗口宽、单行固定高、永不撑破；超出后：① 细样式横向滚动条（`::-webkit-scrollbar` 定制，超宽时可用）；② 两端「上一张/下一张」‹ › 按钮（仅溢出显示，`scrollBy({behavior:'smooth'})` 平滑滚一位缩略图宽，到头隐藏对应侧）；③ 滚轮纵向转横向滑动（保留，加平滑）。溢出判定 `computeCanNav(scrollWidth, clientWidth, scrollLeft)` 纯函数导出供单测。
+- **R78.5** **不动**：R75.1 预览缩放、snip 框选流程、MediaRecorder 录制、视频裁剪导出、`media://` 协议、R70–R72 已修项、`package.json` scripts、npm 依赖零新增。
+- **R78.6** **受影响文件**：`src/renderer/src/components/video/annotationModel.ts`（rotation/align/bold 字段、reorderShape、rotatePt 数学、等比/点列缩放）、`src/renderer/src/components/video/annotationRender.ts`（旋转渲染包装、align/bold）、`src/renderer/src/components/video/AnnotateOverlay.tsx`（IME/工具条扩展/图层/复制粘贴/同工具点选/旋转柄/OCR 面板）、`src/renderer/src/components/CaptureFilmstrip.tsx`（导航按钮 + computeCanNav）、`src/main/ocrService.ts`（新增）、`src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts`、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`tests/main/ocrService.test.ts`（新增）、`tests/renderer/components/annotationModel.test.ts`（+用例）、`tests/renderer/components/annotationRender.test.ts`（+用例）、`tests/renderer/components/CaptureFilmstrip.test.tsx`（+用例）、`tests/renderer/components/AnnotateOverlay.test.tsx`（IME 用例）、`tests/renderer/_helpers.tsx`。
+- **R78.7** **验收点**：
+  - [ ] `yarn typecheck` / `yarn build` 通过
+  - [ ] `yarn test` 全量通过，无回归（reorder/旋转数学/align·bold 渲染/OCR 脚本与输出解析/computeCanNav 新用例）
+  - [ ] code review 通过（沿用 R77 的显式 review 步骤）
+  - [ ] 手动：中文输入法可正常输入并 Enter 落字；对齐/字号/粗体实时生效；图层四钮调序；Ctrl+C 复制标注文字、Ctrl+V 粘贴建字；矩形/箭头等画完再点即选中编辑，角=等比/边=拉伸、旋转柄可转（Shift 15°）；OCR 按钮对含中英文截图识别出可复制文本；胶片栏多图后宽度=预览区宽、滚动条/‹›按钮/滚轮三种滑动可用
+- **R78.8** **状态**：⏳
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
