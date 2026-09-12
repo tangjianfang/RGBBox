@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
-import type { CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming } from '../shared/types'
+import type { CaptureEntry, CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -145,6 +145,15 @@ const api = {
   // R76: write a PNG dataURL to the OS clipboard (main-process nativeImage)
   clipboardWriteImage: (dataUrl: string): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.clipboardWriteImage, dataUrl),
+  // R77: persistent capture cache
+  capturesList: (): Promise<CaptureEntry[]> => ipcRenderer.invoke(ipcChannels.capturesList),
+  capturesAdd: (dataUrl: string, kind: CaptureEntry['kind']): Promise<CaptureEntry | null> =>
+    ipcRenderer.invoke(ipcChannels.capturesAdd, dataUrl, kind),
+  capturesDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.capturesDelete, id),
+  capturesRead: (id: string): Promise<string | null> =>
+    ipcRenderer.invoke(ipcChannels.capturesRead, id),
+  capturesImport: (): Promise<CaptureEntry[]> => ipcRenderer.invoke(ipcChannels.capturesImport),
 
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>

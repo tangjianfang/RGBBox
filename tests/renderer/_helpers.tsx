@@ -62,6 +62,12 @@ export function setupRendererMocks() {
     screensaverSetSettings: vi.fn().mockResolvedValue({ enabled: false, idleMinutes: 5 }),
     // R76: native clipboard write-image
     clipboardWriteImage: vi.fn().mockResolvedValue(true),
+    // R77: persistent capture cache
+    capturesList: vi.fn().mockResolvedValue([]),
+    capturesAdd: vi.fn().mockResolvedValue({ id: 'c1', file: 'C:\\cap\\x.png', name: 'x.png', ts: 0, kind: 'photo' }),
+    capturesDelete: vi.fn().mockResolvedValue(true),
+    capturesRead: vi.fn().mockResolvedValue('data:image/png;base64,QQ=='),
+    capturesImport: vi.fn().mockResolvedValue([]),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),

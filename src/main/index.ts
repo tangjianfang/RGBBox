@@ -8,11 +8,12 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { defaultProfile } from '../shared/defaultProfile'
+import { createCaptureStore } from './captureStore'
 import { ipcChannels } from '../shared/ipc'
 import { initLogger } from '../shared/logger'
 import { MODELS_MANIFEST } from '../shared/modelsManifest'
 import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
-import type { DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, RgbFrame, ScreenCaptureRequest } from '../shared/types'
+import type { CaptureEntry, DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
 import { runPerfSelfTest } from './perfSelfTest'
 import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOverlay, getAudioVizWindowIds, getOverlayDisplayIds, openAudioVizWindow, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
@@ -254,6 +255,27 @@ function registerIpc(): void {
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false
     clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
     return true
+  })
+
+  // R77: persistent capture cache (filmstrip gallery)
+  const captureStore = createCaptureStore(app.getPath('userData'))
+  ipcMain.handle(ipcChannels.capturesList, () => captureStore.list())
+  ipcMain.handle(ipcChannels.capturesAdd, (_event, dataUrl: unknown, kind: unknown) =>
+    typeof dataUrl === 'string' && typeof kind === 'string'
+      ? captureStore.addPng(dataUrl, kind as CaptureEntry['kind'])
+      : null)
+  ipcMain.handle(ipcChannels.capturesDelete, (_event, id: unknown) =>
+    typeof id === 'string' ? captureStore.delete(id) : false)
+  ipcMain.handle(ipcChannels.capturesRead, (_event, id: unknown) =>
+    typeof id === 'string' ? captureStore.read(id) : null)
+  ipcMain.handle(ipcChannels.capturesImport, async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Import Images',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
+    })
+    if (result.canceled) return []
+    return captureStore.importFiles(result.filePaths)
   })
 
   ipcMain.handle(ipcChannels.appVersion, () => app.getVersion())

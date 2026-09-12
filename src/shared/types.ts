@@ -363,6 +363,15 @@ export interface DesktopAudioSource {
 }
 
 /** A screen/window capture source returned by desktopCapturer (Video Studio). */
+/** R77: 拍摄缓存条目（main captureStore / preload / renderer 三方共用） */
+export interface CaptureEntry {
+  id: string
+  file: string        // 缓存目录内的绝对文件路径
+  name: string
+  ts: number
+  kind: 'photo' | 'snip' | 'annotated' | 'imported'
+}
+
 export interface CaptureSource {
   id: string
   name: string

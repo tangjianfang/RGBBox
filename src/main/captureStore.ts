@@ -10,14 +10,9 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { CaptureEntry } from '../shared/types'
 
-export interface CaptureEntry {
-  id: string
-  file: string        // 缓存目录内的绝对文件路径
-  name: string
-  ts: number
-  kind: 'photo' | 'snip' | 'annotated' | 'imported'
-}
+export type { CaptureEntry }
 
 export const MAX_CAPTURES = 200
 const MAX_PNG_BYTES = 30 * 1024 * 1024

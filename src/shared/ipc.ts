@@ -116,6 +116,12 @@ export const ipcChannels = {
   // R76: native clipboard write-image (Electron clipboard, deterministic
   // replacement for renderer navigator.clipboard which failed in practice)
   clipboardWriteImage: 'rgbbox:clipboard:write-image',
+  // R77: persistent capture cache (filmstrip gallery)
+  capturesList: 'rgbbox:captures:list',
+  capturesAdd: 'rgbbox:captures:add',
+  capturesDelete: 'rgbbox:captures:delete',
+  capturesRead: 'rgbbox:captures:read',
+  capturesImport: 'rgbbox:captures:import',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]
