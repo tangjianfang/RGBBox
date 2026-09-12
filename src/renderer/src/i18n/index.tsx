@@ -674,6 +674,9 @@ const EN = {
   'video.annotate.ocrFailed': 'Recognition failed',
   'video.annotate.ocrNoLang': 'No OCR language pack — install Chinese/English language in Windows Settings',
   'video.annotate.ocrCopyAll': 'Copy all',
+  // R80: standalone global snip window
+  'snip.hint': 'Drag to select · ESC to cancel',
+  'snip.failed': 'Failed to load the frozen frame, please retry',
   'video.annotate.ocrClose': 'Close',
   'video.annotate.ocrLines': 'lines',
   'video.cameraSettings': 'Camera Settings',
@@ -1393,6 +1396,9 @@ const ZH: TranslationTable = {
   'video.annotate.ocrFailed': '识别失败',
   'video.annotate.ocrNoLang': '未找到 OCR 语言包——请在 Windows 设置中安装中文/英文语言',
   'video.annotate.ocrCopyAll': '复制全部',
+  // R80: standalone global snip window
+  'snip.hint': '拖选截图区域 · ESC 取消',
+  'snip.failed': '截图画面获取失败，请重试',
   'video.annotate.ocrClose': '关闭',
   'video.annotate.ocrLines': '行',
   'video.cameraSettings': '摄像头设置',

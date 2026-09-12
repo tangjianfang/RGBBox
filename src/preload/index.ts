@@ -160,6 +160,14 @@ const api = {
   clipboardReadText: (): Promise<string> => ipcRenderer.invoke(ipcChannels.clipboardReadText),
   ocrRecognize: (dataUrl: string): Promise<{ ok: boolean; text: string; hint?: string }> =>
     ipcRenderer.invoke(ipcChannels.ocrRecognize, dataUrl),
+  // R80: standalone global snip tool
+  snipGetFrame: (displayId: number): Promise<{ dataUrl: string } | null> =>
+    ipcRenderer.invoke(ipcChannels.snipGetFrame, displayId),
+  snipFinish: (dataUrl: string, action: 'copy' | 'save'): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.snipFinish, { dataUrl, action }),
+  snipCancel: (): void => {
+    ipcRenderer.send(ipcChannels.snipCancel)
+  },
 
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>

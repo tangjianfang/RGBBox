@@ -4,6 +4,7 @@ import { App } from './App'
 import { AudioVizProjector } from './components/AudioVizProjector'
 import { OverlayCanvas } from './components/OverlayCanvas'
 import { ScreensaverView } from './components/ScreensaverView'
+import { SnipView } from './components/SnipView'
 import { I18nProvider } from './i18n'
 import './styles.css'
 
@@ -11,6 +12,7 @@ const params = new URLSearchParams(window.location.search)
 const isOverlay = params.get('overlay') === 'true'
 const isAudioViz = params.get('audioviz') === 'true'
 const isScreensaver = params.get('screensaver') === '1'
+const isSnip = params.get('snip') === '1'
 const overlayDisplayId = Number(params.get('displayId') ?? 0)
 // R65: whether this overlay window was created opaque (fullscreen region —
 // see overlayManager.ts#openOverlay) rather than transparent (non-fullscreen
@@ -42,6 +44,15 @@ if (isAudioViz) {
   root.render(
     <I18nProvider>
       <ScreensaverView displayId={overlayDisplayId} />
+    </I18nProvider>
+  )
+} else if (isSnip) {
+  // R80: standalone global snip — frozen fullscreen frame + region select + annotator
+  document.documentElement.style.overflow = 'hidden'
+  document.body.classList.add('snip-mode')
+  root.render(
+    <I18nProvider>
+      <SnipView displayId={overlayDisplayId} />
     </I18nProvider>
   )
 } else if (isOverlay) {

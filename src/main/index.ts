@@ -20,6 +20,7 @@ import { runPerfSelfTest } from './perfSelfTest'
 import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOverlay, getAudioVizWindowIds, getOverlayDisplayIds, openAudioVizWindow, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
 import { armShutdown, cancelShutdown, getShutdownStatus } from './shutdownScheduler'
 import { closeAllScreensaverWindows, disposeScreensaver, getScreensaverSettings, initScreensaver, setScreensaverSettings } from './screensaverManager'
+import { cancelSnip, disposeSnipManager, finishSnip, getSnipFrame, initSnipManager, registerSnipHotkey, startSnip } from './snipManager'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
@@ -278,6 +279,19 @@ function registerIpc(): void {
     if (result.canceled) return []
     return captureStore.importFiles(result.filePaths)
   })
+
+  // R80: standalone global snip tool
+  initSnipManager({ addPng: (url, kind) => captureStore.addPng(url, kind) }, isDevelopment, process.env.ELECTRON_RENDERER_URL)
+  ipcMain.handle(ipcChannels.snipGetFrame, (_event, displayId: unknown) =>
+    getSnipFrame(typeof displayId === 'number' ? displayId : -1))
+  ipcMain.handle(ipcChannels.snipFinish, (_event, p: unknown) => {
+    const q = p as { dataUrl?: unknown; action?: unknown } | null
+    return finishSnip(
+      typeof q?.dataUrl === 'string' ? q.dataUrl : '',
+      q?.action === 'save' ? 'save' : 'copy',
+    )
+  })
+  ipcMain.on(ipcChannels.snipCancel, () => cancelSnip())
 
   // R78: clipboard text (annotator copy/paste) + native OCR
   ipcMain.handle(ipcChannels.clipboardWriteText, (_event, text: unknown) => {
@@ -737,6 +751,8 @@ function createTray(): void {
 
   const contextMenu = Menu.buildFromTemplate([
     { label: '显示 / 隐藏主界面', click: toggleMainWindow },
+    // R80: standalone global snip — same entry as the Alt+A hotkey
+    { label: '截图 (Alt+A)', click: () => { void startSnip() } },
     { type: 'separator' },
     {
       label: '退出 RGBBox',
@@ -884,6 +900,11 @@ app.whenReady().then(() => {
   createTray()
   log.info('App', 'Application ready — main window and tray created')
 
+  // R80: global snip hotkey — conflict (e.g. WeChat owns Alt+A) degrades to tray-only with a balloon
+  registerSnipHotkey((accel) => {
+    tray?.displayBalloon?.({ title: 'RGBBox', content: `全局热键 ${accel} 已被其他应用占用，截图仍可从托盘菜单触发。`, iconType: 'info' })
+  })
+
   // R74: restore the light-effect screensaver settings and start idle polling
   // if it was left enabled (does NOT auto-open windows — the first poll decides).
   void initScreensaver(isDevelopment, process.env.ELECTRON_RENDERER_URL)
@@ -939,6 +960,8 @@ app.on('before-quit', () => {
   // R74: stop idle polling + close effect windows. The R73 OS shutdown timer
   // (if armed) intentionally survives app quit — that is the feature.
   disposeScreensaver()
+  // R80: close snip session + unregister global hotkey
+  disposeSnipManager()
 })
 
 app.on('window-all-closed', () => {
