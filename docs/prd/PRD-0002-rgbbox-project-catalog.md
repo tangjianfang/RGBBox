@@ -641,6 +641,24 @@
   - [ ] 手动：拍照直接下载；缩略图"编辑"进入就地标注；局部截图确认后就地浮出工具条（矩形/椭圆/箭头/画笔/文字/马赛克/撤销重做可用，选中可移动缩放删除）；✓ 保存 PNG 无水印；复制到剪贴板在微信/画图可粘贴；框选手柄好抓、选区外双击不再误确认
 - **R76.10** **状态**：✅（代码已实施，自动化验证全绿（证据见 R76.9）；实机手动验证 pending 用户复测。）
 
+### R77. 拍摄缓存胶片栏 + 标注器文字/马赛克修复 + 标注器查看缩放
+
+> 触发场景：2026-09-12 用户实测 R76 后提出三项优化——① "最近拍摄"改为左右滚动栏、软件内截图自动缓存、列表支持增删；② 标注器文字注释无法使用、马赛克无法工作；③ 图片查看支持滚轮缩放且颗粒度调细。经 brainstorm 确认：胶片栏位于预览区下方、缓存三类产出（拍照/局部截图/标注保存）上限 200 条 FIFO、增加=从文件导入、缩放作用于标注器内（步进 ×1.06）。
+> **缺陷根因（R76 引入，复盘确认）**：文字——`ctx.font` 含非法 token `inherit`，赋值被静默忽略回退 10px 默认字体，经视图缩放后不可见；马赛克——像素化底砖为 1/12 尺寸画布，采样却用原图坐标系 source rect，越界采样输出透明。另发现同类问题：文字输入框内按 ESC 会关闭整个标注器而非仅收起输入框。
+> **风险等级：L2**（新增 5 个 IPC 通道 + 主进程持久化存储目录 + 用户可见 UI 行为变更）。
+
+- **R77.1** **拍摄缓存胶片栏**：主进程新增 `src/main/captureStore.ts`——存储 `<userData>/captures/*.png` + `index.json`（`[{id, file, name, ts, kind}]`，kind ∈ `photo|snip|annotated|imported`）；上限 **200 条 FIFO**（超限删除最旧文件+索引），裁剪/合并纯函数导出供单测。IPC ×5：`rgbbox:captures:list/add/delete/read/import`（`add` 接 dataURL 落盘；`read` 按 id 返回 dataURL——规避 canvas 跨源污染；`import` 走 `dialog` 多选复制入列）+ preload 白名单。渲染层新增 `CaptureFilmstrip.tsx`：位于**预览区下方、传输条上方**，横向滚动（滚轮转横滚），缩略图 hover 浮现「编辑/删除」，尾部 `+` 导入按钮，空列表整栏隐藏；点缩略图经 `capturesRead` 进 `AnnotateOverlay` 编辑。**自动入库**：拍照、局部截图确认、标注 ✓ 保存三个产出点各调 `capturesAdd`；右栏"最近拍摄"单张面板（`lastShot`）移除。
+- **R77.2** **标注器修复**：① `ctx.font` 去除非法 `inherit`（`'${size}px system-ui, sans-serif'`）——文字恢复可见；② 马赛克底砖改为**全尺寸**像素化画布（缩小 1/12 后关平滑放大回原尺寸），采样坐标与图像坐标 1:1 对齐；③ 文字输入框内 ESC 仅收起输入框（不再关闭标注器丢标注）。绘制函数抽为 `annotationRender.ts` 独立模块，mock-ctx 单测锁回归（font 字符串合法、马赛克 `drawImage` 源矩形与 bbox 一致）。
+- **R77.3** **标注器查看缩放**：滚轮直接缩放（无需 Ctrl）、步进 **×1.06/格**、锚点=鼠标、范围 10%–800%；放大后拖拽空白处平移（选择工具点空白拖动即平移，绘制工具不受影响）、双击空白复位。复用 R75.1 `zoomAtPoint/clampPan` 数学；标注坐标保持图像原生坐标系，指针映射/手柄命中统一走有效缩放系数。
+- **R77.4** **不动**：R75.1 预览缩放（步进保持 ×1.1 不调细，用户选择仅标注器调）、snip 框选流程、录制/裁剪管线、`media://` 协议、overlay/投屏、`package.json` scripts、R70–R72 已修项。
+- **R77.5** **受影响文件**：`src/main/captureStore.ts`（新增）、`src/main/index.ts`（handler 接线 + dialog import）、`src/shared/ipc.ts`、`src/preload/index.ts`、`src/renderer/src/components/CaptureFilmstrip.tsx`（新增，挂载于 `VideoStudioView` 舞台）、`src/renderer/src/components/video/annotationRender.ts`（新增，自 `AnnotateOverlay.tsx` 抽出）、`src/renderer/src/components/video/AnnotateOverlay.tsx`（修复 + 缩放）、`src/renderer/src/components/VideoStudioView.tsx`（胶片栏接线 + 三产出入库 + 删 lastShot 面板）、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`tests/main/captureStore.test.ts`（新增）、`tests/renderer/components/annotationRender.test.ts`（新增）、`tests/renderer/components/CaptureFilmstrip.test.tsx`（新增）、`tests/renderer/components/AnnotateOverlay.test.tsx`（回归+缩放用例）、`tests/renderer/_helpers.tsx`。
+- **R77.6** **验收点**：
+  - [ ] `yarn typecheck` / `yarn build` 通过
+  - [ ] `yarn test` 全量通过，无回归（captureStore 纯函数 + annotationRender mock-ctx 回归锁 + CaptureFilmstrip 组件 + AnnotateOverlay 既有用例）
+  - [ ] code review 通过（本条为 goal 流程新增的显式 review 步骤）
+  - [ ] 手动：拍照/局部截图/标注保存三类产出自动入列且**重启应用后列表仍在**；导入多张图片、单条删除、清空后胶片栏隐藏；标注器文字可见可编辑、马赛克涂抹生效；滚轮缩放细腻（×1.06）且锚点正确、放大拖拽平移、双击复位；导出仍无水印
+- **R77.7** **状态**：⏳
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
