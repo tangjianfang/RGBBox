@@ -1,5 +1,5 @@
 import { Languages, Mic, MicOff, Settings, Timer, User } from 'lucide-react'
-import type { CSSProperties, ReactNode } from 'react'
+import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import { useI18n } from '../i18n'
 import { TabBar, type TabBarProps } from './TabBar'
 
@@ -12,8 +12,9 @@ export interface AppShellProps extends TabBarProps {
   audioErrorLabel?: string
   lang: 'zh' | 'en'
   onToggleLang: () => void
-  // R73 shutdown chip — undefined = not armed, chip hidden
-  shutdownLabel?: string
+  // R73 shutdown chip — label is the countdown when armed, else the "off" hint;
+  // the chip is ALWAYS visible so the timer can be armed in the first place.
+  shutdownLabel: string
   onShutdownClick: () => void
   children: ReactNode
 }
@@ -21,6 +22,29 @@ export interface AppShellProps extends TabBarProps {
 export function AppShell(props: AppShellProps) {
   const { t } = useI18n()
   const { tabs, activeView, onOpen, onClose } = props
+  const settingsMenuRef = useRef<HTMLDetailsElement>(null)
+  const userMenuRef = useRef<HTMLDetailsElement>(null)
+
+  // Native <details> menus: close both on any outside click, keep them exclusive.
+  const closeMenus = useCallback(() => {
+    settingsMenuRef.current?.removeAttribute('open')
+    userMenuRef.current?.removeAttribute('open')
+  }, [])
+  useEffect(() => {
+    const onDocClick = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target?.closest('.topbar-menu')) return
+      closeMenus()
+    }
+    document.addEventListener('click', onDocClick)
+    return () => document.removeEventListener('click', onDocClick)
+  }, [closeMenus])
+
+  const runMenuItem = (action: () => void) => () => {
+    action()
+    closeMenus()
+  }
+
   return (
     <>
       <header className="topbar">
@@ -55,24 +79,27 @@ export function AppShell(props: AppShellProps) {
           >
             <Languages size={15} />
           </button>
-          {props.shutdownLabel && (
-            <button type="button" className="topbar-chip" onClick={props.onShutdownClick} title={t('shutdown.title')}>
-              <Timer size={14} />
-              <span>{props.shutdownLabel}</span>
-            </button>
-          )}
-          {/* ⚙ settings menu — native <details> keeps it testable & dependency-free */}
-          <details className="topbar-menu" data-menu="settings">
+          <button
+            type="button"
+            className={`topbar-chip${props.shutdownLabel ? ' armed' : ''}`}
+            onClick={props.onShutdownClick}
+            title={t('shutdown.title')}
+          >
+            <Timer size={14} />
+            <span>{props.shutdownLabel || t('shutdown.off')}</span>
+          </button>
+          {/* ⚙ settings menu — native <details> + explicit close (see closeMenus) */}
+          <details className="topbar-menu" data-menu="settings" ref={settingsMenuRef}>
             <summary aria-label={t('nav.settings')}><Settings size={16} /></summary>
             <div className="topbar-menu-items" role="menu">
-              <button type="button" role="menuitem" className="topbar-menu-item" onClick={() => onOpen('settings')}>
+              <button type="button" role="menuitem" className="topbar-menu-item" onClick={runMenuItem(() => onOpen('settings'))}>
                 {t('menu.settings')}
               </button>
               <div className="topbar-menu-about">{t('menu.about')} · RGBBox v{props.version}</div>
             </div>
           </details>
           {/* 👤 user menu — reserved entries, all disabled (R85.3) */}
-          <details className="topbar-menu" data-menu="user">
+          <details className="topbar-menu" data-menu="user" ref={userMenuRef}>
             <summary aria-label={t('menu.login')}><User size={16} /></summary>
             <div className="topbar-menu-items" role="menu">
               <button type="button" role="menuitem" className="topbar-menu-item" disabled title={t('menu.comingSoon')}>

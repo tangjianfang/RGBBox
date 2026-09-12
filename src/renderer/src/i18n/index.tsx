@@ -25,7 +25,7 @@ const EN = {
   'dash.desc.video': 'Video studio and wall',
   'dash.desc.audio': 'Audio workstation',
   'dash.desc.model3d': '3D model effects',
-  'dash.desc.games': 'Mini games',
+  'dash.desc.games': 'Built-in mini games',
   'dash.desc.diagnostics': 'Engine and capture diagnostics',
   'dash.desc.architecture': '3D architecture visual',
   'dash.closeTab': 'Close tab',
@@ -331,7 +331,6 @@ const EN = {
   'profile.importSuccess': 'Profile imported.',
   'profile.importError': 'Invalid profile file.',
   // Language toggle
-  'lang.toggle': '中文',
   // Static text effect params
   'param.text': 'Text',
   'param.textX': 'X Position',
@@ -814,7 +813,7 @@ const ZH: TranslationTable = {
   'dash.desc.video': '视频工作站与拼接墙',
   'dash.desc.audio': '音频工作站',
   'dash.desc.model3d': '3D 模型灯效',
-  'dash.desc.games': '迷你游戏',
+  'dash.desc.games': '内置迷你游戏合集',
   'dash.desc.diagnostics': '引擎与捕获诊断',
   'dash.desc.architecture': '3D 架构可视化',
   'dash.closeTab': '关闭标签页',
@@ -1103,7 +1102,6 @@ const ZH: TranslationTable = {
   'profile.noSaved': '暂无已保存配置。',
   'profile.importSuccess': '配置已导入。',
   'profile.importError': '无效的配置文件。',
-  'lang.toggle': 'English',
   'param.text': '文本内容',
   'param.textX': 'X 位置',
   'param.textY': 'Y 位置',

@@ -12,9 +12,16 @@ export interface ShellModuleMeta {
   icon: LucideIcon
 }
 
-export type ModuleView = 'workspace' | 'effects' | 'video' | 'audio' | 'model3d' | 'games' | 'diagnostics' | 'architecture'
+/** Views that get a dashboard card — every module view except settings. */
+export const CARD_VIEWS = [
+  'workspace', 'effects', 'video', 'audio', 'model3d',
+  'games', 'diagnostics', 'architecture'
+] as const
+export type CardView = (typeof CARD_VIEWS)[number]
 
-export const MODULE_META: Record<ModuleView, ShellModuleMeta> = {
+// Record<CardView, …> makes TypeScript reject a missing meta entry when a view
+// is added to CARD_VIEWS — no silent fallbacks for card modules.
+export const MODULE_META: Record<CardView, ShellModuleMeta> = {
   workspace:    { view: 'workspace',    labelKey: 'nav.workspace',    descKey: 'dash.desc.workspace',    icon: Monitor },
   effects:      { view: 'effects',      labelKey: 'nav.effects',      descKey: 'dash.desc.effects',      icon: Sparkles },
   video:        { view: 'video',        labelKey: 'nav.video',        descKey: 'dash.desc.video',        icon: Video },
@@ -27,7 +34,7 @@ export const MODULE_META: Record<ModuleView, ShellModuleMeta> = {
 
 export interface ShellSection {
   key: TranslationKey
-  views: View[]
+  views: CardView[]
 }
 
 /** Dashboard 固定三分区（R85.1，用户已确认：不做自定义/频率自适应） */
@@ -37,18 +44,17 @@ export const DASHBOARD_SECTIONS: ShellSection[] = [
   { key: 'dash.section.tools',  views: ['games', 'diagnostics', 'architecture'] }
 ]
 
-const TAB_LABEL_KEYS: Partial<Record<View, TranslationKey>> = {
-  dashboard: 'nav.dashboard',
-  settings: 'nav.settings'
-}
-const TAB_ICONS: Partial<Record<View, LucideIcon>> = {
-  dashboard: LayoutGrid,
-  settings: Settings
+const TAB_META: Record<'dashboard' | 'settings', { labelKey: TranslationKey; icon: LucideIcon }> = {
+  dashboard: { labelKey: 'nav.dashboard', icon: LayoutGrid },
+  settings: { labelKey: 'nav.settings', icon: Settings }
 }
 
-/** Label + icon for any tabbable view (module views come from MODULE_META). */
+/** Label + icon for any view that can appear as a tab. Card modules come from
+ *  MODULE_META (Record<CardView,…> — compile-checked complete); the final
+ *  fallback is only reachable for 'profiles', which never opens a tab (R85.4). */
 export function getTabMeta(view: View): { labelKey: TranslationKey; icon: LucideIcon } {
-  const meta = MODULE_META[view as ModuleView]
-  if (meta) return { labelKey: meta.labelKey, icon: meta.icon }
-  return { labelKey: TAB_LABEL_KEYS[view] ?? 'nav.dashboard', icon: TAB_ICONS[view] ?? LayoutGrid }
+  const extra = TAB_META[view as keyof typeof TAB_META]
+  if (extra) return extra
+  const meta = MODULE_META[view as CardView]
+  return { labelKey: meta.labelKey, icon: meta.icon }
 }

@@ -18,6 +18,7 @@ function makeProps(over: Partial<ShellProps> = {}): ShellProps {
     onToggleAudio: vi.fn(),
     lang: 'zh',
     onToggleLang: vi.fn(),
+    shutdownLabel: '',
     onShutdownClick: vi.fn(),
     children: <div className="fake-view">VIEW</div>,
     ...over
@@ -49,13 +50,29 @@ describe('AppShell', () => {
     expect(container.querySelectorAll('.topbar-meters .audio-meter').length).toBe(3)
   })
 
-  it('shutdown chip renders only when label provided', () => {
+  it('shutdown chip is always visible (R73 stays armable) — "off" hint when idle, opens HUD on click', () => {
     const onShutdownClick = vi.fn()
-    const { container: none } = render(<AppShell {...makeProps()} />)
-    expect(none.querySelector('.topbar-chip')).toBeNull()
-    const { container } = render(<AppShell {...makeProps({ shutdownLabel: '36:12', onShutdownClick })} />)
-    fireEvent.click(container.querySelector('.topbar-chip') as HTMLElement)
+    const { container } = render(<AppShell {...makeProps({ onShutdownClick })} />)
+    const chip = container.querySelector('.topbar-chip') as HTMLElement
+    expect(chip.textContent).toContain('shutdown.off')
+    expect(chip.classList.contains('armed')).toBe(false)
+    fireEvent.click(chip)
     expect(onShutdownClick).toHaveBeenCalledOnce()
+  })
+
+  it('armed countdown shows in the chip with the armed state', () => {
+    const { container } = render(<AppShell {...makeProps({ shutdownLabel: '36:12' })} />)
+    const chip = container.querySelector('.topbar-chip') as HTMLElement
+    expect(chip.textContent).toContain('36:12')
+    expect(chip.classList.contains('armed')).toBe(true)
+  })
+
+  it('settings menu closes after a menu item is clicked', () => {
+    const { container } = render(<AppShell {...makeProps()} />)
+    const details = container.querySelector('.topbar-menu[data-menu="settings"]') as HTMLDetailsElement
+    details.setAttribute('open', '')
+    fireEvent.click(container.querySelector('.topbar-menu[data-menu="settings"] .topbar-menu-item') as HTMLElement)
+    expect(details.hasAttribute('open')).toBe(false)
   })
 
   it('settings menu opens the settings view via onOpen', () => {

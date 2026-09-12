@@ -36,7 +36,6 @@ export function SettingsView(props: SettingsViewProps) {
     <div className="settings-view">
       <header className="workspace-header">
         <div>
-          <p className="eyebrow">{t('nav.settings')}</p>
           <h2>{t('menu.settings')}</h2>
         </div>
       </header>

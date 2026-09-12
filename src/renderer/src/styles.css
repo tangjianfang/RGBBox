@@ -1064,12 +1064,6 @@ input:not([type]):focus {
   padding: 0 4px;
 }
 
-.audio-error {
-  color: #e0a040;
-  font-size: 11px;
-  line-height: 1.35;
-}
-
 /* Aspect-ratio lock row sits between columns and rows sliders */
 .grid-fps-hint {
   color: #5e8091;
@@ -2371,20 +2365,9 @@ input:not([type]):focus {
 }
 
 @media (max-width: 960px) {
-  .app-shell {
-    grid-template-columns: 72px 1fr;
-  }
-
-  .brand-block div:not(.brand-mark),
-  .nav-item span,
-  .status-panel div {
-    display: none;
-  }
-
-  .nav-item {
-    justify-content: center;
-    padding: 0;
-  }
+  /* R85: old sidebar-collapse rules (app-shell grid / nav-item / hidden
+     status-panel labels) removed with the sidebar — .status-panel is now used
+     by SettingsView, whose labels must stay visible at any width. */
 
   .fx-sidebar {
     width: 220px;
@@ -5278,8 +5261,8 @@ input[type='range'].audio-slider {
 /* ── R73: scheduled-shutdown HUD ─────────────────────────────────────── */
 .shutdown-panel {
   position: fixed;
-  /* sidebar column is clamp(180px, 22vw, 260px) wide + its padding */
-  left: calc(clamp(180px, 22vw, 260px) + 16px);
+  /* R85: sidebar removed — anchor to the right edge, below the top bar */
+  right: 16px;
   bottom: 24px;
   z-index: 120;
   width: 264px;
@@ -6151,3 +6134,15 @@ input[type='range'].video-player-volume {
 .settings-group { display: flex; flex-direction: column; gap: 10px; }
 .settings-group h3 { margin: 0; }
 .settings-group .status-panel { margin-top: 0; }
+
+/* R85 review fix: chip shows accent state only while a countdown is armed */
+.topbar-chip.armed {
+  border-color: rgba(79, 195, 247, 0.45);
+  color: #7de8d0;
+}
+/* R85 review fix: sidebar rule carried width:100% — in the flex status strip
+   the select would force its own full-width row */
+.dash-status .audio-device-select {
+  width: auto;
+  max-width: 220px;
+}

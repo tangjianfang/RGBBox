@@ -77,4 +77,14 @@ describe('DashboardView', () => {
     fireEvent.click(container.querySelector('.dash-status .icon-button') as HTMLElement)
     expect(onToggleEngine).toHaveBeenCalledOnce()
   })
+
+  it('hides the audio device select when audio is disabled (old sidebar gate)', () => {
+    const { container } = renderDash({ status: { audioEnabled: false } })
+    expect(container.querySelector('.dash-status .audio-device-select')).toBeNull()
+  })
+
+  it('renders — instead of fps before the first measured sample', () => {
+    const { container } = renderDash({ status: { fps: 0 } })
+    expect(container.querySelector('.dash-status')?.textContent).toContain('—')
+  })
 })

@@ -34,7 +34,6 @@ export function DashboardView({ onOpen, openTabs, model3dEnabled, status }: Dash
           className="icon-button"
           onClick={status.onToggleEngine}
           aria-label="Toggle engine"
-          title={status.running ? t('engine.paused') : t('engine.running')}
         >
           {status.running ? <Pause size={16} /> : <Play size={16} />}
         </button>
@@ -43,29 +42,33 @@ export function DashboardView({ onOpen, openTabs, model3dEnabled, status }: Dash
         <span className="dash-sep">·</span>
         <span>{t('dash.status.effect')}: {status.effectName}</span>
         <span className="dash-sep">·</span>
-        <span>{status.fps} fps</span>
+        <span>{status.fps > 0 ? `${status.fps} fps` : '—'}</span>
         <span className="dash-sep">·</span>
         <span>{t('dash.status.overlay')}: {status.overlayCount}</span>
-        <span className="dash-sep">·</span>
-        <select
-          className="audio-device-select"
-          value={status.audioDeviceId}
-          onChange={(e) => status.onSelectAudioDevice(e.target.value)}
-          title={t('audio.deviceLabel')}
-        >
-          <option value="">{t('audio.defaultDevice')}</option>
-          {status.speakerDevices.map((d) => (
-            <option key={d.deviceId} value={`__speaker__:${d.deviceId}`}>
-              {t('audio.speakerPrefix')}{d.label || d.deviceId.slice(0, 12)}
-            </option>
-          ))}
-          <option value="__system_audio__">{t('audio.systemAudio')}</option>
-          {status.audioDevices.map((d) => (
-            <option key={d.deviceId} value={d.deviceId}>
-              {d.label || d.deviceId.slice(0, 12)}
-            </option>
-          ))}
-        </select>
+        {status.audioEnabled && (
+          <>
+            <span className="dash-sep">·</span>
+            <select
+              className="audio-device-select"
+              value={status.audioDeviceId}
+              onChange={(e) => status.onSelectAudioDevice(e.target.value)}
+              title={t('audio.deviceLabel')}
+            >
+              <option value="">{t('audio.defaultDevice')}</option>
+              {status.speakerDevices.map((d) => (
+                <option key={d.deviceId} value={`__speaker__:${d.deviceId}`}>
+                  {t('audio.speakerPrefix')}{d.label || d.deviceId.slice(0, 12)}
+                </option>
+              ))}
+              <option value="__system_audio__">{t('audio.systemAudio')}</option>
+              {status.audioDevices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || d.deviceId.slice(0, 12)}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
 
       {DASHBOARD_SECTIONS.map((section) => (

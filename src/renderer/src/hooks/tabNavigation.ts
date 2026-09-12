@@ -1,22 +1,23 @@
 // R85 tab-shell navigation core. Pure functions, no React/DOM — unit-testable in node.
 
-export type View =
-  | 'dashboard' | 'workspace' | 'effects' | 'games' | 'audio'
-  | 'video' | 'diagnostics' | 'model3d' | 'architecture'
-  | 'settings' | 'profiles'
+/** Single ordered list of module views that may open as a tab (R85).
+ *  KNOWN_VIEWS / TABBABLE_VIEWS / the View union all derive from this one
+ *  list — adding a module means adding it HERE (plus its card meta in
+ *  shellModules.ts). */
+export const MODULE_VIEWS = [
+  'workspace', 'effects', 'games', 'audio', 'video',
+  'diagnostics', 'model3d', 'architecture', 'settings'
+] as const
+export type ModuleView = (typeof MODULE_VIEWS)[number]
+
+export type View = 'dashboard' | 'profiles' | ModuleView
 // 'profiles' keeps its legacy status: in the union, but never rendered / never a tab (R85.4).
 
 export const DASHBOARD_VIEW: View = 'dashboard'
 
-const KNOWN_VIEWS: ReadonlySet<string> = new Set<View>([
-  'dashboard', 'workspace', 'effects', 'games', 'audio', 'video',
-  'diagnostics', 'model3d', 'architecture', 'settings', 'profiles'
-])
+const KNOWN_VIEWS: ReadonlySet<string> = new Set<string>([...MODULE_VIEWS, 'dashboard', 'profiles'])
 
-const TABBABLE_VIEWS: readonly View[] = [
-  'workspace', 'effects', 'games', 'audio', 'video',
-  'diagnostics', 'model3d', 'architecture', 'settings'
-]
+const TABBABLE_VIEWS: readonly View[] = MODULE_VIEWS
 
 export interface TabNavState {
   tabs: View[]

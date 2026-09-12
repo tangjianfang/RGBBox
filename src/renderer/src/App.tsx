@@ -848,6 +848,20 @@ export function App(): JSX.Element {
   audioRef.current = audio
   const metricsCollectorRef = useRef(new MetricsCollector())
 
+  // R85: live fps for the dashboard status strip. status.fps (EngineStatus) is a
+  // boot-time value that never updates — the measured rate lives in the rolling
+  // metrics collector, which is fed by the worker on every frame regardless of
+  // the active view. Sample it once per second while the dashboard is showing.
+  const [dashFps, setDashFps] = useState(0)
+  useEffect(() => {
+    if (activeView !== 'dashboard') return undefined
+    const id = window.setInterval(() => {
+      const snap = metricsCollectorRef.current.snapshot()
+      setDashFps(snap.avgFrameMs > 0 ? Math.min(Math.round(1000 / snap.avgFrameMs), 999) : 0)
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [activeView])
+
   /** Ripple burst: set on canvas click, cleared after 2.5 s (matches burstDuration in effects.ts). */
   const rippleBurstRef = useRef<{ cx: number; cy: number; clickedAt: number } | null>(null)
   const rippleBurstTimerRef = useRef<number | null>(null)
@@ -1798,7 +1812,7 @@ export function App(): JSX.Element {
         shutdownLabel={
           shutdownInfo && shutdownInfo.remainingMs > 0
             ? formatMediaTime(Math.ceil(shutdownInfo.remainingMs / 1000))
-            : undefined
+            : ''
         }
         onShutdownClick={() => setShutdownPanelOpen((v) => !v)}
       >
@@ -1826,7 +1840,7 @@ export function App(): JSX.Element {
               effectName:
                 effectPresets.find((p) => p.kind === (selectedLayer?.kind ?? 'static'))?.label
                 ?? selectedLayer?.kind ?? 'static',
-              fps: status.fps,
+              fps: dashFps,
               audioEnabled,
               audioDeviceId,
               audioDevices,
