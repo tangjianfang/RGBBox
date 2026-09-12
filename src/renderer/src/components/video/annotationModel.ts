@@ -26,6 +26,12 @@ export interface Shape {
   points?: Pt[]
   /** text 内容 */
   text?: string
+  /** R78.2: 旋转角（度，绕 bbox 中心，顺时针） */
+  rotation?: number
+  /** R78.1: 文字对齐 */
+  align?: 'left' | 'center' | 'right'
+  /** R78.1: 粗体 */
+  bold?: boolean
 }
 
 export type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'start' | 'end'
@@ -101,6 +107,52 @@ export function hitTest(shapes: Shape[], p: Pt): Shape | null {
   return null
 }
 
+/** R78.2: 绕中心顺时针旋转点（屏幕 y 向下坐标系，与 canvas rotate 一致）。 */
+export function rotatePt(p: Pt, center: Pt, deg: number): Pt {
+  const rad = (deg * Math.PI) / 180
+  const dx = p.x - center.x
+  const dy = p.y - center.y
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  return {
+    x: center.x + dx * cos - dy * sin,
+    y: center.y + dx * sin + dy * cos,
+  }
+}
+
+/** R78.2: 带旋转的顶层优先命中——先把点逆旋转回形状本地坐标系再判定。 */
+export function hitTestRotated(shapes: Shape[], p: Pt): Shape | null {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i]
+    const local = s.rotation ? rotatePt(p, bboxCenter(s), -s.rotation) : p
+    if (hitShape(s, local, 4)) return s
+  }
+  return null
+}
+
+function bboxCenter(s: Shape): Pt {
+  const b = shapeBBox(s)
+  return { x: b.x + b.w / 2, y: b.y + b.h / 2 }
+}
+
+export type ReorderDir = 'front' | 'back' | 'forward' | 'backward'
+
+/** R78.1: 图层排序（front 置顶 / back 置底 / forward 上移一位 / backward 下移一位）。 */
+export function reorderShape(shapes: Shape[], id: string, dir: ReorderDir): Shape[] {
+  const idx = shapes.findIndex(s => s.id === id)
+  if (idx < 0) return shapes
+  let target = idx
+  if (dir === 'front') target = shapes.length - 1
+  else if (dir === 'back') target = 0
+  else if (dir === 'forward') target = Math.min(shapes.length - 1, idx + 1)
+  else target = Math.max(0, idx - 1)
+  if (target === idx) return shapes
+  const next = [...shapes]
+  const [item] = next.splice(idx, 1)
+  next.splice(target, 0, item)
+  return next
+}
+
 /** 平移（深拷贝，含 bbox/端点/点列）。 */
 export function moveShape(s: Shape, dx: number, dy: number): Shape {
   const n: Shape = { ...s, x: s.x + dx, y: s.y + dy }
@@ -112,22 +164,58 @@ export function moveShape(s: Shape, dx: number, dy: number): Shape {
   return n
 }
 
-/** 手柄缩放：bbox 类 8 向（min 8）；arrow 拖端点；pen/mosaic/text 不支持（返回原样）。 */
-export function resizeShape(s: Shape, handle: Handle, p: Pt): Shape {
+/**
+ * 手柄缩放（R78.2 扩展语义）：
+ *  - arrow：拖端点（不变）；
+ *  - 角手柄 + `proportional`：等比缩放（以 x 轴比率为准）——rect/ellipse 保持宽高比，
+ *    pen/mosaic 点列按 bbox 比率映射，text 字号同比；
+ *  - 边手柄：单轴拉伸（pen/mosaic 点列单轴映射；text 只改 bbox 不改字号）。
+ */
+export function resizeShape(s: Shape, handle: Handle, p: Pt, opts?: { proportional?: boolean }): Shape {
   if (s.kind === 'arrow') {
     const n = { ...s }
     if (handle === 'start') { n.x1 = p.x; n.y1 = p.y }
     else { n.x2 = p.x; n.y2 = p.y }
     return n
   }
-  if (s.kind === 'pen' || s.kind === 'mosaic' || s.kind === 'text') return s
-  let { x, y, w, h } = s
-  const right = x + w, bottom = y + h
-  if (handle.includes('w')) { x = Math.min(p.x, right - MIN_SIZE); w = right - x }
-  if (handle.includes('e')) { w = Math.max(MIN_SIZE, p.x - x) }
-  if (handle.includes('n')) { y = Math.min(p.y, bottom - MIN_SIZE); h = bottom - y }
-  if (handle.includes('s')) { h = Math.max(MIN_SIZE, p.y - y) }
-  return { ...s, x, y, w, h }
+  const b = shapeBBox(s)
+  const corner = 'nw ne se sw'.split(' ').includes(handle)
+  const proportional = opts?.proportional === true && corner
+
+  // 目标 bbox（在未旋转的本地坐标系里计算；旋转形状的调用方负责先把 p 逆旋转）
+  let nx = b.x, ny = b.y, nw = b.w, nh = b.h
+  const right = b.x + b.w, bottom = b.y + b.h
+  if (handle.includes('w')) { nx = Math.min(p.x, right - MIN_SIZE); nw = right - nx }
+  if (handle.includes('e')) { nw = Math.max(MIN_SIZE, p.x - b.x) }
+  if (handle.includes('n')) { ny = Math.min(p.y, bottom - MIN_SIZE); nh = bottom - ny }
+  if (handle.includes('s')) { nh = Math.max(MIN_SIZE, p.y - b.y) }
+  if (proportional) {
+    const ratio = b.w > 0 ? nw / b.w : 1
+    nh = Math.max(MIN_SIZE, b.h * ratio)
+    // 北侧角手柄：顶边跟随比率收缩
+    if (handle.includes('n')) ny = bottom - nh
+  }
+
+  const mapPoints = (axisOnly?: 'x' | 'y'): Pt[] | undefined => {
+    if (!s.points) return undefined
+    const kx = b.w > 0 ? nw / b.w : 1
+    const ky = b.h > 0 ? nh / b.h : 1
+    return s.points.map(pt => ({
+      x: axisOnly === 'y' ? pt.x : nx + (pt.x - b.x) * kx,
+      y: axisOnly === 'x' ? pt.y : ny + (pt.y - b.y) * ky,
+    }))
+  }
+
+  if (s.kind === 'pen' || s.kind === 'mosaic') {
+    const axisOnly = proportional ? undefined : handle.includes('e') || handle.includes('w') ? 'x' : 'y'
+    return { ...s, points: mapPoints(axisOnly) }
+  }
+  // text
+  if (proportional && s.w > 0) {
+    const ratio = nw / s.w
+    return { ...s, x: nx, y: ny, w: nw, h: nh, width: Math.max(8, s.width * ratio) }
+  }
+  return { ...s, x: nx, y: ny, w: nw, h: nh }
 }
 
 // ── 历史栈（快照式；标注数组很小，成本可忽略；各限 50 帧） ──────────────────

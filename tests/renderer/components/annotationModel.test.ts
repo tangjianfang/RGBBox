@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   makeShape, shapeBBox, handlesFor, hitTest, moveShape, resizeShape,
   commit, undo, redo, canUndo, canRedo, emptyHistory, distToSegment,
+  reorderShape, rotatePt, hitTestRotated,
 } from '../../../src/renderer/src/components/video/annotationModel'
 
 describe('annotationModel', () => {
@@ -72,5 +73,72 @@ describe('annotationModel', () => {
   it('distToSegment perpendicular and on-line cases', () => {
     expect(distToSegment({ x: 5, y: 10 }, { x: 0, y: 0 }, { x: 10, y: 0 })).toBeCloseTo(10)
     expect(distToSegment({ x: 5, y: 0 }, { x: 0, y: 0 }, { x: 10, y: 0 })).toBeCloseTo(0)
+  })
+
+  // ── R78: rotation / reorder / proportional resize ──────────────────────
+
+  it('reorderShape: four directions', () => {
+    const a = makeShape('rect', { id: 'a' }), b = makeShape('rect', { id: 'b' }), c = makeShape('rect', { id: 'c' })
+    expect(reorderShape([a, b, c], 'a', 'front').map(s => s.id)).toEqual(['b', 'c', 'a'])
+    expect(reorderShape([a, b, c], 'c', 'back').map(s => s.id)).toEqual(['c', 'a', 'b'])
+    expect(reorderShape([a, b, c], 'a', 'forward').map(s => s.id)).toEqual(['b', 'a', 'c'])
+    expect(reorderShape([a, b, c], 'c', 'backward').map(s => s.id)).toEqual(['a', 'c', 'b'])
+    // 边界：已在顶/底或 id 不存在 → 原样
+    expect(reorderShape([a, b], 'a', 'back').map(s => s.id)).toEqual(['a', 'b'])
+    expect(reorderShape([a], 'nope', 'front').map(s => s.id)).toEqual(['a'])
+  })
+
+  it('rotatePt rotates clockwise around center (90° up→right)', () => {
+    const c = { x: 10, y: 10 }
+    // (10, 0) 在中心正上方；顺时针 90° 应到正右 (20, 10)
+    const out = rotatePt({ x: 10, y: 0 }, c, 90)
+    expect(out.x).toBeCloseTo(20)
+    expect(out.y).toBeCloseTo(10)
+  })
+
+  it('hitTestRotated hits a rotated rect at the rotated position', () => {
+    // 100×100 rect at origin，绕中心 (50,50) 转 45° → 命中原 bbox 角附近的点、未命中旋转后空出的边中点
+    const s = makeShape('rect', { x: 0, y: 0, w: 100, h: 100, rotation: 45 })
+    // 旋转后正右方向 (50+70.7, 50) 处是形状对角线延伸 → 命中
+    expect(hitTestRotated([s], { x: 50 + 60, y: 50 })?.id).toBe(s.id)
+    // 原 bbox 上边中点 (50, 1)：旋转 45° 后该点已转出形状（距中心 49，旋转后位置仍在半径 49 的圆上，
+    // 但形状现在是以中心为圆心、半对角 70.7 的旋转正方形——(50,1) 逆旋 45° 落在对角线上 → 命中）。
+    // 换一个确定未命中点：距中心 80 的点（超出旋转正方形最大半径 70.7）
+    expect(hitTestRotated([s], { x: 50 + 80, y: 50 })).toBeNull()
+  })
+
+  it('proportional corner resize keeps aspect for rect, maps pen points, scales text font', () => {
+    const r = resizeShape(makeShape('rect', { x: 0, y: 0, w: 100, h: 50 }), 'se', { x: 50, y: 25 }, { proportional: true })
+    // 等比：以 w 比例 0.5 为准 → h 同比 25
+    expect(r).toMatchObject({ w: 50, h: 25 })
+    const p = resizeShape(
+      makeShape('pen', { points: [{ x: 0, y: 0 }, { x: 100, y: 40 }] }),
+      'se', { x: 50, y: 999 }, { proportional: true },
+    )
+    // pen bbox 100×40 → 等比 w=50 → 点列按 0.5 映射
+    expect(p.points![0]).toEqual({ x: 0, y: 0 })
+    expect(p.points![1].x).toBeCloseTo(50)
+    expect(p.points![1].y).toBeCloseTo(20)
+    const t = resizeShape(makeShape('text', { x: 0, y: 0, w: 100, h: 20, width: 32, text: 'a' }), 'se', { x: 50, y: 999 }, { proportional: true })
+    expect(t.w).toBe(50)
+    expect(t.width).toBeCloseTo(16)   // 字号同比
+  })
+
+  it('edge stretch maps pen points on one axis', () => {
+    const p = resizeShape(
+      makeShape('pen', { points: [{ x: 10, y: 10 }, { x: 60, y: 30 }] }),
+      'e', { x: 110, y: 0 },
+    )
+    // pen bbox x:10..60 → 右边拉到 110 → x 轴 ×2（10→60 变 10→110），y 不变
+    expect(p.points![0].x).toBe(10)
+    expect(p.points![1].x).toBeCloseTo(110)
+    expect(p.points![1].y).toBeCloseTo(30)
+  })
+
+  it('makeShape passes through rotation/align/bold', () => {
+    const s = makeShape('text', { rotation: 30, align: 'center', bold: true, text: 'x' })
+    expect(s.rotation).toBe(30)
+    expect(s.align).toBe('center')
+    expect(s.bold).toBe(true)
   })
 })
