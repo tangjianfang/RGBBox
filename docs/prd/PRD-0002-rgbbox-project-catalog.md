@@ -678,6 +678,33 @@
   - [ ] 手动：中文输入法可正常输入并 Enter 落字；对齐/字号/粗体实时生效；图层四钮调序；Ctrl+C 复制标注文字、Ctrl+V 粘贴建字；矩形/箭头等画完再点即选中编辑，角=等比/边=拉伸、旋转柄可转（Shift 15°）；OCR 按钮对含中英文截图识别出可复制文本；胶片栏多图后宽度=预览区宽、滚动条/‹›按钮/滚轮三种滑动可用
 - **R78.8** **状态**：✅（代码已实施，自动化验证 + code review 全绿（证据见 R78.7）；实机手动验证（含 OCR 中文识别率）pending 用户复测。）
 
+### R79. OCR 实机失败修复（已实证）+ 框选识别 + 三项体验打磨
+
+> 触发场景：2026-09-12 用户实测 R78 反馈——① OCR 点击"一直失败"，并要求框选区域识别（框完立即识别）；② 图片编辑预览框内滚动条颜色与背景不匹配；③ 预览区缩略图双击应默认打开编辑；④ 画图形后第二次点击应变手势拉伸状态且鼠标手势相应变化。
+> **OCR 根因（本机实证复现与修复验证）**：PS 5.1 无法经 `::` 调用返回 `IAsyncOperation` 的静态 WinRT 方法——`BitmapDecoder::CreateAsync` 无论传 `IStorageFile` 还是 `IRandomAccessStream(WithContentType)`，绑定器一律报"找不到重载"（反射可见方法存在）。修复 = `OpenAsync(Read)` 取 `IRandomAccessStream` + **反射直调** `CreateAsync`（`GetMethods()` 过滤后 `Invoke($null, @($stream))`）。实测：英文/中文识别（"会议记录 2026"/"视频工作站 OCR 测试" 全对）、UTF-8 输出、含中文目录路径均通过。
+> **风险等级：L2**（用户可见行为变更：OCR 按钮改框选交互；无新 IPC / 依赖）。
+
+- **R79.1** **OCR 脚本修复**：`buildOcrScript` 的 decoder 创建改为流式 + 反射直调（实证方案）；`parseOcrOutput` 增加 CJK 词间空格合并后处理（连续单字 CJK 间空格合并，保留中英边界），避免"会 议 记 录"式输出。
+- **R79.2** **框选识别**：OCR 按钮点击 → 进入框选模式（十字光标 + 暗幕遮罩挖洞，与局部截图同手感）→ 拖选松手 → **立即对所选区域识别**（裁剪导出后送 OCR）→ 面板显示；ESC 取消；拖选 <8px 取消；面板头部保留「整图」按钮（识别整张图）。
+- **R79.3** **滚动条配色**：OCR 结果 textarea 与深色面板内滚动区统一深色 `::-webkit-scrollbar` 样式（深灰轨道 + 主题青滑块）。
+- **R79.4** **缩略图双击进编辑**：胶片栏缩略图 `onDoubleClick` → 打开标注器编辑（单击无动作防误触；hover 编辑按钮保留）。
+- **R79.5** **手势光标**：画布 hover 按上下文实时切换 cursor——手柄 `nwse/nesw/ns/ew`（旋转形状按角度取最近 45° 桶）、旋转柄 `grab`（拖动 `grabbing`）、形状体 `move`、绘制工具 `crosshair`、缩放平移 `grab`；实现为 pointermove 空闲态的 hover 计算，不新增渲染循环。
+- **R79.6** **不动**：R78 既有交互语义、拍摄缓存、IPC 集合（本条零新通道）、`package.json` scripts、R70–R72。
+- **R79.7** **受影响文件**：`src/main/ocrService.ts`、`src/renderer/src/components/video/AnnotateOverlay.tsx`、`src/renderer/src/components/CaptureFilmstrip.tsx`、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`tests/main/ocrService.test.ts`（脚本断言更新 + 空格合并用例）、`tests/renderer/components/AnnotateOverlay.test.tsx`（框选识别用例）、`tests/renderer/components/CaptureFilmstrip.test.tsx`（双击用例）。
+- **R79.8** **验收点**：
+  - [ ] `yarn typecheck` / `yarn build` 通过
+  - [ ] `yarn test` 全量通过，无回归
+  - [ ] code review 通过
+  - [ ] 手动：OCR 按钮框选一段含中英文的区域 → 松手立即出可复制结果（中文无乱码、无多余空格）；「整图」可用；编辑器滚动条为深色；胶片栏双击缩略图进编辑；画形状后点选出现手柄且各方向光标正确
+- **R79.9** **状态**：⏳
+
+### R80. 独立全局截图工具（托盘入口 + 全屏选区 + 标注小工具）
+
+> 触发场景：2026-09-12 用户需求——截图做成独立功能：① 入口放右下角托盘菜单；② 带图片编辑全套逻辑；③ 启动截图时显示悬浮截图小工具；复用现有功能。可行性评估已完成（复用约 70%：AnnotateOverlay 标注全家桶 / RegionSnipOverlay 框选 / desktopCapturer / captureStore 缓存 / 剪贴板 IPC / R74 多显示器全屏窗口先例；新增主进程 SnipManager + `?snip=1` 路由）。已知边界：锁屏/UAC secure desktop 无法截取（系统限制）、多显示器 DPI 映射需处理。**经用户确认立项，R79 交付后实施；交互细节届时 brainstorm 补充。**
+> **风险等级：L2**（新窗口类型 + 托盘菜单 + 用户可见新功能）。
+- **R80.1–R80.x**：待 R79 交付后 brainstorm 细化（入口/热键/多显示器/窗口生命周期/缓存与剪贴板复用/验收点）。
+- **R80.2** **状态**：⏳
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
