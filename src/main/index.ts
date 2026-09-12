@@ -20,7 +20,7 @@ import { runPerfSelfTest } from './perfSelfTest'
 import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOverlay, getAudioVizWindowIds, getOverlayDisplayIds, openAudioVizWindow, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
 import { armShutdown, cancelShutdown, getShutdownStatus } from './shutdownScheduler'
 import { closeAllScreensaverWindows, disposeScreensaver, getScreensaverSettings, initScreensaver, setScreensaverSettings } from './screensaverManager'
-import { cancelSnip, disposeSnipManager, finishSnip, getSnipFrame, initSnipManager, registerSnipHotkey, startSnip, SNIP_HOTKEY } from './snipManager'
+import { cancelSnip, disposeSnipManager, finishSnip, getSnipFrame, getSnipHotkeyPref, initSnipHotkeyPref, initSnipManager, isPresetSnipHotkey, registerSnipHotkey, setSnipHotkeyPref, startSnip } from './snipManager'
 import { asUiLocale, trayMenuLabels, type UiLocale } from './trayMenu'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
@@ -300,6 +300,21 @@ function registerIpc(): void {
   ipcMain.on(ipcChannels.uiSetLocale, (_event, l: unknown) => {
     uiLocale = asUiLocale(l)
     rebuildTrayMenu?.()
+  })
+  // R81: global snip hotkey preference (preset whitelist; re-register + persist + rebuild tray label)
+  ipcMain.handle(ipcChannels.snipGetHotkey, () => getSnipHotkeyPref())
+  ipcMain.handle(ipcChannels.snipSetHotkey, (_event, accel: unknown) => {
+    const ok = setSnipHotkeyPref(
+      typeof accel === 'string' && isPresetSnipHotkey(accel) ? accel : '',
+      (k) => {
+        tray?.displayBalloon?.({ title: 'RGBBox', content: `全局热键 ${k} 已被其他应用占用，已保留原热键。`, iconType: 'info' })
+      },
+    )
+    if (ok) {
+      rebuildTrayMenu?.()
+      void saveSystemSettings({ snip: { hotkey: getSnipHotkeyPref() } }).catch(() => { /* best-effort */ })
+    }
+    return { ok, hotkey: getSnipHotkeyPref() }
   })
 
   // R78: clipboard text (annotator copy/paste) + native OCR
@@ -760,7 +775,7 @@ function createTray(): void {
 
   // R80.12: 界面语言切换后重建托盘菜单（原生菜单启动时只建一次，不随 i18n 变）
   const applyTrayMenu = (): void => {
-    const L = trayMenuLabels(uiLocale, SNIP_HOTKEY)
+    const L = trayMenuLabels(uiLocale, getSnipHotkeyPref())
     const contextMenu = Menu.buildFromTemplate([
       { label: L.toggle, click: toggleMainWindow },
       { label: L.snip, click: () => { void startSnip() } },
@@ -915,10 +930,20 @@ app.whenReady().then(() => {
   createTray()
   log.info('App', 'Application ready — main window and tray created')
 
-  // R80: global snip hotkey — conflict (e.g. WeChat owns Alt+A) degrades to tray-only with a balloon
-  registerSnipHotkey((accel) => {
-    tray?.displayBalloon?.({ title: 'RGBBox', content: `全局热键 ${accel} 已被其他应用占用，截图仍可从托盘菜单触发。`, iconType: 'info' })
-  })
+  // R80/R81: global snip hotkey — restore persisted preference BEFORE registering
+  // (init-first avoids leaking the default Alt+A if the user chose another key)
+  void loadSystemSettings()
+    .then((s) => {
+      if (s.snip?.hotkey) initSnipHotkeyPref(s.snip.hotkey)
+    })
+    .catch(() => { /* unreadable settings → default */ })
+    .finally(() => {
+      rebuildTrayMenu?.()   // tray label follows the persisted key
+      // conflict (e.g. WeChat owns Alt+A) degrades to tray-only with a balloon
+      registerSnipHotkey((accel) => {
+        tray?.displayBalloon?.({ title: 'RGBBox', content: `全局热键 ${accel} 已被其他应用占用，截图仍可从托盘菜单触发。`, iconType: 'info' })
+      })
+    })
 
   // R74: restore the light-effect screensaver settings and start idle polling
   // if it was left enabled (does NOT auto-open windows — the first poll decides).

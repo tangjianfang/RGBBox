@@ -24,6 +24,7 @@ import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 import type { WorkerInput, WorkerOutput } from './workers/previewEngineWorker'
 import { useModelStore } from './3d/useModelStore'
 import { MetricsCollector } from './engine/metricsCollector'
+import { PRESET_SNIP_HOTKEYS } from '../../shared/snipHotkeys'
 
 // Lazily loaded — vendor-splat (1.6MB) is only fetched when the 3D view is first opened
 const SplatViewer = lazy(() => import('./3d/SplatViewer').then((m) => ({ default: m.SplatViewer })))
@@ -724,6 +725,15 @@ export function App(): JSX.Element {
   // R74: light-effect screensaver settings mirror (main owns the idle watcher)
   const [screensaverEnabled, setScreensaverEnabled] = useState(false)
   const [screensaverMinutes, setScreensaverMinutes] = useState(5)
+  // R81: global snip hotkey mirror (main owns globalShortcut + persistence)
+  const [snipHotkey, setSnipHotkeyState] = useState<string>('Alt+A')
+  useEffect(() => {
+    void window.rgbbox.snipGetHotkey().then((k) => setSnipHotkeyState(k)).catch(() => { /* default */ })
+  }, [])
+  const applySnipHotkey = useCallback((accel: string) => {
+    setSnipHotkeyState(accel)   // 乐观更新；冲突时主进程回滚并返回当前键
+    void window.rgbbox.snipSetHotkey(accel).then((r) => setSnipHotkeyState(r.hotkey)).catch(() => { /* keep */ })
+  }, [])
   // R45: reactive counterpart of windowVisibleRef (declared below) — a plain
   // ref wouldn't cause `audioShouldAnalyze` to recompute when visibility
   // changes, since nothing else re-renders App at that moment. Minimize/
@@ -1933,6 +1943,16 @@ export function App(): JSX.Element {
             </select>
           </div>
         )}
+
+        {/* R81: global snip hotkey (preset whitelist, main re-registers + persists) */}
+        <div className="status-panel screensaver-threshold" title={t('snip.hotkeyHint')}>
+          <span>{t('snip.hotkeyLabel')}</span>
+          <select value={snipHotkey} onChange={(e) => applySnipHotkey(e.target.value)}>
+            {PRESET_SNIP_HOTKEYS.map((k) => (
+              <option key={k} value={k}>{k}</option>
+            ))}
+          </select>
+        </div>
 
         <div className="sidebar-footer">
           <button

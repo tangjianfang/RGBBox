@@ -9,6 +9,7 @@
 import { BrowserWindow, clipboard, desktopCapturer, globalShortcut, nativeImage, screen } from 'electron'
 import { join } from 'node:path'
 import { getLogger, type Logger } from '../shared/logger'
+import { PRESET_SNIP_HOTKEYS as PRESET_SNIP_HOTKEYS_SHARED, isPresetSnipHotkey } from '../shared/snipHotkeys'
 import type { CaptureEntry } from './captureStore'
 
 export const SNIP_HOTKEY = 'Alt+A'
@@ -180,11 +181,46 @@ export function cancelSnip(): void {
 }
 
 export function registerSnipHotkey(onConflict: (accel: string) => void): void {
-  globalShortcut.register(SNIP_HOTKEY, () => { void startSnip() })
-  // register 对冲突不抛错而是静默失败——isRegistered 仅当本应用注册成功才为 true
-  if (!globalShortcut.isRegistered(SNIP_HOTKEY)) onConflict(SNIP_HOTKEY)
+  applyHotkey(hotkeyPref, onConflict)
 }
 
 export function unregisterSnipHotkey(): void {
-  try { globalShortcut.unregister(SNIP_HOTKEY) } catch { /* 未注册 */ }
+  try { globalShortcut.unregister(hotkeyPref) } catch { /* 未注册 */ }
+}
+
+// ── R81: 热键偏好（预设白名单 + 运行时切换 + 回滚） ─────────────────────
+
+export const PRESET_SNIP_HOTKEYS = PRESET_SNIP_HOTKEYS_SHARED
+export { isPresetSnipHotkey }
+
+let hotkeyPref: string = SNIP_HOTKEY
+
+export function getSnipHotkeyPref(): string {
+  return hotkeyPref
+}
+
+/** 启动时从持久化设置注入（须在 registerSnipHotkey 之前调用）。 */
+export function initSnipHotkeyPref(accel: string): void {
+  if (isPresetSnipHotkey(accel)) hotkeyPref = accel
+}
+
+function applyHotkey(cand: string, onConflict: (accel: string) => void): boolean {
+  try { globalShortcut.unregister(hotkeyPref) } catch { /* 未注册 */ }
+  globalShortcut.register(cand, () => { void startSnip() })
+  // register 对冲突不抛错而是静默失败——isRegistered 仅当本应用注册成功才为 true
+  if (!globalShortcut.isRegistered(cand)) {
+    // 回滚：新键被占用，恢复旧键，托盘标签不变
+    globalShortcut.register(hotkeyPref, () => { void startSnip() })
+    onConflict(cand)
+    return false
+  }
+  hotkeyPref = cand
+  return true
+}
+
+/** R81.2: 运行时切换（校验白名单 → 重注册 → 失败回滚并回调冲突）。 */
+export function setSnipHotkeyPref(accel: string, onConflict: (accel: string) => void): boolean {
+  if (!isPresetSnipHotkey(accel)) return false
+  if (accel === hotkeyPref) return true
+  return applyHotkey(accel, onConflict)
 }

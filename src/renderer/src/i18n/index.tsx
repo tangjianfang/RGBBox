@@ -677,6 +677,8 @@ const EN = {
   // R80: standalone global snip window
   'snip.hint': 'Drag to select · ESC to cancel',
   'snip.failed': 'Failed to load the frozen frame, please retry',
+  'snip.hotkeyLabel': 'Snip hotkey',
+  'snip.hotkeyHint': 'Global hotkey for the snip tool (applies immediately; falls back to the tray menu if occupied)',
   'video.annotate.ocrClose': 'Close',
   'video.annotate.ocrLines': 'lines',
   'video.cameraSettings': 'Camera Settings',
@@ -1399,6 +1401,8 @@ const ZH: TranslationTable = {
   // R80: standalone global snip window
   'snip.hint': '拖选截图区域 · ESC 取消',
   'snip.failed': '截图画面获取失败，请重试',
+  'snip.hotkeyLabel': '截图热键',
+  'snip.hotkeyHint': '截图工具全局热键（即时生效；被占用时回退托盘菜单）',
   'video.annotate.ocrClose': '关闭',
   'video.annotate.ocrLines': '行',
   'video.cameraSettings': '摄像头设置',

@@ -19,6 +19,10 @@ export interface SystemSettings {
     /** idle threshold in minutes before the effect screensaver takes over */
     idleMinutes: number
   }
+  /** R81: global snip hotkey (preset whitelist) */
+  snip?: {
+    hotkey: string
+  }
 }
 
 const configDir = join(app.getPath('userData'), 'config')

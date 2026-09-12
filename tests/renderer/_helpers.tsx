@@ -77,6 +77,8 @@ export function setupRendererMocks() {
     snipFinish: vi.fn().mockResolvedValue(true),
     snipCancel: vi.fn(),
     setUiLocale: vi.fn(),
+    snipGetHotkey: vi.fn().mockResolvedValue('Alt+A'),
+    snipSetHotkey: vi.fn().mockResolvedValue({ ok: true, hotkey: 'Alt+A' }),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),

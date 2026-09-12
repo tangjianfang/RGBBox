@@ -132,6 +132,9 @@ export const ipcChannels = {
   snipCancel: 'rgbbox:snip:cancel',
   // R80.12: renderer i18n → main (tray menu follows UI language)
   uiSetLocale: 'rgbbox:ui:set-locale',
+  // R81: global snip hotkey preference (preset whitelist)
+  snipGetHotkey: 'rgbbox:snip:get-hotkey',
+  snipSetHotkey: 'rgbbox:snip:set-hotkey',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

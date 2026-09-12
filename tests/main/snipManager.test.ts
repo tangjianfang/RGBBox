@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { matchDisplayToSource, physicalThumbSize, resolveFinishAction } from '../../src/main/snipManager'
+import { isPresetSnipHotkey, matchDisplayToSource, physicalThumbSize, resolveFinishAction, PRESET_SNIP_HOTKEYS } from '../../src/main/snipManager'
 import { ipcChannels } from '../../src/shared/ipc'
 
 describe('snipManager pure (R80.2)', () => {
@@ -31,5 +31,15 @@ describe('snipManager pure (R80.2)', () => {
     expect(ipcChannels.snipGetFrame).toBe('rgbbox:snip:get-frame')
     expect(ipcChannels.snipFinish).toBe('rgbbox:snip:finish')
     expect(ipcChannels.snipCancel).toBe('rgbbox:snip:cancel')
+  })
+
+  it('R81: snip hotkey preset whitelist', () => {
+    expect(PRESET_SNIP_HOTKEYS).toEqual(['Alt+A', 'Ctrl+Alt+A', 'Ctrl+Shift+S', 'F2', 'PrintScreen'])
+    expect(isPresetSnipHotkey('Alt+A')).toBe(true)
+    expect(isPresetSnipHotkey('F2')).toBe(true)
+    expect(isPresetSnipHotkey('Ctrl+Z')).toBe(false)   // 非白名单
+    expect(isPresetSnipHotkey('')).toBe(false)
+    expect(ipcChannels.snipGetHotkey).toBe('rgbbox:snip:get-hotkey')
+    expect(ipcChannels.snipSetHotkey).toBe('rgbbox:snip:set-hotkey')
   })
 })

@@ -172,6 +172,10 @@ const api = {
   setUiLocale: (l: 'zh' | 'en'): void => {
     ipcRenderer.send(ipcChannels.uiSetLocale, l)
   },
+  // R81: global snip hotkey preference
+  snipGetHotkey: (): Promise<string> => ipcRenderer.invoke(ipcChannels.snipGetHotkey),
+  snipSetHotkey: (accel: string): Promise<{ ok: boolean; hotkey: string }> =>
+    ipcRenderer.invoke(ipcChannels.snipSetHotkey, accel),
 
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>
