@@ -88,13 +88,17 @@ describe('AnnotateOverlay', () => {
     expect(shouldCommitText({ key: ' ' })).toBe(false)
   })
 
-  it('R78.3: OCR button opens panel, result editable, copy-all writes clipboard text', async () => {
+  it('R78.3/R79.2: OCR panel result editable, copy-all writes clipboard text', async () => {
     const mocks = setupRendererMocks()
     mocks.ocrRecognize.mockResolvedValue({ ok: true, text: '识别结果 line1\nline2', hint: undefined })
     const { container, findByTestId } = render(<AnnotateOverlay source={png} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    // R79.2 后 OCR 按钮先进框选模式 → 拖一个区域触发识别
     fireEvent.click(container.querySelector('.video-annotate-ocr')!)
+    const canvas = container.querySelector('.video-annotate-canvas')!
+    fireEvent.pointerDown(canvas, { button: 0, clientX: 20, clientY: 20 })
+    fireEvent.pointerMove(canvas, { clientX: 200, clientY: 120 })
+    fireEvent.pointerUp(canvas, { clientX: 200, clientY: 120 })
     const panel = await findByTestId('ocr-panel')
-    expect(panel).toBeTruthy()
     const ta = panel.querySelector('.video-annotate-ocr-text') as HTMLTextAreaElement
     expect(ta.value).toContain('识别结果')
     fireEvent.change(ta, { target: { value: '编辑后' } })
@@ -109,5 +113,38 @@ describe('AnnotateOverlay', () => {
     const layerBtns = container.querySelectorAll('.video-annotate-layer')
     expect(layerBtns.length).toBe(4)
     layerBtns.forEach(b => expect((b as HTMLButtonElement).disabled).toBe(true))
+  })
+
+  it('R79.2: OCR button enters region mode; drag+release recognizes the region', async () => {
+    const mocks = setupRendererMocks()
+    mocks.ocrRecognize.mockResolvedValue({ ok: true, text: '区域结果', hint: undefined })
+    const cv = document.createElement('canvas')
+    cv.width = 400; cv.height = 300
+    const { container, findByTestId } = render(<AnnotateOverlay source={cv} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    // 点击 OCR 按钮 → 框选模式（遮罩出现）
+    fireEvent.click(container.querySelector('.video-annotate-ocr')!)
+    expect(container.querySelector('.video-ocr-region-mask')).toBeTruthy()
+    // 拖选 (40,40) → (240,160)，松手即识别
+    const canvas = container.querySelector('.video-annotate-canvas')!
+    fireEvent.pointerDown(canvas, { button: 0, clientX: 40, clientY: 40 })
+    fireEvent.pointerMove(canvas, { clientX: 240, clientY: 160 })
+    fireEvent.pointerUp(canvas, { clientX: 240, clientY: 160 })
+    await findByTestId('ocr-panel')
+    expect(mocks.ocrRecognize).toHaveBeenCalledTimes(1)
+    expect(String(mocks.ocrRecognize.mock.calls[0][0])).toMatch(/^data:image\//)
+    // 面板「整图」按钮 → 再识别一次
+    fireEvent.click(container.querySelector('.video-annotate-ocr-full')!)
+    await vi.waitFor(() => expect(mocks.ocrRecognize).toHaveBeenCalledTimes(2))
+  })
+
+  it('R79.2: Esc exits region mode without recognizing', () => {
+    const mocks = setupRendererMocks()
+    const cv = document.createElement('canvas')
+    cv.width = 400; cv.height = 300
+    const { container } = render(<AnnotateOverlay source={cv} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    fireEvent.click(container.querySelector('.video-annotate-ocr')!)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(container.querySelector('.video-ocr-region-mask')).toBeNull()
+    expect(mocks.ocrRecognize).not.toHaveBeenCalled()
   })
 })
