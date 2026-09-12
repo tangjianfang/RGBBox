@@ -97,22 +97,33 @@ export function mergeCjkSpaces(text: string): string {
   return text.replace(new RegExp(`(${cjk}) +(?=${cjk})`, 'g'), '$1')
 }
 
-export function parseOcrOutput(stdout: string): { ok: boolean; text: string; hint?: string } {
+export function parseOcrOutput(stdout: string): { ok: boolean; text: string; hint?: string; engine?: 'rapid' | 'winrt' } {
   const lines = stdout.split(/\r?\n/)
   const err = lines.find(l => l.startsWith('RGBBOX_OCR_ERR:'))
   if (err) return { ok: false, text: '', hint: err.slice('RGBBOX_OCR_ERR:'.length).trim() || 'engine' }
   const begin = lines.indexOf('RGBBOX_OCR_BEGIN')
   const end = lines.indexOf('RGBBOX_OCR_END')
   if (begin >= 0 && end > begin) {
-    return { ok: true, text: mergeCjkSpaces(lines.slice(begin + 1, end).join('\n')) }
+    return { ok: true, text: mergeCjkSpaces(lines.slice(begin + 1, end).join('\n')), engine: 'winrt' }
   }
   return { ok: false, text: '', hint: 'engine' }
+}
+
+// ── R82: RapidOCR 引擎路由（注入式；node 单测不加载原生模块） ────────────
+
+export type RapidOcrRunner = (dataUrl: string) => Promise<{ ok: boolean; text: string } | null>
+
+let rapidRunner: RapidOcrRunner | null = null
+
+/** 由 index.ts 在 whenReady 时注入（dynamic import rapidOcrService）。 */
+export function setRapidOcrRunner(r: RapidOcrRunner | null): void {
+  rapidRunner = r
 }
 
 export async function recognizeImage(
   dataUrl: string,
   run: RunFn = defaultRun,
-): Promise<{ ok: boolean; text: string; hint?: string }> {
+): Promise<{ ok: boolean; text: string; hint?: string; engine?: 'rapid' | 'winrt' }> {
   if (process.platform !== 'win32') return { ok: false, text: '', hint: 'unsupported' }
   const prefix = 'data:image/'
   if (typeof dataUrl !== 'string' || !dataUrl.startsWith(prefix)) return { ok: false, text: '', hint: 'decode' }
@@ -126,6 +137,13 @@ export async function recognizeImage(
   }
   let dir: string | null = null
   try {
+    // R82: RapidOCR 优先（模型就绪时）；未就绪/失败回退 WinRT
+    if (rapidRunner) {
+      try {
+        const rapid = await rapidRunner(dataUrl)
+        if (rapid) return { ok: true, text: mergeCjkSpaces(rapid.text), engine: 'rapid' }
+      } catch { /* fall through to WinRT */ }
+    }
     dir = mkdtempSync(join(tmpdir(), 'rgbbox-ocr-'))
     const imgPath = join(dir, 'input.png')
     writeFileSync(imgPath, buf)

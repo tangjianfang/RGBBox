@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildOcrScript, parseOcrOutput, recognizeImage, mergeCjkSpaces } from '../../src/main/ocrService'
+import { buildOcrScript, parseOcrOutput, recognizeImage, mergeCjkSpaces, setRapidOcrRunner } from '../../src/main/ocrService'
 
 describe('ocrService pure', () => {
   it('buildOcrScript embeds the image path and the language fallback chain', () => {
@@ -37,10 +37,10 @@ describe('ocrService pure', () => {
 
   it('parseOcrOutput: success block, error codes, empty and garbage', () => {
     expect(parseOcrOutput('RGBBOX_OCR_BEGIN\n会 议 记 录 2026\nsecond line\nRGBBOX_OCR_END\n'))
-      .toEqual({ ok: true, text: '会议记录 2026\nsecond line', hint: undefined })
+      .toEqual({ ok: true, text: '会议记录 2026\nsecond line', hint: undefined, engine: 'winrt' })
     expect(parseOcrOutput('RGBBOX_OCR_ERR:nolangpack')).toMatchObject({ ok: false, hint: 'nolangpack' })
     expect(parseOcrOutput('RGBBOX_OCR_ERR:decode')).toMatchObject({ ok: false, hint: 'decode' })
-    expect(parseOcrOutput('RGBBOX_OCR_BEGIN\nRGBBOX_OCR_END')).toEqual({ ok: true, text: '', hint: undefined })
+    expect(parseOcrOutput('RGBBOX_OCR_BEGIN\nRGBBOX_OCR_END')).toEqual({ ok: true, text: '', hint: undefined, engine: 'winrt' })
     expect(parseOcrOutput('garbage without markers')).toMatchObject({ ok: false })
   })
 })
@@ -71,8 +71,37 @@ describe('ocrService recognizeImage', () => {
       const fakeRun = ((): Promise<{ stdout: string; stderr: string }> =>
         Promise.resolve({ stdout: 'RGBBOX_OCR_BEGIN\n识别文本\nRGBBOX_OCR_END', stderr: '' })) as unknown as Parameters<typeof recognizeImage>[1]
       const out = await recognizeImage('data:image/png;base64,QQ==', fakeRun)
-      expect(out).toMatchObject({ ok: true, text: '识别文本' })
+      expect(out).toMatchObject({ ok: true, text: '识别文本', engine: 'winrt' })
     } finally {
+      Object.defineProperty(process, 'platform', { value: before, configurable: true })
+    }
+  })
+
+  it('R82: rapid runner takes priority (CJK spaces merged); null/throw falls back to WinRT', async () => {
+    const before = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    try {
+      // rapid 优先：winrt executor 不应被调用
+      let winrtCalled = false
+      const fakeWinrt = ((): Promise<{ stdout: string; stderr: string }> => {
+        winrtCalled = true
+        return Promise.resolve({ stdout: 'RGBBOX_OCR_BEGIN\nwinrt\nRGBBOX_OCR_END', stderr: '' })
+      }) as unknown as Parameters<typeof recognizeImage>[1]
+      setRapidOcrRunner(async () => ({ ok: true, text: '会 议 记 录 2026' }))
+      const out = await recognizeImage('data:image/png;base64,QQ==', fakeWinrt)
+      expect(out).toMatchObject({ ok: true, text: '会议记录 2026', engine: 'rapid' })
+      expect(winrtCalled).toBe(false)
+      // rapid 未就绪（null）→ WinRT 兜底
+      setRapidOcrRunner(async () => null)
+      const out2 = await recognizeImage('data:image/png;base64,QQ==', fakeWinrt)
+      expect(out2).toMatchObject({ ok: true, text: 'winrt', engine: 'winrt' })
+      expect(winrtCalled).toBe(true)
+      // rapid 抛异常 → 同样兜底
+      setRapidOcrRunner(async () => { throw new Error('boom') })
+      const out3 = await recognizeImage('data:image/png;base64,QQ==', fakeWinrt)
+      expect(out3).toMatchObject({ engine: 'winrt' })
+    } finally {
+      setRapidOcrRunner(null)
       Object.defineProperty(process, 'platform', { value: before, configurable: true })
     }
   })

@@ -71,7 +71,7 @@ export function setupRendererMocks() {
     // R78: clipboard text + OCR
     clipboardWriteText: vi.fn().mockResolvedValue(true),
     clipboardReadText: vi.fn().mockResolvedValue(''),
-    ocrRecognize: vi.fn().mockResolvedValue({ ok: true, text: '', hint: undefined }),
+    ocrRecognize: vi.fn().mockResolvedValue({ ok: true, text: '', hint: undefined, engine: undefined }),
     // R80: standalone global snip tool
     snipGetFrame: vi.fn().mockResolvedValue({ dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }),
     snipFinish: vi.fn().mockResolvedValue(true),

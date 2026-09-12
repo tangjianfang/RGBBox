@@ -30,6 +30,7 @@
     "@vitejs/plugin-react": "5.2.0",
     "hls.js": "1.5.17",
     "lucide-react": "1.14.0",
+    "onnxruntime-node": "^1.29.0",
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "three": "0.184.0",
@@ -59,6 +60,9 @@
     "productName": "RGBBox",
     "copyright": "Copyright © 2025 RGBBox Contributors",
     "afterPack": "./scripts/afterPack.mjs",
+    "asarUnpack": [
+      "**/node_modules/onnxruntime-node/**"
+    ],
     "directories": {
       "output": "release",
       "buildResources": "build"

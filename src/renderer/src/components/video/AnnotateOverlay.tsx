@@ -121,7 +121,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   // review-fix(R78): 拖拽/旋转开始前的快照——结束时入历史（否则 Ctrl+Z 会整形状消失）
   const preDragPresentRef = useRef<Shape[] | null>(null)
   // R78.3: OCR 面板
-  const [ocr, setOcr] = useState<{ status: 'idle' | 'running' | 'done' | 'failed'; text: string; hint?: string }>({ status: 'idle', text: '' })
+  const [ocr, setOcr] = useState<{ status: 'idle' | 'running' | 'done' | 'failed'; text: string; hint?: string; engine?: 'rapid' | 'winrt' }>({ status: 'idle', text: '' })
   // R79.2: 框选识别（图像坐标区域；active = 框选模式中）
   const [ocrRegionActive, setOcrRegionActive] = useState(false)
   const [ocrRegionDraft, setOcrRegionDraft] = useState<{ start: Pt; end: Pt } | null>(null)
@@ -566,7 +566,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   const recognizeDataUrl = useCallback((dataUrl: string) => {
     setOcr({ status: 'running', text: '' })
     window.rgbbox.ocrRecognize(dataUrl)
-      .then(r => setOcr(r.ok ? { status: 'done', text: r.text } : { status: 'failed', text: '', hint: r.hint }))
+      .then(r => setOcr(r.ok ? { status: 'done', text: r.text, engine: r.engine } : { status: 'failed', text: '', hint: r.hint }))
       .catch(() => setOcr({ status: 'failed', text: '', hint: 'engine' }))
   }, [])
   const runOcr = useCallback(() => { recognizeDataUrl(exportDataUrl()) }, [recognizeDataUrl, exportDataUrl])
@@ -723,7 +723,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
                 value={ocr.text}
                 onChange={(e) => setOcrText(e.target.value)}
               />
-              <p className="video-annotate-ocr-meta">{ocr.text.split('\n').filter(l => l.trim()).length} {t('video.annotate.ocrLines')}</p>
+              <p className="video-annotate-ocr-meta">{ocr.text.split('\n').filter(l => l.trim()).length} {t('video.annotate.ocrLines')}{ocr.engine ? ` · ${t((ocr.engine === 'rapid' ? 'video.annotate.engineRapid' : 'video.annotate.engineWinrt') as never)}` : ''}</p>
               <button
                 type="button"
                 className="video-btn video-annotate-ocr-copyall"

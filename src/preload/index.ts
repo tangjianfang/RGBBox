@@ -158,7 +158,7 @@ const api = {
   clipboardWriteText: (text: string): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.clipboardWriteText, text),
   clipboardReadText: (): Promise<string> => ipcRenderer.invoke(ipcChannels.clipboardReadText),
-  ocrRecognize: (dataUrl: string): Promise<{ ok: boolean; text: string; hint?: string }> =>
+  ocrRecognize: (dataUrl: string): Promise<{ ok: boolean; text: string; hint?: string; engine?: 'rapid' | 'winrt' }> =>
     ipcRenderer.invoke(ipcChannels.ocrRecognize, dataUrl),
   // R80: standalone global snip tool
   snipGetFrame: (displayId: number): Promise<{ dataUrl: string } | null> =>

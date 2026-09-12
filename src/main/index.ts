@@ -26,6 +26,7 @@ import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile,
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
 import { loadSystemSettings, saveSystemSettings } from './systemSettingsStore'
+import { setRapidOcrRunner } from './ocrService'
 import { parseRangeHeader, resolveMediaMime } from './mediaProtocol'
 
 // Initialize file logger — must be done after imports but before app.whenReady
@@ -286,6 +287,14 @@ function registerIpc(): void {
 
   // R80: standalone global snip tool
   initSnipManager({ addPng: (url, kind) => captureStore.addPng(url, kind) }, isDevelopment, process.env.ELECTRON_RENDERER_URL)
+  // R82: RapidOCR 优先、WinRT 回退（dynamic import，避免 vitest node 环境加载原生模块）
+  setRapidOcrRunner(null)
+  void import('./rapidOcrService').then(async (m) => {
+    m.initRapidOcr(join(app.getPath('userData'), 'models', 'rapidocr'))
+    setRapidOcrRunner(m.recognizeWithRapid)
+  }).catch((err) => {
+    log.warn('RapidOcr', `dynamic import failed, WinRT only: ${err instanceof Error ? err.message : String(err)}`)
+  })
   ipcMain.handle(ipcChannels.snipGetFrame, (_event, displayId: unknown) =>
     getSnipFrame(typeof displayId === 'number' ? displayId : -1))
   ipcMain.handle(ipcChannels.snipFinish, (_event, p: unknown) => {
