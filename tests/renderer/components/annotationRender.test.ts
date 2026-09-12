@@ -13,7 +13,9 @@ function mockCtx() {
     strokeRect: rec('strokeRect'), beginPath: rec('beginPath'), ellipse: rec('ellipse'), stroke: rec('stroke'),
     moveTo: rec('moveTo'), lineTo: rec('lineTo'), closePath: rec('closePath'), fill: rec('fill'),
     arc: rec('arc'), fillText: rec('fillText'), fillRect: rec('fillRect'), drawImage: rec('drawImage'),
-    save: rec('save'), restore: rec('restore'), setLineDash: rec('setLineDash'),
+    save: rec('save'), restore: rec('restore'), setLineDash: rec('setLineDash'), translate: rec('translate'),
+    rotate: rec('rotate'),
+    measureText: (t: unknown) => { calls.push({ op: 'measureText', args: [t] }); return { width: 0 } },
   } as unknown as CanvasRenderingContext2D
   return { ctx, calls }
 }
@@ -87,5 +89,42 @@ describe('annotationRender', () => {
     } finally {
       patch.restore()
     }
+  })
+
+  // ── R78: rotation / align / bold ───────────────────────────────────────
+
+  it('rotated shape renders inside save→translate→rotate→restore (paired)', () => {
+    const { ctx, calls } = mockCtx()
+    const s = makeShape('rect', { x: 0, y: 0, w: 40, h: 20, rotation: 45 })
+    renderAnnotations(ctx, [s])
+    const ops = calls.map(c => c.op)
+    expect(ops).toContain('save')
+    expect(ops).toContain('restore')
+    expect(ops).toContain('rotate')
+    const saveIdx = ops.indexOf('save')
+    const rotateIdx = ops.indexOf('rotate')
+    const restoreIdx = ops.indexOf('restore')
+    expect(rotateIdx).toBeGreaterThan(saveIdx)
+    expect(restoreIdx).toBeGreaterThan(rotateIdx)
+    // 选中态的 save/restore 独立配对（无 selectedId 时不画）
+  })
+
+  it('rotation=0 skips the rotate transform', () => {
+    const { ctx, calls } = mockCtx()
+    renderAnnotations(ctx, [makeShape('rect', { x: 0, y: 0, w: 10, h: 10 })])
+    expect(calls.some(c => c.op === 'rotate')).toBe(false)
+  })
+
+  it('align=center measures each line and bold goes into the font string', () => {
+    const { ctx, calls } = mockCtx()
+    const s = makeShape('text', { x: 0, y: 0, w: 200, h: 30, width: 24, text: 'ab\ncd', align: 'center', bold: true })
+    renderAnnotations(ctx, [s])
+    expect(ctx.font).toBe('700 24px system-ui, sans-serif')
+    // 每行各 measureText 一次，fillText 的 x 用 (w - lineWidth)/2 偏移（mock measureText 返回 0 → x=100）
+    const measures = calls.filter(c => c.op === 'measureText')
+    expect(measures.length).toBe(2)
+    const fills = calls.filter(c => c.op === 'fillText')
+    expect(fills[0].args[1]).toBe(100)
+    expect(fills[1].args[1]).toBe(100)
   })
 })

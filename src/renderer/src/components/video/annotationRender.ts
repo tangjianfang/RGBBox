@@ -69,6 +69,21 @@ export function buildMosaicStamp(tile: CanvasImageSource, s: Shape): { canvas: H
   return { canvas: tmp, x: b.x - r, y: b.y - r }
 }
 
+/** R78.2: 旋转包装——rotation=0 直通；否则绕 bbox 中心转（与命中数学一致）。 */
+function withRotation(ctx: CanvasRenderingContext2D, s: Shape, draw: () => void): void {
+  const deg = s.rotation ?? 0
+  if (!deg) { draw(); return }
+  const b = shapeBBox(s)
+  const cx = b.x + b.w / 2
+  const cy = b.y + b.h / 2
+  ctx.save()
+  ctx.translate(cx, cy)
+  ctx.rotate((deg * Math.PI) / 180)
+  ctx.translate(-cx, -cy)
+  draw()
+  ctx.restore()
+}
+
 export function renderAnnotations(ctx: CanvasRenderingContext2D | null, shapes: Shape[], opts: RenderOpts = {}): void {
   if (!ctx) return
   const { selectedId, mosaicTile } = opts
@@ -78,73 +93,83 @@ export function renderAnnotations(ctx: CanvasRenderingContext2D | null, shapes: 
     ctx.lineWidth = Math.max(1, s.width)
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    if (s.kind === 'rect') {
-      ctx.strokeRect(s.x, s.y, s.w, s.h)
-    } else if (s.kind === 'ellipse') {
-      ctx.beginPath()
-      ctx.ellipse(s.x + s.w / 2, s.y + s.h / 2, Math.max(1, s.w / 2), Math.max(1, s.h / 2), 0, 0, Math.PI * 2)
-      ctx.stroke()
-    } else if (s.kind === 'arrow') {
-      const x1 = s.x1 ?? 0, y1 = s.y1 ?? 0, x2 = s.x2 ?? 0, y2 = s.y2 ?? 0
-      const L = s.width * 3 + 6
-      const ang = Math.atan2(y2 - y1, x2 - x1)
-      const bx = x2 - Math.cos(ang) * L * 0.8, by = y2 - Math.sin(ang) * L * 0.8
-      ctx.beginPath()
-      ctx.moveTo(x1, y1)
-      ctx.lineTo(bx, by)
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.moveTo(x2, y2)
-      ctx.lineTo(x2 - Math.cos(ang - Math.PI / 6) * L, y2 - Math.sin(ang - Math.PI / 6) * L)
-      ctx.lineTo(x2 - Math.cos(ang + Math.PI / 6) * L, y2 - Math.sin(ang + Math.PI / 6) * L)
-      ctx.closePath()
-      ctx.fill()
-    } else if (s.kind === 'pen') {
-      const pts = s.points ?? []
-      if (pts.length === 1) {
+    withRotation(ctx, s, () => {
+      if (s.kind === 'rect') {
+        ctx.strokeRect(s.x, s.y, s.w, s.h)
+      } else if (s.kind === 'ellipse') {
         ctx.beginPath()
-        ctx.arc(pts[0].x, pts[0].y, s.width / 2, 0, Math.PI * 2)
-        ctx.fill()
-      } else if (pts.length > 1) {
-        ctx.beginPath()
-        ctx.moveTo(pts[0].x, pts[0].y)
-        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+        ctx.ellipse(s.x + s.w / 2, s.y + s.h / 2, Math.max(1, s.w / 2), Math.max(1, s.h / 2), 0, 0, Math.PI * 2)
         ctx.stroke()
+      } else if (s.kind === 'arrow') {
+        const x1 = s.x1 ?? 0, y1 = s.y1 ?? 0, x2 = s.x2 ?? 0, y2 = s.y2 ?? 0
+        const L = s.width * 3 + 6
+        const ang = Math.atan2(y2 - y1, x2 - x1)
+        const bx = x2 - Math.cos(ang) * L * 0.8, by = y2 - Math.sin(ang) * L * 0.8
+        ctx.beginPath()
+        ctx.moveTo(x1, y1)
+        ctx.lineTo(bx, by)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(x2, y2)
+        ctx.lineTo(x2 - Math.cos(ang - Math.PI / 6) * L, y2 - Math.sin(ang - Math.PI / 6) * L)
+        ctx.lineTo(x2 - Math.cos(ang + Math.PI / 6) * L, y2 - Math.sin(ang + Math.PI / 6) * L)
+        ctx.closePath()
+        ctx.fill()
+      } else if (s.kind === 'pen') {
+        const pts = s.points ?? []
+        if (pts.length === 1) {
+          ctx.beginPath()
+          ctx.arc(pts[0].x, pts[0].y, s.width / 2, 0, Math.PI * 2)
+          ctx.fill()
+        } else if (pts.length > 1) {
+          ctx.beginPath()
+          ctx.moveTo(pts[0].x, pts[0].y)
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+          ctx.stroke()
+        }
+      } else if (s.kind === 'text' && s.text) {
+        // R77.2: 非法 token 'inherit' 已移除；R78.1: 粗体前缀
+        ctx.font = `${s.bold ? '700 ' : ''}${Math.max(8, Math.round(s.width))}px system-ui, sans-serif`
+        ctx.textBaseline = 'top'
+        s.text.split('\n').forEach((line, i) => {
+          let x = s.x
+          if (s.align === 'center' || s.align === 'right') {
+            const m = ctx.measureText(line)
+            const lw = m && typeof m.width === 'number' ? m.width : 0
+            x = s.align === 'center' ? s.x + Math.max(0, (s.w - lw) / 2) : s.x + Math.max(0, s.w - lw)
+          }
+          ctx.fillText(line, x, s.y + i * s.width * 1.25)
+        })
+      } else if (s.kind === 'mosaic' && mosaicTile) {
+        const stamp = buildMosaicStamp(mosaicTile, s)
+        if (stamp) ctx.drawImage(stamp.canvas, stamp.x, stamp.y)
       }
-    } else if (s.kind === 'text' && s.text) {
-      // R77.2: 非法 token 'inherit' 已移除——R76 中该赋值被静默忽略导致 10px 隐形文字
-      ctx.font = `${Math.max(8, Math.round(s.width))}px system-ui, sans-serif`
-      ctx.textBaseline = 'top'
-      s.text.split('\n').forEach((line, i) => {
-        ctx.fillText(line, s.x, s.y + i * s.width * 1.25)
-      })
-    } else if (s.kind === 'mosaic' && mosaicTile) {
-      const stamp = buildMosaicStamp(mosaicTile, s)
-      if (stamp) ctx.drawImage(stamp.canvas, stamp.x, stamp.y)
-    }
+    })
   }
-  // 选中态：虚线框 + 手柄
+  // 选中态：虚线框 + 手柄（画在同一旋转变换内）
   const sel = shapes.find(s => s.id === selectedId)
   if (sel) {
     const b = shapeBBox(sel)
-    ctx.save()
-    ctx.strokeStyle = '#4fc3f7'
-    ctx.lineWidth = 1
-    ctx.setLineDash([4, 3])
-    ctx.strokeRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6)
-    ctx.restore()
-    for (const h of handlesFor(sel)) {
-      let hx = b.x, hy = b.y
-      if (h === 'start') { hx = sel.x1 ?? hx; hy = sel.y1 ?? hy }
-      else if (h === 'end') { hx = sel.x2 ?? hx; hy = sel.y2 ?? hy }
-      else {
-        if (h.includes('e')) hx = b.x + b.w
-        if (h.includes('s')) hy = b.y + b.h
-        if (h === 'n' || h === 's') hx = b.x + b.w / 2
-        if (h === 'e' || h === 'w') hy = b.y + b.h / 2
+    withRotation(ctx, sel, () => {
+      ctx.save()
+      ctx.strokeStyle = '#4fc3f7'
+      ctx.lineWidth = 1
+      ctx.setLineDash([4, 3])
+      ctx.strokeRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6)
+      ctx.restore()
+      for (const h of handlesFor(sel)) {
+        let hx = b.x, hy = b.y
+        if (h === 'start') { hx = sel.x1 ?? hx; hy = sel.y1 ?? hy }
+        else if (h === 'end') { hx = sel.x2 ?? hx; hy = sel.y2 ?? hy }
+        else {
+          if (h.includes('e')) hx = b.x + b.w
+          if (h.includes('s')) hy = b.y + b.h
+          if (h === 'n' || h === 's') hx = b.x + b.w / 2
+          if (h === 'e' || h === 'w') hy = b.y + b.h / 2
+        }
+        ctx.fillStyle = '#4fc3f7'
+        ctx.fillRect(hx - 4, hy - 4, 8, 8)
       }
-      ctx.fillStyle = '#4fc3f7'
-      ctx.fillRect(hx - 4, hy - 4, 8, 8)
-    }
+    })
   }
 }
