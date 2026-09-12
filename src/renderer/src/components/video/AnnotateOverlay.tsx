@@ -23,6 +23,7 @@ import {
   redo, resizeShape, shapeBBox, undo,
   type Handle, type History, type Shape, type ShapeKind,
 } from './annotationModel'
+import { buildMosaicTile, renderAnnotations } from './annotationRender'
 
 export interface AnnotateOverlayProps {
   source: HTMLCanvasElement | string   // 冻结帧裁剪结果或照片 dataURL
@@ -49,114 +50,7 @@ type DragState =
   | { kind: 'create'; start: Pt; draft: Shape }
   | { kind: 'move'; start: Pt; orig: Shape }
   | { kind: 'resize'; handle: Handle; orig: Shape }
-
-/** 标注绘制（图像坐标系；调用方负责 ctx 变换）。所有 canvas 调用守卫。 */
-function renderAnnotations(
-  ctx: CanvasRenderingContext2D | null,
-  shapes: Shape[],
-  opts: { selectedId?: string; mosaicTile?: CanvasImageSource | null } = {},
-): void {
-  if (!ctx) return
-  const { selectedId, mosaicTile } = opts
-  for (const s of shapes) {
-    ctx.strokeStyle = s.color
-    ctx.fillStyle = s.color
-    ctx.lineWidth = Math.max(1, s.width)
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    if (s.kind === 'rect') {
-      ctx.strokeRect(s.x, s.y, s.w, s.h)
-    } else if (s.kind === 'ellipse') {
-      ctx.beginPath()
-      ctx.ellipse(s.x + s.w / 2, s.y + s.h / 2, Math.max(1, s.w / 2), Math.max(1, s.h / 2), 0, 0, Math.PI * 2)
-      ctx.stroke()
-    } else if (s.kind === 'arrow') {
-      const x1 = s.x1 ?? 0, y1 = s.y1 ?? 0, x2 = s.x2 ?? 0, y2 = s.y2 ?? 0
-      const L = s.width * 3 + 6
-      const ang = Math.atan2(y2 - y1, x2 - x1)
-      // 主线缩短一个头长，三角头收在端点
-      const bx = x2 - Math.cos(ang) * L * 0.8, by = y2 - Math.sin(ang) * L * 0.8
-      ctx.beginPath()
-      ctx.moveTo(x1, y1)
-      ctx.lineTo(bx, by)
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.moveTo(x2, y2)
-      ctx.lineTo(x2 - Math.cos(ang - Math.PI / 6) * L, y2 - Math.sin(ang - Math.PI / 6) * L)
-      ctx.lineTo(x2 - Math.cos(ang + Math.PI / 6) * L, y2 - Math.sin(ang + Math.PI / 6) * L)
-      ctx.closePath()
-      ctx.fill()
-    } else if (s.kind === 'pen') {
-      const pts = s.points ?? []
-      if (pts.length === 1) {
-        ctx.beginPath()
-        ctx.arc(pts[0].x, pts[0].y, s.width / 2, 0, Math.PI * 2)
-        ctx.fill()
-      } else if (pts.length > 1) {
-        ctx.beginPath()
-        ctx.moveTo(pts[0].x, pts[0].y)
-        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
-        ctx.stroke()
-      }
-    } else if (s.kind === 'text' && s.text) {
-      ctx.font = `${Math.max(8, s.width)}px inherit, sans-serif`
-      ctx.textBaseline = 'top'
-      s.text.split('\n').forEach((line, i) => {
-        ctx.fillText(line, s.x, s.y + i * s.width * 1.25)
-      })
-    } else if (s.kind === 'mosaic' && mosaicTile) {
-      const pts = s.points ?? []
-      if (pts.length > 0) {
-        const b = shapeBBox(s)
-        const r = s.width / 2 + 2
-        // 在 bbox 大小的临时画布上：先贴像素化图，再用 destination-in
-        // 只保留笔画路径（圆头粗线）区域 → 贴回主画布
-        const tmp = document.createElement('canvas')
-        tmp.width = Math.max(1, Math.ceil(b.w + r * 2))
-        tmp.height = Math.max(1, Math.ceil(b.h + r * 2))
-        const tc = tmp.getContext('2d')
-        if (tc) {
-          tc.drawImage(mosaicTile as CanvasImageSource, b.x - r, b.y - r, b.w + r * 2, b.h + r * 2, 0, 0, tmp.width, tmp.height)
-          tc.globalCompositeOperation = 'destination-in'
-          tc.strokeStyle = '#fff'
-          tc.lineWidth = s.width + 4
-          tc.lineCap = 'round'
-          tc.lineJoin = 'round'
-          tc.beginPath()
-          tc.moveTo(pts[0].x - b.x + r, pts[0].y - b.y + r)
-          for (let i = 1; i < pts.length; i++) tc.lineTo(pts[i].x - b.x + r, pts[i].y - b.y + r)
-          if (pts.length === 1) tc.lineTo(pts[0].x - b.x + r + 0.01, pts[0].y - b.y + r)
-          tc.stroke()
-          ctx.drawImage(tmp, b.x - r, b.y - r)
-        }
-      }
-    }
-  }
-  // 选中态：虚线框 + 手柄
-  const sel = shapes.find(s => s.id === selectedId)
-  if (sel) {
-    const b = shapeBBox(sel)
-    ctx.save()
-    ctx.strokeStyle = '#4fc3f7'
-    ctx.lineWidth = 1
-    ctx.setLineDash([4, 3])
-    ctx.strokeRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6)
-    ctx.restore()
-    for (const h of handlesFor(sel)) {
-      let hx = b.x, hy = b.y
-      if (h === 'start') { hx = sel.x1 ?? hx; hy = sel.y1 ?? hy }
-      else if (h === 'end') { hx = sel.x2 ?? hx; hy = sel.y2 ?? hy }
-      else {
-        if (h.includes('e')) hx = b.x + b.w
-        if (h.includes('s')) hy = b.y + b.h
-        if (h === 'n' || h === 's') hx = b.x + b.w / 2
-        if (h === 'e' || h === 'w') hy = b.y + b.h / 2
-      }
-      ctx.fillStyle = '#4fc3f7'
-      ctx.fillRect(hx - 4, hy - 4, 8, 8)
-    }
-  }
-}
+  | { kind: 'pan'; lastScreen: Pt }   // R77.3: 放大后拖拽空白平移
 
 export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOverlayProps): JSX.Element {
   const { t } = useI18n()
@@ -217,18 +111,10 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   }, [])
 
   // ── 马赛克底砖（1/12 采样 + 关平滑放大） ────────────────────────────────
+  // R77.2: 全尺寸像素化底砖（1:1 图像坐标，修复 R76 越界采样缺陷）
   const mosaicTileRef = useRef<HTMLCanvasElement | null>(null)
   useEffect(() => {
-    if (!base || natural.w === 0) return
-    const c = document.createElement('canvas')
-    const f = 12
-    c.width = Math.max(1, Math.ceil(natural.w / f))
-    c.height = Math.max(1, Math.ceil(natural.h / f))
-    const ctx = c.getContext('2d')
-    if (!ctx) return
-    ctx.imageSmoothingEnabled = false
-    ctx.drawImage(base, 0, 0, c.width, c.height)
-    mosaicTileRef.current = c
+    mosaicTileRef.current = base && natural.w > 0 ? buildMosaicTile(base, natural) : null
   }, [base, natural])
 
   // ── 渲染（视图 canvas：底图 + 标注，同一画布） ──────────────────────────
