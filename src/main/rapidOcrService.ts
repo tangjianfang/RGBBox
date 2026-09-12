@@ -52,6 +52,20 @@ export function initRapidOcr(dir: string): void {
   modelsDir = dir
 }
 
+/**
+ * R82.6: 模型目录解析——优先随安装包内置的 resources/rapidocr（dev 为
+ * build/rapidocr），内置缺失才用 userData 在线下载路径。
+ */
+export function resolveRapidOcrDir(): string {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { app } = require('electron') as typeof import('electron')
+  const bundled = app.isPackaged
+    ? join(process.resourcesPath, 'rapidocr')
+    : join(__dirname, '../../build/rapidocr')
+  if (existsSync(join(bundled, RAPIDOCR_MODELS[0].file))) return bundled
+  return join(app.getPath('userData'), 'models', 'rapidocr')
+}
+
 function download(url: string, dest: string): Promise<void> {
   return new Promise((resolve, reject) => {
     https.get(url, (res) => {
@@ -85,6 +99,16 @@ async function ensureReady(): Promise<boolean> {
   if (detSession && recSession && charset) return true
   if (!modelsDir) return false
   try {
+    // R82.6: 内置目录缺文件/损坏（Program Files 只读）→ 自动切 userData 下载
+    const bundledOk = RAPIDOCR_MODELS.every((m) => {
+      const p = join(modelsDir as string, m.file)
+      return existsSync(p) && sha256Of(p) === m.sha256
+    })
+    if (!bundledOk && modelsDir !== join(require('electron').app.getPath('userData'), 'models', 'rapidocr')) {
+      log().info('RapidOcr', 'bundled models incomplete — falling back to userData download')
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      modelsDir = join((require('electron') as typeof import('electron')).app.getPath('userData'), 'models', 'rapidocr')
+    }
     mkdirSync(modelsDir, { recursive: true })
     for (const m of RAPIDOCR_MODELS) {
       const dest = join(modelsDir, m.file)

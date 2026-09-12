@@ -291,7 +291,7 @@ function registerIpc(): void {
   // R82: RapidOCR 优先、WinRT 回退（dynamic import，避免 vitest node 环境加载原生模块）
   setRapidOcrRunner(null)
   void import('./rapidOcrService').then(async (m) => {
-    m.initRapidOcr(join(app.getPath('userData'), 'models', 'rapidocr'))
+    m.initRapidOcr(m.resolveRapidOcrDir())   // R82.6: 内置优先，在线下载兜底
     setRapidOcrRunner(m.recognizeWithRapid)
   }).catch((err) => {
     log.warn('RapidOcr', `dynamic import failed, WinRT only: ${err instanceof Error ? err.message : String(err)}`)

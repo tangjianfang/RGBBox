@@ -784,6 +784,14 @@
 - **R82.3** **引擎路由**：`ocrService.recognizeImage` 优先 RapidOCR（模型就绪）→ 异常回退 WinRT；结果带 `engine` 标识；OCR 面板显示引擎名。IPC 签名不变（渲染层零改动除引擎展示）。
 - **R82.4** **验收点**：CTC 解码 + det 后处理纯函数单测（构造张量）；引擎路由单测（mock）；实机用低识别率样本对比 WinRT vs RapidOCR；全量回归 0 失败 + build 0 error（含 asarUnpack 原生模块）。
 - **R82.5** **状态**：✅（rapidOcrPure 6 用例（CTC/连通域/排序/张量）+ 引擎路由 3 用例；模型直链 SHA256 校验（哈希与官方 yaml 一致实证）；实机验证：中英混排 4 行样本 3 行全对 1 行 1 字误，warm 379ms；rec 宽度上限 800 为 640/800/1280 三档实测定稿；61 files / 616 passed；打包 asarUnpack 原生模块；实机复测待用户。）
+- **R82.6** **RapidOCR 模型预置打包**（用户需求 2026-09-13：模型预设并打进安装包，免首用下载）：
+  - **方案**：模型三件（det 4.7MB + rec 10.9MB + 字典 26KB，SHA256 与 R82.5 实证一致）入库 `build/rapidocr/`；electron-builder `extraResources` 复制到 `resources/rapidocr/`；运行时 `resolveRapidOcrDir()` 优先内置目录（packaged=resourcesPath/rapidocr，dev=build/rapidocr），内置文件缺失/损坏才落回 `userData/models/rapidocr/` 在线下载（Program Files 只读，需下载时自动切 userData）。
+  - **验收点**：
+    - [x] `yarn dist:dir` 产物 `resources/rapidocr/` 含三文件（det 4,745,517B / rec 10,857,958B / 字典 26,249B；rec SHA256 头 16 位 `48fc40f24f6d2a20` 与源一致）；`app.asar.unpacked/node_modules/onnxruntime-node/` 原生模块已解包
+    - [x] 目录解析逻辑：packaged→resourcesPath/rapidocr、dev→build/rapidocr、内置缺失→userData 在线下载兜底（Program Files 只读时自动切换）
+    - [x] 62 files / 621 passed / 0 失败；typecheck + build 0 error（dist 脚本版本号副作用已还原 0.3.47→0.3.46）
+    - [ ] 实机：安装包运行后首次 OCR 无下载、直接 RapidOCR（待用户复测）
+  - **状态**：✅（打包产物实证；实机安装包复测待用户确认。）
 
 ### R83. OCR 后 AI 整理（云 LLM，OpenAI 兼容协议）
 
@@ -2244,3 +2252,4 @@
 | 2026-09-13 | 追加并实施 R80.10/R80.11（用户复测三项：启动延迟 / 框选区域黑色 / 背景偏暗）：R80.10 根因 = toDataURL 同步串行 PNG 编码阻塞在开窗前 → 改 nativeImage 存储 + 先开窗 + getSnipFrame 懒编码（窗口加载与编码重叠，多屏各自独立），startSnip 记分段耗时日志；实机 窗口出现→可交互 62ms；R80.11 根因 = 选区挖洞误用不透明黑 rect → 改 evenodd 路径真挖洞（选区透亮）+ 暗幕 0.45→0.18 + 视口 resize 跟踪；实机 DOM/截图双验证（subPaths:2、blackRects:0、600×300 角标清晰）；59 files / 605 passed（+1）；状态 ⏳ → ✅；体验待用户复测 | Claude |
 | 2026-09-13 | 追加并实施 R80.12（用户复测"切英文后托盘菜单仍中文"）：根因 = 托盘菜单启动时一次构建 + 标签硬编码中文，语言状态只在渲染层；修复 = 新纯函数模块 trayMenu.ts（zh/en 标签 + locale 白名单，3 用例）+ 菜单可重建（applyTrayMenu/rebuildTrayMenu）+ 新 IPC ui:set-locale + i18n Provider 启动同步/切换通知；60 files / 608 passed（+3）；状态 ⏳→✅（同轮答复用户：自定义热键与 OCR 升级为候选方案待选型） | Claude |
 | 2026-09-13 | 实施 R81（截图热键预设五选一：shared 白名单 + applyHotkey 回滚 + 设置下拉 + system.json 持久化 + 托盘标签跟随）；R82（本地 RapidOCR：onnxruntime-node CPU + ModelScope 官方直链 SHA256 模型下载 + CTC/连通域纯函数 6 用例 + rapid 优先 winrt 兜底路由 + OCR 面板引擎显示；rec 宽度 800 实测定稿；实机 4 行样本 3 行全对、warm 379ms）；R83（OCR 后 AI 整理：OpenAI 兼容接口 + 设置区 Key 配置 + 面板按钮/未配 Key 提示 + 纯函数 4 用例）；62 files / 621 passed（--maxWorkers=4）；三条款 ⏳ → ✅；实机复测待用户 | Claude |
+| 2026-09-13 | 追加并实施 R82.6（用户需求"模型预设并打包到安装包"）：模型三件入库 build/rapidocr/（SHA256 与官方实证一致）+ electron-builder extraResources → resources/rapidocr + resolveRapidOcrDir 内置优先（packaged/dev 双路径）+ 内置缺失自动切 userData 在线下载兜底（Program Files 只读兼容）；yarn dist:dir 实证产物含三文件（哈希核对）+ onnxruntime 原生模块 asar 解包；62 files / 621 passed；状态 ⏳ → ✅；安装包实机复测待用户 | Claude |
