@@ -8,11 +8,20 @@
  * 简单直写惯例（损坏文件静默回退空列表）。
  * 无水印铁律（R75.2）：本存储只落原始 PNG 字节，不改写内容。
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import type { CaptureEntry } from '../shared/types'
 
 export type { CaptureEntry }
+
+/** review-fix: 导入的非 PNG 文件按真实扩展名给 dataURL 前缀（此前一律 png 误标） */
+const MIME_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+}
 
 export const MAX_CAPTURES = 200
 const MAX_PNG_BYTES = 30 * 1024 * 1024
@@ -75,13 +84,16 @@ export function createCaptureStore(userDataDir: string): {
 
   const loadIndex = (): CaptureEntry[] => {
     try {
+      // review-fix: 索引只存相对文件名，加载时按当前 captures 目录解析——
+      // userData 迁移/改名后不再产生指向旧绝对路径的幽灵条目
       return parseIndex(readFileSync(indexPath, 'utf-8'))
+        .map(e => ({ ...e, file: join(dir, basename(e.file)) }))
     } catch {
       return []
     }
   }
   const saveIndex = (entries: CaptureEntry[]): void => {
-    writeFileSync(indexPath, JSON.stringify(entries), 'utf-8')
+    writeFileSync(indexPath, JSON.stringify(entries.map(e => ({ ...e, file: basename(e.file) }))), 'utf-8')
   }
   const evict = (evicted: CaptureEntry[]): void => {
     for (const e of evicted) {
@@ -120,7 +132,10 @@ export function createCaptureStore(userDataDir: string): {
       const hit = loadIndex().find(e => e.id === id)
       if (!hit || !existsSync(hit.file)) return null
       try {
-        return 'data:image/png;base64,' + readFileSync(hit.file).toString('base64')
+        // review-fix: 按扩展名给 MIME（导入的 jpg/webp/bmp 不再被误标为 png）
+        const ext = hit.file.slice(hit.file.lastIndexOf('.')).toLowerCase()
+        const mime = MIME_BY_EXT[ext] ?? 'image/png'
+        return `data:${mime};base64,` + readFileSync(hit.file).toString('base64')
       } catch {
         return null
       }
@@ -131,6 +146,12 @@ export function createCaptureStore(userDataDir: string): {
         if (typeof p !== 'string') continue
         const ext = p.slice(p.lastIndexOf('.')).toLowerCase()
         if (!IMPORT_EXTS.has(ext) || !existsSync(p)) continue
+        // review-fix: 导入同样受大小上限约束（200MB BMP 直拷会拖垮 IPC/渲染层）
+        try {
+          if (statSync(p).size > MAX_PNG_BYTES) continue
+        } catch {
+          continue
+        }
         try {
           const buf = readFileSync(p)
           // 非 png 扩展也统一以 png 命名位仅当源为 png；其余转存原字节 + 按扩展名命名

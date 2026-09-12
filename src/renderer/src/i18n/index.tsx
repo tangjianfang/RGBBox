@@ -625,7 +625,7 @@ const EN = {
   'video.editor.saved': 'Saved (PNG downloaded)',
   'video.editor.close': 'Close without saving',
   'video.editor.loading': 'Loading editor…',
-  'video.editor.error': 'Editor failed to load — use the download link beside the thumbnail instead',
+  'video.editor.error': 'Editor failed to load — the capture was not modified',
   'video.editor.hint': 'Annotate / crop / rotate, then Save to download. Close = keep original only.',
   // R76: in-place annotator
   'video.annotate.tool.select': 'Select / move',
@@ -652,6 +652,7 @@ const EN = {
   'video.filmstrip.edit': 'Edit',
   'video.filmstrip.delete': 'Delete',
   'video.filmstrip.import': 'Import images',
+  'video.filmstrip.missing': 'Capture file missing or unreadable',
   'video.cameraSettings': 'Camera Settings',
   'video.device': 'Device',
   'video.noCamera': 'No camera found',
@@ -1320,7 +1321,7 @@ const ZH: TranslationTable = {
   'video.editor.saved': '已保存（PNG 已下载）',
   'video.editor.close': '关闭（不保存）',
   'video.editor.loading': '编辑器加载中…',
-  'video.editor.error': '编辑器加载失败——请用缩略图旁的下载链接直接保存原图',
+  'video.editor.error': '编辑器加载失败——图片未被修改',
   'video.editor.hint': '标注 / 裁剪 / 旋转后点保存下载；直接关闭则只保留原图。',
   // R76: 就地标注器
   'video.annotate.tool.select': '选择 / 移动',
@@ -1347,6 +1348,7 @@ const ZH: TranslationTable = {
   'video.filmstrip.edit': '编辑',
   'video.filmstrip.delete': '删除',
   'video.filmstrip.import': '导入图片',
+  'video.filmstrip.missing': '缓存文件缺失或不可读',
   'video.cameraSettings': '摄像头设置',
   'video.device': '设备',
   'video.noCamera': '未找到摄像头',

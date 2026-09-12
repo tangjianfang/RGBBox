@@ -54,7 +54,10 @@ describe('AnnotateOverlay', () => {
 
   it('R77.2: Escape while typing text only dismisses the input, not the overlay', () => {
     const onClose = vi.fn()
-    const { container } = render(<AnnotateOverlay source={png} onClose={onClose} onSave={() => {}} onCopy={() => {}} />)
+    // canvas 源：base/natural 同步就绪（严格守卫下文字放置需要底图已解码）
+    const cv = document.createElement('canvas')
+    cv.width = 400; cv.height = 300
+    const { container } = render(<AnnotateOverlay source={cv} onClose={onClose} onSave={() => {}} onCopy={() => {}} />)
     // 切到文字工具并点击画布 → 弹出输入框
     fireEvent.click(container.querySelectorAll('.video-annotate-tool')[5])
     fireEvent.pointerDown(container.querySelector('.video-annotate-canvas')!, { button: 0, clientX: 50, clientY: 50 })

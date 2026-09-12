@@ -1421,6 +1421,25 @@ export function VideoStudioView(): JSX.Element {
           )}
 
           {/* Transport controls */}
+          {/* R77.1: 拍摄缓存胶片栏（预览区下方、传输条上方；空列表自动隐藏） */}
+          <CaptureFilmstrip
+            items={captures}
+            onEdit={(it) => {
+              window.rgbbox.capturesRead(it.id)
+                .then((url) => {
+                  // review-fix: 文件缺失/不可读时给反馈，不再是无声死按钮
+                  if (url) setAnnotateSource(url)
+                  else editorToast(t('video.filmstrip.missing' as never))
+                })
+                .catch(() => editorToast(t('video.filmstrip.missing' as never)))
+            }}
+            onDelete={(id) => {
+              void window.rgbbox.capturesDelete(id).then(refreshCaptures).catch(() => { /* best-effort */ })
+            }}
+            onImport={() => {
+              void window.rgbbox.capturesImport().then(refreshCaptures).catch(() => { /* best-effort */ })
+            }}
+          />
           <div className="video-transport">
             {mode === 'camera' && (
               <>
@@ -1462,23 +1481,8 @@ export function VideoStudioView(): JSX.Element {
             )}
           </div>
 
-          {/* R77.1: 拍摄缓存胶片栏（预览区下方、标注器/传输条上方；空列表自动隐藏） */}
-          <CaptureFilmstrip
-            items={captures}
-            onEdit={(it) => {
-              window.rgbbox.capturesRead(it.id)
-                .then((url) => { if (url) setAnnotateSource(url) })
-                .catch(() => editorToast(t('video.editor.error' as never)))
-            }}
-            onDelete={(id) => {
-              void window.rgbbox.capturesDelete(id).then(refreshCaptures).catch(() => { /* best-effort */ })
-            }}
-            onImport={() => {
-              void window.rgbbox.capturesImport().then(refreshCaptures).catch(() => { /* best-effort */ })
-            }}
-          />
 
-          {/* R76: in-place annotator（局部截图确认 / 缩略图编辑入口） */}
+          {/* R76: in-place annotator（局部截图确认 / 缩略图编辑入口；绝对定位覆盖全舞台） */}
           {annotateSource !== null && (
             <AnnotateOverlay
               source={annotateSource}

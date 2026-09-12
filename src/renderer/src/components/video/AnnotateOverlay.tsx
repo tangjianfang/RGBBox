@@ -106,15 +106,18 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     () => (natural.w > 0 && wrapSize.w > 0 ? containRect(wrapSize, natural) : { x: 0, y: 0, w: 0, h: 0 }),
     [natural, wrapSize],
   )
-  const center: Pt = { x: wrapSize.w / 2, y: wrapSize.h / 2 }
+  const view: Rect = useMemo(() => {
+    const zz = zoomState?.z ?? 1
+    const off = zoomState?.offset ?? { x: 0, y: 0 }
+    const c = { x: wrapSize.w / 2, y: wrapSize.h / 2 }
+    return {
+      x: c.x + (fit.x - c.x) * zz + off.x,
+      y: c.y + (fit.y - c.y) * zz + off.y,
+      w: fit.w * zz,
+      h: fit.h * zz,
+    }
+  }, [fit, zoomState, wrapSize])
   const z = zoomState?.z ?? 1
-  const zoff = zoomState?.offset ?? { x: 0, y: 0 }
-  const view: Rect = {
-    x: center.x + (fit.x - center.x) * z + zoff.x,
-    y: center.y + (fit.y - center.y) * z + zoff.y,
-    w: fit.w * z,
-    h: fit.h * z,
-  }
   const k = view.w > 0 ? view.w / Math.max(1, natural.w) : 1
 
   const pushShapes = useCallback((next: Shape[]) => {
@@ -133,12 +136,18 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     const el = wrapRef.current
     if (!el) return
     const onWheel = (e: WheelEvent): void => {
+      // review-fix: 工具条/文字输入框上的滚轮留给控件自身（textarea 滚动），不缩放
+      const t = e.target as HTMLElement | null
+      if (t && typeof t.closest === 'function' && t.closest('.video-annotate-toolbar, .video-annotate-text-input')) return
       e.preventDefault()
       if (fit.w === 0 || natural.w === 0) return
       const fitK = fit.w / Math.max(1, natural.w)
       const curAbs = fitK * (zoomState?.z ?? 1)
       const nextAbs = clampScale(curAbs * (e.deltaY < 0 ? 1.06 : 1 / 1.06))
       if (nextAbs === curAbs) return
+      // review-fix: 极小图（fitK>8）时 clamp 会反向——放大不得变小、缩小不得变大
+      if (e.deltaY < 0 && nextAbs < curAbs) return
+      if (e.deltaY > 0 && nextAbs > curAbs) return
       const r = el.getBoundingClientRect()
       const cursor = { x: e.clientX - r.left, y: e.clientY - r.top }
       const c = { x: el.clientWidth / 2, y: el.clientHeight / 2 }
@@ -154,8 +163,11 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     const cv = canvasRef.current
     if (!cv || view.w === 0) return
     const dpr = window.devicePixelRatio || 1
-    cv.width = Math.round(wrapSize.w * dpr)
-    cv.height = Math.round(wrapSize.h * dpr)
+    // review-fix: 尺寸未变不重设（重设会清空+重分配 backing store，打字时逐帧抖动）
+    const cw = Math.round(wrapSize.w * dpr)
+    const ch = Math.round(wrapSize.h * dpr)
+    if (cv.width !== cw) cv.width = cw
+    if (cv.height !== ch) cv.height = ch
     const ctx = cv.getContext('2d')
     if (!ctx) return
     ctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -203,8 +215,9 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   const strokeWidthImage = STROKES[strokeIdx] / k
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-    // 文字工具的落点不依赖底图解码完成（其余绘制需要 base）
-    if (e.button !== 0 || (!base && tool !== 'text')) return
+    // review-fix: 恢复严格守卫——底图未解码时 natural={0,0}，此时放置文字会把屏幕坐标
+    // 当图像坐标存下，解码后位置错乱（文字等 base 就绪后再放）
+    if (e.button !== 0 || !base) return
     e.currentTarget.setPointerCapture?.(e.pointerId)
     const p = toImage(e.clientX, e.clientY)
     if (tool === 'select') {
@@ -298,6 +311,8 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
         const fontSize = STROKES[strokeIdx] * 8 / k
         const s = makeShape('text', {
           x: inp.at.x, y: inp.at.y, w: Math.max(10, fontSize), h: fontSize * 1.2,
+          // review-fix: 字号存 width（renderAnnotations 读 s.width；此前漏设 → 默认 3 → 8px 隐形字）
+          width: Math.max(10, fontSize),
           color, text: inp.value,
         })
         setHist(h => commit(h, [...h.present, s]))
