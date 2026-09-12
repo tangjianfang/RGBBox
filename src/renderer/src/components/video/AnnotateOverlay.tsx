@@ -17,7 +17,7 @@ import {
   Redo2, Square, Trash2, Type, Undo2, X,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
-import { containRect, type Pt, type Rect, type Size } from './previewTransform'
+import { clampPan, clampScale, containRect, zoomAtPoint, type Pt, type Rect, type Size } from './previewTransform'
 import {
   canRedo, canUndo, commit, handlesFor, hitTest, makeShape, moveShape,
   redo, resizeShape, shapeBBox, undo,
@@ -89,12 +89,6 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     return () => ro.disconnect()
   }, [])
 
-  const view: Rect = useMemo(
-    () => (natural.w > 0 && wrapSize.w > 0 ? containRect(wrapSize, natural) : { x: 0, y: 0, w: 0, h: 0 }),
-    [natural, wrapSize],
-  )
-  const k = view.w > 0 ? view.w / Math.max(1, natural.w) : 1
-
   // ── 状态 ────────────────────────────────────────────────────────────────
   const [hist, setHist] = useState<History>({ past: [], present: [], future: [] })
   const [tool, setTool] = useState<Tool>('select')
@@ -102,9 +96,26 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   const [strokeIdx, setStrokeIdx] = useState(1)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [textInput, setTextInput] = useState<{ at: Pt; value: string } | null>(null)
+  const [zoomState, setZoomState] = useState<{ z: number; offset: Pt } | null>(null)
   const dragRef = useRef<DragState | null>(null)
   const [dragging, setDragging] = useState(false)   // 触发重绘
   const shapes = hist.present
+
+  // R77.3: 视图 = contain-fit 矩形绕容器中心缩放 z + 平移 offset（zoom=null 即 fit）
+  const fit: Rect = useMemo(
+    () => (natural.w > 0 && wrapSize.w > 0 ? containRect(wrapSize, natural) : { x: 0, y: 0, w: 0, h: 0 }),
+    [natural, wrapSize],
+  )
+  const center: Pt = { x: wrapSize.w / 2, y: wrapSize.h / 2 }
+  const z = zoomState?.z ?? 1
+  const zoff = zoomState?.offset ?? { x: 0, y: 0 }
+  const view: Rect = {
+    x: center.x + (fit.x - center.x) * z + zoff.x,
+    y: center.y + (fit.y - center.y) * z + zoff.y,
+    w: fit.w * z,
+    h: fit.h * z,
+  }
+  const k = view.w > 0 ? view.w / Math.max(1, natural.w) : 1
 
   const pushShapes = useCallback((next: Shape[]) => {
     setHist(h => commit(h, next))
@@ -116,6 +127,27 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   useEffect(() => {
     mosaicTileRef.current = base && natural.w > 0 ? buildMosaicTile(base, natural) : null
   }, [base, natural])
+
+  // R77.3: 滚轮直接缩放（无需 Ctrl、步进 ×1.06、锚点=鼠标、绝对比例 clamp 10%–800%）
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent): void => {
+      e.preventDefault()
+      if (fit.w === 0 || natural.w === 0) return
+      const fitK = fit.w / Math.max(1, natural.w)
+      const curAbs = fitK * (zoomState?.z ?? 1)
+      const nextAbs = clampScale(curAbs * (e.deltaY < 0 ? 1.06 : 1 / 1.06))
+      if (nextAbs === curAbs) return
+      const r = el.getBoundingClientRect()
+      const cursor = { x: e.clientX - r.left, y: e.clientY - r.top }
+      const c = { x: el.clientWidth / 2, y: el.clientHeight / 2 }
+      const out = zoomAtPoint({ center: c, offset: zoomState?.offset ?? { x: 0, y: 0 }, absScale: curAbs }, cursor, nextAbs)
+      setZoomState({ z: nextAbs / fitK, offset: out.offset })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [fit, natural, zoomState])
 
   // ── 渲染（视图 canvas：底图 + 标注，同一画布） ──────────────────────────
   useEffect(() => {
@@ -171,7 +203,8 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   const strokeWidthImage = STROKES[strokeIdx] / k
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-    if (e.button !== 0 || !base) return
+    // 文字工具的落点不依赖底图解码完成（其余绘制需要 base）
+    if (e.button !== 0 || (!base && tool !== 'text')) return
     e.currentTarget.setPointerCapture?.(e.pointerId)
     const p = toImage(e.clientX, e.clientY)
     if (tool === 'select') {
@@ -183,7 +216,12 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
       }
       const hit = hitTest(shapes, p)
       setSelectedId(hit?.id ?? null)
-      if (hit) dragRef.current = { kind: 'move', start: p, orig: hit }
+      if (hit) {
+        dragRef.current = { kind: 'move', start: p, orig: hit }
+      } else if (z > 1.001) {
+        // R77.3: 放大后选择工具拖拽空白 = 平移视图
+        dragRef.current = { kind: 'pan', lastScreen: screenPt(e.clientX, e.clientY) }
+      }
       return
     }
     if (tool === 'text') {
@@ -218,6 +256,23 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     } else if (d.kind === 'resize') {
       const resized = resizeShape(d.orig, d.handle, p)
       setHist(h => ({ ...h, present: h.present.map(s => (s.id === resized.id ? resized : s)) }))
+    } else if (d.kind === 'pan') {
+      const sp = screenPt(e.clientX, e.clientY)
+      const dx = sp.x - d.lastScreen.x
+      const dy = sp.y - d.lastScreen.y
+      d.lastScreen = sp
+      setZoomState(zs => {
+        const zz = zs?.z ?? 1
+        return {
+          z: zz,
+          offset: clampPan(
+            { x: (zs?.offset.x ?? 0) + dx, y: (zs?.offset.y ?? 0) + dy },
+            { w: fit.w * zz, h: fit.h * zz },
+            wrapSize,
+            60,
+          ),
+        }
+      })
     }
   }
 
@@ -257,7 +312,13 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     const onKey = (e: KeyboardEvent): void => {
       const tag = (e.target as HTMLElement).tagName
       const typing = tag === 'INPUT' || tag === 'TEXTAREA'
-      if (e.key === 'Escape') { e.stopPropagation(); onClose(); return }
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        // R77.2: 文字输入中 ESC 只收起输入框，不再关闭整个标注器（丢标注）
+        if (textInput) { setTextInput(null); return }
+        onClose()
+        return
+      }
       if (typing) return
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         e.preventDefault()
@@ -271,7 +332,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [onClose, selectedId])
+  }, [onClose, selectedId, textInput])
 
   // ── 导出（自然尺寸；无水印） ───────────────────────────────────────────
   const exportDataUrl = useCallback((): string => {
@@ -312,6 +373,10 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        onDoubleClick={(e) => {
+          // R77.3: 选择工具下双击空白 = 复位缩放
+          if (tool === 'select' && !hitTest(shapes, toImage(e.clientX, e.clientY))) setZoomState(null)
+        }}
       />
 
       {/* 文字输入（DOM textarea 定位覆盖，Enter/失焦提交） */}

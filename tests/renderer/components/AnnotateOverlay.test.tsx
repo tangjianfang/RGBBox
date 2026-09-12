@@ -51,4 +51,30 @@ describe('AnnotateOverlay', () => {
     expect(tools[1].className).toContain('active')
     expect(tools[0].className).not.toContain('active')
   })
+
+  it('R77.2: Escape while typing text only dismisses the input, not the overlay', () => {
+    const onClose = vi.fn()
+    const { container } = render(<AnnotateOverlay source={png} onClose={onClose} onSave={() => {}} onCopy={() => {}} />)
+    // 切到文字工具并点击画布 → 弹出输入框
+    fireEvent.click(container.querySelectorAll('.video-annotate-tool')[5])
+    fireEvent.pointerDown(container.querySelector('.video-annotate-canvas')!, { button: 0, clientX: 50, clientY: 50 })
+    const ta = container.querySelector('.video-annotate-text-input') as HTMLTextAreaElement
+    expect(ta).toBeTruthy()
+    ta.focus()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()          // 只收输入框
+    expect(container.querySelector('.video-annotate-text-input')).toBeNull()
+    fireEvent.keyDown(window, { key: 'Escape' })     // 无输入框时才关闭
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('R77.3: wheel zoom does not break save flow', () => {
+    const onSave = vi.fn()
+    const { container } = render(<AnnotateOverlay source={png} onClose={() => {}} onSave={onSave} onCopy={() => {}} />)
+    fireEvent.wheel(container.querySelector('.video-annotate-overlay')!, { deltaY: -120 })
+    fireEvent.wheel(container.querySelector('.video-annotate-overlay')!, { deltaY: 120 })
+    fireEvent.click(container.querySelector('.video-annotate-save')!)
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0]).toMatch(/^data:image\/png;base64,/)
+  })
 })
