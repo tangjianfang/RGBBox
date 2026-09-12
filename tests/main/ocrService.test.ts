@@ -30,6 +30,9 @@ describe('ocrService pure', () => {
     expect(mergeCjkSpaces('Chinese Test 67890')).toBe('Chinese Test 67890')
     expect(mergeCjkSpaces('hello  world')).toBe('hello  world')   // 非 CJK 不动
     expect(mergeCjkSpaces('')).toBe('')
+    // review-fix: CJK 标点/全角符号相邻的空格也合并
+    expect(mergeCjkSpaces('预 算 ， 超 支')).toBe('预算，超支')
+    expect(mergeCjkSpaces('第一 、第二 。')).toBe('第一、第二。')
   })
 
   it('parseOcrOutput: success block, error codes, empty and garbage', () => {

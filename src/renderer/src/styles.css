@@ -4528,6 +4528,7 @@ input[type='range'].audio-slider {
   bottom: 44px;
   left: 50%;
   transform: translateX(-50%);
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -4664,6 +4665,7 @@ input[type='range'].audio-slider {
   right: 16px;
   width: min(360px, 80%);
   max-height: 60%;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 10px 12px;
@@ -4700,12 +4702,13 @@ input[type='range'].audio-slider {
 .video-annotate-ocr-meta { margin: 6px 0; font-size: 11px; color: rgba(200, 220, 229, 0.45); }
 .video-annotate-ocr-copyall { justify-content: center; }
 
-/* R79.2: OCR 框选遮罩 */
+/* R79.2: OCR 框选遮罩（事件载体；层级低于工具条，框选中仍可点工具） */
 .video-ocr-region-mask {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 2;
   cursor: crosshair;
+  touch-action: none;
 }
 
 /* R79.3: 深色滚动条（OCR 结果框等深色面板内滚动区，替代 UA 默认亮色） */

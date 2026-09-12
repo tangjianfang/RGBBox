@@ -75,16 +75,12 @@ export function CaptureFilmstrip({ items, onEdit, onDelete, onImport }: CaptureF
         }}
       >
         {items.map((it) => (
-          <div
-            key={it.id}
-            className="video-filmstrip-item"
-            title={`${it.name} · ${new Date(it.ts).toLocaleString()}`}
-          >
+          <div key={it.id} className="video-filmstrip-item">
             <img
               className="video-filmstrip-thumb"
               src={`media://local?p=${encodeURIComponent(it.file)}`}
               alt={it.name}
-              title={t('video.filmstrip.dblclickEdit')}
+              title={`${it.name} · ${new Date(it.ts).toLocaleString()} — ${t('video.filmstrip.dblclickEdit')}`}
               loading="lazy"
               onLoad={measure}
               onDoubleClick={() => onEdit(it)}

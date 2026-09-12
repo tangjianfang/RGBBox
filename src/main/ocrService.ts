@@ -92,7 +92,8 @@ try {
  * 如"会 议 记 录"）；CJK 与拉丁数字边界的空格保留，其余空格原样不动。
  */
 export function mergeCjkSpaces(text: string): string {
-  const cjk = '[\\u3400-\\u9FFF\\uF900-\\uFAFF]'
+  // review-fix: 含 CJK 标点（、。，）与全角符号——"预 算 ， 超 支" 也要合并
+  const cjk = '[\\u3001-\\u9FFF\\uF900-\\uFAFF\\uFF01-\\uFF60]'
   return text.replace(new RegExp(`(${cjk}) +(?=${cjk})`, 'g'), '$1')
 }
 

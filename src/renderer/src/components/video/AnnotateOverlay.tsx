@@ -25,6 +25,7 @@ import {
   type Handle, type History, type Shape, type ShapeKind,
 } from './annotationModel'
 import { buildMosaicTile, measureTextBlock, renderAnnotations } from './annotationRender'
+import { cropToDataUrl } from './frameCapture'
 
 export interface AnnotateOverlayProps {
   source: HTMLCanvasElement | string   // 冻结帧裁剪结果或照片 dataURL
@@ -251,14 +252,16 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
 
   const strokeWidthImage = STROKES[strokeIdx] / k
 
-  /** R79.5: 手柄方向光标（形状旋转时按 45° 桶换算到屏幕方向）。 */
+  /** R79.5: 手柄方向光标——45° 步进的 4 态周期（review-fix: 四角全算角；周期 90°）。 */
   const handleCursor = (handle: Handle, rotation: number): string => {
-    const bucket = ((Math.round(rotation / 45) % 8) + 8) % 8
     if (handle === 'start' || handle === 'end') return 'move'
-    const corner = handle === 'nw' || handle === 'se'
-    if (corner) return bucket % 2 === 0 ? 'nwse-resize' : 'nesw-resize'
-    return bucket % 2 === 0 ? (handle === 'n' || handle === 's' ? 'ns-resize' : 'ew-resize')
-      : (handle === 'n' || handle === 's' ? 'ew-resize' : 'ns-resize')
+    // 周期：nwse →(45°)→ ew →(45°)→ nesw →(45°)→ ns →(45°)→ nwse
+    const CYCLE = ['nwse', 'ew', 'nesw', 'ns']
+    const idx0 = handle === 'nw' || handle === 'se' ? 0
+      : handle === 'e' || handle === 'w' ? 1
+      : handle === 'ne' || handle === 'sw' ? 2 : 3
+    const bucket = ((Math.round(rotation / 45) % 4) + 4) % 4
+    return `${CYCLE[(idx0 + bucket) % 4]}-resize`
   }
 
   /** R79.5: 空闲态 hover 上下文光标（直写 canvas style）。 */
@@ -279,17 +282,11 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
     // review-fix: 恢复严格守卫——底图未解码时 natural={0,0}，此时放置文字会把屏幕坐标
-    // 当图像坐标存下，解码后位置错乱（文字等 base 就绪后再放）；
-    // R79.2: 框选识别模式豁免（区域导出自带回退，无需 base）
-    if (e.button !== 0 || (!base && !ocrRegionActive)) return
+    // 当图像坐标存下，解码后位置错乱（文字等 base 就绪后再放）
+    if (e.button !== 0 || !base) return
     e.currentTarget.setPointerCapture?.(e.pointerId)
     const p = toImage(e.clientX, e.clientY)
     lastPtRef.current = p
-    // R79.2: 框选识别模式——拖选区域，松手即识别
-    if (ocrRegionActive) {
-      setOcrRegionDraft({ start: p, end: p })
-      return
-    }
     const sp = screenPt(e.clientX, e.clientY)
     // R78.2: 旋转柄/手柄优先（任意工具下都可直接抓选中形状的手柄）
     const hh = hitHandle(sp)
@@ -345,11 +342,6 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>): void => {
     const p = toImage(e.clientX, e.clientY)
-    // R79.2: 框选草稿跟随
-    if (ocrRegionDraft) {
-      setOcrRegionDraft(d => (d ? { ...d, end: p } : d))
-      return
-    }
     const d = dragRef.current
     if (!d) {
       // R79.5: 空闲态 hover 手势光标（直写 style，避免逐帧 setState）
@@ -405,14 +397,6 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   }
 
   const endDrag = (): void => {
-    // R79.2: 框选完成 → 识别并退出框选模式
-    if (ocrRegionDraft) {
-      const { start, end } = ocrRegionDraft
-      setOcrRegionDraft(null)
-      setOcrRegionActive(false)
-      finishOcrRegion(start, end)
-      return
-    }
     const d = dragRef.current
     dragRef.current = null
     if (d?.kind === 'create') {
@@ -490,8 +474,8 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
         // R78.1: IME 组合中的 ESC 属于输入法（关候选窗），不收输入框
         if ((e as KeyboardEvent & { isComposing?: boolean }).isComposing) return
         e.stopPropagation()
-        // R79.2: 框选识别模式中 ESC 只退出框选
-        if (ocrRegionActive || ocrRegionDraft) {
+        // R79.2: 框选识别模式中 ESC 只退出框选（draft 随 active 一同清理）
+        if (ocrRegionActive) {
           setOcrRegionActive(false)
           setOcrRegionDraft(null)
           return
@@ -529,7 +513,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [onClose, selectedId, textInput, shapes, closeTextInput, ocrRegionActive, ocrRegionDraft])
+  }, [onClose, selectedId, textInput, shapes, closeTextInput, ocrRegionActive])
 
   // ── 导出（自然尺寸；无水印） ───────────────────────────────────────────
   const exportDataUrl = useCallback((): string => {
@@ -562,27 +546,19 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
 
   /** R79.2: 区域裁剪导出（同步；无 canvas 环境回退：字符串源→原样，canvas 源→兜底 PNG）。 */
   const exportRegionDataUrl = useCallback((r: { x: number; y: number; w: number; h: number }): string => {
-    try {
-      const out = document.createElement('canvas')
-      out.width = Math.max(1, Math.round(r.w))
-      out.height = Math.max(1, Math.round(r.h))
-      const ctx = out.getContext('2d')
-      if (!ctx || !base) return typeof source === 'string' ? source : FALLBACK_PNG
-      ctx.drawImage(base, r.x, r.y, r.w, r.h, 0, 0, out.width, out.height)
-      return out.toDataURL('image/png')
-    } catch {
-      return typeof source === 'string' ? source : FALLBACK_PNG
-    }
+    if (!base) return typeof source === 'string' ? source : FALLBACK_PNG
+    return cropToDataUrl(base, r, typeof source === 'string' ? source : FALLBACK_PNG)
   }, [base, source])
 
-  /** R79.2: 完成框选 → 立即识别所选区域。 */
+  /** R79.2: 完成框选 → 立即识别所选区域；拖选过小回退整图识别（一键 OCR 语义 + 有反馈）。 */
   const finishOcrRegion = useCallback((a: Pt, b: Pt) => {
     const rect = {
       x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
       w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y),
     }
     if (rect.w >= 8 && rect.h >= 8) recognizeDataUrl(exportRegionDataUrl(rect))
-  }, [recognizeDataUrl, exportRegionDataUrl])
+    else runOcr()
+  }, [recognizeDataUrl, exportRegionDataUrl, runOcr])
 
   // ── R78.1: 文字工具行的当前值（选中项优先，否则默认值） ────────────────
   const selText = selectedShape?.kind === 'text' ? selectedShape : null
@@ -667,7 +643,28 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
           : `M0 0H${W}V${H}H0Z`
         return (
           <>
-            <svg className="video-ocr-region-mask" width={W} height={H}>
+            {/* review-fix: 指针事件挂在 SVG 上（遮罩必然拦截画布，绑画布 = 真机拖不动） */}
+            <svg
+              className="video-ocr-region-mask"
+              width={W}
+              height={H}
+              onPointerDown={(e) => {
+                if (e.button !== 0) return
+                e.currentTarget.setPointerCapture?.(e.pointerId)
+                setOcrRegionDraft({ start: toImage(e.clientX, e.clientY), end: toImage(e.clientX, e.clientY) })
+              }}
+              onPointerMove={(e) => {
+                setOcrRegionDraft(d => (d ? { ...d, end: toImage(e.clientX, e.clientY) } : d))
+              }}
+              onPointerUp={() => {
+                setOcrRegionDraft(d => {
+                  if (d) finishOcrRegion(d.start, d.end)
+                  return null
+                })
+                setOcrRegionActive(false)
+              }}
+              onPointerCancel={() => { setOcrRegionDraft(null); setOcrRegionActive(false) }}
+            >
               <path d={mask} fill="rgba(0,0,0,0.5)" fillRule="evenodd" />
               {r && <rect x={r.x} y={r.y} width={r.w} height={r.h} fill="none" stroke="#46c6a8" strokeWidth="1.5" />}
             </svg>
@@ -741,7 +738,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
         <span className="video-annotate-sep" />
         <button type="button" className="video-annotate-btn" title={t('video.annotate.delete')} disabled={!selectedId} onClick={() => { if (selectedId) { setHist(h => commit(h, h.present.filter(s => s.id !== selectedId))); setSelectedId(null) } }}><Trash2 size={15} /></button>
         <span className="video-annotate-flex" />
-        <button type="button" className="video-annotate-btn video-annotate-ocr" title={t('video.annotate.ocrRegion')} disabled={ocr.status === 'running'} onClick={() => { setOcrRegionActive(true); setSelectedId(null) }}><ScanText size={15} /></button>
+        <button type="button" className="video-annotate-btn video-annotate-ocr" title={t('video.annotate.ocrRegion')} disabled={ocr.status === 'running' || !base} onClick={() => { if (!base) return; setOcrRegionActive(true); setSelectedId(null) }}><ScanText size={15} /></button>
         <button type="button" className="video-annotate-btn video-annotate-save" title={t('video.annotate.save')} onClick={doSave}><Check size={16} /></button>
         <button type="button" className="video-annotate-btn video-annotate-copy" title={t('video.annotate.copy')} onClick={doCopy}><Copy size={15} /></button>
         <button type="button" className="video-annotate-btn video-annotate-close" title={t('video.annotate.close')} onClick={onClose}><X size={16} /></button>
