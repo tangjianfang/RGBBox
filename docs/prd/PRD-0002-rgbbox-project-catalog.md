@@ -725,6 +725,11 @@
     - [x] `yarn typecheck` 通过；全量 vitest `--maxWorkers=4`：**57 files / 592 passed / 41 skipped，0 失败**；`yarn build` 0 error
     - [ ] 实机：矩形工具激活 → 悬停已有矩形边框光标变化 → 直接拖拉伸 → 松手继续画矩形（待用户复测）
   - **状态**：✅（自动化全绿；实机复测待用户确认。）
+- **R79.13** **胶片栏滚动条灰色修复**（用户复测反馈：拍照图片列表滚动条与主题不搭）：
+  - **根因**：`.video-filmstrip` 设了 `scrollbar-width: thin` 但未配 `scrollbar-color`——Chromium 121+（Electron 41）规定元素上出现非 auto 的标准滚动条属性即**忽略全部 `::-webkit-scrollbar*` 伪元素规则**，青色 webkit 规则全数失效，回落系统默认灰滑块。全文件排查：仅此一处不配对（其余 12 处 thin+color 成对）。
+  - **修复**：补 `scrollbar-color: rgba(70, 198, 168, 0.4) transparent`（青色滑块透明轨道，与既有 webkit 规则同色）。
+  - **验收点**：胶片栏横向滚动条为深色轨道 + 主题青滑块（hover 加深）；无其它滚动条回归（其余 12 处不受影响）。
+  - **状态**：✅（修复与既有 12 处成对实例同款模式（`.video-annotate-ocr-text` 同为青 thin+color，R79.3 已实机验收）；CaptureFilmstrip 6/6 不回归；实机外观待用户复测确认。）
 
 ### R80. 独立全局截图工具（托盘入口 + 全屏选区 + 标注小工具）
 
@@ -2191,3 +2196,4 @@
 | 2026-09-12 | 追加并实施 R79.11（用户反馈"有输入文字点别处也要保存"）：根因 = R79.10 preventDefault 阻断默认焦点转移后，点击画布别处不再触发 onBlur 隐式提交 → 已输入文字被新 setTextInput 覆盖丢失；修复 = onPointerDown 显式 commitText（微信式点哪落哪，空输入不落形状）+ 调色板点击即时给选中标注上色；排版/排序确认 R78.1 已支持（对齐/字号/粗体/图层 4 向/旋转/双击再编辑/Ctrl+C-V）；57 files / 589 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机复测 | Claude |
 | 2026-09-12 | 追加并实施 R79.12（智能手势切换，用户反馈"编辑中拖动/调整其它形状要点击很多地方"）：模型层新增 hitShapeBorder 纯函数（bbox 边框带 tol 命中→角柄等比/边柄单轴，旋转逆变换，边段范围约束防命中延长线，pen/arrow 不参与，顶层优先）；交互层任意工具下悬停边框变方向 resize 光标 + 按下自动选中直接进入拉伸（免切工具），文字工具点中文字补齐 move 拖拽；拖完不换工具；57 files / 592 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机复测 | Claude |
 | 2026-09-12 | 实施 R80（独立全局截图工具，设计/计划文档随附）：snipManager（desktopCapturer 先截后开窗 + 每屏 frameless 全屏置顶窗口 + 会话互斥/显示器变化取消 + Alt+A 注册失败气泡降级）+ 3 条 snip IPC + preload API + 托盘「截图 (Alt+A)」菜单项 + SnipView（冻结帧全屏 → 暗幕拖选 ≥8px + 尺寸角标 → cropToDataUrl 裁剪 → AnnotateOverlay 全套标注零改动复用；✓=下载+落档 / 复制=剪贴板+落档；ESC 分层退出）；TDD 全程：snipManager 4 用例 + SnipView 8 用例；59 files / 604 passed（--maxWorkers=4）；实机 CDP 端到端验证（冻结→拖选→标注→ESC 分层→会话销毁，截图留证）；状态 🔄 → ✅；多屏/DPI/热键冲突待用户复测 | Claude |
+| 2026-09-13 | 追加并实施 R79.13（用户复测反馈"拍照图片列表滚动条与主题不搭"）：根因 = Chromium 121+（Electron 41）标准滚动条属性（scrollbar-width: thin）出现即忽略 ::-webkit-scrollbar* 规则，.video-filmstrip 是全文件唯一未配 scrollbar-color 的实例 → 青色 webkit 规则失效回落系统灰滑块；修复 = 补 scrollbar-color 青/透明对（与 .video-annotate-ocr-text 同款已验收模式）；CaptureFilmstrip 6/6；状态 🔄 → ✅；实机外观待用户确认 | Claude |

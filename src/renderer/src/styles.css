@@ -4788,6 +4788,9 @@ input[type='range'].audio-slider {
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
+  /* R79.13: Chromium 121+ 一旦出现标准滚动条属性即忽略 ::-webkit-scrollbar* ——
+     必须成对给 color，否则青色 webkit 规则失效回落系统灰滑块 */
+  scrollbar-color: rgba(70, 198, 168, 0.4) transparent;
   scroll-behavior: smooth;
 }
 
