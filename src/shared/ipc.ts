@@ -126,6 +126,10 @@ export const ipcChannels = {
   clipboardWriteText: 'rgbbox:clipboard:write-text',
   clipboardReadText: 'rgbbox:clipboard:read-text',
   ocrRecognize: 'rgbbox:ocr:recognize',
+  // R80: standalone global snip tool (frozen-frame windows + annotator)
+  snipGetFrame: 'rgbbox:snip:get-frame',
+  snipFinish: 'rgbbox:snip:finish',
+  snipCancel: 'rgbbox:snip:cancel',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]
