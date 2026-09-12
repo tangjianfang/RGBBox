@@ -5969,3 +5969,17 @@ input[type='range'].video-player-volume {
 
 /* R51.1/R52.1: 顶部 transport cluster（R52.1 全合并后由 .audio-tools-bar 主规则承载）*/
 .audio-time { font-size: 12px; color: rgba(138, 162, 173, 0.85); }
+
+/* ── R80: 独立全局截图窗口 ─────────────────────────────────────────── */
+.snip-root { position: fixed; inset: 0; background: #05080a; overflow: hidden; }
+.snip-canvas { width: 100vw; height: 100vh; display: block; }
+.snip-mask { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+.snip-size {
+  position: absolute; transform: translateX(-50%); padding: 2px 8px; border-radius: 4px;
+  background: rgba(5, 8, 10, 0.85); color: #46c6a8; font-size: 12px; pointer-events: none;
+}
+.snip-hint {
+  position: absolute; bottom: 48px; left: 50%; transform: translateX(-50%);
+  padding: 6px 14px; border-radius: 6px; background: rgba(5, 8, 10, 0.8);
+  color: rgba(255, 255, 255, 0.82); font-size: 13px; pointer-events: none;
+}
