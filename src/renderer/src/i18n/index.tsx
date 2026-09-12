@@ -655,6 +655,7 @@ const EN = {
   'video.filmstrip.missing': 'Capture file missing or unreadable',
   'video.filmstrip.prev': 'Previous',
   'video.filmstrip.next': 'Next',
+  'video.filmstrip.dblclickEdit': 'Double-click to edit',
   // R78: annotator text system + OCR
   'video.annotate.align.left': 'Align left',
   'video.annotate.align.center': 'Align center',
@@ -1373,6 +1374,7 @@ const ZH: TranslationTable = {
   'video.filmstrip.missing': '缓存文件缺失或不可读',
   'video.filmstrip.prev': '上一张',
   'video.filmstrip.next': '下一张',
+  'video.filmstrip.dblclickEdit': '双击编辑',
   // R78: 标注器文字系统 + OCR
   'video.annotate.align.left': '左对齐',
   'video.annotate.align.center': '居中对齐',

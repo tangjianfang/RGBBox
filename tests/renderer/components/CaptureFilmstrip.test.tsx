@@ -50,6 +50,15 @@ describe('CaptureFilmstrip', () => {
     expect(computeCanNav(600, 300, 300)).toEqual({ left: true, right: false })
   })
 
+  it('R79.4: double-click a thumbnail opens the editor', () => {
+    const onEdit = vi.fn()
+    const { container } = render(
+      <CaptureFilmstrip items={[item('a')]} onEdit={onEdit} onDelete={() => {}} onImport={() => {}} />,
+    )
+    fireEvent.dblClick(container.querySelector('.video-filmstrip-thumb')!)
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }))
+  })
+
   it('R78.4: prev/next buttons scroll by one thumbnail (scrollBy spy)', () => {
     const scrollBySpy = vi.fn()
     const proto = Element.prototype as unknown as Record<string, unknown>

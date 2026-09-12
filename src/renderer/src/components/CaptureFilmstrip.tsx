@@ -84,8 +84,10 @@ export function CaptureFilmstrip({ items, onEdit, onDelete, onImport }: CaptureF
               className="video-filmstrip-thumb"
               src={`media://local?p=${encodeURIComponent(it.file)}`}
               alt={it.name}
+              title={t('video.filmstrip.dblclickEdit')}
               loading="lazy"
               onLoad={measure}
+              onDoubleClick={() => onEdit(it)}
             />
             <button
               type="button"
