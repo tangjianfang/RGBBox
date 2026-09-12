@@ -653,6 +653,8 @@ const EN = {
   'video.filmstrip.delete': 'Delete',
   'video.filmstrip.import': 'Import images',
   'video.filmstrip.missing': 'Capture file missing or unreadable',
+  'video.filmstrip.prev': 'Previous',
+  'video.filmstrip.next': 'Next',
   // R78: annotator text system + OCR
   'video.annotate.align.left': 'Align left',
   'video.annotate.align.center': 'Align center',
@@ -1366,6 +1368,8 @@ const ZH: TranslationTable = {
   'video.filmstrip.delete': '删除',
   'video.filmstrip.import': '导入图片',
   'video.filmstrip.missing': '缓存文件缺失或不可读',
+  'video.filmstrip.prev': '上一张',
+  'video.filmstrip.next': '下一张',
   // R78: 标注器文字系统 + OCR
   'video.annotate.align.left': '左对齐',
   'video.annotate.align.center': '居中对齐',

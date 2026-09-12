@@ -4726,16 +4726,60 @@ input[type='range'].audio-slider {
 
 .video-last-shot-row .video-btn { flex: 1; justify-content: center; padding: 6px 8px; }
 
-/* R77.1: capture filmstrip */
+/* R77.1 / R78.4: capture filmstrip —— 限宽根因修复：
+   grid/flex 子项的 min-width 默认 auto 会让内容撑开列宽（"无限变长"根因），
+   显式 min-width:0 + max-width:100% 把滚动约束在本组件内部。 */
+.video-layout > .video-stage { min-width: 0; }
+.video-layout { min-width: 0; }
+
+.video-filmstrip-wrap {
+  position: relative;
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
 .video-filmstrip {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
   padding: 6px 4px;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
+  scroll-behavior: smooth;
 }
+
+.video-filmstrip::-webkit-scrollbar { height: 6px; }
+.video-filmstrip::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.04); border-radius: 3px; }
+.video-filmstrip::-webkit-scrollbar-thumb { background: rgba(70, 198, 168, 0.4); border-radius: 3px; }
+.video-filmstrip::-webkit-scrollbar-thumb:hover { background: rgba(70, 198, 168, 0.7); }
+
+.video-filmstrip-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(13, 21, 25, 0.92);
+  color: #c5f0e4;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.video-filmstrip-prev { left: 2px; }
+.video-filmstrip-next { right: 2px; }
+.video-filmstrip-nav:hover { border-color: #46c6a8; color: #fff; }
 
 .video-filmstrip-item {
   position: relative;
