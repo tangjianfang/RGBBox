@@ -63,4 +63,42 @@ describe('SnipView select phase (R80.5)', () => {
     fireEvent.contextMenu(window)
     expect(mocks.snipCancel).toHaveBeenCalledTimes(1)
   })
+
+  async function enterAnnotate(container: HTMLElement): Promise<void> {
+    const mask = container.querySelector('.snip-mask') as SVGSVGElement
+    fireEvent.pointerDown(mask, { button: 0, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(mask, { clientX: 120, clientY: 90 })
+    fireEvent.pointerUp(mask, { clientX: 120, clientY: 90 })
+    await waitFor(() => expect(container.querySelector('.video-annotate-overlay')).toBeTruthy())
+  }
+
+  it('R80.6: × closes annotator back to select state (session alive)', async () => {
+    const mocks = setupRendererMocks()
+    const { container } = render(<SnipView displayId={1} />)
+    await waitFor(() => expect(container.querySelector('.snip-mask')).toBeTruthy())
+    await enterAnnotate(container)
+    fireEvent.click(container.querySelector('.video-annotate-close')!)
+    await waitFor(() => expect(container.querySelector('.snip-mask')).toBeTruthy())
+    expect(mocks.snipCancel).not.toHaveBeenCalled()
+  })
+
+  it('R80.6: save → snipFinish(save) then snipCancel', async () => {
+    const mocks = setupRendererMocks()
+    const { container } = render(<SnipView displayId={1} />)
+    await waitFor(() => expect(container.querySelector('.snip-mask')).toBeTruthy())
+    await enterAnnotate(container)
+    fireEvent.click(container.querySelector('.video-annotate-save')!)
+    await waitFor(() => expect(mocks.snipFinish).toHaveBeenCalledTimes(1))
+    expect(mocks.snipFinish.mock.calls[0][1]).toBe('save')
+    await waitFor(() => expect(mocks.snipCancel).toHaveBeenCalledTimes(1))
+  })
+
+  it('R80.6: copy → snipFinish(copy)', async () => {
+    const mocks = setupRendererMocks()
+    const { container } = render(<SnipView displayId={1} />)
+    await waitFor(() => expect(container.querySelector('.snip-mask')).toBeTruthy())
+    await enterAnnotate(container)
+    fireEvent.click(container.querySelector('.video-annotate-copy')!)
+    await waitFor(() => expect(mocks.snipFinish).toHaveBeenCalledWith(expect.stringMatching(/^data:image\//), 'copy'))
+  })
 })
