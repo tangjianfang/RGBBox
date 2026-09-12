@@ -68,6 +68,10 @@ export function setupRendererMocks() {
     capturesDelete: vi.fn().mockResolvedValue(true),
     capturesRead: vi.fn().mockResolvedValue('data:image/png;base64,QQ=='),
     capturesImport: vi.fn().mockResolvedValue([]),
+    // R78: clipboard text + OCR
+    clipboardWriteText: vi.fn().mockResolvedValue(true),
+    clipboardReadText: vi.fn().mockResolvedValue(''),
+    ocrRecognize: vi.fn().mockResolvedValue({ ok: true, text: '', hint: undefined }),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),

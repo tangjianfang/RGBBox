@@ -122,6 +122,10 @@ export const ipcChannels = {
   capturesDelete: 'rgbbox:captures:delete',
   capturesRead: 'rgbbox:captures:read',
   capturesImport: 'rgbbox:captures:import',
+  // R78: clipboard text (annotator copy/paste) + native OCR
+  clipboardWriteText: 'rgbbox:clipboard:write-text',
+  clipboardReadText: 'rgbbox:clipboard:read-text',
+  ocrRecognize: 'rgbbox:ocr:recognize',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

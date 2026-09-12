@@ -154,6 +154,12 @@ const api = {
   capturesRead: (id: string): Promise<string | null> =>
     ipcRenderer.invoke(ipcChannels.capturesRead, id),
   capturesImport: (): Promise<CaptureEntry[]> => ipcRenderer.invoke(ipcChannels.capturesImport),
+  // R78: clipboard text + native OCR
+  clipboardWriteText: (text: string): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.clipboardWriteText, text),
+  clipboardReadText: (): Promise<string> => ipcRenderer.invoke(ipcChannels.clipboardReadText),
+  ocrRecognize: (dataUrl: string): Promise<{ ok: boolean; text: string; hint?: string }> =>
+    ipcRenderer.invoke(ipcChannels.ocrRecognize, dataUrl),
 
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>

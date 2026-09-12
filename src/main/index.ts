@@ -9,6 +9,7 @@ import { join, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { defaultProfile } from '../shared/defaultProfile'
 import { createCaptureStore } from './captureStore'
+import { recognizeImage } from './ocrService'
 import { ipcChannels } from '../shared/ipc'
 import { initLogger } from '../shared/logger'
 import { MODELS_MANIFEST } from '../shared/modelsManifest'
@@ -277,6 +278,16 @@ function registerIpc(): void {
     if (result.canceled) return []
     return captureStore.importFiles(result.filePaths)
   })
+
+  // R78: clipboard text (annotator copy/paste) + native OCR
+  ipcMain.handle(ipcChannels.clipboardWriteText, (_event, text: unknown) => {
+    if (typeof text !== 'string') return false
+    clipboard.writeText(text)
+    return true
+  })
+  ipcMain.handle(ipcChannels.clipboardReadText, () => clipboard.readText())
+  ipcMain.handle(ipcChannels.ocrRecognize, (_event, dataUrl: unknown) =>
+    typeof dataUrl === 'string' ? recognizeImage(dataUrl) : Promise.resolve({ ok: false, text: '', hint: 'decode' }))
 
   ipcMain.handle(ipcChannels.appVersion, () => app.getVersion())
   ipcMain.handle(ipcChannels.getDisplayTopology, () => getDisplayTopology())
