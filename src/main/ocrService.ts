@@ -8,7 +8,7 @@
  * RGBBOX_OCR_ERR:<code>（nolangpack / decode / engine / unsupported）。
  * buildOcrScript / parseOcrOutput 为纯函数供单测；真实识别率以实机验收为准。
  */
-import { execFile } from 'node:child_process'
+import { execFile, type ExecFileException } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,7 +18,7 @@ type RunFn = (cmd: string, args: string[], opts: Record<string, unknown>) => Pro
 
 const defaultRun: RunFn = (cmd, args, opts) =>
   new Promise((resolve, reject) => {
-    execFile(cmd, args, opts, (err: NodeJS.ErrnoException | null, stdout: string, stderr: string) => {
+    execFile(cmd, args, opts, (err: ExecFileException | null, stdout: string, stderr: string) => {
       if (err) reject(err)
       else resolve({ stdout, stderr })
     })
