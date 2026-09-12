@@ -17,7 +17,7 @@
 import {
   AppWindow, Camera, CameraOff, ChevronDown, ChevronRight, Circle, Download, FileText,
   Film, FlipHorizontal, FolderOpen, Frame, Image as ImageIcon, Link as LinkIcon, Maximize2,
-  Minimize2, Monitor, MonitorPlay, Pause, Pencil, Play, Plus, RefreshCw, Scissors, SkipBack,
+  Minimize2, Monitor, MonitorPlay, Pause, Play, Plus, RefreshCw, Scissors, SkipBack,
   SkipForward, Square, Trash2, Video, Volume2, VolumeX,
 } from 'lucide-react'
 import Hls from 'hls.js'
@@ -30,6 +30,8 @@ import { PreviewZoomBar } from './video/PreviewZoomBar'
 import { freezeVideoFrame } from './video/frameCapture'
 import { RegionSnipOverlay } from './video/RegionSnipOverlay'
 import { AnnotateOverlay } from './video/AnnotateOverlay'
+import { CaptureFilmstrip } from './CaptureFilmstrip'
+import type { CaptureEntry } from '../../../shared/types'
 import type { Rect } from './video/previewTransform'
 
 type Mode = 'camera' | 'screen' | 'player'
@@ -298,8 +300,6 @@ export function VideoStudioView(): JSX.Element {
   const recStartRef = useRef(0)
   const recTimerRef = useRef<number | null>(null)
 
-  const [lastShot, setLastShot] = useState<string>('')
-
   // ── Video Playlist ──────────────────────────────────────────────────────────
   const videoCache = useMemo(() => loadVideoCache(), [])
   const [videoPlaylist, setVideoPlaylist] = useState<VideoItem[]>([])
@@ -322,6 +322,13 @@ export function VideoStudioView(): JSX.Element {
   // ── Snapshot annotate (R76: in-place annotator replaces R75 modal) ──────
   const [annotateSource, setAnnotateSource] = useState<HTMLCanvasElement | string | null>(null)
   const [editorToastMsg, setEditorToastMsg] = useState('')
+
+  // ── Capture cache filmstrip (R77.1) ─────────────────────────────────────
+  const [captures, setCaptures] = useState<CaptureEntry[]>([])
+  const refreshCaptures = useCallback(() => {
+    window.rgbbox.capturesList().then(setCaptures).catch(() => { /* best-effort */ })
+  }, [])
+  useEffect(() => { refreshCaptures() }, [refreshCaptures])
   const editorToastTimerRef = useRef<number | null>(null)
   const editorToast = useCallback((msg: string) => {
     setEditorToastMsg(msg)
@@ -367,10 +374,10 @@ export function VideoStudioView(): JSX.Element {
     if (!ctx) return
     // R75.2: 裁剪只搬运像素，绝不叠加任何文字/logo（无水印铁律）
     ctx.drawImage(frame, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h)
-    // R76.3: 框选确认后就地标注（微信流程）——不再下载、不弹窗
-    setLastShot(out.toDataURL('image/png'))
+    // R76.3: 框选确认后就地标注（微信流程）；R77.1: 裁剪结果自动入缓存
+    void window.rgbbox.capturesAdd(out.toDataURL('image/png'), 'snip').then(refreshCaptures).catch(() => { /* best-effort */ })
     setAnnotateSource(out)
-  }, [snipFrame, cancelSnip])
+  }, [snipFrame, cancelSnip, refreshCaptures])
 
   // R75.3: S 快捷键（camera/screen live 模式；player 模式在播放器快捷键 effect 里）
   useEffect(() => {
@@ -555,10 +562,10 @@ export function VideoStudioView(): JSX.Element {
     }
     ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
     const url = canvas.toDataURL('image/png')
-    setLastShot(url)
-    // R76.3: 拍照恢复"咔嚓即下载"；要编辑时点右栏缩略图旁的编辑按钮
+    // R76.3: 拍照恢复"咔嚓即下载"；R77.1: 自动入拍摄缓存
     downloadPng(url, 'rgbbox-photo')
-  }, [mode, filterStyle, mirror, downloadPng])
+    void window.rgbbox.capturesAdd(url, 'photo').then(refreshCaptures).catch(() => { /* best-effort */ })
+  }, [mode, filterStyle, mirror, downloadPng, refreshCaptures])
 
   // ── Recording ──────────────────────────────────────────────────────────────
   const stopRecording = useCallback(() => {
@@ -1455,6 +1462,22 @@ export function VideoStudioView(): JSX.Element {
             )}
           </div>
 
+          {/* R77.1: 拍摄缓存胶片栏（预览区下方、标注器/传输条上方；空列表自动隐藏） */}
+          <CaptureFilmstrip
+            items={captures}
+            onEdit={(it) => {
+              window.rgbbox.capturesRead(it.id)
+                .then((url) => { if (url) setAnnotateSource(url) })
+                .catch(() => editorToast(t('video.editor.error' as never)))
+            }}
+            onDelete={(id) => {
+              void window.rgbbox.capturesDelete(id).then(refreshCaptures).catch(() => { /* best-effort */ })
+            }}
+            onImport={() => {
+              void window.rgbbox.capturesImport().then(refreshCaptures).catch(() => { /* best-effort */ })
+            }}
+          />
+
           {/* R76: in-place annotator（局部截图确认 / 缩略图编辑入口） */}
           {annotateSource !== null && (
             <AnnotateOverlay
@@ -1462,6 +1485,7 @@ export function VideoStudioView(): JSX.Element {
               onClose={() => setAnnotateSource(null)}
               onSave={(url) => {
                 downloadPng(url, 'rgbbox-annotated')
+                void window.rgbbox.capturesAdd(url, 'annotated').then(refreshCaptures).catch(() => { /* best-effort */ })
                 setAnnotateSource(null)
                 editorToast(t('video.annotate.saved' as never))
               }}
@@ -1739,20 +1763,6 @@ export function VideoStudioView(): JSX.Element {
               </div>
             ))}
           </section>
-
-          {lastShot && (
-            <section className="video-panel">
-              <h3 className="video-panel-title">{t('video.lastShot')}</h3>
-              <img className="video-last-shot" src={lastShot} alt="last capture" />
-              {/* R76.3: 显式编辑入口（进就地标注器）+ 下载 */}
-              <div className="video-last-shot-row">
-                <button type="button" className="video-btn" onClick={() => setAnnotateSource(lastShot)} title={t('video.annotate.title')}>
-                  <Pencil size={14} /> {t('video.lastShotEdit')}
-                </button>
-                <a className="video-btn" href={lastShot} download={`rgbbox-photo-${Date.now()}.png`}><Download size={14} /> {t('video.save')}</a>
-              </div>
-            </section>
-          )}
         </aside>
       </div>
 

@@ -648,6 +648,10 @@ const EN = {
   'video.annotate.copied': 'Copied to clipboard',
   'video.annotate.copyFail': 'Copy failed',
   'video.lastShotEdit': 'Edit',
+  // R77: capture filmstrip
+  'video.filmstrip.edit': 'Edit',
+  'video.filmstrip.delete': 'Delete',
+  'video.filmstrip.import': 'Import images',
   'video.cameraSettings': 'Camera Settings',
   'video.device': 'Device',
   'video.noCamera': 'No camera found',
@@ -1339,6 +1343,10 @@ const ZH: TranslationTable = {
   'video.annotate.copied': '已复制到剪贴板',
   'video.annotate.copyFail': '复制失败',
   'video.lastShotEdit': '编辑',
+  // R77: 拍摄缓存胶片栏
+  'video.filmstrip.edit': '编辑',
+  'video.filmstrip.delete': '删除',
+  'video.filmstrip.import': '导入图片',
   'video.cameraSettings': '摄像头设置',
   'video.device': '设备',
   'video.noCamera': '未找到摄像头',

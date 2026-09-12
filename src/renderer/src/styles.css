@@ -4658,6 +4658,74 @@ input[type='range'].audio-slider {
 
 .video-last-shot-row .video-btn { flex: 1; justify-content: center; padding: 6px 8px; }
 
+/* R77.1: capture filmstrip */
+.video-filmstrip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.video-filmstrip-item {
+  position: relative;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: border-color 0.15s;
+}
+
+.video-filmstrip-item:hover { border-color: #46c6a8; }
+
+.video-filmstrip-thumb {
+  display: block;
+  height: 64px;
+  max-width: 160px;
+  object-fit: cover;
+  background: #05090b;
+}
+
+.video-filmstrip-act {
+  position: absolute;
+  top: 3px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(5, 9, 11, 0.85);
+  color: #c5f0e4;
+  cursor: pointer;
+}
+
+.video-filmstrip-edit { left: 3px; }
+.video-filmstrip-del { right: 3px; }
+.video-filmstrip-del:hover { border-color: #ff5d5d; color: #ff9d9d; }
+.video-filmstrip-edit:hover { border-color: #46c6a8; color: #fff; }
+.video-filmstrip-item:hover .video-filmstrip-act { display: flex; }
+
+.video-filmstrip-add {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: rgba(197, 240, 228, 0.6);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.video-filmstrip-add:hover { border-color: #46c6a8; color: #fff; }
+
 .video-transport {
   display: flex;
   align-items: center;
