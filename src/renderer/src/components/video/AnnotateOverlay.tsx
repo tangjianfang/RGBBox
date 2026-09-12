@@ -289,6 +289,9 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     // 画布无需文本选择/焦点，preventDefault 阻掉该击的默认焦点转移。
     e.preventDefault()
     e.currentTarget.setPointerCapture?.(e.pointerId)
+    // R79.11: 打字中点击画布别处 = 先提交旧文字（微信式"点哪落哪"），再执行本次点击语义。
+    // （preventDefault 阻断了默认焦点转移，原 onBlur 隐式提交在此路径失效，不显式提交会丢字）
+    if (textInput) commitText()
     const p = toImage(e.clientX, e.clientY)
     lastPtRef.current = p
     const sp = screenPt(e.clientX, e.clientY)
@@ -725,7 +728,13 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
             className={`video-annotate-swatch${color === c ? ' active' : ''}`}
             style={{ background: c }}
             title={c}
-            onClick={() => setColor(c)}
+            onClick={() => {
+              setColor(c)
+              // R79.11: 选中标注即时换色入历史（打字中点色 = blur 先落字并选中 → 点色即上色）
+              if (selectedShape) {
+                setHist(h => commit(h, h.present.map(s => (s.id === selectedShape.id ? { ...s, color: c } : s))))
+              }
+            }}
           />
         ))}
         {STROKES.map((w, i) => (

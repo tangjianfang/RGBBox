@@ -89,6 +89,36 @@ describe('AnnotateOverlay', () => {
     expect(document.activeElement).toBe(ta)
   })
 
+  it('R79.11: typing then clicking elsewhere on canvas commits the text (no Enter needed)', () => {
+    const cv = document.createElement('canvas')
+    cv.width = 400; cv.height = 300
+    const { container } = render(<AnnotateOverlay source={cv} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    fireEvent.click(container.querySelectorAll('.video-annotate-tool')[5])  // 文字工具
+    fireEvent.pointerDown(container.querySelector('.video-annotate-canvas')!, { button: 0, clientX: 50, clientY: 50 })
+    let ta = container.querySelector('.video-annotate-text-input') as HTMLTextAreaElement
+    fireEvent.change(ta, { target: { value: '点别处也要保存' } })
+    // 点击画布另一处：旧文字应被提交（无需 Enter），并在新位置开出新的空输入框
+    fireEvent.pointerDown(container.querySelector('.video-annotate-canvas')!, { button: 0, clientX: 200, clientY: 200 })
+    ta = container.querySelector('.video-annotate-text-input') as HTMLTextAreaElement
+    expect(ta).toBeTruthy()
+    expect(ta.value).toBe('')
+    // ESC 只收起新输入框；已提交形状仍被选中 → 图层按钮可用 = 文字形状已存在
+    fireEvent.keyDown(window, { key: 'Escape' })
+    container.querySelectorAll('.video-annotate-layer').forEach(b => expect((b as HTMLButtonElement).disabled).toBe(false))
+  })
+
+  it('R79.11: empty text input clicked away leaves no shape', () => {
+    const cv = document.createElement('canvas')
+    cv.width = 400; cv.height = 300
+    const { container } = render(<AnnotateOverlay source={cv} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    fireEvent.click(container.querySelectorAll('.video-annotate-tool')[5])
+    fireEvent.pointerDown(container.querySelector('.video-annotate-canvas')!, { button: 0, clientX: 50, clientY: 50 })
+    // 不输入任何文字，直接点击别处 + ESC：不落空形状（图层按钮仍禁用）
+    fireEvent.pointerDown(container.querySelector('.video-annotate-canvas')!, { button: 0, clientX: 200, clientY: 200 })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    container.querySelectorAll('.video-annotate-layer').forEach(b => expect((b as HTMLButtonElement).disabled).toBe(true))
+  })
+
   it('R77.3: wheel zoom does not break save flow', () => {
     const onSave = vi.fn()
     const { container } = render(<AnnotateOverlay source={png} onClose={() => {}} onSave={onSave} onCopy={() => {}} />)

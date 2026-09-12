@@ -706,6 +706,15 @@
     - [x] `yarn typecheck` 通过；全量 `yarn vitest run --maxWorkers=4`：**57 files / 586 passed / 41 skipped，0 失败**（+1 用例，AnnotateOverlay 14/14）
     - [x] `.tmp-debug/` 调试产物已清理
   - **状态**：✅（根因实机实证 + 修复实机验证 + 全量回归全绿；用户复测待确认。）
+- **R79.11** **文字输入"点别处即保存" + 调色板即时上色**（用户复测反馈：有输入文字时点击其它地方也要保存，而非必须 Enter；并询问排版/排序支持度）：
+  - **根因**：R79.10 的 `onPointerDown` `preventDefault()`（焦点竞态修复）阻断了该击默认焦点转移 → textarea 不再 blur → 原依赖 `onBlur` 的隐式提交在"点击画布别处"路径失效 → 旧 `setTextInput({at,value:''})` 直接覆盖，**已输入文字静默丢失**。工具条按钮不受影响（各自元素正常抢焦点触发 blur）。
+  - **修复**：① 画布 `onPointerDown` 在守卫后显式 `if (textInput) commitText()`——点击别处 = 先提交旧文字再执行本次点击语义（微信式；空输入只收框不落形状；文字工具点空白 = 落旧字 + 在新位置开新输入框）；② 调色板点击同时给**选中标注**换色入历史（打字中点色 = blur 先落字 → 选中 → 点色即上色）。
+  - **排版/排序确认**（无代码变更，R78.1 已支持）：对齐/字号/粗体（第二工具行）+ 图层 4 向排序 + 旋转柄 + 双击再编辑 + Ctrl+C/V；打字中触任何工具条控件均"先落字再应用"。
+  - **验收点**：
+    - [x] 测试：打字后点击画布别处 → 旧文字落为形状（新空输入框在新位置打开；ESC 后图层按钮可用证明形状存在且选中）；空输入点击别处不落形状（AnnotateOverlay 16/16，+2 用例）
+    - [x] `yarn typecheck` 通过；全量 vitest `--maxWorkers=4`：**57 files / 589 passed / 41 skipped，0 失败**；`yarn build` 0 error
+    - [ ] 实机：打字 → 点别处 → 文字保留；打字中点颜色/对齐/字号 → 先落后改（待用户复测）
+  - **状态**：✅（自动化全绿；实机复测待用户确认。）
 
 ### R80. 独立全局截图工具（托盘入口 + 全屏选区 + 标注小工具）
 
@@ -2157,3 +2166,4 @@
 | 2026-09-12 | 追加 R79（OCR 实机失败修复 + 框选识别 + 三项打磨）与 R80 立项占位（独立全局截图工具，R79 后实施）；L2；状态 ⏳ | mike / Claude |
 | 2026-09-12 | 实施 R79：OCR 根因实证（PS 5.1 静态 WinRT 异步方法绑定缺陷 → OpenAsync+反射直调，本机英/中/中文路径全通）+ CJK 空格合并（含标点）；OCR 按钮改框选识别（遮罩 SVG 承载事件、<8px 回退整图、面板整图按钮）；深色滚动条；缩略图双击进编辑；hover 手势光标（45° 四态周期）；code review 10 项确认全修（f117385，最重：遮罩事件绑定真机失效）；57 files / 586 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机验收 | Claude |
 | 2026-09-12 | 追加并实施 R79.10（用户复测缺陷"文字功能无法添加输入"）：systematic-debugging 四阶段定位实机焦点竞态根因（pointerdown 同步挂 textarea+autoFocus 被同一击 mousedown 默认焦点行为瞬时 blur → 空 commit → 卸载；CDP 临时插桩实证生命周期，单测假绿因 fireEvent 不模拟默认焦点行为）→ 修复 = onPointerDown preventDefault（根因）+ textarea ref rAF 补聚焦（双保险）；回归用例钉行为契约（defaultPrevented + 下一帧 activeElement）；实机 CDP 验证全绿（打字"ABC123"→Enter 提交→画布渲染，截图视觉确认）；57 files / 587 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户复测确认 | Claude |
+| 2026-09-12 | 追加并实施 R79.11（用户反馈"有输入文字点别处也要保存"）：根因 = R79.10 preventDefault 阻断默认焦点转移后，点击画布别处不再触发 onBlur 隐式提交 → 已输入文字被新 setTextInput 覆盖丢失；修复 = onPointerDown 显式 commitText（微信式点哪落哪，空输入不落形状）+ 调色板点击即时给选中标注上色；排版/排序确认 R78.1 已支持（对齐/字号/粗体/图层 4 向/旋转/双击再编辑/Ctrl+C-V）；57 files / 589 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机复测 | Claude |
