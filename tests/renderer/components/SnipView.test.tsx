@@ -36,6 +36,22 @@ describe('SnipView select phase (R80.5)', () => {
     await waitFor(() => expect(container.querySelector('.video-annotate-overlay')).toBeTruthy())
   })
 
+  it('R80.11: dragging carves a real hole (evenodd path), no opaque black rect; dim is light', async () => {
+    const { container } = render(<SnipView displayId={1} />)
+    await waitFor(() => expect(container.querySelector('.snip-mask')).toBeTruthy())
+    const mask = container.querySelector('.snip-mask') as SVGSVGElement
+    fireEvent.pointerDown(mask, { button: 0, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(mask, { clientX: 120, clientY: 90 })
+    // 选区内必须透亮：不允许任何不透明黑 rect（回归钉子：曾经用黑 rect 盖底 → 选区全黑）
+    mask.querySelectorAll('rect').forEach(r => expect(r.getAttribute('fill')).not.toBe('black'))
+    // 挖洞 = evenodd 路径（外框 + 选区两个子路径）
+    const path = mask.querySelector('path') as SVGPathElement
+    expect(path.getAttribute('fill-rule')).toBe('evenodd')
+    expect((path.getAttribute('d') ?? '').split('M').length).toBe(3)
+    // 暗幕减淡（R80.11: 只需一点暗）
+    expect(path.getAttribute('fill')).toBe('rgba(0,0,0,0.18)')
+  })
+
   it('drag <8px stays in select state, no annotator', async () => {
     const { container } = render(<SnipView displayId={1} />)
     await waitFor(() => expect(container.querySelector('.snip-mask')).toBeTruthy())

@@ -52,7 +52,9 @@ function log(): Logger {
 }
 
 const snipWindows = new Map<number, BrowserWindow>()
-const snipFrames = new Map<number, string>()    // displayId → 冻结帧 dataURL
+// R80.10: 存 nativeImage（不做同步 PNG 编码）——编码推迟到渲染端请求时（懒编码），
+// startSnip 只做捕获 + 开窗，窗口加载与编码时间重叠
+const snipFrames = new Map<number, Electron.NativeImage>()
 let sessionActive = false
 let deps: SnipDeps | null = null
 let isDev = false
@@ -127,6 +129,7 @@ function openSnipWindow(displayId: number): void {
 
 export async function startSnip(): Promise<boolean> {
   if (sessionActive) return false
+  const t0 = Date.now()
   const displays = screen.getAllDisplays()
   if (displays.length === 0) return false
   // thumbnailSize 取所有屏物理像素的最大值：小屏返回原生分辨率（Chromium 不放大）
@@ -134,21 +137,24 @@ export async function startSnip(): Promise<boolean> {
   const maxW = Math.max(...sizes.map((s) => s.width))
   const maxH = Math.max(...sizes.map((s) => s.height))
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: maxW, height: maxH } })
+  const tCapture = Date.now() - t0
   const pairs = matchDisplayToSource(sources, displays)
   if (pairs.size === 0) {
     log().error('Snip', 'no display source matched — abort')
     return false
   }
-  for (const [displayId, src] of pairs) snipFrames.set(displayId, src.thumbnail.toDataURL())
+  for (const [displayId, src] of pairs) snipFrames.set(displayId, src.thumbnail)
   sessionActive = true
-  log().info('Snip', `session start — ${pairs.size} display(s) frozen`)
+  // R80.10: 先开窗——窗口加载与帧编码（懒编码）重叠，不再让 toDataURL 串行阻塞开窗
   for (const displayId of pairs.keys()) openSnipWindow(displayId)
+  log().info('Snip', `session start — ${pairs.size} display(s); capture ${tCapture}ms, windows opened +${Date.now() - t0}ms`)
   return true
 }
 
 export function getSnipFrame(displayId: number): { dataUrl: string } | null {
-  const dataUrl = snipFrames.get(displayId)
-  return dataUrl ? { dataUrl } : null
+  const img = snipFrames.get(displayId)
+  // 懒编码：仅在对应窗口请求时做一次 PNG 编码（多屏各自独立，不互相阻塞）
+  return img && !img.isEmpty() ? { dataUrl: img.toDataURL() } : null
 }
 
 export function finishSnip(dataUrl: string, action: 'copy' | 'save'): boolean {

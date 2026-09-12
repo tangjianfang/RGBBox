@@ -23,8 +23,17 @@ export function SnipView({ displayId }: { displayId: number }): JSX.Element {
   const [frame, setFrame] = useState<HTMLCanvasElement | null>(null)  // 物理像素冻结帧
   const [frameUrl, setFrameUrl] = useState<string>(FALLBACK_PNG)      // dataURL（AnnotateOverlay 源）
   const [draft, setDraft] = useState<{ a: Pt; b: Pt } | null>(null)
+  const [vp, setVp] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  // R80.11: 挖洞路径需要像素值（非百分比）——跟踪视口尺寸
+  useEffect(() => {
+    const measure = () => setVp({ w: window.innerWidth, h: window.innerHeight })
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
 
   // 拉冻结帧 → 解码到物理像素 canvas
   useEffect(() => {
@@ -147,13 +156,16 @@ export function SnipView({ displayId }: { displayId: number }): JSX.Element {
           }}
           onPointerCancel={() => setDraft(null)}
         >
-          {/* 暗幕 + 选区"挖洞"（黑 rect 盖掉半透明底）+ 主题青描边 */}
-          <rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.45)" />
+          {/* R80.11: evenodd 真挖洞——选区内完全透亮显示原画面；暗幕只留一点暗（0.18） */}
+          <path
+            d={selCss
+              ? `M0 0H${vp.w}V${vp.h}H0Z M${selCss.x} ${selCss.y}H${selCss.x + selCss.w}V${selCss.y + selCss.h}H${selCss.x}Z`
+              : `M0 0H${vp.w}V${vp.h}H0Z`}
+            fill="rgba(0,0,0,0.18)"
+            fillRule="evenodd"
+          />
           {selCss && (
-            <>
-              <rect x={selCss.x} y={selCss.y} width={selCss.w} height={selCss.h} fill="black" />
-              <rect x={selCss.x} y={selCss.y} width={selCss.w} height={selCss.h} fill="none" stroke="#46c6a8" strokeWidth="1.5" />
-            </>
+            <rect x={selCss.x} y={selCss.y} width={selCss.w} height={selCss.h} fill="none" stroke="#46c6a8" strokeWidth="1.5" />
           )}
         </svg>
       )}

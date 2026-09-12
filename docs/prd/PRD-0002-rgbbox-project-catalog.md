@@ -749,6 +749,18 @@
   - [x] 实机端到端（CDP 驱动，单屏）：desktopCapturer 冻结真实桌面（图标/壁纸/任务栏清晰）→ 全屏窗口 + 暗幕 + 中文提示条 → 真实鼠标拖选 → AnnotateOverlay 就地挂载（选区内亮外暗 + 完整工具条）→ ESC 分层（1 次=关标注器回拖选、2 次=退出会话，窗口即时销毁，仅剩主窗口）——截图证据 `snip-select.png` / `snip-annotate.png`（本次验证后已清理）
   - [ ] 实机复测（待用户）：多屏冻结、DPI 150% 选区像素准确、Alt+A 冲突降级气泡、托盘菜单入口、最近拍摄入库（kind=annotated）
 - **R80.9** **状态**：✅（自动化全绿 + 实机端到端验证（单屏）；多屏/DPI/热键冲突场景待用户复测确认。）
+- **R80.10** **启动提速**（用户复测：快捷键触发到冻结有延迟）：
+  - **根因**：`startSnip` 在开窗**前**对每屏 `thumbnail.toDataURL()` 同步串行 PNG 编码（全物理分辨率，单屏数百 ms）——编码完全串行于窗口创建之前，用户感知 = 捕获 + 编码×N + 开窗之和。
+  - **修复**：frames map 改存 `nativeImage`，**getSources 后立即开窗**（窗口 HTML/JS 加载与编码重叠），PNG 编码移到 `getSnipFrame` **懒编码**（仅对应窗口请求时、单屏一次）；startSnip 记录分段耗时日志（capture / windows-opened）供后续诊断。
+- **R80.11** **选区显示修复 + 暗幕减淡**（用户复测：框选区域是黑色不合理；背景偏暗只需一点暗）：
+  - **根因**：选区"挖洞"误用不透明 `fill="black"` rect 盖住半透明底 → 拖选时选区呈黑色；暗幕 0.45 不透明度偏重。
+  - **修复**：改为 evenodd 路径真挖洞（选区内完全透亮显示原画面，仅描边 + 角标）；暗幕降到 **0.18**（一点暗）；视口尺寸经 resize 监听（路径数据需像素值，非百分比）。
+  - **验收点**：
+    - [x] 测试：拖选中 evenodd 真挖洞（双子路径）+ 无 `fill="black"` rect + 暗幕恰为 `rgba(0,0,0,0.18)`（SnipView 9/9，+1 回归钉子用例）
+    - [x] 实机 CDP：拖拽中 DOM `{pathFill:"rgba(0,0,0,0.18)", fillRule:"evenodd", subPaths:2, blackRects:0, canvasPx:"1920x1080"}`；截图视觉确认——选区内透亮显原内容、外部轻微变暗、600×300 角标 + 提示条
+    - [x] 提速实机：窗口出现 → 可交互（含懒 PNG 编码 + 解码）**62ms**；剩余延迟 = desktopCapturer 捕获（~100-300ms，与微信同量级，系统固有）；startSnip 记录 capture/windows-opened 分段耗时日志
+    - [x] `yarn typecheck` + 全量 59 files / 605 passed / 0 失败 + `yarn build` 0 error
+  - **状态**：✅（三项复测问题全修复并实机验证；用户体验级"快不快"待用户复测确认。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
@@ -2197,3 +2209,4 @@
 | 2026-09-12 | 追加并实施 R79.12（智能手势切换，用户反馈"编辑中拖动/调整其它形状要点击很多地方"）：模型层新增 hitShapeBorder 纯函数（bbox 边框带 tol 命中→角柄等比/边柄单轴，旋转逆变换，边段范围约束防命中延长线，pen/arrow 不参与，顶层优先）；交互层任意工具下悬停边框变方向 resize 光标 + 按下自动选中直接进入拉伸（免切工具），文字工具点中文字补齐 move 拖拽；拖完不换工具；57 files / 592 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机复测 | Claude |
 | 2026-09-12 | 实施 R80（独立全局截图工具，设计/计划文档随附）：snipManager（desktopCapturer 先截后开窗 + 每屏 frameless 全屏置顶窗口 + 会话互斥/显示器变化取消 + Alt+A 注册失败气泡降级）+ 3 条 snip IPC + preload API + 托盘「截图 (Alt+A)」菜单项 + SnipView（冻结帧全屏 → 暗幕拖选 ≥8px + 尺寸角标 → cropToDataUrl 裁剪 → AnnotateOverlay 全套标注零改动复用；✓=下载+落档 / 复制=剪贴板+落档；ESC 分层退出）；TDD 全程：snipManager 4 用例 + SnipView 8 用例；59 files / 604 passed（--maxWorkers=4）；实机 CDP 端到端验证（冻结→拖选→标注→ESC 分层→会话销毁，截图留证）；状态 🔄 → ✅；多屏/DPI/热键冲突待用户复测 | Claude |
 | 2026-09-13 | 追加并实施 R79.13（用户复测反馈"拍照图片列表滚动条与主题不搭"）：根因 = Chromium 121+（Electron 41）标准滚动条属性（scrollbar-width: thin）出现即忽略 ::-webkit-scrollbar* 规则，.video-filmstrip 是全文件唯一未配 scrollbar-color 的实例 → 青色 webkit 规则失效回落系统灰滑块；修复 = 补 scrollbar-color 青/透明对（与 .video-annotate-ocr-text 同款已验收模式）；CaptureFilmstrip 6/6；状态 🔄 → ✅；实机外观待用户确认 | Claude |
+| 2026-09-13 | 追加并实施 R80.10/R80.11（用户复测三项：启动延迟 / 框选区域黑色 / 背景偏暗）：R80.10 根因 = toDataURL 同步串行 PNG 编码阻塞在开窗前 → 改 nativeImage 存储 + 先开窗 + getSnipFrame 懒编码（窗口加载与编码重叠，多屏各自独立），startSnip 记分段耗时日志；实机 窗口出现→可交互 62ms；R80.11 根因 = 选区挖洞误用不透明黑 rect → 改 evenodd 路径真挖洞（选区透亮）+ 暗幕 0.45→0.18 + 视口 resize 跟踪；实机 DOM/截图双验证（subPaths:2、blackRects:0、600×300 角标清晰）；59 files / 605 passed（+1）；状态 ⏳ → ✅；体验待用户复测 | Claude |
