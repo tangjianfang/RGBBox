@@ -77,7 +77,9 @@ vi.mock('lucide-react', () => {
     'CastOff','ScreenShare','BellRing','Clock2','Clock3','Clock4','PlaySquare',
     'MousePointer2','Grid3x3','Undo2','Redo2','Undo','Redo','Frame',
     'ArrowUpRight','ArrowUpLeft','ArrowDownLeft','ArrowDownRight',
-    'AlignLeft','AlignCenter','AlignRight','ArrowUpToLine','ArrowDownToLine','ScanText'
+    'AlignLeft','AlignCenter','AlignRight','ArrowUpToLine','ArrowDownToLine','ScanText',
+    // R85 tab shell: dashboard tab icon + shutdown chip icon
+    'LayoutGrid','Timer'
   ]
   for (const n of NAMES) icons[n] = catchAll
   return icons
