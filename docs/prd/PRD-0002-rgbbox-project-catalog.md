@@ -672,11 +672,11 @@
 - **R78.5** **不动**：R75.1 预览缩放、snip 框选流程、MediaRecorder 录制、视频裁剪导出、`media://` 协议、R70–R72 已修项、`package.json` scripts、npm 依赖零新增。
 - **R78.6** **受影响文件**：`src/renderer/src/components/video/annotationModel.ts`（rotation/align/bold 字段、reorderShape、rotatePt 数学、等比/点列缩放）、`src/renderer/src/components/video/annotationRender.ts`（旋转渲染包装、align/bold）、`src/renderer/src/components/video/AnnotateOverlay.tsx`（IME/工具条扩展/图层/复制粘贴/同工具点选/旋转柄/OCR 面板）、`src/renderer/src/components/CaptureFilmstrip.tsx`（导航按钮 + computeCanNav）、`src/main/ocrService.ts`（新增）、`src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts`、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`tests/main/ocrService.test.ts`（新增）、`tests/renderer/components/annotationModel.test.ts`（+用例）、`tests/renderer/components/annotationRender.test.ts`（+用例）、`tests/renderer/components/CaptureFilmstrip.test.tsx`（+用例）、`tests/renderer/components/AnnotateOverlay.test.tsx`（IME 用例）、`tests/renderer/_helpers.tsx`。
 - **R78.7** **验收点**：
-  - [ ] `yarn typecheck` / `yarn build` 通过
-  - [ ] `yarn test` 全量通过，无回归（reorder/旋转数学/align·bold 渲染/OCR 脚本与输出解析/computeCanNav 新用例）
-  - [ ] code review 通过（沿用 R77 的显式 review 步骤）
+  - [x] `yarn typecheck` 通过；`yarn build` 通过（0 error）
+  - [x] `yarn test` 全量通过：**57 files / 580 passed / 41 skipped，0 失败**（`--maxWorkers=4`，review 修复后复跑全绿；较 R77 基线 56/562 → +1 文件 +18 用例：annotationModel +6、annotationRender +3、ocrService +4、CaptureFilmstrip +2、AnnotateOverlay +3）
+  - [x] code review 通过：10 项确认发现全部修复（`82a0874`）——其中两项 OCR 编码缺陷经验证代理在 zh-CN Windows 实证复现（PS 5.1 GBK stdout 乱码 → 脚本强制 UTF-8 输出；无 BOM 脚本在含非 ASCII 临时路径机器上全损 → BOM + env 双保险）；Escape 在 OCR 面板/字号下拉不再关整个标注器；replaceIdRef 取消路径清理；文字 bbox 真实测量（对齐/命中修复）；滚轮排除扩展；pen/mosaic/text 补 8 手柄（缩放路径原为死代码）+ text 可旋转；拖拽/旋转/样式入历史（Ctrl+Z 不再吞形状）；commitText 纯化（StrictMode 重复修复）；胶片栏懒加载图 onLoad 重测溢出。已知未修（review 记录，如实保留）：旋转后复合缩放手柄漂移（近似可用）、keydown 监听随 deps 重订阅（性能轻微）、每 scroll setCanNav 重渲染（轻微）
   - [ ] 手动：中文输入法可正常输入并 Enter 落字；对齐/字号/粗体实时生效；图层四钮调序；Ctrl+C 复制标注文字、Ctrl+V 粘贴建字；矩形/箭头等画完再点即选中编辑，角=等比/边=拉伸、旋转柄可转（Shift 15°）；OCR 按钮对含中英文截图识别出可复制文本；胶片栏多图后宽度=预览区宽、滚动条/‹›按钮/滚轮三种滑动可用
-- **R78.8** **状态**：⏳
+- **R78.8** **状态**：✅（代码已实施，自动化验证 + code review 全绿（证据见 R78.7）；实机手动验证（含 OCR 中文识别率）pending 用户复测。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
@@ -2116,3 +2116,5 @@
 | 2026-09-12 | 实施 R76：新增 `annotationModel.ts`（纯函数形状模型+历史栈，8 用例）+ `AnnotateOverlay.tsx`（canvas 就地标注：矩形/椭圆/箭头/画笔/文字/马赛克/撤销重做/✓保存/复制/×，5 用例）+ 剪贴板 IPC `rgbbox:clipboard:write-image`（clipboard.writeImage 原生实现）；拍照恢复直接下载、框选确认后就地标注、缩略图显式编辑按钮；框选手柄 16px/双击限选区内/提示条；移除 filerobot+react-konva+styled-components（chunk -1.86MB）；顺带加固 logger 测试竞态；53 files / 545 passed（--maxWorkers=4 连续两次全绿）；状态 ⏳ → ✅；待用户实机验收 | Claude |
 | 2026-09-12 | 追加 R77（拍摄缓存胶片栏 + 标注器文字/马赛克修复 + 标注器查看缩放）；L2 风险；三项需求 brainstorm 确认（舞台下方胶片栏/三类产出 200 条 FIFO/文件导入/×1.06 步进）；状态 ⏳ | mike / Claude |
 | 2026-09-12 | 实施 R77：`captureStore.ts`（主进程持久化 + 5 IPC）+ `CaptureFilmstrip.tsx`（横滚胶片栏，三产出自动入库/导入/删除）+ `annotationRender.ts` 抽取并修复文字（font 非法 token）与马赛克（全尺寸底砖 1:1 坐标）+ 标注器滚轮缩放（×1.06/锚点/平移/双击复位）+ ESC 分层；code review 10 项确认发现全部修复（8277c5c）；56 files / 562 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机验收 | Claude |
+| 2026-09-12 | 追加 R78（标注器文本系统重做 + 形状手势编辑 + Windows 原生 OCR + 胶片栏窗口约束）；L2 风险（+3 IPC）；三项选型经用户确认（WinRT OCR / 对齐+字号+粗体+图层 / 双向纯文本）；状态 ⏳ | mike / Claude |
+| 2026-09-12 | 实施 R78：模型扩展（rotation/align/bold/reorder/等比缩放）+ 渲染（旋转包装/对齐/粗体）+ ocrService（PowerShell WinRT）+ 剪贴板文本 ×2 与 ocr 三 IPC + 标注器交互大改（IME isComposing 修复、排版工具行、图层、Ctrl+C/V、同工具点选、角等比/边拉伸、旋转柄、OCR 面板）+ 胶片栏限宽根因修复与三种滑动；code review 10 项确认发现全部修复（含两项 zh-CN 实证复现的 OCR 编码缺陷）；57 files / 580 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机验收 | Claude |
