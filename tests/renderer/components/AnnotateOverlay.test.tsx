@@ -71,6 +71,24 @@ describe('AnnotateOverlay', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('R79.10: canvas pointerdown is default-prevented and textarea refocuses next frame (text focus race)', async () => {
+    // 实机根因：pointerdown 同步挂 textarea+autoFocus，被同一击 mousedown 的默认
+    // 焦点行为立即 blur → 空 commit → 卸载。修复契约 = pointerdown preventDefault +
+    // 挂载后 rAF 补聚焦（fireEvent 不模拟默认焦点行为，故钉行为契约而非复现竞态）。
+    const cv = document.createElement('canvas')
+    cv.width = 400; cv.height = 300
+    const { container } = render(<AnnotateOverlay source={cv} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    fireEvent.click(container.querySelectorAll('.video-annotate-tool')[5])  // 文字工具
+    // fireEvent 返回 false = 事件被 preventDefault（阻断默认焦点转移）
+    const notCanceled = fireEvent.pointerDown(container.querySelector('.video-annotate-canvas')!, { button: 0, clientX: 50, clientY: 50 })
+    expect(notCanceled).toBe(false)
+    const ta = container.querySelector('.video-annotate-text-input') as HTMLTextAreaElement
+    expect(ta).toBeTruthy()
+    // 双保险：挂载后下一帧 rAF 补聚焦
+    await new Promise(r => setTimeout(r, 40))
+    expect(document.activeElement).toBe(ta)
+  })
+
   it('R77.3: wheel zoom does not break save flow', () => {
     const onSave = vi.fn()
     const { container } = render(<AnnotateOverlay source={png} onClose={() => {}} onSave={onSave} onCopy={() => {}} />)

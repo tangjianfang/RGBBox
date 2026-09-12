@@ -697,6 +697,15 @@
   - [x] code review 通过：10 项确认发现全部修复（`f117385`）——最重项：框选遮罩此前绑在画布上的事件真机永远拖不动（遮罩必然拦截画布；fireEvent 绕过命中测试致测试假绿）→ 事件改挂 SVG 本体 + 测试改打遮罩；其余：base 未解码禁入框选（杜绝整图静默回退/坐标脏写）、手柄光标 4 角/90° 周期修正、<8px 拖选回退整图识别（一键 OCR 可达 + 有反馈）、CJK 标点空格合并、面板 overflow 激活滚动条规则、cropToDataUrl 抽共享助手、keydown 免逐帧重订阅、缩略图 title 合并文件名时间。已知未修（如实记录）：crop 助手与 VideoStudioView.finishSnip 的内联裁剪仅部分收敛（finishSnip 产出 canvas 类型不同，未强并）
   - [ ] 手动：OCR 按钮框选一段含中英文的区域 → 松手立即出可复制结果（中文无乱码、无多余空格）；「整图」与一键（原地点击）均可用；编辑器滚动条为深色；胶片栏双击缩略图进编辑；画形状后点选出现手柄且各方向光标正确（含旋转后）
 - **R79.9** **状态**：✅（代码已实施，自动化验证 + code review 全绿（证据见 R79.8）；OCR 脚本修复已在本机实证（英文/中文/中文路径）；实机端到端手动验证 pending 用户复测。）
+- **R79.10** **文字输入焦点竞态修复**（用户复测报告"图片编辑中：文字 功能无法添加输入"；R78.1 文字功能的实机回归）：
+  - **根因**（systematic-debugging 四阶段，实机 CDP 证据链）：pointerdown 处理器里同步挂载 textarea 并 autoFocus → **同一击 mousedown 的默认焦点行为**立即把焦点抢回 → textarea 瞬时 blur → 空 commit → 卸载。临时插桩日志实证生命周期：`render textInput:true → mounted focused=true → BLUR → textInput:false → unmounted`（用户视角 = 输入框闪没/无法输入）。单测假绿原因：fireEvent 不模拟浏览器默认焦点行为。
+  - **修复**（`AnnotateOverlay.tsx` 两处，根因修 + 双保险）：① `onPointerDown` 顶部 `e.preventDefault()`（画布无需文本选择/焦点，阻断该击默认焦点转移；click/dblclick 按 Pointer Events 规范不属于 compatibility mouse events，不受影响）；② textarea `ref` 挂载后 `requestAnimationFrame(() => el.focus())` 补聚焦。
+  - **验收点**：
+    - [x] 实机 CDP 复现脚本全绿：textarea 点击后存活（`exists:true`）、聚焦打字 `value:"ABC123"`、Enter 提交后卸载且画布出现文字形状（截图视觉确认：青色 "ABC123" 带选中框+手柄）
+    - [x] 回归测试 `R79.10` 用例：pointerdown 必须 `defaultPrevented` + 挂载后下一帧 `document.activeElement === textarea`（钉行为契约）
+    - [x] `yarn typecheck` 通过；全量 `yarn vitest run --maxWorkers=4`：**57 files / 586 passed / 41 skipped，0 失败**（+1 用例，AnnotateOverlay 14/14）
+    - [x] `.tmp-debug/` 调试产物已清理
+  - **状态**：✅（根因实机实证 + 修复实机验证 + 全量回归全绿；用户复测待确认。）
 
 ### R80. 独立全局截图工具（托盘入口 + 全屏选区 + 标注小工具）
 
@@ -2147,3 +2156,4 @@
 | 2026-09-12 | 实施 R78：模型扩展（rotation/align/bold/reorder/等比缩放）+ 渲染（旋转包装/对齐/粗体）+ ocrService（PowerShell WinRT）+ 剪贴板文本 ×2 与 ocr 三 IPC + 标注器交互大改（IME isComposing 修复、排版工具行、图层、Ctrl+C/V、同工具点选、角等比/边拉伸、旋转柄、OCR 面板）+ 胶片栏限宽根因修复与三种滑动；code review 10 项确认发现全部修复（含两项 zh-CN 实证复现的 OCR 编码缺陷）；57 files / 580 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机验收 | Claude |
 | 2026-09-12 | 追加 R79（OCR 实机失败修复 + 框选识别 + 三项打磨）与 R80 立项占位（独立全局截图工具，R79 后实施）；L2；状态 ⏳ | mike / Claude |
 | 2026-09-12 | 实施 R79：OCR 根因实证（PS 5.1 静态 WinRT 异步方法绑定缺陷 → OpenAsync+反射直调，本机英/中/中文路径全通）+ CJK 空格合并（含标点）；OCR 按钮改框选识别（遮罩 SVG 承载事件、<8px 回退整图、面板整图按钮）；深色滚动条；缩略图双击进编辑；hover 手势光标（45° 四态周期）；code review 10 项确认全修（f117385，最重：遮罩事件绑定真机失效）；57 files / 586 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机验收 | Claude |
+| 2026-09-12 | 追加并实施 R79.10（用户复测缺陷"文字功能无法添加输入"）：systematic-debugging 四阶段定位实机焦点竞态根因（pointerdown 同步挂 textarea+autoFocus 被同一击 mousedown 默认焦点行为瞬时 blur → 空 commit → 卸载；CDP 临时插桩实证生命周期，单测假绿因 fireEvent 不模拟默认焦点行为）→ 修复 = onPointerDown preventDefault（根因）+ textarea ref rAF 补聚焦（双保险）；回归用例钉行为契约（defaultPrevented + 下一帧 activeElement）；实机 CDP 验证全绿（打字"ABC123"→Enter 提交→画布渲染，截图视觉确认）；57 files / 587 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户复测确认 | Claude |

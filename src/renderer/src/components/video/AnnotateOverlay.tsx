@@ -284,6 +284,10 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     // review-fix: 恢复严格守卫——底图未解码时 natural={0,0}，此时放置文字会把屏幕坐标
     // 当图像坐标存下，解码后位置错乱（文字等 base 就绪后再放）
     if (e.button !== 0 || !base) return
+    // root-cause fix（文字输入闪没）：pointerdown 里同步挂载 textarea 并 autoFocus，
+    // 会被同一击 mousedown 的默认焦点行为立即 blur → 空 commit → 卸载。
+    // 画布无需文本选择/焦点，preventDefault 阻掉该击的默认焦点转移。
+    e.preventDefault()
     e.currentTarget.setPointerCapture?.(e.pointerId)
     const p = toImage(e.clientX, e.clientY)
     lastPtRef.current = p
@@ -605,6 +609,10 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
       {/* 文字输入（DOM textarea 定位覆盖，Enter/失焦提交） */}
       {textInput && (
         <textarea
+          ref={(el) => {
+            // root-cause fix 双保险：挂载后下一帧再补聚焦（防其他焦点源竞争）
+            if (el) requestAnimationFrame(() => el.focus())
+          }}
           className="video-annotate-text-input"
           autoFocus
           value={textInput.value}
