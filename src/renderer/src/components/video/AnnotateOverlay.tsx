@@ -24,7 +24,7 @@ import {
   redo, reorderShape, resizeShape, rotatePt, shapeBBox, undo,
   type Handle, type History, type Shape, type ShapeKind,
 } from './annotationModel'
-import { buildMosaicTile, renderAnnotations } from './annotationRender'
+import { buildMosaicTile, measureTextBlock, renderAnnotations } from './annotationRender'
 
 export interface AnnotateOverlayProps {
   source: HTMLCanvasElement | string   // 冻结帧裁剪结果或照片 dataURL
@@ -113,6 +113,8 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   const lastPtRef = useRef<Pt>({ x: 0, y: 0 })
   // R78.1: 双击编辑已有文字时，提交时替换该形状而非新增
   const replaceIdRef = useRef<string | null>(null)
+  // review-fix(R78): 拖拽/旋转开始前的快照——结束时入历史（否则 Ctrl+Z 会整形状消失）
+  const preDragPresentRef = useRef<Shape[] | null>(null)
   // R78.3: OCR 面板
   const [ocr, setOcr] = useState<{ status: 'idle' | 'running' | 'done' | 'failed'; text: string; hint?: string }>({ status: 'idle', text: '' })
   const dragRef = useRef<DragState | null>(null)
@@ -154,9 +156,10 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     const el = wrapRef.current
     if (!el) return
     const onWheel = (e: WheelEvent): void => {
-      // review-fix: 工具条/文字输入框上的滚轮留给控件自身（textarea 滚动），不缩放
+      // review-fix: 工具条/文字输入框/OCR 面板/字号行等控件上的滚轮留给控件自身，不缩放
       const t = e.target as HTMLElement | null
-      if (t && typeof t.closest === 'function' && t.closest('.video-annotate-toolbar, .video-annotate-text-input')) return
+      if (t && typeof t.closest === 'function' &&
+        t.closest('.video-annotate-toolbar, .video-annotate-toolbar2, .video-annotate-ocr-panel, textarea, select, input')) return
       e.preventDefault()
       if (fit.w === 0 || natural.w === 0) return
       const fitK = fit.w / Math.max(1, natural.w)
@@ -219,8 +222,8 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     const b = shapeBBox(sel)
     const rot = sel.rotation ?? 0
     const cScr: Pt = { x: (b.x + b.w / 2) * k + view.x, y: (b.y + b.h / 2) * k + view.y }
-    // 旋转柄：顶部中点沿旋转后上方偏移
-    if (sel.kind !== 'text') {
+    // 旋转柄：顶部中点沿旋转后上方偏移（review-fix: text 同样可旋转）
+    {
       const rLocal: Pt = { x: cScr.x, y: (b.y) * k + view.y - ROTATE_OFFSET_PX }
       const rPos = rot ? rotatePt(rLocal, cScr, rot) : rLocal
       if (Math.abs(p.x - rPos.x) <= HANDLE_HIT_PX && Math.abs(p.y - rPos.y) <= HANDLE_HIT_PX) {
@@ -254,6 +257,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     // R78.2: 旋转柄/手柄优先（任意工具下都可直接抓选中形状的手柄）
     const hh = hitHandle(sp)
     if (hh) {
+      preDragPresentRef.current = shapes
       if (hh.handle === 'rotate') {
         const b = shapeBBox(hh.shape)
         const cScr: Pt = { x: (b.x + b.w / 2) * k + view.x, y: (b.y + b.h / 2) * k + view.y }
@@ -273,6 +277,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     if (tool === 'select') {
       setSelectedId(hit?.id ?? null)
       if (hit) {
+        preDragPresentRef.current = shapes
         dragRef.current = { kind: 'move', start: p, orig: hit }
       } else if (z > 1.001) {
         // R77.3: 放大后选择工具拖拽空白 = 平移视图
@@ -289,6 +294,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     // R78.2: 绘制工具点中已有形状 → 选中 + 拖动编辑（点空白才新建）
     if (hit) {
       setSelectedId(hit.id)
+      preDragPresentRef.current = shapes
       dragRef.current = { kind: 'move', start: p, orig: hit }
       return
     }
@@ -364,41 +370,53 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
         setSelectedId(s.id)
       }
       setDragging(x => !x)
+    } else if (d && (d.kind === 'move' || d.kind === 'resize' || d.kind === 'rotate')) {
+      // review-fix(R78): 拖拽结束把"拖前快照"入历史——Ctrl+Z 只回退本操作，不吞形状
+      const pre = preDragPresentRef.current
+      preDragPresentRef.current = null
+      if (pre) setHist(h => (h.present === pre ? h : { past: [...h.past.slice(-49), pre], present: h.present, future: [] }))
     }
   }
 
-  // ── 文字提交 ────────────────────────────────────────────────────────────
-  const commitText = useCallback(() => {
-    setTextInput(inp => {
-      if (inp && inp.value.trim()) {
-        const replaceId = replaceIdRef.current
-        replaceIdRef.current = null
-        const orig = replaceId ? hist.present.find(s => s.id === replaceId) : undefined
-        const fontSize = orig?.width ?? STROKES[strokeIdx] * 8 / k
-        const s = makeShape('text', {
-          x: inp.at.x, y: inp.at.y, w: Math.max(10, fontSize), h: fontSize * 1.2,
-          // review-fix: 字号存 width（renderAnnotations 读 s.width；此前漏设 → 默认 3 → 8px 隐形字）
-          width: Math.max(10, fontSize),
-          color: orig?.color ?? color, text: inp.value,
-          align: orig?.align ?? textDefault.align, bold: orig?.bold ?? textDefault.bold,
-        })
-        setHist(h => commit(h, replaceId ? h.present.map(x => (x.id === replaceId ? s : x)) : [...h.present, s]))
-        setSelectedId(s.id)
-      } else {
-        replaceIdRef.current = null
-      }
-      return null
-    })
-  }, [color, strokeIdx, k, textDefault, hist.present])
+  // ── 文字输入开关（review-fix: 统一清理 replaceIdRef，防取消后陈旧替换） ──
+  const closeTextInput = useCallback(() => {
+    replaceIdRef.current = null
+    setTextInput(null)
+  }, [])
 
-  /** R78.1: 把排版属性应用到选中的文字标注（无选中则记为下次默认）。 */
+  // ── 文字提交（review-fix: 纯函数体——StrictMode 双调用不再产生重复形状） ──
+  const commitText = useCallback(() => {
+    const inp = textInput
+    const replaceId = replaceIdRef.current
+    replaceIdRef.current = null
+    setTextInput(null)
+    if (!inp || !inp.value.trim()) return
+    const orig = replaceId ? hist.present.find(s => s.id === replaceId) : undefined
+    const fontSize = orig?.width ?? STROKES[strokeIdx] * 8 / k
+    const bold = orig?.bold ?? textDefault.bold
+    const text = inp.value
+    // review-fix(R78): w/h 用真实测量值（对齐偏移与命中 bbox 依赖它）
+    const m = measureTextBlock(text, Math.max(10, fontSize), bold)
+    const s = makeShape('text', {
+      x: inp.at.x, y: inp.at.y, w: Math.max(10, m.w), h: Math.max(10, m.h),
+      width: Math.max(10, fontSize),
+      color: orig?.color ?? color, text,
+      align: orig?.align ?? textDefault.align, bold,
+    })
+    setHist(h => commit(h, replaceId ? h.present.map(x => (x.id === replaceId ? s : x)) : [...h.present, s]))
+    setSelectedId(s.id)
+  }, [textInput, closeTextInput, hist.present, color, strokeIdx, k, textDefault])
+
+  /** R78.1: 把排版属性应用到选中的文字标注（无选中则记为下次默认）；重测尺寸并入历史。 */
   const applyTextProp = useCallback((patch: Partial<Shape>) => {
     setTextDefault(d => ({ ...d, ...patch }) as { align: 'left' | 'center' | 'right'; bold: boolean })
     if (selectedId) {
-      setHist(h => {
-        const next = h.present.map(s => (s.id === selectedId && s.kind === 'text' ? { ...s, ...patch } : s))
-        return { ...h, present: next }
-      })
+      setHist(h => commit(h, h.present.map(s => {
+        if (s.id !== selectedId || s.kind !== 'text') return s
+        const next = { ...s, ...patch }
+        const m = measureTextBlock(next.text ?? '', Math.max(8, next.width), next.bold)
+        return { ...next, w: Math.max(10, m.w), h: Math.max(10, m.h) }
+      })))
     }
   }, [selectedId])
 
@@ -412,13 +430,16 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const tag = (e.target as HTMLElement).tagName
-      const typing = tag === 'INPUT' || tag === 'TEXTAREA'
+      // review-fix(R78): SELECT 也算输入控件（字号下拉聚焦时 Delete 不应删形状）
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
       if (e.key === 'Escape') {
         // R78.1: IME 组合中的 ESC 属于输入法（关候选窗），不收输入框
         if ((e as KeyboardEvent & { isComposing?: boolean }).isComposing) return
         e.stopPropagation()
         // R77.2: 文字输入中 ESC 只收起输入框，不再关闭整个标注器（丢标注）
-        if (textInput) { setTextInput(null); return }
+        if (textInput) { closeTextInput(); return }
+        // review-fix(R78): 其他输入面（OCR 结果框/字号下拉）聚焦时 ESC 不关标注器
+        if (typing) return
         onClose()
         return
       }
@@ -448,7 +469,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [onClose, selectedId, textInput, shapes])
+  }, [onClose, selectedId, textInput, shapes, closeTextInput])
 
   // ── 导出（自然尺寸；无水印） ───────────────────────────────────────────
   const exportDataUrl = useCallback((): string => {
@@ -493,7 +514,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
       type="button"
       className={`video-annotate-tool video-annotate-btn${tool === id ? ' active' : ''}`}
       title={t(key as never)}
-      onClick={() => { setTool(id); setSelectedId(null); setTextInput(null) }}
+      onClick={() => { setTool(id); setSelectedId(null); closeTextInput() }}
     >{<Icon size={15} data-idx={idx} />}</button>
   )
 
@@ -627,7 +648,13 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
             onChange={(e) => {
               const css = Number(e.target.value)
               if (selectedShape?.kind === 'text') {
-                setHist(h => ({ ...h, present: h.present.map(s => (s.id === selectedShape.id ? { ...s, width: css / k } : s)) }))
+                // review-fix(R78): 入历史 + 重测 bbox（对齐/命中依赖）
+                setHist(h => commit(h, h.present.map(s => {
+                  if (s.id !== selectedShape.id || s.kind !== 'text') return s
+                  const width = css / k
+                  const m = measureTextBlock(s.text ?? '', Math.max(8, width), s.bold)
+                  return { ...s, width, w: Math.max(10, m.w), h: Math.max(10, m.h) }
+                })))
               }
             }}
           >

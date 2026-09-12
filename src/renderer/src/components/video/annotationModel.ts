@@ -68,8 +68,9 @@ export function shapeBBox(s: Shape): Rect {
 }
 
 export function handlesFor(s: Shape): Handle[] {
+  // review-fix(R78): pen/mosaic/text 也要 8 向手柄——否则 resizeShape 的
+  // 点列映射/字号同步缩放分支是不可达死代码，text 更是无手柄可抓
   if (s.kind === 'arrow') return ['start', 'end']
-  if (s.kind === 'pen' || s.kind === 'mosaic' || s.kind === 'text') return []
   return BBOX_HANDLES
 }
 

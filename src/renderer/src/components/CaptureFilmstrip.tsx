@@ -85,6 +85,7 @@ export function CaptureFilmstrip({ items, onEdit, onDelete, onImport }: CaptureF
               src={`media://local?p=${encodeURIComponent(it.file)}`}
               alt={it.name}
               loading="lazy"
+              onLoad={measure}
             />
             <button
               type="button"

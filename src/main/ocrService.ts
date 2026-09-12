@@ -29,7 +29,12 @@ export function buildOcrScript(imagePath: string): string {
   const psPath = imagePath.replace(/'/g, "''")
   return `
 $ErrorActionPreference = 'Stop'
+# review-fix(R78): PS 5.1 默认按 OEM/ANSI 代码页输出 stdout（中文系统=GBK），
+# Node 按 UTF-8 解码 → 中文乱码；强制 UTF-8 输出。
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Console]::OutputEncoding
 $img = '${psPath}'
+if (-not $img) { $img = $env:RGBBOX_OCR_IMG }
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $null = [Windows.Media.Ocr.OcrEngine, Windows.Media.Ocr, ContentType = WindowsRuntime]
 $null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics.Imaging, ContentType = WindowsRuntime]
@@ -111,8 +116,15 @@ export async function recognizeImage(
     const imgPath = join(dir, 'input.png')
     writeFileSync(imgPath, buf)
     const scriptPath = join(dir, 'ocr.ps1')
-    writeFileSync(scriptPath, buildOcrScript(imgPath), 'utf-8')
-    const { stdout } = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], { timeout: 30_000 })
+    // review-fix(R78): 带 BOM 写入——PS 5.1 对无 BOM 脚本按 ANSI 代码页解码，
+    // 含非 ASCII 的临时路径（如中文用户名）会读坏；路径同时经 env 传递双保险。
+    writeFileSync(scriptPath, '﻿' + buildOcrScript(imgPath), 'utf-8')
+    const { stdout } = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
+      timeout: 30_000,
+      windowsHide: true,
+      env: { ...process.env, RGBBOX_OCR_IMG: imgPath },
+      encoding: 'utf-8',
+    })
     return parseOcrOutput(stdout)
   } catch {
     return { ok: false, text: '', hint: 'engine' }

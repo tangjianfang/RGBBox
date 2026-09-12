@@ -16,6 +16,27 @@ export interface RenderOpts {
   mosaicTile?: CanvasImageSource | null
 }
 
+let measureCtx: CanvasRenderingContext2D | null | undefined
+
+/**
+ * R78 review-fix: 文字块真实尺寸（w 决定对齐偏移与命中 bbox）。
+ * 无 canvas 环境（happy-dom）回退按字数 × 0.6 字宽估算。
+ */
+export function measureTextBlock(text: string, fontSize: number, bold?: boolean): { w: number; h: number } {
+  const lines = text.split('\n')
+  if (measureCtx === undefined) {
+    measureCtx = document.createElement('canvas').getContext('2d')
+  }
+  let w = 0
+  if (measureCtx) {
+    measureCtx.font = `${bold ? '700 ' : ''}${Math.max(8, fontSize)}px system-ui, sans-serif`
+    for (const line of lines) w = Math.max(w, measureCtx.measureText(line).width)
+  } else {
+    w = Math.max(1, ...lines.map(l => l.length)) * fontSize * 0.6
+  }
+  return { w: Math.ceil(w), h: Math.ceil(lines.length * fontSize * 1.25) }
+}
+
 /**
  * 马赛克底砖：全尺寸像素化画布（缩小 1/12 采样 → 关平滑放大回原尺寸）。
  * 返回的画布与图像像素 1:1 对齐，可直接以图像坐标采样。

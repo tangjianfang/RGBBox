@@ -20,11 +20,11 @@ describe('annotationModel', () => {
     expect(shapeBBox(p)).toEqual({ x: 0, y: 0, w: 50, h: 24 })
   })
 
-  it('handlesFor: bbox shapes 8, arrow endpoints, pen/mosaic/text none', () => {
+  it('handlesFor: bbox shapes (incl. pen/mosaic/text, R78 review-fix) 8, arrow endpoints', () => {
     expect(handlesFor(makeShape('rect', {})).length).toBe(8)
     expect(handlesFor(makeShape('arrow', {}))).toEqual(['start', 'end'])
-    expect(handlesFor(makeShape('pen', {}))).toEqual([])
-    expect(handlesFor(makeShape('text', {}))).toEqual([])
+    expect(handlesFor(makeShape('pen', {})).length).toBe(8)
+    expect(handlesFor(makeShape('text', {})).length).toBe(8)
   })
 
   it('hitTest prefers topmost and hits arrow within tolerance', () => {
