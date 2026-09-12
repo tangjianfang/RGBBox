@@ -119,6 +119,33 @@ describe('AnnotateOverlay', () => {
     container.querySelectorAll('.video-annotate-layer').forEach(b => expect((b as HTMLButtonElement).disabled).toBe(true))
   })
 
+  it('R79.12: shape border under pen tool → resize cursor, pointerdown auto-selects into resize; tool stays', () => {
+    const cv = document.createElement('canvas')
+    cv.width = 400; cv.height = 300
+    const { container } = render(<AnnotateOverlay source={cv} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    const canvas = container.querySelector('.video-annotate-canvas') as HTMLCanvasElement
+    const tools = container.querySelectorAll('.video-annotate-tool')
+    // 画一个矩形 (20,20)-(120,100)
+    fireEvent.click(tools[1])   // rect
+    fireEvent.pointerDown(canvas, { button: 0, clientX: 20, clientY: 20 })
+    fireEvent.pointerMove(canvas, { clientX: 120, clientY: 100 })
+    fireEvent.pointerUp(canvas)
+    // 切选择工具（同时清空选中）→ 图层按钮禁用
+    fireEvent.click(tools[0])
+    container.querySelectorAll('.video-annotate-layer').forEach(b => expect((b as HTMLButtonElement).disabled).toBe(true))
+    // 画笔工具下：悬停矩形右边框中点 → 方向 resize 光标（手势提示）
+    fireEvent.click(tools[4])   // pen
+    fireEvent.pointerMove(canvas, { clientX: 120, clientY: 60 })
+    expect(canvas.style.cursor).toBe('ew-resize')
+    // 按下 → 自动选中并直接进入拉伸（无需切工具、无需先点选）
+    fireEvent.pointerDown(canvas, { button: 0, clientX: 120, clientY: 60 })
+    container.querySelectorAll('.video-annotate-layer').forEach(b => expect((b as HTMLButtonElement).disabled).toBe(false))
+    // 拖拽拉伸 + 松手 → 结束后画笔工具仍激活（完成就继续下一个任务）
+    fireEvent.pointerMove(canvas, { clientX: 160, clientY: 60 })
+    fireEvent.pointerUp(canvas)
+    expect(tools[4].className).toContain('active')
+  })
+
   it('R77.3: wheel zoom does not break save flow', () => {
     const onSave = vi.fn()
     const { container } = render(<AnnotateOverlay source={png} onClose={() => {}} onSave={onSave} onCopy={() => {}} />)

@@ -20,7 +20,7 @@ import {
 import { useI18n } from '../../i18n'
 import { clampPan, clampScale, containRect, zoomAtPoint, type Pt, type Rect, type Size } from './previewTransform'
 import {
-  canRedo, canUndo, commit, handlesFor, hitTestRotated, makeShape, moveShape,
+  canRedo, canUndo, commit, handlesFor, hitShapeBorder, hitTestRotated, makeShape, moveShape,
   redo, reorderShape, resizeShape, rotatePt, shapeBBox, undo,
   type Handle, type History, type Shape, type ShapeKind,
 } from './annotationModel'
@@ -54,6 +54,8 @@ const STROKES = [2, 4, 8]
 const FONT_SIZES = [12, 16, 20, 24, 32, 48]
 const HANDLE_HIT_PX = 16
 const ROTATE_OFFSET_PX = 22
+/** R79.12: 未选中形状边框带宽度（屏幕像素；智能手势切换的命中容差） */
+const BORDER_HIT_PX = 6
 /** 无 canvas 环境的导出兜底（1×1 透明 PNG；生产路径永远走真 canvas）。 */
 const FALLBACK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
@@ -272,7 +274,10 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     if (ocrRegionActive) cursor = 'crosshair'
     else {
       const hh = hitHandle(sp)
+      // R79.12: 未选中形状的边框带 → 方向 resize 光标（智能手势提示，任意工具下生效）
+      const bb = hitShapeBorder(shapes, imgPt, BORDER_HIT_PX / k)
       if (hh) cursor = hh.handle === 'rotate' ? 'grab' : handleCursor(hh.handle, hh.shape.rotation ?? 0)
+      else if (bb) cursor = handleCursor(bb.handle, bb.shape.rotation ?? 0)
       else if (hitTestRotated(shapes, imgPt)) cursor = 'move'
       else if (tool !== 'select') cursor = 'crosshair'
       else if (z > 1.001) cursor = 'grab'
@@ -314,6 +319,16 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
       setDragging(d => !d)
       return
     }
+    // R79.12: 智能手势切换——任意工具下点中（未选中）形状的边框带 = 自动选中并
+    // 直接进入拉伸（角=等比、边=单轴；拖完不换工具，"完成之后继续下一个任务"）。
+    const bb = hitShapeBorder(shapes, p, BORDER_HIT_PX / k)
+    if (bb) {
+      setSelectedId(bb.shape.id)
+      preDragPresentRef.current = shapes
+      dragRef.current = { kind: 'resize', handle: bb.handle, orig: bb.shape, proportional: bb.handle.length === 2 }
+      setDragging(d => !d)
+      return
+    }
     const hit = hitTestRotated(shapes, p)
     if (tool === 'select') {
       setSelectedId(hit?.id ?? null)
@@ -327,8 +342,13 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
       return
     }
     if (tool === 'text') {
-      // R78.2: 点中已有文字 → 选中编辑（双击进文字编辑在 onDoubleClick）
-      if (hit) { setSelectedId(hit.id); return }
+      // R78.2/R79.12: 点中已有文字 → 选中并拖动（与其它工具一致；双击进文字编辑在 onDoubleClick）
+      if (hit) {
+        setSelectedId(hit.id)
+        preDragPresentRef.current = shapes
+        dragRef.current = { kind: 'move', start: p, orig: hit }
+        return
+      }
       setTextInput({ at: p, value: '' })
       return
     }

@@ -715,6 +715,16 @@
     - [x] `yarn typecheck` 通过；全量 vitest `--maxWorkers=4`：**57 files / 589 passed / 41 skipped，0 失败**；`yarn build` 0 error
     - [ ] 实机：打字 → 点别处 → 文字保留；打字中点颜色/对齐/字号 → 先落后改（待用户复测）
   - **状态**：✅（自动化全绿；实机复测待用户确认。）
+- **R79.12** **智能手势切换（边框带自动进入拉伸，免切工具）**（用户反馈：编辑中想拖动/调整其它形状要点击很多地方；移到形状边框时手势变化即可直接拖拉伸，完成后继续原任务）：
+  - **模型层**：`annotationModel.hitShapeBorder(shapes, p, tol)` 纯函数——顶层优先，在形状 bbox **边框带**（距任一边 ≤ tol，图像坐标，tol 由调用方按 6 屏幕像素换算）内返回 `{ shape, handle }`（角区=两轴近边→角柄等比，边区→单轴柄；旋转形状先逆旋转到本地系判定）。覆盖 rect/ellipse/text/mosaic；pen/arrow 不参与（笔迹边框语义不成立，保持点中即拖动）。
+  - **交互层**（`AnnotateOverlay.tsx`）：① 空闲 hover：手柄命中之后、形状体 move 之前插入边框带检查——光标按 `handleCursor`（45° 四态周期，旋转感知）实时变化；② `onPointerDown`：选中形状手柄之后插入边框带命中——**任意工具下**点中未选中形状的边框 = 自动选中 + 直接进入 resize 拖拽（无需先切选择工具、无需先点选一次）；③ 文字工具点中文字体补齐 move 拖拽（与其它绘制工具一致，双击再编辑不受影响）；④ 拖拽结束不改变当前工具——"完成之后就继续下一个任务"天然成立。
+  - **既有能力衔接**：R78.2 同工具点身拖动 + 任意工具可抓选中形状手柄保持不变；边框带 6px 仅在贴近边缘时劫持"新建"，内侧/外侧仍是原语义（体内=移动、空白=新建）。
+  - **验收点**：
+    - [x] 模型测试：边框带命中/角度/角柄判定、tol 外 null、中心 null、延长线远端 null、pen/arrow 不参与、顶层优先（annotationModel +2 用例，33/33）
+    - [x] 组件测试：画笔工具下悬停矩形边框光标变 `ew-resize`；按下即自动选中（图层按钮可用）并进入拉伸；拖拽松手后画笔工具仍激活（AnnotateOverlay 17/17）
+    - [x] `yarn typecheck` 通过；全量 vitest `--maxWorkers=4`：**57 files / 592 passed / 41 skipped，0 失败**；`yarn build` 0 error
+    - [ ] 实机：矩形工具激活 → 悬停已有矩形边框光标变化 → 直接拖拉伸 → 松手继续画矩形（待用户复测）
+  - **状态**：✅（自动化全绿；实机复测待用户确认。）
 
 ### R80. 独立全局截图工具（托盘入口 + 全屏选区 + 标注小工具）
 
@@ -2167,3 +2177,4 @@
 | 2026-09-12 | 实施 R79：OCR 根因实证（PS 5.1 静态 WinRT 异步方法绑定缺陷 → OpenAsync+反射直调，本机英/中/中文路径全通）+ CJK 空格合并（含标点）；OCR 按钮改框选识别（遮罩 SVG 承载事件、<8px 回退整图、面板整图按钮）；深色滚动条；缩略图双击进编辑；hover 手势光标（45° 四态周期）；code review 10 项确认全修（f117385，最重：遮罩事件绑定真机失效）；57 files / 586 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机验收 | Claude |
 | 2026-09-12 | 追加并实施 R79.10（用户复测缺陷"文字功能无法添加输入"）：systematic-debugging 四阶段定位实机焦点竞态根因（pointerdown 同步挂 textarea+autoFocus 被同一击 mousedown 默认焦点行为瞬时 blur → 空 commit → 卸载；CDP 临时插桩实证生命周期，单测假绿因 fireEvent 不模拟默认焦点行为）→ 修复 = onPointerDown preventDefault（根因）+ textarea ref rAF 补聚焦（双保险）；回归用例钉行为契约（defaultPrevented + 下一帧 activeElement）；实机 CDP 验证全绿（打字"ABC123"→Enter 提交→画布渲染，截图视觉确认）；57 files / 587 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户复测确认 | Claude |
 | 2026-09-12 | 追加并实施 R79.11（用户反馈"有输入文字点别处也要保存"）：根因 = R79.10 preventDefault 阻断默认焦点转移后，点击画布别处不再触发 onBlur 隐式提交 → 已输入文字被新 setTextInput 覆盖丢失；修复 = onPointerDown 显式 commitText（微信式点哪落哪，空输入不落形状）+ 调色板点击即时给选中标注上色；排版/排序确认 R78.1 已支持（对齐/字号/粗体/图层 4 向/旋转/双击再编辑/Ctrl+C-V）；57 files / 589 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机复测 | Claude |
+| 2026-09-12 | 追加并实施 R79.12（智能手势切换，用户反馈"编辑中拖动/调整其它形状要点击很多地方"）：模型层新增 hitShapeBorder 纯函数（bbox 边框带 tol 命中→角柄等比/边柄单轴，旋转逆变换，边段范围约束防命中延长线，pen/arrow 不参与，顶层优先）；交互层任意工具下悬停边框变方向 resize 光标 + 按下自动选中直接进入拉伸（免切工具），文字工具点中文字补齐 move 拖拽；拖完不换工具；57 files / 592 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机复测 | Claude |

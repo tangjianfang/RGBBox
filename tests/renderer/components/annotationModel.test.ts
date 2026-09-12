@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   makeShape, shapeBBox, handlesFor, hitTest, moveShape, resizeShape,
   commit, undo, redo, canUndo, canRedo, emptyHistory, distToSegment,
-  reorderShape, rotatePt, hitTestRotated,
+  reorderShape, rotatePt, hitTestRotated, hitShapeBorder,
 } from '../../../src/renderer/src/components/video/annotationModel'
 
 describe('annotationModel', () => {
@@ -140,5 +140,36 @@ describe('annotationModel', () => {
     expect(s.rotation).toBe(30)
     expect(s.align).toBe('center')
     expect(s.bold).toBe(true)
+  })
+
+  it('R79.12: hitShapeBorder maps border band to directional handles', () => {
+    const r = makeShape('rect', { x: 100, y: 100, w: 200, h: 100 })   // bbox (100,100)-(300,200)
+    // 边中点 → 单轴柄；框内贴边与框外贴边（≤tol）都算
+    expect(hitShapeBorder([r], { x: 300, y: 150 }, 6)?.handle).toBe('e')
+    expect(hitShapeBorder([r], { x: 200, y: 100 }, 6)?.handle).toBe('n')
+    expect(hitShapeBorder([r], { x: 104, y: 150 }, 6)?.handle).toBe('w')
+    expect(hitShapeBorder([r], { x: 305, y: 150 }, 6)?.handle).toBe('e')
+    expect(hitShapeBorder([r], { x: 307, y: 150 }, 6)).toBeNull()
+    // 角区（两轴同时近边）→ 等比角柄
+    expect(hitShapeBorder([r], { x: 102, y: 102 }, 6)?.handle).toBe('nw')
+    expect(hitShapeBorder([r], { x: 297, y: 198 }, 6)?.handle).toBe('se')
+    // 中心不命中（体内走 move 语义）；边的延长线远端不命中
+    expect(hitShapeBorder([r], { x: 200, y: 150 }, 6)).toBeNull()
+    expect(hitShapeBorder([r], { x: 305, y: 250 }, 6)).toBeNull()
+  })
+
+  it('R79.12: hitShapeBorder is rotation-aware and skips pen/arrow; topmost wins', () => {
+    // 旋转 90°：本地系右边框转到屏幕下方 (200, 250)
+    const rot = makeShape('rect', { x: 100, y: 100, w: 200, h: 100, rotation: 90 })
+    expect(hitShapeBorder([rot], { x: 200, y: 250 }, 6)?.handle).toBe('e')
+    // pen/arrow 不参与（笔迹边框语义不成立）
+    const pen = makeShape('pen', { points: [{ x: 0, y: 0 }, { x: 50, y: 0 }] })
+    expect(hitShapeBorder([pen], { x: 25, y: 0 }, 6)).toBeNull()
+    const arrow = makeShape('arrow', { x1: 0, y1: 0, x2: 50, y2: 0 })
+    expect(hitShapeBorder([arrow], { x: 25, y: 0 }, 6)).toBeNull()
+    // 顶层优先：同位置叠两个矩形，返回数组末位（顶层）
+    const a = makeShape('rect', { x: 100, y: 100, w: 200, h: 100 })
+    const b = makeShape('rect', { x: 100, y: 100, w: 200, h: 100 })
+    expect(hitShapeBorder([a, b], { x: 300, y: 150 }, 6)?.shape).toBe(b)
   })
 })

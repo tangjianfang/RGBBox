@@ -136,6 +136,40 @@ function bboxCenter(s: Shape): Pt {
   return { x: b.x + b.w / 2, y: b.y + b.h / 2 }
 }
 
+/**
+ * R79.12: bbox 边框带命中（智能手势切换）——点落在形状边框带（距任一边 ≤ tol，
+ * 图像坐标）内返回角柄/边柄语义：角区（两轴同时近边）= 等比角柄，边区 = 单轴柄。
+ * 旋转形状先把点逆旋转到本地系判定。pen/arrow 不参与（笔迹边框语义不成立）。
+ * 顶层优先，与 hitTestRotated 一致。
+ */
+export function hitShapeBorder(shapes: Shape[], p: Pt, tol: number): { shape: Shape; handle: Handle } | null {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i]
+    if (s.kind === 'pen' || s.kind === 'arrow') continue
+    const b = shapeBBox(s)
+    const local = s.rotation ? rotatePt(p, bboxCenter(s), -s.rotation) : p
+    // 贴某条边 = 该轴距边 ≤ tol 且另一轴落在边段延伸 ±tol 内（不命中无限延长线）
+    const inY = local.y >= b.y - tol && local.y <= b.y + b.h + tol
+    const inX = local.x >= b.x - tol && local.x <= b.x + b.w + tol
+    const nearL = Math.abs(local.x - b.x) <= tol && inY
+    const nearR = Math.abs(local.x - (b.x + b.w)) <= tol && inY
+    const nearT = Math.abs(local.y - b.y) <= tol && inX
+    const nearB = Math.abs(local.y - (b.y + b.h)) <= tol && inX
+    if (!(nearL || nearR || nearT || nearB)) continue
+    let handle: Handle
+    if (nearT && nearL) handle = 'nw'
+    else if (nearT && nearR) handle = 'ne'
+    else if (nearB && nearL) handle = 'sw'
+    else if (nearB && nearR) handle = 'se'
+    else if (nearL) handle = 'w'
+    else if (nearR) handle = 'e'
+    else if (nearT) handle = 'n'
+    else handle = 's'
+    return { shape: s, handle }
+  }
+  return null
+}
+
 export type ReorderDir = 'front' | 'back' | 'forward' | 'backward'
 
 /** R78.1: 图层排序（front 置顶 / back 置底 / forward 上移一位 / backward 下移一位）。 */
