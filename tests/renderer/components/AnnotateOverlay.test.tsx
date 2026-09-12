@@ -146,6 +146,53 @@ describe('AnnotateOverlay', () => {
     expect(tools[4].className).toContain('active')
   })
 
+  it('R84: full-image toolbar button recognizes without region mode; repeat region OCR works', async () => {
+    const mocks = setupRendererMocks()
+    mocks.ocrRecognize.mockResolvedValue({ ok: true, text: '整图结果', hint: undefined })
+    const cv = document.createElement('canvas')
+    cv.width = 400; cv.height = 300
+    const { container, findByTestId } = render(<AnnotateOverlay source={cv} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    // R84.1: 工具栏「整图识别」按钮 → 不进框选模式，直接整图识别
+    expect(container.querySelector('.video-ocr-region-mask')).toBeNull()
+    fireEvent.click(container.querySelector('.video-annotate-ocrfull')!)
+    await findByTestId('ocr-panel')
+    expect(mocks.ocrRecognize).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('.video-ocr-region-mask')).toBeNull()   // 未进过框选
+    // R84.2: 连续框选——面板已开后，再点框选按钮可再次框选
+    fireEvent.click(container.querySelector('.video-annotate-ocr')!)
+    const mask = container.querySelector('.video-ocr-region-mask') as SVGSVGElement
+    expect(mask).toBeTruthy()
+    mocks.ocrRecognize.mockResolvedValue({ ok: true, text: '第二次框选', hint: undefined })
+    fireEvent.pointerDown(mask, { button: 0, clientX: 20, clientY: 20 })
+    fireEvent.pointerMove(mask, { clientX: 200, clientY: 150 })
+    fireEvent.pointerUp(mask, { clientX: 200, clientY: 150 })
+    await vi.waitFor(() => expect(mocks.ocrRecognize).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => {
+      const ta = container.querySelector('.video-annotate-ocr-text') as HTMLTextAreaElement | null
+      expect(ta?.value).toBe('第二次框选')   // running 态面板无 textarea，就绪后再断言
+    })
+  })
+
+  it('R84: translate replaces text; show-original toggles back', async () => {
+    const mocks = setupRendererMocks()
+    mocks.ocrRecognize.mockResolvedValue({ ok: true, text: '会议记录', hint: undefined })
+    const cv = document.createElement('canvas')
+    cv.width = 400; cv.height = 300
+    const { container, findByTestId } = render(<AnnotateOverlay source={cv} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    fireEvent.click(container.querySelector('.video-annotate-ocrfull')!)
+    const panel = await findByTestId('ocr-panel')
+    const ta = panel.querySelector('.video-annotate-ocr-text') as HTMLTextAreaElement
+    await vi.waitFor(() => expect(ta.value).toBe('会议记录'))
+    // 翻译 → 译文替换
+    mocks.aiTranslateText.mockResolvedValueOnce({ ok: true, text: 'Meeting minutes' })
+    fireEvent.click(panel.querySelector('.video-annotate-ocr-translate')!)
+    await vi.waitFor(() => expect(mocks.aiTranslateText).toHaveBeenCalledWith('会议记录'))
+    await vi.waitFor(() => expect(ta.value).toBe('Meeting minutes'))
+    // 显示原文 → 恢复
+    fireEvent.click(panel.querySelector('.video-annotate-ocr-translate')!)
+    await vi.waitFor(() => expect(ta.value).toBe('会议记录'))
+  })
+
   it('R77.3: wheel zoom does not break save flow', () => {
     const onSave = vi.fn()
     const { container } = render(<AnnotateOverlay source={png} onClose={() => {}} onSave={onSave} onCopy={() => {}} />)

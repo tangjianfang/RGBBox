@@ -27,7 +27,7 @@ import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
 import { loadSystemSettings, saveSystemSettings, type SystemSettings } from './systemSettingsStore'
 import { setRapidOcrRunner } from './ocrService'
-import { cleanupOcrText, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
+import { cleanupOcrText, translateOcrText, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
 import { parseRangeHeader, resolveMediaMime } from './mediaProtocol'
 
 // Initialize file logger — must be done after imports but before app.whenReady
@@ -349,6 +349,11 @@ function registerIpc(): void {
   ipcMain.handle(ipcChannels.aiCleanupText, async (_event, text: unknown) => {
     const s = await loadSystemSettings()
     return cleanupOcrText(typeof text === 'string' ? text : '', asAiSettings(s.ai))
+  })
+  // R84.3: OCR 中英互译（同一 OpenAI 兼容配置）
+  ipcMain.handle(ipcChannels.aiTranslateText, async (_event, text: unknown) => {
+    const s = await loadSystemSettings()
+    return translateOcrText(typeof text === 'string' ? text : '', asAiSettings(s.ai))
   })
 
   // R78: clipboard text (annotator copy/paste) + native OCR

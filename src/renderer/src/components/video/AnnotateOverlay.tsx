@@ -14,8 +14,8 @@ import {
 } from 'react'
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDownToLine, ArrowUpRight, ArrowUpToLine,
-  Bold, Check, ChevronDown, ChevronUp, Circle, Copy, Grid3x3, MousePointer2, Pencil,
-  Redo2, Square, Trash2, Type, Undo2, X, ScanText, Sparkles,
+  Bold, Check, ChevronDown, ChevronUp, Circle, Copy, Grid3x3, Languages, MousePointer2, Pencil,
+  Redo2, Scan, Square, Trash2, Type, Undo2, X, ScanText, Sparkles,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { clampPan, clampScale, containRect, zoomAtPoint, type Pt, type Rect, type Size } from './previewTransform'
@@ -578,6 +578,29 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
       .catch(() => setAiFail('network'))
       .finally(() => setAiBusy(false))
   }, [aiBusy, ocr])
+  // R84.3: 中英互译（方向自动检测）；译文替换文本区，「显示原文」一键切回
+  const [origText, setOrigText] = useState<string | null>(null)
+  const [transBusy, setTransBusy] = useState(false)
+  const runTranslate = useCallback(() => {
+    if (transBusy || ocr.status !== 'done' || !ocr.text.trim()) return
+    setTransBusy(true)
+    setAiFail(null)
+    const before = ocr.text
+    window.rgbbox.aiTranslateText(before)
+      .then(r => {
+        if (r.ok) {
+          setOrigText(o => o ?? before)
+          setOcr(o => (o.status === 'done' ? { ...o, text: r.text } : o))
+        } else setAiFail(r.hint ?? 'http')
+      })
+      .catch(() => setAiFail('network'))
+      .finally(() => setTransBusy(false))
+  }, [transBusy, ocr])
+  const showOriginal = useCallback(() => {
+    if (origText === null) return
+    setOcr(o => (o.status === 'done' ? { ...o, text: origText } : o))
+    setOrigText(null)
+  }, [origText])
   const recognizeDataUrl = useCallback((dataUrl: string) => {
     setOcr({ status: 'running', text: '' })
     window.rgbbox.ocrRecognize(dataUrl)
@@ -725,7 +748,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
           <div className="video-annotate-ocr-head">
             <span className="video-annotate-title">{t('video.annotate.ocr')}</span>
             <div style={{ display: 'flex', gap: 4 }}>
-              <button type="button" className="video-annotate-btn video-annotate-ocr-full" title={t('video.annotate.ocrFullImage')} disabled={ocr.status === 'running'} onClick={runOcr}><ScanText size={14} /></button>
+              <button type="button" className="video-annotate-btn video-annotate-ocr-full" title={t('video.annotate.ocrFullImage')} disabled={ocr.status === 'running'} onClick={runOcr}><Scan size={14} /></button>
               <button type="button" className="video-annotate-btn" title={t('video.annotate.ocrClose')} onClick={() => setOcr({ status: 'idle', text: '' })}><X size={14} /></button>
             </div>
           </div>
@@ -741,6 +764,12 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
               <p className="video-annotate-ocr-meta">{ocr.text.split('\n').filter(l => l.trim()).length} {t('video.annotate.ocrLines')}{ocr.engine ? ` · ${t((ocr.engine === 'rapid' ? 'video.annotate.engineRapid' : 'video.annotate.engineWinrt') as never)}` : ''}</p>
               {aiFail && <p className="video-annotate-ocr-loading">{t((aiFail === 'nokey' ? 'video.annotate.aiNoKey' : 'video.annotate.aiFail') as never)}</p>}
               <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  className="video-btn video-annotate-ocr-translate"
+                  disabled={transBusy && origText === null}
+                  onClick={origText !== null ? showOriginal : runTranslate}
+                ><Languages size={13} /> {t((origText !== null ? 'video.annotate.showOrig' : transBusy ? 'video.annotate.translating' : 'video.annotate.translate') as never)}</button>
                 <button
                   type="button"
                   className="video-btn video-annotate-ocr-ai"
@@ -799,7 +828,9 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
         <span className="video-annotate-sep" />
         <button type="button" className="video-annotate-btn" title={t('video.annotate.delete')} disabled={!selectedId} onClick={() => { if (selectedId) { setHist(h => commit(h, h.present.filter(s => s.id !== selectedId))); setSelectedId(null) } }}><Trash2 size={15} /></button>
         <span className="video-annotate-flex" />
+        {/* R84.1: 框选识别（ScanText，拖选区域）+ 整图识别（Scan，直接识别）双入口 */}
         <button type="button" className="video-annotate-btn video-annotate-ocr" title={t('video.annotate.ocrRegion')} disabled={ocr.status === 'running' || !base} onClick={() => { if (!base) return; setOcrRegionActive(true); setSelectedId(null) }}><ScanText size={15} /></button>
+        <button type="button" className="video-annotate-btn video-annotate-ocrfull" title={t('video.annotate.ocrFullImage')} disabled={ocr.status === 'running' || !base} onClick={() => { if (!base) return; setSelectedId(null); runOcr() }}><Scan size={15} /></button>
         <button type="button" className="video-annotate-btn video-annotate-save" title={t('video.annotate.save')} onClick={doSave}><Check size={16} /></button>
         <button type="button" className="video-annotate-btn video-annotate-copy" title={t('video.annotate.copy')} onClick={doCopy}><Copy size={15} /></button>
         <button type="button" className="video-annotate-btn video-annotate-close" title={t('video.annotate.close')} onClick={onClose}><X size={16} /></button>

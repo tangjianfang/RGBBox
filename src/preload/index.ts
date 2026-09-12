@@ -183,6 +183,8 @@ const api = {
     ipcRenderer.invoke(ipcChannels.aiSetSettings, cfg),
   aiCleanupText: (text: string): Promise<{ ok: boolean; text: string; hint?: 'nokey' | 'auth' | 'http' | 'parse' | 'network' }> =>
     ipcRenderer.invoke(ipcChannels.aiCleanupText, text),
+  aiTranslateText: (text: string): Promise<{ ok: boolean; text: string; hint?: 'nokey' | 'auth' | 'http' | 'parse' | 'network' }> =>
+    ipcRenderer.invoke(ipcChannels.aiTranslateText, text),
 
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>

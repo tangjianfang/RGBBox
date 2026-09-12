@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildCleanupRequest, cleanupOcrText, parseCleanupResponse, DEFAULT_AI_SETTINGS,
+  buildCleanupRequest, buildTranslateRequest, cleanupOcrText, detectTranslateDirection,
+  parseCleanupResponse, translateOcrText, DEFAULT_AI_SETTINGS,
 } from '../../src/main/aiCleanupService'
 
 describe('aiCleanupService pure (R83)', () => {
@@ -34,5 +35,25 @@ describe('aiCleanupService pure (R83)', () => {
   it('cleanupOcrText without key short-circuits to nokey (no fetch)', async () => {
     const out = await cleanupOcrText('文本', DEFAULT_AI_SETTINGS)
     expect(out).toEqual({ ok: false, text: '', hint: 'nokey' })
+  })
+
+  it('R84: detectTranslateDirection by CJK/letter ratio', () => {
+    expect(detectTranslateDirection('会议记录 2026')).toBe('zh2en')       // 中文为主
+    expect(detectTranslateDirection('Video Workstation')).toBe('en2zh')   // 英文为主
+    expect(detectTranslateDirection('123 456')).toBe('zh2en')             // 中性默认
+  })
+
+  it('R84: buildTranslateRequest picks prompt by direction; empty key → null', () => {
+    expect(buildTranslateRequest('文本', DEFAULT_AI_SETTINGS)).toBeNull()
+    const zh = buildTranslateRequest('会议记录', { ...DEFAULT_AI_SETTINGS, apiKey: 'k' })
+    const bodyZh = JSON.parse(zh!.init.body as string)
+    expect(bodyZh.messages[0].content).toContain('中文文本翻译成英文')
+    const en = buildTranslateRequest('meeting notes', { ...DEFAULT_AI_SETTINGS, apiKey: 'k' })
+    expect(JSON.parse(en!.init.body as string).messages[0].content).toContain('英文文本翻译成中文')
+    expect(zh!.url).toBe('https://open.bigmodel.cn/api/paas/v4/chat/completions')
+  })
+
+  it('R84: translateOcrText without key short-circuits (no fetch)', async () => {
+    expect(await translateOcrText('文本', DEFAULT_AI_SETTINGS)).toEqual({ ok: false, text: '', hint: 'nokey' })
   })
 })

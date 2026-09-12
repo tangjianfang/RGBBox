@@ -66,7 +66,7 @@ vi.mock('lucide-react', () => {
     'PieChart','Play','PlayCircle','Plus','PlusCircle','Pocket','Power','Printer','Radio',
     'RefreshCw','Repeat','Reply','Rewind','RotateCcw','RotateCw','Rss','Save','Scissors',
     'Search','Send','Server','Settings','Share','Share2','Shield','ShieldOff','ShoppingBag',
-    'ShoppingCart','Shuffle','Sidebar','SkipBack','SkipForward','Slack','Slash','Sliders',
+    'ShoppingCart','Shuffle','Sidebar','SkipBack','SkipForward','Slack','Slash','Sliders','Scan',
     'Smartphone','Smile','Sparkles','Speaker','Square','Star','StopCircle','Sun','Sunrise','Sunset',
     'Tablet','Tag','Target','Terminal','Thermometer','ThumbsDown','ThumbsUp','ToggleLeft',
     'ToggleRight','Tool','Trash','Trash2','Trello','TrendingDown','TrendingUp','Triangle',

@@ -83,6 +83,7 @@ export function setupRendererMocks() {
     aiGetSettings: vi.fn().mockResolvedValue({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-4-flash' }),
     aiSetSettings: vi.fn().mockResolvedValue({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-4-flash' }),
     aiCleanupText: vi.fn().mockResolvedValue({ ok: true, text: '' }),
+    aiTranslateText: vi.fn().mockResolvedValue({ ok: true, text: '' }),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),

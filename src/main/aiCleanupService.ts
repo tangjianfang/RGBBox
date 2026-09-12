@@ -61,6 +61,56 @@ export function parseCleanupResponse(json: unknown): string | null {
 export async function cleanupOcrText(text: string, s: AiCleanupSettings): Promise<CleanupOutcome> {
   const req = buildCleanupRequest(text, s)
   if (!req) return { ok: false, text: '', hint: 'nokey' }
+  return postChat(req)
+}
+
+// ── R84.3: 中英互译（复用同一 OpenAI 兼容管线；方向自动检测） ────────────
+
+/** 按 CJK/拉丁字母占比自动定向：中文为主 → 译英，否则 → 译中。 */
+export function detectTranslateDirection(text: string): 'zh2en' | 'en2zh' {
+  const cjk = (text.match(/[、-鿿豈-﫿！-｠]/g) ?? []).length
+  const letters = (text.match(/[A-Za-z]/g) ?? []).length
+  return cjk >= letters ? 'zh2en' : 'en2zh'
+}
+
+export function buildTranslateRequest(
+  text: string,
+  s: AiCleanupSettings,
+): { url: string; init: RequestInit } | null {
+  if (!s.apiKey.trim() || !text.trim()) return null
+  const base = s.baseUrl.trim().replace(/\/+$/, '')
+  const dir = detectTranslateDirection(text)
+  const prompt = dir === 'zh2en'
+    ? '你是翻译助手。把用户提供的中文文本翻译成英文。只输出译文，保留原文的段落与换行，不要任何解释。'
+    : '你是翻译助手。把用户提供的英文文本翻译成中文。只输出译文，保留原文的段落与换行，不要任何解释。'
+  return {
+    url: `${base}/chat/completions`,
+    init: {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${s.apiKey.trim()}`,
+      },
+      body: JSON.stringify({
+        model: s.model.trim() || DEFAULT_AI_SETTINGS.model,
+        messages: [
+          { role: 'system', content: prompt },
+          { role: 'user', content: text },
+        ],
+        temperature: 0.1,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    },
+  }
+}
+
+export async function translateOcrText(text: string, s: AiCleanupSettings): Promise<CleanupOutcome> {
+  const req = buildTranslateRequest(text, s)
+  if (!req) return { ok: false, text: '', hint: 'nokey' }
+  return postChat(req)
+}
+
+async function postChat(req: { url: string; init: RequestInit }): Promise<CleanupOutcome> {
   try {
     const res = await fetch(req.url, req.init)
     if (!res.ok) return { ok: false, text: '', hint: res.status === 401 || res.status === 403 ? 'auth' : 'http' }

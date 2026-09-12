@@ -139,6 +139,8 @@ export const ipcChannels = {
   aiGetSettings: 'rgbbox:ai:get-settings',
   aiSetSettings: 'rgbbox:ai:set-settings',
   aiCleanupText: 'rgbbox:ai:cleanup-text',
+  // R84: OCR text translation via the same OpenAI-compatible API
+  aiTranslateText: 'rgbbox:ai:translate-text',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

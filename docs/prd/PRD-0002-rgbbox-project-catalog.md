@@ -802,6 +802,15 @@
 - **R83.4** **验收点**：请求体构造/响应解析纯函数单测；未配 Key 路径组件测试；实机配 GLM Key 走通一次整理；全量回归 0 失败。
 - **R83.5** **状态**：✅（aiCleanupService 纯函数 4 用例（请求构造/URL 拼接/响应解析/无 Key 短路）+ 组件流 1 用例（AI 整理替换文本 + 未配 Key 行内提示）；设置区 API 配置行（baseUrl/模型/Key，system.json 持久化，Key 不入日志）；62 files / 621 passed 0 失败；typecheck + build 0 error；实机配 GLM Key 走通待用户。）
 
+### R84. OCR 入口区分 + 连续框选 + 云 LLM 中英翻译
+
+> 来源：2026-09-13 用户复测 R82 后四项反馈；翻译路线经用户确认（云 LLM，复用 R83 配置）。**风险等级：L1**（UI 行为 + 1 条新 IPC，无新依赖）。
+- **R84.1** **工具栏双入口**：框选识别（ScanText，现行为不变）旁新增「整图识别」按钮（Scan 图标，点击直接整图识别，不进框选）；OCR 面板头部「整图」按钮同步换 Scan 图标——三处入口图标语义区分（框选=ScanText+框选遮罩，整图=Scan）。
+- **R84.2** **连续框选**：region OCR 完成后再次点击框选按钮可继续新一轮框选识别（面板保留旧结果直到新识别完成）；组件测试钉住。
+- **R84.3** **云 LLM 中英互译**：`translateOcrText`（复用 R83 OpenAI 兼容配置与请求管线；`detectTranslateDirection` 纯函数按 CJK/字母占比自动定向）；新 IPC `rgbbox:ai:translate-text`；OCR 面板「翻译」按钮（Languages 图标）：译文替换文本区 + 「显示原文」一键切回（原文暂存状态）；未配 Key 复用 AI 整理的提示行。
+- **R84.4** **验收点**：方向检测/翻译请求构造纯函数单测；组件测试（整图按钮直接识别、连续框选、翻译→显示原文往返）；全量回归 0 失败。
+- **R84.5** **状态**：✅（方向检测/翻译请求构造 3 用例 + 组件流 3 用例（整图直识不进框选、面板开后连续框选二轮替换结果、翻译→显示原文往返）；工具栏 ScanText(框选)+Scan(整图) 图标区分 + 面板整图按钮换 Scan；62 files / 626 passed 0 失败；typecheck + build 0 error；实机复测待用户。）
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
@@ -2253,3 +2262,4 @@
 | 2026-09-13 | 追加并实施 R80.12（用户复测"切英文后托盘菜单仍中文"）：根因 = 托盘菜单启动时一次构建 + 标签硬编码中文，语言状态只在渲染层；修复 = 新纯函数模块 trayMenu.ts（zh/en 标签 + locale 白名单，3 用例）+ 菜单可重建（applyTrayMenu/rebuildTrayMenu）+ 新 IPC ui:set-locale + i18n Provider 启动同步/切换通知；60 files / 608 passed（+3）；状态 ⏳→✅（同轮答复用户：自定义热键与 OCR 升级为候选方案待选型） | Claude |
 | 2026-09-13 | 实施 R81（截图热键预设五选一：shared 白名单 + applyHotkey 回滚 + 设置下拉 + system.json 持久化 + 托盘标签跟随）；R82（本地 RapidOCR：onnxruntime-node CPU + ModelScope 官方直链 SHA256 模型下载 + CTC/连通域纯函数 6 用例 + rapid 优先 winrt 兜底路由 + OCR 面板引擎显示；rec 宽度 800 实测定稿；实机 4 行样本 3 行全对、warm 379ms）；R83（OCR 后 AI 整理：OpenAI 兼容接口 + 设置区 Key 配置 + 面板按钮/未配 Key 提示 + 纯函数 4 用例）；62 files / 621 passed（--maxWorkers=4）；三条款 ⏳ → ✅；实机复测待用户 | Claude |
 | 2026-09-13 | 追加并实施 R82.6（用户需求"模型预设并打包到安装包"）：模型三件入库 build/rapidocr/（SHA256 与官方实证一致）+ electron-builder extraResources → resources/rapidocr + resolveRapidOcrDir 内置优先（packaged/dev 双路径）+ 内置缺失自动切 userData 在线下载兜底（Program Files 只读兼容）；yarn dist:dir 实证产物含三文件（哈希核对）+ onnxruntime 原生模块 asar 解包；62 files / 621 passed；状态 ⏳ → ✅；安装包实机复测待用户 | Claude |
+| 2026-09-13 | 追加并实施 R84（用户复测四项）：①工具栏 OCR 双入口——框选识别（ScanText）+ 新增整图识别（Scan，点击直接整图识别不进框选），面板「整图」按钮同步换 Scan 图标（三入口图标语义区分）；②连续框选（面板已开后再点框选按钮可继续新一轮，组件测试钉住）；③云 LLM 中英互译（复用 R83 OpenAI 兼容配置，detectTranslateDirection 按 CJK/字母占比自动定向，纯函数 3 用例；「翻译」按钮译文替换 + 「显示原文」切回）；新 IPC ai:translate-text；62 files / 626 passed（+5）；状态 ⏳ → ✅；实机复测待用户 | Claude |
