@@ -20,7 +20,8 @@ import { runPerfSelfTest } from './perfSelfTest'
 import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOverlay, getAudioVizWindowIds, getOverlayDisplayIds, openAudioVizWindow, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
 import { armShutdown, cancelShutdown, getShutdownStatus } from './shutdownScheduler'
 import { closeAllScreensaverWindows, disposeScreensaver, getScreensaverSettings, initScreensaver, setScreensaverSettings } from './screensaverManager'
-import { cancelSnip, disposeSnipManager, finishSnip, getSnipFrame, initSnipManager, registerSnipHotkey, startSnip } from './snipManager'
+import { cancelSnip, disposeSnipManager, finishSnip, getSnipFrame, initSnipManager, registerSnipHotkey, startSnip, SNIP_HOTKEY } from './snipManager'
+import { asUiLocale, trayMenuLabels, type UiLocale } from './trayMenu'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
@@ -83,6 +84,9 @@ const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL)
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+// R80.12: 界面语言（渲染层 i18n 同步过来）+ 托盘菜单重建句柄
+let uiLocale: UiLocale = 'zh'
+let rebuildTrayMenu: (() => void) | null = null
 let isQuitting = false
 let powerSaveBlockerId: number | null = null
 // Capture source id pre-selected by the Video Studio for the next getDisplayMedia()
@@ -292,6 +296,11 @@ function registerIpc(): void {
     )
   })
   ipcMain.on(ipcChannels.snipCancel, () => cancelSnip())
+  // R80.12: 界面语言切换 → 重建托盘菜单（含启动时同步持久化语言）
+  ipcMain.on(ipcChannels.uiSetLocale, (_event, l: unknown) => {
+    uiLocale = asUiLocale(l)
+    rebuildTrayMenu?.()
+  })
 
   // R78: clipboard text (annotator copy/paste) + native OCR
   ipcMain.handle(ipcChannels.clipboardWriteText, (_event, text: unknown) => {
@@ -749,20 +758,26 @@ function createTray(): void {
     }
   }
 
-  const contextMenu = Menu.buildFromTemplate([
-    { label: '显示 / 隐藏主界面', click: toggleMainWindow },
-    // R80: standalone global snip — same entry as the Alt+A hotkey
-    { label: '截图 (Alt+A)', click: () => { void startSnip() } },
-    { type: 'separator' },
-    {
-      label: '退出 RGBBox',
-      click: () => {
-        isQuitting = true
-        app.quit()
+  // R80.12: 界面语言切换后重建托盘菜单（原生菜单启动时只建一次，不随 i18n 变）
+  const applyTrayMenu = (): void => {
+    const L = trayMenuLabels(uiLocale, SNIP_HOTKEY)
+    const contextMenu = Menu.buildFromTemplate([
+      { label: L.toggle, click: toggleMainWindow },
+      { label: L.snip, click: () => { void startSnip() } },
+      { type: 'separator' },
+      {
+        label: L.quit,
+        click: () => {
+          isQuitting = true
+          app.quit()
+        }
       }
-    }
-  ])
-  tray.setContextMenu(contextMenu)
+    ])
+    tray?.setContextMenu(contextMenu)
+  }
+  applyTrayMenu()
+  rebuildTrayMenu = applyTrayMenu
+
   tray.on('double-click', toggleMainWindow)
 }
 

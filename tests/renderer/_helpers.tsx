@@ -76,6 +76,7 @@ export function setupRendererMocks() {
     snipGetFrame: vi.fn().mockResolvedValue({ dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }),
     snipFinish: vi.fn().mockResolvedValue(true),
     snipCancel: vi.fn(),
+    setUiLocale: vi.fn(),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),

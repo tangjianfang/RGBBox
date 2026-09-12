@@ -168,6 +168,10 @@ const api = {
   snipCancel: (): void => {
     ipcRenderer.send(ipcChannels.snipCancel)
   },
+  // R80.12: notify main of UI language so the tray menu rebuilds to match
+  setUiLocale: (l: 'zh' | 'en'): void => {
+    ipcRenderer.send(ipcChannels.uiSetLocale, l)
+  },
 
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>

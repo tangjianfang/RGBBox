@@ -761,6 +761,11 @@
     - [x] 提速实机：窗口出现 → 可交互（含懒 PNG 编码 + 解码）**62ms**；剩余延迟 = desktopCapturer 捕获（~100-300ms，与微信同量级，系统固有）；startSnip 记录 capture/windows-opened 分段耗时日志
     - [x] `yarn typecheck` + 全量 59 files / 605 passed / 0 失败 + `yarn build` 0 error
   - **状态**：✅（三项复测问题全修复并实机验证；用户体验级"快不快"待用户复测确认。）
+- **R80.12** **托盘菜单跟随界面语言**（用户复测：切英文后右下角托盘菜单仍中文）：
+  - **根因**：托盘 context menu 在 `createTray()` 启动时一次性构建且标签硬编码中文；语言状态存渲染层 localStorage（`rgbbox:lang`），主进程无从感知。
+  - **修复**：标签集中到新纯函数模块 `src/main/trayMenu.ts`（`trayMenuLabels(locale, hotkeyLabel)` zh/en 双语 + `asUiLocale` 白名单，3 用例）；`createTray` 改为 `applyTrayMenu()` 可重建（模块级 `rebuildTrayMenu` 句柄）；新 IPC `rgbbox:ui:set-locale`（preload `setUiLocale`）；i18n Provider 启动时同步持久化语言 + `setLang` 切换时通知。
+  - **验收点**：trayMenu 3/3；全量 60 files / 608 passed / 0 失败；typecheck + build 0 error；实机中英文切换托盘菜单即时切换（待用户复测）。
+  - **状态**：✅（自动化全绿；实机复测待用户确认。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
@@ -2210,3 +2215,4 @@
 | 2026-09-12 | 实施 R80（独立全局截图工具，设计/计划文档随附）：snipManager（desktopCapturer 先截后开窗 + 每屏 frameless 全屏置顶窗口 + 会话互斥/显示器变化取消 + Alt+A 注册失败气泡降级）+ 3 条 snip IPC + preload API + 托盘「截图 (Alt+A)」菜单项 + SnipView（冻结帧全屏 → 暗幕拖选 ≥8px + 尺寸角标 → cropToDataUrl 裁剪 → AnnotateOverlay 全套标注零改动复用；✓=下载+落档 / 复制=剪贴板+落档；ESC 分层退出）；TDD 全程：snipManager 4 用例 + SnipView 8 用例；59 files / 604 passed（--maxWorkers=4）；实机 CDP 端到端验证（冻结→拖选→标注→ESC 分层→会话销毁，截图留证）；状态 🔄 → ✅；多屏/DPI/热键冲突待用户复测 | Claude |
 | 2026-09-13 | 追加并实施 R79.13（用户复测反馈"拍照图片列表滚动条与主题不搭"）：根因 = Chromium 121+（Electron 41）标准滚动条属性（scrollbar-width: thin）出现即忽略 ::-webkit-scrollbar* 规则，.video-filmstrip 是全文件唯一未配 scrollbar-color 的实例 → 青色 webkit 规则失效回落系统灰滑块；修复 = 补 scrollbar-color 青/透明对（与 .video-annotate-ocr-text 同款已验收模式）；CaptureFilmstrip 6/6；状态 🔄 → ✅；实机外观待用户确认 | Claude |
 | 2026-09-13 | 追加并实施 R80.10/R80.11（用户复测三项：启动延迟 / 框选区域黑色 / 背景偏暗）：R80.10 根因 = toDataURL 同步串行 PNG 编码阻塞在开窗前 → 改 nativeImage 存储 + 先开窗 + getSnipFrame 懒编码（窗口加载与编码重叠，多屏各自独立），startSnip 记分段耗时日志；实机 窗口出现→可交互 62ms；R80.11 根因 = 选区挖洞误用不透明黑 rect → 改 evenodd 路径真挖洞（选区透亮）+ 暗幕 0.45→0.18 + 视口 resize 跟踪；实机 DOM/截图双验证（subPaths:2、blackRects:0、600×300 角标清晰）；59 files / 605 passed（+1）；状态 ⏳ → ✅；体验待用户复测 | Claude |
+| 2026-09-13 | 追加并实施 R80.12（用户复测"切英文后托盘菜单仍中文"）：根因 = 托盘菜单启动时一次构建 + 标签硬编码中文，语言状态只在渲染层；修复 = 新纯函数模块 trayMenu.ts（zh/en 标签 + locale 白名单，3 用例）+ 菜单可重建（applyTrayMenu/rebuildTrayMenu）+ 新 IPC ui:set-locale + i18n Provider 启动同步/切换通知；60 files / 608 passed（+3）；状态 ⏳→✅（同轮答复用户：自定义热键与 OCR 升级为候选方案待选型） | Claude |

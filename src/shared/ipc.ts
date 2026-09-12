@@ -130,6 +130,8 @@ export const ipcChannels = {
   snipGetFrame: 'rgbbox:snip:get-frame',
   snipFinish: 'rgbbox:snip:finish',
   snipCancel: 'rgbbox:snip:cancel',
+  // R80.12: renderer i18n → main (tray menu follows UI language)
+  uiSetLocale: 'rgbbox:ui:set-locale',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

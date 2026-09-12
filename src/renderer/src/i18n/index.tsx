@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type JSX, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type JSX, type ReactNode } from 'react'
 
 export type Lang = 'zh' | 'en'
 
@@ -1494,7 +1494,14 @@ export function I18nProvider({ children }: { children: ReactNode }): JSX.Element
   const setLang = useCallback((l: Lang) => {
     setLangState(l)
     localStorage.setItem('rgbbox:lang', l)
+    // R80.12: 通知主进程重建托盘菜单等原生 UI 的语言
+    window.rgbbox?.setUiLocale?.(l)
   }, [])
+
+  // R80.12: 启动时把持久化语言同步给主进程（托盘菜单跟随界面语言）
+  useEffect(() => {
+    window.rgbbox?.setUiLocale?.(lang)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const t = useCallback((key: TranslationKey): string => {
     return translations[lang][key] ?? key
