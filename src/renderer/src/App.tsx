@@ -1,4 +1,4 @@
-import { Activity, Box, ChevronDown, ChevronUp, Clock, Cpu, Download, FilePlus, Gamepad2, Gauge, Languages, Link2, Link2Off, Lock, Maximize2, Mic, Minimize2, MicOff, Monitor, MoreVertical, Music, Pause, Pencil, Play, Plus, Shuffle, Sparkles, Star, Timer, Trash2, Unlock, Upload, Video } from 'lucide-react'
+import { Activity, ChevronDown, ChevronUp, Clock, Download, FilePlus, Gauge, Link2, Link2Off, Lock, Maximize2, Minimize2, Monitor, MoreVertical, Pencil, Plus, Shuffle, Sparkles, Star, Trash2, Unlock, Upload } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
 import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, Scene, VideoWallLayout } from '../../shared/types'
@@ -24,19 +24,18 @@ import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 import type { WorkerInput, WorkerOutput } from './workers/previewEngineWorker'
 import { useModelStore } from './3d/useModelStore'
 import { MetricsCollector } from './engine/metricsCollector'
-import { PRESET_SNIP_HOTKEYS } from '../../shared/snipHotkeys'
+import { useTabNavigation } from './hooks/useTabNavigation'
+import type { View } from './hooks/tabNavigation'
+import { AppShell } from './components/AppShell'
+import { DashboardView } from './components/DashboardView'
+import { SettingsView } from './components/SettingsView'
 
 // Lazily loaded — vendor-splat (1.6MB) is only fetched when the 3D view is first opened
 const SplatViewer = lazy(() => import('./3d/SplatViewer').then((m) => ({ default: m.SplatViewer })))
 const LEDMapper   = lazy(() => import('./3d/LEDMapper').then((m) => ({ default: m.LEDMapper })))
 
-type View = 'workspace' | 'effects' | 'profiles' | 'diagnostics' | 'model3d' | 'games' | 'audio' | 'video' | 'architecture'
-
+// R85: View union + tab navigation moved to hooks/tabNavigation (dashboard + settings added).
 const MODEL3D_VIEW_ENABLED = false
-
-function normalizeView(view: View | null): View {
-  return view === 'model3d' && !MODEL3D_VIEW_ENABLED ? 'workspace' : (view ?? 'workspace')
-}
 
 type RandomizerMode = 'subtle' | 'bold' | 'calm' | 'energy'
 type ScheduleBlockId = 'day' | 'evening' | 'night'
@@ -667,10 +666,8 @@ export function App(): JSX.Element {
   const [selectedLayerId, setSelectedLayerId] = useState(() =>
     localStorage.getItem('rgbbox:selectedLayerId') ?? 'layer-rainbow'
   )
-  const [currentView, setCurrentView] = useState<View>(() => {
-    const v = localStorage.getItem('rgbbox:view') as View | null
-    return normalizeView(v)
-  })
+  // R85: IDE-style tab navigation (dashboard first tab, modules on demand, persisted)
+  const { tabs, activeView, openView, closeView } = useTabNavigation(MODEL3D_VIEW_ENABLED)
   const [favoriteEffectKinds, setFavoriteEffectKinds] = useState<EffectKind[]>(() =>
     parseStoredEffectKinds(localStorage.getItem('rgbbox:favoriteEffects'))
   )
@@ -758,7 +755,7 @@ export function App(): JSX.Element {
   // R42/R43 "is anyone consuming a frame" gate used for the effect tick loop.
   // Audio-reactive effects (audio-beat/audio-equalizer) still need live data
   // while an overlay is projecting them, regardless of main-window visibility.
-  const audioShouldAnalyze = overlayDisplayIds.length > 0 || (windowVisible && currentView === 'workspace')
+  const audioShouldAnalyze = overlayDisplayIds.length > 0 || (windowVisible && activeView === 'workspace')
   const audio = useAudioAnalyzer(audioEnabled, audioDeviceId, audioShouldAnalyze)
 
   // ── R73: scheduled shutdown ────────────────────────────────────────────────
@@ -828,10 +825,10 @@ export function App(): JSX.Element {
   const overlayConfigsRef = useRef<Record<number, OverlayConfig>>(overlayConfigs)
   overlayConfigsRef.current = overlayConfigs
   // R42: lets the tick loop below know the latest view/visibility without
-  // being a useEffect dependency (adding currentView there would tear down
+  // being a useEffect dependency (adding activeView there would tear down
   // and recreate the worker on every tab switch).
-  const currentViewRef = useRef<View>(currentView)
-  currentViewRef.current = currentView
+  const activeViewRef = useRef<View>(activeView)
+  activeViewRef.current = activeView
   // R43: main-window visibility per the IPC signal from main/index.ts (NOT
   // document.hidden — see ipc.ts#mainWindowVisibilityChanged for why that
   // stopped being reliable after R38). Defaults to true (visible) until the
@@ -973,7 +970,6 @@ export function App(): JSX.Element {
   }, [overlayDisplayIds])
 
   // ── Persist UI state to localStorage ────────────────────────────────────
-  useEffect(() => { localStorage.setItem('rgbbox:view', normalizeView(currentView)) }, [currentView])
   useEffect(() => { localStorage.setItem('rgbbox:favoriteEffects', JSON.stringify(favoriteEffectKinds)) }, [favoriteEffectKinds])
   useEffect(() => { localStorage.setItem('rgbbox:allEffectsOpen', allEffectsOpen ? '1' : '0') }, [allEffectsOpen])
   useEffect(() => { localStorage.setItem('rgbbox:advancedControlsOpen', advancedControlsOpen ? '1' : '0') }, [advancedControlsOpen])
@@ -996,14 +992,14 @@ export function App(): JSX.Element {
   // minimized/hidden with nothing being rendered. Gated on the Diagnostics tab
   // actually being the visible one.
   useEffect(() => {
-    if (currentView !== 'diagnostics') return undefined
+    if (activeView !== 'diagnostics') return undefined
     const timer = window.setInterval(() => {
       setEngineMetrics(metricsCollectorRef.current.snapshot())
       void window.rgbbox.getCaptureProviderStatus().then(setCaptureProvider)
       void window.rgbbox.getProcessCpuSamples().then(setProcessCpuSamples)
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [currentView])
+  }, [activeView])
 
   // Enumerate audio input and output devices (labels populated after first getUserMedia permission)
   useEffect(() => {
@@ -1177,7 +1173,7 @@ export function App(): JSX.Element {
       // to tab switches, minimise/restore and overlay open/close without
       // tearing down/recreating the worker.
       const overlayActive = overlayIdsRef.current.length > 0
-      const previewVisible = windowVisibleRef.current && currentViewRef.current === 'workspace'
+      const previewVisible = windowVisibleRef.current && activeViewRef.current === 'workspace'
       if (!overlayActive && !previewVisible) return
 
       // R43: also pause once every layer is disabled — there's nothing to
@@ -1787,226 +1783,26 @@ export function App(): JSX.Element {
     <>
       <div className="titlebar-drag" aria-hidden="true" />
       <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-block">
-          <div className="brand-mark">RB</div>
-          <div>
-            <h1>RGBBox</h1>
-            <p>v{version}</p>
-          </div>
-        </div>
-
-        <nav className="nav-list" aria-label="Main sections">
-          <button className={`nav-item ${currentView === 'workspace' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('workspace')}>
-            <Monitor size={18} />
-            {t('nav.workspace')}
-          </button>
-          <button className={`nav-item ${currentView === 'effects' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('effects')}>
-            <Sparkles size={18} />
-            {t('nav.effects')}
-          </button>
-          <button className={`nav-item ${currentView === 'games' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('games')}>
-            <Gamepad2 size={18} />
-            {t('nav.games')}
-          </button>
-          <button className={`nav-item ${currentView === 'audio' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('audio')}>
-            <Music size={18} />
-            {t('nav.audio')}
-          </button>
-          <button className={`nav-item ${currentView === 'video' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('video')}>
-            <Video size={18} />
-            {t('nav.video')}
-          </button>
-          <button className={`nav-item ${currentView === 'diagnostics' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('diagnostics')}>
-            <Gauge size={18} />
-            {t('nav.diagnostics')}
-          </button>
-          {MODEL3D_VIEW_ENABLED && (
-            <button className={`nav-item ${currentView === 'model3d' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('model3d')}>
-              <Box size={18} />
-              {t('model3d.eyebrow')}
-            </button>
-          )}
-          <button className={`nav-item ${currentView === 'architecture' ? 'active' : ''}`} type="button" onClick={() => setCurrentView('architecture')}>
-            <Cpu size={18} />
-            {t('nav.architecture')}
-          </button>
-        </nav>
-
-        <div className="sidebar-audio">
-          <button
-            className={`audio-toggle ${audioEnabled ? 'active' : ''}`}
-            type="button"
-            onClick={() => setAudioEnabled((v) => !v)}
-            title={audioEnabled ? t('audio.on') : t('audio.off')}
-          >
-            {audioEnabled ? <Mic size={16} /> : <MicOff size={16} />}
-            <span>{audioEnabled ? t('audio.on') : t('audio.off')}</span>
-          </button>
-          {audioEnabled && (
-            <select
-              className="audio-device-select"
-              value={audioDeviceId}
-              title={t('audio.deviceLabel')}
-              onChange={(e) => setAudioDeviceId(e.target.value)}
-            >
-              <option value="">{t('audio.defaultDevice')}</option>
-              {speakerDevices.map((d) => (
-                <option key={d.deviceId} value={`__speaker__:${d.deviceId}`}>
-                  {t('audio.speakerPrefix')}{d.label || d.deviceId.slice(0, 12)}
-                </option>
-              ))}
-              <option value="__system_audio__">{t('audio.systemAudio')}</option>
-              {audioDevices.map((d) => (
-                <option key={d.deviceId} value={d.deviceId}>
-                  {d.label || d.deviceId.slice(0, 12)}
-                </option>
-              ))}
-            </select>
-          )}
-          {audioEnabled && audio.active && (
-            <div className="audio-meter-row">
-              <div className="audio-meter" style={{ '--level': audio.bass } as React.CSSProperties} title="Bass" />
-              <div className="audio-meter" style={{ '--level': audio.mid } as React.CSSProperties} title="Mid" />
-              <div className="audio-meter" style={{ '--level': audio.high } as React.CSSProperties} title="High" />
-            </div>
-          )}
-          {audioEnabled && audio.error && (
-            <div className="audio-error" title={audioErrorLabel}>{audioErrorLabel}</div>
-          )}
-        </div>
-
-        <section className="status-panel" aria-label="Engine status">
-          <div>
-            <span>{t('engine.label')}</span>
-            <strong>{status.running ? t('engine.running') : t('engine.paused')}</strong>
-          </div>
-          <button className="icon-button" type="button" onClick={toggleEngine} aria-label="Toggle engine">
-            {status.running ? <Pause size={18} /> : <Play size={18} />}
-          </button>
-        </section>
-        <label className="status-panel" style={{ cursor: 'pointer' }}>
-          <div>
-            <span>{t('power.label')}</span>
-            <strong>{powerSaveBlock ? t('power.on') : t('power.off')}</strong>
-          </div>
-          <input
-            type="checkbox"
-            checked={powerSaveBlock}
-            onChange={(e) => {
-              window.rgbbox.setPowerSaveBlock(e.target.checked).then(setPowerSaveBlock)
-            }}
-          />
-        </label>
-        <label className="status-panel" style={{ cursor: 'pointer' }}>
-          <div>
-            <span>{t('autoLaunch.label')}</span>
-            <strong>{autoLaunch ? t('autoLaunch.on') : t('autoLaunch.off')}</strong>
-          </div>
-          <input
-            type="checkbox"
-            checked={autoLaunch}
-            onChange={(e) => {
-              window.rgbbox.setAutoLaunch(e.target.checked).then(setAutoLaunch)
-            }}
-          />
-        </label>
-
-        {/* R73: scheduled shutdown — chip shows the countdown, click opens the HUD */}
-        <button
-          className="status-panel"
-          type="button"
-          style={{ cursor: 'pointer', background: 'transparent', border: 'none', textAlign: 'left', color: 'inherit', width: '100%' }}
-          onClick={() => setShutdownPanelOpen((v) => !v)}
-          title={t('shutdown.title')}
-        >
-          <div>
-            <span>{t('shutdown.label')}</span>
-            <strong>
-              {shutdownInfo && shutdownInfo.remainingMs > 0
-                ? formatMediaTime(Math.ceil(shutdownInfo.remainingMs / 1000))
-                : t('shutdown.off')}
-            </strong>
-          </div>
-          <Timer size={16} />
-        </button>
-
-        {/* R74: light-effect screensaver toggle + idle threshold */}
-        <label className="status-panel" style={{ cursor: 'pointer' }} title={t('screensaver.hint')}>
-          <div>
-            <span>{t('screensaver.label')}</span>
-            <strong>{screensaverEnabled ? t('screensaver.on') : t('screensaver.off')}</strong>
-          </div>
-          <input
-            type="checkbox"
-            checked={screensaverEnabled}
-            onChange={(e) => applyScreensaverSettings({ enabled: e.target.checked })}
-          />
-        </label>
-        {screensaverEnabled && (
-          <div className="status-panel screensaver-threshold" title={t('screensaver.hint')}>
-            <span>{t('screensaver.threshold')}</span>
-            <select
-              value={screensaverMinutes}
-              onChange={(e) => applyScreensaverSettings({ idleMinutes: Number(e.target.value) })}
-            >
-              {[1, 5, 10, 30].map((m) => (
-                <option key={m} value={m}>{m} {t('screensaver.minUnit')}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* R81: global snip hotkey (preset whitelist, main re-registers + persists) */}
-        <div className="status-panel screensaver-threshold" title={t('snip.hotkeyHint')}>
-          <span>{t('snip.hotkeyLabel')}</span>
-          <select value={snipHotkey} onChange={(e) => applySnipHotkey(e.target.value)}>
-            {PRESET_SNIP_HOTKEYS.map((k) => (
-              <option key={k} value={k}>{k}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* R83: OCR AI-cleanup config (OpenAI-compatible baseUrl / model / key) */}
-        <div className="status-panel screensaver-threshold" title={t('ai.hint')}>
-          <span>{t('ai.label')}</span>
-          <div className="ai-cfg-row">
-            <input
-              value={aiCfg.baseUrl}
-              placeholder={t('ai.baseUrl')}
-              onChange={(e) => setAiCfg(c => ({ ...c, baseUrl: e.target.value }))}
-            />
-            <input
-              value={aiCfg.model}
-              placeholder={t('ai.model')}
-              onChange={(e) => setAiCfg(c => ({ ...c, model: e.target.value }))}
-            />
-            <input
-              type="password"
-              value={aiCfg.apiKey}
-              placeholder={t('ai.apiKey')}
-              onChange={(e) => setAiCfg(c => ({ ...c, apiKey: e.target.value }))}
-            />
-            <button type="button" className="video-btn" onClick={saveAiCfg}>
-              {aiSaved ? t('ai.saved') : t('ai.save')}
-            </button>
-          </div>
-        </div>
-
-        <div className="sidebar-footer">
-          <button
-            className="lang-toggle-btn"
-            type="button"
-            onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
-            title={lang === 'zh' ? 'Switch to English' : '切换到中文'}
-          >
-            <Languages size={15} />
-            <span className="lang-toggle-label">{t('lang.toggle')}</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* R73: scheduled-shutdown HUD (fixed card next to the sidebar) */}
+      <AppShell
+        tabs={tabs}
+        activeView={activeView}
+        onOpen={openView}
+        onClose={closeView}
+        version={version}
+        audioEnabled={audioEnabled}
+        onToggleAudio={() => setAudioEnabled((v) => !v)}
+        audioLevels={audio.active ? { bass: audio.bass, mid: audio.mid, high: audio.high } : undefined}
+        audioErrorLabel={audioErrorLabel || undefined}
+        lang={lang}
+        onToggleLang={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+        shutdownLabel={
+          shutdownInfo && shutdownInfo.remainingMs > 0
+            ? formatMediaTime(Math.ceil(shutdownInfo.remainingMs / 1000))
+            : undefined
+        }
+        onShutdownClick={() => setShutdownPanelOpen((v) => !v)}
+      >
+      {/* R73: scheduled-shutdown HUD (fixed floating card) */}
       {shutdownPanelOpen && (
         <ShutdownTimerPanel
           deadlineMs={shutdownInfo?.deadlineMs ?? null}
@@ -2019,7 +1815,48 @@ export function App(): JSX.Element {
       )}
 
       <section className="workspace">
-        {currentView === 'workspace' && (
+        {activeView === 'dashboard' && (
+          <DashboardView
+            onOpen={openView}
+            openTabs={tabs}
+            model3dEnabled={MODEL3D_VIEW_ENABLED}
+            status={{
+              running: status.running,
+              onToggleEngine: toggleEngine,
+              effectName:
+                effectPresets.find((p) => p.kind === (selectedLayer?.kind ?? 'static'))?.label
+                ?? selectedLayer?.kind ?? 'static',
+              fps: status.fps,
+              audioEnabled,
+              audioDeviceId,
+              audioDevices,
+              speakerDevices,
+              onSelectAudioDevice: setAudioDeviceId,
+              overlayCount: overlayDisplayIds.length,
+              version
+            }}
+          />
+        )}
+        {activeView === 'settings' && (
+          <SettingsView
+            running={status.running}
+            onToggleEngine={toggleEngine}
+            powerSaveBlock={powerSaveBlock}
+            onPowerSaveBlock={(v) => { window.rgbbox.setPowerSaveBlock(v).then(setPowerSaveBlock) }}
+            autoLaunch={autoLaunch}
+            onAutoLaunch={(v) => { window.rgbbox.setAutoLaunch(v).then(setAutoLaunch) }}
+            screensaverEnabled={screensaverEnabled}
+            screensaverMinutes={screensaverMinutes}
+            onScreensaver={applyScreensaverSettings}
+            snipHotkey={snipHotkey}
+            onSnipHotkey={applySnipHotkey}
+            aiCfg={aiCfg}
+            onAiCfg={setAiCfg}
+            onSaveAiCfg={saveAiCfg}
+            aiSaved={aiSaved}
+          />
+        )}
+        {activeView === 'workspace' && (
           <div className="workspace-inner">
 
             {/* ── Left FX sidebar ──────────────────────────────────────── */}
@@ -2860,19 +2697,19 @@ export function App(): JSX.Element {
           </div>
         )}
 
-        {currentView === 'effects' && (
+        {activeView === 'effects' && (
           <EffectsView
             activeKind={selectedLayer?.kind ?? 'static'}
             favoriteKinds={favoriteEffectKinds}
             onSelectEffect={(kind) => {
               selectEffect(kind)
-              setCurrentView('workspace')
+              openView('workspace')
             }}
             onToggleFavorite={toggleFavoriteEffect}
           />
         )}
 
-        {currentView === 'games' && (
+        {activeView === 'games' && (
           <MiniGamesView />
         )}
 
@@ -2888,15 +2725,15 @@ export function App(): JSX.Element {
             `overflow:hidden` and get clipped (the "频谱图表只显示了一半" bug after
             un-maximizing) instead of properly triggering the intended inner
             `overflow:auto` scrollbars (the "播放列表没有滚动条" bug). */}
-        <div className="audio-view-wrapper" style={{ display: currentView === 'audio' ? undefined : 'none' }}>
-          <AudioStudioView visible={currentView === 'audio'} />
+        <div className="audio-view-wrapper" style={{ display: activeView === 'audio' ? undefined : 'none' }}>
+          <AudioStudioView visible={activeView === 'audio'} />
         </div>
 
-        {currentView === 'video' && (
+        {activeView === 'video' && (
           <VideoStudioView />
         )}
 
-        {MODEL3D_VIEW_ENABLED && currentView === 'model3d' && (
+        {MODEL3D_VIEW_ENABLED && activeView === 'model3d' && (
           <div className="model3d-view">
             <header className="workspace-header">
               <div>
@@ -2907,7 +2744,7 @@ export function App(): JSX.Element {
                 <button
                   className="aspect-lock-btn model3d-back-btn"
                   type="button"
-                  onClick={() => setCurrentView('workspace')}
+                  onClick={() => openView('workspace')}
                 >
                   <Monitor size={13} />
                   {t('nav.workspace')}
@@ -3005,11 +2842,11 @@ export function App(): JSX.Element {
           </div>
         )}
 
-        {currentView === 'architecture' && (
+        {activeView === 'architecture' && (
           <ArchitectureView />
         )}
 
-        {currentView === 'diagnostics' && (
+        {activeView === 'diagnostics' && (
           <div className="diagnostics-view">
             <header className="workspace-header">
               <div>
@@ -3085,6 +2922,7 @@ export function App(): JSX.Element {
         )}
 
       </section>
+      </AppShell>
     </main>
     </>
   )
