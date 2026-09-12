@@ -66,9 +66,12 @@ export function resolveRapidOcrDir(): string {
   return join(app.getPath('userData'), 'models', 'rapidocr')
 }
 
+/** ModelScope LFS CDN 对无 User-Agent 的裸请求回 403（实证 A/B：无 UA→403、带 UA→200）。 */
+const DOWNLOAD_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) RGBBox/1.0'
+
 function download(url: string, dest: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
+    https.get(url, { headers: { 'User-Agent': DOWNLOAD_UA } }, (res) => {
       if (res.statusCode != null && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         download(res.headers.location, dest).then(resolve, reject)
         return
@@ -143,9 +146,17 @@ async function ensureReady(): Promise<boolean> {
   }
 }
 
-/** 懒初始化（首次调用触发模型下载，失败缓存 false 不再重试直到下次会话）。 */
+/** 懒初始化（首次调用触发模型下载；失败冷却 5 分钟后自动重试，不再永久缓存失败）。 */
+let ensureFailedAt = 0
 async function ensureReadyOnce(): Promise<boolean> {
-  if (ensurePromise === null) ensurePromise = ensureReady()
+  if (detSession && recSession && charset) return true
+  if (ensureFailedAt > 0 && Date.now() - ensureFailedAt < 5 * 60_000) return false
+  if (ensurePromise === null) {
+    ensurePromise = ensureReady().finally(() => {
+      if (!detSession || !recSession || !charset) ensureFailedAt = Date.now()
+      ensurePromise = null
+    })
+  }
   return ensurePromise
 }
 
