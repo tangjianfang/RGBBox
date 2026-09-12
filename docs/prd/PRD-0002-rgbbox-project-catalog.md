@@ -814,12 +814,13 @@
 ### R85. 主界面重设计：Dashboard 首页 + 模块 Tab 标签页导航
 
 > 来源：2026-09-13 用户需求——功能模块越来越多，当前左 sidebar 菜单入口（8 个）复杂度变高；改造为「首页 dashboard 按重点/优先级展示各模块 + 点击模块在顶部开新 Tab 标签页（第一个 Tab 恒为 Dashboard，其余按模块名按需打开）」。**风险等级：L1**（纯 renderer UI 壳层重构，无新依赖、无新 IPC；但属用户可见行为变更，须走标准流程）。分支：`feat/dashboard-tab-shell`。
-- **R85.1** **Dashboard 首页**：新增 dashboard 作为首屏（恒为第一个 Tab），按重要性/优先级以模块卡片形式展示各功能模块入口及关键状态；具体卡片清单与排序见设计文档（`docs/superpowers/specs/2026-09-13-dashboard-tab-shell-design.md`）。
-- **R85.2** **顶部 Tab 栏**：顶部区域显示 Tab 栏；第一个 Tab 恒为 Dashboard（不可关闭），其余 Tab 仅在用户点击对应模块后按需打开，Tab 名为模块名；支持关闭非 Dashboard Tab。
-- **R85.3** **导航层约束**：不引入路由层（遵守 CLAUDE.md God Component 约定），仍基于 `type View` 联合 + 状态驱动；旧 `rgbbox:view` localStorage 迁移兼容。
-- **R85.4** **受影响文件**：`src/renderer/src/App.tsx`（导航壳层）、`src/renderer/src/styles.css`（布局样式）、`src/renderer/src/i18n/*`（zh+en 新字符串）、`tests/renderer/**`（组件测试）。设计定稿后在此更新。
-- **R85.5** **验收点**（设计定稿后细化）：Dashboard 按优先级展示模块卡片；点击卡片 → 顶部新开对应模块 Tab 并切换；关闭 Tab 回到 Dashboard；Dashboard Tab 不可关闭；旧 `rgbbox:view` 值不再导致落错视图；zh/en 文案齐全；全量回归 0 失败。
-- **R85.6** **状态**：🔄（设计阶段：brainstorming → spec → 实施计划 → 实施）。
+- **R85.1** **Dashboard 首页**：新增 `'dashboard'` 作为首屏（恒为第一个 Tab），固定三分区（核心/创作/工具）展示 8 个模块卡片 + 全局状态区（引擎/fps/灯效/audio 设备/overlay 数）。完整设计见 `docs/superpowers/specs/2026-09-13-dashboard-tab-shell-design.md`（用户已确认）。
+- **R85.2** **顶部 Tab 栏（IDE 式+记忆）**：左 sidebar 整体移除；Tab 栏为唯一模块导航，第一个 Tab 恒为 Dashboard（不可关闭），其余 Tab 点击模块后按需打开（每模块最多一个，重开=聚焦）、按模块名命名、可关闭（关当前 Tab 回 Dashboard）；tabs+active 持久化到 localStorage 并恢复。
+- **R85.3** **系统设置 Tab + 预留用户菜单**：新增 `'settings'` view 经 ⚙ 菜单打开，收编 sidebar 的 7 组全局配置（引擎/电源阻断/自启/屏保 R74/截图热键 R81/AI OCR R83），分「运行/屏保/快捷键/AI」四组；👤 用户菜单预留登录/个人资料/退出登录入口（灰置「即将上线」，无鉴权逻辑）。
+- **R85.4** **导航层约束**：不引入路由层（遵守 CLAUDE.md God Component 约定），仍基于 `type View` 联合 + 状态驱动；旧 `rgbbox:view` 首启迁移为 [Dashboard, 旧模块]；`'profiles'` 维持无入口现状。
+- **R85.5** **受影响文件**：新增 `src/renderer/src/components/AppShell.tsx`、`TabBar.tsx`、`DashboardView.tsx`、`SettingsView.tsx`、`shellModules.ts`、`src/renderer/src/hooks/useTabNavigation.ts`；修改 `App.tsx`（删 sidebar JSX、接 AppShell/children）、`styles.css`（删 `.sidebar*`、增 `.app-shell/.tab-bar/.dashboard/.settings-view` 等）、`src/renderer/src/i18n/*`（zh+en）；新增 `tests/renderer/**` 对应测试。
+- **R85.6** **验收点**：①首屏 Dashboard 且状态区数据实时正确 ②卡片点击开 Tab/已开聚焦 ③关当前 Tab 回 Dashboard、Dashboard 恒在无 × ④重启恢复 tabs+active ⑤旧 `rgbbox:view` 迁移无感 ⑥设置 Tab 四组配置与迁移前行为等价（同 state/IPC） ⑦👤 菜单全灰置 ⑧sidebar CSS/JSX 无残留 ⑨zh/en 无缺 key ⑩`yarn test` 0 失败 + `yarn typecheck` 0 error。
+- **R85.7** **状态**：🔄（设计已确认（2026-09-13），spec 已提交，待实施计划 → 实施）。
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
