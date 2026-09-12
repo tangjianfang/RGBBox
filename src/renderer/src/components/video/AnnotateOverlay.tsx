@@ -15,7 +15,7 @@ import {
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDownToLine, ArrowUpRight, ArrowUpToLine,
   Bold, Check, ChevronDown, ChevronUp, Circle, Copy, Grid3x3, MousePointer2, Pencil,
-  Redo2, Square, Trash2, Type, Undo2, X, ScanText,
+  Redo2, Square, Trash2, Type, Undo2, X, ScanText, Sparkles,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { clampPan, clampScale, containRect, zoomAtPoint, type Pt, type Rect, type Size } from './previewTransform'
@@ -563,6 +563,21 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
 
   // ── R78.3/R79.2: OCR ───────────────────────────────────────────────────
   const setOcrText = (v: string): void => setOcr(o => (o.status === 'done' ? { ...o, text: v } : o))
+  // R83: AI 整理（云 LLM，OpenAI 兼容协议；未配 Key → 行内提示）
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiFail, setAiFail] = useState<'nokey' | 'auth' | 'http' | 'parse' | 'network' | null>(null)
+  const runAiCleanup = useCallback(() => {
+    if (aiBusy || ocr.status !== 'done' || !ocr.text.trim()) return
+    setAiBusy(true)
+    setAiFail(null)
+    window.rgbbox.aiCleanupText(ocr.text)
+      .then(r => {
+        if (r.ok) setOcr(o => (o.status === 'done' ? { ...o, text: r.text } : o))
+        else setAiFail(r.hint ?? 'http')
+      })
+      .catch(() => setAiFail('network'))
+      .finally(() => setAiBusy(false))
+  }, [aiBusy, ocr])
   const recognizeDataUrl = useCallback((dataUrl: string) => {
     setOcr({ status: 'running', text: '' })
     window.rgbbox.ocrRecognize(dataUrl)
@@ -724,11 +739,20 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
                 onChange={(e) => setOcrText(e.target.value)}
               />
               <p className="video-annotate-ocr-meta">{ocr.text.split('\n').filter(l => l.trim()).length} {t('video.annotate.ocrLines')}{ocr.engine ? ` · ${t((ocr.engine === 'rapid' ? 'video.annotate.engineRapid' : 'video.annotate.engineWinrt') as never)}` : ''}</p>
-              <button
-                type="button"
-                className="video-btn video-annotate-ocr-copyall"
-                onClick={() => { void window.rgbbox.clipboardWriteText(ocr.text) }}
-              ><Copy size={13} /> {t('video.annotate.ocrCopyAll')}</button>
+              {aiFail && <p className="video-annotate-ocr-loading">{t((aiFail === 'nokey' ? 'video.annotate.aiNoKey' : 'video.annotate.aiFail') as never)}</p>}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  className="video-btn video-annotate-ocr-ai"
+                  disabled={aiBusy || !ocr.text.trim()}
+                  onClick={runAiCleanup}
+                ><Sparkles size={13} /> {t(aiBusy ? 'video.annotate.aiRunning' as never : 'video.annotate.ai' as never)}</button>
+                <button
+                  type="button"
+                  className="video-btn video-annotate-ocr-copyall"
+                  onClick={() => { void window.rgbbox.clipboardWriteText(ocr.text) }}
+                ><Copy size={13} /> {t('video.annotate.ocrCopyAll')}</button>
+              </div>
             </>
           )}
         </div>

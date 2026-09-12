@@ -734,6 +734,19 @@ export function App(): JSX.Element {
     setSnipHotkeyState(accel)   // 乐观更新；冲突时主进程回滚并返回当前键
     void window.rgbbox.snipSetHotkey(accel).then((r) => setSnipHotkeyState(r.hotkey)).catch(() => { /* keep */ })
   }, [])
+  // R83: OCR AI-cleanup config (baseUrl / model / key, persisted in system.json)
+  const [aiCfg, setAiCfg] = useState({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-4-flash' })
+  const [aiSaved, setAiSaved] = useState(false)
+  useEffect(() => {
+    void window.rgbbox.aiGetSettings().then(setAiCfg).catch(() => { /* defaults */ })
+  }, [])
+  const saveAiCfg = useCallback(() => {
+    void window.rgbbox.aiSetSettings(aiCfg).then((saved) => {
+      setAiCfg(saved)
+      setAiSaved(true)
+      setTimeout(() => setAiSaved(false), 1500)
+    }).catch(() => { /* keep local */ })
+  }, [aiCfg])
   // R45: reactive counterpart of windowVisibleRef (declared below) — a plain
   // ref wouldn't cause `audioShouldAnalyze` to recompute when visibility
   // changes, since nothing else re-renders App at that moment. Minimize/
@@ -1952,6 +1965,32 @@ export function App(): JSX.Element {
               <option key={k} value={k}>{k}</option>
             ))}
           </select>
+        </div>
+
+        {/* R83: OCR AI-cleanup config (OpenAI-compatible baseUrl / model / key) */}
+        <div className="status-panel screensaver-threshold" title={t('ai.hint')}>
+          <span>{t('ai.label')}</span>
+          <div className="ai-cfg-row">
+            <input
+              value={aiCfg.baseUrl}
+              placeholder={t('ai.baseUrl')}
+              onChange={(e) => setAiCfg(c => ({ ...c, baseUrl: e.target.value }))}
+            />
+            <input
+              value={aiCfg.model}
+              placeholder={t('ai.model')}
+              onChange={(e) => setAiCfg(c => ({ ...c, model: e.target.value }))}
+            />
+            <input
+              type="password"
+              value={aiCfg.apiKey}
+              placeholder={t('ai.apiKey')}
+              onChange={(e) => setAiCfg(c => ({ ...c, apiKey: e.target.value }))}
+            />
+            <button type="button" className="video-btn" onClick={saveAiCfg}>
+              {aiSaved ? t('ai.saved') : t('ai.save')}
+            </button>
+          </div>
         </div>
 
         <div className="sidebar-footer">

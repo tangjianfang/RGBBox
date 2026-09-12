@@ -135,6 +135,10 @@ export const ipcChannels = {
   // R81: global snip hotkey preference (preset whitelist)
   snipGetHotkey: 'rgbbox:snip:get-hotkey',
   snipSetHotkey: 'rgbbox:snip:set-hotkey',
+  // R83: OCR AI-cleanup (settings + invoke)
+  aiGetSettings: 'rgbbox:ai:get-settings',
+  aiSetSettings: 'rgbbox:ai:set-settings',
+  aiCleanupText: 'rgbbox:ai:cleanup-text',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

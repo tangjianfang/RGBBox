@@ -23,6 +23,12 @@ export interface SystemSettings {
   snip?: {
     hotkey: string
   }
+  /** R83: OCR AI-cleanup (OpenAI-compatible chat API) */
+  ai?: {
+    baseUrl: string
+    apiKey: string
+    model: string
+  }
 }
 
 const configDir = join(app.getPath('userData'), 'config')

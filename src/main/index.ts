@@ -25,8 +25,9 @@ import { asUiLocale, trayMenuLabels, type UiLocale } from './trayMenu'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
-import { loadSystemSettings, saveSystemSettings } from './systemSettingsStore'
+import { loadSystemSettings, saveSystemSettings, type SystemSettings } from './systemSettingsStore'
 import { setRapidOcrRunner } from './ocrService'
+import { cleanupOcrText, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
 import { parseRangeHeader, resolveMediaMime } from './mediaProtocol'
 
 // Initialize file logger — must be done after imports but before app.whenReady
@@ -324,6 +325,30 @@ function registerIpc(): void {
       void saveSystemSettings({ snip: { hotkey: getSnipHotkeyPref() } }).catch(() => { /* best-effort */ })
     }
     return { ok, hotkey: getSnipHotkeyPref() }
+  })
+  // R83: OCR AI-cleanup settings + invoke (OpenAI-compatible chat API)
+  const asAiSettings = (ai: SystemSettings['ai']): AiCleanupSettings => ({
+    baseUrl: typeof ai?.baseUrl === 'string' ? ai.baseUrl : DEFAULT_AI_SETTINGS.baseUrl,
+    apiKey: typeof ai?.apiKey === 'string' ? ai.apiKey : '',
+    model: typeof ai?.model === 'string' ? ai.model : DEFAULT_AI_SETTINGS.model,
+  })
+  ipcMain.handle(ipcChannels.aiGetSettings, async () => {
+    const s = await loadSystemSettings()
+    return asAiSettings(s.ai)
+  })
+  ipcMain.handle(ipcChannels.aiSetSettings, (_event, p: unknown) => {
+    const q = p as Partial<AiCleanupSettings> | null
+    const cfg: AiCleanupSettings = {
+      baseUrl: typeof q?.baseUrl === 'string' && q.baseUrl.trim() !== '' ? q.baseUrl.trim() : DEFAULT_AI_SETTINGS.baseUrl,
+      apiKey: typeof q?.apiKey === 'string' ? q.apiKey.trim() : '',
+      model: typeof q?.model === 'string' && q.model.trim() !== '' ? q.model.trim() : DEFAULT_AI_SETTINGS.model,
+    }
+    void saveSystemSettings({ ai: cfg }).catch(() => { /* best-effort */ })
+    return cfg
+  })
+  ipcMain.handle(ipcChannels.aiCleanupText, async (_event, text: unknown) => {
+    const s = await loadSystemSettings()
+    return cleanupOcrText(typeof text === 'string' ? text : '', asAiSettings(s.ai))
   })
 
   // R78: clipboard text (annotator copy/paste) + native OCR

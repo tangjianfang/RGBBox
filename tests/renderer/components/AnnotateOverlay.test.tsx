@@ -214,6 +214,33 @@ describe('AnnotateOverlay', () => {
     await vi.waitFor(() => expect(mocks.ocrRecognize).toHaveBeenCalledTimes(2))
   })
 
+  it('R83: AI cleanup button sends panel text and replaces result; no-key shows hint', async () => {
+    const mocks = setupRendererMocks()
+    mocks.ocrRecognize.mockResolvedValue({ ok: true, text: '原始 OCR 文本', hint: undefined })
+    const cv = document.createElement('canvas')
+    cv.width = 400; cv.height = 300
+    const { container, findByTestId } = render(<AnnotateOverlay source={cv} onClose={() => {}} onSave={() => {}} onCopy={() => {}} />)
+    fireEvent.click(container.querySelector('.video-annotate-ocr')!)
+    const mask = container.querySelector('.video-ocr-region-mask')!
+    fireEvent.pointerDown(mask, { button: 0, clientX: 20, clientY: 20 })
+    fireEvent.pointerMove(mask, { clientX: 200, clientY: 120 })
+    fireEvent.pointerUp(mask, { clientX: 200, clientY: 120 })
+    const panel = await findByTestId('ocr-panel')
+    // 已配 Key：AI 整理 → 结果替换文本区
+    mocks.aiCleanupText.mockResolvedValueOnce({ ok: true, text: 'AI 整理后的文本' })
+    const aiBtn = panel.querySelector('.video-annotate-ocr-ai')!
+    fireEvent.click(aiBtn)
+    await vi.waitFor(() => expect(mocks.aiCleanupText).toHaveBeenCalledWith('原始 OCR 文本'))
+    await vi.waitFor(() => {
+      expect((panel.querySelector('.video-annotate-ocr-text') as HTMLTextAreaElement).value).toBe('AI 整理后的文本')
+    })
+    // 未配 Key：行内提示且文本不变（测试无 I18nProvider，t 返回原始 key）
+    mocks.aiCleanupText.mockResolvedValueOnce({ ok: false, text: '', hint: 'nokey' })
+    fireEvent.click(aiBtn)
+    await vi.waitFor(() => expect(panel.textContent).toContain('video.annotate.aiNoKey'))
+    expect((panel.querySelector('.video-annotate-ocr-text') as HTMLTextAreaElement).value).toBe('AI 整理后的文本')
+  })
+
   it('R79.2: tiny drag (<8px) falls back to full-image OCR instead of silent exit', async () => {
     const mocks = setupRendererMocks()
     mocks.ocrRecognize.mockResolvedValue({ ok: true, text: 'full', hint: undefined })

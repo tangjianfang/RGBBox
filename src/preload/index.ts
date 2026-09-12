@@ -176,6 +176,13 @@ const api = {
   snipGetHotkey: (): Promise<string> => ipcRenderer.invoke(ipcChannels.snipGetHotkey),
   snipSetHotkey: (accel: string): Promise<{ ok: boolean; hotkey: string }> =>
     ipcRenderer.invoke(ipcChannels.snipSetHotkey, accel),
+  // R83: OCR AI-cleanup (OpenAI-compatible chat API)
+  aiGetSettings: (): Promise<{ baseUrl: string; apiKey: string; model: string }> =>
+    ipcRenderer.invoke(ipcChannels.aiGetSettings),
+  aiSetSettings: (cfg: { baseUrl: string; apiKey: string; model: string }): Promise<{ baseUrl: string; apiKey: string; model: string }> =>
+    ipcRenderer.invoke(ipcChannels.aiSetSettings, cfg),
+  aiCleanupText: (text: string): Promise<{ ok: boolean; text: string; hint?: 'nokey' | 'auth' | 'http' | 'parse' | 'network' }> =>
+    ipcRenderer.invoke(ipcChannels.aiCleanupText, text),
 
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>

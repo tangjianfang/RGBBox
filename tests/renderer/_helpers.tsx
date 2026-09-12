@@ -79,6 +79,10 @@ export function setupRendererMocks() {
     setUiLocale: vi.fn(),
     snipGetHotkey: vi.fn().mockResolvedValue('Alt+A'),
     snipSetHotkey: vi.fn().mockResolvedValue({ ok: true, hotkey: 'Alt+A' }),
+    // R83: OCR AI-cleanup
+    aiGetSettings: vi.fn().mockResolvedValue({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-4-flash' }),
+    aiSetSettings: vi.fn().mockResolvedValue({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-4-flash' }),
+    aiCleanupText: vi.fn().mockResolvedValue({ ok: true, text: '' }),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),

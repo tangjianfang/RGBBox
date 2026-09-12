@@ -774,7 +774,7 @@
 - **R81.2** **snipManager**：抽 `applyHotkey()`（unregister 旧 → register 新 → `isRegistered` 校验，失败回滚旧键并回调 onConflict）；导出 `getSnipHotkeyPref/setSnipHotkeyPref`；托盘菜单标签经 `trayMenuLabels(locale, 当前键)` 跟随（R80.12 已预留参数）。
 - **R81.3** **IPC + UI**：`rgbbox:snip:get-hotkey` / `set-hotkey`（校验+注册+持久化+重建托盘菜单，返回 `{ok, hotkey}`）；App 状态面板（屏保开关下）加「全局截图热键」下拉行；冲突 → 气泡 + 选择回退。i18n zh/en。
 - **R81.4** **验收点**：预设白名单纯函数单测；切换热键后旧键失效新键生效 + 托盘标签跟随（实机）；全量回归 0 失败。
-- **R81.5** **状态**：⏳
+- **R81.5** **状态**：✅（shared/snipHotkeys 白名单 + applyHotkey 失败回滚；设置区下拉即时生效 + 持久化 + 托盘标签跟随；预设白名单用例；60 files / 609 passed 0 失败；typecheck + build 0 error；实机复测待用户。）
 
 ### R82. 本地 RapidOCR（PP-OCRv4 ONNX）替换/兜底 WinRT
 
@@ -783,7 +783,7 @@
 - **R82.2** **推理服务** `src/main/rapidOcrService.ts`：懒加载 session；nativeImage 解码 RGBA（零 canvas 依赖）；det 预处理（max-side 960 等比 + ImageNet 归一化 NCHW）→ DBNet 概率图 → 阈值 0.3 → 连通域 → bbox 映射回原图 + 比例扩边（截图文本轴对齐，不做多边形 unclip）；rec 预处理（h=48 等比、(x/255-0.5)/0.5）→ CTC 贪心解码（纯函数）；按行排序拼接。
 - **R82.3** **引擎路由**：`ocrService.recognizeImage` 优先 RapidOCR（模型就绪）→ 异常回退 WinRT；结果带 `engine` 标识；OCR 面板显示引擎名。IPC 签名不变（渲染层零改动除引擎展示）。
 - **R82.4** **验收点**：CTC 解码 + det 后处理纯函数单测（构造张量）；引擎路由单测（mock）；实机用低识别率样本对比 WinRT vs RapidOCR；全量回归 0 失败 + build 0 error（含 asarUnpack 原生模块）。
-- **R82.5** **状态**：⏳
+- **R82.5** **状态**：✅（rapidOcrPure 6 用例（CTC/连通域/排序/张量）+ 引擎路由 3 用例；模型直链 SHA256 校验（哈希与官方 yaml 一致实证）；实机验证：中英混排 4 行样本 3 行全对 1 行 1 字误，warm 379ms；rec 宽度上限 800 为 640/800/1280 三档实测定稿；61 files / 616 passed；打包 asarUnpack 原生模块；实机复测待用户。）
 
 ### R83. OCR 后 AI 整理（云 LLM，OpenAI 兼容协议）
 
@@ -792,7 +792,7 @@
 - **R83.2** **服务与 IPC**：`src/main/aiCleanupService.ts`（node fetch，OpenAI chat/completions 协议；系统提示词=整理 OCR 文本恢复段落/去乱码/表格转 markdown、不新增内容；30s 超时）；`rgbbox:ai:cleanup-text` + `ai:get-settings` / `ai:set-settings`。
 - **R83.3** **UI**：OCR 结果面板加「AI 整理」按钮——已配 Key：调用并以结果替换文本区（可重新识别还原）；未配 Key：行内提示跳设置；失败行内提示不影响纯 OCR。
 - **R83.4** **验收点**：请求体构造/响应解析纯函数单测；未配 Key 路径组件测试；实机配 GLM Key 走通一次整理；全量回归 0 失败。
-- **R83.5** **状态**：⏳
+- **R83.5** **状态**：✅（aiCleanupService 纯函数 4 用例（请求构造/URL 拼接/响应解析/无 Key 短路）+ 组件流 1 用例（AI 整理替换文本 + 未配 Key 行内提示）；设置区 API 配置行（baseUrl/模型/Key，system.json 持久化，Key 不入日志）；62 files / 621 passed 0 失败；typecheck + build 0 error；实机配 GLM Key 走通待用户。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
@@ -2243,3 +2243,4 @@
 | 2026-09-13 | 追加并实施 R79.13（用户复测反馈"拍照图片列表滚动条与主题不搭"）：根因 = Chromium 121+（Electron 41）标准滚动条属性（scrollbar-width: thin）出现即忽略 ::-webkit-scrollbar* 规则，.video-filmstrip 是全文件唯一未配 scrollbar-color 的实例 → 青色 webkit 规则失效回落系统灰滑块；修复 = 补 scrollbar-color 青/透明对（与 .video-annotate-ocr-text 同款已验收模式）；CaptureFilmstrip 6/6；状态 🔄 → ✅；实机外观待用户确认 | Claude |
 | 2026-09-13 | 追加并实施 R80.10/R80.11（用户复测三项：启动延迟 / 框选区域黑色 / 背景偏暗）：R80.10 根因 = toDataURL 同步串行 PNG 编码阻塞在开窗前 → 改 nativeImage 存储 + 先开窗 + getSnipFrame 懒编码（窗口加载与编码重叠，多屏各自独立），startSnip 记分段耗时日志；实机 窗口出现→可交互 62ms；R80.11 根因 = 选区挖洞误用不透明黑 rect → 改 evenodd 路径真挖洞（选区透亮）+ 暗幕 0.45→0.18 + 视口 resize 跟踪；实机 DOM/截图双验证（subPaths:2、blackRects:0、600×300 角标清晰）；59 files / 605 passed（+1）；状态 ⏳ → ✅；体验待用户复测 | Claude |
 | 2026-09-13 | 追加并实施 R80.12（用户复测"切英文后托盘菜单仍中文"）：根因 = 托盘菜单启动时一次构建 + 标签硬编码中文，语言状态只在渲染层；修复 = 新纯函数模块 trayMenu.ts（zh/en 标签 + locale 白名单，3 用例）+ 菜单可重建（applyTrayMenu/rebuildTrayMenu）+ 新 IPC ui:set-locale + i18n Provider 启动同步/切换通知；60 files / 608 passed（+3）；状态 ⏳→✅（同轮答复用户：自定义热键与 OCR 升级为候选方案待选型） | Claude |
+| 2026-09-13 | 实施 R81（截图热键预设五选一：shared 白名单 + applyHotkey 回滚 + 设置下拉 + system.json 持久化 + 托盘标签跟随）；R82（本地 RapidOCR：onnxruntime-node CPU + ModelScope 官方直链 SHA256 模型下载 + CTC/连通域纯函数 6 用例 + rapid 优先 winrt 兜底路由 + OCR 面板引擎显示；rec 宽度 800 实测定稿；实机 4 行样本 3 行全对、warm 379ms）；R83（OCR 后 AI 整理：OpenAI 兼容接口 + 设置区 Key 配置 + 面板按钮/未配 Key 提示 + 纯函数 4 用例）；62 files / 621 passed（--maxWorkers=4）；三条款 ⏳ → ✅；实机复测待用户 | Claude |

@@ -5986,3 +5986,12 @@ input[type='range'].video-player-volume {
   padding: 6px 14px; border-radius: 6px; background: rgba(5, 8, 10, 0.8);
   color: rgba(255, 255, 255, 0.82); font-size: 13px; pointer-events: none;
 }
+
+/* ── R83: AI 整理配置行 ────────────────────────────────────────────── */
+.ai-cfg-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.ai-cfg-row input {
+  width: 130px; padding: 3px 8px; border-radius: 6px; font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(13, 21, 25, 0.9);
+  color: rgba(255, 255, 255, 0.86);
+}
+.ai-cfg-row input:focus { outline: none; border-color: #46c6a8; }
