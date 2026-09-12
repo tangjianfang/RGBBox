@@ -653,11 +653,11 @@
 - **R77.4** **不动**：R75.1 预览缩放（步进保持 ×1.1 不调细，用户选择仅标注器调）、snip 框选流程、录制/裁剪管线、`media://` 协议、overlay/投屏、`package.json` scripts、R70–R72 已修项。
 - **R77.5** **受影响文件**：`src/main/captureStore.ts`（新增）、`src/main/index.ts`（handler 接线 + dialog import）、`src/shared/ipc.ts`、`src/preload/index.ts`、`src/renderer/src/components/CaptureFilmstrip.tsx`（新增，挂载于 `VideoStudioView` 舞台）、`src/renderer/src/components/video/annotationRender.ts`（新增，自 `AnnotateOverlay.tsx` 抽出）、`src/renderer/src/components/video/AnnotateOverlay.tsx`（修复 + 缩放）、`src/renderer/src/components/VideoStudioView.tsx`（胶片栏接线 + 三产出入库 + 删 lastShot 面板）、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`tests/main/captureStore.test.ts`（新增）、`tests/renderer/components/annotationRender.test.ts`（新增）、`tests/renderer/components/CaptureFilmstrip.test.tsx`（新增）、`tests/renderer/components/AnnotateOverlay.test.tsx`（回归+缩放用例）、`tests/renderer/_helpers.tsx`。
 - **R77.6** **验收点**：
-  - [ ] `yarn typecheck` / `yarn build` 通过
-  - [ ] `yarn test` 全量通过，无回归（captureStore 纯函数 + annotationRender mock-ctx 回归锁 + CaptureFilmstrip 组件 + AnnotateOverlay 既有用例）
-  - [ ] code review 通过（本条为 goal 流程新增的显式 review 步骤）
+  - [x] `yarn typecheck` 通过（node + web 双绿）；`yarn build` 通过（0 error）
+  - [x] `yarn test` 全量通过：**56 files / 562 passed / 41 skipped，0 失败**（`--maxWorkers=4`；较 R76 基线 53/545 → +3 文件 +17 用例：`captureStore.test.ts` 7 + `annotationRender.test.ts` 5 + `CaptureFilmstrip.test.tsx` 3 + `AnnotateOverlay.test.tsx` +2）
+  - [x] code review 通过：10 项确认发现全部修复（`8277c5c`）——文字修复补完（commitText 漏设 width 字号）、胶片栏归位传输条上方、滚轮避开工具条/输入框、视图 memo 化+画布重分配守卫、导入大小上限、read 按扩展名给 MIME、索引存相对路径（userData 迁移无幽灵条目）、编辑死按钮给 toast、极小图首滚不反向、底图未解码禁止放文字；另修过期 toast 文案。已知未修（review 记录、如实保留）：media:// MIME 表无图片扩展名（缩略图靠 Chromium 嗅探渲染正常；涉 R70.1 语义，不在本条范围）、胶片栏无单条下载按钮（需求只列了增删）、importFiles 与 addBuffer 存在少量重复（低危）
   - [ ] 手动：拍照/局部截图/标注保存三类产出自动入列且**重启应用后列表仍在**；导入多张图片、单条删除、清空后胶片栏隐藏；标注器文字可见可编辑、马赛克涂抹生效；滚轮缩放细腻（×1.06）且锚点正确、放大拖拽平移、双击复位；导出仍无水印
-- **R77.7** **状态**：⏳
+- **R77.7** **状态**：✅（代码已实施，自动化验证 + code review 全绿（证据见 R77.6）；实机手动验证 pending 用户复测。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
@@ -2095,3 +2095,5 @@
 | 2026-09-11 | 实施 R75：`video/` 新增 7 文件（previewTransform/usePreviewZoom/PreviewZoomBar/frameCapture/RegionSnipOverlay/SnapshotEditorModal/editorZh）；依赖 +react-filerobot-image-editor@5.0.0-beta.159（peerDeps react>=19，官方支持）+ peer 补装 react-konva/styled-components；typecheck/build 全绿、52 files / 536 passed（+25 新用例）；状态 ⏳ → ✅；待用户实机验收 | Claude |
 | 2026-09-12 | 追加 R76（截图/标注体验重做：微信式就地工具条，取代 R75.4/R75.5 filerobot 弹窗）；L2 风险；7 项缺陷根因复盘 + 方向 A 经用户批准；状态 ⏳ | mike / Claude |
 | 2026-09-12 | 实施 R76：新增 `annotationModel.ts`（纯函数形状模型+历史栈，8 用例）+ `AnnotateOverlay.tsx`（canvas 就地标注：矩形/椭圆/箭头/画笔/文字/马赛克/撤销重做/✓保存/复制/×，5 用例）+ 剪贴板 IPC `rgbbox:clipboard:write-image`（clipboard.writeImage 原生实现）；拍照恢复直接下载、框选确认后就地标注、缩略图显式编辑按钮；框选手柄 16px/双击限选区内/提示条；移除 filerobot+react-konva+styled-components（chunk -1.86MB）；顺带加固 logger 测试竞态；53 files / 545 passed（--maxWorkers=4 连续两次全绿）；状态 ⏳ → ✅；待用户实机验收 | Claude |
+| 2026-09-12 | 追加 R77（拍摄缓存胶片栏 + 标注器文字/马赛克修复 + 标注器查看缩放）；L2 风险；三项需求 brainstorm 确认（舞台下方胶片栏/三类产出 200 条 FIFO/文件导入/×1.06 步进）；状态 ⏳ | mike / Claude |
+| 2026-09-12 | 实施 R77：`captureStore.ts`（主进程持久化 + 5 IPC）+ `CaptureFilmstrip.tsx`（横滚胶片栏，三产出自动入库/导入/删除）+ `annotationRender.ts` 抽取并修复文字（font 非法 token）与马赛克（全尺寸底砖 1:1 坐标）+ 标注器滚轮缩放（×1.06/锚点/平移/双击复位）+ ESC 分层；code review 10 项确认发现全部修复（8277c5c）；56 files / 562 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机验收 | Claude |
