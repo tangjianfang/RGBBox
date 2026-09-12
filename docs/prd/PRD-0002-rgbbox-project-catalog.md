@@ -692,11 +692,11 @@
 - **R79.6** **不动**：R78 既有交互语义、拍摄缓存、IPC 集合（本条零新通道）、`package.json` scripts、R70–R72。
 - **R79.7** **受影响文件**：`src/main/ocrService.ts`、`src/renderer/src/components/video/AnnotateOverlay.tsx`、`src/renderer/src/components/CaptureFilmstrip.tsx`、`src/renderer/src/i18n/index.tsx`、`src/renderer/src/styles.css`、`tests/main/ocrService.test.ts`（脚本断言更新 + 空格合并用例）、`tests/renderer/components/AnnotateOverlay.test.tsx`（框选识别用例）、`tests/renderer/components/CaptureFilmstrip.test.tsx`（双击用例）。
 - **R79.8** **验收点**：
-  - [ ] `yarn typecheck` / `yarn build` 通过
-  - [ ] `yarn test` 全量通过，无回归
-  - [ ] code review 通过
-  - [ ] 手动：OCR 按钮框选一段含中英文的区域 → 松手立即出可复制结果（中文无乱码、无多余空格）；「整图」可用；编辑器滚动条为深色；胶片栏双击缩略图进编辑；画形状后点选出现手柄且各方向光标正确
-- **R79.9** **状态**：⏳
+  - [x] `yarn typecheck` 通过；`yarn build` 通过（0 error）
+  - [x] `yarn test` 全量通过：**57 files / 586 passed / 41 skipped，0 失败**（`--maxWorkers=4`，review 修复后全绿；较 R78 基线 580 → +6 用例：ocrService +2、AnnotateOverlay +3、CaptureFilmstrip +1）
+  - [x] code review 通过：10 项确认发现全部修复（`f117385`）——最重项：框选遮罩此前绑在画布上的事件真机永远拖不动（遮罩必然拦截画布；fireEvent 绕过命中测试致测试假绿）→ 事件改挂 SVG 本体 + 测试改打遮罩；其余：base 未解码禁入框选（杜绝整图静默回退/坐标脏写）、手柄光标 4 角/90° 周期修正、<8px 拖选回退整图识别（一键 OCR 可达 + 有反馈）、CJK 标点空格合并、面板 overflow 激活滚动条规则、cropToDataUrl 抽共享助手、keydown 免逐帧重订阅、缩略图 title 合并文件名时间。已知未修（如实记录）：crop 助手与 VideoStudioView.finishSnip 的内联裁剪仅部分收敛（finishSnip 产出 canvas 类型不同，未强并）
+  - [ ] 手动：OCR 按钮框选一段含中英文的区域 → 松手立即出可复制结果（中文无乱码、无多余空格）；「整图」与一键（原地点击）均可用；编辑器滚动条为深色；胶片栏双击缩略图进编辑；画形状后点选出现手柄且各方向光标正确（含旋转后）
+- **R79.9** **状态**：✅（代码已实施，自动化验证 + code review 全绿（证据见 R79.8）；OCR 脚本修复已在本机实证（英文/中文/中文路径）；实机端到端手动验证 pending 用户复测。）
 
 ### R80. 独立全局截图工具（托盘入口 + 全屏选区 + 标注小工具）
 
@@ -2145,3 +2145,5 @@
 | 2026-09-12 | 实施 R77：`captureStore.ts`（主进程持久化 + 5 IPC）+ `CaptureFilmstrip.tsx`（横滚胶片栏，三产出自动入库/导入/删除）+ `annotationRender.ts` 抽取并修复文字（font 非法 token）与马赛克（全尺寸底砖 1:1 坐标）+ 标注器滚轮缩放（×1.06/锚点/平移/双击复位）+ ESC 分层；code review 10 项确认发现全部修复（8277c5c）；56 files / 562 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机验收 | Claude |
 | 2026-09-12 | 追加 R78（标注器文本系统重做 + 形状手势编辑 + Windows 原生 OCR + 胶片栏窗口约束）；L2 风险（+3 IPC）；三项选型经用户确认（WinRT OCR / 对齐+字号+粗体+图层 / 双向纯文本）；状态 ⏳ | mike / Claude |
 | 2026-09-12 | 实施 R78：模型扩展（rotation/align/bold/reorder/等比缩放）+ 渲染（旋转包装/对齐/粗体）+ ocrService（PowerShell WinRT）+ 剪贴板文本 ×2 与 ocr 三 IPC + 标注器交互大改（IME isComposing 修复、排版工具行、图层、Ctrl+C/V、同工具点选、角等比/边拉伸、旋转柄、OCR 面板）+ 胶片栏限宽根因修复与三种滑动；code review 10 项确认发现全部修复（含两项 zh-CN 实证复现的 OCR 编码缺陷）；57 files / 580 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机验收 | Claude |
+| 2026-09-12 | 追加 R79（OCR 实机失败修复 + 框选识别 + 三项打磨）与 R80 立项占位（独立全局截图工具，R79 后实施）；L2；状态 ⏳ | mike / Claude |
+| 2026-09-12 | 实施 R79：OCR 根因实证（PS 5.1 静态 WinRT 异步方法绑定缺陷 → OpenAsync+反射直调，本机英/中/中文路径全通）+ CJK 空格合并（含标点）；OCR 按钮改框选识别（遮罩 SVG 承载事件、<8px 回退整图、面板整图按钮）；深色滚动条；缩略图双击进编辑；hover 手势光标（45° 四态周期）；code review 10 项确认全修（f117385，最重：遮罩事件绑定真机失效）；57 files / 586 passed（--maxWorkers=4）；状态 ⏳ → ✅；待用户实机验收 | Claude |
