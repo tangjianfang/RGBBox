@@ -84,6 +84,9 @@ export function setupRendererMocks() {
     aiSetSettings: vi.fn().mockResolvedValue({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-4-flash' }),
     aiCleanupText: vi.fn().mockResolvedValue({ ok: true, text: '' }),
     aiTranslateText: vi.fn().mockResolvedValue({ ok: true, text: '' }),
+    // R88: AI Lab
+    aiTestConnection: vi.fn().mockResolvedValue({ ok: true, text: 'pong', latencyMs: 12 }),
+    aiChat: vi.fn().mockResolvedValue({ ok: true, text: 'hi there', latencyMs: 20 }),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),

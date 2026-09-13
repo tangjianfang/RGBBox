@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
-import type { CaptureEntry, CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming } from '../shared/types'
+import { validateChatMessages } from '../shared/aiChatValidation'
+import type { AiChatMessage, AiChatOutcome, CaptureEntry, CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -185,6 +186,15 @@ const api = {
     ipcRenderer.invoke(ipcChannels.aiCleanupText, text),
   aiTranslateText: (text: string): Promise<{ ok: boolean; text: string; hint?: 'nokey' | 'auth' | 'http' | 'parse' | 'network' }> =>
     ipcRenderer.invoke(ipcChannels.aiTranslateText, text),
+  // R88.2: AI Lab — connection test + multi-turn chat
+  aiTestConnection: (): Promise<AiChatOutcome> =>
+    ipcRenderer.invoke(ipcChannels.aiTestConnection),
+  aiChat: (messages: AiChatMessage[]): Promise<AiChatOutcome> => {
+    const valid = validateChatMessages(messages)
+    return valid === null
+      ? Promise.resolve({ ok: false, text: '', hint: 'parse', latencyMs: 0 })
+      : ipcRenderer.invoke(ipcChannels.aiChat, valid)
+  },
 
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>

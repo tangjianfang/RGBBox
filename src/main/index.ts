@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, screen, session, shell, Tray } from 'electron'
+import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, safeStorage, screen, session, shell, Tray } from 'electron'
 import { access, mkdir, open, readdir, stat, unlink } from 'node:fs/promises'
 import { createWriteStream } from 'node:fs'
 import { get as httpGet } from 'node:http'
@@ -27,7 +27,9 @@ import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
 import { loadSystemSettings, saveSystemSettings, type SystemSettings } from './systemSettingsStore'
 import { setRapidOcrRunner } from './ocrService'
-import { cleanupOcrText, translateOcrText, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
+import { cleanupOcrText, translateOcrText, chatCompletion, testConnection, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
+import { encodeApiKey, decodeApiKey, type SafeStorageCodec } from './aiSecretCodec'
+import { validateChatMessages } from '../shared/aiChatValidation'
 import { parseRangeHeader, resolveMediaMime } from './mediaProtocol'
 
 // Initialize file logger — must be done after imports but before app.whenReady
@@ -327,9 +329,26 @@ function registerIpc(): void {
     return { ok, hotkey: getSnipHotkeyPref() }
   })
   // R83: OCR AI-cleanup settings + invoke (OpenAI-compatible chat API)
+  // R88.4: safeStorage-backed codec for the AI api key at rest (DPAPI on Windows).
+  const safeStorageCodec: SafeStorageCodec = {
+    encrypt: (plain) => {
+      try {
+        return safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(plain) : null
+      } catch {
+        return null
+      }
+    },
+    decrypt: (data) => {
+      try {
+        return safeStorage.decryptString(Buffer.from(data))
+      } catch {
+        return null
+      }
+    },
+  }
   const asAiSettings = (ai: SystemSettings['ai']): AiCleanupSettings => ({
     baseUrl: typeof ai?.baseUrl === 'string' ? ai.baseUrl : DEFAULT_AI_SETTINGS.baseUrl,
-    apiKey: typeof ai?.apiKey === 'string' ? ai.apiKey : '',
+    apiKey: decodeApiKey(typeof ai?.apiKey === 'string' ? ai.apiKey : '', safeStorageCodec),
     model: typeof ai?.model === 'string' ? ai.model : DEFAULT_AI_SETTINGS.model,
   })
   ipcMain.handle(ipcChannels.aiGetSettings, async () => {
@@ -343,7 +362,12 @@ function registerIpc(): void {
       apiKey: typeof q?.apiKey === 'string' ? q.apiKey.trim() : '',
       model: typeof q?.model === 'string' && q.model.trim() !== '' ? q.model.trim() : DEFAULT_AI_SETTINGS.model,
     }
-    void saveSystemSettings({ ai: cfg }).catch(() => { /* best-effort */ })
+    if (cfg.apiKey !== '' && !safeStorage.isEncryptionAvailable()) {
+      console.warn('[RGBBox] safeStorage unavailable — AI key stored in plaintext')
+    }
+    // store encrypted, return plaintext (renderer must never see the ciphertext)
+    void saveSystemSettings({ ai: { ...cfg, apiKey: encodeApiKey(cfg.apiKey, safeStorageCodec) } })
+      .catch(() => { /* best-effort */ })
     return cfg
   })
   ipcMain.handle(ipcChannels.aiCleanupText, async (_event, text: unknown) => {
@@ -354,6 +378,18 @@ function registerIpc(): void {
   ipcMain.handle(ipcChannels.aiTranslateText, async (_event, text: unknown) => {
     const s = await loadSystemSettings()
     return translateOcrText(typeof text === 'string' ? text : '', asAiSettings(s.ai))
+  })
+
+  // R88.2: AI Lab — connection test + multi-turn chat (payload validated, never throws)
+  ipcMain.handle(ipcChannels.aiTestConnection, async () => {
+    const s = await loadSystemSettings()
+    return testConnection(asAiSettings(s.ai))
+  })
+  ipcMain.handle(ipcChannels.aiChat, async (_event, p: unknown) => {
+    const messages = validateChatMessages(p)
+    if (messages === null) return { ok: false, text: '', hint: 'parse', latencyMs: 0 }
+    const s = await loadSystemSettings()
+    return chatCompletion(messages, asAiSettings(s.ai), { temperature: 0.7 })
   })
 
   // R78: clipboard text (annotator copy/paste) + native OCR
