@@ -1,30 +1,26 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
-  buildCleanupRequest, buildTranslateRequest, cleanupOcrText, detectTranslateDirection,
-  parseCleanupResponse, translateOcrText, DEFAULT_AI_SETTINGS,
+  cleanupOcrText, detectTranslateDirection, parseCleanupResponse, translateOcrText,
+  chatCompletion, buildTestMessages, testConnection, TRANSLATE_PROMPTS,
+  DEFAULT_AI_SETTINGS, type AiCleanupSettings,
 } from '../../src/main/aiCleanupService'
 
-describe('aiCleanupService pure (R83)', () => {
-  it('buildCleanupRequest: no key / empty text → null', () => {
-    expect(buildCleanupRequest('文本', { ...DEFAULT_AI_SETTINGS, apiKey: '' })).toBeNull()
-    expect(buildCleanupRequest('  ', { ...DEFAULT_AI_SETTINGS, apiKey: 'sk-x' })).toBeNull()
-  })
+afterEach(() => vi.unstubAllGlobals())
 
-  it('buildCleanupRequest: OpenAI-compatible URL join + payload', () => {
-    const req = buildCleanupRequest('会 议 记 录', {
-      baseUrl: 'https://open.bigmodel.cn/api/paas/v4/',
-      apiKey: ' sk-test ',
-      model: 'glm-4-flash',
-    })
-    expect(req).not.toBeNull()
-    expect(req!.url).toBe('https://open.bigmodel.cn/api/paas/v4/chat/completions')
-    const body = JSON.parse(req!.init.body as string)
-    expect(body.model).toBe('glm-4-flash')
-    expect(body.messages).toHaveLength(2)
-    expect(body.messages[1].content).toBe('会 议 记 录')
-    expect((req!.init.headers as Record<string, string>).Authorization).toBe('Bearer sk-test')
-  })
+const settings: AiCleanupSettings = { baseUrl: 'https://x.example/v4', apiKey: 'k', model: 'glm-5.3-flash' }
 
+/** Captures (url, init) of the next fetch and replies with an ok chat body. */
+function stubFetchCapture(replay: (url: string, init: RequestInit) => Response = () =>
+  new Response(JSON.stringify({ choices: [{ message: { content: 'pong' } }] }), { status: 200 })) {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+    calls.push({ url, init })
+    return replay(url, init)
+  }))
+  return calls
+}
+
+describe('aiCleanupService pure (R83, payload level)', () => {
   it('parseCleanupResponse extracts content; rejects invalid shapes', () => {
     expect(parseCleanupResponse({ choices: [{ message: { content: '整理后' } }] })).toBe('整理后')
     expect(parseCleanupResponse({ choices: [] })).toBeNull()
@@ -37,35 +33,41 @@ describe('aiCleanupService pure (R83)', () => {
     expect(out).toEqual({ ok: false, text: '', hint: 'nokey' })
   })
 
+  it('cleanupOcrText: OpenAI-compatible URL join + payload (ported from the deleted builder)', async () => {
+    const calls = stubFetchCapture()
+    const out = await cleanupOcrText('会 议 记 录', {
+      baseUrl: 'https://open.bigmodel.cn/api/paas/v4/',
+      apiKey: ' sk-test ',
+      model: 'glm-4-flash',
+    })
+    expect(out.ok).toBe(true)
+    expect(calls[0].url).toBe('https://open.bigmodel.cn/api/paas/v4/chat/completions')
+    const body = JSON.parse(calls[0].init.body as string)
+    expect(body.model).toBe('glm-4-flash')
+    expect(body.messages).toHaveLength(2)
+    expect(body.messages[1].content).toBe('会 议 记 录')
+    expect((calls[0].init.headers as Record<string, string>).Authorization).toBe('Bearer sk-test')
+  })
+
   it('R84: detectTranslateDirection by CJK/letter ratio', () => {
     expect(detectTranslateDirection('会议记录 2026')).toBe('zh2en')       // 中文为主
     expect(detectTranslateDirection('Video Workstation')).toBe('en2zh')   // 英文为主
     expect(detectTranslateDirection('123 456')).toBe('zh2en')             // 中性默认
   })
 
-  it('R84: buildTranslateRequest picks prompt by direction; empty key → null', () => {
-    expect(buildTranslateRequest('文本', DEFAULT_AI_SETTINGS)).toBeNull()
-    const zh = buildTranslateRequest('会议记录', { ...DEFAULT_AI_SETTINGS, apiKey: 'k' })
-    const bodyZh = JSON.parse(zh!.init.body as string)
-    expect(bodyZh.messages[0].content).toContain('中文文本翻译成英文')
-    const en = buildTranslateRequest('meeting notes', { ...DEFAULT_AI_SETTINGS, apiKey: 'k' })
-    expect(JSON.parse(en!.init.body as string).messages[0].content).toContain('英文文本翻译成中文')
-    expect(zh!.url).toBe('https://open.bigmodel.cn/api/paas/v4/chat/completions')
+  it('R84: translateOcrText picks prompt by direction; TRANSLATE_PROMPTS is the single source', async () => {
+    const calls = stubFetchCapture()
+    await translateOcrText('会议记录', { ...DEFAULT_AI_SETTINGS, apiKey: 'k' })
+    expect(JSON.parse(calls[0].init.body as string).messages[0].content).toBe(TRANSLATE_PROMPTS.zh2en)
+    await translateOcrText('meeting notes', { ...DEFAULT_AI_SETTINGS, apiKey: 'k' })
+    expect(JSON.parse(calls[1].init.body as string).messages[0].content).toBe(TRANSLATE_PROMPTS.en2zh)
+    expect(calls[0].url).toBe('https://open.bigmodel.cn/api/paas/v4/chat/completions')
   })
 
   it('R84: translateOcrText without key short-circuits (no fetch)', async () => {
     expect(await translateOcrText('文本', DEFAULT_AI_SETTINGS)).toEqual({ ok: false, text: '', hint: 'nokey' })
   })
 })
-
-// ── R88: AI Lab generic pipeline ───────────────────────────────────────────
-import { chatCompletion, buildTestMessages, testConnection } from '../../src/main/aiCleanupService'
-import { vi, afterEach } from 'vitest'
-import type { AiCleanupSettings } from '../../src/main/aiCleanupService'
-
-afterEach(() => vi.unstubAllGlobals())
-
-const settings: AiCleanupSettings = { baseUrl: 'https://x.example/v4', apiKey: 'k', model: 'glm-5.3-flash' }
 
 describe('chatCompletion (R88)', () => {
   it('returns ok + text + latencyMs on 200 with choices', async () => {
@@ -83,7 +85,7 @@ describe('chatCompletion (R88)', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('x', { status: 500 })))
     expect((await chatCompletion([{ role: 'user', content: 'p' }], settings)).hint).toBe('http')
   })
-  it('nokey without key; parse on bad shape; network on fetch throw; empty messages → parse', async () => {
+  it('nokey without key (remote); parse on bad shape; network on fetch throw; empty messages → parse', async () => {
     expect((await chatCompletion([{ role: 'user', content: 'p' }], { ...settings, apiKey: '' })).hint).toBe('nokey')
     expect((await chatCompletion([], settings)).hint).toBe('parse')
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ nope: 1 }), { status: 200 })))
@@ -91,19 +93,24 @@ describe('chatCompletion (R88)', () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
     expect((await chatCompletion([{ role: 'user', content: 'p' }], settings)).hint).toBe('network')
   })
+  it('R88 review fix: keyless local endpoints (Ollama) work and omit the Authorization header', async () => {
+    const calls = stubFetchCapture()
+    const out = await chatCompletion(
+      [{ role: 'user', content: 'hi' }],
+      { baseUrl: 'http://localhost:11434/v1', apiKey: '', model: 'qwen3.6:35b' },
+    )
+    expect(out.ok).toBe(true)
+    expect((calls[0].init.headers as Record<string, string>).Authorization).toBeUndefined()
+  })
 })
 
 describe('testConnection (R88)', () => {
   it('pings with a tiny user message and max_tokens 8', async () => {
-    let captured: { max_tokens?: number } | undefined
-    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => {
-      captured = JSON.parse(init.body as string)
-      return new Response(JSON.stringify({ choices: [{ message: { content: 'pong' } }] }), { status: 200 })
-    }))
+    const calls = stubFetchCapture()
     expect(buildTestMessages()).toEqual([{ role: 'user', content: 'ping' }])
     const out = await testConnection(settings)
     expect(out.ok).toBe(true)
-    expect(captured?.max_tokens).toBe(8)
+    expect(JSON.parse(calls[0].init.body as string).max_tokens).toBe(8)
   })
 })
 

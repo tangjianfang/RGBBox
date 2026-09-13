@@ -101,4 +101,40 @@ describe('AiLabView (R88)', () => {
     await findByDisplayValue('https://open.bigmodel.cn/api/paas/v4')
     expect(container.textContent).toContain('nokey')
   })
+
+  it('no nokey hint for keyless local endpoints (Ollama), and keyUnreadable warns', async () => {
+    const rgbbox = setupRendererMocks()
+    rgbbox.aiGetSettings.mockResolvedValue({ baseUrl: 'http://localhost:11434/v1', apiKey: '', model: 'qwen3.6:35b' })
+    const { container, findByDisplayValue } = render(<AiLabView />)
+    await findByDisplayValue('http://localhost:11434/v1')
+    expect(container.querySelector('.ai-hint-line')).toBeNull()
+
+    const rgbbox2 = setupRendererMocks()
+    rgbbox2.aiGetSettings.mockResolvedValue({ baseUrl: 'https://x.example/v1', apiKey: '', model: 'm', keyUnreadable: true })
+    const second = render(<AiLabView />)
+    await second.findByDisplayValue('https://x.example/v1')
+    expect(second.container.textContent).toContain('ai.lab.keyUnreadable')
+    cleanup()
+  })
+
+  it('R88 review fix: error turns are not replayed into subsequent aiChat payloads', async () => {
+    const { rgbbox, container, findByDisplayValue } = mount()
+    await findByDisplayValue('https://open.bigmodel.cn/api/paas/v4')
+    const input = container.querySelector('textarea[data-field="chat-input"]') as HTMLTextAreaElement
+    const send = () => fireEvent.click(container.querySelector('[data-action="send"]') as HTMLElement)
+
+    // first turn fails (network) → error turn appended
+    rgbbox.aiChat.mockResolvedValueOnce({ ok: false, text: '', hint: 'network', latencyMs: 5 })
+    fireEvent.change(input, { target: { value: 'a' } })
+    send()
+    await waitFor(() => expect(container.querySelectorAll('.ai-msg-error').length).toBe(1))
+
+    // second turn succeeds → payload must NOT contain the failed empty assistant turn
+    fireEvent.change(input, { target: { value: 'b' } })
+    send()
+    await waitFor(() => expect(rgbbox.aiChat).toHaveBeenCalledTimes(2))
+    const secondPayload = (rgbbox.aiChat.mock.calls[1] as unknown[])[0] as Array<{ role: string; content: string }>
+    expect(secondPayload.filter((m) => m.role === 'assistant')).toHaveLength(0) // error turn excluded
+    expect(secondPayload.map((m) => m.content)).toEqual(['a', 'b'])
+  })
 })

@@ -57,3 +57,14 @@ export function matchProviderPreset(baseUrl: string): AiProviderPreset {
   return AI_PROVIDER_PRESETS.find((p) => p.id !== 'custom' && p.baseUrl === trimmed)
     ?? AI_PROVIDER_PRESETS[AI_PROVIDER_PRESETS.length - 1]
 }
+
+/** R88 review fix: local endpoints (Ollama etc.) need no API key — the keyless
+ *  preset would be dead otherwise, since chatCompletion gates on apiKey. */
+export function isKeylessLocal(baseUrl: string): boolean {
+  try {
+    const host = new URL(baseUrl.trim()).hostname.toLowerCase()
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
+  } catch {
+    return false
+  }
+}

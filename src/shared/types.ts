@@ -435,6 +435,10 @@ export interface VideoWallLayout {
 }
 
 // ── R88: AI Lab chat IPC types ────────────────────────────────────────────
+/** Single source for the AI failure taxonomy (R88 review fix: was spelled
+ *  out in six declarations across four layers). */
+export type AiErrorHint = 'nokey' | 'auth' | 'http' | 'parse' | 'network'
+
 export interface AiChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
@@ -443,6 +447,6 @@ export interface AiChatOutcome {
   ok: boolean
   /** Reply text when ok; empty string on failure. */
   text: string
-  hint?: 'nokey' | 'auth' | 'http' | 'parse' | 'network'
+  hint?: AiErrorHint
   latencyMs: number
 }

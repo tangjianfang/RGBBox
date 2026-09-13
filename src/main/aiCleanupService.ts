@@ -1,11 +1,12 @@
 /**
  * aiCleanupService — R83: OCR 文本 AI 整理（云 LLM，OpenAI 兼容协议）。
  * R88: 抽出通用 chatCompletion 管线（AI 实验室复用）；cleanup/translate 行为零改动。
- * 纯函数（buildCleanupRequest / parseCleanupResponse）供单测；网络调用
+ * 纯函数（parseCleanupResponse / TRANSLATE_PROMPTS）供单测；网络调用
  * 走主进程 fetch，30s 超时。Key 只存本机 system.json，不写日志。
  */
 
-import type { AiChatMessage, AiChatOutcome } from '../shared/types'
+import { isKeylessLocal } from '../shared/aiProviders'
+import type { AiChatMessage, AiChatOutcome, AiErrorHint } from '../shared/types'
 
 export interface AiCleanupSettings {
   baseUrl: string
@@ -24,35 +25,7 @@ export const CLEANUP_SYSTEM_PROMPT =
   '修正明显的错字与乱码、把表格转为 markdown、去掉页眉页脚等噪声。' +
   '只整理已有内容，不新增、不翻译、不总结。直接输出整理后的文本，不要任何解释或前后缀。'
 
-export type CleanupOutcome = { ok: boolean; text: string; hint?: 'nokey' | 'auth' | 'http' | 'parse' | 'network' }
-
-/** 构造 OpenAI 兼容 chat/completions 请求；未配 Key 或空文本 → null。 */
-export function buildCleanupRequest(
-  text: string,
-  s: AiCleanupSettings,
-): { url: string; init: RequestInit } | null {
-  if (!s.apiKey.trim() || !text.trim()) return null
-  const base = s.baseUrl.trim().replace(/\/+$/, '')
-  return {
-    url: `${base}/chat/completions`,
-    init: {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${s.apiKey.trim()}`,
-      },
-      body: JSON.stringify({
-        model: s.model.trim() || DEFAULT_AI_SETTINGS.model,
-        messages: [
-          { role: 'system', content: CLEANUP_SYSTEM_PROMPT },
-          { role: 'user', content: text },
-        ],
-        temperature: 0.1,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    },
-  }
-}
+export type CleanupOutcome = { ok: boolean; text: string; hint?: AiErrorHint }
 
 /** 从 OpenAI 兼容响应提取 content；无效结构 → null。 */
 export function parseCleanupResponse(json: unknown): string | null {
@@ -74,50 +47,22 @@ export async function cleanupOcrText(text: string, s: AiCleanupSettings): Promis
 
 /** 按 CJK/拉丁字母占比自动定向：中文为主 → 译英，否则 → 译中。 */
 export function detectTranslateDirection(text: string): 'zh2en' | 'en2zh' {
-  const cjk = (text.match(/[、-鿿豈-﫿！-｠]/g) ?? []).length
+  const cjk = (text.match(/[、-鿿豈-﫿！-｠]/g) ?? []).length
   const letters = (text.match(/[A-Za-z]/g) ?? []).length
   return cjk >= letters ? 'zh2en' : 'en2zh'
 }
 
-export function buildTranslateRequest(
-  text: string,
-  s: AiCleanupSettings,
-): { url: string; init: RequestInit } | null {
-  if (!s.apiKey.trim() || !text.trim()) return null
-  const base = s.baseUrl.trim().replace(/\/+$/, '')
-  const dir = detectTranslateDirection(text)
-  const prompt = dir === 'zh2en'
-    ? '你是翻译助手。把用户提供的中文文本翻译成英文。只输出译文，保留原文的段落与换行，不要任何解释。'
-    : '你是翻译助手。把用户提供的英文文本翻译成中文。只输出译文，保留原文的段落与换行，不要任何解释。'
-  return {
-    url: `${base}/chat/completions`,
-    init: {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${s.apiKey.trim()}`,
-      },
-      body: JSON.stringify({
-        model: s.model.trim() || DEFAULT_AI_SETTINGS.model,
-        messages: [
-          { role: 'system', content: prompt },
-          { role: 'user', content: text },
-        ],
-        temperature: 0.1,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    },
-  }
+/** Single source for the translate prompts (R88 review fix: was duplicated
+ *  between the now-deleted buildTranslateRequest and translateOcrText). */
+export const TRANSLATE_PROMPTS: Record<'zh2en' | 'en2zh', string> = {
+  zh2en: '你是翻译助手。把用户提供的中文文本翻译成英文。只输出译文，保留原文的段落与换行，不要任何解释。',
+  en2zh: '你是翻译助手。把用户提供的英文文本翻译成中文。只输出译文，保留原文的段落与换行，不要任何解释。',
 }
 
 export async function translateOcrText(text: string, s: AiCleanupSettings): Promise<CleanupOutcome> {
   if (!text.trim()) return { ok: false, text: '', hint: 'nokey' } // legacy empty-text semantics (R84)
-  const dir = detectTranslateDirection(text)
-  const prompt = dir === 'zh2en'
-    ? '你是翻译助手。把用户提供的中文文本翻译成英文。只输出译文，保留原文的段落与换行，不要任何解释。'
-    : '你是翻译助手。把用户提供的英文文本翻译成中文。只输出译文，保留原文的段落与换行，不要任何解释。'
   const out = await chatCompletion(
-    [{ role: 'system', content: prompt }, { role: 'user', content: text }],
+    [{ role: 'system', content: TRANSLATE_PROMPTS[detectTranslateDirection(text)] }, { role: 'user', content: text }],
     s,
   )
   return { ok: out.ok, text: out.text, hint: out.hint }
@@ -125,20 +70,25 @@ export async function translateOcrText(text: string, s: AiCleanupSettings): Prom
 
 // ── R88: AI Lab generic pipeline ──────────────────────────────────────────
 
-/** Generic OpenAI-compatible chat pipeline (fetch + latency + hint taxonomy). */
+/** Generic OpenAI-compatible chat pipeline (fetch + latency + hint taxonomy).
+ *  R88 review fix: local endpoints (Ollama) may run keyless — only remote
+ *  endpoints require an api key. */
 export async function chatCompletion(
   messages: AiChatMessage[],
   s: AiCleanupSettings,
   opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number },
 ): Promise<AiChatOutcome> {
-  if (!s.apiKey.trim()) return { ok: false, text: '', hint: 'nokey', latencyMs: 0 }
+  const hasKey = s.apiKey.trim() !== ''
+  if (!hasKey && !isKeylessLocal(s.baseUrl)) return { ok: false, text: '', hint: 'nokey', latencyMs: 0 }
   if (messages.length === 0) return { ok: false, text: '', hint: 'parse', latencyMs: 0 }
   const base = s.baseUrl.trim().replace(/\/+$/, '')
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (hasKey) headers.Authorization = `Bearer ${s.apiKey.trim()}`
   const startedAt = Date.now()
   try {
     const res = await fetch(`${base}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.apiKey.trim()}` },
+      headers,
       body: JSON.stringify({
         model: s.model.trim() || DEFAULT_AI_SETTINGS.model,
         messages,

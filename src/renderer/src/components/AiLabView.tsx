@@ -1,10 +1,13 @@
 import { useEffect, useState, type JSX } from 'react'
 import { Eye, EyeOff, RefreshCw } from 'lucide-react'
 import { useI18n } from '../i18n'
-import { AI_PROVIDER_PRESETS, matchProviderPreset } from '../../../shared/aiProviders'
-import type { AiChatMessage, AiChatOutcome } from '../../../shared/types'
+import { AI_PROVIDER_PRESETS, isKeylessLocal, matchProviderPreset } from '../../../shared/aiProviders'
+import type { AiChatMessage, AiChatOutcome, AiErrorHint } from '../../../shared/types'
 
-type AiOutcome = { ok: boolean; text: string; hint?: 'nokey' | 'auth' | 'http' | 'parse' | 'network' }
+interface ChatTurn extends AiChatMessage {
+  latencyMs?: number
+  error?: AiErrorHint
+}
 
 interface AiLabConfig {
   baseUrl: string
@@ -12,16 +15,16 @@ interface AiLabConfig {
   model: string
 }
 
-interface ChatTurn extends AiChatMessage {
-  latencyMs?: number
-  error?: string
-}
-
 type ConnState =
   | { kind: 'idle' }
   | { kind: 'testing' }
   | { kind: 'ok'; latencyMs: number; model: string }
-  | { kind: 'fail'; hint?: AiOutcome['hint'] }
+  | { kind: 'fail'; hint?: AiErrorHint }
+
+/** Max turns sent to aiChat (preload caps at 40) with headroom for the new message. */
+const REPLAY_WINDOW = 38
+/** Per-message replay cap (preload caps content at 32k chars). */
+const REPLAY_CHAR_CAP = 30_000
 
 /** R88: AI Lab — provider presets, connection test, chat playground, OCR tryout.
  *  Self-manages the config lifecycle (aiGetSettings/aiSetSettings); conversation
@@ -29,7 +32,10 @@ type ConnState =
 export function AiLabView(): JSX.Element {
   const { t } = useI18n()
   const [cfg, setCfg] = useState<AiLabConfig>({ baseUrl: '', apiKey: '', model: '' })
+  const [savedModel, setSavedModel] = useState('')
   const [loaded, setLoaded] = useState(false)
+  const [keyUnreadable, setKeyUnreadable] = useState(false)
+  const [encryptionAvailable, setEncryptionAvailable] = useState(true)
   const [showKey, setShowKey] = useState(false)
   const [conn, setConn] = useState<ConnState>({ kind: 'idle' })
   const [chat, setChat] = useState<ChatTurn[]>([])
@@ -37,27 +43,31 @@ export function AiLabView(): JSX.Element {
   const [chatBusy, setChatBusy] = useState(false)
   const [ocrInput, setOcrInput] = useState('')
   const [ocrResult, setOcrResult] = useState('')
-  const [ocrHint, setOcrHint] = useState<AiOutcome['hint']>()
+  const [ocrHint, setOcrHint] = useState<AiErrorHint>()
   const [ocrBusy, setOcrBusy] = useState<'cleanup' | 'translate' | null>(null)
 
   useEffect(() => {
     window.rgbbox.aiGetSettings().then((c) => {
       setCfg({ baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model })
+      setSavedModel(c.model)
+      setKeyUnreadable(c.keyUnreadable === true)
+      setEncryptionAvailable(c.encryptionAvailable !== false)
       setLoaded(true)
     }).catch(() => setLoaded(true))
   }, [])
 
   const provider = matchProviderPreset(cfg.baseUrl)
   const modelOptions = provider.models
-  const hintLine = (hint?: AiOutcome['hint']): string =>
+  const hintLine = (hint?: AiErrorHint): string =>
     `${t('ai.lab.status.failed')} (${hint ?? 'unknown'})`
+  const keyless = cfg.apiKey === '' && !isKeylessLocal(cfg.baseUrl)
 
   const runTest = async () => {
     setConn({ kind: 'testing' })
     try {
       const out = await window.rgbbox.aiTestConnection()
       setConn(out.ok
-        ? { kind: 'ok', latencyMs: out.latencyMs, model: cfg.model }
+        ? { kind: 'ok', latencyMs: out.latencyMs, model: savedModel || cfg.model.trim() || 'glm-5.3-flash' }
         : { kind: 'fail', hint: out.hint })
     } catch {
       setConn({ kind: 'fail', hint: 'network' })
@@ -67,6 +77,8 @@ export function AiLabView(): JSX.Element {
   const save = async () => {
     const saved = await window.rgbbox.aiSetSettings(cfg)
     setCfg({ baseUrl: saved.baseUrl, apiKey: saved.apiKey, model: saved.model })
+    setSavedModel(saved.model || 'glm-5.3-flash')
+    setKeyUnreadable(false)
     void runTest()
   }
 
@@ -93,10 +105,17 @@ export function AiLabView(): JSX.Element {
     setChatBusy(true)
     setChat((h) => [...h, { role: 'user', content }])
     try {
-      const history: AiChatMessage[] = [
-        ...chat.map(({ role, content: c }) => ({ role, content: c })),
-        { role: 'user', content },
-      ]
+      // R88 review fix: replay only clean turns (error turns with empty content
+      // get strict providers 400-ing), cap per-message length and window size
+      // so the preload validator (≤40 turns, ≤32k chars) never rejects a send.
+      const replayable = chat
+        .filter((turn) => turn.error === undefined && turn.content.trim() !== '')
+        .map(({ role, content: c }) => ({
+          role,
+          content: c.length > REPLAY_CHAR_CAP ? c.slice(0, REPLAY_CHAR_CAP) + '…' : c,
+        }))
+        .slice(-REPLAY_WINDOW)
+      const history: AiChatMessage[] = [...replayable, { role: 'user', content }]
       const out: AiChatOutcome = await window.rgbbox.aiChat(history)
       if (out.ok) {
         setChat((h) => [...h, { role: 'assistant', content: out.text, latencyMs: out.latencyMs }])
@@ -117,7 +136,7 @@ export function AiLabView(): JSX.Element {
     setOcrResult('')
     setOcrHint(undefined)
     try {
-      const out: AiOutcome = mode === 'cleanup'
+      const out: { ok: boolean; text: string; hint?: AiErrorHint } = mode === 'cleanup'
         ? await window.rgbbox.aiCleanupText(text)
         : await window.rgbbox.aiTranslateText(text)
       if (out.ok) setOcrResult(out.text)
@@ -184,7 +203,7 @@ export function AiLabView(): JSX.Element {
                 value={cfg.apiKey}
                 autoComplete="new-password"
                 spellCheck={false}
-                onChange={(e) => setCfg({ ...cfg, apiKey: e.target.value })}
+                onChange={(e) => { setCfg({ ...cfg, apiKey: e.target.value }); setKeyUnreadable(false) }}
               />
               <button
                 type="button"
@@ -198,7 +217,8 @@ export function AiLabView(): JSX.Element {
               </button>
             </span>
           </label>
-          <p className="ai-privacy-note">{t('ai.privacyNote')}</p>
+          <p className="ai-privacy-note">{t(encryptionAvailable ? 'ai.privacyNote' : 'ai.privacyNotePlain')}</p>
+          {keyUnreadable && <p className="ai-hint-line">{t('ai.lab.keyUnreadable')}</p>}
           <div className="ai-config-actions">
             <button type="button" data-action="reset" onClick={resetDefaults}>{t('ai.lab.reset')}</button>
             <button type="button" data-action="save" onClick={save} disabled={!loaded}>{t('ai.lab.save')}</button>
@@ -209,13 +229,13 @@ export function AiLabView(): JSX.Element {
       <details open className="dash-group">
         <summary><span className="dash-group-arrow" aria-hidden="true">▼</span> {t('ai.lab.group.chat')}</summary>
         <div className="ai-chat">
-          {cfg.apiKey === '' && <p className="ai-hint-line">{hintLine('nokey')}</p>}
+          {keyless && <p className="ai-hint-line">{hintLine('nokey')}</p>}
           <div className="ai-chat-log">
             {chat.map((turn, i) => (
               <div key={i} className={`ai-msg ai-msg-${turn.role}`}>
                 <span className="ai-msg-role">{turn.role}</span>
                 {turn.error !== undefined
-                  ? <span className="ai-msg-error">{hintLine(turn.error as AiOutcome['hint'])}</span>
+                  ? <span className="ai-msg-error">{hintLine(turn.error)}</span>
                   : <span className="ai-msg-text">{turn.content}{turn.latencyMs !== undefined ? ` (${turn.latencyMs} ms)` : ''}</span>}
               </div>
             ))}
@@ -226,7 +246,15 @@ export function AiLabView(): JSX.Element {
               value={chatInput}
               placeholder={t('ai.lab.chat.placeholder')}
               onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendChat() } }}
+              onKeyDown={(e) => {
+                // IME composition guard (R88 review fix): Enter that confirms
+                // a CJK composition must not send — same guard as AnnotateOverlay.
+                const native = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
+                if (e.key === 'Enter' && !e.shiftKey && !native.isComposing) {
+                  e.preventDefault()
+                  void sendChat()
+                }
+              }}
             />
             <button type="button" data-action="send" onClick={sendChat} disabled={chatBusy || chatInput.trim() === ''}>{t('ai.lab.chat.send')}</button>
             <button type="button" data-action="clear-chat" onClick={() => setChat([])} disabled={chat.length === 0}>{t('ai.lab.chat.clear')}</button>

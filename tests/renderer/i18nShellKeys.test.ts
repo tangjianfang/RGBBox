@@ -7,7 +7,7 @@ const { translations } = await vi.importActual<typeof import('../../src/renderer
 const SHELL_KEYS = [
   'nav.dashboard', 'nav.settings', 'nav.model3d', 'nav.ai',
   'dash.desc.ai',
-  'ai.privacyNote',
+  'ai.privacyNote', 'ai.privacyNotePlain', 'ai.lab.keyUnreadable',
   'ai.lab.provider', 'ai.lab.providerCustom',
   'ai.lab.group.connection', 'ai.lab.group.config', 'ai.lab.group.chat', 'ai.lab.group.ocr',
   'ai.lab.status.connected', 'ai.lab.status.disconnected', 'ai.lab.status.failed',

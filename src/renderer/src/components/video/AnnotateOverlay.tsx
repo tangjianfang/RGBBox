@@ -18,6 +18,7 @@ import {
   Redo2, Scan, Square, Trash2, Type, Undo2, X, ScanText, Sparkles,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
+import type { AiErrorHint } from '../../../../shared/types'
 import { clampPan, clampScale, containRect, zoomAtPoint, type Pt, type Rect, type Size } from './previewTransform'
 import {
   canRedo, canUndo, commit, handlesFor, hitShapeBorder, hitTestRotated, makeShape, moveShape,
@@ -565,7 +566,7 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   const setOcrText = (v: string): void => setOcr(o => (o.status === 'done' ? { ...o, text: v } : o))
   // R83: AI 整理（云 LLM，OpenAI 兼容协议；未配 Key → 行内提示）
   const [aiBusy, setAiBusy] = useState(false)
-  const [aiFail, setAiFail] = useState<'nokey' | 'auth' | 'http' | 'parse' | 'network' | null>(null)
+  const [aiFail, setAiFail] = useState<AiErrorHint | null>(null)
   const runAiCleanup = useCallback(() => {
     if (aiBusy || ocr.status !== 'done' || !ocr.text.trim()) return
     setAiBusy(true)

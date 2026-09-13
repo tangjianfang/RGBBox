@@ -353,9 +353,15 @@ function registerIpc(): void {
   })
   ipcMain.handle(ipcChannels.aiGetSettings, async () => {
     const s = await loadSystemSettings()
-    return asAiSettings(s.ai)
+    const cfg = asAiSettings(s.ai)
+    // R88 review fix: surface an undecodable ciphertext instead of silently
+    // handing the form an empty key (a subsequent save would destroy it).
+    const storedKey = typeof s.ai?.apiKey === 'string' ? s.ai.apiKey : ''
+    const keyUnreadable = storedKey.startsWith('enc:v1:') && cfg.apiKey === ''
+    if (keyUnreadable) console.warn('[RGBBox] stored AI key could not be decrypted on this machine/account')
+    return { ...cfg, keyUnreadable, encryptionAvailable: safeStorage.isEncryptionAvailable() }
   })
-  ipcMain.handle(ipcChannels.aiSetSettings, (_event, p: unknown) => {
+  ipcMain.handle(ipcChannels.aiSetSettings, async (_event, p: unknown) => {
     const q = p as Partial<AiCleanupSettings> | null
     const cfg: AiCleanupSettings = {
       baseUrl: typeof q?.baseUrl === 'string' && q.baseUrl.trim() !== '' ? q.baseUrl.trim() : DEFAULT_AI_SETTINGS.baseUrl,
@@ -365,9 +371,12 @@ function registerIpc(): void {
     if (cfg.apiKey !== '' && !safeStorage.isEncryptionAvailable()) {
       console.warn('[RGBBox] safeStorage unavailable — AI key stored in plaintext')
     }
-    // store encrypted, return plaintext (renderer must never see the ciphertext)
-    void saveSystemSettings({ ai: { ...cfg, apiKey: encodeApiKey(cfg.apiKey, safeStorageCodec) } })
-      .catch(() => { /* best-effort */ })
+    // R88 review fix: AWAIT the write so the save→auto-test sequence reads back
+    // the fresh config instead of racing the fire-and-forget disk write.
+    // Store encrypted, return plaintext (renderer never sees the ciphertext).
+    try {
+      await saveSystemSettings({ ai: { ...cfg, apiKey: encodeApiKey(cfg.apiKey, safeStorageCodec) } })
+    } catch { /* best-effort */ }
     return cfg
   })
   ipcMain.handle(ipcChannels.aiCleanupText, async (_event, text: unknown) => {
