@@ -100,6 +100,19 @@ export function setupRendererMocks() {
       ({ id: p.id || 'p_new', name: p.name || 'Auto · name', baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model })),
     aiDeleteProfile: vi.fn().mockResolvedValue(undefined),
     aiSetActiveProfile: vi.fn().mockResolvedValue(undefined),
+    // R90 P1: audio AI test lab
+    audioAiStatus: vi.fn().mockResolvedValue({ sileroCached: true, astCached: true }),
+    audioAiRunVad: vi.fn().mockResolvedValue({ ok: true, prob: 0.97, frames: 31 }),
+    audioAiRunAst: vi.fn().mockResolvedValue({
+      ok: true,
+      top: [
+        { index: 0, score: 0.55 },
+        { index: 66, score: 0.2 },
+        { index: 137, score: 0.1 },
+        { index: 315, score: 0.05 },
+        { index: 493, score: 0.03 },
+      ],
+    }),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),

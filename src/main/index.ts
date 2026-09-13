@@ -36,6 +36,7 @@ function mintProfileId(): string {
   return `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 import { validateChatMessages } from '../shared/aiChatValidation'
+import { initAudioAi, isCached as audioAiIsCached, runVad as audioAiRunVadPcm, runAst as audioAiRunAstPcm } from './audioAiService'
 import { parseRangeHeader, resolveMediaMime } from './mediaProtocol'
 
 // Initialize file logger — must be done after imports but before app.whenReady
@@ -517,6 +518,35 @@ function registerIpc(): void {
     return chatCompletion(messages, asAiSettings(s.ai), { temperature: 0.7 })
   })
 
+  // R90 P1: audio AI test lab (VAD + AST). pcm = mono Float32Array @16kHz, 1–30s.
+  const assertPcm16k = (p: unknown): Float32Array | null => {
+    if (!(p instanceof Float32Array)) return null
+    return p.length >= 16000 && p.length <= 16000 * 30 ? p : null
+  }
+  ipcMain.handle(ipcChannels.audioAiStatus, async () => ({
+    sileroCached: await audioAiIsCached('silero_vad.onnx'),
+    astCached: await audioAiIsCached('ast_audioset_int8.onnx'),
+  }))
+  ipcMain.handle(ipcChannels.audioAiRunVad, async (_event, pcm: unknown) => {
+    const valid = assertPcm16k(pcm)
+    if (valid === null) return { ok: false, hint: 'parse' }
+    try {
+      const r = await audioAiRunVadPcm(valid)
+      return { ok: true, prob: r.prob, frames: r.frames }
+    } catch (err) {
+      return { ok: false, hint: (err as { hint?: 'not-downloaded' }).hint ?? 'parse' }
+    }
+  })
+  ipcMain.handle(ipcChannels.audioAiRunAst, async (_event, pcm: unknown) => {
+    const valid = assertPcm16k(pcm)
+    if (valid === null) return { ok: false, hint: 'parse' }
+    try {
+      return { ok: true, top: (await audioAiRunAstPcm(valid)).top }
+    } catch (err) {
+      return { ok: false, hint: (err as { hint?: 'not-downloaded' }).hint ?? 'parse' }
+    }
+  })
+
   // R78: clipboard text (annotator copy/paste) + native OCR
   ipcMain.handle(ipcChannels.clipboardWriteText, (_event, text: unknown) => {
     if (typeof text !== 'string') return false
@@ -741,6 +771,12 @@ function registerIpc(): void {
   // ── On-demand 3D model download ──────────────────────────────────────────
 
   const modelsDir = join(app.getPath('userData'), 'models')
+
+  // R90 P1: audio AI inference (Silero VAD + AST), cached-model lookup injected
+  initAudioAi({
+    modelsDir,
+    findCached: async (file) => (await getCachedModelUrl(file)) ?? null,
+  })
 
   /** Return a file:// URL if the model is already cached, otherwise undefined. */
   async function getCachedModelUrl(fileName: string): Promise<string | undefined> {

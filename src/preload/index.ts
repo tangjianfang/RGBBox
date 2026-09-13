@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
 import { validateChatMessages } from '../shared/aiChatValidation'
-import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, CaptureEntry, CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming } from '../shared/types'
+import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiVadResult, CaptureEntry, CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -204,6 +204,13 @@ const api = {
     ipcRenderer.invoke(ipcChannels.aiDeleteProfile, id),
   aiSetActiveProfile: (id: string): Promise<void> =>
     ipcRenderer.invoke(ipcChannels.aiSetActiveProfile, id),
+  // R90 P1: audio AI test lab (pcm = mono Float32Array @16kHz, 1–30s)
+  audioAiStatus: (): Promise<AudioAiStatus> =>
+    ipcRenderer.invoke(ipcChannels.audioAiStatus),
+  audioAiRunVad: (pcm: Float32Array): Promise<AudioAiVadResult> =>
+    ipcRenderer.invoke(ipcChannels.audioAiRunVad, pcm),
+  audioAiRunAst: (pcm: Float32Array): Promise<AudioAiAstResult> =>
+    ipcRenderer.invoke(ipcChannels.audioAiRunAst, pcm),
 
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>

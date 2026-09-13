@@ -460,3 +460,21 @@ export interface AiProfile {
   apiKey: string
   model: string
 }
+
+// ── R90 P1: audio AI test lab ─────────────────────────────────────────────
+export interface AudioAiStatus {
+  sileroCached: boolean
+  astCached: boolean
+}
+export interface AudioAiVadResult {
+  ok: boolean
+  /** 0..1 voice probability (max over chunks). */
+  prob?: number
+  frames?: number
+  hint?: 'not-downloaded' | 'parse'
+}
+export interface AudioAiAstResult {
+  ok: boolean
+  top?: Array<{ index: number; score: number }>
+  hint?: 'not-downloaded' | 'parse'
+}

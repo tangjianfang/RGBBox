@@ -147,6 +147,10 @@ export const ipcChannels = {
   aiSaveProfile: 'rgbbox:ai:save-profile',
   aiDeleteProfile: 'rgbbox:ai:delete-profile',
   aiSetActiveProfile: 'rgbbox:ai:set-active-profile',
+  // R90 P1: audio AI test lab
+  audioAiStatus: 'rgbbox:audio-ai:status',
+  audioAiRunVad: 'rgbbox:audio-ai:run-vad',
+  audioAiRunAst: 'rgbbox:audio-ai:run-ast',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

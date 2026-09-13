@@ -76,7 +76,7 @@ function assertPcm(pcm: Float32Array): void {
 /** Voice-activity probability for a pcm snippet: max chunk prob across the clip. */
 export async function runVad(pcm: Float32Array): Promise<{ prob: number; frames: number }> {
   assertPcm(pcm)
-  const s = requireState()
+  await requireState()
   const session = await getSession('silero_vad.onnx', 'vadSession')
   let stateData = new Float32Array(VAD_STATE[0] * VAD_STATE[1] * VAD_STATE[2])
   let maxProb = 0
@@ -102,7 +102,7 @@ export async function runVad(pcm: Float32Array): Promise<{ prob: number; frames:
 /** AST AudioSet classification: mel → logits[527] → softmax → top-K. */
 export async function runAst(pcm: Float32Array): Promise<{ top: Array<{ index: number; score: number }> }> {
   assertPcm(pcm)
-  const s = requireState()
+  await requireState()
   const session = await getSession('ast_audioset_int8.onnx', 'astSession')
   const mel = astMelSpectrogram(pcm)
   const tensor = new ort.Tensor('float32', mel, [1, 1024, 128])
