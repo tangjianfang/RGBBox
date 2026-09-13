@@ -102,6 +102,10 @@ export function setupRendererMocks() {
     aiSetActiveProfile: vi.fn().mockResolvedValue(undefined),
     // R90 P1: audio AI test lab
     audioAiStatus: vi.fn().mockResolvedValue({ sileroCached: true, astCached: true }),
+    // R90.8: streaming detection session
+    audioAiStreamStart: vi.fn().mockResolvedValue(undefined),
+    audioAiStreamFeed: vi.fn().mockResolvedValue({ ok: true, prob: 0.42, top: undefined }),
+    audioAiStreamStop: vi.fn().mockResolvedValue(undefined),
     audioAiRunVad: vi.fn().mockResolvedValue({ ok: true, prob: 0.97, frames: 31 }),
     audioAiRunAst: vi.fn().mockResolvedValue({
       ok: true,

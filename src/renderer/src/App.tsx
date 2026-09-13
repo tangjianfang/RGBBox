@@ -31,6 +31,7 @@ import { ModuleRail } from './components/ModuleRail'
 import { DashboardView } from './components/DashboardView'
 import { SettingsView } from './components/SettingsView'
 import { AiLabView } from './components/AiLabView'
+import { AiListenOverlay } from './components/AiListenOverlay'
 import { getTabMeta } from './components/shellModules'
 
 // Lazily loaded — vendor-splat (1.6MB) is only fetched when the 3D view is first opened
@@ -2742,10 +2743,14 @@ export function App(): JSX.Element {
             `overflow:auto` scrollbars (the "播放列表没有滚动条" bug). */}
         <div className="audio-view-wrapper" style={{ display: activeView === 'audio' ? undefined : 'none' }}>
           <AudioStudioView visible={activeView === 'audio'} />
+          {activeView === 'audio' && <AiListenOverlay />}
         </div>
 
         {activeView === 'video' && (
-          <VideoStudioView />
+          <div className="video-view-anchor">
+            <VideoStudioView />
+            <AiListenOverlay />
+          </div>
         )}
 
         {MODEL3D_VIEW_ENABLED && activeView === 'model3d' && (

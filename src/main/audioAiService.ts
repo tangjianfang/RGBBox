@@ -194,7 +194,7 @@ export async function feedStream(pcm: Float32Array): Promise<{
   top?: Array<{ index: number; score: number }>
 }> {
   if (!stream) throw new Error('no active audio stream — call startStream() first')
-  const s = requireState()
+  requireState()
 
   // ── VAD: prepend any carry, then consume complete 1536 chunks ──
   const combined = new Float32Array(stream.carry.length + pcm.length)
