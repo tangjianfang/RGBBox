@@ -2,12 +2,6 @@ import { Pause, Play } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { PRESET_SNIP_HOTKEYS } from '../../../shared/snipHotkeys'
 
-export interface AiCfg {
-  baseUrl: string
-  model: string
-  apiKey: string
-}
-
 export interface SettingsViewProps {
   // Runtime
   running: boolean
@@ -23,11 +17,7 @@ export interface SettingsViewProps {
   // Hotkeys (R81)
   snipHotkey: string
   onSnipHotkey: (k: string) => void
-  // AI (R83)
-  aiCfg: AiCfg
-  onAiCfg: (c: AiCfg) => void
-  onSaveAiCfg: () => void
-  aiSaved: boolean
+  // AI (R83→R88): moved to the AI Lab view
 }
 
 export function SettingsView(props: SettingsViewProps) {
@@ -109,34 +99,6 @@ export function SettingsView(props: SettingsViewProps) {
                 <option key={k} value={k}>{k}</option>
               ))}
             </select>
-          </div>
-        </section>
-
-        <section className="panel settings-group" data-group="ai">
-          <h3>{t('settings.group.ai')}</h3>
-          <div className="status-panel" title={t('ai.hint')}>
-            <span>{t('ai.label')}</span>
-            <div className="ai-cfg-row">
-              <input
-                value={props.aiCfg.baseUrl}
-                placeholder={t('ai.baseUrl')}
-                onChange={(e) => props.onAiCfg({ ...props.aiCfg, baseUrl: e.target.value })}
-              />
-              <input
-                value={props.aiCfg.model}
-                placeholder={t('ai.model')}
-                onChange={(e) => props.onAiCfg({ ...props.aiCfg, model: e.target.value })}
-              />
-              <input
-                type="password"
-                value={props.aiCfg.apiKey}
-                placeholder={t('ai.apiKey')}
-                onChange={(e) => props.onAiCfg({ ...props.aiCfg, apiKey: e.target.value })}
-              />
-              <button type="button" className="video-btn" onClick={props.onSaveAiCfg}>
-                {props.aiSaved ? t('ai.saved') : t('ai.save')}
-              </button>
-            </div>
           </div>
         </section>
       </div>

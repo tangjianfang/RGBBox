@@ -30,6 +30,7 @@ import { AppShell } from './components/AppShell'
 import { ModuleRail } from './components/ModuleRail'
 import { DashboardView } from './components/DashboardView'
 import { SettingsView } from './components/SettingsView'
+import { AiLabView } from './components/AiLabView'
 import { getTabMeta } from './components/shellModules'
 
 // Lazily loaded — vendor-splat (1.6MB) is only fetched when the 3D view is first opened
@@ -736,19 +737,7 @@ export function App(): JSX.Element {
     setSnipHotkeyState(accel)   // 乐观更新；冲突时主进程回滚并返回当前键
     void window.rgbbox.snipSetHotkey(accel).then((r) => setSnipHotkeyState(r.hotkey)).catch(() => { /* keep */ })
   }, [])
-  // R83: OCR AI-cleanup config (baseUrl / model / key, persisted in system.json)
-  const [aiCfg, setAiCfg] = useState({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-4-flash' })
-  const [aiSaved, setAiSaved] = useState(false)
-  useEffect(() => {
-    void window.rgbbox.aiGetSettings().then(setAiCfg).catch(() => { /* defaults */ })
-  }, [])
-  const saveAiCfg = useCallback(() => {
-    void window.rgbbox.aiSetSettings(aiCfg).then((saved) => {
-      setAiCfg(saved)
-      setAiSaved(true)
-      setTimeout(() => setAiSaved(false), 1500)
-    }).catch(() => { /* keep local */ })
-  }, [aiCfg])
+  // R88: AI config state moved into AiLabView (self-managed via aiGetSettings/aiSetSettings)
   // R45: reactive counterpart of windowVisibleRef (declared below) — a plain
   // ref wouldn't cause `audioShouldAnalyze` to recompute when visibility
   // changes, since nothing else re-renders App at that moment. Minimize/
@@ -1879,12 +1868,9 @@ export function App(): JSX.Element {
             onScreensaver={applyScreensaverSettings}
             snipHotkey={snipHotkey}
             onSnipHotkey={applySnipHotkey}
-            aiCfg={aiCfg}
-            onAiCfg={setAiCfg}
-            onSaveAiCfg={saveAiCfg}
-            aiSaved={aiSaved}
           />
         )}
+        {activeView === 'ai' && <AiLabView />}
         {activeView === 'workspace' && (
           <div className="workspace-inner">
 

@@ -67,7 +67,6 @@ const EN = {
   'settings.group.run': 'Runtime',
   'settings.group.screensaver': 'Screensaver',
   'settings.group.hotkey': 'Hotkeys',
-  'settings.group.ai': 'AI (OCR)', // removed together with the SettingsView AI group in R88-T6
   // Audio
   'audio.on': 'Audio On',
   'audio.off': 'Audio Off',
@@ -883,7 +882,6 @@ const ZH: TranslationTable = {
   'settings.group.run': '运行',
   'settings.group.screensaver': '屏保',
   'settings.group.hotkey': '快捷键',
-  'settings.group.ai': 'AI（OCR）', // removed together with the SettingsView AI group in R88-T6
   'audio.on': '音频已开',
   'audio.off': '音频已关',
   'audio.defaultDevice': '默认（麦克风）',

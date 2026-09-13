@@ -18,22 +18,17 @@ function makeProps(over: Partial<SettingsViewProps> = {}): SettingsViewProps {
     onScreensaver: vi.fn(),
     snipHotkey: 'Alt+A',
     onSnipHotkey: vi.fn(),
-    aiCfg: { baseUrl: 'https://x', model: 'm', apiKey: '' },
-    onAiCfg: vi.fn(),
-    onSaveAiCfg: vi.fn(),
-    aiSaved: false,
     ...over
   }
 }
 
 describe('SettingsView', () => {
-  it('renders the four config groups', () => {
+  it('renders the three config groups (AI group moved to AI Lab, R88)', () => {
     const { container } = render(<SettingsView {...makeProps()} />)
     const groups = container.querySelectorAll('.settings-group h3')
     const titles = [...groups].map((g) => g.textContent)
     expect(titles).toEqual([
-      'settings.group.run', 'settings.group.screensaver',
-      'settings.group.hotkey', 'settings.group.ai'
+      'settings.group.run', 'settings.group.screensaver', 'settings.group.hotkey'
     ])
   })
 
@@ -68,14 +63,8 @@ describe('SettingsView', () => {
     expect(props.onSnipHotkey).toHaveBeenCalledWith(select.options[1].value)
   })
 
-  it('ai group: inputs are controlled, save button fires', () => {
-    const props = makeProps()
-    const { container } = render(<SettingsView {...props} />)
-    const inputs = [...container.querySelectorAll('.settings-group[data-group="ai"] input')] as HTMLInputElement[]
-    expect(inputs.length).toBe(3)
-    fireEvent.change(inputs[0], { target: { value: 'https://y' } })
-    expect(props.onAiCfg).toHaveBeenCalledWith({ baseUrl: 'https://y', model: 'm', apiKey: '' })
-    fireEvent.click(container.querySelector('.settings-group[data-group="ai"] button') as HTMLElement)
-    expect(props.onSaveAiCfg).toHaveBeenCalledOnce()
+  it('ai group is gone (moved to AI Lab, R88)', () => {
+    const { container } = render(<SettingsView {...makeProps()} />)
+    expect(container.querySelector('.settings-group[data-group="ai"]')).toBeNull()
   })
 })
