@@ -24,6 +24,7 @@ import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 import type { WorkerInput, WorkerOutput } from './workers/previewEngineWorker'
 import { useModelStore } from './3d/useModelStore'
 import { MetricsCollector } from './engine/metricsCollector'
+import { frameAgeState } from './engine/frameAge'
 import { loadStoredView, persistView, resolveInitialView, type View } from './hooks/tabNavigation'
 import { AppShell } from './components/AppShell'
 import { ModuleRail } from './components/ModuleRail'
@@ -1225,6 +1226,10 @@ export function App(): JSX.Element {
   }, [profile, status.running, selectedLayerId, automationEnabled, automationMode, automatedParams])
 
   const scene = useMemo(() => (profile ? activeScene(profile) : null), [profile])
+
+  // R87: same consumer condition as the tick-loop gate (R42/R43) — used by the
+  // Diagnostics frame-age row to explain a growing age as "idle", not "unhealthy".
+  const frameConsumerActive = overlayDisplayIds.length > 0 || (windowVisible && activeView === 'workspace')
 
   /** Frame handler for GPU 3D effects — Preview3D calls this instead of the worker. */
   const handleFrame3D = useCallback((frame: RgbFrame) => {
@@ -2883,7 +2888,22 @@ export function App(): JSX.Element {
               <div className="panel">
                 <dl className="diagnostics-list">
                   <div><dt>{t('diag.virtualBounds')}</dt><dd>{topology.virtualBounds.width}×{topology.virtualBounds.height}</dd></div>
-                  <div><dt>{t('diag.frameAge')}</dt><dd>{frameRef.current ? `${Math.max(0, Date.now() - frameRef.current.generatedAt)} ms` : t('diag.waiting')}</dd></div>
+                  <div>
+                    <dt>{t('diag.frameAge')}</dt>
+                    <dd>{(() => {
+                      // R87: a growing age on this page usually means the tick loop is
+                      // gated (R42/R43), not that the engine is unhealthy — say so.
+                      const state = frameAgeState(
+                        frameRef.current?.generatedAt ?? null,
+                        Date.now(),
+                        frameConsumerActive,
+                        status.running
+                      )
+                      if (state.kind === 'waiting') return t('diag.waiting')
+                      if (state.kind === 'idle') return t(state.reason === 'paused' ? 'diag.frameIdlePaused' : 'diag.frameIdleNoConsumer')
+                      return `${state.ms} ms`
+                    })()}</dd>
+                  </div>
                   <div><dt>{t('diag.avgFrameMs')}</dt><dd>{formatMs(engineMetrics.avgFrameMs)}</dd></div>
                   <div><dt>{t('diag.p95FrameMs')}</dt><dd>{formatMs(engineMetrics.p95FrameMs)}</dd></div>
                   <div><dt>{t('diag.workerMs')}</dt><dd>{formatMs(engineMetrics.workerProcessMs)}</dd></div>

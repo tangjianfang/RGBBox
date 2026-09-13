@@ -840,7 +840,7 @@
 - **R87.2** **诊断行展示**：`diag.frameAge` 行改为——waiting → 现有 `diag.waiting`；idle(paused) → 新 key `diag.frameIdlePaused`（'空闲——引擎已暂停'/'Idle — engine paused'）；idle(no-consumer) → 新 key `diag.frameIdleNoConsumer`（'空闲——无消费方（不在工作台且无浮窗）'/'Idle — no consumer (Workspace hidden, no overlay)'）；age → 照常 `${ms} ms`。
 - **R87.3** **受影响文件**：新增 `src/renderer/src/engine/frameAge.ts` + `tests/renderer/engine/frameAge.test.ts`；修改 `App.tsx`（诊断行接线，`consumerActive = overlayDisplayIds.length > 0 || (windowVisible && activeView === 'workspace')` 与门控同源）、`i18n/index.tsx`（zh+en 2 key）。
 - **R87.4** **验收点**：纯函数三态矩阵单测（含优先级）；`yarn typecheck` 0 error + 全量 `yarn test` 0 失败；诊断页三态文案正确（实机待用户）。
-- **R87.5** **状态**：⏳
+- **R87.5** **状态**：✅（`frameAgeState` 三态纯函数 + 6 用例矩阵单测（含 paused > no-consumer 优先级、时钟偏移负值钳制）；诊断行接 `frameConsumerActive`（与 R42/R43 门控同源表达式，提升至组件顶层绕开 JSX 窄化）；`yarn typecheck` 0 error + `yarn test` 71 files / 669 passed 0 失败 + `yarn build` 成功；实机复测待用户。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
