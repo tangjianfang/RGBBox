@@ -20,7 +20,7 @@ export function AiListenOverlay(): JSX.Element {
   const [modelsReady, setModelsReady] = useState<boolean | null>(null) // null = checking
   const [downloading, setDownloading] = useState<number | null>(null)
   const [downloadError, setDownloadError] = useState<string | null>(null)
-  const { running, error, vadProb, astTop } = useAiAudioStream(enabled && modelsReady === true ? 'system' : null)
+  const { running, error, vadProb, astTop, level } = useAiAudioStream(enabled && modelsReady === true ? 'system' : null)
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -91,6 +91,14 @@ export function AiListenOverlay(): JSX.Element {
             <div className="ai-listen-row">
               <span>{t('ai.lab.audio.vad.prob')}</span>
               <strong className={vadProb >= VAD_THRESHOLD ? 'on' : ''}>{Math.round(vadProb * 100)}%</strong>
+            </div>
+          )}
+          {running && (
+            <div className="ai-listen-row">
+              <span>{t('ai.lab.audio.level')}</span>
+              <div className="ai-prob-bar ai-listen-level">
+                <span style={{ width: `${Math.round(Math.min(1, level) * 100)}%` }} />
+              </div>
             </div>
           )}
           {vadProb !== null && (

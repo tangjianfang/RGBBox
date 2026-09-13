@@ -154,7 +154,7 @@ export async function runAst(pcm: Float32Array): Promise<{ top: Array<{ index: n
 // ── R90.8: streaming session (continuous detection for the AI Lab + players) ──
 
 const AST_WINDOW = 16000 * 3 // 3s rolling buffer
-const AST_CADENCE_MS = 2000
+const AST_CADENCE_MS = 1200
 
 interface StreamSession {
   vadState: Float32Array
@@ -189,10 +189,28 @@ export function stopStream(): void {
  * complete chunk (context+state carried across feeds) and — at most every
  * AST_CADENCE_MS — classifies the last 3s window. Returns the latest values.
  */
-export async function feedStream(pcm: Float32Array): Promise<{
+export interface StreamFeedResult {
   prob: number
+  rms: number
+  astState: 'running' | 'waiting-audio' | 'cadence'
   top?: Array<{ index: number; score: number }>
-}> {
+}
+
+// R90.8 review: AST inference blocks the main thread for hundreds of ms while
+// the renderer keeps feeding every 300ms — serialize feeds so overlapping
+// invokes cannot interleave VAD state/ring mutations.
+let feedChain: Promise<unknown> = Promise.resolve()
+
+export function feedStream(pcm: Float32Array): Promise<StreamFeedResult> {
+  const run = feedChain.then(
+    () => feedStreamInner(pcm),
+    () => feedStreamInner(pcm),
+  ) as Promise<StreamFeedResult>
+  feedChain = run.then(() => undefined, () => undefined)
+  return run
+}
+
+async function feedStreamInner(pcm: Float32Array): Promise<StreamFeedResult> {
   if (!stream) throw new Error('no active audio stream — call startStream() first')
   requireState()
 
@@ -233,8 +251,10 @@ export async function feedStream(pcm: Float32Array): Promise<{
     stream.ringFill = keep + incoming
   }
   let top: Array<{ index: number; score: number }> | undefined
+  let astState: 'running' | 'waiting-audio' | 'cadence' = 'cadence'
   const now = Date.now()
   if (stream.ringFill >= 16000 && now - stream.lastAstAt >= AST_CADENCE_MS) {
+    astState = 'running'
     stream.lastAstAt = now
     const astSession = await getSession('ast_audioset_int8.onnx', 'astSession')
     const mel = astMelSpectrogram(stream.ring)
@@ -251,5 +271,10 @@ export async function feedStream(pcm: Float32Array): Promise<{
     top = Array.from(exps.keys()).sort((a, b) => exps[b] - exps[a]).slice(0, AST_TOP_K)
       .map((i) => ({ index: i, score: exps[i] / sum }))
   }
-  return { prob: Math.max(prob, 0), top }
+  // loudness of this batch — the UI's "is capture actually receiving audio" gauge
+  let sq = 0
+  for (let i = 0; i < pcm.length; i++) sq += pcm[i] * pcm[i]
+  const rms = Math.min(1, Math.sqrt(sq / Math.max(1, pcm.length)) * 4)
+
+  return { prob: Math.max(prob, 0), rms, top, astState }
 }

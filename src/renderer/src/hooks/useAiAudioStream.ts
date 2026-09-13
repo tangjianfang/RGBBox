@@ -10,20 +10,24 @@ export interface AiAudioStreamState {
   running: boolean
   error: string | null
   vadProb: number | null
+  /** 0..1 input loudness of the latest feed — the capture-health gauge. */
+  level: number
   astTop: Array<{ index: number; score: number }> | null
+  /** 'running' while AST infers, 'waiting-audio' before 1s accumulates. */
+  astState: 'running' | 'waiting-audio' | 'cadence' | null
 }
 
 const FEED_INTERVAL_MS = 300
 
 /** null source = stopped. */
 export function useAiAudioStream(source: AiAudioSource | null): AiAudioStreamState {
-  const [state, setState] = useState<AiAudioStreamState>({ running: false, error: null, vadProb: null, astTop: null })
+  const [state, setState] = useState<AiAudioStreamState>({ running: false, error: null, vadProb: null, astTop: null, level: 0, astState: null })
   const sourceRef = useRef(source)
   sourceRef.current = source
 
   useEffect(() => {
     if (source === null) {
-      setState({ running: false, error: null, vadProb: null, astTop: null })
+      setState({ running: false, error: null, vadProb: null, astTop: null, level: 0, astState: null })
       return
     }
     let cancelled = false
@@ -33,7 +37,7 @@ export function useAiAudioStream(source: AiAudioSource | null): AiAudioStreamSta
     let pending: Float32Array = new Float32Array(0)
     let timer: number | null = null
 
-    setState({ running: true, error: null, vadProb: null, astTop: null })
+    setState({ running: true, error: null, vadProb: null, astTop: null, level: 0, astState: null })
 
     const teardown = async (): Promise<void> => {
       if (timer !== null) window.clearInterval(timer)
@@ -86,7 +90,9 @@ export function useAiAudioStream(source: AiAudioSource | null): AiAudioStreamSta
             running: true,
             error: null,
             vadProb: typeof tick.prob === 'number' ? tick.prob : s.vadProb,
+            level: typeof tick.rms === 'number' ? tick.rms : s.level,
             astTop: tick.top ?? s.astTop,
+            astState: typeof tick.astState === 'string' ? tick.astState : s.astState,
           }))
         }).catch(() => undefined)
       }, FEED_INTERVAL_MS)
@@ -95,7 +101,7 @@ export function useAiAudioStream(source: AiAudioSource | null): AiAudioStreamSta
     start().catch((err) => {
       if (cancelled) return
       void teardown()
-      setState({ running: false, error: err instanceof Error ? err.message : String(err), vadProb: null, astTop: null })
+      setState({ running: false, error: err instanceof Error ? err.message : String(err), vadProb: null, astTop: null, level: 0, astState: null })
     })
 
     return () => {

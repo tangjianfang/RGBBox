@@ -6605,3 +6605,8 @@ input[type='range'].video-player-volume {
   margin: 8px 0 0;
   padding-top: 8px;
 }
+
+/* R90.8 review: input level gauge + AST state line */
+.ai-level { display: flex; flex-direction: column; gap: 4px; }
+.ai-level .ai-prob-bar span { background: #3db7ff; }
+.ai-listen-level { flex: 1; max-width: 90px; }

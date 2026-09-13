@@ -108,7 +108,7 @@ export function AiLabAudioTab(): JSX.Element {
   // the tab opens (an all-unchecked state read as a bug — and it was: nothing ran).
   const [source, setSource] = useState<AiAudioSource | null>('mic')
   const { silero, ast, astPercent, err, download } = useModelDownloads()
-  const { running, error, vadProb, astTop } = useAiAudioStream(source)
+  const { running, error, vadProb, astTop, level, astState } = useAiAudioStream(source)
   const vadPct = vadProb === null ? null : Math.round(vadProb * 100)
 
   return (
@@ -120,6 +120,15 @@ export function AiLabAudioTab(): JSX.Element {
           <strong>{t('ai.lab.audio.title.vad')}</strong>
           <ModelBadge state={silero} name="silero_vad" onDownload={download} />
         </div>
+        {running && (
+          <div className="ai-level">
+            <span className="ai-lab-desc">{t('ai.lab.audio.level')}</span>
+            <div className="ai-prob-bar">
+              <span style={{ width: `${Math.round(Math.min(1, level) * 100)}%` }} />
+            </div>
+            {level < 0.01 && <span className="ai-hint-line">{t('ai.lab.audio.levelZero')}</span>}
+          </div>
+        )}
         {vadPct !== null ? (
           <>
             <div data-field="vad-result" className="ai-prob">
@@ -141,6 +150,13 @@ export function AiLabAudioTab(): JSX.Element {
           {ast === 'downloading' && <span className="ai-lab-status">{t('ai.lab.audio.progress')} {astPercent}%</span>}
           <ModelBadge state={ast} name="ast_audioset" percent={astPercent} onDownload={download} />
         </div>
+        {running && (
+          <p className="ai-lab-desc">
+            {astState === 'running' && `… ${t('ai.lab.audio.ast.running')}`}
+            {astState === 'waiting-audio' && t('ai.lab.audio.ast.waiting')}
+            {astState === 'cadence' && t('ai.lab.audio.ast.cadence')}
+          </p>
+        )}
         {astTop !== null ? (
           <>
             <div data-field="ast-result" className="ai-ast">

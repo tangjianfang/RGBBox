@@ -482,6 +482,10 @@ export interface AudioAiAstResult {
 export interface AudioAiStreamTick {
   ok: boolean
   prob?: number
+  /** 0..1 input loudness of this batch — the capture-health gauge. */
+  rms?: number
+  /** AST inference lifecycle: running = classifying now, waiting-audio = <1s accumulated. */
+  astState?: 'running' | 'waiting-audio' | 'cadence'
   top?: Array<{ index: number; score: number }>
   hint?: 'not-downloaded' | 'parse' | 'inference'
 }
