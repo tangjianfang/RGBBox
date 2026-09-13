@@ -20,7 +20,8 @@ export function AiListenOverlay(): JSX.Element {
   const [modelsReady, setModelsReady] = useState<boolean | null>(null) // null = checking
   const [downloading, setDownloading] = useState<number | null>(null)
   const [downloadError, setDownloadError] = useState<string | null>(null)
-  const { running, error, vadProb, astTop, level } = useAiAudioStream(enabled && modelsReady === true ? 'system' : null)
+  const { stage, error, vadProb, astTop, level } = useAiAudioStream(enabled && modelsReady === true ? 'system' : null)
+  const running = stage === 'capturing' || stage === 'inferring' || stage === 'results'
 
   const refreshStatus = useCallback(async () => {
     try {

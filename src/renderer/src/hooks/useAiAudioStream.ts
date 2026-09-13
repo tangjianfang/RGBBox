@@ -1,107 +1,79 @@
-// R90.8: continuous AI audio detection — captures mic or system loopback at
-// 16kHz, feeds the main-process streaming session every 300ms, and exposes
-// the latest VAD probability + AST top-5 as state.
-import { useEffect, useRef, useState } from 'react'
-import { openMonitorStream, stripVideoTracks } from '../tools/desktopAudio'
+// R90.9 L3: pipeline state machine over a PcmSource. The hook owns exactly
+// one responsibility — wire a source's 16kHz batches to the main-process
+// streaming session and expose per-stage state. Capture mechanics live in
+// tools/pcmSource.ts (L2, injectable for tests), math in tools/pcm.ts (L1).
+import { useEffect, useState } from 'react'
+import { startPcmSource, type PcmSourceHandle, type SourceId } from '../tools/pcmSource'
 
-export type AiAudioSource = 'mic' | 'system'
+export type PipelineStage = 'idle' | 'capturing' | 'inferring' | 'results' | 'error'
 
 export interface AiAudioStreamState {
-  running: boolean
+  stage: PipelineStage
+  /** Raw driver rate before resampling (48k→16k display). */
+  actualRate: number | null
   error: string | null
-  vadProb: number | null
-  /** 0..1 input loudness of the latest feed — the capture-health gauge. */
   level: number
+  vadProb: number | null
   astTop: Array<{ index: number; score: number }> | null
-  /** 'running' while AST infers, 'waiting-audio' before 1s accumulates. */
   astState: 'running' | 'waiting-audio' | 'cadence' | null
+  /** Count of batches fed — the self-test's "pipeline alive" assertion. */
+  batches: number
 }
 
-const FEED_INTERVAL_MS = 300
+const IDLE: AiAudioStreamState = {
+  stage: 'idle', actualRate: null, error: null, level: 0,
+  vadProb: null, astTop: null, astState: null, batches: 0,
+}
 
-/** null source = stopped. */
-export function useAiAudioStream(source: AiAudioSource | null): AiAudioStreamState {
-  const [state, setState] = useState<AiAudioStreamState>({ running: false, error: null, vadProb: null, astTop: null, level: 0, astState: null })
-  const sourceRef = useRef(source)
-  sourceRef.current = source
+export function useAiAudioStream(source: SourceId | null): AiAudioStreamState {
+  const [state, setState] = useState<AiAudioStreamState>(IDLE)
 
   useEffect(() => {
     if (source === null) {
-      setState({ running: false, error: null, vadProb: null, astTop: null, level: 0, astState: null })
+      setState(IDLE)
       return
     }
     let cancelled = false
-    let stream: MediaStream | null = null
-    let ctx: AudioContext | null = null
-    let processor: ScriptProcessorNode | null = null
-    let pending: Float32Array = new Float32Array(0)
-    let timer: number | null = null
+    let handle: PcmSourceHandle | null = null
+    let lastResults = { vadProb: null as number | null, astTop: null as Array<{ index: number; score: number }> | null, astState: null as AiAudioStreamState['astState'] }
 
-    setState({ running: true, error: null, vadProb: null, astTop: null, level: 0, astState: null })
+    setState({ ...IDLE, stage: 'capturing' })
 
     const teardown = async (): Promise<void> => {
-      if (timer !== null) window.clearInterval(timer)
-      processor?.disconnect()
-      for (const track of stream?.getTracks() ?? []) track.stop()
-      await ctx?.close().catch(() => undefined)
+      await handle?.stop().catch(() => undefined)
+      handle = null
       await window.rgbbox.audioAiStreamStop().catch(() => undefined)
     }
 
     const start = async (): Promise<void> => {
       await window.rgbbox.audioAiStreamStart()
-      stream = source === 'system'
-        ? await openMonitorStream('__system_audio__')
-        : await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-      if (cancelled) { await teardown(); return }
-      stripVideoTracks(stream)
-      ctx = new AudioContext({ sampleRate: 16000 })
-      const srcNode = ctx.createMediaStreamSource(stream)
-      processor = ctx.createScriptProcessor(4096, 1, 1)
-      processor.onaudioprocess = (e) => {
-        const chunk = new Float32Array(e.inputBuffer.getChannelData(0))
-        const merged = new Float32Array(pending.length + chunk.length)
-        merged.set(pending)
-        merged.set(chunk, pending.length)
-        pending = merged
-      }
-      srcNode.connect(processor)
-      const mute = ctx.createGain()
-      mute.gain.value = 0
-      processor.connect(mute)
-      mute.connect(ctx.destination)
-
-      timer = window.setInterval(() => {
+      handle = await startPcmSource(source, (pcm) => {
         if (cancelled) return
-        const batch = pending
-        pending = new Float32Array(0)
-        // R90.8 review fix: WASAPI loopback emits NO callbacks while nothing
-        // plays — without a silence heartbeat the panel would freeze with no
-        // results. Pad short/empty batches with zeros so VAD keeps ticking.
-        let frame: Float32Array
-        if (batch.length >= 4800) {
-          frame = batch
-        } else {
-          frame = new Float32Array(4800) // 300ms of silence @16kHz
-          frame.set(batch)
-        }
-        void window.rgbbox.audioAiStreamFeed(frame).then((tick) => {
+        void window.rgbbox.audioAiStreamFeed(pcm).then((tick) => {
           if (cancelled || !tick.ok) return
+          if (typeof tick.prob === 'number') lastResults.vadProb = tick.prob
+          if (tick.top) lastResults.astTop = tick.top
+          if (tick.astState) lastResults.astState = tick.astState
           setState((s) => ({
-            running: true,
+            stage: tick.astState === 'running' ? 'inferring' : 'results',
+            actualRate: s.actualRate,
             error: null,
-            vadProb: typeof tick.prob === 'number' ? tick.prob : s.vadProb,
             level: typeof tick.rms === 'number' ? tick.rms : s.level,
-            astTop: tick.top ?? s.astTop,
-            astState: typeof tick.astState === 'string' ? tick.astState : s.astState,
+            vadProb: lastResults.vadProb,
+            astTop: lastResults.astTop,
+            astState: lastResults.astState,
+            batches: s.batches + 1,
           }))
         }).catch(() => undefined)
-      }, FEED_INTERVAL_MS)
+      })
+      if (cancelled) { await teardown(); return }
+      setState((s) => ({ ...s, actualRate: handle?.actualRate ?? null }))
     }
 
     start().catch((err) => {
       if (cancelled) return
       void teardown()
-      setState({ running: false, error: err instanceof Error ? err.message : String(err), vadProb: null, astTop: null, level: 0, astState: null })
+      setState({ ...IDLE, stage: 'error', error: err instanceof Error ? err.message : String(err) })
     })
 
     return () => {

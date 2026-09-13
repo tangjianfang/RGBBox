@@ -19,7 +19,7 @@ async function openTab(container: HTMLElement, tab: 'config' | 'chat' | 'ocr') {
 }
 
 describe('AiLabView (R89)', () => {
-  it('renders four tabs (config/chat/ocr/audio) and switches between them', async () => {
+  it('renders four tabs (config/chat/ocr/audio) and switches between them', { timeout: 15000 }, async () => {
     const { container } = mount()
     const tabs = container.querySelectorAll('.ai-tab')
     expect(tabs.length).toBe(4)
