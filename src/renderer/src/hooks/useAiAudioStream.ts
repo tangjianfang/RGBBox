@@ -67,10 +67,20 @@ export function useAiAudioStream(source: AiAudioSource | null): AiAudioStreamSta
       mute.connect(ctx.destination)
 
       timer = window.setInterval(() => {
-        if (cancelled || pending.length === 0) return
+        if (cancelled) return
         const batch = pending
         pending = new Float32Array(0)
-        void window.rgbbox.audioAiStreamFeed(batch).then((tick) => {
+        // R90.8 review fix: WASAPI loopback emits NO callbacks while nothing
+        // plays — without a silence heartbeat the panel would freeze with no
+        // results. Pad short/empty batches with zeros so VAD keeps ticking.
+        let frame: Float32Array
+        if (batch.length >= 4800) {
+          frame = batch
+        } else {
+          frame = new Float32Array(4800) // 300ms of silence @16kHz
+          frame.set(batch)
+        }
+        void window.rgbbox.audioAiStreamFeed(frame).then((tick) => {
           if (cancelled || !tick.ok) return
           setState((s) => ({
             running: true,
