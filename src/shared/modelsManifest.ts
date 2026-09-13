@@ -63,12 +63,14 @@ export const MODELS_MANIFEST: ModelManifestEntry[] = [
     description: 'Demo scene — bicycle (Mip-NeRF 360 dataset)',
   },
   // ── R90 P1: audio AI test-lab models (hard budget ≤100MB each, R90.2) ──
+  // Both served from hf-mirror — GitHub direct connections time out in the
+  // app's main process (no system proxy; verified ETIMEDOUT 2026-09-14).
   {
     name: 'silero_vad',
     kind: 'onnx',
     file: 'silero_vad.onnx',
-    url: 'https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx',
-    description: 'Silero VAD voice-activity ONNX (~2MB)',
+    url: 'https://hf-mirror.com/onnx-community/silero-vad/resolve/main/onnx/model_quantized.onnx',
+    description: 'Silero VAD voice-activity ONNX (~0.6MB)',
   },
   {
     name: 'ast_audioset',

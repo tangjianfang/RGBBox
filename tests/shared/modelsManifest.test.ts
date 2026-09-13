@@ -40,8 +40,10 @@ describe('MODELS_MANIFEST invariants (restored, R90 review fix)', () => {
   it('audio entries use the verified int8 sources within the ≤100MB budget (R90.2)', () => {
     const ast = MODELS_MANIFEST.find((m) => m.name === 'ast_audioset')!
     const silero = MODELS_MANIFEST.find((m) => m.name === 'silero_vad')!
-    expect(silero.url).toContain('github.com/snakers4/silero-vad')
-    expect(ast.url).toContain('ast-finetuned-audioset-10-10-0.4593-ONNX')
+    // R90 review follow-up: GitHub direct connections time out in the Electron
+    // main process (no system proxy) — ALL audio models are served via hf-mirror.
+    expect(silero.url).toContain('hf-mirror.com/onnx-community/silero-vad')
+    expect(ast.url).toContain('hf-mirror.com/onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX')
     expect(ast.url).toContain('model_int8.onnx') // int8 ≈ 90.6MB ≤ 100MB budget
   })
 

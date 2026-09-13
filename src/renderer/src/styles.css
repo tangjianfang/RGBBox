@@ -6474,9 +6474,11 @@ input[type='range'].video-player-volume {
 .ai-lab-status { color: var(--accent); font-size: 12.5px; }
 
 .ai-listen {
+  /* R90.8 review: bottom-right keeps clear of the player's native top toolbar
+     and bottom control bar — the previous top-right anchor covered buttons */
   position: absolute;
   right: 18px;
-  top: 14px;
+  bottom: 18px;
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -6545,3 +6547,34 @@ input[type='range'].video-player-volume {
 }
 .ai-listen-models button:hover { border-color: var(--accent); color: var(--accent); }
 .ai-listen-panel { max-width: 320px; }
+
+/* R90.8 review: model manager rows */
+.ai-model-row {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+}
+.ai-model-dot {
+  border-radius: 50%;
+  flex-shrink: 0;
+  height: 9px;
+  width: 9px;
+}
+.ai-model-dot[data-state='ready'] { background: var(--accent); box-shadow: 0 0 6px rgba(66, 232, 169, 0.5); }
+.ai-model-dot[data-state='downloading'] { background: #3db7ff; }
+.ai-model-dot[data-state='error'] { background: #e0a040; }
+.ai-model-dot[data-state='idle'],
+.ai-model-dot[data-state='checking'] { background: var(--text-faint); }
+.ai-model-name { color: var(--text-primary); flex: 1; }
+.ai-model-state { color: var(--accent); font-size: 12.5px; }
+.ai-model-refresh {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11.5px;
+  padding: 4px 10px;
+}
+.ai-model-refresh:hover { color: var(--text-primary); border-color: var(--border-hover); }
