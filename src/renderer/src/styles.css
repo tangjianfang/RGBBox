@@ -6531,3 +6531,17 @@ input[type='range'].video-player-volume {
   min-height: 0;
   position: relative;
 }
+
+/* R90.8 review: model-download prompt inside the listen panel */
+.ai-listen-models { display: flex; flex-direction: column; gap: 8px; }
+.ai-listen-models button {
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12.5px;
+  padding: 7px 12px;
+}
+.ai-listen-models button:hover { border-color: var(--accent); color: var(--accent); }
+.ai-listen-panel { max-width: 320px; }
