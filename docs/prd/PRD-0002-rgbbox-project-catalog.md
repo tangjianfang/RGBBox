@@ -865,6 +865,17 @@
 - **R89.5** **验收点**：①配好 Key 后连接测试成功（不再 parse）；②三 Tab 切换正常且结构可扩展；③多档案增删改/自动命名/自动保存；④对话与 OCR 用 active 档案、可切换；⑤OCR 截图面板行为不变；⑥旧单配置自动迁移；⑦zh/en 无缺 key；⑧全量回归 0 失败。
 - **R89.6** **状态**：✅（2026-09-13 实施完成：probe 判据（200+非空 choices 且无 error 即成功，thinking 模型空 content 不再误判 parse）+ 三 Tab（配置/对话/OCR·翻译）+ `aiProfileStore` 纯函数（normalize 迁移/自动命名/legacy 镜像/**密文保留合并**）+ 4 档案 IPC（get/save/delete/setActive，**经 promise 队列串行化**）+ `aiTestConnection(profile?)` 按档案测试 + apiKey 逐档案 `enc:v1:` 加密 + 旧 `aiGetSettings/aiSetSettings` 变 active 别名（OCR 面板零改动）。code-review 10+2 findings 全部修复：**不可解密密文的跨档案保留**（无关写操作不再毁 key）、**读改写竞态串行化**、**卸载时提交未存编辑**（导航切走不丢配置）、空 baseUrl 草稿不自动保存（防 main 强改智谱默认）+ 测试按钮守卫（不再误标 active 档案结果）、**probe 收紧**（choices:[] 与 200+error 判 parse）、档案 id 随机后缀防同毫秒碰撞、自动名称回填表单、asAiSettings 仅解密 active（热路径 N 次 DPAPI → 1 次）、legacy 镜像复用已加密条目、死 key（ai.lab.reset/profile）清理、`FALLBACK_MODEL` 常量单一源。证据：`yarn test` 76 files / 712 passed 0 失败 + `yarn typecheck` 0 error + `yarn build` 成功；实机复测待用户——重点：连接测试应成功、多档案切换/自动保存/切走模块不丢编辑。）
 
+### R90. 音频 AI 模型集成（P1：AI 实验室测试场——AST 声音事件分类 + Silero VAD）
+
+> 来源：2026-09-13 HF 模型快照评估（≤100MB 音视频识别/处理）；用户确认按「①AST 声音事件→灯效联动 ②Silero VAD 门控 ③Moonshine 语音指令 ④EdgeTAM 跟踪」顺序推进，**P1 先在 AI 实验室做集成测试**（录 N 秒→推理→显示结果），验证模型可用后再做灯效联动（P2）。**风险等级：L2**（新增 onnx 推理服务 + 2 条 IPC + MODELS_MANIFEST 扩展；无新 npm 依赖——复用 onnxruntime-node 1.29）。
+- **R90.1** **音频推理服务**：新增 `src/main/audioAiService.ts`（参照 rapidOcrService 模式：lazy init/session 缓存/dispose）——`ensureModels`（按需下载）、`runVad(pcm16k)`（Silero VAD，输出语音概率）、`runAst(pcm16k)`（AST audioset 527 类，mel 前处理纯函数 + Top-5 类别置信度）。
+- **R90.2** **模型按需下载**：`MODELS_MANIFEST` 扩展 `silero_vad`（~2MB ONNX）与 `ast_audioset`（~86MB ONNX）条目，复用 `modelDownload` IPC 与缓存；AST 527 类标签表打包为 assets JSON。**风险声明**：AST 的 ONNX 源 URL 在实施时验证（快照不含 URL）；若社区无现成 ONNX，P1 交付 Silero VAD 全功能 + AST 的前处理/UI（模型文件就位即亮）。
+- **R90.3** **AI 实验室「音频」Tab**：第 4 个 Tab——两块测试卡（VAD：录 3 秒→语音概率；AST：录 3 秒→Top-5 声音类别），渲染层 OfflineAudioContext 重采样 16k → Float32Array 传主进程；模型未下载时显示下载按钮+进度（复用 modelDownloadProgress）。
+- **R90.4** **IPC**：新增 `audioAiStatus`（模型缓存状态）、`audioAiRunVad`、`audioAiRunAst`（preload 白名单 +3，参数校验 Float32Array 长度上限 ~30s）；录音采集仅在音频 Tab 激活时进行（不常驻）。
+- **R90.5** **验收点**：①音频 Tab 渲染与下载进度正确；②VAD：说话→语音概率显著高于静音；③AST：对可辨识输入（掌声/音乐）输出合理 Top-5；④模型缓存后重启免下载；⑤录音仅在 Tab 激活时进行；⑥zh/en 无缺 key；⑦全量回归 0 失败。**P1 明确不做**：灯效联动（P2）、实时流式推理、语音指令（P3）、视频模型（P4 EdgeTAM）。
+- **R90.6** **受影响文件**：新增 `main/audioAiService.ts` + `shared/audioAiLabels.ts`（或 assets JSON）+ `tests/main/audioAiService.test.ts`；修改 `shared/modelsManifest.ts`、`shared/ipc.ts`、`preload/index.ts`、`main/index.ts`、`AiLabView.tsx`、`i18n/*`、`styles.css`、`_helpers.tsx`。
+- **R90.7** **状态**：⏳
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
