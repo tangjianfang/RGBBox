@@ -876,6 +876,8 @@
 - **R90.6** **受影响文件**：新增 `main/audioAiService.ts` + `shared/audioAiLabels.ts`（或 assets JSON）+ `tests/main/audioAiService.test.ts`；修改 `shared/modelsManifest.ts`、`shared/ipc.ts`、`preload/index.ts`、`main/index.ts`、`AiLabView.tsx`、`i18n/*`、`styles.css`、`_helpers.tsx`。
 - **R90.7** **状态**：✅（2026-09-13 P1 实施完成并经 code-review 修复：初版 19 测试全绿但评审对照 silero-vad utils_vad.py 与 transformers ASTFeatureExtractor 源码发现 4 条致命问题（录音 done 时序 0ms 采样、Silero 协议 feed 名 input/state/sr + 64 样本 context + stateN 输出、AST feed 名 input_values、mel 前处理 kaldi 化：povey 窗/preemphasis 0.97/remove DC/low 20Hz/log floor 1e-6/post-log 0 填充/std×2）+ 6 条次级（真 modelDownloadProgress 推送替代假轮询、session reject 不粘滞 + disposeAudioAi、inference/needModel 错误区分、manifest kind 字段隔离 splat/onnx + 恢复全量不变量测试、AST 主线程上限收紧 10s（worker 化记 P2）、下载失败回退）。证据：`yarn test` 79 files / 722 passed 0 失败 + `yarn typecheck` 0 error + `yarn build` 成功；模型 URL 实测（Silero GitHub 200 / AST int8 hf-mirror 200 / 90.6MB ≤100MB）；实机复测待用户——**必须**：录音权限后真模型下载、对麦克风说话 VAD>50%、掌声/音乐 AST Top-5 合理。）
 
+- **R90.8** **流式实时检测（P1 验证场扩展，2026-09-13 用户需求）**：①AI 实验室音频 Tab 从「固定录 3 秒一次性推理」升级为**实时连续检测**——开始/停止控制，VAD 逐块推演实时概率条、AST 对最近 3 秒滑窗每 ~2 秒刷新 Top-5；②**音频工作站 / 视频工作站**各加「AI 实时听音」开关——播放时采集**系统声音**（复用 useAudioAnalyzer 的 desktop loopback 采集路径，提取共享 util），同一条流式管线验证真实媒体流，浮层显示 VAD 概率 + AST Top-2；③服务端 `startStream/feed/stop` 会话（feed ~300ms 节流、AST 串行防重入）；受影响：`audioAiService.ts`（流式会话）、`ipc.ts`/`preload`（+3 通道）、新 `useAiAudioStream` hook、`AiLabAudioTab.tsx` 重构、`AudioStudioView.tsx`/`VideoStudioView.tsx` 挂浮层、i18n/styles/测试。**验收点**：AI Tab 实时模式说话→VAD 概率实时跳动、AST 周期刷新；播放器播放音乐开启听音→AST 命中 Music 类、说话→Speech；停止/切页资源释放；全量回归 0 失败。
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
