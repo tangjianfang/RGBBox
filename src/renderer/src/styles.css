@@ -6350,3 +6350,44 @@ input[type='range'].video-player-volume {
 }
 .ai-ocr-actions { display: flex; gap: 8px; }
 .ai-ocr-result { opacity: 0.9; }
+
+/* ══ R89: AI Lab tabs + profile row ═════════════════════════════════ */
+.ai-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.ai-tab {
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  padding: 7px 16px;
+  text-transform: uppercase;
+  transition: background 150ms ease, color 150ms ease;
+}
+.ai-tab:hover { background: var(--bg-card); color: var(--text-primary); }
+.ai-tab.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+.ai-profile-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.ai-profile-row select { max-width: 280px; }
+.ai-active-banner {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  font-size: 12.5px;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ai-active-banner strong { color: var(--accent); }

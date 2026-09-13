@@ -8,39 +8,43 @@ beforeEach(() => { localStorage.clear(); cleanup() })
 
 function mount() {
   const rgbbox = setupRendererMocks()
-  rgbbox.aiGetSettings.mockResolvedValue({
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    apiKey: 'sk-x',
-    model: 'glm-5.3',
-  })
   return { rgbbox, ...render(<AiLabView />) }
 }
 
-describe('AiLabView (R88)', () => {
-  it('renders four collapsible groups', async () => {
-    const { container, findByDisplayValue } = mount()
-    await findByDisplayValue('https://open.bigmodel.cn/api/paas/v4')
-    const summaries = container.querySelectorAll('.dash-group > summary')
-    expect(summaries.length).toBe(4)
-    const titles = [...summaries].map((s) => s.textContent)
-    expect(titles[0]).toContain('ai.lab.group.connection')
-    expect(titles[1]).toContain('ai.lab.group.config')
-    expect(titles[2]).toContain('ai.lab.group.chat')
-    expect(titles[3]).toContain('ai.lab.group.ocr')
+async function openTab(container: HTMLElement, tab: 'config' | 'chat' | 'ocr') {
+  const btn = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === tab) as HTMLElement
+  fireEvent.click(btn)
+  await waitFor(() => expect(btn.classList.contains('active')).toBe(true))
+  return btn
+}
+
+describe('AiLabView (R89)', () => {
+  it('renders three tabs and switches between them', async () => {
+    const { container } = mount()
+    const tabs = container.querySelectorAll('.ai-tab')
+    expect(tabs.length).toBe(3)
+    expect(tabs[0].classList.contains('active')).toBe(true) // config default
+    await openTab(container, 'chat')
+    expect(container.querySelector('textarea[data-field="chat-input"]')).not.toBeNull()
+    await openTab(container, 'ocr')
+    expect(container.querySelector('textarea[data-field="ocr-input"]')).not.toBeNull()
+    await openTab(container, 'config')
+    expect(container.querySelector('select[data-field="provider"]')).not.toBeNull()
   })
 
-  it('loads settings and reverse-matches the provider preset', async () => {
-    const { container, findByDisplayValue } = mount()
-    await findByDisplayValue('https://open.bigmodel.cn/api/paas/v4')
-    const providerSelect = container.querySelector('select[data-field="provider"]') as HTMLSelectElement
-    expect(providerSelect.value).toBe('zhipu')
-    const modelInput = container.querySelector('input[data-field="model"]') as HTMLInputElement
-    expect(modelInput.value).toBe('glm-5.3')
+  it('config tab: profile dropdown lists profiles, editor loads the active one', async () => {
+    const { container } = mount()
+    await waitFor(() => expect((container.querySelector('select[data-field="profile"]') as HTMLSelectElement).value).toBe('p1'))
+    expect((container.querySelector('input[data-field="baseUrl"]') as HTMLInputElement).value).toBe('https://open.bigmodel.cn/api/paas/v4')
+    expect((container.querySelector('input[data-field="model"]') as HTMLInputElement).value).toBe('glm-5.3')
+    expect((container.querySelector('input[data-field="apiKey"]') as HTMLInputElement).value).toBe('sk-x')
+    expect((container.querySelector('select[data-field="provider"]') as HTMLSelectElement).value).toBe('zhipu')
   })
 
   it('key input is masked with a toggle and the privacy note is shown', async () => {
-    const { container, findByDisplayValue } = mount()
-    const keyInput = (await findByDisplayValue('sk-x')) as HTMLInputElement
+    const { container } = mount()
+    await waitFor(() => expect(container.querySelector('input[data-field="apiKey"]')).not.toBeNull())
+    const keyInput = container.querySelector('input[data-field="apiKey"]') as HTMLInputElement
     expect(keyInput.type).toBe('password')
     expect(keyInput.autocomplete).toBe('new-password')
     expect(container.textContent).toContain('ai.privacyNote')
@@ -49,8 +53,8 @@ describe('AiLabView (R88)', () => {
   })
 
   it('picking a provider preset fills baseUrl + first model', async () => {
-    const { container, findByDisplayValue } = mount()
-    await findByDisplayValue('https://open.bigmodel.cn/api/paas/v4')
+    const { container } = mount()
+    await waitFor(() => expect((container.querySelector('select[data-field="provider"]') as HTMLSelectElement).value).toBe('zhipu'))
     fireEvent.change(container.querySelector('select[data-field="provider"]') as HTMLSelectElement, {
       target: { value: 'deepseek' },
     })
@@ -58,35 +62,90 @@ describe('AiLabView (R88)', () => {
     expect((container.querySelector('input[data-field="model"]') as HTMLInputElement).value).toBe('deepseek-v4-pro')
   })
 
-  it('save persists and auto-runs the connection test', async () => {
-    const { rgbbox, container, findByDisplayValue } = mount()
-    rgbbox.aiSetSettings.mockResolvedValue({ baseUrl: 'b', apiKey: 'k', model: 'm' })
-    await findByDisplayValue('https://open.bigmodel.cn/api/paas/v4')
-    fireEvent.click(container.querySelector('[data-action="save"]') as HTMLElement)
-    await waitFor(() => expect(rgbbox.aiSetSettings).toHaveBeenCalled())
+  it('test button calls aiTestConnection WITH the edited profile (no save/switch needed)', async () => {
+    const { rgbbox, container } = mount()
+    await waitFor(() => expect(container.querySelector('[data-action="test"]')).not.toBeNull())
+    fireEvent.change(container.querySelector('input[data-field="model"]') as HTMLInputElement, { target: { value: 'glm-5.3-flash' } })
+    fireEvent.click(container.querySelector('[data-action="test"]') as HTMLElement)
     await waitFor(() => expect(rgbbox.aiTestConnection).toHaveBeenCalled())
+    expect((rgbbox.aiTestConnection.mock.calls[0] as unknown[])[0]).toEqual({
+      baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+      apiKey: 'sk-x',
+      model: 'glm-5.3-flash',
+    })
+    await waitFor(() => expect(container.querySelector('.ai-status')?.textContent).toContain('ms'))
   })
 
-  it('chat: sends a turn, appends user+assistant with latency, clear wipes', async () => {
-    const { rgbbox, container, findByDisplayValue } = mount()
-    await findByDisplayValue('https://open.bigmodel.cn/api/paas/v4')
+  it('save persists the profile; “use this profile” activates it', async () => {
+    const { rgbbox, container } = mount()
+    await waitFor(() => expect(container.querySelector('[data-action="save"]')).not.toBeNull())
+    fireEvent.click(container.querySelector('[data-action="save"]') as HTMLElement)
+    await waitFor(() => expect(rgbbox.aiSaveProfile).toHaveBeenCalled())
+    expect(((rgbbox.aiSaveProfile.mock.calls[0] as unknown[])[0] as { id: string }).id).toBe('p1')
+    fireEvent.click(container.querySelector('[data-action="set-active"]') as HTMLElement)
+    await waitFor(() => expect(rgbbox.aiSetActiveProfile).toHaveBeenCalledWith('p1'))
+  })
+
+  it('switching profiles auto-saves the edited one, then loads the target', async () => {
+    const { rgbbox, container } = mount()
+    await waitFor(() => expect((container.querySelector('select[data-field="profile"]') as HTMLSelectElement).value).toBe('p1'))
+    fireEvent.change(container.querySelector('input[data-field="name"]') as HTMLInputElement, { target: { value: '我的主力' } })
+    fireEvent.change(container.querySelector('select[data-field="profile"]') as HTMLSelectElement, { target: { value: 'p2' } })
+    await waitFor(() => expect(rgbbox.aiSaveProfile).toHaveBeenCalled())
+    expect(((rgbbox.aiSaveProfile.mock.calls[0] as unknown[])[0] as { name: string }).name).toBe('我的主力')
+    await waitFor(() => expect((container.querySelector('input[data-field="model"]') as HTMLInputElement).value).toBe('deepseek-v4-pro'))
+  })
+
+  it('new profile creates one and switches the editor to it', async () => {
+    const { rgbbox, container } = mount()
+    await waitFor(() => expect(container.querySelector('[data-action="new-profile"]')).not.toBeNull())
+    fireEvent.click(container.querySelector('[data-action="new-profile"]') as HTMLElement)
+    await waitFor(() => expect(rgbbox.aiSaveProfile).toHaveBeenCalled())
+    // the first call is the auto-save of the previously edited profile; the
+    // creation call is the one with an empty id + fresh zhipu defaults
+    const calls = (rgbbox.aiSaveProfile.mock.calls as unknown[]).map((c) => c[0] as { id: string; baseUrl: string })
+    expect(calls.some((c) => c.id === '' && c.baseUrl === 'https://open.bigmodel.cn/api/paas/v4')).toBe(true)
+  })
+
+  it('chat tab: active banner + send/clear roundtrip + error turns excluded from replay', async () => {
+    const { rgbbox, container } = mount()
+    await openTab(container, 'chat')
+    expect(container.querySelector('.ai-active-banner')?.textContent).toContain('智谱 GLM · glm-5.3')
     const input = container.querySelector('textarea[data-field="chat-input"]') as HTMLTextAreaElement
-    fireEvent.change(input, { target: { value: '你好' } })
-    fireEvent.click(container.querySelector('[data-action="send"]') as HTMLElement)
-    await waitFor(() => expect(rgbbox.aiChat).toHaveBeenCalled())
-    expect((rgbbox.aiChat.mock.calls[0] as unknown[])[0]).toEqual(
-      expect.arrayContaining([{ role: 'user', content: '你好' }])
-    )
-    await waitFor(() => expect(container.querySelectorAll('.ai-msg').length).toBe(2))
-    expect(container.querySelector('.ai-msg-assistant')?.textContent).toMatch(/\(\d+\s*ms\)/)
+    const send = () => fireEvent.click(container.querySelector('[data-action="send"]') as HTMLElement)
+
+    rgbbox.aiChat.mockResolvedValueOnce({ ok: false, text: '', hint: 'network', latencyMs: 5 })
+    fireEvent.change(input, { target: { value: 'a' } })
+    send()
+    await waitFor(() => expect(container.querySelectorAll('.ai-msg-error').length).toBe(1))
+
+    fireEvent.change(input, { target: { value: 'b' } })
+    send()
+    await waitFor(() => expect(rgbbox.aiChat).toHaveBeenCalledTimes(2))
+    const secondPayload = (rgbbox.aiChat.mock.calls[1] as unknown[])[0] as Array<{ role: string; content: string }>
+    expect(secondPayload.filter((m) => m.role === 'assistant')).toHaveLength(0)
+    expect(secondPayload.map((m) => m.content)).toEqual(['a', 'b'])
+    await waitFor(() => {
+      // error turns share .ai-msg-assistant — the SUCCESS turn is the last one
+      const turns = [...container.querySelectorAll('.ai-msg-assistant')]
+      expect(turns[turns.length - 1]?.textContent).toMatch(/\(\d+\s*ms\)/)
+    })
+
     fireEvent.click(container.querySelector('[data-action="clear-chat"]') as HTMLElement)
     expect(container.querySelectorAll('.ai-msg').length).toBe(0)
   })
 
-  it('ocr playground: cleanup + translate call the existing IPCs', async () => {
-    const { rgbbox, container, findByDisplayValue } = mount()
+  it('chat tab: switching the banner profile activates it globally', async () => {
+    const { rgbbox, container } = mount()
+    await openTab(container, 'chat')
+    fireEvent.change(container.querySelector('.ai-active-banner select') as HTMLSelectElement, { target: { value: 'p2' } })
+    await waitFor(() => expect(rgbbox.aiSetActiveProfile).toHaveBeenCalledWith('p2'))
+  })
+
+  it('ocr tab: cleanup + translate call the existing IPCs', async () => {
+    const { rgbbox, container } = mount()
+    await openTab(container, 'ocr')
     rgbbox.aiCleanupText.mockResolvedValue({ ok: true, text: 'cleaned' })
-    await findByDisplayValue('https://open.bigmodel.cn/api/paas/v4')
     const input = container.querySelector('textarea[data-field="ocr-input"]') as HTMLTextAreaElement
     fireEvent.change(input, { target: { value: 'raw text' } })
     fireEvent.click(container.querySelector('[data-action="ocr-cleanup"]') as HTMLElement)
@@ -94,47 +153,24 @@ describe('AiLabView (R88)', () => {
     await waitFor(() => expect(container.querySelector('.ai-ocr-result')?.textContent).toContain('cleaned'))
   })
 
-  it('shows a nokey hint line when the stored key is empty', async () => {
+  it('chat tab: nokey hint only for keyless REMOTE profiles', async () => {
     const rgbbox = setupRendererMocks()
-    rgbbox.aiGetSettings.mockResolvedValue({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-5.3' })
-    const { container, findByDisplayValue } = render(<AiLabView />)
-    await findByDisplayValue('https://open.bigmodel.cn/api/paas/v4')
-    expect(container.textContent).toContain('nokey')
-  })
-
-  it('no nokey hint for keyless local endpoints (Ollama), and keyUnreadable warns', async () => {
-    const rgbbox = setupRendererMocks()
-    rgbbox.aiGetSettings.mockResolvedValue({ baseUrl: 'http://localhost:11434/v1', apiKey: '', model: 'qwen3.6:35b' })
-    const { container, findByDisplayValue } = render(<AiLabView />)
-    await findByDisplayValue('http://localhost:11434/v1')
-    expect(container.querySelector('.ai-hint-line')).toBeNull()
+    rgbbox.aiGetProfiles.mockResolvedValue({
+      profiles: [{ id: 'p1', name: 'Local · ollama', baseUrl: 'http://localhost:11434/v1', apiKey: '', model: 'qwen3.6:35b' }],
+      activeId: 'p1', unreadableIds: [], encryptionAvailable: true,
+    })
+    const { container } = render(<AiLabView />)
+    await openTab(container, 'chat')
+    expect(container.querySelector('.ai-hint-line')).toBeNull() // local endpoint → no nokey nag
 
     const rgbbox2 = setupRendererMocks()
-    rgbbox2.aiGetSettings.mockResolvedValue({ baseUrl: 'https://x.example/v1', apiKey: '', model: 'm', keyUnreadable: true })
+    rgbbox2.aiGetProfiles.mockResolvedValue({
+      profiles: [{ id: 'p1', name: 'X · m', baseUrl: 'https://x.example/v1', apiKey: '', model: 'm' }],
+      activeId: 'p1', unreadableIds: ['p1'], encryptionAvailable: true,
+    })
     const second = render(<AiLabView />)
-    await second.findByDisplayValue('https://x.example/v1')
-    expect(second.container.textContent).toContain('ai.lab.keyUnreadable')
+    await openTab(second.container, 'config')
+    await waitFor(() => expect(second.container.textContent).toContain('ai.lab.keyUnreadable'))
     cleanup()
-  })
-
-  it('R88 review fix: error turns are not replayed into subsequent aiChat payloads', async () => {
-    const { rgbbox, container, findByDisplayValue } = mount()
-    await findByDisplayValue('https://open.bigmodel.cn/api/paas/v4')
-    const input = container.querySelector('textarea[data-field="chat-input"]') as HTMLTextAreaElement
-    const send = () => fireEvent.click(container.querySelector('[data-action="send"]') as HTMLElement)
-
-    // first turn fails (network) → error turn appended
-    rgbbox.aiChat.mockResolvedValueOnce({ ok: false, text: '', hint: 'network', latencyMs: 5 })
-    fireEvent.change(input, { target: { value: 'a' } })
-    send()
-    await waitFor(() => expect(container.querySelectorAll('.ai-msg-error').length).toBe(1))
-
-    // second turn succeeds → payload must NOT contain the failed empty assistant turn
-    fireEvent.change(input, { target: { value: 'b' } })
-    send()
-    await waitFor(() => expect(rgbbox.aiChat).toHaveBeenCalledTimes(2))
-    const secondPayload = (rgbbox.aiChat.mock.calls[1] as unknown[])[0] as Array<{ role: string; content: string }>
-    expect(secondPayload.filter((m) => m.role === 'assistant')).toHaveLength(0) // error turn excluded
-    expect(secondPayload.map((m) => m.content)).toEqual(['a', 'b'])
   })
 })
