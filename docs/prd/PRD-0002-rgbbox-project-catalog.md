@@ -869,10 +869,10 @@
 
 > 来源：2026-09-13 HF 模型快照评估（≤100MB 音视频识别/处理）；用户确认按「①AST 声音事件→灯效联动 ②Silero VAD 门控 ③Moonshine 语音指令 ④EdgeTAM 跟踪」顺序推进，**P1 先在 AI 实验室做集成测试**（录 N 秒→推理→显示结果），验证模型可用后再做灯效联动（P2）。**风险等级：L2**（新增 onnx 推理服务 + 2 条 IPC + MODELS_MANIFEST 扩展；无新 npm 依赖——复用 onnxruntime-node 1.29）。
 - **R90.1** **音频推理服务**：新增 `src/main/audioAiService.ts`（参照 rapidOcrService 模式：lazy init/session 缓存/dispose）——`ensureModels`（按需下载）、`runVad(pcm16k)`（Silero VAD，输出语音概率）、`runAst(pcm16k)`（AST audioset 527 类，mel 前处理纯函数 + Top-5 类别置信度）。
-- **R90.2** **模型按需下载**：`MODELS_MANIFEST` 扩展 `silero_vad`（~2MB ONNX）与 `ast_audioset`（~86MB ONNX）条目，复用 `modelDownload` IPC 与缓存；AST 527 类标签表打包为 assets JSON。**风险声明**：AST 的 ONNX 源 URL 在实施时验证（快照不含 URL）；若社区无现成 ONNX，P1 交付 Silero VAD 全功能 + AST 的前处理/UI（模型文件就位即亮）。
+- **R90.2** **模型按需下载 + 硬预算**：**所有集成模型 ≤100MB，超过直接放弃（用户 2026-09-13 定，覆盖后续所有 AI 集成条款）**。`MODELS_MANIFEST` 扩展 `silero_vad`（~2MB ONNX）与 `ast_audioset`（**int8 量化 ONNX ~90MB**，fp32 344MB 超预算不可用）条目，复用 `modelDownload` IPC 与缓存；AST 527 类标签表打包为 assets JSON。**风险声明**：AST 的 int8 ONNX 源 URL 在实施时验证（快照不含 URL）；若量化版不存在或质量不可接受，按硬预算规则放弃 AST，P1 只交付 Silero VAD 全功能。连带裁决（2026-09-13）：歌词/对话专项 ASR（VocalParse 2GB / VibeVoice 8.7GB / Qwen3-ASR 0.94GB / ForcedAligner 0.92GB / canary ~0.4GB）全部超预算放弃——卡拉OK逐字歌词灯效方案取消；P3 语音指令用 moonshine-tiny（44MB，英语），对话字幕最低成本项为 whisper-tiny ONNX（int8 ~40MB，多语含 zh），并入 P3 一并评估。
 - **R90.3** **AI 实验室「音频」Tab**：第 4 个 Tab——两块测试卡（VAD：录 3 秒→语音概率；AST：录 3 秒→Top-5 声音类别），渲染层 OfflineAudioContext 重采样 16k → Float32Array 传主进程；模型未下载时显示下载按钮+进度（复用 modelDownloadProgress）。
 - **R90.4** **IPC**：新增 `audioAiStatus`（模型缓存状态）、`audioAiRunVad`、`audioAiRunAst`（preload 白名单 +3，参数校验 Float32Array 长度上限 ~30s）；录音采集仅在音频 Tab 激活时进行（不常驻）。
-- **R90.5** **验收点**：①音频 Tab 渲染与下载进度正确；②VAD：说话→语音概率显著高于静音；③AST：对可辨识输入（掌声/音乐）输出合理 Top-5；④模型缓存后重启免下载；⑤录音仅在 Tab 激活时进行；⑥zh/en 无缺 key；⑦全量回归 0 失败。**P1 明确不做**：灯效联动（P2）、实时流式推理、语音指令（P3）、视频模型（P4 EdgeTAM）。
+- **R90.5** **验收点**：①音频 Tab 渲染与下载进度正确；②VAD：说话→语音概率显著高于静音；③AST（若量化版可用）：单个模型文件 ≤100MB 且对可辨识输入（掌声/音乐）输出合理 Top-5；④模型缓存后重启免下载；⑤录音仅在 Tab 激活时进行；⑥zh/en 无缺 key；⑦全量回归 0 失败。**P1 明确不做**：灯效联动（P2）、实时流式推理、语音指令/字幕（P3：moonshine-tiny 44MB + whisper-tiny ONNX ~40MB）、视频模型（P4 EdgeTAM 14MB）。
 - **R90.6** **受影响文件**：新增 `main/audioAiService.ts` + `shared/audioAiLabels.ts`（或 assets JSON）+ `tests/main/audioAiService.test.ts`；修改 `shared/modelsManifest.ts`、`shared/ipc.ts`、`preload/index.ts`、`main/index.ts`、`AiLabView.tsx`、`i18n/*`、`styles.css`、`_helpers.tsx`。
 - **R90.7** **状态**：⏳
 
