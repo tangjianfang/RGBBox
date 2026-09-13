@@ -6548,13 +6548,24 @@ input[type='range'].video-player-volume {
 .ai-listen-models button:hover { border-color: var(--accent); color: var(--accent); }
 .ai-listen-panel { max-width: 320px; }
 
-/* R90.8 review: model manager rows */
-.ai-model-row {
+/* R90.8 review: per-card model badge (was a standalone card) */
+.ai-model-badge {
   align-items: center;
   display: flex;
-  font-size: 13px;
-  gap: 10px;
+  font-size: 12px;
+  gap: 6px;
 }
+.ai-model-badge button {
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 11.5px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.ai-model-badge button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .ai-model-dot {
   border-radius: 50%;
   flex-shrink: 0;
@@ -6578,3 +6589,19 @@ input[type='range'].video-player-volume {
   padding: 4px 10px;
 }
 .ai-model-refresh:hover { color: var(--text-primary); border-color: var(--border-hover); }
+
+/* R90.8 review: intro + result reading hints */
+.ai-lab-intro {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+  margin: 0;
+}
+.ai-lab-reading {
+  border-top: 1px dashed var(--border-subtle);
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin: 8px 0 0;
+  padding-top: 8px;
+}

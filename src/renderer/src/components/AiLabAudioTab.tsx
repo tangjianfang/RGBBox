@@ -7,7 +7,8 @@ const VAD_THRESHOLD = 0.5
 
 type ModelDlState = 'checking' | 'ready' | 'idle' | 'downloading' | 'error'
 
-/** R90.8: model manager — per-model cached/download status with retry. */
+/** R90.8 review: model status lives INSIDE each feature card's header
+ *  (the standalone "Detection Models" card was redundant chrome). */
 function useModelDownloads(): {
   silero: ModelDlState
   ast: ModelDlState
@@ -69,47 +70,92 @@ function useModelDownloads(): {
   return { silero, ast, astPercent, err, download, refresh }
 }
 
+/** Per-card model badge: status dot + state / download button, rendered in the
+ *  feature card's header (R90.8 review — no standalone model card). */
+function ModelBadge(props: {
+  state: ModelDlState
+  name: 'silero_vad' | 'ast_audioset'
+  percent?: number
+  onDownload: (name: 'silero_vad' | 'ast_audioset') => void
+}): JSX.Element {
+  const { t } = useI18n()
+  const { state, name, percent, onDownload } = props
+  const label =
+    state === 'checking' ? '…'
+    : state === 'ready' ? t('ai.lab.audio.modelReady')
+    : state === 'downloading' ? `${t('ai.lab.audio.progress')} ${name === 'ast_audioset' ? percent : ''}%`
+    : state === 'error' ? t('ai.lab.audio.modelFailed')
+    : ''
+  return (
+    <span className="ai-model-badge" data-model={name} data-state={state}>
+      <span className="ai-model-dot" data-state={state} />
+      {state === 'idle'
+        ? (
+          <button type="button" data-action={`dl-${name}`} onClick={() => onDownload(name)}>
+            {t('ai.lab.audio.download')}
+          </button>
+        )
+        : <span>{label}</span>}
+    </span>
+  )
+}
+
 /** R90.8: continuous audio AI detection — VAD probability updates live
  *  (every ~300ms feed) and AST classifies the last 3s on a 2s cadence. */
 export function AiLabAudioTab(): JSX.Element {
   const { t } = useI18n()
-  const [source, setSource] = useState<AiAudioSource | null>(null)
-  const { silero, ast, astPercent, err, download, refresh } = useModelDownloads()
+  // R90.8 review fix: default to the microphone so detection starts the moment
+  // the tab opens (an all-unchecked state read as a bug — and it was: nothing ran).
+  const [source, setSource] = useState<AiAudioSource | null>('mic')
+  const { silero, ast, astPercent, err, download } = useModelDownloads()
   const { running, error, vadProb, astTop } = useAiAudioStream(source)
   const vadPct = vadProb === null ? null : Math.round(vadProb * 100)
 
-  const modelRow = (label: string, state: ModelDlState, name: 'silero_vad' | 'ast_audioset', percent?: number) => (
-    <div className="ai-model-row" data-model={name}>
-      <span className="ai-model-dot" data-state={state} />
-      <span className="ai-model-name">{label}</span>
-      {state === 'checking' && <span className="ai-lab-status">…</span>}
-      {state === 'ready' && <span className="ai-model-state on">{t('ai.lab.audio.modelReady')}</span>}
-      {state === 'downloading' && (
-        <span className="ai-lab-status">
-          {t('ai.lab.audio.progress')} {name === 'ast_audioset' ? percent : ''}%
-        </span>
-      )}
-      {state === 'error' && <span className="ai-hint-line">{t('ai.lab.audio.modelFailed')}</span>}
-      {state === 'idle' && (
-        <button type="button" data-action={`dl-${name}`} onClick={() => download(name)}>
-          {t('ai.lab.audio.download')}
-        </button>
-      )}
-    </div>
-  )
-
   return (
     <div className="ai-audio">
+      <p className="ai-lab-intro">{t('ai.lab.audio.intro')}</p>
+
       <div className="ai-audio-card">
         <div className="ai-audio-card-head">
-          <strong>{t('ai.lab.audio.models')}</strong>
-          <button type="button" className="ai-model-refresh" onClick={() => void refresh()} title={t('ai.lab.audio.recheck')}>
-            {t('ai.lab.audio.recheck')}
-          </button>
+          <strong>{t('ai.lab.audio.title.vad')}</strong>
+          <ModelBadge state={silero} name="silero_vad" onDownload={download} />
         </div>
-        {modelRow('Silero VAD (0.6MB)', silero, 'silero_vad')}
-        {modelRow('AST AudioSet (91MB)', ast, 'ast_audioset', astPercent)}
-        {err !== null && <div className="ai-hint-line">{err}</div>}
+        {vadPct !== null ? (
+          <>
+            <div data-field="vad-result" className="ai-prob">
+              <div className="ai-prob-bar">
+                <span style={{ width: `${vadPct}%` }} />
+              </div>
+              <span>{vadPct}% · {vadProb! >= VAD_THRESHOLD ? t('ai.lab.audio.vad.speech') : t('ai.lab.audio.vad.quiet')}</span>
+            </div>
+            <p className="ai-lab-reading">{t('ai.lab.audio.vad.reading')}</p>
+          </>
+        ) : (
+          <p className="ai-lab-desc">{t('ai.lab.audio.vad.hint')}</p>
+        )}
+      </div>
+
+      <div className="ai-audio-card">
+        <div className="ai-audio-card-head">
+          <strong>{t('ai.lab.audio.title.ast')}</strong>
+          {ast === 'downloading' && <span className="ai-lab-status">{t('ai.lab.audio.progress')} {astPercent}%</span>}
+          <ModelBadge state={ast} name="ast_audioset" percent={astPercent} onDownload={download} />
+        </div>
+        {astTop !== null ? (
+          <>
+            <div data-field="ast-result" className="ai-ast">
+              {astTop.map((row) => (
+                <div key={row.index} className="ai-ast-row">
+                  <span>{labels[row.index]?.label ?? `#${row.index}`}</span>
+                  <span>{Math.round(row.score * 100)}%</span>
+                </div>
+              ))}
+            </div>
+            <p className="ai-lab-reading">{t('ai.lab.audio.ast.reading')}</p>
+          </>
+        ) : (
+          <p className="ai-lab-desc">{t('ai.lab.audio.ast.hint')}</p>
+        )}
       </div>
 
       <div className="ai-audio-card">
@@ -141,41 +187,7 @@ export function AiLabAudioTab(): JSX.Element {
           </label>
         </div>
         <p className="ai-lab-desc">{t('ai.lab.audio.desc.live')}</p>
-      </div>
-
-      <div className="ai-audio-card">
-        <div className="ai-audio-card-head">
-          <strong>{t('ai.lab.audio.title.vad')}</strong>
-          {vadPct !== null && <span className="ai-lab-status">{vadPct}%</span>}
-        </div>
-        {vadPct !== null ? (
-          <div data-field="vad-result" className="ai-prob">
-            <div className="ai-prob-bar">
-              <span style={{ width: `${vadPct}%` }} />
-            </div>
-            <span>{vadProb! >= VAD_THRESHOLD ? t('ai.lab.audio.vad.speech') : t('ai.lab.audio.vad.quiet')}</span>
-          </div>
-        ) : (
-          <p className="ai-lab-desc">{t('ai.lab.audio.vad.hint')}</p>
-        )}
-      </div>
-
-      <div className="ai-audio-card">
-        <div className="ai-audio-card-head">
-          <strong>{t('ai.lab.audio.title.ast')}</strong>
-        </div>
-        {astTop !== null ? (
-          <div data-field="ast-result" className="ai-ast">
-            {astTop.map((row) => (
-              <div key={row.index} className="ai-ast-row">
-                <span>{labels[row.index]?.label ?? `#${row.index}`}</span>
-                <span>{Math.round(row.score * 100)}%</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="ai-lab-desc">{t('ai.lab.audio.ast.hint')}</p>
-        )}
+        {err !== null && <div className="ai-hint-line">{err}</div>}
       </div>
     </div>
   )
