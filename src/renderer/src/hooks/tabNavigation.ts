@@ -7,7 +7,7 @@
  *  tail) and an exact-order test keeps the two in lockstep. */
 export const MODULE_VIEWS = [
   'workspace', 'effects', 'video', 'audio', 'model3d',
-  'games', 'diagnostics', 'architecture', 'settings'
+  'games', 'diagnostics', 'architecture', 'ai', 'settings'
 ] as const
 export type ModuleView = (typeof MODULE_VIEWS)[number]
 

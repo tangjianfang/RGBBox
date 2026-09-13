@@ -62,15 +62,15 @@ describe('DashboardView (R86)', () => {
     expect(onToggleEngine).toHaveBeenCalledOnce()
   })
 
-  it('module tiles: 7 with model3d disabled, 8 enabled; click fires onOpen', () => {
+  it('module tiles: 8 with model3d disabled, 9 enabled; click fires onOpen', () => {
     const { container, props } = renderDash()
-    expect(container.querySelectorAll('.dash-tile').length).toBe(7)
+    expect(container.querySelectorAll('.dash-tile').length).toBe(8)
     const tile = [...container.querySelectorAll('.dash-tile')]
       .find((el) => el.textContent?.includes('nav.workspace')) as HTMLElement
     fireEvent.click(tile)
     expect(props.onOpen).toHaveBeenCalledWith('workspace')
     const enabled = renderDash({ model3dEnabled: true })
-    expect(enabled.container.querySelectorAll('.dash-tile').length).toBe(8)
+    expect(enabled.container.querySelectorAll('.dash-tile').length).toBe(9)
   })
 
   it('audio card hides the device select when audio is disabled', () => {
