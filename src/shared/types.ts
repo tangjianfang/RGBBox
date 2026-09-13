@@ -450,3 +450,13 @@ export interface AiChatOutcome {
   hint?: AiErrorHint
   latencyMs: number
 }
+
+// ── R89: AI Lab named profiles ────────────────────────────────────────────
+export interface AiProfile {
+  id: string
+  /** Auto-generated "Provider · model" when left empty; user-editable. */
+  name: string
+  baseUrl: string
+  apiKey: string
+  model: string
+}

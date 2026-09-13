@@ -72,11 +72,15 @@ export async function translateOcrText(text: string, s: AiCleanupSettings): Prom
 
 /** Generic OpenAI-compatible chat pipeline (fetch + latency + hint taxonomy).
  *  R88 review fix: local endpoints (Ollama) may run keyless — only remote
- *  endpoints require an api key. */
+ *  endpoints require an api key.
+ *  R89.1: `probe` mode relaxes the parse check to "HTTP 200 + a choices array"
+ *  (content may be empty) — connection testing only cares about reachability
+ *  and auth, and thinking models (glm-5.3) burn small max_tokens budgets on
+ *  reasoning, returning an empty content string. */
 export async function chatCompletion(
   messages: AiChatMessage[],
   s: AiCleanupSettings,
-  opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number },
+  opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean },
 ): Promise<AiChatOutcome> {
   const hasKey = s.apiKey.trim() !== ''
   if (!hasKey && !isKeylessLocal(s.baseUrl)) return { ok: false, text: '', hint: 'nokey', latencyMs: 0 }
@@ -101,8 +105,18 @@ export async function chatCompletion(
     if (!res.ok) {
       return { ok: false, text: '', hint: res.status === 401 || res.status === 403 ? 'auth' : 'http', latencyMs }
     }
-    const parsed = parseCleanupResponse(await res.json())
-    if (parsed === null) return { ok: false, text: '', hint: 'parse', latencyMs }
+    const json = await res.json()
+    const parsed = parseCleanupResponse(json)
+    if (parsed === null) {
+      if (opts?.probe) {
+        const choices = (json as { choices?: unknown } | null)?.choices
+        if (Array.isArray(choices)) {
+          const content = (choices[0] as { message?: { content?: unknown } } | undefined)?.message?.content
+          return { ok: true, text: typeof content === 'string' ? content : '', latencyMs }
+        }
+      }
+      return { ok: false, text: '', hint: 'parse', latencyMs }
+    }
     return { ok: true, text: parsed, latencyMs }
   } catch {
     return { ok: false, text: '', hint: 'network', latencyMs: Date.now() - startedAt }
@@ -114,5 +128,5 @@ export function buildTestMessages(): AiChatMessage[] {
 }
 
 export async function testConnection(s: AiCleanupSettings): Promise<AiChatOutcome> {
-  return chatCompletion(buildTestMessages(), s, { maxTokens: 8 })
+  return chatCompletion(buildTestMessages(), s, { maxTokens: 16, probe: true })
 }

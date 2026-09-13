@@ -143,6 +143,10 @@ export const ipcChannels = {
   aiTranslateText: 'rgbbox:ai:translate-text',
   aiTestConnection: 'rgbbox:ai:test-connection',
   aiChat: 'rgbbox:ai:chat',
+  aiGetProfiles: 'rgbbox:ai:get-profiles',
+  aiSaveProfile: 'rgbbox:ai:save-profile',
+  aiDeleteProfile: 'rgbbox:ai:delete-profile',
+  aiSetActiveProfile: 'rgbbox:ai:set-active-profile',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

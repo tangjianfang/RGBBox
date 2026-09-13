@@ -104,13 +104,36 @@ describe('chatCompletion (R88)', () => {
   })
 })
 
-describe('testConnection (R88)', () => {
-  it('pings with a tiny user message and max_tokens 8', async () => {
+describe('testConnection (R88/R89)', () => {
+  it('pings with a tiny user message and max_tokens 16 (R89: headroom for reasoning models)', async () => {
     const calls = stubFetchCapture()
     expect(buildTestMessages()).toEqual([{ role: 'user', content: 'ping' }])
     const out = await testConnection(settings)
     expect(out.ok).toBe(true)
-    expect(JSON.parse(calls[0].init.body as string).max_tokens).toBe(8)
+    expect(JSON.parse(calls[0].init.body as string).max_tokens).toBe(16)
+  })
+})
+
+describe('chatCompletion probe mode (R89.1)', () => {
+  it('probe: 200 + choices array succeeds even with EMPTY content (thinking models burn max_tokens)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ choices: [{ message: { content: '' }, finish_reason: 'length' }] }), { status: 200 }
+    )))
+    const out = await chatCompletion([{ role: 'user', content: 'ping' }], settings, { maxTokens: 16, probe: true })
+    expect(out.ok).toBe(true)
+    expect(out.text).toBe('')
+  })
+  it('probe still fails on 200 without a choices array (parse) and on http errors', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ nope: 1 }), { status: 200 })))
+    expect((await chatCompletion([{ role: 'user', content: 'p' }], settings, { probe: true })).hint).toBe('parse')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('x', { status: 401 })))
+    expect((await chatCompletion([{ role: 'user', content: 'p' }], settings, { probe: true })).hint).toBe('auth')
+  })
+  it('non-probe still rejects empty content (cleanup/translate semantics unchanged)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ choices: [{ message: { content: '' } }] }), { status: 200 }
+    )))
+    expect((await chatCompletion([{ role: 'user', content: 'p' }], settings)).hint).toBe('parse')
   })
 })
 
