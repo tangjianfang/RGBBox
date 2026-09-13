@@ -129,6 +129,14 @@ describe('chatCompletion probe mode (R89.1)', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('x', { status: 401 })))
     expect((await chatCompletion([{ role: 'user', content: 'p' }], settings, { probe: true })).hint).toBe('auth')
   })
+  it('R89 review fix: probe rejects empty choices arrays and 200-with-error bodies (misconfigured gateways)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ choices: [] }), { status: 200 })))
+    expect((await chatCompletion([{ role: 'user', content: 'p' }], settings, { probe: true })).hint).toBe('parse')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ error: { message: 'model not found' }, choices: [{ message: { content: '' } }] }), { status: 200 }
+    )))
+    expect((await chatCompletion([{ role: 'user', content: 'p' }], settings, { probe: true })).hint).toBe('parse')
+  })
   it('non-probe still rejects empty content (cleanup/translate semantics unchanged)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(
       JSON.stringify({ choices: [{ message: { content: '' } }] }), { status: 200 }

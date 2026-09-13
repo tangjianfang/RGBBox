@@ -173,4 +173,29 @@ describe('AiLabView (R89)', () => {
     await waitFor(() => expect(second.container.textContent).toContain('ai.lab.keyUnreadable'))
     cleanup()
   })
+
+  it('R89 review fix: unmounting the view (nav rail switch) commits pending edits', async () => {
+    const rgbbox = setupRendererMocks()
+    const { container, unmount } = render(<AiLabView />)
+    await waitFor(() => expect(container.querySelector('input[data-field="apiKey"]')).not.toBeNull())
+    fireEvent.change(container.querySelector('input[data-field="apiKey"]') as HTMLInputElement, {
+      target: { value: 'sk-brand-new' },
+    })
+    unmount()
+    await waitFor(() => expect(rgbbox.aiSaveProfile).toHaveBeenCalled())
+    expect(((rgbbox.aiSaveProfile.mock.calls[0] as unknown[])[0] as { apiKey: string }).apiKey).toBe('sk-brand-new')
+  })
+
+  it('R89 review fix: a draft with an empty baseUrl is NOT auto-saved (main would rewrite it to zhipu)', async () => {
+    const rgbbox = setupRendererMocks()
+    const { container } = render(<AiLabView />)
+    await waitFor(() => expect((container.querySelector('select[data-field="provider"]') as HTMLSelectElement).value).toBe('zhipu'))
+    fireEvent.change(container.querySelector('select[data-field="provider"]') as HTMLSelectElement, { target: { value: 'custom' } })
+    fireEvent.change(container.querySelector('input[data-field="model"]') as HTMLInputElement, { target: { value: 'my-model' } })
+    await openTab(container, 'chat') // tab switch triggers the auto-save path
+    await openTab(container, 'config')
+    expect(rgbbox.aiSaveProfile).not.toHaveBeenCalled()
+    // and the test button is disabled while baseUrl is blank
+    expect((container.querySelector('[data-action="test"]') as HTMLButtonElement).disabled).toBe(true)
+  })
 })

@@ -1,7 +1,7 @@
-import { useEffect, useState, type JSX } from 'react'
+import { useEffect, useRef, useState, type JSX } from 'react'
 import { Eye, EyeOff, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
-import { AI_PROVIDER_PRESETS, isKeylessLocal, matchProviderPreset } from '../../../shared/aiProviders'
+import { AI_PROVIDER_PRESETS, FALLBACK_MODEL, isKeylessLocal, matchProviderPreset } from '../../../shared/aiProviders'
 import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile } from '../../../shared/types'
 
 interface ChatTurn extends AiChatMessage {
@@ -49,6 +49,7 @@ export function AiLabView(): JSX.Element {
   const [unreadableIds, setUnreadableIds] = useState<string[]>([])
   const [encryptionAvailable, setEncryptionAvailable] = useState(true)
   const [showKey, setShowKey] = useState(false)
+  const [profileBusy, setProfileBusy] = useState(false)
   const [conn, setConn] = useState<ConnState>({ kind: 'idle' })
   const [chat, setChat] = useState<ChatTurn[]>([])
   const [chatInput, setChatInput] = useState('')
@@ -83,15 +84,26 @@ export function AiLabView(): JSX.Element {
     })
   }
 
-  /** Auto-save the edited profile (R89: 配置好之后自动保存); skips empty drafts. */
+  /** Auto-save the edited profile (R89: 配置好之后自动保存); skips drafts whose
+   *  baseUrl is still blank (R89 review fix — main would coerce '' to the zhipu
+   *  default and silently rewrite a half-filled custom config). */
   const commitEdits = async (): Promise<AiProfile | null> => {
     if (!loaded) return null
-    if (cfg.baseUrl.trim() === '' && cfg.model.trim() === '') return null
+    if (cfg.baseUrl.trim() === '') return null
     const saved = await window.rgbbox.aiSaveProfile({ id: editId, ...cfg })
     upsertLocal(saved)
     if (saved.id !== editId) setEditId(saved.id)
+    // R89 review fix: sync the auto-generated name back into the form so the
+    // input and the dropdown/banner cannot diverge for the same profile.
+    setCfg((c) => (c.name.trim() === '' ? { ...c, name: saved.name } : c))
     return saved
   }
+
+  // R89 review fix: the module rail unmounts this view on navigation — commit
+  // pending edits on unmount so "自动保存" holds outside the component too.
+  const commitRef = useRef(commitEdits)
+  commitRef.current = commitEdits
+  useEffect(() => () => { void commitRef.current() }, [])
 
   const selectProfile = async (id: string) => {
     if (id === editId) return
@@ -139,6 +151,9 @@ export function AiLabView(): JSX.Element {
   }
 
   const runTest = async () => {
+    // R89 review fix: a draft without a baseUrl has nothing to test — main would
+    // silently fall back to the ACTIVE profile and we would mislabel the result.
+    if (cfg.baseUrl.trim() === '') return
     setConn({ kind: 'testing' })
     try {
       // R89: test the EDITED profile directly — no save, no active switch needed.
@@ -146,7 +161,7 @@ export function AiLabView(): JSX.Element {
         baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model,
       })
       setConn(out.ok
-        ? { kind: 'ok', latencyMs: out.latencyMs, model: cfg.model.trim() || 'glm-5.3-flash' }
+        ? { kind: 'ok', latencyMs: out.latencyMs, model: cfg.model.trim() || FALLBACK_MODEL }
         : { kind: 'fail', hint: out.hint })
     } catch {
       setConn({ kind: 'fail', hint: 'network' })
@@ -243,12 +258,15 @@ export function AiLabView(): JSX.Element {
             <select data-field="profile" value={editId} onChange={(e) => void selectProfile(e.target.value)}>
               {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <button type="button" className="icon-button" data-action="new-profile" onClick={newProfile}
+            <button type="button" className="icon-button" data-action="new-profile"
+              onClick={() => { setProfileBusy(true); void newProfile().finally(() => setProfileBusy(false)) }}
+              disabled={profileBusy}
               aria-label={t('ai.lab.profileNew')} title={t('ai.lab.profileNew')}>
               <Plus size={15} />
             </button>
-            <button type="button" className="icon-button" data-action="delete-profile" onClick={deleteProfile}
-              disabled={profiles.length === 0}
+            <button type="button" className="icon-button" data-action="delete-profile"
+              onClick={() => { setProfileBusy(true); void deleteProfile().finally(() => setProfileBusy(false)) }}
+              disabled={profiles.length === 0 || profileBusy}
               aria-label={t('ai.lab.profileDelete')} title={t('ai.lab.profileDelete')}>
               <Trash2 size={15} />
             </button>
@@ -262,7 +280,7 @@ export function AiLabView(): JSX.Element {
               {conn.kind === 'fail' && hintLine(conn.hint)}
             </span>
             <button type="button" className="icon-button" data-action="test" onClick={runTest}
-              disabled={conn.kind === 'testing' || !loaded}
+              disabled={conn.kind === 'testing' || !loaded || cfg.baseUrl.trim() === ''}
               aria-label={t('ai.lab.test')} title={t('ai.lab.test')}>
               <RefreshCw size={16} />
             </button>

@@ -58,6 +58,10 @@ export function matchProviderPreset(baseUrl: string): AiProviderPreset {
     ?? AI_PROVIDER_PRESETS[AI_PROVIDER_PRESETS.length - 1]
 }
 
+/** R89 review fix: single source for the display fallback model (mirrors
+ *  DEFAULT_AI_SETTINGS.model in main, which renderer cannot import). */
+export const FALLBACK_MODEL = 'glm-5.3-flash'
+
 /** R88 review fix: local endpoints (Ollama etc.) need no API key — the keyless
  *  preset would be dead otherwise, since chatCompletion gates on apiKey. */
 export function isKeylessLocal(baseUrl: string): boolean {

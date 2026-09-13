@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { autoProfileName, normalizeAiStore, mirrorLegacy } from '../../src/main/aiProfileStore'
+import { autoProfileName, normalizeAiStore, mirrorLegacy, mergePreservedKeys } from '../../src/main/aiProfileStore'
 
 describe('autoProfileName (R89.3)', () => {
   it('names as "Provider · model"; custom falls back', () => {
@@ -52,5 +52,29 @@ describe('mirrorLegacy (R89.3)', () => {
     expect(mirrorLegacy({ id: 'p1', name: 'A', baseUrl: 'https://a/v1', apiKey: 'k', model: 'm' }))
       .toEqual({ baseUrl: 'https://a/v1', apiKey: 'k', model: 'm' })
     expect(mirrorLegacy(null)).toEqual({ baseUrl: '', apiKey: '', model: '' })
+  })
+})
+
+describe('mergePreservedKeys (R89 review fix)', () => {
+  const raw = [
+    { id: 'p1', name: 'A', baseUrl: 'https://a/v1', apiKey: 'enc:v1:XXX', model: 'm1' },
+    { id: 'p2', name: 'B', baseUrl: 'https://b/v1', apiKey: 'enc:v1:YYY', model: 'm2' },
+  ]
+  it('restores ciphertext for unreadable profiles the user did not re-enter', () => {
+    const decoded = [
+      { id: 'p1', name: 'A', baseUrl: 'https://a/v1', apiKey: '', model: 'm1' },
+      { id: 'p2', name: 'B', baseUrl: 'https://b/v1', apiKey: '', model: 'm2' },
+    ]
+    const merged = mergePreservedKeys(decoded, raw, ['p1'])
+    expect(merged[0].apiKey).toBe('enc:v1:XXX') // preserved
+    expect(merged[1].apiKey).toBe('')           // readable → stays decoded
+  })
+  it('a re-entered key wins over the stale ciphertext', () => {
+    const reentered = [{ id: 'p1', name: 'A', baseUrl: 'https://a/v1', apiKey: 'sk-new', model: 'm1' }]
+    expect(mergePreservedKeys(reentered, raw, ['p1'])[0].apiKey).toBe('sk-new')
+  })
+  it('no unreadable ids → untouched', () => {
+    const decoded = [{ id: 'p2', name: 'B', baseUrl: 'https://b/v1', apiKey: 'plain', model: 'm2' }]
+    expect(mergePreservedKeys(decoded, raw, [])).toBe(decoded)
   })
 })

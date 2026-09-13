@@ -109,8 +109,11 @@ export async function chatCompletion(
     const parsed = parseCleanupResponse(json)
     if (parsed === null) {
       if (opts?.probe) {
-        const choices = (json as { choices?: unknown } | null)?.choices
-        if (Array.isArray(choices)) {
+        // R89 review fix: a bare 200 + empty choices array, or a 200 carrying an
+        // error object (misconfigured gateways), is NOT a working connection.
+        const body = json as { choices?: unknown; error?: unknown } | null
+        const choices = body?.choices
+        if (Array.isArray(choices) && choices.length > 0 && body?.error === undefined) {
           const content = (choices[0] as { message?: { content?: unknown } } | undefined)?.message?.content
           return { ok: true, text: typeof content === 'string' ? content : '', latencyMs }
         }

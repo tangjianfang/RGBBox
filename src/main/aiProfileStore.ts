@@ -61,3 +61,22 @@ export function mirrorLegacy(active: AiProfile | null): { baseUrl: string; apiKe
   if (active === null) return { baseUrl: '', apiKey: '', model: '' }
   return { baseUrl: active.baseUrl, apiKey: active.apiKey, model: active.model }
 }
+
+/** R89 review fix: when persisting, RESTORE the original stored ciphertext for
+ *  profiles whose key failed to decode on this machine (and was not re-entered)
+ *  — otherwise an unrelated write would wipe a key that is only unreadable
+ *  here (e.g. created under another Windows account) exactly as if the user
+ *  had cleared it. */
+export function mergePreservedKeys(
+  profiles: AiProfile[],
+  raw: AiProfile[],
+  unreadableIds: string[]
+): AiProfile[] {
+  if (unreadableIds.length === 0) return profiles
+  const rawById = new Map(raw.map((p) => [p.id, p]))
+  return profiles.map((p) => {
+    if (!unreadableIds.includes(p.id) || p.apiKey !== '') return p
+    const original = rawById.get(p.id)
+    return original ? { ...p, apiKey: original.apiKey } : p
+  })
+}
