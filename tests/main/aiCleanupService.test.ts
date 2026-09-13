@@ -57,3 +57,59 @@ describe('aiCleanupService pure (R83)', () => {
     expect(await translateOcrText('文本', DEFAULT_AI_SETTINGS)).toEqual({ ok: false, text: '', hint: 'nokey' })
   })
 })
+
+// ── R88: AI Lab generic pipeline ───────────────────────────────────────────
+import { chatCompletion, buildTestMessages, testConnection } from '../../src/main/aiCleanupService'
+import { vi, afterEach } from 'vitest'
+import type { AiCleanupSettings } from '../../src/main/aiCleanupService'
+
+afterEach(() => vi.unstubAllGlobals())
+
+const settings: AiCleanupSettings = { baseUrl: 'https://x.example/v4', apiKey: 'k', model: 'glm-5.3-flash' }
+
+describe('chatCompletion (R88)', () => {
+  it('returns ok + text + latencyMs on 200 with choices', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ choices: [{ message: { content: 'pong' } }] }), { status: 200 }
+    )))
+    const out = await chatCompletion([{ role: 'user', content: 'ping' }], settings)
+    expect(out.ok).toBe(true)
+    expect(out.text).toBe('pong')
+    expect(out.latencyMs).toBeGreaterThanOrEqual(0)
+  })
+  it('classifies auth (401) and http (500)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('x', { status: 401 })))
+    expect((await chatCompletion([{ role: 'user', content: 'p' }], settings)).hint).toBe('auth')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('x', { status: 500 })))
+    expect((await chatCompletion([{ role: 'user', content: 'p' }], settings)).hint).toBe('http')
+  })
+  it('nokey without key; parse on bad shape; network on fetch throw; empty messages → parse', async () => {
+    expect((await chatCompletion([{ role: 'user', content: 'p' }], { ...settings, apiKey: '' })).hint).toBe('nokey')
+    expect((await chatCompletion([], settings)).hint).toBe('parse')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ nope: 1 }), { status: 200 })))
+    expect((await chatCompletion([{ role: 'user', content: 'p' }], settings)).hint).toBe('parse')
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
+    expect((await chatCompletion([{ role: 'user', content: 'p' }], settings)).hint).toBe('network')
+  })
+})
+
+describe('testConnection (R88)', () => {
+  it('pings with a tiny user message and max_tokens 8', async () => {
+    let captured: { max_tokens?: number } | undefined
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string)
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'pong' } }] }), { status: 200 })
+    }))
+    expect(buildTestMessages()).toEqual([{ role: 'user', content: 'ping' }])
+    const out = await testConnection(settings)
+    expect(out.ok).toBe(true)
+    expect(captured?.max_tokens).toBe(8)
+  })
+})
+
+describe('DEFAULT_AI_SETTINGS (R88.5)', () => {
+  it('default model is glm-5.3-flash on the zhipu endpoint', () => {
+    expect(DEFAULT_AI_SETTINGS.model).toBe('glm-5.3-flash')
+    expect(DEFAULT_AI_SETTINGS.baseUrl).toBe('https://open.bigmodel.cn/api/paas/v4')
+  })
+})
