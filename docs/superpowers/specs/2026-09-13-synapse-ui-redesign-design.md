@@ -106,6 +106,7 @@ interface ModuleRailProps {
   onSwitch: (v: View) => void        // 首页 + CARD_VIEWS（model3d 门控同 R85）
   onOpenSettings: () => void          // 底部 ⚙（setActiveView('settings')）
   isSettingsActive: boolean
+  model3dEnabled: boolean             // false 时 rail 不显示 3D 入口
 }
 
 // AppShell.tsx（改造）
