@@ -833,6 +833,15 @@
 - **R86.6 受影响文件**：`styles.css`（token 重构 + 全部布局类）、`App.tsx`（壳层接线）、`AppShell.tsx`/`DashboardView.tsx`（重排）、`shellModules.ts`（磁贴元数据）、`i18n/*`；`TabBar.tsx`/`useTabNavigation.ts` 移除；各期 view 文件在 P2/P3 补充。
 - **R86.7 状态**：🔄（**P1 ✅（2026-09-13）**：ModuleRail 左 rail 直切 + `rgbbox:view` 记忆、TabBar/useTabNavigation 多 Tab 移除、Dashboard 折叠分组（运行状态 5 卡 + 模块磁贴 8 项）、:root 设计 token 落地；code-review 10 findings 全部修复（窄屏 rail 媒体规则源顺序、getTabMeta 防御回退、rail 按钮无障碍名/aria i18n 化、`loadStoredView`/`persistView` 持久化函数化 + 往返测试、`--bg-control/--border-control/--border-hover` 补齐 hover/控制件 token、`isViewReachable` 单一门控收敛 3 处 model3d 判断、折叠箭头旋转状态 + aria-hidden、静态状态卡 hover 用 `:has()` 收窄、MODULE_VIEWS 与 CARD_VIEWS 精确顺序锁同步）；证据：`yarn typecheck` 0 error、`yarn test` 70 files / 663 passed 0 失败、`yarn build` 成功、死引用核查仅剩 1 处说明性注释；实机复测待用户。P2/P3 待启动）。
 
+### R87. 诊断页 Frame age 语义修正：空闲时显示原因而非持续增长的毫秒数
+
+> 来源：2026-09-13 用户在 R86 P1 后实测诊断页 `Frame age: > 50000ms` 提问；systematic-debugging 定位——帧循环受 R42/R43 消费门控（`App.tsx:1193-1195`：仅「有浮窗投射」或「主窗口可见且在工作台 view」才生成帧）与 `tick()` 的 `!status.running` 早退（`App.tsx:1069`）控制，非 bug；但 R85/R86 后默认首页为 Dashboard，诊断页打开瞬间门控即关闭，该指标在诊断页必然显示持续增长的大数值，语义误导。用户选定方案 1（修诊断语义）。**风险等级：L0**（纯 renderer 诊断展示 + 纯函数，无行为变更）。
+- **R87.1** **三态语义**：新增纯函数 `frameAgeState(generatedAt, now, consumerActive, engineRunning)`（`src/renderer/src/engine/frameAge.ts`，node 可测）返回 `{kind:'waiting'}`（从未有帧）/ `{kind:'idle', reason:'paused'|'no-consumer'}`（循环被门控，毫秒数无意义）/ `{kind:'age', ms}`（帧在流动）。判定优先级：无帧 > 引擎暂停 > 无消费方。
+- **R87.2** **诊断行展示**：`diag.frameAge` 行改为——waiting → 现有 `diag.waiting`；idle(paused) → 新 key `diag.frameIdlePaused`（'空闲——引擎已暂停'/'Idle — engine paused'）；idle(no-consumer) → 新 key `diag.frameIdleNoConsumer`（'空闲——无消费方（不在工作台且无浮窗）'/'Idle — no consumer (Workspace hidden, no overlay)'）；age → 照常 `${ms} ms`。
+- **R87.3** **受影响文件**：新增 `src/renderer/src/engine/frameAge.ts` + `tests/renderer/engine/frameAge.test.ts`；修改 `App.tsx`（诊断行接线，`consumerActive = overlayDisplayIds.length > 0 || (windowVisible && activeView === 'workspace')` 与门控同源）、`i18n/index.tsx`（zh+en 2 key）。
+- **R87.4** **验收点**：纯函数三态矩阵单测（含优先级）；`yarn typecheck` 0 error + 全量 `yarn test` 0 失败；诊断页三态文案正确（实机待用户）。
+- **R87.5** **状态**：⏳
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
