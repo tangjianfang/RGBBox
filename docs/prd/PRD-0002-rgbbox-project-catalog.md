@@ -878,6 +878,9 @@
 
 
 - **R90.8** **流式实时检测（P1 验证场扩展，2026-09-13 用户需求）**：①AI 实验室音频 Tab 从「固定录 3 秒一次性推理」升级为**实时连续检测**——开始/停止控制，VAD 逐块推演实时概率条、AST 对最近 3 秒滑窗每 ~2 秒刷新 Top-5；②**音频工作站 / 视频工作站**各加「AI 实时听音」开关——播放时采集**系统声音**（复用 useAudioAnalyzer 的 desktop loopback 采集路径，提取共享 util），同一条流式管线验证真实媒体流，浮层显示 VAD 概率 + AST Top-2；③服务端 `startStream/feed/stop` 会话（feed ~300ms 节流、AST 串行防重入）；受影响：`audioAiService.ts`（流式会话）、`ipc.ts`/`preload`（+3 通道）、新 `useAiAudioStream` hook、`AiLabAudioTab.tsx` 重构、`AudioStudioView.tsx`/`VideoStudioView.tsx` 挂浮层、i18n/styles/测试。**验收点**：AI Tab 实时模式说话→VAD 概率实时跳动、AST 周期刷新；播放器播放音乐开启听音→AST 命中 Music 类、说话→Speech；停止/切页资源释放；全量回归 0 失败。**实施证据（2026-09-13）**：流式会话 3 用例（context/state 跨 feed、2s cadence、双 start 安全）+ 组件状态映射 4 用例（idle/results/quiet+error/radio）；desktop 采集提取 `tools/desktopAudio.ts`（useAudioAnalyzer 同源复用，零行为变更）；播放器零侵入挂载（App.tsx 两分支 + `.audio-view-wrapper/.video-view-anchor` relative 锚）；`yarn test` 79 files / 723 passed 0 失败 + typecheck/build 0 error；hook 级时序在 happy-dom 无媒体栈下以 service 测试 + 实机验证覆盖；实机复测待用户。
+- **R90.9** **音频 Tab 分层重构（2026-09-14 用户反馈「乱七八糟、一点结果都没有」）**：根因 F1 采集黑盒（AudioContext 采样率承诺不可信 + ScriptProcessor 可能零回调，均无检测）、F2 断层不可见、F3 UI 补丁堆叠、F4 pcm 链路零测试。重构为四层：L1 纯函数 `resampleTo16k`/`synthTestTone`（100% 单测）；L2 `PcmSource` 接口 + Mic/System/**Tone（内置测试音，零权限保底）** 三适配器（可注入 fake）；L3 `useAiAudioStream` 管线状态机（idle→capturing→inferring→results/error）；L4 单卡管线 UI（音源选择 + ①采集②电平③VAD④AST 分段状态灯 + **运行自检**：3 秒测试音逐项断言 feed/采样率/RMS/VAD/AST）。验收点：测试音源选中即出结果；自检五项可判定；麦克风说话 VAD 响应；48k→16k 转换单测；全量回归 0 失败。
+
+### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
 > 目标：从「优秀的灯效可视化引擎」升级为「真正的 RGB 控制器 + 无人能及的 AI 灯效引擎」。
