@@ -3,23 +3,46 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { MODELS_MANIFEST } from '../../src/shared/modelsManifest'
 
-describe('MODELS_MANIFEST (R90 P1 audio entries)', () => {
-  const silero = MODELS_MANIFEST.find((m) => m.name === 'silero_vad')
-  const ast = MODELS_MANIFEST.find((m) => m.name === 'ast_audioset')
+describe('MODELS_MANIFEST invariants (restored, R90 review fix)', () => {
+  it('names/files/urls are unique across all entries', () => {
+    const names = MODELS_MANIFEST.map((m) => m.name)
+    const files = MODELS_MANIFEST.map((m) => m.file)
+    const urls = MODELS_MANIFEST.map((m) => m.url)
+    expect(new Set(names).size).toBe(names.length)
+    expect(new Set(files).size).toBe(files.length)
+    expect(new Set(urls).size).toBe(urls.length)
+  })
 
-  it('audio entries exist with https urls and files', () => {
-    for (const m of [silero, ast]) {
-      expect(m, 'entry missing').toBeDefined()
-      expect(m!.file).toMatch(/^[\w.-]+\.onnx$/)
-      expect(m!.url).toMatch(/^https:\/\//)
-      expect(m!.description).toBeTruthy()
+  it('every entry has https url + non-empty description + valid kind', () => {
+    for (const m of MODELS_MANIFEST) {
+      expect(m.url).toMatch(/^https:\/\//)
+      expect(m.description).toBeTruthy()
+      expect(['splat', 'onnx']).toContain(m.kind)
+      expect(m.file).toContain('.')
     }
   })
 
-  it('urls are the verified sources (R90.2)', () => {
-    expect(silero!.url).toContain('github.com/snakers4/silero-vad')
-    expect(ast!.url).toContain('ast-finetuned-audioset-10-10-0.4593-ONNX')
-    expect(ast!.url).toContain('model_int8.onnx') // int8 ≈ 90.6MB ≤ 100MB budget
+  it('splat entries keep .splat + name-is-stem; onnx entries keep .onnx', () => {
+    const splats = MODELS_MANIFEST.filter((m) => m.kind === 'splat')
+    const onnx = MODELS_MANIFEST.filter((m) => m.kind === 'onnx')
+    expect(splats.length).toBe(5)
+    expect(onnx.length).toBe(2)
+    for (const m of splats) {
+      expect(m.file.endsWith('.splat')).toBe(true)
+      expect(m.file.startsWith(`${m.name}.`)).toBe(true)
+    }
+    for (const m of onnx) expect(m.file.endsWith('.onnx')).toBe(true)
+    expect(splats.map((m) => m.name)).toEqual(
+      expect.arrayContaining(['keyboard_rgb', 'mouse_rgb', 'train', 'garden', 'bicycle'])
+    )
+  })
+
+  it('audio entries use the verified int8 sources within the ≤100MB budget (R90.2)', () => {
+    const ast = MODELS_MANIFEST.find((m) => m.name === 'ast_audioset')!
+    const silero = MODELS_MANIFEST.find((m) => m.name === 'silero_vad')!
+    expect(silero.url).toContain('github.com/snakers4/silero-vad')
+    expect(ast.url).toContain('ast-finetuned-audioset-10-10-0.4593-ONNX')
+    expect(ast.url).toContain('model_int8.onnx') // int8 ≈ 90.6MB ≤ 100MB budget
   })
 
   it('audioset labels asset has 527 contiguous classes', () => {

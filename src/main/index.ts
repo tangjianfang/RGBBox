@@ -36,7 +36,7 @@ function mintProfileId(): string {
   return `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 import { validateChatMessages } from '../shared/aiChatValidation'
-import { initAudioAi, isCached as audioAiIsCached, runVad as audioAiRunVadPcm, runAst as audioAiRunAstPcm } from './audioAiService'
+import { initAudioAi, disposeAudioAi, isCached as audioAiIsCached, runVad as audioAiRunVadPcm, runAst as audioAiRunAstPcm } from './audioAiService'
 import { parseRangeHeader, resolveMediaMime } from './mediaProtocol'
 
 // Initialize file logger — must be done after imports but before app.whenReady
@@ -518,32 +518,39 @@ function registerIpc(): void {
     return chatCompletion(messages, asAiSettings(s.ai), { temperature: 0.7 })
   })
 
-  // R90 P1: audio AI test lab (VAD + AST). pcm = mono Float32Array @16kHz, 1–30s.
-  const assertPcm16k = (p: unknown): Float32Array | null => {
+  // R90 P1: audio AI test lab (VAD + AST). pcm = mono Float32Array @16kHz.
+  // R90 review fix: per-model caps (VAD 30s, AST 10s — main-thread mel+inference
+  // freeze bound) and distinct failure hints (not-downloaded vs inference vs parse).
+  const assertPcm16k = (p: unknown, maxSamples: number): Float32Array | null => {
     if (!(p instanceof Float32Array)) return null
-    return p.length >= 16000 && p.length <= 16000 * 30 ? p : null
+    return p.length >= 16000 && p.length <= maxSamples ? p : null
+  }
+  const audioHintOf = (err: unknown): 'not-downloaded' | 'inference' | 'parse' => {
+    const hint = (err as { hint?: string }).hint
+    if (hint === 'not-downloaded') return 'not-downloaded'
+    return 'inference'
   }
   ipcMain.handle(ipcChannels.audioAiStatus, async () => ({
     sileroCached: await audioAiIsCached('silero_vad.onnx'),
     astCached: await audioAiIsCached('ast_audioset_int8.onnx'),
   }))
   ipcMain.handle(ipcChannels.audioAiRunVad, async (_event, pcm: unknown) => {
-    const valid = assertPcm16k(pcm)
+    const valid = assertPcm16k(pcm, 16000 * 30)
     if (valid === null) return { ok: false, hint: 'parse' }
     try {
       const r = await audioAiRunVadPcm(valid)
       return { ok: true, prob: r.prob, frames: r.frames }
     } catch (err) {
-      return { ok: false, hint: (err as { hint?: 'not-downloaded' }).hint ?? 'parse' }
+      return { ok: false, hint: audioHintOf(err) }
     }
   })
   ipcMain.handle(ipcChannels.audioAiRunAst, async (_event, pcm: unknown) => {
-    const valid = assertPcm16k(pcm)
+    const valid = assertPcm16k(pcm, 16000 * 10)
     if (valid === null) return { ok: false, hint: 'parse' }
     try {
       return { ok: true, top: (await audioAiRunAstPcm(valid)).top }
     } catch (err) {
-      return { ok: false, hint: (err as { hint?: 'not-downloaded' }).hint ?? 'parse' }
+      return { ok: false, hint: audioHintOf(err) }
     }
   })
 
@@ -1231,6 +1238,7 @@ app.on('second-instance', () => {
 
 app.on('before-quit', () => {
   log.info('App', 'Application quitting')
+  void disposeAudioAi() // R90 P1: release onnx sessions
   log.flushSync()
   isQuitting = true
   // R74: stop idle polling + close effect windows. The R73 OS shutdown timer

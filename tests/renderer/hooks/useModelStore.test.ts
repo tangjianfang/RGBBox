@@ -28,8 +28,8 @@ describe('renderer/hooks/useModelStore', () => {
     await waitFor(() => {
       expect(result.current.loading).toBe(false)
     })
-    // Bundled count = MODELS_MANIFEST length
-    expect(result.current.models.length).toBe(MODELS_MANIFEST.length)
+    // Bundled count = splat-kind manifest entries (R90: onnx models are excluded)
+    expect(result.current.models.length).toBe(MODELS_MANIFEST.filter((m) => m.kind === 'splat').length)
   })
 
   it('marks each bundled model as "remote" when not cached', async () => {

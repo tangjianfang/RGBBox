@@ -3,8 +3,12 @@
 // happy-dom has no media stack — component tests mock this module.
 
 export interface AudioRecorderHandle {
-  /** Stops recording and resolves with the captured mono PCM. */
+  /** Stops recording immediately and resolves with the captured mono PCM. */
   stop(): Promise<Float32Array>
+  /** Resolves with the captured PCM once the requested duration elapses
+   *  (the auto-stop path — R90 review fix: awaiting stop() right after start
+   *  captured ~0ms of audio because cleanup raced the audio callback). */
+  done: Promise<Float32Array>
 }
 
 export async function startAudioRecorder(seconds?: number): Promise<AudioRecorderHandle> {
@@ -44,19 +48,22 @@ export async function startAudioRecorder(seconds?: number): Promise<AudioRecorde
     return out
   }
 
-  let timer: number | null = null
-  if (seconds !== undefined) {
-    timer = window.setTimeout(() => { void stop() }, seconds * 1000)
-  }
-
   let stopped = false
   async function stop(): Promise<Float32Array> {
     if (stopped) return concat()
     stopped = true
-    if (timer !== null) window.clearTimeout(timer)
     await cleanup()
     return concat()
   }
 
-  return { stop }
+  let doneResolver: ((pcm: Float32Array) => void) | null = null
+  const done = new Promise<Float32Array>((resolve) => { doneResolver = resolve })
+  if (seconds !== undefined) {
+    window.setTimeout(async () => {
+      const pcm = await stop()
+      doneResolver?.(pcm)
+    }, seconds * 1000)
+  }
+
+  return { stop, done }
 }

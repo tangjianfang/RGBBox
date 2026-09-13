@@ -13,7 +13,7 @@ const SHELL_KEYS = [
   'ai.lab.audio.title.vad', 'ai.lab.audio.title.ast',
   'ai.lab.audio.desc.vad', 'ai.lab.audio.desc.ast',
   'ai.lab.audio.download', 'ai.lab.audio.progress', 'ai.lab.audio.record', 'ai.lab.audio.recording',
-  'ai.lab.audio.needModel', 'ai.lab.audio.vad.speech', 'ai.lab.audio.vad.quiet', 'ai.lab.audio.vad.prob',
+  'ai.lab.audio.needModel', 'ai.lab.audio.errorInference', 'ai.lab.audio.vad.speech', 'ai.lab.audio.vad.quiet', 'ai.lab.audio.vad.prob',
   'ai.lab.profileNew', 'ai.lab.profileDelete', 'ai.lab.setActive', 'ai.lab.activeNow', 'ai.lab.name',
   'ai.lab.status.connected', 'ai.lab.status.disconnected', 'ai.lab.status.failed',
   'ai.lab.test', 'ai.lab.showKey', 'ai.lab.hideKey', 'ai.lab.save',

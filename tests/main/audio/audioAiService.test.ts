@@ -41,10 +41,10 @@ describe('audioAiService (R90 P1)', () => {
     expect(findCached).toHaveBeenCalledWith('silero_vad.onnx')
   })
 
-  it('runVad chunks pcm at 1536, keeps state shape, returns max prob', async () => {
+  it('runVad follows the Silero v5 protocol (input/state/sr → output/stateN) with 64-sample context', async () => {
     const sess = fakeSession([
-      { output: { data: new Float32Array([0.2]), dims: [1, 1] } },
-      { output: { data: new Float32Array([0.9]), dims: [1, 1] } },
+      { output: { data: new Float32Array([0.2]), dims: [1, 1] }, stateN: { data: new Float32Array(256).fill(0.5), dims: [2, 1, 128] } },
+      { output: { data: new Float32Array([0.9]), dims: [1, 1] }, stateN: { data: new Float32Array(256), dims: [2, 1, 128] } },
     ])
     sessionFactory.mockResolvedValue(sess)
     initAudioAi({ modelsDir: 'C:/m', findCached: vi.fn().mockResolvedValue('file:///s.onnx') })
@@ -52,15 +52,18 @@ describe('audioAiService (R90 P1)', () => {
     const pcm = new Float32Array(16000 * 3)
     const out = await runVad(pcm)
     expect(out.prob).toBeCloseTo(0.9)
-    expect(out.frames).toBe(Math.floor(pcm.length / VAD_CHUNK))
-    // each run got x[1,1536] + state[2,1,128] + sr[1]
+    expect(out.frames).toBe(Math.floor(pcm.length / 1472))
+    // chunk 1 feeds {input, state, sr}: input[1,1536], state[2,1,128], sr=16000
     const feeds = sess.run.mock.calls[0][0] as Record<string, { dims: number[]; data: Float32Array | BigInt64Array }>
-    expect(feeds.x.dims).toEqual([1, VAD_CHUNK])
+    expect(feeds.input.dims).toEqual([1, VAD_CHUNK])
     expect(feeds.state.dims).toEqual([2, 1, 128])
     expect(Number(feeds.sr.data[0])).toBe(16000)
+    // chunk 2 carries chunk-1's stateN
+    const feeds2 = sess.run.mock.calls[1][0] as Record<string, { data: Float32Array; dims: number[] }>
+    expect(feeds2.state.data[0]).toBe(0.5)
   })
 
-  it('runAst softmaxes 527 logits and returns top-5 by score', async () => {
+  it('runAst feeds input_values, softmaxes 527 logits and returns top-5 by score', async () => {
     const logits = new Float32Array(527).fill(-1)
     logits[12] = 5; logits[7] = 4; logits[100] = 3; logits[0] = 2; logits[526] = 1
     const sess = fakeSession([{ logits: { data: logits, dims: [1, 527] } }])
@@ -74,15 +77,27 @@ describe('audioAiService (R90 P1)', () => {
     for (let i = 1; i < out.top.length; i++) {
       expect(out.top[i].score).toBeLessThanOrEqual(out.top[i - 1].score) // strictly ordered
     }
+    const feeds = sess.run.mock.calls[0][0] as Record<string, { dims: number[] }>
+    expect(feeds.input_values.dims).toEqual([1, 1024, 128]) // R90 review: optimum export feed name
   })
 
-  it('rejects pcm outside the 1–30s range', async () => {
+  it('rejects pcm outside the 1–30s (VAD) / 1–10s (AST) ranges', async () => {
     initAudioAi({ modelsDir: 'C:/m', findCached: vi.fn().mockResolvedValue(null) })
     await expect(runVad(new Float32Array(100))).rejects.toThrow(/length/i)
-    await expect(runAst(new Float32Array(16000 * 31))).rejects.toThrow(/length/i)
+    await expect(runVad(new Float32Array(16000 * 31))).rejects.toThrow(/length/i)
+    await expect(runAst(new Float32Array(16000 * 11))).rejects.toThrow(/length/i)
   })
 
-  it('budget constant documents the ≤100MB rule', () => {
-    expect(AST_MODEL_BYTES_BUDGET).toBe(100 * 1000 * 1000)
+  it('a rejected session create is NOT cached — the next call retries (R90 review fix)', async () => {
+    const bad = fakeSession([])
+    const good = fakeSession([{ output: { data: new Float32Array([0.8]), dims: [1, 1] } }])
+    sessionFactory.mockRejectedValueOnce(new Error('corrupt file'))
+    sessionFactory.mockResolvedValueOnce(good)
+    initAudioAi({ modelsDir: 'C:/m', findCached: vi.fn().mockResolvedValue('file:///s.onnx') })
+    await expect(runVad(new Float32Array(16000 * 3))).rejects.toThrow('corrupt file')
+    const out = await runVad(new Float32Array(16000 * 3)) // must retry create, not reuse rejection
+    expect(out.prob).toBeCloseTo(0.8)
+    expect(sessionFactory).toHaveBeenCalledTimes(2)
+    expect(bad).toBeDefined()
   })
 })

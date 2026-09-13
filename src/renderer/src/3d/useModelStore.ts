@@ -86,7 +86,7 @@ export function useModelStore(enabled = true) {
     const cachedPaths: Record<string, string> = await window.rgbbox.modelGetCachedPaths()
 
     const resolved: SplatModel[] = await Promise.all(
-      MODELS_MANIFEST.map(async (entry) => {
+      MODELS_MANIFEST.filter((entry) => entry.kind === 'splat').map(async (entry) => {
         const cachedUrl = cachedPaths[entry.name]
         const ledMap = entry.ledMapFile ? await fetchLedMap(entry.ledMapFile) : null
         return {

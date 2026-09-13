@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
-import { useI18n, type TranslationKey } from '../i18n'
+import { useI18n } from '../i18n'
 import { startAudioRecorder, type AudioRecorderHandle } from '../tools/audioRecorder'
 import labels from '../assets/audioset-labels.json'
 
@@ -11,6 +11,7 @@ type CardState =
   | { kind: 'not-downloaded' }
   | { kind: 'downloading'; percent: number }
   | { kind: 'ready' }
+  | { kind: 'error'; hint: string }
 
 type InferState =
   | { kind: 'idle' }
@@ -19,7 +20,8 @@ type InferState =
   | { kind: 'error'; hint: string }
 
 /** R90 P1: audio AI test cards — Silero VAD + AST AudioSet, recorded from the mic.
- *  Capture only runs while this tab is mounted (unmount stops the recorder). */
+ *  Capture only runs while this tab is mounted (unmount stops the recorder and
+ *  releases the download-progress subscription). */
 export function AiLabAudioTab(): JSX.Element {
   const { t } = useI18n()
   const [vadCard, setVadCard] = useState<CardState>({ kind: 'checking' })
@@ -41,32 +43,36 @@ export function AiLabAudioTab(): JSX.Element {
     }
   }, [])
 
+  // R90 review fix: real download progress from the existing main-process push
+  // events (modelDownloadProgress) instead of a fabricated polling counter;
+  // the subscription is released on unmount and download errors surface.
   useEffect(() => {
     void refreshStatus()
-    return () => { void recorderRef.current?.stop() } // stop capture on unmount
+    const unsubscribe = window.rgbbox.onModelDownloadProgress((p) => {
+      if (p.name === 'silero_vad') {
+        if (p.done) setVadCard({ kind: 'ready' })
+        else if (p.error) setVadCard({ kind: 'error', hint: p.error })
+        else setVadCard({ kind: 'downloading', percent: Math.round(p.percent) })
+      } else if (p.name === 'ast_audioset') {
+        if (p.done) setAstCard({ kind: 'ready' })
+        else if (p.error) setAstCard({ kind: 'error', hint: p.error })
+        else setAstCard({ kind: 'downloading', percent: Math.round(p.percent) })
+      }
+    })
+    return () => {
+      unsubscribe()
+      void recorderRef.current?.stop()
+      recorderRef.current = null
+    }
   }, [refreshStatus])
 
   const download = (name: string) => {
-    void window.rgbbox.modelDownload(name)
     if (name === 'silero_vad') setVadCard({ kind: 'downloading', percent: 0 })
     else setAstCard({ kind: 'downloading', percent: 0 })
-    // the existing modelDownloadProgress events update the 3D view; here we
-    // simply poll status until the file lands (test-lab simplicity, R90 P1)
-    const poll = window.setInterval(() => {
-      void window.rgbbox.audioAiStatus().then((s) => {
-        const done = name === 'silero_vad' ? s.sileroCached : s.astCached
-        if (done) {
-          window.clearInterval(poll)
-          if (name === 'silero_vad') setVadCard({ kind: 'ready' })
-          else setAstCard({ kind: 'ready' })
-        } else {
-          const bump = (p: CardState): CardState =>
-            p.kind === 'downloading' ? { kind: 'downloading', percent: Math.min(p.percent + 7, 95) } : p
-          if (name === 'silero_vad') setVadCard(bump)
-          else setAstCard(bump)
-        }
-      })
-    }, 1500)
+    void window.rgbbox.modelDownload(name).catch(() => {
+      if (name === 'silero_vad') setVadCard({ kind: 'error', hint: 'download-failed' })
+      else setAstCard({ kind: 'error', hint: 'download-failed' })
+    })
   }
 
   const runCard = async (kind: 'vad' | 'ast') => {
@@ -74,9 +80,11 @@ export function AiLabAudioTab(): JSX.Element {
     if (recorderRef.current) return
     setInfer({ kind: 'recording' })
     try {
+      // R90 review fix: wait for the recorder's OWN auto-stop (done) instead of
+      // calling stop() immediately — the old code captured ~0ms of audio.
       const handle = await startAudioRecorder(RECORD_SECONDS)
       recorderRef.current = handle
-      const pcm = await handle.stop()
+      const pcm = await handle.done
       recorderRef.current = null
       setInfer({ kind: 'running' })
       if (kind === 'vad') {
@@ -100,11 +108,11 @@ export function AiLabAudioTab(): JSX.Element {
       }
     } catch {
       recorderRef.current = null
-      setInfer({ kind: 'error', hint: 'parse' })
+      setInfer({ kind: 'error', hint: 'inference' })
     }
   }
 
-  const cardHeader = (titleKey: TranslationKey, card: CardState, infer: InferState, modelName: string, actionSuffix: string) => (
+  const cardHeader = (titleKey: 'ai.lab.audio.title.vad' | 'ai.lab.audio.title.ast', card: CardState, infer: InferState, modelName: string, actionSuffix: string) => (
     <div className="ai-audio-card-head">
       <strong>{t(titleKey)}</strong>
       {card.kind === 'not-downloaded' && (
@@ -113,6 +121,7 @@ export function AiLabAudioTab(): JSX.Element {
         </button>
       )}
       {card.kind === 'downloading' && <span className="ai-lab-status">{t('ai.lab.audio.progress')} {card.percent}%</span>}
+      {card.kind === 'error' && <span className="ai-hint-line">{card.hint}</span>}
       {card.kind === 'ready' && (
         <button
           type="button"
@@ -124,7 +133,11 @@ export function AiLabAudioTab(): JSX.Element {
         </button>
       )}
       {infer.kind === 'running' && <span className="ai-lab-status">…</span>}
-      {infer.kind === 'error' && <span className="ai-hint-line">{t('ai.lab.audio.needModel')}</span>}
+      {infer.kind === 'error' && (
+        <span className="ai-hint-line">
+          {infer.hint === 'not-downloaded' ? t('ai.lab.audio.needModel') : t('ai.lab.audio.errorInference')}
+        </span>
+      )}
     </div>
   )
 
