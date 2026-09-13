@@ -11,13 +11,14 @@ describe('astMelSpectrogram (R90 P1)', () => {
     expect(out.every((v) => Number.isFinite(v))).toBe(true)
   })
 
-  it('silence normalizes to a constant value determined by log-floor/mean/std', () => {
+  it('silence normalizes to a constant value determined by log-floor/mean/std', { timeout: 20000 }, () => {
+    // 20s timeout: pure-JS FFT starves under full-suite parallel workers (passes in <1s alone)
     const out = astMelSpectrogram(new Float32Array(SR / 2), SR)
     const expected = (Math.log(1e-10) - AST_MEL_MEAN) / AST_MEL_STD
     for (const v of out) expect(Math.abs(v - expected)).toBeLessThan(1e-4)
   })
 
-  it('a 440Hz tone concentrates energy in low mel bands, not high ones', () => {
+  it('a 440Hz tone concentrates energy in low mel bands, not high ones', { timeout: 20000 }, () => {
     const sec = 2
     const pcm = new Float32Array(SR * sec)
     for (let i = 0; i < pcm.length; i++) pcm[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / SR)
@@ -32,7 +33,7 @@ describe('astMelSpectrogram (R90 P1)', () => {
     expect(low).toBeGreaterThan(high * 10)
   })
 
-  it('input longer than the 1024-frame window is truncated, not rejected', () => {
+  it('input longer than the 1024-frame window is truncated, not rejected', { timeout: 20000 }, () => {
     const out = astMelSpectrogram(new Float32Array(SR * 5), SR)
     expect(out.length).toBe(MEL_FRAMES * MEL_BINS)
   })

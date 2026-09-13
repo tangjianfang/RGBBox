@@ -6391,3 +6391,71 @@ input[type='range'].video-player-volume {
   margin-bottom: 12px;
 }
 .ai-active-banner strong { color: var(--accent); }
+
+/* ══ R90 P1: audio test cards ══════════════════════════════════════ */
+.ai-audio {
+  display: grid;
+  gap: var(--gap-grid);
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+.ai-audio-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+.ai-audio-card-head {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+.ai-audio-card-head strong { color: var(--text-primary); font-size: 14px; }
+.ai-audio-card-head button,
+.ai-audio-card .ai-prob button {
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12.5px;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+.ai-audio-card-head button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.ai-audio-card-head button:disabled { color: var(--text-faint); cursor: not-allowed; }
+.ai-lab-desc { color: var(--text-muted); font-size: 12.5px; margin: 0; }
+.ai-lab-status { color: var(--text-secondary); font-size: 12.5px; }
+.ai-prob {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-prob > span { color: var(--text-primary); font-size: 13px; }
+.ai-prob-bar {
+  background: var(--bg-rail);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  height: 14px;
+  overflow: hidden;
+  width: 100%;
+}
+.ai-prob-bar span {
+  background: var(--accent);
+  border-radius: 999px;
+  display: block;
+  height: 100%;
+  transition: width 300ms ease;
+}
+.ai-ast { display: flex; flex-direction: column; gap: 6px; }
+.ai-ast-row {
+  color: var(--text-primary);
+  display: flex;
+  font-size: 13px;
+  justify-content: space-between;
+}
+.ai-ast-row span:last-child { color: var(--accent); }
