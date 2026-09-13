@@ -855,6 +855,16 @@
 - **R88.8** **验收点**：①rail/磁贴 AI 入口 + 设置页三组；②服务商预设可选且反显、模型组合框可选可输（智谱含 glm-5.3/glm-5.3-flash）；③连接测试显示延迟/状态；④会话多轮+每轮耗时、切走清空；⑤OCR/翻译试玩可用；⑥key 掩码 + 隐私说明行；⑦落盘 `enc:v1:` 密文 + 旧明文自动迁移；⑧zh/en 无缺 key；⑨`yarn test` 0 失败 + typecheck/build 0 error；实机复测待用户。
 - **R88.9** **状态**：✅（2026-09-13 实施完成：shared 层 `aiChatValidation`/`aiProviders` + main 层 `chatCompletion`/`aiSecretCodec`（`enc:v1:` 前缀 + 旧明文迁移）+ IPC `aiTestConnection`/`aiChat` + preload 校验 + `AiLabView` 四区 + rail/磁贴 `ai` 入口（Bot 图标）+ 设置页 AI 组迁走；厂商预设含 glm-5.3/glm-5.3-flash，默认模型升级 glm-5.3-flash。code-review 10 findings 全部修复：aiSetSettings **await 落盘**（save→test 竞态）、聊天框 **IME composition 守卫**、重放**裁剪**（错误轮次不重放/38 轮窗口/30k 截断）、`keyUnreadable` 警告（密文不可解密时保存前提示防毁损）+ `encryptionAvailable` 条件化隐私文案（无加密时不再宣称加密）、**Ollama 本地端点免 key**（`isKeylessLocal`，省略 Authorization 头）、连接状态显示已保存模型、删除死代码 builders（`TRANSLATE_PROMPTS` 单一源，断言移植到 payload 级测试）、`AiErrorHint` 六处联合类型单一源。证据：`yarn test` 75 files / 695 passed 0 失败 + `yarn typecheck` 0 error + `yarn build` 成功 + 死引用核查零命中；实机复测待用户——重点验证 key 落盘 `enc:v1:` 密文、中文输入法 Enter 不误发、Ollama 免 key 连接。）
 
+### R89. AI 实验室优化：连接测试判据修正 + 内部 Tab 化 + 多配置档案
+
+> 来源：2026-09-13 用户反馈两条：①连接状态一直「连接失败 (parse)」但已配 Key 且对话成功（bug：`testConnection` 用 `max_tokens:8`，glm-5.3 思考型模型 8 token 被 reasoning 耗尽 → content 空串 → `parseCleanupResponse` 判 null → parse）；②实验室内部改 Tab 布局（为扩展 AI 实验模块），模型配置支持多个命名档案（服务商+模型版本自动命名、自动保存、按档案测试）。**风险等级：L1→L2**（4 条新 IPC + system.json `ai` 结构迁移 + 视图重构；无新依赖）。
+- **R89.1** **连接测试判据修正**：`chatCompletion` 增 `probe` 模式（`opts.probe`：HTTP 200 + 响应含 `choices` 数组即成功，content 可空）；`testConnection` 改用 probe + `maxTokens:16`；对话/整理/翻译判据不变。
+- **R89.2** **内部 Tab 化**：AiLabView 改三 Tab——「配置」「对话」「OCR·翻译」（`.ai-tabs` 胶囊风格，沿用 R39.2 语言），结构可扩展未来实验模块；连接测试为配置 Tab 内按钮。
+- **R89.3** **多配置档案**：`AiProfile{id,name,baseUrl,apiKey,model}`，存 `system.json` `ai.profiles[]` + `ai.activeProfileId`；apiKey 逐档案 `enc:v1:` 加密；现有单配置迁移为首档案（自动命名「服务商 · 模型」）；IPC 新增 `aiGetProfiles/aiSaveProfile/aiDeleteProfile/aiSetActiveProfile`；`aiTestConnection(profile?)` 支持按档案测试（不落盘）；旧 `aiGetSettings/aiSetSettings` 保留为 active 档案别名（OCR 截图面板零改动）。
+- **R89.4** **受影响文件**：`main/aiCleanupService.ts`（probe）、`main/index.ts`（4 handler + 迁移 + aiTestConnection 参数）、`shared/{types,ipc}.ts`、`preload/index.ts`、`AiLabView.tsx`（重构）、`i18n/*`、`styles.css`（.ai-tabs）、`systemSettingsStore.ts`（ai 结构）及相关测试。
+- **R89.5** **验收点**：①配好 Key 后连接测试成功（不再 parse）；②三 Tab 切换正常且结构可扩展；③多档案增删改/自动命名/自动保存；④对话与 OCR 用 active 档案、可切换；⑤OCR 截图面板行为不变；⑥旧单配置自动迁移；⑦zh/en 无缺 key；⑧全量回归 0 失败。
+- **R89.6** **状态**：⏳
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
