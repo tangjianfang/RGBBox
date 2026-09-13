@@ -55,4 +55,17 @@ export const MODELS_MANIFEST: ModelManifestEntry[] = [
     url: 'https://github.com/tjf/RGBBox/releases/download/models-v1/bicycle.splat',
     description: 'Demo scene — bicycle (Mip-NeRF 360 dataset)',
   },
+  // ── R90 P1: audio AI test-lab models (hard budget ≤100MB each, R90.2) ──
+  {
+    name: 'silero_vad',
+    file: 'silero_vad.onnx',
+    url: 'https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx',
+    description: 'Silero VAD voice-activity ONNX (~2MB)',
+  },
+  {
+    name: 'ast_audioset',
+    file: 'ast_audioset_int8.onnx',
+    url: 'https://hf-mirror.com/onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX/resolve/main/onnx/model_int8.onnx',
+    description: 'AST AudioSet 527-class classifier, int8 ONNX (~91MB)',
+  },
 ]
