@@ -19,12 +19,14 @@ export function AiListenOverlay(): JSX.Element {
   const [enabled, setEnabled] = useState(false)
   const [modelsReady, setModelsReady] = useState<boolean | null>(null) // null = checking
   const [downloading, setDownloading] = useState<number | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   const { running, error, vadProb, astTop } = useAiAudioStream(enabled && modelsReady === true ? 'system' : null)
 
   const refreshStatus = useCallback(async () => {
     try {
       const s = await window.rgbbox.audioAiStatus()
       setModelsReady(s.sileroCached && s.astCached)
+      if (s.sileroCached && s.astCached) setDownloadError(null)
     } catch {
       setModelsReady(false)
     }
@@ -34,12 +36,17 @@ export function AiListenOverlay(): JSX.Element {
     void refreshStatus()
     const unsub = window.rgbbox.onModelDownloadProgress((p) => {
       if (p.name !== 'silero_vad' && p.name !== 'ast_audioset') return
+      // R90: retry notices arrive as {error} with done:false — surface them
+      // instead of silently resetting; terminal failures keep the message up.
       if (p.done) {
+        if (p.error) setDownloadError(p.error)
+        else setDownloadError(null)
         void refreshStatus()
         setDownloading(null)
       } else if (p.error) {
-        setDownloading(null)
+        setDownloadError(`retrying: ${p.error}`)
       } else {
+        setDownloadError(null)
         setDownloading(Math.round(p.percent))
       }
     })
@@ -70,11 +77,11 @@ export function AiListenOverlay(): JSX.Element {
           {modelsReady === false && (
             <div className="ai-listen-models">
               <p className="ai-lab-desc">{t('player.aiListen.needModel')}</p>
-              {downloading !== null
-                ? <span className="ai-lab-status">{t('ai.lab.audio.progress')} {downloading}%</span>
-                : (
-                  <button type="button" onClick={downloadModels}>{t('ai.lab.audio.download')}</button>
-                  )}
+              {downloading !== null && <span className="ai-lab-status">{t('ai.lab.audio.progress')} {downloading}%</span>}
+              {downloadError !== null && <div className="ai-hint-line">{downloadError}</div>}
+              {downloading === null && (
+                <button type="button" onClick={downloadModels}>{t('ai.lab.audio.download')}</button>
+              )}
             </div>
           )}
           {modelsReady === true && running && <div className="ai-lab-status">{t('player.aiListen.listening')}</div>}

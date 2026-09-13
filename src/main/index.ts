@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, safeStorage, screen, session, shell, Tray } from 'electron'
 import { access, mkdir, open, readdir, stat, unlink } from 'node:fs/promises'
-import { createWriteStream } from 'node:fs'
+import { createWriteStream, statSync } from 'node:fs'
 import { get as httpGet } from 'node:http'
 import { get as httpsGet } from 'node:https'
 import { pipeline } from 'node:stream/promises'
@@ -810,40 +810,61 @@ function registerIpc(): void {
     }
   }
 
-  /** Follow HTTPS/HTTP redirects and stream to dest, pushing progress events. */
+  /** Follow HTTPS/HTTP redirects and stream to dest, pushing progress events.
+   *  R90: network drops (ECONNRESET on large files) auto-retry with backoff and
+   *  RESUME from the partial file via HTTP Range — a 91MB model no longer
+   *  restarts from zero on every hiccup. Partial files are kept between attempts. */
   function downloadWithProgress(
     url: string,
     dest: string,
     onProgress: (p: ModelDownloadProgress, name: string) => void,
     name: string
   ): Promise<void> {
+    const MAX_ATTEMPTS = 4
     return new Promise((resolve, reject) => {
-      const attempt = (currentUrl: string, redirects = 0): void => {
+      let attempts = 0
+      const attempt = (currentUrl: string, redirects = 0, resumeFrom = 0): void => {
         if (redirects > 10) { reject(new Error('Too many redirects')); return }
         const getter = currentUrl.startsWith('https://') ? httpsGet : httpGet
-        getter(currentUrl, (res) => {
+        const headers: Record<string, string> = {}
+        if (resumeFrom > 0) headers.Range = `bytes=${resumeFrom}-`
+        const req = getter(currentUrl, { headers }, (res) => {
           if (res.statusCode !== undefined && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
             res.resume()
-            attempt(res.headers.location, redirects + 1)
+            attempt(res.headers.location, redirects + 1, resumeFrom)
             return
           }
-          if (res.statusCode !== 200) {
+          const resumed = res.statusCode === 206 && resumeFrom > 0
+          if (res.statusCode !== 200 && res.statusCode !== 206) {
             res.resume()
             reject(new Error(`HTTP ${res.statusCode}`))
             return
           }
-          const totalBytes = parseInt(res.headers['content-length'] ?? '0', 10)
-          let receivedBytes = 0
+          const already = resumed ? resumeFrom : 0
+          const totalBytes = already + parseInt(res.headers['content-length'] ?? '0', 10)
+          let receivedBytes = already
           res.on('data', (chunk: Buffer) => {
             receivedBytes += chunk.length
             const percent = totalBytes > 0 ? Math.round(receivedBytes / totalBytes * 100) : 0
             onProgress({ name, receivedBytes, totalBytes, percent, done: false }, name)
           })
-          const out = createWriteStream(dest)
+          const out = createWriteStream(dest, { flags: resumed ? 'a' : 'w' })
           pipeline(res, out)
             .then(() => { onProgress({ name, receivedBytes, totalBytes, percent: 100, done: true }, name); resolve() })
-            .catch(reject)
-        }).on('error', reject)
+            .catch((err) => scheduleRetry(err))
+        })
+        req.on('error', (err) => scheduleRetry(err))
+      }
+      const scheduleRetry = (err: Error): void => {
+        attempts += 1
+        if (attempts >= MAX_ATTEMPTS) { reject(err); return }
+        const delay = 1000 * 2 ** (attempts - 1)
+        onProgress({ name, receivedBytes: 0, totalBytes: 0, percent: 0, done: false, error: `retry ${attempts}/${MAX_ATTEMPTS - 1}: ${err.message}` }, name)
+        setTimeout(() => {
+          let resumeFrom = 0
+          try { resumeFrom = statSync(dest).size } catch { resumeFrom = 0 }
+          attempt(url, 0, resumeFrom)
+        }, delay)
       }
       attempt(url)
     })
@@ -985,8 +1006,7 @@ function registerIpc(): void {
 
     log.info('Model', `Downloading model: ${name} from ${entry.url}`)
 
-    // Remove any partial file from a previous failed attempt
-    try { await unlink(destPath) } catch { /* ignore */ }
+    // R90: keep any partial file — the downloader resumes it via HTTP Range
 
     const sendProgress = (p: ModelDownloadProgress): void => {
       if (mainWindow && !mainWindow.isDestroyed()) {
