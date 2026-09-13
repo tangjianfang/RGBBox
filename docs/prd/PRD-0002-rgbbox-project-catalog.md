@@ -831,7 +831,7 @@
 - **R86.4 (P2) 核心 view 重排**：工作台（fx-sidebar → Synapse 式面板分组）、灯效库（分类可折叠分组）。验收点在 P2 启动时细化追加于此。
 - **R86.5 (P3) 媒体与工具 view 重排**：音频 / 视频 / 3D / 游戏 / 诊断 / 架构。验收点在 P3 启动时细化追加于此。
 - **R86.6 受影响文件**：`styles.css`（token 重构 + 全部布局类）、`App.tsx`（壳层接线）、`AppShell.tsx`/`DashboardView.tsx`（重排）、`shellModules.ts`（磁贴元数据）、`i18n/*`；`TabBar.tsx`/`useTabNavigation.ts` 移除；各期 view 文件在 P2/P3 补充。
-- **R86.7 状态**：⏳（P1 设计阶段；P2/P3 待 P1 验收后逐期启动）。
+- **R86.7 状态**：🔄（**P1 ✅（2026-09-13）**：ModuleRail 左 rail 直切 + `rgbbox:view` 记忆、TabBar/useTabNavigation 多 Tab 移除、Dashboard 折叠分组（运行状态 5 卡 + 模块磁贴 8 项）、:root 设计 token 落地；证据：`yarn typecheck` 0 error、`yarn test` 69 files / 656 passed 0 失败、`yarn build` 成功、死引用核查仅剩 1 处说明性注释；实机复测待用户。P2/P3 待启动）。
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
