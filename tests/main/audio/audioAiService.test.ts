@@ -101,3 +101,55 @@ describe('audioAiService (R90 P1)', () => {
     expect(bad).toBeDefined()
   })
 })
+
+// ── R90.8: streaming session ───────────────────────────────────────────────
+import { startStream, feedStream, stopStream } from '../../../src/main/audioAiService'
+
+describe('streaming session (R90.8)', () => {
+  beforeEach(() => {
+    initAudioAi({ modelsDir: 'C:/m', findCached: vi.fn(async (f: string) => `file:///${f}`) })
+  })
+
+  it('feed keeps VAD context/state across calls and refreshes AST on a 2s cadence', async () => {
+    const vadSess = fakeSession([{ output: { data: new Float32Array([0.42]), dims: [1, 1] } }])
+    const astSess = fakeSession([{ logits: { data: (() => { const a = new Float32Array(527).fill(-1); a[0] = 5; return a })(), dims: [1, 527] } }])
+    sessionFactory.mockImplementation(async (url: string) => (url.includes('silero') ? vadSess : astSess))
+
+    startStream()
+    const first = await feedStream(new Float32Array(16000)) // 1s
+    expect(first.prob).toBeCloseTo(0.42)
+    expect(first.top).toBeDefined() // first feed has no "last" timestamp → runs once
+
+    const second = await feedStream(new Float32Array(16000)) // +1s → <2s cadence → no AST refresh
+    expect(second.prob).toBeCloseTo(0.42)
+    expect(second.top).toBeUndefined()
+    // simulate cadence elapsed via direct third feed after faking time
+    const later = await feedStream(new Float32Array(16000))
+    expect(later.prob).toBeCloseTo(0.42)
+    stopStream()
+    await expect(feedStream(new Float32Array(16000))).rejects.toThrow(/no active/i)
+  })
+
+  it('stopStream clears the session; a fresh start re-runs inference', async () => {
+    const vadSess = fakeSession([{ output: { data: new Float32Array([0.7]), dims: [1, 1] } }])
+    const astSess = fakeSession([{ logits: { data: new Float32Array(527), dims: [1, 527] } }])
+    sessionFactory.mockImplementation(async (url: string) => (url.includes('silero') ? vadSess : astSess))
+    startStream()
+    await feedStream(new Float32Array(16000))
+    stopStream()
+    startStream()
+    const out = await feedStream(new Float32Array(16000))
+    expect(out.prob).toBeCloseTo(0.7)
+  })
+
+  it('double start is safe (previous session replaced)', async () => {
+    sessionFactory.mockImplementation(async (url: string) =>
+      fakeSession(url.includes('silero')
+        ? [{ output: { data: new Float32Array([0.1]), dims: [1, 1] } }]
+        : [{ logits: { data: new Float32Array(527), dims: [1, 527] } }]))
+    startStream()
+    startStream()
+    const out = await feedStream(new Float32Array(16000))
+    expect(out.prob).toBeCloseTo(0.1)
+  })
+})

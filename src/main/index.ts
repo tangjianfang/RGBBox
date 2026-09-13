@@ -36,7 +36,7 @@ function mintProfileId(): string {
   return `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 import { validateChatMessages } from '../shared/aiChatValidation'
-import { initAudioAi, disposeAudioAi, isCached as audioAiIsCached, runVad as audioAiRunVadPcm, runAst as audioAiRunAstPcm } from './audioAiService'
+import { initAudioAi, disposeAudioAi, isCached as audioAiIsCached, runVad as audioAiRunVadPcm, runAst as audioAiRunAstPcm, startStream as audioAiStartStream, feedStream as audioAiFeedStream, stopStream as audioAiStopStream } from './audioAiService'
 import { parseRangeHeader, resolveMediaMime } from './mediaProtocol'
 
 // Initialize file logger — must be done after imports but before app.whenReady
@@ -549,6 +549,20 @@ function registerIpc(): void {
     if (valid === null) return { ok: false, hint: 'parse' }
     try {
       return { ok: true, top: (await audioAiRunAstPcm(valid)).top }
+    } catch (err) {
+      return { ok: false, hint: audioHintOf(err) }
+    }
+  })
+  // R90.8: streaming detection session (feeds ~300ms of 16kHz mono each)
+  ipcMain.handle(ipcChannels.audioAiStreamStart, async () => { audioAiStartStream() })
+  ipcMain.handle(ipcChannels.audioAiStreamStop, async () => { audioAiStopStream() })
+  ipcMain.handle(ipcChannels.audioAiStreamFeed, async (_event, pcm: unknown) => {
+    if (!(pcm instanceof Float32Array) || pcm.length === 0 || pcm.length > 16000 * 5) {
+      return { ok: false, hint: 'parse' }
+    }
+    try {
+      const r = await audioAiFeedStream(pcm)
+      return { ok: true, prob: r.prob, top: r.top }
     } catch (err) {
       return { ok: false, hint: audioHintOf(err) }
     }

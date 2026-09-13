@@ -151,6 +151,9 @@ export const ipcChannels = {
   audioAiStatus: 'rgbbox:audio-ai:status',
   audioAiRunVad: 'rgbbox:audio-ai:run-vad',
   audioAiRunAst: 'rgbbox:audio-ai:run-ast',
+  audioAiStreamStart: 'rgbbox:audio-ai:stream-start',
+  audioAiStreamFeed: 'rgbbox:audio-ai:stream-feed',
+  audioAiStreamStop: 'rgbbox:audio-ai:stream-stop',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

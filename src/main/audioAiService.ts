@@ -150,3 +150,106 @@ export async function runAst(pcm: Float32Array): Promise<{ top: Array<{ index: n
   const idx = Array.from(exps.keys()).sort((a, b) => exps[b] - exps[a]).slice(0, AST_TOP_K)
   return { top: idx.map((i) => ({ index: i, score: exps[i] / sum })) }
 }
+
+// ── R90.8: streaming session (continuous detection for the AI Lab + players) ──
+
+const AST_WINDOW = 16000 * 3 // 3s rolling buffer
+const AST_CADENCE_MS = 2000
+
+interface StreamSession {
+  vadState: Float32Array
+  context: Float32Array
+  carry: Float32Array // partial VAD chunk awaiting more samples
+  ring: Float32Array // last 3s of audio for AST
+  ringFill: number
+  lastAstAt: number
+}
+
+let stream: StreamSession | null = null
+
+/** Start (or restart) the continuous-detection session. */
+export function startStream(): void {
+  requireState()
+  stream = {
+    vadState: new Float32Array(VAD_STATE[0] * VAD_STATE[1] * VAD_STATE[2]),
+    context: new Float32Array(VAD_CONTEXT),
+    carry: new Float32Array(0),
+    ring: new Float32Array(AST_WINDOW),
+    ringFill: 0,
+    lastAstAt: 0,
+  }
+}
+
+export function stopStream(): void {
+  stream = null
+}
+
+/**
+ * Feed accumulated pcm (16kHz mono) into the session. Runs VAD over every
+ * complete chunk (context+state carried across feeds) and — at most every
+ * AST_CADENCE_MS — classifies the last 3s window. Returns the latest values.
+ */
+export async function feedStream(pcm: Float32Array): Promise<{
+  prob: number
+  top?: Array<{ index: number; score: number }>
+}> {
+  if (!stream) throw new Error('no active audio stream — call startStream() first')
+  const s = requireState()
+
+  // ── VAD: prepend any carry, then consume complete 1536 chunks ──
+  const combined = new Float32Array(stream.carry.length + pcm.length)
+  combined.set(stream.carry, 0)
+  combined.set(pcm, stream.carry.length)
+  let pos = 0
+  let prob = -1
+  while (pos + VAD_CHUNK <= combined.length) {
+    const feed = new Float32Array(VAD_CHUNK)
+    feed.set(stream.context, 0)
+    feed.set(combined.subarray(pos, pos + VAD_NEW_SAMPLES), VAD_CONTEXT)
+    const vadSession = await getSession('silero_vad.onnx', 'vadSession')
+    const out = await vadSession.run({
+      input: new ort.Tensor('float32', feed, [1, VAD_CHUNK]),
+      state: new ort.Tensor('float32', stream.vadState, VAD_STATE),
+      sr: new ort.Tensor('int64', BigInt64Array.from([BigInt(16000)]), [1]),
+    } as never)
+    const p = (out.output.data as Float32Array)[0]
+    if (p > prob) prob = p
+    stream.context = feed.slice(VAD_CHUNK - VAD_CONTEXT)
+    const stateOut = (out as Record<string, { data: Float32Array; dims: number[] }>).stateN
+    if (stateOut) stream.vadState = new Float32Array(stateOut.data)
+    pos += VAD_NEW_SAMPLES
+  }
+  stream.carry = combined.slice(pos)
+
+  // ── AST: rolling 3s window, refreshed at most every AST_CADENCE_MS ──
+  const incoming = pcm.length
+  if (incoming >= AST_WINDOW) {
+    stream.ring.set(pcm.subarray(incoming - AST_WINDOW))
+    stream.ringFill = AST_WINDOW
+  } else {
+    const keep = Math.min(stream.ringFill, AST_WINDOW - incoming)
+    stream.ring.copyWithin(0, stream.ringFill - keep)
+    stream.ring.set(pcm, keep)
+    stream.ringFill = keep + incoming
+  }
+  let top: Array<{ index: number; score: number }> | undefined
+  const now = Date.now()
+  if (stream.ringFill >= 16000 && now - stream.lastAstAt >= AST_CADENCE_MS) {
+    stream.lastAstAt = now
+    const astSession = await getSession('ast_audioset_int8.onnx', 'astSession')
+    const mel = astMelSpectrogram(stream.ring)
+    const out = await astSession.run({ input_values: new ort.Tensor('float32', mel, [1, 1024, 128]) } as never)
+    const logits = out.logits.data as Float32Array
+    let maxL = -Infinity
+    for (const v of logits) if (v > maxL) maxL = v
+    const exps = new Float64Array(logits.length)
+    let sum = 0
+    for (let i = 0; i < logits.length; i++) {
+      exps[i] = Math.exp(logits[i] - maxL)
+      sum += exps[i]
+    }
+    top = Array.from(exps.keys()).sort((a, b) => exps[b] - exps[a]).slice(0, AST_TOP_K)
+      .map((i) => ({ index: i, score: exps[i] / sum }))
+  }
+  return { prob: Math.max(prob, 0), top }
+}

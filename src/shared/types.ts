@@ -476,5 +476,12 @@ export interface AudioAiVadResult {
 export interface AudioAiAstResult {
   ok: boolean
   top?: Array<{ index: number; score: number }>
-  hint?: 'not-downloaded' | 'parse'
+  hint?: 'not-downloaded' | 'parse' | 'inference'
+}
+/** R90.8: one streaming-detection tick (VAD every feed, AST on its cadence). */
+export interface AudioAiStreamTick {
+  ok: boolean
+  prob?: number
+  top?: Array<{ index: number; score: number }>
+  hint?: 'not-downloaded' | 'parse' | 'inference'
 }
