@@ -842,6 +842,18 @@
 - **R87.4** **验收点**：纯函数三态矩阵单测（含优先级）；`yarn typecheck` 0 error + 全量 `yarn test` 0 失败；诊断页三态文案正确（实机待用户）。
 - **R87.5** **状态**：✅（`frameAgeState` 三态纯函数 + 6 用例矩阵单测（含 paused > no-consumer 优先级、时钟偏移负值钳制）；诊断行接 `frameConsumerActive`（与 R42/R43 门控同源表达式，提升至组件顶层绕开 JSX 窄化）；`yarn typecheck` 0 error + `yarn test` 71 files / 669 passed 0 失败 + `yarn build` 成功；实机复测待用户。）
 
+### R88. AI 实验室独立模块：LLM 连接测试 / 会话 demo / OCR·翻译试玩 / 配置中心（含 Key 加密落盘）
+
+> 来源：2026-09-13 用户需求——「AI 拆分出独立模块，作为小而美模型的验证、demo 和 LLM 测试验证/配置等」；澄清确认四区全做（连接测试+配置管理+会话式多轮 demo+OCR·翻译试玩）、设置页 AI 组**整体迁走**、demo 会话**不持久化**、方案 A（最小 IPC 扩展 + AiLabView）；追加要求：**API Key 保密性**（掩码输入 + 本地加密落盘 + 隐私说明行）。完整设计见 `docs/superpowers/specs/2026-09-13-ai-lab-design.md`。**风险等级：L2**（2 条新 IPC + safeStorage 存储格式迁移 + 新 view；无新依赖；走标准四步）。
+- **R88.1** **View 接入**：`View` 联合新增 `'ai'`；`MODULE_VIEWS`/`CARD_VIEWS`/`MODULE_META` 增 `ai` 项（icon=Bot）；rail + Dashboard 磁贴入口；条件渲染（切走卸载，会话即清）。
+- **R88.2** **IPC 扩展**：`aiTestConnection`（无参，最小 ping 请求）+ `aiChat`（messages 数组，会话式多轮）；返回共用 `{ok, text?, hint?, latencyMs}`（hint 沿用 nokey/auth/http/parse/network 五类）；preload 白名单 +2 带参数校验（条数≤40、单条≤32k 字符、role 白名单，违规返回 hint:'parse' 不抛异常）。
+- **R88.3** **主进程服务**：`aiCleanupService.ts` 抽底层 `chatCompletion(messages, settings)`（fetch+计时+hint 分类+choices 解析），cleanup/translate 改为复用（对外签名与行为零改动）；`buildTestRequest()`（"ping"，max_tokens 8）。
+- **R88.4** **Key 保密性**：输入侧 `type=password`+可见性切换+`autocomplete=new-password`+隐私说明行（新 key `ai.privacyNote`，措辞明确「仅本机加密存储、仅发往用户配置的 API 地址认证、无 RGBBox 云端」）；落盘侧 Electron `safeStorage`（DPAPI）加密 apiKey，密文 `enc:v1:` 前缀，读兼容旧明文、下次保存自动升级（一次性迁移）；`isEncryptionAvailable()` false 回退明文+warn；抽 `encodeApiKey/decodeApiKey` 纯函数（注入 codec）供单测。
+- **R88.5** **设置页瘦身**：AI 组整体迁走（四组→三组），`settings.group.ai` key 删除；App.tsx 删 `aiCfg/setAiCfg/saveAiCfg/aiSaved`（AiLabView 自管 `aiGetSettings/aiSetSettings`）；OCR 截图面板（R83/R84 消费方）不受影响。
+- **R88.6** **受影响文件**：新增 `src/renderer/src/components/AiLabView.tsx` + 组件测试、`src/main/aiSecretCodec.ts`（或并入 service）+ 测试；修改 `shared/ipc.ts`、`preload/index.ts`、`main/index.ts`（+2 handler + safeStorage 接线）、`main/aiCleanupService.ts`、`main/systemSettingsStore.ts`（若需前缀识别）、`App.tsx`、`SettingsView.tsx`、`shellModules.ts`、`i18n/index.tsx`。
+- **R88.7** **验收点**：①rail/磁贴 AI 入口 + 设置页三组；②连接测试显示延迟/状态；③会话多轮+每轮耗时、切走清空；④OCR/翻译试玩可用；⑤key 掩码 + 隐私说明行；⑥落盘 `enc:v1:` 密文 + 旧明文自动迁移；⑦zh/en 无缺 key；⑧`yarn test` 0 失败 + typecheck/build 0 error；实机复测待用户。
+- **R88.8** **状态**：⏳（设计已确认 2026-09-13，spec 提交后进入计划）。
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
