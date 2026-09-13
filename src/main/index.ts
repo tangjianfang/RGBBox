@@ -14,7 +14,7 @@ import { ipcChannels } from '../shared/ipc'
 import { initLogger } from '../shared/logger'
 import { MODELS_MANIFEST } from '../shared/modelsManifest'
 import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
-import type { CaptureEntry, DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, RgbFrame, ScreenCaptureRequest } from '../shared/types'
+import type { AiProfile, CaptureEntry, DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
 import { runPerfSelfTest } from './perfSelfTest'
 import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOverlay, getAudioVizWindowIds, getOverlayDisplayIds, openAudioVizWindow, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
@@ -29,6 +29,7 @@ import { loadSystemSettings, saveSystemSettings, type SystemSettings } from './s
 import { setRapidOcrRunner } from './ocrService'
 import { cleanupOcrText, translateOcrText, chatCompletion, testConnection, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
 import { encodeApiKey, decodeApiKey, type SafeStorageCodec } from './aiSecretCodec'
+import { autoProfileName, mirrorLegacy, normalizeAiStore, type AiStoreShape } from './aiProfileStore'
 import { validateChatMessages } from '../shared/aiChatValidation'
 import { parseRangeHeader, resolveMediaMime } from './mediaProtocol'
 
@@ -346,38 +347,109 @@ function registerIpc(): void {
       }
     },
   }
-  const asAiSettings = (ai: SystemSettings['ai']): AiCleanupSettings => ({
-    baseUrl: typeof ai?.baseUrl === 'string' ? ai.baseUrl : DEFAULT_AI_SETTINGS.baseUrl,
-    apiKey: decodeApiKey(typeof ai?.apiKey === 'string' ? ai.apiKey : '', safeStorageCodec),
-    model: typeof ai?.model === 'string' ? ai.model : DEFAULT_AI_SETTINGS.model,
-  })
-  ipcMain.handle(ipcChannels.aiGetSettings, async () => {
+  // R89.3: multi-profile store. Normalize (with legacy single-config migration),
+  // decode keys, and flag undecodable ciphertexts per profile.
+  const loadAiStore = async (): Promise<{ profiles: AiProfile[]; activeId: string; unreadableIds: string[] }> => {
     const s = await loadSystemSettings()
-    const cfg = asAiSettings(s.ai)
-    // R88 review fix: surface an undecodable ciphertext instead of silently
-    // handing the form an empty key (a subsequent save would destroy it).
-    const storedKey = typeof s.ai?.apiKey === 'string' ? s.ai.apiKey : ''
-    const keyUnreadable = storedKey.startsWith('enc:v1:') && cfg.apiKey === ''
+    const { profiles, activeId } = normalizeAiStore(s.ai as AiStoreShape)
+    const unreadableIds: string[] = []
+    const decoded = profiles.map((p) => {
+      const plain = decodeApiKey(p.apiKey, safeStorageCodec)
+      if (p.apiKey.startsWith('enc:v1:') && plain === '') unreadableIds.push(p.id)
+      return { ...p, apiKey: plain }
+    })
+    return { profiles: decoded, activeId, unreadableIds }
+  }
+  const persistAiStore = async (profiles: AiProfile[], activeId: string): Promise<void> => {
+    const active = profiles.find((p) => p.id === activeId) ?? null
+    const encrypted = profiles.map((p) => ({ ...p, apiKey: encodeApiKey(p.apiKey, safeStorageCodec) }))
+    await saveSystemSettings({
+      ai: {
+        profiles: encrypted,
+        activeProfileId: activeId,
+        ...mirrorLegacy(active ? { ...active, apiKey: encodeApiKey(active.apiKey, safeStorageCodec) } : null),
+      },
+    }).catch(() => { /* best-effort */ })
+  }
+  const activeSettings = (profiles: AiProfile[], activeId: string): AiCleanupSettings => {
+    const active = profiles.find((p) => p.id === activeId)
+    return active
+      ? { baseUrl: active.baseUrl, apiKey: active.apiKey, model: active.model }
+      : { ...DEFAULT_AI_SETTINGS }
+  }
+  /** Legacy alias kept for the OCR pipeline handlers: settings of the ACTIVE profile. */
+  const asAiSettings = (ai: SystemSettings['ai']): AiCleanupSettings => {
+    const { profiles, activeId } = normalizeAiStore(ai as AiStoreShape)
+    const store = profiles.map((p) => ({ ...p, apiKey: decodeApiKey(p.apiKey, safeStorageCodec) }))
+    return activeSettings(store, activeId)
+  }
+  ipcMain.handle(ipcChannels.aiGetSettings, async () => {
+    const { profiles, activeId, unreadableIds } = await loadAiStore()
+    const cfg = activeSettings(profiles, activeId)
+    const keyUnreadable = unreadableIds.includes(activeId)
     if (keyUnreadable) console.warn('[RGBBox] stored AI key could not be decrypted on this machine/account')
     return { ...cfg, keyUnreadable, encryptionAvailable: safeStorage.isEncryptionAvailable() }
   })
   ipcMain.handle(ipcChannels.aiSetSettings, async (_event, p: unknown) => {
+    // Legacy alias (R89.3): write into the ACTIVE profile (create one if none).
     const q = p as Partial<AiCleanupSettings> | null
     const cfg: AiCleanupSettings = {
       baseUrl: typeof q?.baseUrl === 'string' && q.baseUrl.trim() !== '' ? q.baseUrl.trim() : DEFAULT_AI_SETTINGS.baseUrl,
       apiKey: typeof q?.apiKey === 'string' ? q.apiKey.trim() : '',
       model: typeof q?.model === 'string' && q.model.trim() !== '' ? q.model.trim() : DEFAULT_AI_SETTINGS.model,
     }
+    const { profiles, activeId } = await loadAiStore()
+    const idx = profiles.findIndex((pr) => pr.id === activeId)
+    if (idx >= 0) {
+      profiles[idx] = { ...profiles[idx], ...cfg }
+    } else {
+      profiles.push({ id: `p_${Date.now().toString(36)}`, name: autoProfileName(cfg.baseUrl, cfg.model), ...cfg })
+    }
+    const nextActive = idx >= 0 ? activeId : profiles[profiles.length - 1].id
     if (cfg.apiKey !== '' && !safeStorage.isEncryptionAvailable()) {
       console.warn('[RGBBox] safeStorage unavailable — AI key stored in plaintext')
     }
-    // R88 review fix: AWAIT the write so the save→auto-test sequence reads back
-    // the fresh config instead of racing the fire-and-forget disk write.
-    // Store encrypted, return plaintext (renderer never sees the ciphertext).
-    try {
-      await saveSystemSettings({ ai: { ...cfg, apiKey: encodeApiKey(cfg.apiKey, safeStorageCodec) } })
-    } catch { /* best-effort */ }
+    await persistAiStore(profiles, nextActive)
     return cfg
+  })
+  // R89.3: named profile CRUD
+  ipcMain.handle(ipcChannels.aiGetProfiles, async () => {
+    const { profiles, activeId, unreadableIds } = await loadAiStore()
+    return { profiles, activeId, unreadableIds, encryptionAvailable: safeStorage.isEncryptionAvailable() }
+  })
+  ipcMain.handle(ipcChannels.aiSaveProfile, async (_event, p: unknown) => {
+    const q = p as Partial<AiProfile> | null
+    const baseUrl = typeof q?.baseUrl === 'string' && q.baseUrl.trim() !== '' ? q.baseUrl.trim() : DEFAULT_AI_SETTINGS.baseUrl
+    const model = typeof q?.model === 'string' && q.model.trim() !== '' ? q.model.trim() : DEFAULT_AI_SETTINGS.model
+    const profile: AiProfile = {
+      id: typeof q?.id === 'string' && q.id !== '' ? q.id : `p_${Date.now().toString(36)}`,
+      name: typeof q?.name === 'string' && q.name.trim() !== '' ? q.name.trim() : autoProfileName(baseUrl, model),
+      baseUrl,
+      apiKey: typeof q?.apiKey === 'string' ? q.apiKey.trim() : '',
+      model,
+    }
+    const { profiles, activeId } = await loadAiStore()
+    const idx = profiles.findIndex((pr) => pr.id === profile.id)
+    if (idx >= 0) profiles[idx] = profile
+    else profiles.push(profile)
+    if (profile.apiKey !== '' && !safeStorage.isEncryptionAvailable()) {
+      console.warn('[RGBBox] safeStorage unavailable — AI key stored in plaintext')
+    }
+    await persistAiStore(profiles, activeId) // saving does NOT change the active profile
+    return profile
+  })
+  ipcMain.handle(ipcChannels.aiDeleteProfile, async (_event, id: unknown) => {
+    if (typeof id !== 'string') return
+    const { profiles, activeId } = await loadAiStore()
+    const next = profiles.filter((p) => p.id !== id)
+    const nextActive = activeId === id ? (next[0]?.id ?? '') : activeId
+    await persistAiStore(next, nextActive)
+  })
+  ipcMain.handle(ipcChannels.aiSetActiveProfile, async (_event, id: unknown) => {
+    if (typeof id !== 'string') return
+    const { profiles } = await loadAiStore()
+    if (!profiles.some((p) => p.id === id)) return
+    await persistAiStore(profiles, id)
   })
   ipcMain.handle(ipcChannels.aiCleanupText, async (_event, text: unknown) => {
     const s = await loadSystemSettings()
@@ -389,8 +461,17 @@ function registerIpc(): void {
     return translateOcrText(typeof text === 'string' ? text : '', asAiSettings(s.ai))
   })
 
-  // R88.2: AI Lab — connection test + multi-turn chat (payload validated, never throws)
-  ipcMain.handle(ipcChannels.aiTestConnection, async () => {
+  // R88.2/R89.3: connection test (optionally against an explicit, unsaved profile)
+  // + multi-turn chat (payload validated, never throws). Both use the ACTIVE profile
+  // unless a valid explicit profile is passed.
+  ipcMain.handle(ipcChannels.aiTestConnection, async (_event, profile?: unknown) => {
+    const q = profile as Partial<AiCleanupSettings> | null | undefined
+    if (q && typeof q === 'object' && typeof q.baseUrl === 'string' && q.baseUrl.trim() !== ''
+      && typeof q.apiKey === 'string' && typeof q.model === 'string') {
+      return testConnection({
+        baseUrl: q.baseUrl, apiKey: q.apiKey, model: q.model,
+      })
+    }
     const s = await loadSystemSettings()
     return testConnection(asAiSettings(s.ai))
   })

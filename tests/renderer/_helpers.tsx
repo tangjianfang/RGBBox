@@ -84,9 +84,22 @@ export function setupRendererMocks() {
     aiSetSettings: vi.fn().mockResolvedValue({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-4-flash' }),
     aiCleanupText: vi.fn().mockResolvedValue({ ok: true, text: '' }),
     aiTranslateText: vi.fn().mockResolvedValue({ ok: true, text: '' }),
-    // R88: AI Lab
+    // R88/R89: AI Lab
     aiTestConnection: vi.fn().mockResolvedValue({ ok: true, text: 'pong', latencyMs: 12 }),
     aiChat: vi.fn().mockResolvedValue({ ok: true, text: 'hi there', latencyMs: 20 }),
+    aiGetProfiles: vi.fn().mockResolvedValue({
+      profiles: [
+        { id: 'p1', name: '智谱 GLM · glm-5.3', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: 'sk-x', model: 'glm-5.3' },
+        { id: 'p2', name: 'DeepSeek · deepseek-v4-pro', baseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-v4-pro' },
+      ],
+      activeId: 'p1',
+      unreadableIds: [],
+      encryptionAvailable: true,
+    }),
+    aiSaveProfile: vi.fn().mockImplementation(async (p: { id: string; name: string; baseUrl: string; apiKey: string; model: string }) =>
+      ({ id: p.id || 'p_new', name: p.name || 'Auto · name', baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model })),
+    aiDeleteProfile: vi.fn().mockResolvedValue(undefined),
+    aiSetActiveProfile: vi.fn().mockResolvedValue(undefined),
     pushFrameToOverlays: vi.fn(),
     pushFrameToDisplay: vi.fn(),
     captureScreenSample: vi.fn().mockResolvedValue(null),

@@ -23,11 +23,16 @@ export interface SystemSettings {
   snip?: {
     hotkey: string
   }
-  /** R83: OCR AI-cleanup (OpenAI-compatible chat API) */
+  /** R83: OCR AI-cleanup (OpenAI-compatible chat API).
+   *  R89.3: named profiles — baseUrl/apiKey/model remain as the ACTIVE
+   *  profile's mirror so legacy readers keep working; apiKey values inside
+   *  profiles are safeStorage-encrypted (enc:v1: prefix). */
   ai?: {
     baseUrl: string
     apiKey: string
     model: string
+    profiles?: Array<{ id: string; name: string; baseUrl: string; apiKey: string; model: string }>
+    activeProfileId?: string
   }
 }
 

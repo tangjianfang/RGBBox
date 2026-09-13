@@ -1,0 +1,56 @@
+import { describe, it, expect } from 'vitest'
+import { autoProfileName, normalizeAiStore, mirrorLegacy } from '../../src/main/aiProfileStore'
+
+describe('autoProfileName (R89.3)', () => {
+  it('names as "Provider · model"; custom falls back', () => {
+    expect(autoProfileName('https://open.bigmodel.cn/api/paas/v4', 'glm-5.3-flash')).toBe('智谱 GLM · glm-5.3-flash')
+    expect(autoProfileName('https://api.deepseek.com', 'deepseek-v4-pro')).toBe('DeepSeek · deepseek-v4-pro')
+    expect(autoProfileName('https://who.knows/v1', 'm1')).toBe('Custom · m1')
+    expect(autoProfileName('https://who.knows/v1', '')).toBe('Custom · default')
+  })
+})
+
+describe('normalizeAiStore (R89.3 migration)', () => {
+  it('valid profiles pass through; bogus activeId falls back to first', () => {
+    const out = normalizeAiStore({
+      profiles: [
+        { id: 'p1', name: 'A', baseUrl: 'https://a/v1', apiKey: 'k1', model: 'm1' },
+        { id: 'p2', name: 'B', baseUrl: 'https://b/v1', apiKey: '', model: 'm2' },
+      ],
+      activeProfileId: 'missing',
+    })
+    expect(out.activeId).toBe('p1')
+    expect(out.profiles.map((p) => p.id)).toEqual(['p1', 'p2'])
+  })
+  it('invalid profile entries are filtered', () => {
+    const out = normalizeAiStore({
+      profiles: [
+        { id: 'p1', name: 'A', baseUrl: 'https://a/v1', apiKey: '', model: 'm1' },
+        { id: '', name: 'bad', baseUrl: '', apiKey: '', model: '' },
+        { id: 'p3', name: 'C', baseUrl: 'https://c/v1', apiKey: '', model: 'm3' },
+      ] as never,
+      activeProfileId: 'p3',
+    })
+    expect(out.profiles.map((p) => p.id)).toEqual(['p1', 'p3'])
+    expect(out.activeId).toBe('p3')
+  })
+  it('legacy single config migrates to one p_legacy profile', () => {
+    const out = normalizeAiStore({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: 'enc:v1:x', model: 'glm-5.3' })
+    expect(out.profiles).toHaveLength(1)
+    expect(out.profiles[0].id).toBe('p_legacy')
+    expect(out.profiles[0].model).toBe('glm-5.3')
+    expect(out.activeId).toBe('p_legacy')
+  })
+  it('empty store → empty profiles', () => {
+    expect(normalizeAiStore(undefined)).toEqual({ profiles: [], activeId: '' })
+    expect(normalizeAiStore({})).toEqual({ profiles: [], activeId: '' })
+  })
+})
+
+describe('mirrorLegacy (R89.3)', () => {
+  it('projects the active profile onto the legacy fields (all keys always present)', () => {
+    expect(mirrorLegacy({ id: 'p1', name: 'A', baseUrl: 'https://a/v1', apiKey: 'k', model: 'm' }))
+      .toEqual({ baseUrl: 'https://a/v1', apiKey: 'k', model: 'm' })
+    expect(mirrorLegacy(null)).toEqual({ baseUrl: '', apiKey: '', model: '' })
+  })
+})

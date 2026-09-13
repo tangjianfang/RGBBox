@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
 import { validateChatMessages } from '../shared/aiChatValidation'
-import type { AiChatMessage, AiChatOutcome, AiErrorHint, CaptureEntry, CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming } from '../shared/types'
+import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, CaptureEntry, CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -186,15 +186,24 @@ const api = {
     ipcRenderer.invoke(ipcChannels.aiCleanupText, text),
   aiTranslateText: (text: string): Promise<{ ok: boolean; text: string; hint?: AiErrorHint }> =>
     ipcRenderer.invoke(ipcChannels.aiTranslateText, text),
-  // R88.2: AI Lab — connection test + multi-turn chat
-  aiTestConnection: (): Promise<AiChatOutcome> =>
-    ipcRenderer.invoke(ipcChannels.aiTestConnection),
+  // R88.2/R89.3: AI Lab — connection test (optionally against an explicit unsaved
+  // profile) + multi-turn chat + named profile CRUD
+  aiTestConnection: (profile?: { baseUrl: string; apiKey: string; model: string }): Promise<AiChatOutcome> =>
+    ipcRenderer.invoke(ipcChannels.aiTestConnection, profile),
   aiChat: (messages: AiChatMessage[]): Promise<AiChatOutcome> => {
     const valid = validateChatMessages(messages)
     return valid === null
       ? Promise.resolve({ ok: false, text: '', hint: 'parse' as AiErrorHint, latencyMs: 0 })
       : ipcRenderer.invoke(ipcChannels.aiChat, valid)
   },
+  aiGetProfiles: (): Promise<{ profiles: AiProfile[]; activeId: string; unreadableIds?: string[]; encryptionAvailable?: boolean }> =>
+    ipcRenderer.invoke(ipcChannels.aiGetProfiles),
+  aiSaveProfile: (profile: AiProfile): Promise<AiProfile> =>
+    ipcRenderer.invoke(ipcChannels.aiSaveProfile, profile),
+  aiDeleteProfile: (id: string): Promise<void> =>
+    ipcRenderer.invoke(ipcChannels.aiDeleteProfile, id),
+  aiSetActiveProfile: (id: string): Promise<void> =>
+    ipcRenderer.invoke(ipcChannels.aiSetActiveProfile, id),
 
   // Auto-launch at login
   getAutoLaunch: (): Promise<boolean> =>
