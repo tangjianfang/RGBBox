@@ -35,14 +35,19 @@ export function useAiAudioStream(source: SourceId | null): AiAudioStreamState {
     }
     let cancelled = false
     let handle: PcmSourceHandle | null = null
+    let failures = 0
     let lastResults = { vadProb: null as number | null, astTop: null as Array<{ index: number; score: number }> | null, astState: null as AiAudioStreamState['astState'] }
 
     setState({ ...IDLE, stage: 'capturing' })
 
     const teardown = async (): Promise<void> => {
+      // R90.9 review fix: dispatch streamStop BEFORE awaiting handle.stop() —
+      // on source switches React runs destroy(old)-then-create(new) in one
+      // flush, and ipcRenderer preserves invocation order: Stop(old) then
+      // Start(new). The old order (Stop awaited last) killed the fresh session.
+      await window.rgbbox.audioAiStreamStop().catch(() => undefined)
       await handle?.stop().catch(() => undefined)
       handle = null
-      await window.rgbbox.audioAiStreamStop().catch(() => undefined)
     }
 
     const start = async (): Promise<void> => {
@@ -50,7 +55,19 @@ export function useAiAudioStream(source: SourceId | null): AiAudioStreamState {
       handle = await startPcmSource(source, (pcm) => {
         if (cancelled) return
         void window.rgbbox.audioAiStreamFeed(pcm).then((tick) => {
-          if (cancelled || !tick.ok) return
+          if (cancelled) return
+          // R90.9 review fix: feed failures need an exit — models missing is
+          // immediately actionable; a run of failures means the session died.
+          if (!tick.ok) {
+            failures += 1
+            if (tick.hint === 'not-downloaded') {
+              setState((s) => ({ ...s, stage: 'error', error: 'not-downloaded' }))
+            } else if (failures > 10) {
+              setState((s) => ({ ...s, stage: 'error', error: 'pipeline lost' }))
+            }
+            return
+          }
+          failures = 0
           if (typeof tick.prob === 'number') lastResults.vadProb = tick.prob
           if (tick.top) lastResults.astTop = tick.top
           if (tick.astState) lastResults.astState = tick.astState

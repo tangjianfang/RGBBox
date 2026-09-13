@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import { useI18n } from '../i18n'
 import { useAiAudioStream, type PipelineStage } from '../hooks/useAiAudioStream'
-import { synthTestTone } from '../tools/pcm'
+import { resampleTo16k, rmsLevel, synthTestTone } from '../tools/pcm'
 import type { SourceId } from '../tools/pcmSource'
 import labels from '../assets/audioset-labels.json'
 
@@ -122,6 +122,12 @@ export function AiLabAudioTab(): JSX.Element {
       { item: 'vad', pass: null },
       { item: 'ast', pass: null },
     ])
+    // R90.9 review fix #9: exercise the REAL resampler — a 48k sine through
+    // resampleTo16k must come out 1/3 length with preserved loudness.
+    const sine48 = new Float32Array(4800)
+    for (let i = 0; i < sine48.length; i++) sine48[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / 48000)
+    const rsOut = resampleTo16k(sine48, 48000)
+    const resampleOk = Math.abs(rsOut.length - 1600) <= 2 && rmsLevel(rsOut) > 0.1
     const tone = synthTestTone(3)
     await window.rgbbox.audioAiStreamStart()
     let maxRms = 0
@@ -137,14 +143,17 @@ export function AiLabAudioTab(): JSX.Element {
       if (tick.top) gotAst = tick.top
     }
     await window.rgbbox.audioAiStreamStop()
+    // R90.9 review fix #2: the self-test shares the main-process session with
+    // the live pipeline — its Stop killed it. Re-arm so live detection resumes.
+    if (source !== null) await window.rgbbox.audioAiStreamStart().catch(() => undefined)
     setSelfTest([
       { item: 'feed', pass: feeds >= 9, detail: `${feeds}/10` },
-      { item: 'resample', pass: true, detail: '16kHz' },
+      { item: 'resample', pass: resampleOk, detail: `48k→${rsOut.length}` },
       { item: 'rms', pass: maxRms > 0.1, detail: maxRms.toFixed(2) },
       { item: 'vad', pass: gotVad !== null, detail: gotVad === null ? undefined : gotVad.toFixed(2) },
       { item: 'ast', pass: Array.isArray(gotAst) && gotAst.length === 5, detail: gotAst ? gotAst[0] && (labels[gotAst[0].index]?.label ?? `#${gotAst[0].index}`) : undefined },
     ])
-  }, [])
+  }, [source])
 
   const sourceOptions: Array<{ id: SourceId; label: string }> = [
     { id: 'tone', label: t('ai.lab.audio.source.tone') },
@@ -180,7 +189,7 @@ export function AiLabAudioTab(): JSX.Element {
                 name="ai-audio-source"
                 value={opt.id}
                 checked={source === opt.id}
-                onChange={() => setSource(opt.id)}
+                onChange={() => setSource(source === opt.id ? null : opt.id)}
               />
               <span>{opt.label}</span>
             </label>

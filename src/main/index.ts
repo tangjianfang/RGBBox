@@ -562,7 +562,9 @@ function registerIpc(): void {
     }
     try {
       const r = await audioAiFeedStream(pcm)
-      return { ok: true, prob: r.prob, top: r.top }
+      // R90.9 review fix: rms/astState must cross the IPC — the renderer's
+      // level gauge, 'inferring' stage and self-test RMS row all read them.
+      return { ok: true, prob: r.prob, rms: r.rms, astState: r.astState, top: r.top }
     } catch (err) {
       return { ok: false, hint: audioHintOf(err) }
     }

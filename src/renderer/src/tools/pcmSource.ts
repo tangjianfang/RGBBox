@@ -32,7 +32,9 @@ export async function startSystemSource(onBatch: (pcm: Float32Array) => void): P
 /** Built-in test tone: alternating 440Hz/silence, streamed in 300ms batches.
  *  No permissions, no hardware — the guaranteed-alive source. */
 export async function startToneSource(onBatch: (pcm: Float32Array) => void): Promise<PcmSourceHandle> {
-  const pcm = synthTestTone(3600) // ~1h of audio; restarts wrap around
+  // R90.9 review fix: a 2s looping buffer (128KB), not synthTestTone(3600)
+  // which allocated ~230MB and ran 28.8M sin() calls on every tab mount.
+  const pcm = synthTestTone(2)
   let pos = 0
   const per = (TARGET_RATE * BATCH_MS) / 1000
   const timer = window.setInterval(() => {
@@ -54,6 +56,9 @@ async function startWebAudioSource(
 ): Promise<PcmSourceHandle> {
   const stream = existingStream ?? await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
   stripVideoTracks(stream)
+  // R90.9 review fix: anything throwing below must stop the tracks — otherwise
+  // the mic/loopback indicator stays lit until app restart.
+  try {
   // Request 16k but trust nothing — the rate is read back from the context.
   const ctx = new AudioContext({ sampleRate: TARGET_RATE })
   // Autoplay policy can leave the context suspended with zero callbacks.
@@ -80,13 +85,18 @@ async function startWebAudioSource(
   // 300ms batch timer — also the watchdog: if ScriptProcessor never fires
   // (suspended context / blocked device), feed the silence heartbeat so the
   // pipeline state machine can distinguish "capturing but silent" from dead.
+  // R90.9 review fix: forward the WHOLE accumulated batch — the old
+  // subarray(0, perBatch) truncation silently dropped every sample past one
+  // window whenever the renderer janked, corrupting speech before VAD/AST.
   const perBatch = (ctx.sampleRate * BATCH_MS) / 1000
   const timer = window.setInterval(() => {
     const batch = pending
     pending = new Float32Array(0)
-    const frame = new Float32Array(perBatch)
-    frame.set(batch.subarray(0, perBatch))
-    onBatch(resampleTo16k(frame, ctx.sampleRate))
+    if (batch.length === 0) {
+      onBatch(resampleTo16k(new Float32Array(perBatch), ctx.sampleRate))
+    } else {
+      onBatch(resampleTo16k(batch, ctx.sampleRate))
+    }
   }, BATCH_MS)
 
   return {
@@ -101,6 +111,10 @@ async function startWebAudioSource(
       for (const track of stream.getTracks()) track.stop()
       await ctx.close().catch(() => undefined)
     },
+  }
+  } catch (err) {
+    for (const track of stream.getTracks()) track.stop()
+    throw err
   }
 }
 
