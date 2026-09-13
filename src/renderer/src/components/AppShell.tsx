@@ -1,27 +1,28 @@
 import { Languages, Mic, MicOff, Settings, Timer, User } from 'lucide-react'
 import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import { useI18n } from '../i18n'
-import { TabBar, type TabBarProps } from './TabBar'
 
-export interface AppShellProps extends TabBarProps {
+export interface AppShellProps {
+  title: string // current module name, uppercase handled by CSS
   version: string
-  // audio quick block (from the old sidebar)
+  // audio quick block (unchanged from R85)
   audioEnabled: boolean
   onToggleAudio: () => void
   audioLevels?: { bass: number; mid: number; high: number }
   audioErrorLabel?: string
   lang: 'zh' | 'en'
   onToggleLang: () => void
-  // R73 shutdown chip — label is the countdown when armed, else the "off" hint;
-  // the chip is ALWAYS visible so the timer can be armed in the first place.
+  // R73 shutdown chip — always visible so the timer stays armable (R85 review fix)
   shutdownLabel: string
   onShutdownClick: () => void
+  // toolbar ⚙ menu (equivalent to the rail's settings entry)
+  onOpenSettings: () => void
+  rail: ReactNode
   children: ReactNode
 }
 
 export function AppShell(props: AppShellProps) {
   const { t } = useI18n()
-  const { tabs, activeView, onOpen, onClose } = props
   const settingsMenuRef = useRef<HTMLDetailsElement>(null)
   const userMenuRef = useRef<HTMLDetailsElement>(null)
 
@@ -52,9 +53,7 @@ export function AppShell(props: AppShellProps) {
           <div className="brand-mark">RB</div>
           <h1>RGBBox</h1>
         </div>
-
-        <TabBar tabs={tabs} activeView={activeView} onOpen={onOpen} onClose={onClose} />
-
+        <div className="topbar-title">{props.title}</div>
         <div className="topbar-controls">
           <button
             type="button"
@@ -92,7 +91,7 @@ export function AppShell(props: AppShellProps) {
           <details className="topbar-menu" data-menu="settings" ref={settingsMenuRef}>
             <summary aria-label={t('nav.settings')}><Settings size={16} /></summary>
             <div className="topbar-menu-items" role="menu">
-              <button type="button" role="menuitem" className="topbar-menu-item" onClick={runMenuItem(() => onOpen('settings'))}>
+              <button type="button" role="menuitem" className="topbar-menu-item" onClick={runMenuItem(props.onOpenSettings)}>
                 {t('menu.settings')}
               </button>
               <div className="topbar-menu-about">{t('menu.about')} · RGBBox v{props.version}</div>
@@ -115,7 +114,10 @@ export function AppShell(props: AppShellProps) {
           </details>
         </div>
       </header>
-      <div className="app-content">{props.children}</div>
+      <div className="shell-body">
+        {props.rail}
+        <div className="app-content">{props.children}</div>
+      </div>
     </>
   )
 }

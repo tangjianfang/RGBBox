@@ -22,51 +22,35 @@ function makeStatus(over: Partial<DashboardStatus> = {}): DashboardStatus {
   }
 }
 
-function renderDash(over: { openTabs?: any[]; model3dEnabled?: boolean; status?: Partial<DashboardStatus> } = {}) {
+function renderDash(over: { model3dEnabled?: boolean; status?: Partial<DashboardStatus> } = {}) {
   const props = {
     onOpen: vi.fn(),
-    openTabs: over.openTabs ?? ['dashboard'],
     model3dEnabled: over.model3dEnabled ?? false,
     status: makeStatus(over.status ?? {})
   }
   return { props, ...render(<DashboardView {...props} />) }
 }
 
-describe('DashboardView', () => {
-  it('renders the three fixed sections with all cards (model3d disabled → hidden)', () => {
+describe('DashboardView (R86)', () => {
+  it('renders two collapsible groups: status then modules', () => {
     const { container } = renderDash()
-    const sections = container.querySelectorAll('.dash-section')
-    expect(sections.length).toBe(3)
-    const cards = container.querySelectorAll('.dash-card')
-    expect(cards.length).toBe(7) // 8 modules − model3d
+    const groups = container.querySelectorAll('.dash-group')
+    expect(groups.length).toBe(2)
+    expect(groups[0].querySelector('summary')?.textContent).toContain('dash.group.status')
+    expect(groups[1].querySelector('summary')?.textContent).toContain('dash.group.modules')
+    expect((groups[0] as HTMLDetailsElement).open).toBe(true)
   })
 
-  it('shows the model3d card when enabled', () => {
-    const { container } = renderDash({ model3dEnabled: true })
-    expect(container.querySelectorAll('.dash-card').length).toBe(8)
-  })
-
-  it('card click fires onOpen with the module view', () => {
-    const { container, props } = renderDash()
-    const card = [...container.querySelectorAll('.dash-card')].find((c) => c.textContent?.includes('nav.workspace'))
-    fireEvent.click(card as HTMLElement)
-    expect(props.onOpen).toHaveBeenCalledWith('workspace')
-  })
-
-  it('open module card carries the is-open marker', () => {
-    const { container } = renderDash({ openTabs: ['dashboard', 'audio'] })
-    const audioCard = [...container.querySelectorAll('.dash-card')].find((c) => c.textContent?.includes('nav.audio'))
-    expect(audioCard?.classList.contains('is-open')).toBe(true)
-  })
-
-  it('status row shows engine state, effect, fps, overlay count and device select', () => {
+  it('status cards show live values', () => {
     const { container } = renderDash()
-    const status = container.querySelector('.dash-status') as HTMLElement
-    expect(status.textContent).toContain('engine.running')
-    expect(status.textContent).toContain('Rainbow')
-    expect(status.textContent).toContain('60')
-    expect(status.textContent).toContain('2')
-    const select = container.querySelector('.dash-status .audio-device-select') as HTMLSelectElement
+    const cards = container.querySelectorAll('.dash-cards .dash-card')
+    expect(cards.length).toBe(5)
+    const text = container.querySelector('.dash-cards')?.textContent ?? ''
+    expect(text).toContain('engine.running')
+    expect(text).toContain('Rainbow')
+    expect(text).toContain('60 fps')
+    expect(text).toContain('2')
+    const select = container.querySelector('.dash-cards .audio-device-select') as HTMLSelectElement
     const options = [...select.querySelectorAll('option')].map((o) => o.value)
     expect(options).toEqual(['', '__speaker__:spk-1', '__system_audio__', 'mic-1'])
   })
@@ -74,17 +58,28 @@ describe('DashboardView', () => {
   it('engine toggle button fires onToggleEngine', () => {
     const onToggleEngine = vi.fn()
     const { container } = renderDash({ status: { onToggleEngine } })
-    fireEvent.click(container.querySelector('.dash-status .icon-button') as HTMLElement)
+    fireEvent.click(container.querySelector('.dash-cards .icon-button') as HTMLElement)
     expect(onToggleEngine).toHaveBeenCalledOnce()
   })
 
-  it('hides the audio device select when audio is disabled (old sidebar gate)', () => {
+  it('module tiles: 7 with model3d disabled, 8 enabled; click fires onOpen', () => {
+    const { container, props } = renderDash()
+    expect(container.querySelectorAll('.dash-tile').length).toBe(7)
+    const tile = [...container.querySelectorAll('.dash-tile')]
+      .find((el) => el.textContent?.includes('nav.workspace')) as HTMLElement
+    fireEvent.click(tile)
+    expect(props.onOpen).toHaveBeenCalledWith('workspace')
+    const enabled = renderDash({ model3dEnabled: true })
+    expect(enabled.container.querySelectorAll('.dash-tile').length).toBe(8)
+  })
+
+  it('audio card hides the device select when audio is disabled', () => {
     const { container } = renderDash({ status: { audioEnabled: false } })
-    expect(container.querySelector('.dash-status .audio-device-select')).toBeNull()
+    expect(container.querySelector('.dash-cards .audio-device-select')).toBeNull()
   })
 
   it('renders — instead of fps before the first measured sample', () => {
     const { container } = renderDash({ status: { fps: 0 } })
-    expect(container.querySelector('.dash-status')?.textContent).toContain('—')
+    expect(container.querySelector('.dash-cards')?.textContent).toContain('—')
   })
 })

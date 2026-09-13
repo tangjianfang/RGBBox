@@ -24,11 +24,12 @@ import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 import type { WorkerInput, WorkerOutput } from './workers/previewEngineWorker'
 import { useModelStore } from './3d/useModelStore'
 import { MetricsCollector } from './engine/metricsCollector'
-import { useTabNavigation } from './hooks/useTabNavigation'
-import type { View } from './hooks/tabNavigation'
+import { resolveInitialView, type View } from './hooks/tabNavigation'
 import { AppShell } from './components/AppShell'
+import { ModuleRail } from './components/ModuleRail'
 import { DashboardView } from './components/DashboardView'
 import { SettingsView } from './components/SettingsView'
+import { getTabMeta } from './components/shellModules'
 
 // Lazily loaded — vendor-splat (1.6MB) is only fetched when the 3D view is first opened
 const SplatViewer = lazy(() => import('./3d/SplatViewer').then((m) => ({ default: m.SplatViewer })))
@@ -666,8 +667,11 @@ export function App(): JSX.Element {
   const [selectedLayerId, setSelectedLayerId] = useState(() =>
     localStorage.getItem('rgbbox:selectedLayerId') ?? 'layer-rainbow'
   )
-  // R85: IDE-style tab navigation (dashboard first tab, modules on demand, persisted)
-  const { tabs, activeView, openView, closeView } = useTabNavigation(MODEL3D_VIEW_ENABLED)
+  // R86: single-view navigation — left rail direct switching, last view persisted
+  const [activeView, setActiveView] = useState<View>(() =>
+    resolveInitialView(localStorage.getItem('rgbbox:view'), MODEL3D_VIEW_ENABLED)
+  )
+  useEffect(() => { localStorage.setItem('rgbbox:view', activeView) }, [activeView])
   const [favoriteEffectKinds, setFavoriteEffectKinds] = useState<EffectKind[]>(() =>
     parseStoredEffectKinds(localStorage.getItem('rgbbox:favoriteEffects'))
   )
@@ -1798,10 +1802,17 @@ export function App(): JSX.Element {
       <div className="titlebar-drag" aria-hidden="true" />
       <main className="app-shell">
       <AppShell
-        tabs={tabs}
-        activeView={activeView}
-        onOpen={openView}
-        onClose={closeView}
+        title={t(getTabMeta(activeView).labelKey)}
+        onOpenSettings={() => setActiveView('settings')}
+        rail={
+          <ModuleRail
+            activeView={activeView}
+            onSwitch={setActiveView}
+            onOpenSettings={() => setActiveView('settings')}
+            isSettingsActive={activeView === 'settings'}
+            model3dEnabled={MODEL3D_VIEW_ENABLED}
+          />
+        }
         version={version}
         audioEnabled={audioEnabled}
         onToggleAudio={() => setAudioEnabled((v) => !v)}
@@ -1831,8 +1842,7 @@ export function App(): JSX.Element {
       <section className="workspace">
         {activeView === 'dashboard' && (
           <DashboardView
-            onOpen={openView}
-            openTabs={tabs}
+            onOpen={setActiveView}
             model3dEnabled={MODEL3D_VIEW_ENABLED}
             status={{
               running: status.running,
@@ -2717,7 +2727,7 @@ export function App(): JSX.Element {
             favoriteKinds={favoriteEffectKinds}
             onSelectEffect={(kind) => {
               selectEffect(kind)
-              openView('workspace')
+              setActiveView('workspace')
             }}
             onToggleFavorite={toggleFavoriteEffect}
           />
@@ -2758,7 +2768,7 @@ export function App(): JSX.Element {
                 <button
                   className="aspect-lock-btn model3d-back-btn"
                   type="button"
-                  onClick={() => openView('workspace')}
+                  onClick={() => setActiveView('workspace')}
                 >
                   <Monitor size={13} />
                   {t('nav.workspace')}

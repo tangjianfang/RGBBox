@@ -32,18 +32,6 @@ export const MODULE_META: Record<CardView, ShellModuleMeta> = {
   architecture: { view: 'architecture', labelKey: 'nav.architecture', descKey: 'dash.desc.architecture', icon: Cpu }
 }
 
-export interface ShellSection {
-  key: TranslationKey
-  views: CardView[]
-}
-
-/** Dashboard 固定三分区（R85.1，用户已确认：不做自定义/频率自适应） */
-export const DASHBOARD_SECTIONS: ShellSection[] = [
-  { key: 'dash.section.core',   views: ['workspace', 'effects'] },
-  { key: 'dash.section.create', views: ['video', 'audio', 'model3d'] },
-  { key: 'dash.section.tools',  views: ['games', 'diagnostics', 'architecture'] }
-]
-
 const TAB_META: Record<'dashboard' | 'settings', { labelKey: TranslationKey; icon: LucideIcon }> = {
   dashboard: { labelKey: 'nav.dashboard', icon: LayoutGrid },
   settings: { labelKey: 'nav.settings', icon: Settings }
