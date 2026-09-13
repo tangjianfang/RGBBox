@@ -874,7 +874,7 @@
 - **R90.4** **IPC**：新增 `audioAiStatus`（模型缓存状态）、`audioAiRunVad`、`audioAiRunAst`（preload 白名单 +3，参数校验 Float32Array 长度上限 ~30s）；录音采集仅在音频 Tab 激活时进行（不常驻）。
 - **R90.5** **验收点**：①音频 Tab 渲染与下载进度正确；②VAD：说话→语音概率显著高于静音；③AST（若量化版可用）：单个模型文件 ≤100MB 且对可辨识输入（掌声/音乐）输出合理 Top-5；④模型缓存后重启免下载；⑤录音仅在 Tab 激活时进行；⑥zh/en 无缺 key；⑦全量回归 0 失败。**P1 明确不做**：灯效联动（P2）、实时流式推理、语音指令/字幕（P3：moonshine-tiny 44MB + whisper-tiny ONNX ~40MB）、视频模型（P4 EdgeTAM 14MB）。
 - **R90.6** **受影响文件**：新增 `main/audioAiService.ts` + `shared/audioAiLabels.ts`（或 assets JSON）+ `tests/main/audioAiService.test.ts`；修改 `shared/modelsManifest.ts`、`shared/ipc.ts`、`preload/index.ts`、`main/index.ts`、`AiLabView.tsx`、`i18n/*`、`styles.css`、`_helpers.tsx`。
-- **R90.7** **状态**：⏳
+- **R90.7** **状态**：✅（2026-09-13 P1 实施完成：`melSpectrogram.ts`（512 点 radix-2 FFT + 128 mel 三角带 + AST 归一化，5 性质测试）+ `audioAiService.ts`（Silero 1536-chunk 状态推演 / AST softmax Top-5，session 工厂注入可测）+ IPC 3 条（status/run-vad/run-ast，pcm 1–30s 校验）+ AI Lab 第 4 Tab「音频」（下载状态机/录音 3 秒/概率条/Top-5 标签，卸载停录音）；模型 URL 已实测（Silero GitHub 200、AST int8 hf-mirror 200 / **90.6MB ≤100MB 预算**）；标签资产 527 类入库；证据：`yarn test` 79 files / 719 passed 0 失败 + `yarn typecheck` 0 error + `yarn build` 成功；实机复测待用户——重点：录音权限、真模型下载后 VAD/AST 推理结果合理性。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
