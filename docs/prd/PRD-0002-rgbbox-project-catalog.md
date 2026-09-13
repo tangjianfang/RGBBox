@@ -853,7 +853,7 @@
 - **R88.6** **设置页瘦身**：AI 组整体迁走（四组→三组），`settings.group.ai` key 删除；App.tsx 删 `aiCfg/setAiCfg/saveAiCfg/aiSaved`（AiLabView 自管 `aiGetSettings/aiSetSettings`）；OCR 截图面板（R83/R84 消费方）不受影响。
 - **R88.7** **受影响文件**：新增 `src/renderer/src/components/AiLabView.tsx` + 组件测试、`src/main/aiSecretCodec.ts` + 测试、`src/shared/aiProviders.ts` + 测试、`src/shared/aiChatValidation.ts` + 测试；修改 `shared/types.ts`、`shared/ipc.ts`、`preload/index.ts`、`main/index.ts`（+2 handler + safeStorage 接线 + 默认模型升级）、`main/aiCleanupService.ts`、`App.tsx`、`SettingsView.tsx`、`shellModules.ts`、`i18n/index.tsx`、`tests/renderer/setup.ts`（图标桩补 Bot）。
 - **R88.8** **验收点**：①rail/磁贴 AI 入口 + 设置页三组；②服务商预设可选且反显、模型组合框可选可输（智谱含 glm-5.3/glm-5.3-flash）；③连接测试显示延迟/状态；④会话多轮+每轮耗时、切走清空；⑤OCR/翻译试玩可用；⑥key 掩码 + 隐私说明行；⑦落盘 `enc:v1:` 密文 + 旧明文自动迁移；⑧zh/en 无缺 key；⑨`yarn test` 0 失败 + typecheck/build 0 error；实机复测待用户。
-- **R88.9** **状态**：⏳（设计已确认 2026-09-13 含预设补充，spec 提交后进入计划）。
+- **R88.9** **状态**：✅（2026-09-13 实施完成：shared 层 `aiChatValidation`/`aiProviders` + main 层 `chatCompletion`/`aiSecretCodec`（`enc:v1:` 前缀 + 旧明文迁移）+ IPC `aiTestConnection`/`aiChat` + preload 校验 + `AiLabView` 四区 + rail/磁贴 `ai` 入口（Bot 图标）+ 设置页 AI 组迁走；厂商预设含 glm-5.3/glm-5.3-flash，默认模型升级 glm-5.3-flash；`aiSetSettings` 存密文返明文；证据：`yarn test` 75 files / 692 passed 0 失败（新增 23 用例）+ `yarn typecheck` 0 error + `yarn build` 成功 + 死引用核查零命中（settings.group.ai/saveAiCfg/aiSaved）；实机复测待用户——重点验证 key 落盘 `enc:v1:` 密文与会话试玩。）
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
