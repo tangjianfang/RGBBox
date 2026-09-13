@@ -16,6 +16,7 @@
 | demo 形态 | 会话式多轮；历史为组件本地 state，**不持久化**（切走卸载即清） |
 | 实现路线 | 方案 A：最小 IPC 扩展（2 条）+ AiLabView；Node 能力全走 main |
 | Key 保密性 | 掩码输入 + 可见性切换 + 隐私说明行 + **safeStorage 加密落盘**（含旧明文迁移） |
+| 厂商预设 | 内置主流服务商预设（智谱 GLM / DeepSeek / OpenAI / Kimi / 通义千问 / 本地 Ollama / 自定义），模型版本可从预设列表选也可自由输入；默认模型升级 glm-4-flash → glm-5.3-flash |
 
 ## 2. 现状锚点
 
@@ -88,11 +89,38 @@ aiSecretCodec.ts（新，纯函数 + 注入 codec）
 迁移：读到旧明文 → 正常返回使用；下一次 set 时自然写为密文（无感一次性升级）
 ```
 
+### 3.5 厂商与模型预设（`src/shared/aiProviders.ts`，纯数据 + 匹配函数）
+
+```ts
+export interface AiProviderPreset {
+  id: string            // 'zhipu' | 'deepseek' | 'openai' | 'kimi' | 'qwen' | 'ollama' | 'custom'
+  label: string         // 品牌名，zh/en 同形，不走 i18n
+  baseUrl: string       // OpenAI 兼容端点（custom 为空串 = 自由输入）
+  models: string[]      // 推荐版本（2026-09 核实），首位为该预设默认
+}
+export const AI_PROVIDER_PRESETS: AiProviderPreset[] = [
+  { id: 'zhipu',    label: '智谱 GLM',  baseUrl: 'https://open.bigmodel.cn/api/paas/v4',            models: ['glm-5.3', 'glm-5.3-flash', 'glm-4.5-air', 'glm-4-flash'] },
+  { id: 'deepseek', label: 'DeepSeek',  baseUrl: 'https://api.deepseek.com',                        models: ['deepseek-v4-pro', 'deepseek-v4-flash'] },
+  { id: 'openai',   label: 'OpenAI',    baseUrl: 'https://api.openai.com/v1',                      models: ['gpt-5.2', 'gpt-5.2-chat-latest', 'gpt-5.2-pro'] },
+  { id: 'kimi',     label: 'Kimi',      baseUrl: 'https://api.moonshot.ai/v1',                     models: ['kimi-k3'] },
+  { id: 'qwen',     label: '通义千问',   baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen3.8-max', 'qwen-plus'] },
+  { id: 'ollama',   label: '本地 Ollama', baseUrl: 'http://localhost:11434/v1',                    models: ['qwen3.6:35b', 'deepseek-v4:flash'] },
+  { id: 'custom',   label: '自定义',     baseUrl: '',                                                models: [] }
+]
+/** 按 baseUrl 反查预设（载入已有配置时显示当前服务商徽标）；无匹配 → custom */
+export function matchProviderPreset(baseUrl: string): AiProviderPreset
+```
+
+- 管线只讲 OpenAI 兼容协议——预设只收录提供兼容端点的服务商；Anthropic 原生协议不在此列（自定义也不承诺）。
+- 模型输入为**组合框**（input + datalist）：预设版本可点选、任意版本可手输（版本迭代无需改代码）。
+- `DEFAULT_AI_SETTINGS.model` 由 `glm-4-flash` 升级为 `glm-5.3-flash`（baseUrl 不变）；预设数据是纯共享数据，后续版本迭代只改这一个文件。
+
 ## 4. AiLabView 四区（自上而下，Synapse 折叠分组）
 
 ```text
 ▼ 连接状态    [● 已连接 glm-4-flash · 412ms] / [○ 未测试] / [✕ 失败:hint文案]   [测试连接]
-▼ 模型配置    Base URL / 模型 / API Key(掩码+👁) / 隐私说明行 / [恢复默认][保存]（保存后自动跑连接测试）
+▼ 模型配置    服务商 [智谱 GLM ▾]（选择即填 baseUrl+模型建议）· Base URL · 模型 [glm-5.3 ▾]（组合框：预设版本+自由输入）
+              API Key(掩码+👁) / 隐私说明行 / [恢复默认][保存]（保存后自动跑连接测试）
 ▼ 对话试玩    历史气泡（每轮标 latencyMs）；输入框 + [发送] + [清空会话]；未配 key → nokey 提示行
 ▼ OCR·翻译试玩 文本输入区 + [AI 整理][中英互译] + 结果区（方向检测沿用 R84 detectTranslateDirection，主进程内）
 ```
@@ -107,19 +135,20 @@ aiSecretCodec.ts（新，纯函数 + 注入 codec）
 
 ## 6. i18n 增量（zh+en 同步）
 
-新增：`nav.ai`（AI 实验室 / AI Lab）、`dash.desc.ai`（LLM 验证与会话试玩 / LLM validation & chat playground）、`ai.privacyNote`、`ai.lab.status.connected/disconnected/failed`、`ai.lab.test/showKey/hideKey`、`ai.lab.chat.placeholder/send/clear`、`ai.lab.ocr.title/cleanup/translate/input/result`。
+新增：`nav.ai`（AI 实验室 / AI Lab）、`dash.desc.ai`（LLM 验证与会话试玩 / LLM validation & chat playground）、`ai.privacyNote`、`ai.lab.provider`（服务商）、`ai.lab.status.connected/disconnected/failed`、`ai.lab.test/showKey/hideKey`、`ai.lab.chat.placeholder/send/clear`、`ai.lab.ocr.title/cleanup/translate/input/result`。（服务商/模型名为品牌名与版本号，zh/en 同形，不进 i18n 表。）
 删除：`settings.group.ai`。
 
 ## 7. 测试
 
-- node 纯函数：`chatCompletion`（mock fetch：成功/各 hint/latency>0）、`buildTestRequest`、`encodeApiKey/decodeApiKey`（往返、旧明文直读、前缀识别、codec 抛错回退）、`validateChatMessages`（合法/超限/坏 role/坏类型）。
+- node 纯函数：`chatCompletion`（mock fetch：成功/各 hint/latency>0）、`buildTestRequest`、`encodeApiKey/decodeApiKey`（往返、旧明文直读、前缀识别、codec 抛错回退）、`validateChatMessages`（合法/超限/坏 role/坏类型）、`AI_PROVIDER_PRESETS` 数据完整性（id 唯一、非 custom 有 baseUrl+models、custom 在列）与 `matchProviderPreset`（精确匹配/无匹配回 custom）。
 - happy-dom 组件：AiLabView 四区渲染、key 掩码与切换、保存触发自动连接测试（mock rgbbox）、对话多轮追加+耗时、清空会话、OCR/翻译回调与结果渲染、nokey 提示、SettingsView 三组（AI 组消失）。
 - 回归：typecheck/test/build 全绿；`aiCleanupText/aiTranslateText` 既有行为零改动。
 
 ## 8. 验收点（对应 R88.7）
 
 1. rail/磁贴出现 AI 入口；设置页三组、无 AI 组
-2. 连接测试显示状态与延迟
+2. 服务商预设可选（智谱/DeepSeek/OpenAI/Kimi/通义/Ollama/自定义），选智谱时模型建议含 glm-5.3 / glm-5.3-flash；载入已有配置能反显当前服务商；模型可自由手输
+3. 连接测试显示状态与延迟
 3. 会话多轮 + 每轮耗时；切走再回为空
 4. OCR 整理 / 中英互译试玩可用
 5. key 掩码输入 + 隐私说明行可见

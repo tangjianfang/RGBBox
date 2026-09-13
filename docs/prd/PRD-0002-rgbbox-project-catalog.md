@@ -849,10 +849,11 @@
 - **R88.2** **IPC 扩展**：`aiTestConnection`（无参，最小 ping 请求）+ `aiChat`（messages 数组，会话式多轮）；返回共用 `{ok, text?, hint?, latencyMs}`（hint 沿用 nokey/auth/http/parse/network 五类）；preload 白名单 +2 带参数校验（条数≤40、单条≤32k 字符、role 白名单，违规返回 hint:'parse' 不抛异常）。
 - **R88.3** **主进程服务**：`aiCleanupService.ts` 抽底层 `chatCompletion(messages, settings)`（fetch+计时+hint 分类+choices 解析），cleanup/translate 改为复用（对外签名与行为零改动）；`buildTestRequest()`（"ping"，max_tokens 8）。
 - **R88.4** **Key 保密性**：输入侧 `type=password`+可见性切换+`autocomplete=new-password`+隐私说明行（新 key `ai.privacyNote`，措辞明确「仅本机加密存储、仅发往用户配置的 API 地址认证、无 RGBBox 云端」）；落盘侧 Electron `safeStorage`（DPAPI）加密 apiKey，密文 `enc:v1:` 前缀，读兼容旧明文、下次保存自动升级（一次性迁移）；`isEncryptionAvailable()` false 回退明文+warn；抽 `encodeApiKey/decodeApiKey` 纯函数（注入 codec）供单测。
-- **R88.5** **设置页瘦身**：AI 组整体迁走（四组→三组），`settings.group.ai` key 删除；App.tsx 删 `aiCfg/setAiCfg/saveAiCfg/aiSaved`（AiLabView 自管 `aiGetSettings/aiSetSettings`）；OCR 截图面板（R83/R84 消费方）不受影响。
-- **R88.6** **受影响文件**：新增 `src/renderer/src/components/AiLabView.tsx` + 组件测试、`src/main/aiSecretCodec.ts`（或并入 service）+ 测试；修改 `shared/ipc.ts`、`preload/index.ts`、`main/index.ts`（+2 handler + safeStorage 接线）、`main/aiCleanupService.ts`、`main/systemSettingsStore.ts`（若需前缀识别）、`App.tsx`、`SettingsView.tsx`、`shellModules.ts`、`i18n/index.tsx`。
-- **R88.7** **验收点**：①rail/磁贴 AI 入口 + 设置页三组；②连接测试显示延迟/状态；③会话多轮+每轮耗时、切走清空；④OCR/翻译试玩可用；⑤key 掩码 + 隐私说明行；⑥落盘 `enc:v1:` 密文 + 旧明文自动迁移；⑦zh/en 无缺 key；⑧`yarn test` 0 失败 + typecheck/build 0 error；实机复测待用户。
-- **R88.8** **状态**：⏳（设计已确认 2026-09-13，spec 提交后进入计划）。
+- **R88.5** **厂商与模型预设**（2026-09-13 用户补充）：`src/shared/aiProviders.ts` 纯数据 + `matchProviderPreset(baseUrl)`；内置 OpenAI 兼容服务商预设——智谱 GLM（glm-5.3/glm-5.3-flash，用户现用）/ DeepSeek（deepseek-v4-pro/flash）/ OpenAI（gpt-5.2 系）/ Kimi（kimi-k3）/ 通义千问（qwen3.8-max/qwen-plus，compatible-mode）/ 本地 Ollama / 自定义；模型输入为组合框（预设版本可点选+任意版本可手输）；载入已有配置按 baseUrl 反显服务商；`DEFAULT_AI_SETTINGS.model` 升级 glm-4-flash → glm-5.3-flash。
+- **R88.6** **设置页瘦身**：AI 组整体迁走（四组→三组），`settings.group.ai` key 删除；App.tsx 删 `aiCfg/setAiCfg/saveAiCfg/aiSaved`（AiLabView 自管 `aiGetSettings/aiSetSettings`）；OCR 截图面板（R83/R84 消费方）不受影响。
+- **R88.7** **受影响文件**：新增 `src/renderer/src/components/AiLabView.tsx` + 组件测试、`src/main/aiSecretCodec.ts` + 测试、`src/shared/aiProviders.ts` + 测试、`src/shared/aiChatValidation.ts` + 测试；修改 `shared/types.ts`、`shared/ipc.ts`、`preload/index.ts`、`main/index.ts`（+2 handler + safeStorage 接线 + 默认模型升级）、`main/aiCleanupService.ts`、`App.tsx`、`SettingsView.tsx`、`shellModules.ts`、`i18n/index.tsx`、`tests/renderer/setup.ts`（图标桩补 Bot）。
+- **R88.8** **验收点**：①rail/磁贴 AI 入口 + 设置页三组；②服务商预设可选且反显、模型组合框可选可输（智谱含 glm-5.3/glm-5.3-flash）；③连接测试显示延迟/状态；④会话多轮+每轮耗时、切走清空；⑤OCR/翻译试玩可用；⑥key 掩码 + 隐私说明行；⑦落盘 `enc:v1:` 密文 + 旧明文自动迁移；⑧zh/en 无缺 key；⑨`yarn test` 0 失败 + typecheck/build 0 error；实机复测待用户。
+- **R88.9** **状态**：⏳（设计已确认 2026-09-13 含预设补充，spec 提交后进入计划）。
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
