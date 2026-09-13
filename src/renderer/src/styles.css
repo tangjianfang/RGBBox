@@ -21,6 +21,9 @@
   --accent: #42e8a9;
   --accent-dim: rgba(66, 232, 169, 0.12);
   --accent-contrast: #081014;
+  --bg-control: #1f3139;
+  --border-control: #33505b;
+  --border-hover: #3a5a68;
   --gap-grid: 20px;
   --gap-block: 28px;
 }
@@ -178,7 +181,7 @@ button {
 }
 
 .status-panel:hover {
-  border-color: #3a5a68;
+  border-color: var(--border-hover);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
 }
 
@@ -197,10 +200,10 @@ button {
 
 .icon-button {
   align-items: center;
-  background: #1f3139;
-  border: 1px solid #33505b;
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
   border-radius: 8px;
-  color: #e8f7fa;
+  color: var(--text-primary);
   display: flex;
   height: 34px;
   justify-content: center;
@@ -281,7 +284,7 @@ section.sampling-panel {
 }
 
 .panel:hover {
-  border-color: #334d58;
+  border-color: var(--border-hover);
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.15);
 }
 
@@ -2384,8 +2387,6 @@ input:not([type]):focus {
   /* R85: old sidebar-collapse rules (app-shell grid / nav-item / hidden
      status-panel labels) removed with the sidebar — .status-panel is now used
      by SettingsView, whose labels must stay visible at any width. */
-  .module-rail { width: 56px; }
-  .rail-label { display: none; }
 
   .fx-sidebar {
     width: 220px;
@@ -5968,7 +5969,7 @@ input[type='range'].video-player-volume {
   justify-content: center;
   width: 32px;
 }
-.topbar-icon-btn:hover { background: var(--bg-card-hover); border-color: #2f4650; color: var(--text-primary); }
+.topbar-icon-btn:hover { background: var(--bg-card-hover); border-color: var(--border-hover); color: var(--text-primary); }
 .topbar-chip {
   align-items: center;
   background: var(--bg-rail);
@@ -6103,6 +6104,12 @@ input[type='range'].video-player-volume {
 .dash-group > summary::-webkit-details-marker { display: none; }
 .dash-group > summary:hover { color: var(--text-primary); }
 .dash-group[open] > summary { color: var(--text-primary); }
+.dash-group-arrow {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 150ms ease;
+}
+.dash-group:not([open]) .dash-group-arrow { transform: rotate(-90deg); }
 
 .dash-cards {
   display: grid;
@@ -6119,7 +6126,11 @@ input[type='range'].video-player-volume {
   padding: 14px 16px;
   transition: background 150ms ease, border-color 150ms ease;
 }
-.dash-card:hover { background: var(--bg-card-hover); border-color: #3a5a68; }
+/* R86 review fix: only cards with interactive descendants (engine button /
+   audio select) get the interactive hover treatment — fps/effect/overlay
+   cards are static and must not read as clickable. */
+.dash-card:has(button):hover,
+.dash-card:has(select):hover { background: var(--bg-card-hover); border-color: var(--border-hover); }
 .dash-card-label {
   color: var(--text-muted);
   font-size: 11px;
@@ -6171,4 +6182,12 @@ input[type='range'].video-player-volume {
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* R86 review fix: narrow-screen rail collapse must come AFTER the base
+   .module-rail block — a media query adds no specificity, so an earlier
+   placement is beaten by later source order and never applies. */
+@media (max-width: 960px) {
+  .module-rail { width: 56px; }
+  .rail-label { display: none; }
 }

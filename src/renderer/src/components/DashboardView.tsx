@@ -1,6 +1,6 @@
 import { Pause, Play } from 'lucide-react'
 import { useI18n } from '../i18n'
-import type { View } from '../hooks/tabNavigation'
+import { isViewReachable, type View } from '../hooks/tabNavigation'
 import { CARD_VIEWS, MODULE_META } from './shellModules'
 
 export interface DashboardStatus {
@@ -29,7 +29,7 @@ export function DashboardView({ onOpen, model3dEnabled, status }: DashboardViewP
   return (
     <div className="dashboard">
       <details open className="dash-group">
-        <summary>▼ {t('dash.group.status')}</summary>
+        <summary><span className="dash-group-arrow" aria-hidden="true">▼</span> {t('dash.group.status')}</summary>
         <div className="dash-cards">
           <div className="dash-card">
             <span className="dash-card-label">{t('dash.card.engine')}</span>
@@ -38,7 +38,7 @@ export function DashboardView({ onOpen, model3dEnabled, status }: DashboardViewP
                 type="button"
                 className="icon-button"
                 onClick={status.onToggleEngine}
-                aria-label="Toggle engine"
+                aria-label={t('a11y.toggleEngine')}
               >
                 {status.running ? <Pause size={16} /> : <Play size={16} />}
               </button>
@@ -88,10 +88,10 @@ export function DashboardView({ onOpen, model3dEnabled, status }: DashboardViewP
       </details>
 
       <details open className="dash-group">
-        <summary>▼ {t('dash.group.modules')}</summary>
+        <summary><span className="dash-group-arrow" aria-hidden="true">▼</span> {t('dash.group.modules')}</summary>
         <div className="dash-tiles">
           {CARD_VIEWS.map((view) => {
-            if (view === 'model3d' && !model3dEnabled) return null
+            if (!isViewReachable(view, model3dEnabled)) return null
             const meta = MODULE_META[view]
             const Icon = meta.icon
             return (

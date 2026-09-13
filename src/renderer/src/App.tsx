@@ -24,7 +24,7 @@ import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 import type { WorkerInput, WorkerOutput } from './workers/previewEngineWorker'
 import { useModelStore } from './3d/useModelStore'
 import { MetricsCollector } from './engine/metricsCollector'
-import { resolveInitialView, type View } from './hooks/tabNavigation'
+import { loadStoredView, persistView, resolveInitialView, type View } from './hooks/tabNavigation'
 import { AppShell } from './components/AppShell'
 import { ModuleRail } from './components/ModuleRail'
 import { DashboardView } from './components/DashboardView'
@@ -669,9 +669,9 @@ export function App(): JSX.Element {
   )
   // R86: single-view navigation — left rail direct switching, last view persisted
   const [activeView, setActiveView] = useState<View>(() =>
-    resolveInitialView(localStorage.getItem('rgbbox:view'), MODEL3D_VIEW_ENABLED)
+    resolveInitialView(loadStoredView(localStorage), MODEL3D_VIEW_ENABLED)
   )
-  useEffect(() => { localStorage.setItem('rgbbox:view', activeView) }, [activeView])
+  useEffect(() => { persistView(activeView) }, [activeView])
   const [favoriteEffectKinds, setFavoriteEffectKinds] = useState<EffectKind[]>(() =>
     parseStoredEffectKinds(localStorage.getItem('rgbbox:favoriteEffects'))
   )

@@ -8,8 +8,10 @@ describe('shell module registry completeness (R86)', () => {
       expect(MODULE_META[v], `missing MODULE_META for ${v}`).toBeDefined()
     }
   })
-  it('module views = card views + settings', () => {
-    expect([...MODULE_VIEWS].sort()).toEqual([...CARD_VIEWS, 'settings'].sort())
+  it('module views = card views + settings, in exact display order', () => {
+    // exact order (not sorted): MODULE_VIEWS mirrors CARD_VIEWS so a reorder
+    // of either fails here instead of silently diverging
+    expect([...MODULE_VIEWS]).toEqual([...CARD_VIEWS, 'settings'])
   })
   it('every view renderable in the rail has label + icon', () => {
     for (const v of ['dashboard', ...CARD_VIEWS] as const) {

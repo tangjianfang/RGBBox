@@ -2,11 +2,12 @@
 // was removed together with the top TabBar — the left ModuleRail switches directly.
 // Pure functions, no React/DOM — unit-testable in node.
 
-/** Single ordered list of module views (single source; add a module HERE plus
- *  its card meta in shellModules.ts). */
+/** Valid module views (membership single source). DISPLAY order is owned by
+ *  CARD_VIEWS in shellModules.ts — this tuple mirrors it (+ settings at the
+ *  tail) and an exact-order test keeps the two in lockstep. */
 export const MODULE_VIEWS = [
-  'workspace', 'effects', 'games', 'audio', 'video',
-  'diagnostics', 'model3d', 'architecture', 'settings'
+  'workspace', 'effects', 'video', 'audio', 'model3d',
+  'games', 'diagnostics', 'architecture', 'settings'
 ] as const
 export type ModuleView = (typeof MODULE_VIEWS)[number]
 
@@ -15,22 +16,36 @@ export type View = 'dashboard' | 'profiles' | ModuleView
 
 export const DASHBOARD_VIEW: View = 'dashboard'
 
+/** Storage key for the last active view (single source; legacy R85 key). */
+export const VIEW_STORAGE_KEY = 'rgbbox:view'
+
 const KNOWN_VIEWS: ReadonlySet<string> = new Set<string>([...MODULE_VIEWS, 'dashboard', 'profiles'])
 
 export function isKnownView(v: unknown): v is View {
   return typeof v === 'string' && KNOWN_VIEWS.has(v)
 }
 
+/** Whether a view is currently reachable in the UI — the ONE feature-flag gate
+ *  consumed by boot resolution, the rail and the dashboard tiles. */
+export function isViewReachable(view: View, model3dEnabled: boolean): boolean {
+  return view !== 'profiles' && !(view === 'model3d' && !model3dEnabled)
+}
+
 /** Boot-time view resolution for the single-active-page rail (R86).
  *  Legacy R85 'rgbbox:tabs' data is ignored; a stored 'rgbbox:view' that is
- *  invalid, 'profiles', or a disabled model3d falls back to the dashboard. */
+ *  invalid or unreachable falls back to the dashboard. */
 export function resolveInitialView(storedViewRaw: string | null, model3dEnabled: boolean): View {
-  if (
-    isKnownView(storedViewRaw)
-    && storedViewRaw !== 'profiles'
-    && !(storedViewRaw === 'model3d' && !model3dEnabled)
-  ) {
-    return storedViewRaw
-  }
-  return DASHBOARD_VIEW
+  return isKnownView(storedViewRaw) && isViewReachable(storedViewRaw, model3dEnabled)
+    ? storedViewRaw
+    : DASHBOARD_VIEW
+}
+
+/** Read the persisted last-active view (null when storage is unavailable). */
+export function loadStoredView(storage: Pick<Storage, 'getItem'> | null): string | null {
+  return storage ? storage.getItem(VIEW_STORAGE_KEY) : null
+}
+
+/** Persist the active view (no-op when localStorage is unavailable, e.g. SSR/tests). */
+export function persistView(view: View): void {
+  if (typeof localStorage !== 'undefined') localStorage.setItem(VIEW_STORAGE_KEY, view)
 }

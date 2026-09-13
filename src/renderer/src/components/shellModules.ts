@@ -37,12 +37,14 @@ const TAB_META: Record<'dashboard' | 'settings', { labelKey: TranslationKey; ico
   settings: { labelKey: 'nav.settings', icon: Settings }
 }
 
-/** Label + icon for any view that can appear as a tab. Card modules come from
- *  MODULE_META (Record<CardView,…> — compile-checked complete); the final
- *  fallback is only reachable for 'profiles', which never opens a tab (R85.4). */
+/** Label + icon for any view that can appear in the rail / toolbar title.
+ *  Card modules come from MODULE_META (Record<CardView,…> — compile-checked
+ *  complete); dashboard/settings come from TAB_META; anything else (the legacy
+ *  'profiles' member) falls back safely instead of crashing mid-render. */
 export function getTabMeta(view: View): { labelKey: TranslationKey; icon: LucideIcon } {
   const extra = TAB_META[view as keyof typeof TAB_META]
   if (extra) return extra
   const meta = MODULE_META[view as CardView]
-  return { labelKey: meta.labelKey, icon: meta.icon }
+  if (meta) return { labelKey: meta.labelKey, icon: meta.icon }
+  return { labelKey: 'nav.dashboard', icon: LayoutGrid }
 }

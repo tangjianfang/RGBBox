@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isKnownView, resolveInitialView } from '../../../src/renderer/src/hooks/tabNavigation'
+import { isKnownView, isViewReachable, resolveInitialView } from '../../../src/renderer/src/hooks/tabNavigation'
 
 describe('resolveInitialView (R86 single-view)', () => {
   it('null / invalid / profiles falls back to dashboard', () => {
@@ -23,5 +23,19 @@ describe('isKnownView', () => {
     expect(isKnownView('workspace')).toBe(true)
     expect(isKnownView(123)).toBe(false)
     expect(isKnownView(undefined)).toBe(false)
+  })
+})
+
+describe('isViewReachable (single feature-flag gate)', () => {
+  it('profiles is never reachable', () => {
+    expect(isViewReachable('profiles', true)).toBe(false)
+  })
+  it('model3d gated by flag', () => {
+    expect(isViewReachable('model3d', false)).toBe(false)
+    expect(isViewReachable('model3d', true)).toBe(true)
+  })
+  it('everything else reachable', () => {
+    expect(isViewReachable('dashboard', false)).toBe(true)
+    expect(isViewReachable('settings', false)).toBe(true)
   })
 })
