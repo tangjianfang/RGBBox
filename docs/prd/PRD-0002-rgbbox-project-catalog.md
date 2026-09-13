@@ -822,6 +822,17 @@
 - **R85.6** **验收点**：①首屏 Dashboard 且状态区数据实时正确 ②卡片点击开 Tab/已开聚焦 ③关当前 Tab 回 Dashboard、Dashboard 恒在无 × ④重启恢复 tabs+active ⑤旧 `rgbbox:view` 迁移无感 ⑥设置 Tab 四组配置与迁移前行为等价（同 state/IPC） ⑦👤 菜单全灰置 ⑧sidebar CSS/JSX 无残留 ⑨zh/en 无缺 key ⑩`yarn test` 0 失败 + `yarn typecheck` 0 error。
 - **R85.7** **状态**：✅（设计 `docs/superpowers/specs/2026-09-13-dashboard-tab-shell-design.md` + 计划 `docs/superpowers/plans/2026-09-13-dashboard-tab-shell.md` 均经用户确认后按 TDD 执行；新增 `tabNavigation.ts`/`useTabNavigation.ts`/`shellModules.ts`/`TabBar`/`AppShell`/`DashboardView`/`SettingsView` + 7 个测试文件 48 用例（含注册表完整性守卫）；sidebar JSX/CSS/imports 全清；code-review 10 findings 全部修复（关机 chip 恒显恢复 R73 可武装、fps 改 metricsCollector 实时采样、菜单关闭/互斥、audio 门控、媒体查询残留、HUD 锚点、模块清单单一源、文案去重）；验收：`yarn test` 70 files / 675 passed 0 失败 + `yarn typecheck` 0 error + `yarn build` 成功；分支 `feat/dashboard-tab-shell`，实机复测待用户。）
 
+### R86. UI 全面重设计：Synapse 式布局（左 rail + 工具条 + 卡片磁贴语言），三期分期
+
+> 来源：2026-09-13 用户需求——「完全参考 Razer Synapse 主界面的设计风格和布局重新设计 UI」；经澄清确认：**导航改左侧竖排图标栏（直接切换，R85 多 Tab 语义移除）**、**配色保持 RGBBox 现有体系（不改 Razer 绿/纯黑）**、**全量 view 重排、三期分期**。参考截图解构与完整设计见 `docs/superpowers/specs/2026-09-13-synapse-ui-redesign-design.md`。**风险等级：L1→L2**（纯 renderer，无新依赖/IPC；但覆盖面大，故分期）。分支：`feat/synapse-ui-redesign`（基于 R85）。
+- **R86.1 (P1) 设计 token 与壳层**：CSS 变量重构（三层明度底色 / 四级字阶 / 全大写标签 / ~21px 网格间距节奏）；左 rail 替换顶部 TabBar（竖排模块图标 + 选中高亮 + 直接切换 + `rgbbox:view` 持久化）；顶部细工具条（品牌 + 页面标题 + 全局控件 audio/语言/关机/⚙/👤）；公共控件（panel/按钮/输入框/滚动条）随 token 自动焕新。
+- **R86.2 (P1) Dashboard 重排**：按参考图语言——可折叠分组（▼ + 大写标题）、设备/引擎状态卡、模块磁贴（圆形底图标）；设置页适配新 token。
+- **R86.3 (P1) 验收点**：左 rail 直切且记忆上次视图；TabBar/useTabNavigation 多 Tab 逻辑移除（旧 `rgbbox:tabs` 数据自然失效无害）；Dashboard 新布局渲染正确；zh/en 文案齐全；`yarn test` 0 失败 + `yarn typecheck` 0 error；视觉对照参考图布局结构（配色保持 RGBBox）。
+- **R86.4 (P2) 核心 view 重排**：工作台（fx-sidebar → Synapse 式面板分组）、灯效库（分类可折叠分组）。验收点在 P2 启动时细化追加于此。
+- **R86.5 (P3) 媒体与工具 view 重排**：音频 / 视频 / 3D / 游戏 / 诊断 / 架构。验收点在 P3 启动时细化追加于此。
+- **R86.6 受影响文件**：`styles.css`（token 重构 + 全部布局类）、`App.tsx`（壳层接线）、`AppShell.tsx`/`DashboardView.tsx`（重排）、`shellModules.ts`（磁贴元数据）、`i18n/*`；`TabBar.tsx`/`useTabNavigation.ts` 移除；各期 view 文件在 P2/P3 补充。
+- **R86.7 状态**：⏳（P1 设计阶段；P2/P3 待 P1 验收后逐期启动）。
+
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
 > 来源：四轮评审第 2 轮「功能 & 视觉评价」+ 第 3 轮合并方案。
