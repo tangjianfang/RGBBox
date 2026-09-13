@@ -433,3 +433,16 @@ export interface VideoWallLayout {
   /** Per-panel descriptors (length === rows * cols for 'matrix' mode). */
   panels: VideoWallPanel[]
 }
+
+// ── R88: AI Lab chat IPC types ────────────────────────────────────────────
+export interface AiChatMessage {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+}
+export interface AiChatOutcome {
+  ok: boolean
+  /** Reply text when ok; empty string on failure. */
+  text: string
+  hint?: 'nokey' | 'auth' | 'http' | 'parse' | 'network'
+  latencyMs: number
+}
