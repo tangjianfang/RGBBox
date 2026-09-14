@@ -477,6 +477,11 @@ export interface AudioAiAstResult {
   ok: boolean
   top?: Array<{ index: number; score: number }>
   hint?: 'not-downloaded' | 'parse' | 'inference'
+  /** R90.9: isolated AST failure message — VAD keeps flowing when set. */
+  astError?: string
+  /** R90.9: raw error message on failure — surfaced in the UI instead of a
+   *  generic 'pipeline lost', so the root cause is visible. */
+  message?: string
 }
 /** R90.8: one streaming-detection tick (VAD every feed, AST on its cadence). */
 export interface AudioAiStreamTick {
@@ -488,4 +493,9 @@ export interface AudioAiStreamTick {
   astState?: 'running' | 'waiting-audio' | 'cadence'
   top?: Array<{ index: number; score: number }>
   hint?: 'not-downloaded' | 'parse' | 'inference'
+  /** R90.9: isolated AST failure message — VAD keeps flowing when set. */
+  astError?: string
+  /** R90.9: raw error message on failure — surfaced in the UI instead of a
+   *  generic 'pipeline lost', so the root cause is visible. */
+  message?: string
 }

@@ -25,7 +25,7 @@ const SHELL_KEYS = [
   'ai.lab.audio.st.feed', 'ai.lab.audio.st.resample', 'ai.lab.audio.st.rms', 'ai.lab.audio.st.vad', 'ai.lab.audio.st.ast',
   'ai.lab.audio.reading',
   'ai.lab.audio.ast.running', 'ai.lab.audio.ast.waiting', 'ai.lab.audio.ast.cadence',
-  'ai.lab.audio.modelReady', 'ai.lab.audio.modelFailed', 'ai.lab.audio.recheck',
+  'ai.lab.audio.models', 'ai.lab.audio.modelReady', 'ai.lab.audio.modelFailed', 'ai.lab.audio.recheck',
   'player.aiListen.title', 'player.aiListen.toggle', 'player.aiListen.listening',
   'player.aiListen.needModel', 'player.aiListen.errSource', 'player.aiListen.errPermission',
   'ai.lab.profileNew', 'ai.lab.profileDelete', 'ai.lab.setActive', 'ai.lab.activeNow', 'ai.lab.name',

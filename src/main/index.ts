@@ -564,9 +564,11 @@ function registerIpc(): void {
       const r = await audioAiFeedStream(pcm)
       // R90.9 review fix: rms/astState must cross the IPC — the renderer's
       // level gauge, 'inferring' stage and self-test RMS row all read them.
-      return { ok: true, prob: r.prob, rms: r.rms, astState: r.astState, top: r.top }
+      return { ok: true, prob: r.prob, rms: r.rms, astState: r.astState, top: r.top, astError: r.astError }
     } catch (err) {
-      return { ok: false, hint: audioHintOf(err) }
+      // R90.9: ship the raw message too — 'pipeline lost' hid the root cause.
+      log.warn('AudioAi', `stream feed failed: ${err instanceof Error ? err.message : String(err)}`)
+      return { ok: false, hint: audioHintOf(err), message: err instanceof Error ? err.message : String(err) }
     }
   })
 

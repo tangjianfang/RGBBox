@@ -6642,3 +6642,10 @@ input[type='range'].video-player-volume {
 .ai-selftest-row { color: var(--text-secondary); display: flex; font-size: 12.5px; gap: 8px; }
 .ai-selftest-row[data-pass='false'] { color: #e0a040; }
 .ai-selftest-row[data-pass='true'] :first-child { color: var(--accent); }
+
+/* R90.9: two-card audio layout (pipeline | models+selftest) */
+.ai-audio { grid-template-columns: 1fr; }
+@media (min-width: 900px) {
+  .ai-audio { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); }
+}
+.ai-audio-card { align-content: start; }

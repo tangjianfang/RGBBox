@@ -51,6 +51,8 @@ export function initAudioAi(opts: AudioAiOptions): void {
 
 export function resetAudioAi(): void {
   state = null
+  stream = null
+  streamUsers = 0
 }
 
 function requireState(): ServiceState {
@@ -163,13 +165,22 @@ interface StreamSession {
   ring: Float32Array // last 3s of audio for AST
   ringFill: number
   lastAstAt: number
+  /** R90.9: after an AST failure, don't retry for a while — a broken AST must
+   *  not storm the pipeline (the 'pipeline lost' failure-climb bug). */
+  astBackoffUntil: number
 }
 
 let stream: StreamSession | null = null
+/** R90.9 review fix #2 (structural): the lab tab, the player overlay and the
+ *  self-test all share ONE global session — reference-count it so any single
+ *  consumer's Stop cannot kill the session out from under the others. */
+let streamUsers = 0
 
 /** Start (or restart) the continuous-detection session. */
 export function startStream(): void {
   requireState()
+  streamUsers += 1
+  if (stream !== null) return
   stream = {
     vadState: new Float32Array(VAD_STATE[0] * VAD_STATE[1] * VAD_STATE[2]),
     context: new Float32Array(VAD_CONTEXT),
@@ -177,11 +188,13 @@ export function startStream(): void {
     ring: new Float32Array(AST_WINDOW),
     ringFill: 0,
     lastAstAt: 0,
+    astBackoffUntil: 0,
   }
 }
 
 export function stopStream(): void {
-  stream = null
+  streamUsers = Math.max(0, streamUsers - 1)
+  if (streamUsers === 0) stream = null
 }
 
 /**
@@ -194,6 +207,8 @@ export interface StreamFeedResult {
   rms: number
   astState: 'running' | 'waiting-audio' | 'cadence'
   top?: Array<{ index: number; score: number }>
+  /** Set when the latest AST attempt failed — VAD keeps flowing regardless. */
+  astError?: string
 }
 
 // R90.8 review: AST inference blocks the main thread for hundreds of ms while
@@ -251,30 +266,43 @@ async function feedStreamInner(pcm: Float32Array): Promise<StreamFeedResult> {
     stream.ringFill = keep + incoming
   }
   let top: Array<{ index: number; score: number }> | undefined
+  let astError: string | undefined
   let astState: 'running' | 'waiting-audio' | 'cadence' = 'cadence'
   const now = Date.now()
-  if (stream.ringFill >= 16000 && now - stream.lastAstAt >= AST_CADENCE_MS) {
+  if (stream.ringFill >= 16000 && now >= stream.astBackoffUntil && now - stream.lastAstAt >= AST_CADENCE_MS) {
     astState = 'running'
     stream.lastAstAt = now
-    const astSession = await getSession('ast_audioset_int8.onnx', 'astSession')
-    const mel = astMelSpectrogram(stream.ring)
-    const out = await astSession.run({ input_values: new ort.Tensor('float32', mel, [1, 1024, 128]) } as never)
-    const logits = out.logits.data as Float32Array
-    let maxL = -Infinity
-    for (const v of logits) if (v > maxL) maxL = v
-    const exps = new Float64Array(logits.length)
-    let sum = 0
-    for (let i = 0; i < logits.length; i++) {
-      exps[i] = Math.exp(logits[i] - maxL)
-      sum += exps[i]
+    try {
+      const astSession = await getSession('ast_audioset_int8.onnx', 'astSession')
+      const mel = astMelSpectrogram(stream.ring)
+      const out = await astSession.run({ input_values: new ort.Tensor('float32', mel, [1, 1024, 128]) } as never)
+      const logits = out.logits.data as Float32Array
+      let maxL = -Infinity
+      for (const v of logits) if (v > maxL) maxL = v
+      const exps = new Float64Array(logits.length)
+      let sum = 0
+      for (let i = 0; i < logits.length; i++) {
+        exps[i] = Math.exp(logits[i] - maxL)
+        sum += exps[i]
+      }
+      top = Array.from(exps.keys()).sort((a, b) => exps[b] - exps[a]).slice(0, AST_TOP_K)
+        .map((i) => ({ index: i, score: exps[i] / sum }))
+      stream.astBackoffUntil = 0
+    } catch (err) {
+      // R90.9: isolate AST failures — VAD/level keep flowing, the error rides
+      // the tick to the UI, and we back off 10s instead of failing every cadence
+      // (the failure-storm that surfaced to users as 'pipeline lost').
+      astError = err instanceof Error ? err.message : String(err)
+      astState = 'cadence'
+      stream.astBackoffUntil = Date.now() + 10_000
     }
-    top = Array.from(exps.keys()).sort((a, b) => exps[b] - exps[a]).slice(0, AST_TOP_K)
-      .map((i) => ({ index: i, score: exps[i] / sum }))
+  } else if (stream.ringFill < 16000) {
+    astState = 'waiting-audio'
   }
   // loudness of this batch — the UI's "is capture actually receiving audio" gauge
   let sq = 0
   for (let i = 0; i < pcm.length; i++) sq += pcm[i] * pcm[i]
   const rms = Math.min(1, Math.sqrt(sq / Math.max(1, pcm.length)) * 4)
 
-  return { prob: Math.max(prob, 0), rms, top, astState }
+  return { prob: Math.max(prob, 0), rms, top, astState, astError }
 }

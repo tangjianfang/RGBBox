@@ -16,13 +16,15 @@ export interface AiAudioStreamState {
   vadProb: number | null
   astTop: Array<{ index: number; score: number }> | null
   astState: 'running' | 'waiting-audio' | 'cadence' | null
+  /** Isolated AST failure message (VAD keeps flowing when set). */
+  astError: string | null
   /** Count of batches fed — the self-test's "pipeline alive" assertion. */
   batches: number
 }
 
 const IDLE: AiAudioStreamState = {
   stage: 'idle', actualRate: null, error: null, level: 0,
-  vadProb: null, astTop: null, astState: null, batches: 0,
+  vadProb: null, astTop: null, astState: null, astError: null, batches: 0,
 }
 
 export function useAiAudioStream(source: SourceId | null): AiAudioStreamState {
@@ -60,10 +62,11 @@ export function useAiAudioStream(source: SourceId | null): AiAudioStreamState {
           // immediately actionable; a run of failures means the session died.
           if (!tick.ok) {
             failures += 1
+            // R90.9: show the REAL error (tick.message), not a generic label.
             if (tick.hint === 'not-downloaded') {
-              setState((s) => ({ ...s, stage: 'error', error: 'not-downloaded' }))
+              setState((s) => ({ ...s, stage: 'error', error: tick.message ?? 'not-downloaded' }))
             } else if (failures > 10) {
-              setState((s) => ({ ...s, stage: 'error', error: 'pipeline lost' }))
+              setState((s) => ({ ...s, stage: 'error', error: tick.message ?? 'pipeline lost' }))
             }
             return
           }
@@ -79,6 +82,7 @@ export function useAiAudioStream(source: SourceId | null): AiAudioStreamState {
             vadProb: lastResults.vadProb,
             astTop: lastResults.astTop,
             astState: lastResults.astState,
+            astError: typeof tick.astError === 'string' ? tick.astError : null,
             batches: s.batches + 1,
           }))
         }).catch(() => undefined)

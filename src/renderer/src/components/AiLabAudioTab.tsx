@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import { useI18n } from '../i18n'
-import { useAiAudioStream, type PipelineStage } from '../hooks/useAiAudioStream'
+import { useAiAudioStream } from '../hooks/useAiAudioStream'
 import { resampleTo16k, rmsLevel, synthTestTone } from '../tools/pcm'
 import type { SourceId } from '../tools/pcmSource'
 import labels from '../assets/audioset-labels.json'
@@ -10,7 +10,7 @@ const VAD_THRESHOLD = 0.5
 type ModelDlState = 'checking' | 'ready' | 'idle' | 'downloading' | 'error'
 type SelfTestResult = Array<{ item: string; pass: boolean | null; detail?: string }> | null
 
-/** Model status hook (unchanged behavior, feeds the pipeline stage-0 badges). */
+/** Model status hook (feeds the ops card badges). */
 function useModelDownloads(): {
   silero: ModelDlState
   ast: ModelDlState
@@ -93,7 +93,7 @@ function ModelBadge(props: {
 }
 
 /** Stage lamp: ①采集 ②电平 ③VAD ④AST — the pipeline narrative. */
-function StageLamp(props: { stage: PipelineStage | 'model'; label: string; ok: boolean | null; detail?: string }): JSX.Element {
+function StageLamp(props: { label: string; ok: boolean | null; detail?: string }): JSX.Element {
   return (
     <div className="ai-stage" data-ok={props.ok === null ? undefined : String(props.ok)}>
       <span className="ai-stage-lamp" />
@@ -103,17 +103,21 @@ function StageLamp(props: { stage: PipelineStage | 'model'; label: string; ok: b
   )
 }
 
-/** R90.9: single-card pipeline view. Source → ①capture ②level ③VAD ④AST. */
+/** R90.9: two-card layout — ①「检测管线」(source + stages + live results),
+ *  ②「模型与自检」(model badges + self-test). The single overloaded card was
+ *  the "layout unreasonable" complaint. */
 export function AiLabAudioTab(): JSX.Element {
   const { t } = useI18n()
   const [source, setSource] = useState<SourceId | null>('tone')
   const { silero, ast, astPercent, err, download } = useModelDownloads()
-  const { stage, actualRate, error, level, vadProb, astTop, astState, batches } = useAiAudioStream(source)
+  const { stage, actualRate, error, level, vadProb, astTop, astState, astError, batches } = useAiAudioStream(source)
   const [selfTest, setSelfTest] = useState<SelfTestResult>(null)
   const vadPct = vadProb === null ? null : Math.round(vadProb * 100)
   const modelsReady = silero === 'ready' && ast === 'ready'
 
-  /** 3s built-in tone → verify the whole pipeline stage by stage. */
+  /** 3s built-in tone → verify the whole pipeline stage by stage. The session
+   *  is reference-counted in main, so this start/stop pair cannot kill the
+   *  live pipeline alongside it. */
   const runSelfTest = useCallback(async () => {
     setSelfTest([
       { item: 'feed', pass: null },
@@ -122,8 +126,6 @@ export function AiLabAudioTab(): JSX.Element {
       { item: 'vad', pass: null },
       { item: 'ast', pass: null },
     ])
-    // R90.9 review fix #9: exercise the REAL resampler — a 48k sine through
-    // resampleTo16k must come out 1/3 length with preserved loudness.
     const sine48 = new Float32Array(4800)
     for (let i = 0; i < sine48.length; i++) sine48[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / 48000)
     const rsOut = resampleTo16k(sine48, 48000)
@@ -143,9 +145,6 @@ export function AiLabAudioTab(): JSX.Element {
       if (tick.top) gotAst = tick.top
     }
     await window.rgbbox.audioAiStreamStop()
-    // R90.9 review fix #2: the self-test shares the main-process session with
-    // the live pipeline — its Stop killed it. Re-arm so live detection resumes.
-    if (source !== null) await window.rgbbox.audioAiStreamStart().catch(() => undefined)
     setSelfTest([
       { item: 'feed', pass: feeds >= 9, detail: `${feeds}/10` },
       { item: 'resample', pass: resampleOk, detail: `48k→${rsOut.length}` },
@@ -153,13 +152,20 @@ export function AiLabAudioTab(): JSX.Element {
       { item: 'vad', pass: gotVad !== null, detail: gotVad === null ? undefined : gotVad.toFixed(2) },
       { item: 'ast', pass: Array.isArray(gotAst) && gotAst.length === 5, detail: gotAst ? gotAst[0] && (labels[gotAst[0].index]?.label ?? `#${gotAst[0].index}`) : undefined },
     ])
-  }, [source])
+  }, [])
 
   const sourceOptions: Array<{ id: SourceId; label: string }> = [
     { id: 'tone', label: t('ai.lab.audio.source.tone') },
     { id: 'mic', label: t('ai.lab.audio.source.mic') },
     { id: 'system', label: t('ai.lab.audio.source.system') },
   ]
+
+  const stageStatus =
+    stage === 'idle' ? t('ai.lab.audio.stage.idle')
+    : stage === 'capturing' ? `● ${t('ai.lab.audio.stage.capturing')}`
+    : stage === 'inferring' ? `● ${t('ai.lab.audio.stage.inferring')}`
+    : stage === 'results' ? `● ${t('ai.lab.audio.stage.results')}`
+    : null
 
   return (
     <div className="ai-audio">
@@ -169,16 +175,9 @@ export function AiLabAudioTab(): JSX.Element {
         <div className="ai-audio-card-head">
           <strong>{t('ai.lab.audio.pipeline')}</strong>
           <span className="ai-lab-status">
-            {stage === 'idle' && t('ai.lab.audio.stage.idle')}
-            {stage === 'capturing' && `● ${t('ai.lab.audio.stage.capturing')}`}
-            {stage === 'inferring' && `● ${t('ai.lab.audio.stage.inferring')}`}
-            {stage === 'results' && `● ${t('ai.lab.audio.stage.results')}`}
+            {stageStatus}
             {stage === 'error' && <span className="ai-hint-line">{error}</span>}
           </span>
-          <div className="ai-model-badges">
-            <ModelBadge state={silero} name="silero_vad" onDownload={download} />
-            <ModelBadge state={ast} name="ast_audioset" percent={astPercent} onDownload={download} />
-          </div>
         </div>
 
         <div className="ai-source-row" role="radiogroup" aria-label={t('ai.lab.audio.source')}>
@@ -198,29 +197,26 @@ export function AiLabAudioTab(): JSX.Element {
 
         <div className="ai-stages">
           <StageLamp
-            stage="model"
             label={t('ai.lab.audio.stage1')}
-            ok={stage !== 'idle' && stage !== 'error' ? true : null}
+            ok={stage === 'results' || stage === 'inferring'}
             detail={actualRate !== null ? `${(actualRate / 1000).toFixed(0)}k→16k` : undefined}
           />
           <StageLamp
-            stage="model"
             label={t('ai.lab.audio.stage2')}
             ok={stage === 'results' || stage === 'inferring' ? level > 0.01 : null}
             detail={`${Math.round(Math.min(1, level) * 100)}%`}
           />
           <StageLamp
-            stage="model"
             label={t('ai.lab.audio.stage3')}
             ok={vadPct !== null}
             detail={vadPct !== null ? `${vadPct}% ${vadProb! >= VAD_THRESHOLD ? t('ai.lab.audio.vad.speech') : t('ai.lab.audio.vad.quiet')}` : undefined}
           />
           <StageLamp
-            stage="model"
             label={t('ai.lab.audio.stage4')}
-            ok={astTop !== null}
+            ok={astTop !== null ? true : astError !== null ? false : null}
             detail={
-              astTop === null
+              astError !== null ? astError
+              : astTop === null
                 ? (astState === 'waiting-audio' ? t('ai.lab.audio.ast.waiting') : t('ai.lab.audio.ast.cadence'))
                 : (labels[astTop[0].index]?.label ?? `#${astTop[0].index}`)
             }
@@ -246,9 +242,18 @@ export function AiLabAudioTab(): JSX.Element {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="ai-audio-card">
+        <div className="ai-audio-card-head">
+          <strong>{t('ai.lab.audio.models')}</strong>
+        </div>
+        <ModelBadge state={silero} name="silero_vad" onDownload={download} />
+        <ModelBadge state={ast} name="ast_audioset" percent={astPercent} onDownload={download} />
+        {err !== null && <div className="ai-hint-line">{err}</div>}
 
         <div className="ai-selftest">
-          <button type="button" data-action="self-test" onClick={() => void runSelfTest()} disabled={!modelsReady || stage === 'error'}>
+          <button type="button" data-action="self-test" onClick={() => void runSelfTest()} disabled={!modelsReady}>
             {t('ai.lab.audio.selfTest')}
           </button>
           {!modelsReady && <span className="ai-lab-desc">{t('ai.lab.audio.selfTestModels')}</span>}
@@ -265,7 +270,6 @@ export function AiLabAudioTab(): JSX.Element {
             </div>
           )}
         </div>
-        {err !== null && <div className="ai-hint-line">{err}</div>}
       </div>
 
       <p className="ai-lab-reading">{t('ai.lab.audio.reading')}</p>

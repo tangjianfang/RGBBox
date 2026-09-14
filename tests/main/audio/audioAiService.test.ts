@@ -153,3 +153,40 @@ describe('streaming session (R90.8)', () => {
     expect(out.prob).toBeCloseTo(0.1)
   })
 })
+
+describe('stream session refcount (R90.9)', () => {
+  beforeEach(() => {
+    initAudioAi({ modelsDir: 'C:/m', findCached: vi.fn(async (f: string) => `file:///${f}`) })
+  })
+
+  it('a second consumer keeps the session alive when the first stops', async () => {
+    const vadSess = fakeSession([{ output: { data: new Float32Array([0.6]), dims: [1, 1] } }])
+    const astSess = fakeSession([{ logits: { data: new Float32Array(527), dims: [1, 527] } }])
+    sessionFactory.mockImplementation(async (url: string) => (url.includes('silero') ? vadSess : astSess))
+    startStream() // consumer A (live pipeline)
+    startStream() // consumer B (self-test)
+    stopStream()  // B stops — A still holds the session
+    const out = await feedStream(new Float32Array(16000))
+    expect(out.prob).toBeCloseTo(0.6)
+    stopStream()  // A stops too → session dies
+    await expect(feedStream(new Float32Array(16000))).rejects.toThrow(/no active/i)
+  })
+
+  it('an AST failure is isolated: VAD keeps flowing, astError rides the tick, backoff engages', async () => {
+    const vadSess = fakeSession([{ output: { data: new Float32Array([0.7]), dims: [1, 1] } }])
+    const badAst = { run: vi.fn(async () => { throw new Error('onnx boom') }) }
+    sessionFactory.mockImplementation(async (url: string) => (url.includes('silero') ? vadSess : badAst))
+    startStream()
+    // 2s of audio fills the ring past 1s → AST runs on the FIRST feed and
+    // THROWS — the tick must still be ok with VAD flowing + astError riding
+    const tick = await feedStream(new Float32Array(16000 * 2))
+    expect(tick.prob).toBeCloseTo(0.7)
+    expect(tick.astError).toContain('onnx boom')
+    // backoff: an immediate second feed does NOT re-invoke the broken AST
+    const calls = badAst.run.mock.calls.length
+    const next = await feedStream(new Float32Array(16000))
+    expect(badAst.run.mock.calls.length).toBe(calls)
+    expect(next.astError).toBeUndefined() // error is per-attempt, not sticky
+    stopStream()
+  })
+})

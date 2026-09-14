@@ -13,6 +13,7 @@ const streamState = {
   vadProb: null as number | null,
   astTop: null as Array<{ index: number; score: number }> | null,
   astState: null as 'running' | 'waiting-audio' | 'cadence' | null,
+  astError: null as string | null,
   batches: 0,
 }
 vi.mock('../../../src/renderer/src/hooks/useAiAudioStream', () => ({
@@ -31,6 +32,7 @@ beforeEach(() => {
   streamState.vadProb = null
   streamState.astTop = null
   streamState.astState = null
+  streamState.astError = null
   streamState.batches = 0
 })
 
