@@ -83,6 +83,21 @@ export function usePreviewZoom(wrapRef: RefObject<HTMLElement | null>): UsePrevi
     [rect, container],
   )
 
+  // R94: when the container resizes (window maximize/restore) while zoomed in
+  // free mode, re-clamp the pan bounds so the picture stays in view instead of
+  // clinging to the pre-resize offset — the "maximize doesn't adapt / scaling
+  // looks off" complaint. Fit mode needs nothing: containRect recomputes.
+  const freeRef = useRef(free)
+  freeRef.current = free
+  useEffect(() => {
+    const f = freeRef.current
+    if (!f || !hasVideo) return
+    setFreeClamped({ absScale: f.absScale, offset: f.offset })
+    // deps intentionally only the container dims — re-clamping on every free
+    // change would be a no-op loop anyway, but keep it tied to resize events
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [container.w, container.h, hasVideo])
+
   const zoomBy = useCallback(
     (factor: number, cursor?: Pt) => {
       if (!hasVideo) return

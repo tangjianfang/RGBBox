@@ -901,13 +901,18 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     }
   }, [playerPlaying])
 
-  // Show controls when paused
+  // Show controls when paused; ARM the auto-hide when playback starts (R94:
+  // starting playback via click/space armed no timer — resetControlsTimer only
+  // runs on wrap mouse events, so controls + zoom bar stayed pinned forever
+  // until the next mouse move).
   useEffect(() => {
     if (!playerPlaying) {
       setPlayerControlsVisible(true)
       if (controlsHideTimerRef.current) window.clearTimeout(controlsHideTimerRef.current)
+    } else {
+      resetControlsTimer()
     }
-  }, [playerPlaying])
+  }, [playerPlaying, resetControlsTimer])
 
   // Subtitle cue activation
   useEffect(() => {
@@ -1091,6 +1096,9 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     setPlayerUrl(item.url)
     setPlayerName(item.name)
     setCurrentVideoIndex(index)
+    // R94: remember the last playlist item played — the player restores it on
+    // the next launch (paused, with the R91.1 resume prompt).
+    try { localStorage.setItem('rgbbox:videoLastItem', item.id) } catch { /* storage unavailable */ }
   }, [videoPlaylist, clearPlayerSource])
 
   const removeVideoItem = useCallback((index: number) => {
@@ -1249,6 +1257,22 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     // the next launch. The main-process handler overwrites unconditionally.
     window.rgbbox.videoSavePaths(pathEntries).catch(() => { /* persistence is best-effort */ })
   }, [videoIsRestored, videoPlaylist, videoGroups, playlistVisible])
+
+  // R94: on entering the player with no active source, auto-load the last
+  // played playlist item (once per app session) — the player no longer opens
+  // empty after a restart. Loads paused; the R91.1 resume prompt takes it from
+  // there.
+  const autoRestoreAttemptedRef = useRef(false)
+  useEffect(() => {
+    if (mode !== 'player' || !videoIsRestored || autoRestoreAttemptedRef.current) return
+    if (playerUrl || usingHls) { autoRestoreAttemptedRef.current = true; return }
+    autoRestoreAttemptedRef.current = true
+    let saved: string | null = null
+    try { saved = localStorage.getItem('rgbbox:videoLastItem') } catch { /* ignore */ }
+    if (!saved) return
+    const idx = videoPlaylist.findIndex((v) => v.id === saved)
+    if (idx >= 0) playVideoItem(idx)
+  }, [mode, videoIsRestored, playerUrl, usingHls, videoPlaylist, playVideoItem])
 
   // Restore video playlist from main process on mount
   useEffect(() => {
@@ -1437,8 +1461,10 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                 </div>
               )}
 
-              {/* R75.1: zoom control bar */}
-              {mediaLoaded && (
+              {/* R75.1: zoom control bar — R94: hides with the player controls
+                  (same 3s inactivity / mouse-move cadence) instead of pinning
+                  over the video forever. */}
+              {mediaLoaded && playerControlsVisible && (
                 <PreviewZoomBar
                   percent={playerZoom.percent}
                   onZoomIn={() => playerZoom.zoomBy(1.1)}

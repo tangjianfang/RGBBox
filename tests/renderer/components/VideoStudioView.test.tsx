@@ -148,6 +148,27 @@ describe('renderer/components/VideoStudioView', () => {
     })
   })
 
+  // R94: entering the player with no active source auto-loads the last played
+  // playlist item (once per session) — the player no longer opens empty.
+  it('auto-restores the last played item on entering the player', async () => {
+    localStorage.setItem('rgbbox:videoMode', 'player')
+    localStorage.setItem('rgbbox:videoLastItem', 'v1')
+    const mocks = setupRendererMocks()
+    mocks.videoGetSavedPaths.mockResolvedValue([
+      { id: 'v1', name: 'a.mp4', path: 'C:\\videos\\a.mp4', group: 'Default', progress: 754, duration: 8597, updatedAt: 1 },
+    ])
+    const { container } = render(<VideoStudioView />)
+    await waitFor(() => {
+      const v = container.querySelector('video.video-preview-rect')!
+      expect(v.getAttribute('src')).toContain('media://')
+    })
+    // R91.1: stored progress past the thresholds surfaces the resume prompt
+    await waitFor(() => {
+      expect(container.querySelector('.video-resume-bar')).toBeTruthy()
+    })
+    localStorage.clear()
+  })
+
   // R91.3: the Audio FX popover lists the four presets and selects them.
   it('audio panel opens from the transport and switches presets', async () => {
     const mocks = setupRendererMocks()

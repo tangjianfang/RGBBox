@@ -902,6 +902,17 @@
 - **受影响文件**：`VideoStudioView.tsx`（crossOrigin 条件 + key + 两处 try/catch toast）、`video/usePreviewZoom.ts`（量测生命周期）、`i18n/*`（+`video.capture.fail` zh/en）、`tests/renderer/components/VideoStudioView.test.tsx`（crossOrigin 断言）、`scripts/verify-photo-player.mjs`（真机回归脚本入库）+ `scripts/verify-photo-fix.mjs`。
 - **验收点与证据**：①真机端到端（verify-photo-player.mjs，真实按钮驱动 3.78GiB HEVC 影片）：拍照 captures 11→12 ✓、局部截图拖选生成 400px 选区 + 8 手柄 → Enter 确认 → captures 12→13 + 标注器打开 ✓、页面异常 0 ✓；②单测：VideoStudioView 6/6（新增 crossOrigin=anonymous 精确匹配 media:// 用例）+ usePreviewZoom 5/5；③`yarn typecheck` 0 error；④全量回归 `yarn test` 80 files / 737 passed / 0 失败；⑤摄像头/屏幕模式与 blob:/远程 URL 路径代码语义未动（crossOrigin 对 srcObject 无影响）。**状态：✅（实机复测待用户：真 UI 播放影片点拍照/局部截图）**
 
+### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
+
+> 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。
+- **R94.1 播放器重启自动恢复现场**：`playVideoItem` 持久化 `rgbbox:videoLastItem`；进入 player 模式且无活动源时自动装载上次播放的列表影片（每会话一次，装载为暂停态），R91.1 续播提示接管位置恢复。
+- **R94.2 缩放条自动隐藏 + 播放启动武装计时器**：PreviewZoomBar 渲染挂 `playerControlsVisible`（与播放控制条同 3s 无操作隐藏/鼠标活动复现）；**R71 遗留 bug 连带修复**——`resetControlsTimer` 仅由 wrap 鼠标事件武装，点击/空格开播（onPlay 后无鼠标移动）时控制条+缩放条永驻：`playerPlaying` 转 true 的 effect 统一武装计时器（effect 移至 resetControlsTimer 声明后避免渲染期 TDZ）。
+- **R94.3 free 缩放模式容器变化重钳制**：`usePreviewZoom` 在 container 尺寸变化且处于 free 模式时 `setFreeClamped` 重钳偏移（最大化/还原后画面保持在视野内而非粘在旧偏移——「不自适应/比例不协调」的根因；fit 模式 containRect 本就重算无需处理）。实测确认 contain 宽高比已正确（874×369=2.37=1920/810，R92 修复生效）。
+- **R94.4 降噪 worklet 旁路逐通道直通**：旁路分支原 `output.set(input)` 只写输出通道 0——**右声道静音**（开启过一次降噪再关闭即触发，L 有声 R 无声）；改逐通道 passthrough（缺源通道补零）。
+- **R94.5 胶片栏删除最后一张整界面空白**：**复现失败**——真机逐张 UI 删除 12→0 全程 UI 完好、零页面异常（verify-r94-filmstrip-delete.mjs）；组件判空安全（items.length===0 → null）。待用户补充确切步骤（哪个列表/删除前的操作序列/是否标注器开着）后重启调查。
+- **受影响文件**：`VideoStudioView.tsx`（lastItem/自动恢复/缩放条门控/计时器武装）、`video/usePreviewZoom.ts`（free 重钳制）、`video/denoiseWorkletSource.ts`（旁路直通）、`tests/renderer/components/VideoStudioView.test.tsx`（自动恢复用例）、`scripts/verify-r94-{filmstrip-delete,zoom,fixes}.mjs`。
+- **验收与证据**：单测自动恢复用例过 + 全量 `yarn test` 83 files / 758 passed / 0 失败 + typecheck 0 error；真机两阶段 `verify-r94-fixes.mjs` **10/10**（Phase A：lastItem 落盘/缩放条活动可见/闲置 3.8s 隐藏/鼠标移动复现；Phase B 零操作冷启动：player tab 恢复+上次影片自动装载+续播提示+crossOrigin 完好+零异常）。**状态：✅（R94.5 待用户步骤；R94.4 声道对称性待用户实机听感确认）**
+
 ### R93. AI 画质增强（超分/插帧）——入档待启动（2026-09-14 用户问询，确认排 R91 后）
 
 > 调研结论（2026-09-14，受 ≤100MB 硬预算约束）：**动画视频实时超分成熟**（RealESRGAN-AnimeVideo-v3 xs ~0.3-2MB，官方为实时视频设计，GPU 30-60fps）；真人视频开源界**不存在** 1080p→4K 实时超分（NVIDIA RTX VSR/Maxine 为闭源驱动级），现实档位=低分辨率→1080p 近实时（RealESRGAN_x4plus 65MB 预算内紧）/ 暂停单帧精修；时序模型（BasicVSR++/RVRT）质量最高但 <1fps 仅适合离线转码；RIFE v4（~几MB）可做 30→60fps 插帧。执行路径：**WebGPU 首选**（Electron 41 Chromium Windows D3D12 默认可用 + onnxruntime-web webgpu backend；参考 sb2702/websr、Amazon IVS WebGPU 实时超分演示），WebGL 后备（慢 3-5×），CPU WASM 仅 xs 模型低分辨率可用，ncnn-vulkan 原生 sidecar（Upscayl 路线）为备选不入主线。**建议档位**：①动画实时超分（xs）②真人降档实时（540p/720p→1080p，x4plus int8 ~32MB）③单帧精修（暂停/截图跑大模型，与 R75-78 截图标注体系打通）。**状态：⏳（用户确认排 R91 之后启动，实施前重新对齐档位）**

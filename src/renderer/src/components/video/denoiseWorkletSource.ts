@@ -102,7 +102,18 @@ class DtlmRelayProcessor extends AudioWorkletProcessor {
     const output = outputs[0][0]
     const n = output.length
     if (!input) { output.fill(0); return true }
-    if (!this.enabled) { output.set(input); return true }
+    if (!this.enabled) {
+      // R94 fix: per-channel passthrough. The old single-channel copy left the
+      // RIGHT output silent — "L loud, R mute" asymmetry whenever the worklet
+      // sat in the chain with denoise off (enabled once, then disabled).
+      for (let c = 0; c < outputs[0].length; c++) {
+        const ich = inputs[0] && inputs[0][c]
+        const och = outputs[0][c]
+        if (ich && och) och.set(ich.length === och.length ? ich : ich.subarray(0, och.length))
+        else if (och) och.fill(0)
+      }
+      return true
+    }
 
     // ── down: 16k samples → hop assembly → window slide → batch dispatch ──
     this.down.push(input, (s16) => {
