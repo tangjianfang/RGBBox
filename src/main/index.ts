@@ -797,10 +797,32 @@ function registerIpc(): void {
 
   const modelsDir = join(app.getPath('userData'), 'models')
 
-  // R90 P1: audio AI inference (Silero VAD + AST), cached-model lookup injected
+  // R90 P1: audio AI inference (Silero VAD + AST), cached-model lookup injected.
+  // R90.9: the cache check ALSO verifies the expected byte size (±10%) — a
+  // partial download (the ECONNRESET saga) previously left a corrupt file that
+  // "已就绪" happily reported while every InferenceSession.create failed. A
+  // size mismatch deletes the file so the next download starts fresh.
+  const audioModelBytes = new Map<string, number>(
+    MODELS_MANIFEST.filter((e) => e.kind === 'onnx' && e.bytes !== undefined)
+      .map((e) => [e.file, e.bytes as number])
+  )
   initAudioAi({
     modelsDir,
-    findCached: async (file) => (await getCachedModelUrl(file)) ?? null,
+    findCached: async (file) => {
+      const url = await getCachedModelUrl(file)
+      if (url === undefined) return null
+      const expected = audioModelBytes.get(file)
+      if (expected === undefined) return url
+      try {
+        const s = await stat(join(modelsDir, file))
+        if (Math.abs(s.size - expected) > expected * 0.1) {
+          log.warn('Model', `corrupt cache detected (${s.size}/${expected} bytes), deleting: ${file}`)
+          await unlink(join(modelsDir, file))
+          return null
+        }
+      } catch { /* stat failed — treat as cached */ }
+      return url
+    },
   })
 
   /** Return a file:// URL if the model is already cached, otherwise undefined. */

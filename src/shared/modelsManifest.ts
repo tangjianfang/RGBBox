@@ -19,6 +19,9 @@ export interface ModelManifestEntry {
   url: string
   /** Asset kind — splat models render in the 3D view; onnx models feed local inference */
   kind: 'splat' | 'onnx'
+  /** R90.9: expected size in bytes for onnx assets — a cached file outside
+   *  ±10% is a corrupt/partial download and gets deleted so it re-downloads. */
+  bytes?: number
   /** Optional LED position map JSON filename (shipped with the app) */
   ledMapFile?: string
   description?: string
@@ -70,6 +73,7 @@ export const MODELS_MANIFEST: ModelManifestEntry[] = [
     kind: 'onnx',
     file: 'silero_vad.onnx',
     url: 'https://hf-mirror.com/onnx-community/silero-vad/resolve/main/onnx/model_quantized.onnx',
+    bytes: 639335,
     description: 'Silero VAD voice-activity ONNX (~0.6MB)',
   },
   {
@@ -77,6 +81,7 @@ export const MODELS_MANIFEST: ModelManifestEntry[] = [
     kind: 'onnx',
     file: 'ast_audioset_int8.onnx',
     url: 'https://hf-mirror.com/onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX/resolve/main/onnx/model_int8.onnx',
+    bytes: 90592065,
     description: 'AST AudioSet 527-class classifier, int8 ONNX (~91MB)',
   },
 ]

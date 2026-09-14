@@ -6643,9 +6643,19 @@ input[type='range'].video-player-volume {
 .ai-selftest-row[data-pass='false'] { color: #e0a040; }
 .ai-selftest-row[data-pass='true'] :first-child { color: var(--accent); }
 
-/* R90.9: two-card audio layout (pipeline | models+selftest) */
-.ai-audio { grid-template-columns: 1fr; }
+/* R90.9: two-card audio layout — intro/reading span BOTH columns (auto-flow
+   previously scattered the four children across the grid: intro top-left,
+   pipeline squeezed into the narrow right column with a wrapped vertical
+   title, models stranded bottom-left — the "乱七八糟" screenshot). */
+.ai-audio {
+  align-items: start;
+  grid-template-columns: 1fr;
+}
+.ai-lab-intro,
+.ai-lab-reading { grid-column: 1 / -1; }
 @media (min-width: 900px) {
-  .ai-audio { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); }
+  .ai-audio { grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); }
+  .ai-pipeline-card { grid-column: 1; }
+  .ai-audio-card:not(.ai-pipeline-card) { grid-column: 2; }
 }
 .ai-audio-card { align-content: start; }
