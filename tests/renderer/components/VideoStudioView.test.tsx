@@ -60,4 +60,33 @@ describe('renderer/components/VideoStudioView', () => {
       expect(calls[calls.length - 1][0]).toEqual([])
     })
   })
+
+  // R92: media:// playlist items play cross-origin — without crossOrigin the
+  // frames taint the canvas and photo/snip export dies with SecurityError
+  // (verified live: 'Tainted canvases may not be exported'). Same-origin blob:
+  // also gets it (harmless); remote http(s) must NOT (anonymous would break
+  // playback on CORS-less stream servers).
+  it('player <video> gains crossOrigin=anonymous exactly for media:// sources', async () => {
+    const mocks = setupRendererMocks()
+    mocks.videoGetSavedPaths.mockResolvedValue([
+      { id: 'v1', name: 'a.mp4', path: 'C:\\videos\\a.mp4', group: 'Default' },
+    ])
+    const { container } = render(<VideoStudioView />)
+    fireEvent.click(container.querySelectorAll('.video-mode-btn')[2])
+    await waitFor(() => {
+      expect(container.querySelectorAll('.audio-track-item').length).toBe(1)
+    })
+    // idle player: no src, no crossOrigin (remote-URL branch shares this state)
+    const idle = container.querySelector('video.video-preview-rect')!
+    expect(idle.getAttribute('src')).toBeNull()
+    expect(idle.getAttribute('crossorigin')).toBeNull()
+    // play the restored media:// item
+    fireEvent.click(container.querySelector('.audio-track-item')!)
+    await waitFor(() => {
+      const v = container.querySelector('video.video-preview-rect')!
+      expect(v.getAttribute('src')).toContain('media://')
+    })
+    const playing = container.querySelector('video.video-preview-rect')!
+    expect(playing.getAttribute('crossorigin')).toBe('anonymous')
+  })
 })

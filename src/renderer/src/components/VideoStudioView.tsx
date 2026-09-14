@@ -261,6 +261,16 @@ export function VideoStudioView(): JSX.Element {
   const hlsRef = useRef<Hls | null>(null)
   const playerFileInputRef = useRef<HTMLInputElement | null>(null)
   const mediaLoaded = playerUrl !== '' || usingHls
+  // R92: media:// plays cross-origin — without crossOrigin its frames taint the
+  // canvas and photo/snip export dies with a SecurityError. 'anonymous' is safe:
+  // the media:// handler sends Access-Control-Allow-Origin:* on every 200/206,
+  // and same-origin blob: ignores it. Remote http(s) URLs keep No-CORS — forcing
+  // anonymous would break playback on CORS-less stream servers (and remote
+  // content stays uncapturable either way). The JSX key remount below guarantees
+  // crossOrigin is set on a fresh element before its src.
+  const playerCrossOrigin = playerUrl.startsWith('media://') || playerUrl.startsWith('blob:')
+    ? ('anonymous' as const)
+    : undefined
 
   // ── Player custom controls ─────────────────────────────────────────────────
   const [playerPlaying, setPlayerPlaying] = useState(false)
@@ -374,10 +384,19 @@ export function VideoStudioView(): JSX.Element {
     if (!ctx) return
     // R75.2: 裁剪只搬运像素，绝不叠加任何文字/logo（无水印铁律）
     ctx.drawImage(frame, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h)
+    let dataUrl: string
+    try {
+      dataUrl = out.toDataURL('image/png')
+    } catch {
+      // R92: cross-origin frames (e.g. remote URL without CORS) taint the
+      // canvas — the annotator would hit the same wall on save, so bail here.
+      editorToast(t('video.capture.fail'))
+      return
+    }
     // R76.3: 框选确认后就地标注（微信流程）；R77.1: 裁剪结果自动入缓存
-    void window.rgbbox.capturesAdd(out.toDataURL('image/png'), 'snip').then(refreshCaptures).catch(() => { /* best-effort */ })
+    void window.rgbbox.capturesAdd(dataUrl, 'snip').then(refreshCaptures).catch(() => { /* best-effort */ })
     setAnnotateSource(out)
-  }, [snipFrame, cancelSnip, refreshCaptures])
+  }, [snipFrame, cancelSnip, refreshCaptures, editorToast, t])
 
   // R75.3: S 快捷键（camera/screen live 模式；player 模式在播放器快捷键 effect 里）
   useEffect(() => {
@@ -561,11 +580,19 @@ export function VideoStudioView(): JSX.Element {
       ctx.scale(-1, 1)
     }
     ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
-    const url = canvas.toDataURL('image/png')
+    let url: string
+    try {
+      url = canvas.toDataURL('image/png')
+    } catch {
+      // R92: cross-origin frames (e.g. remote URL without CORS) taint the
+      // canvas — tell the user instead of dying silently.
+      editorToast(t('video.capture.fail'))
+      return
+    }
     // R76.3: 拍照恢复"咔嚓即下载"；R77.1: 自动入拍摄缓存
     downloadPng(url, 'rgbbox-photo')
     void window.rgbbox.capturesAdd(url, 'photo').then(refreshCaptures).catch(() => { /* best-effort */ })
-  }, [mode, filterStyle, mirror, downloadPng, refreshCaptures])
+  }, [mode, filterStyle, mirror, downloadPng, refreshCaptures, editorToast, t])
 
   // ── Recording ──────────────────────────────────────────────────────────────
   const stopRecording = useCallback(() => {
@@ -1169,7 +1196,9 @@ export function VideoStudioView(): JSX.Element {
             >
               <div className="video-zoom-layer" style={playerZoom.layerStyle} onDoubleClick={playerZoom.reset}>
                 <video
+                  key={playerCrossOrigin ? 'cors' : 'nocors'}
                   ref={playerRef}
+                  crossOrigin={playerCrossOrigin}
                   className="video-preview video-preview-rect"
                   style={{
                     filter: filterStyle,

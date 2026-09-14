@@ -41,17 +41,26 @@ export function usePreviewZoom(wrapRef: RefObject<HTMLElement | null>): UsePrevi
 
   const setNativeSize = useCallback((s: Size) => setNativeState(s), [])
 
-  // 容器尺寸：mount 量一次 + ResizeObserver 跟随（happy-dom 无 RO 则跳过）
+  // 容器尺寸：元素可用时量一次 + ResizeObserver 跟随（happy-dom 无 RO 则跳过）。
+  // R92: wrap 元素是按模式条件渲染的（player wrap 在 mode 切换后才挂载），
+  // 而本 hook 的 effect 只在挂载时跑一次、ref 对象恒定不触发重跑——晚绑的
+  // 元素永远量不到，containerSize 停在 {0,0}（框选 SVG 变 0×0 收不到事件）。
+  // 改为每次渲染检查 ref 当前指向的元素，变化时重测 + 重挂 RO。
+  const roRef = useRef<ResizeObserver | null>(null)
+  const observedElRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     const el = wrapRef.current
-    if (!el) return
+    if (!el || el === observedElRef.current) return
+    observedElRef.current = el
+    roRef.current?.disconnect()
     const measure = () => setContainer({ w: el.clientWidth, h: el.clientHeight })
     measure()
-    if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [wrapRef])
+    if (typeof ResizeObserver !== 'undefined') {
+      roRef.current = new ResizeObserver(measure)
+      roRef.current.observe(el)
+    }
+  })
+  useEffect(() => () => { roRef.current?.disconnect() }, [])
 
   const hasVideo = native.w > 0 && native.h > 0 && container.w > 0 && container.h > 0
   const rect = useMemo(
