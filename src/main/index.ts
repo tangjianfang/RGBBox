@@ -959,7 +959,9 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle(ipcChannels.videoSavePaths, async (_event, paths: Array<{ id: string; name: string; path: string; group: string }>) => {
+  // R91.1: entries may carry resume progress (progress/duration/updatedAt) —
+  // stored verbatim alongside the structural fields.
+  ipcMain.handle(ipcChannels.videoSavePaths, async (_event, paths: Array<{ id: string; name: string; path: string; group: string; progress?: number; duration?: number; updatedAt?: number }>) => {
     await mkdir(join(app.getPath('userData'), 'config'), { recursive: true })
     await writeFile(videoConfigPath, JSON.stringify(paths, null, 2), 'utf-8')
   })

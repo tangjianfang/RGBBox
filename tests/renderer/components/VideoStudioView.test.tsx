@@ -89,4 +89,62 @@ describe('renderer/components/VideoStudioView', () => {
     const playing = container.querySelector('video.video-preview-rect')!
     expect(playing.getAttribute('crossorigin')).toBe('anonymous')
   })
+
+  // R91.1: the mode tab (camera/screen/player) must persist across launches —
+  // it used to be a hardcoded useState('camera').
+  it('persists the mode tab to localStorage and restores it', () => {
+    localStorage.clear()
+    const mocks = setupRendererMocks()
+    mocks.videoGetSavedPaths.mockResolvedValue([])
+    const { container, unmount } = render(<VideoStudioView />)
+    fireEvent.click(container.querySelectorAll('.video-mode-btn')[2]) // player
+    expect(localStorage.getItem('rgbbox:videoMode')).toBe('player')
+    unmount()
+    // fresh mount picks the stored tab up
+    const { container: c2 } = render(<VideoStudioView />)
+    expect(c2.querySelectorAll('.video-mode-btn')[2].className).toContain('active')
+    localStorage.clear()
+  })
+
+  // R91.1: opening an item with stored progress (>30s in, >60s from end)
+  // surfaces the resume prompt.
+  it('offers resume for a restored item with progress past the thresholds', async () => {
+    const mocks = setupRendererMocks()
+    mocks.videoGetSavedPaths.mockResolvedValue([
+      { id: 'v1', name: 'a.mp4', path: 'C:\\videos\\a.mp4', group: 'Default', progress: 754, duration: 8597, updatedAt: 1 },
+    ])
+    const { container } = render(<VideoStudioView />)
+    fireEvent.click(container.querySelectorAll('.video-mode-btn')[2])
+    await waitFor(() => {
+      expect(container.querySelectorAll('.audio-track-item').length).toBe(1)
+    })
+    expect(container.querySelector('.video-resume-bar')).toBeNull() // not until opened
+    fireEvent.click(container.querySelector('.audio-track-item')!)
+    await waitFor(() => {
+      expect(container.querySelector('.video-resume-bar')).toBeTruthy()
+    })
+  })
+
+  // R91.2: keep-alive — a hidden view with a loaded player source surfaces the
+  // MiniPlayerCard (portaled to document.body); making the view visible again
+  // retracts it.
+  it('surfaces the MiniPlayerCard while hidden and retracts it when visible', async () => {
+    const mocks = setupRendererMocks()
+    mocks.videoGetSavedPaths.mockResolvedValue([
+      { id: 'v1', name: 'a.mp4', path: 'C:\\videos\\a.mp4', group: 'Default' },
+    ])
+    const { container, rerender } = render(<VideoStudioView visible={false} />)
+    fireEvent.click(container.querySelectorAll('.video-mode-btn')[2])
+    await waitFor(() => {
+      expect(container.querySelectorAll('.audio-track-item').length).toBe(1)
+    })
+    fireEvent.click(container.querySelector('.audio-track-item')!)
+    await waitFor(() => {
+      expect(document.querySelector('.mini-player')).toBeTruthy()
+    })
+    rerender(<VideoStudioView visible={true} />)
+    await waitFor(() => {
+      expect(document.querySelector('.mini-player')).toBeNull()
+    })
+  })
 })

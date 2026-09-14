@@ -4192,6 +4192,153 @@ input[type='range'].audio-slider {
   padding: 20px;
 }
 
+/* R91.1: 断点续播提示条（播放器画面顶部居中） */
+.video-resume-bar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(10, 16, 20, 0.88);
+  border: 1px solid rgba(70, 198, 168, 0.35);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+}
+
+.video-resume-text {
+  font-size: 13px;
+  color: rgba(200, 220, 229, 0.85);
+  white-space: nowrap;
+}
+
+/* R91.2: 悬浮迷你播放器（portal 到 body，脱离任何 display:none 祖先） */
+.mini-player {
+  position: fixed;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(10, 16, 20, 0.94);
+  border: 1px solid rgba(70, 198, 168, 0.3);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+  user-select: none;
+}
+
+.mini-player-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: grab;
+  background: rgba(20, 28, 34, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mini-player-header:active {
+  cursor: grabbing;
+}
+
+.mini-player-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: rgba(200, 220, 229, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-player-body {
+  position: relative;
+  cursor: pointer;
+  background: #000;
+  line-height: 0;
+}
+
+.mini-player-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.mini-player-paused-badge {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.mini-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(20, 28, 34, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mini-player-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(200, 220, 229, 0.9);
+  cursor: pointer;
+  flex: none;
+}
+
+.mini-player-icon-btn:hover {
+  background: rgba(70, 198, 168, 0.15);
+  color: #46c6a8;
+}
+
+.mini-player-time {
+  font-size: 11px;
+  color: rgba(200, 220, 229, 0.7);
+  white-space: nowrap;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-player-seek {
+  flex: 1;
+  min-width: 40px;
+  height: 4px;
+  accent-color: #46c6a8;
+  cursor: pointer;
+}
+
+.mini-player-vol {
+  width: 56px;
+  height: 4px;
+  accent-color: #46c6a8;
+  cursor: pointer;
+  flex: none;
+}
+
+.mini-player-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, rgba(70, 198, 168, 0.5) 50%);
+}
+
 .video-badges {
   position: absolute;
   top: 12px;

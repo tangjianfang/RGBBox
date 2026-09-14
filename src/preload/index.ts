@@ -261,9 +261,10 @@ const api = {
     ipcRenderer.invoke(ipcChannels.audioOpenFolder),
 
   // Video Studio file persistence
-  videoGetSavedPaths: (): Promise<Array<{ id: string; name: string; path: string; group: string }>> =>
+  // R91.1: entries carry optional resume progress (seconds / epoch ms)
+  videoGetSavedPaths: (): Promise<Array<{ id: string; name: string; path: string; group: string; progress?: number; duration?: number; updatedAt?: number }>> =>
     ipcRenderer.invoke(ipcChannels.videoGetSavedPaths),
-  videoSavePaths: (paths: Array<{ id: string; name: string; path: string; group: string }>): Promise<void> =>
+  videoSavePaths: (paths: Array<{ id: string; name: string; path: string; group: string; progress?: number; duration?: number; updatedAt?: number }>): Promise<void> =>
     ipcRenderer.invoke(ipcChannels.videoSavePaths, paths),
   videoOpenFiles: (): Promise<Array<{ path: string; name: string }>> =>
     ipcRenderer.invoke(ipcChannels.videoOpenFiles),

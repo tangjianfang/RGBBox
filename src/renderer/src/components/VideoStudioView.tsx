@@ -29,6 +29,8 @@ import { usePreviewZoom } from './video/usePreviewZoom'
 import { PreviewZoomBar } from './video/PreviewZoomBar'
 import { freezeVideoFrame } from './video/frameCapture'
 import { RegionSnipOverlay } from './video/RegionSnipOverlay'
+import { buildPathEntries, ingestRestoredProgress, shouldOfferResume, type ProgressEntry } from './video/playlistProgress'
+import { MiniPlayerCard } from './video/MiniPlayerCard'
 import { AnnotateOverlay } from './video/AnnotateOverlay'
 import { CaptureFilmstrip } from './CaptureFilmstrip'
 import type { CaptureEntry } from '../../../shared/types'
@@ -220,10 +222,24 @@ function parseSubtitle(text: string, filename: string): SubCue[] {
 // R71.8: player timestamps use the shared formatMediaTime (this local copy
 // was the video-side twin of the audio view's hour-less formatter).
 
-export function VideoStudioView(): JSX.Element {
+export function VideoStudioView({ visible = true, onReturnToVideo }: {
+  /** R91.2: false while the keep-alive wrapper hides this view — capture and
+   * hotkeys pause, playback continues, MiniPlayerCard takes over. */
+  visible?: boolean
+  onReturnToVideo?: () => void
+}): JSX.Element {
   const { t } = useI18n()
 
-  const [mode, setMode] = useState<Mode>('camera')
+  // R91.1: remember the last mode tab (camera/screen/player) across launches —
+  // same pattern as rgbbox:view etc. Invalid values fall back to camera.
+  const [mode, setModeState] = useState<Mode>(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('rgbbox:videoMode') : null
+    return saved === 'camera' || saved === 'screen' || saved === 'player' ? saved : 'camera'
+  })
+  const setMode = useCallback((m: Mode) => {
+    setModeState(m)
+    try { localStorage.setItem('rgbbox:videoMode', m) } catch { /* storage unavailable — session-only */ }
+  }, [])
 
   // ── Live preview ─────────────────────────────────────────────────────────
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -319,6 +335,53 @@ export function VideoStudioView(): JSX.Element {
   const [videoIsRestored, setVideoIsRestored] = useState(false)
   const videoFileInputRef = useRef<HTMLInputElement | null>(null)
   const videoFolderInputRef = useRef<HTMLInputElement | null>(null)
+
+  // ── R91.1: per-item playback progress (断点续播) ──────────────────────────
+  // 1Hz writes go to a ref (no re-render); disk persistence rides the same
+  // videoSavePaths snapshot as structural saves, throttled to 10s + flushed on
+  // pause / item switch / unmount. Finished items (<5s from the end) drop out.
+  const progressRef = useRef<Record<string, ProgressEntry>>({})
+  const activeItemIdRef = useRef<string | null>(null)
+  const pendingSeekRef = useRef<number | null>(null)
+  const lastNoteRef = useRef(0)
+  const lastPersistRef = useRef(0)
+  const playlistRef = useRef<VideoItem[]>([])
+  useEffect(() => { playlistRef.current = videoPlaylist }, [videoPlaylist])
+  const [resumePrompt, setResumePrompt] = useState<{ id: string; at: number } | null>(null)
+
+  const persistProgress = useCallback(() => {
+    window.rgbbox.videoSavePaths(buildPathEntries(playlistRef.current, progressRef.current)).catch(() => { /* best-effort */ })
+  }, [])
+
+  const noteProgress = useCallback(() => {
+    const el = playerRef.current
+    const id = activeItemIdRef.current
+    if (!el || !id) return
+    const now = Date.now()
+    if (now - lastNoteRef.current < 1000) return
+    lastNoteRef.current = now
+    if (!isFinite(el.duration) || el.duration <= 0) return
+    // watched to (almost) the end — remember nothing so the next open starts fresh
+    if (el.duration - el.currentTime <= 5) {
+      if (progressRef.current[id]) { delete progressRef.current[id]; persistProgress() }
+      return
+    }
+    progressRef.current[id] = { t: el.currentTime, d: el.duration, u: now }
+    if (now - lastPersistRef.current > 10000) {
+      lastPersistRef.current = now
+      persistProgress()
+    }
+  }, [persistProgress])
+
+  // Flush on teardown / app close — natural "walked away" moments.
+  useEffect(() => {
+    const onBeforeUnload = () => persistProgress()
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      persistProgress()
+    }
+  }, [persistProgress])
 
   // ── Video Trim / Clip ──────────────────────────────────────────────────────
   const [trimMode, setTrimMode] = useState(false)
@@ -639,6 +702,11 @@ export function VideoStudioView(): JSX.Element {
   const clearPlayerSource = useCallback(() => {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
     setUsingHls(false)
+    // R91.1: the outgoing item's progress was already noted 1Hz; detach tracking
+    // and drop any unanswered resume prompt before the next source settles.
+    activeItemIdRef.current = null
+    pendingSeekRef.current = null
+    setResumePrompt(null)
     setPlayerUrl((prev) => { if (prev.startsWith('blob:')) URL.revokeObjectURL(prev); return '' })
     // R71.4: everything keyed to the PREVIOUS source resets here, so opening
     // a new video never shows its time/duration, never overlays the previous
@@ -726,6 +794,20 @@ export function VideoStudioView(): JSX.Element {
     }
   }, [mode, stopStream])
 
+  // R91.2: keep-alive hidden — stop live capture (privacy + CPU) and cancel any
+  // pending region snip; the player keeps playing and MiniPlayerCard surfaces.
+  const [miniDismissed, setMiniDismissed] = useState(false)
+  useEffect(() => {
+    if (visible) return
+    stopStream()
+    cancelSnip()
+  }, [visible, stopStream, cancelSnip])
+  // Dismissal is per playback session: returning to the view or a fresh play
+  // re-arms the card for the next switch-away.
+  useEffect(() => {
+    if (visible || playerPlaying) setMiniDismissed(false)
+  }, [visible, playerPlaying])
+
   // Player playback rate / loop
   useEffect(() => { if (playerRef.current) playerRef.current.playbackRate = playerRate }, [playerRate, playerUrl])
 
@@ -733,7 +815,12 @@ export function VideoStudioView(): JSX.Element {
   useEffect(() => {
     const el = playerRef.current
     if (!el) return
-    const onMeta = () => { if (el.videoWidth) playerZoom.setNativeSize({ w: el.videoWidth, h: el.videoHeight }) }
+    const onMeta = () => {
+      if (el.videoWidth) playerZoom.setNativeSize({ w: el.videoWidth, h: el.videoHeight })
+      // R91.1: apply a pending resume position once the media is seekable
+      const ps = pendingSeekRef.current
+      if (ps != null) { el.currentTime = ps; pendingSeekRef.current = null }
+    }
     el.addEventListener('loadedmetadata', onMeta)
     el.addEventListener('resize', onMeta)
     return () => {
@@ -755,13 +842,19 @@ export function VideoStudioView(): JSX.Element {
     const el = playerRef.current
     if (!el) return
     const onPlay = () => setPlayerPlaying(true)
-    const onPause = () => setPlayerPlaying(false)
-    const onEnded = () => setPlayerPlaying(false)
+    const onPause = () => { setPlayerPlaying(false); persistProgress() }
+    const onEnded = () => {
+      setPlayerPlaying(false)
+      // R91.1: finished — drop this item's resume point so the next open starts fresh
+      const id = activeItemIdRef.current
+      if (id && progressRef.current[id]) { delete progressRef.current[id]; persistProgress() }
+    }
     const onTimeUpdate = () => {
       // R71.6: while the user is dragging the seek slider, its own onChange
       // drives the position — writing el.currentTime back here made the
       // thumb snap backwards between input events.
       if (!seekDraggingRef.current) setPlayerCurrentTime(el.currentTime)
+      noteProgress()
       // R71.5: a live stream reports Infinity — never let it reach the range
       // input's max (an invalid max="Infinity" falls back to 100 and pins
       // the thumb once the stream runs past that).
@@ -792,7 +885,7 @@ export function VideoStudioView(): JSX.Element {
     }
     // Re-attach when the video source changes so the element ref is fresh
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerUrl, usingHls])
+  }, [playerUrl, usingHls, persistProgress, noteProgress])
 
   // Auto-hide player controls overlay after inactivity
   const resetControlsTimer = useCallback(() => {
@@ -857,6 +950,25 @@ export function VideoStudioView(): JSX.Element {
     else el.pause()
   }, [trimExporting])
 
+  // R91.1: resume-prompt actions — Continue jumps to the stored spot (already
+  // pre-seeked at loadedmetadata; this covers the not-yet-loaded race), From
+  // start wipes the stored progress for this item.
+  const resumeContinue = useCallback(() => {
+    const el = playerRef.current
+    if (el && resumePrompt) el.currentTime = resumePrompt.at
+    setResumePrompt(null)
+    void el?.play().catch(() => { /* autoplay may defer */ })
+  }, [resumePrompt])
+  const resumeRestart = useCallback(() => {
+    const el = playerRef.current
+    if (resumePrompt && progressRef.current[resumePrompt.id]) {
+      delete progressRef.current[resumePrompt.id]
+      persistProgress()
+    }
+    if (el) el.currentTime = 0
+    setResumePrompt(null)
+  }, [resumePrompt, persistProgress])
+
   // Player fullscreen (just the video wrapper)
   const togglePlayerFullscreen = useCallback(() => {
     const wrap = playerWrapRef.current
@@ -870,7 +982,9 @@ export function VideoStudioView(): JSX.Element {
 
   // ── Player keyboard shortcuts ───────────────────────────────────────────────
   useEffect(() => {
-    if (mode !== 'player') return
+    // R91.2: keep-alive — a hidden studio must not hijack space/arrows from
+    // whatever view is on screen.
+    if (mode !== 'player' || !visible) return
     const onKey = (e: KeyboardEvent) => {
       const el = playerRef.current
       if (!el) return
@@ -890,7 +1004,7 @@ export function VideoStudioView(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [mode, togglePlayerPlay, playerSeek, togglePlayerFullscreen, startSnip])
+  }, [mode, visible, togglePlayerPlay, playerSeek, togglePlayerFullscreen, startSnip])
 
   // R70.5: mirror the player URL so the unmount cleanup below can revoke the
   // blob: URL — the functional-setState revoke inside clearPlayerSource never
@@ -962,6 +1076,13 @@ export function VideoStudioView(): JSX.Element {
     const item = videoPlaylist[index]
     if (!item?.url) return
     clearPlayerSource()
+    // R91.1: offer to resume when the stored position clears the thresholds
+    activeItemIdRef.current = item.id
+    const prog = progressRef.current[item.id]
+    if (shouldOfferResume(prog) && prog) {
+      setResumePrompt({ id: item.id, at: prog.t })
+      pendingSeekRef.current = prog.t
+    }
     setPlayerUrl(item.url)
     setPlayerName(item.name)
     setCurrentVideoIndex(index)
@@ -1116,14 +1237,8 @@ export function VideoStudioView(): JSX.Element {
       groups: videoGroups,
       playlistVisible,
     })
-    const pathEntries = videoPlaylist
-      .map(v => {
-        if (v.url && v.url.startsWith('media://')) {
-          try { const filePath = new URL(v.url).searchParams.get('p') ?? ''; if (filePath) return { id: v.id, name: v.name, path: filePath, group: v.group } } catch { /* ignore */ }
-        }
-        return null
-      })
-      .filter((e): e is { id: string; name: string; path: string; group: string } => e !== null)
+    // R91.1: media:// entries only (blob:/remote have no path), progress merged
+    const pathEntries = buildPathEntries(videoPlaylist, progressRef.current)
     // R70.4: save unconditionally — skipping the empty list meant deleting
     // every video never reached disk, and the stale file resurrected them on
     // the next launch. The main-process handler overwrites unconditionally.
@@ -1135,6 +1250,8 @@ export function VideoStudioView(): JSX.Element {
     let cancelled = false
     window.rgbbox.videoGetSavedPaths().then(saved => {
       if (cancelled) return
+      // R91.1: fold persisted progress back in before anything can play
+      progressRef.current = ingestRestoredProgress(saved)
       if (saved.length > 0) {
         const tracks: VideoItem[] = saved.map(e => ({
           id: e.id, name: e.name, group: e.group,
@@ -1229,6 +1346,17 @@ export function VideoStudioView(): JSX.Element {
                   />
                 )}
               </div>
+
+              {/* R91.1: 断点续播提示条 */}
+              {resumePrompt && (
+                <div className="video-resume-bar">
+                  <span className="video-resume-text">
+                    {t('video.resume.lastseen')} {formatMediaTime(resumePrompt.at)}
+                  </span>
+                  <button type="button" className="video-btn video-btn-primary" onClick={resumeContinue}>{t('video.resume.continue')}</button>
+                  <button type="button" className="video-btn" onClick={resumeRestart}>{t('video.resume.restart')}</button>
+                </div>
+              )}
 
               {/* Empty-state overlay */}
               {!mediaLoaded && (
@@ -1800,6 +1928,29 @@ export function VideoStudioView(): JSX.Element {
       </div>
 
       {editorToastMsg && <div className="video-editor-toast">{editorToastMsg}</div>}
+
+      {/* R91.2: 悬浮迷你播放器（视图隐藏且播放器有源时接管；portal 到 body） */}
+      {!visible && mode === 'player' && mediaLoaded && !miniDismissed && (
+        <MiniPlayerCard
+          videoRef={playerRef}
+          title={playerName}
+          playing={playerPlaying}
+          currentTime={playerCurrentTime}
+          duration={playerDuration}
+          live={playerLive}
+          volume={playerVolume}
+          muted={playerMuted}
+          onTogglePlay={togglePlayerPlay}
+          onSeek={playerSeek}
+          onVolume={(v) => setPlayerVolume(v)}
+          onToggleMute={() => setPlayerMuted((m) => !m)}
+          onReturn={onReturnToVideo ?? (() => {})}
+          onClose={() => {
+            playerRef.current?.pause()
+            setMiniDismissed(true)
+          }}
+        />
+      )}
     </div>
   )
 }

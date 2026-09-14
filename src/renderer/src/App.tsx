@@ -675,6 +675,10 @@ export function App(): JSX.Element {
     resolveInitialView(loadStoredView(localStorage), MODEL3D_VIEW_ENABLED)
   )
   useEffect(() => { persistView(activeView) }, [activeView])
+  // R91.2: keep-alive gate — the video studio mounts on first visit and stays
+  // mounted (hidden) afterwards so playback survives view switches.
+  const [videoVisited, setVideoVisited] = useState<boolean>(() => activeView === 'video')
+  useEffect(() => { if (activeView === 'video') setVideoVisited(true) }, [activeView])
   const [favoriteEffectKinds, setFavoriteEffectKinds] = useState<EffectKind[]>(() =>
     parseStoredEffectKinds(localStorage.getItem('rgbbox:favoriteEffects'))
   )
@@ -2746,10 +2750,14 @@ export function App(): JSX.Element {
           {activeView === 'audio' && <AiListenOverlay />}
         </div>
 
-        {activeView === 'video' && (
-          <div className="video-view-anchor">
-            <VideoStudioView />
-            <AiListenOverlay />
+        {/* R91.2: the video studio stays mounted after first visit (keep-alive,
+            same pattern as the audio view above) — switching views only hides
+            it, so a playing movie keeps sounding and the MiniPlayerCard can
+            take over. Heavy views (3D/games) keep the old unmount behavior. */}
+        {videoVisited && (
+          <div className="video-view-anchor" style={{ display: activeView === 'video' ? undefined : 'none' }}>
+            <VideoStudioView visible={activeView === 'video'} onReturnToVideo={() => setActiveView('video')} />
+            {activeView === 'video' && <AiListenOverlay />}
           </div>
         )}
 
