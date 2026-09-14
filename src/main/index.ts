@@ -39,6 +39,7 @@ import { validateChatMessages } from '../shared/aiChatValidation'
 import { initAudioAi, disposeAudioAi, isCached as audioAiIsCached, runVad as audioAiRunVadPcm, runAst as audioAiRunAstPcm, startStream as audioAiStartStream, feedStream as audioAiFeedStream, stopStream as audioAiStopStream } from './audioAiService'
 import { Readable } from 'node:stream'
 import { mediaStreamPlan, parseRangeHeader, resolveMediaMime } from './mediaProtocol'
+import { registerDenoiseService } from './denoiseService'
 
 // Initialize file logger — must be done after imports but before app.whenReady
 const log = initLogger(join(app.getPath('userData'), 'logs'), { minLevel: 'debug' })
@@ -1207,6 +1208,8 @@ app.whenReady().then(() => {
   void initializeCaptureProviders()
   log.info('App', 'Capture providers initialized')
   registerIpc()
+  // R91.3b: DTLN denoise — inference in a utility process, IPC surface here
+  registerDenoiseService(join(app.getPath('userData'), 'models'), () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null))
 
   // R69: restore the "prevent screensaver/sleep" setting from disk and start
   // the power save blocker before the renderer asks for it.

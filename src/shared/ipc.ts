@@ -85,6 +85,12 @@ export const ipcChannels = {
   modelGetCachedPaths: 'rgbbox:models:get-cached-paths',
   modelDownload: 'rgbbox:models:download',
   modelDownloadProgress: 'rgbbox:models:download-progress',
+  // R91.3b: DTLN real-time speech denoise — inference lives in a utility
+  // process; the renderer's AudioWorklet relays 16k blocks through here.
+  denoiseStart: 'rgbbox:denoise:start',
+  denoiseFrames: 'rgbbox:denoise:frames',
+  denoiseStop: 'rgbbox:denoise:stop',
+  denoiseFramesOut: 'rgbbox:denoise:frames-out',
   // Audio Studio file persistence
   audioGetSavedPaths: 'rgbbox:audio:get-saved-paths',
   audioSavePaths: 'rgbbox:audio:save-paths',

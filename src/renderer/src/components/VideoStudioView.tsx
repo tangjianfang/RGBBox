@@ -1352,9 +1352,10 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                 )}
               </div>
 
-              {/* R91.3: 音频处理面板（影院/对白/夜间 + 增益） */}
+              {/* R91.3: 音频处理面板（影院/对白/夜间 + 增益）。点击不得冒泡到
+                  播放器 wrap 的 togglePlayerPlay（进度条同款先例）。 */}
               {mode === 'player' && audioPanelOpen && mediaLoaded && (
-                <div className="video-audio-panel">
+                <div className="video-audio-panel" onClick={(e) => e.stopPropagation()}>
                   <div className="video-audio-presets">
                     {(Object.keys(ENHANCE_PRESETS) as EnhancePresetId[]).map((id) => (
                       <button
@@ -1379,12 +1380,47 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                       {audioFx.enhanceError === 'ERR_REMOTE' ? t('video.audio.remote') : t('video.audio.unavailable')}
                     </div>
                   )}
+                  {/* R91.3b: AI 降噪（DTLN，语音增强——会压非语音成分，默认关） */}
+                  <div className="video-audio-denoise">
+                    <label className="video-audio-toggle">
+                      <input
+                        type="checkbox"
+                        checked={audioFx.denoiseStatus === 'on'}
+                        disabled={audioFx.denoiseStatus === 'downloading' || audioFx.denoiseStatus === 'starting'}
+                        onChange={(e) => audioFx.toggleDenoise(e.target.checked)}
+                      />
+                      <span>{t('video.denoise.title')}</span>
+                    </label>
+                    {audioFx.denoiseStatus === 'on' && (
+                      <div className="video-audio-gain">
+                        <span className="video-label">{t('video.denoise.strength')}</span>
+                        <input
+                          type="range" min={0} max={1} step={0.05}
+                          value={audioFx.denoiseStrength}
+                          onChange={(e) => audioFx.setDenoiseStrength(Number(e.target.value))}
+                        />
+                        <span className="video-audio-gain-val">{Math.round(audioFx.denoiseStrength * 100)}%</span>
+                      </div>
+                    )}
+                    {audioFx.denoiseStatus === 'downloading' && (
+                      <span className="video-hint">{t('video.denoise.downloading')}</span>
+                    )}
+                    {audioFx.denoiseStatus === 'starting' && (
+                      <span className="video-hint">{t('video.denoise.starting')}</span>
+                    )}
+                    {audioFx.denoiseStatus === 'error' && (
+                      <span className="video-hint video-audio-warn">{t('video.denoise.error')}{audioFx.denoiseMessage ? ` (${audioFx.denoiseMessage})` : ''}</span>
+                    )}
+                    {audioFx.denoiseStatus === 'idle' && (
+                      <span className="video-hint video-denoise-hint">{t('video.denoise.hint')}</span>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* R91.1: 断点续播提示条 */}
+              {/* R91.1: 断点续播提示条（同上：点击不冒泡触发播放/暂停） */}
               {resumePrompt && (
-                <div className="video-resume-bar">
+                <div className="video-resume-bar" onClick={(e) => e.stopPropagation()}>
                   <span className="video-resume-text">
                     {t('video.resume.lastseen')} {formatMediaTime(resumePrompt.at)}
                   </span>

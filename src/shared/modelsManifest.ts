@@ -84,4 +84,23 @@ export const MODELS_MANIFEST: ModelManifestEntry[] = [
     bytes: 90592065,
     description: 'AST AudioSet 527-class classifier, int8 ONNX (~91MB)',
   },
+  // ── R91.3b: DTLN real-time speech denoise (breizhn/DTLN pretrained, mirrored
+  // on HF by niobures/DTLN — byte-identical, sha256 verified 2026-09-15;
+  // GitHub direct times out from the main process, hf-mirror does not) ──
+  {
+    name: 'dtln_1',
+    kind: 'onnx',
+    file: 'dtln_model_1.onnx',
+    url: 'https://hf-mirror.com/niobures/DTLN/resolve/main/models/DTLN/onnx/model_1.onnx',
+    bytes: 1458237,
+    description: 'DTLN stage 1 (mask estimation LSTM, ~1.5MB)',
+  },
+  {
+    name: 'dtln_2',
+    kind: 'onnx',
+    file: 'dtln_model_2.onnx',
+    url: 'https://hf-mirror.com/niobures/DTLN/resolve/main/models/DTLN/onnx/model_2.onnx',
+    bytes: 2510010,
+    description: 'DTLN stage 2 (separation LSTM, ~2.5MB)',
+  },
 ]

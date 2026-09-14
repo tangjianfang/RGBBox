@@ -26,7 +26,8 @@ describe('MODELS_MANIFEST invariants (restored, R90 review fix)', () => {
     const splats = MODELS_MANIFEST.filter((m) => m.kind === 'splat')
     const onnx = MODELS_MANIFEST.filter((m) => m.kind === 'onnx')
     expect(splats.length).toBe(5)
-    expect(onnx.length).toBe(2)
+    // 2 (R90 audio AI) + 2 (R91.3b DTLN denoise)
+    expect(onnx.length).toBe(4)
     for (const m of splats) {
       expect(m.file.endsWith('.splat')).toBe(true)
       expect(m.file.startsWith(`${m.name}.`)).toBe(true)

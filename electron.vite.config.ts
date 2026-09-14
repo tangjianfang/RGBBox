@@ -7,7 +7,11 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: resolve(__dirname, 'src/main/index.ts'),
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          // R91.3b: utility-process entry — forked by denoiseService at runtime
+          denoiseProcessor: resolve(__dirname, 'src/main/denoiseProcessor.ts'),
+        },
         external: ['electron']
       }
     }

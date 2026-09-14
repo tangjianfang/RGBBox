@@ -250,6 +250,19 @@ const api = {
     return () => ipcRenderer.off(ipcChannels.modelDownloadProgress, handler)
   },
 
+  // R91.3b: DTLN real-time denoise (inference in a utility process)
+  denoiseStart: (): Promise<{ ok: boolean; missing?: string[]; message?: string }> =>
+    ipcRenderer.invoke(ipcChannels.denoiseStart),
+  denoiseSendFrames: (id: number, blocks: Float32Array[]): void => {
+    ipcRenderer.send(ipcChannels.denoiseFrames, { id, blocks })
+  },
+  denoiseStop: (): Promise<{ ok: boolean }> => ipcRenderer.invoke(ipcChannels.denoiseStop),
+  onDenoiseFrames: (callback: (payload: { id: number; blocks: Float32Array[] }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: { id: number; blocks: Float32Array[] }): void => callback(payload)
+    ipcRenderer.on(ipcChannels.denoiseFramesOut, handler)
+    return () => ipcRenderer.off(ipcChannels.denoiseFramesOut, handler)
+  },
+
   // Audio Studio file persistence
   audioGetSavedPaths: (): Promise<Array<{ id: string; name: string; path: string; group: string }>> =>
     ipcRenderer.invoke(ipcChannels.audioGetSavedPaths),

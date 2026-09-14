@@ -42,6 +42,11 @@ export function setupRendererMocks() {
     modelGetCachedPaths: vi.fn().mockResolvedValue({}),
     modelDownload: vi.fn().mockResolvedValue('file:///cached/x.splat'),
     onModelDownloadProgress: vi.fn().mockReturnValue(() => undefined),
+    // R91.3b: DTLN denoise surface (unmount cleanup calls denoiseStop)
+    denoiseStart: vi.fn().mockResolvedValue({ ok: true }),
+    denoiseSendFrames: vi.fn(),
+    denoiseStop: vi.fn().mockResolvedValue({ ok: true }),
+    onDenoiseFrames: vi.fn().mockReturnValue(() => undefined),
     audioGetSavedPaths: vi.fn().mockResolvedValue([]),
     audioSavePaths: vi.fn().mockResolvedValue(undefined),
     audioOpenFiles: vi.fn().mockResolvedValue([]),
