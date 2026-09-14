@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MEDIA_MIME, parseRangeHeader, resolveMediaMime } from '../../src/main/mediaProtocol'
+import { MEDIA_MIME, mediaStreamPlan, parseRangeHeader, resolveMediaMime } from '../../src/main/mediaProtocol'
 
 describe('main/mediaProtocol (R70.1)', () => {
   describe('resolveMediaMime', () => {
@@ -71,6 +71,68 @@ describe('main/mediaProtocol (R70.1)', () => {
 
     it('tolerates surrounding whitespace', () => {
       expect(parseRangeHeader(' bytes=0-99  ', size)).toEqual({ start: 0, end: 99 })
+    })
+  })
+
+  describe('mediaStreamPlan (R70.15)', () => {
+    const type = 'video/mp4'
+
+    it('regression: open-ended range on a >2GiB file plans a full-window 206 (the old single fs.read of this window tripped Node\'s int32 CHECK and aborted the app)', () => {
+      const size = 4_055_708_976 // the crash file: 3.78GiB HEVC Main10
+      const plan = mediaStreamPlan(parseRangeHeader('bytes=0-', size), size, type)
+      expect(plan.status).toBe(206)
+      if (plan.status === 416) throw new Error('unreachable')
+      expect(plan.start).toBe(0)
+      expect(plan.end).toBe(size - 1)
+      // the window must stay > INT32_MAX to pin what killed the old handler
+      expect(plan.end - plan.start + 1).toBeGreaterThan(2_147_483_647)
+      expect(plan.headers['Content-Length']).toBe(String(size))
+      expect(plan.headers['Content-Range']).toBe(`bytes 0-${size - 1}/${size}`)
+      expect(plan.headers['Content-Type']).toBe(type)
+      expect(plan.headers['Accept-Ranges']).toBe('bytes')
+      expect(plan.headers['Access-Control-Allow-Origin']).toBe('*')
+    })
+
+    it('no Range header plans a full-file 200 without Content-Range', () => {
+      const plan = mediaStreamPlan(parseRangeHeader(null, 1000), 1000, type)
+      expect(plan.status).toBe(200)
+      if (plan.status === 416) throw new Error('unreachable')
+      expect(plan.start).toBe(0)
+      expect(plan.end).toBe(999)
+      expect(plan.headers['Content-Length']).toBe('1000')
+      expect(plan.headers['Content-Range']).toBeUndefined()
+    })
+
+    it('bounded and suffix ranges plan their exact 206 window', () => {
+      const bounded = mediaStreamPlan(parseRangeHeader('bytes=100-199', 1000), 1000, type)
+      expect(bounded.status).toBe(206)
+      if (bounded.status !== 416) {
+        expect(bounded.start).toBe(100)
+        expect(bounded.end).toBe(199)
+        expect(bounded.headers['Content-Length']).toBe('100')
+        expect(bounded.headers['Content-Range']).toBe('bytes 100-199/1000')
+      }
+      const suffix = mediaStreamPlan(parseRangeHeader('bytes=-100', 1000), 1000, type)
+      expect(suffix.status).toBe(206)
+      if (suffix.status !== 416) {
+        expect(suffix.start).toBe(900)
+        expect(suffix.end).toBe(999)
+      }
+    })
+
+    it('unsatisfiable ranges plan a 416 with the size-only Content-Range', () => {
+      const plan = mediaStreamPlan(parseRangeHeader('bytes=5-2', 1000), 1000, type)
+      expect(plan.status).toBe(416)
+      expect(plan.headers['Content-Range']).toBe('bytes */1000')
+    })
+
+    it('empty file with no Range plans a zero-length 200 window', () => {
+      const plan = mediaStreamPlan(parseRangeHeader(null, 0), 0, type)
+      expect(plan.status).toBe(200)
+      if (plan.status !== 416) {
+        expect(plan.end).toBeLessThan(plan.start) // handler serves an empty body for this
+        expect(plan.headers['Content-Length']).toBe('0')
+      }
     })
   })
 })

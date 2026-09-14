@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, safeStorage, screen, session, shell, Tray } from 'electron'
-import { access, mkdir, open, readdir, stat, unlink } from 'node:fs/promises'
-import { createWriteStream, statSync } from 'node:fs'
+import { access, mkdir, readdir, stat, unlink } from 'node:fs/promises'
+import { createReadStream, createWriteStream, statSync } from 'node:fs'
 import { get as httpGet } from 'node:http'
 import { get as httpsGet } from 'node:https'
 import { pipeline } from 'node:stream/promises'
@@ -37,7 +37,8 @@ function mintProfileId(): string {
 }
 import { validateChatMessages } from '../shared/aiChatValidation'
 import { initAudioAi, disposeAudioAi, isCached as audioAiIsCached, runVad as audioAiRunVadPcm, runAst as audioAiRunAstPcm, startStream as audioAiStartStream, feedStream as audioAiFeedStream, stopStream as audioAiStopStream } from './audioAiService'
-import { parseRangeHeader, resolveMediaMime } from './mediaProtocol'
+import { Readable } from 'node:stream'
+import { mediaStreamPlan, parseRangeHeader, resolveMediaMime } from './mediaProtocol'
 
 // Initialize file logger — must be done after imports but before app.whenReady
 const log = initLogger(join(app.getPath('userData'), 'logs'), { minLevel: 'debug' })
@@ -1157,9 +1158,15 @@ app.whenReady().then(() => {
       })
   }, { useSystemPicker: false })
 
-  // Serve local audio files via the media:// custom scheme.
-  // net.fetch does NOT support file:// — use readFile + Response instead.
+  // Serve local audio/video files via the media:// custom scheme.
+  // net.fetch does NOT support file:// — stream from the fs directly instead.
   // R70.1: MIME table + Range parsing live in ./mediaProtocol (pure, tested).
+  // R70.15: responses STREAM the planned byte window via createReadStream.
+  // The old shape materialized the whole range with one fs.read — on a
+  // >2GiB window (Chromium media opens with open-ended `bytes=0-`) the read
+  // length exceeds INT32_MAX, Node's native CHECK(args[3]->IsInt32()) in
+  // node_file.cc aborts the process (uncatchable, exit 134), and even below
+  // that threshold whole-range buffers spiked main-process memory per seek.
   protocol.handle('media', async (request) => {
     try {
       // Path is stored as query param ?p= to avoid Windows drive-letter mangling
@@ -1172,44 +1179,22 @@ app.whenReady().then(() => {
       log.debug('MediaProtocol', `filePath: ${filePath}`)
       const contentType = resolveMediaMime(filePath)
       const size = (await stat(filePath)).size
-      const baseHeaders: Record<string, string> = {
-        'Content-Type': contentType,
-        'Accept-Ranges': 'bytes',
-        'Access-Control-Allow-Origin': '*',
+      const plan = mediaStreamPlan(parseRangeHeader(request.headers.get('range'), size), size, contentType)
+      if (plan.status === 416) {
+        return new Response('Range Not Satisfiable', { status: 416, headers: plan.headers })
       }
-      // R70.1: serve Range requests as 206 partial reads — media elements
-      // seek by byte range, and re-reading a whole multi-GB file per seek
-      // both stalls playback and spikes main-process memory.
-      const range = parseRangeHeader(request.headers.get('range'), size)
-      if (range === 'unsatisfiable') {
-        return new Response('Range Not Satisfiable', {
-          status: 416,
-          headers: { 'Content-Range': `bytes */${size}` },
-        })
+      log.debug('MediaProtocol', `streaming ${plan.end - plan.start + 1} bytes (${plan.status} ${plan.start}-${plan.end}/${size})`)
+      if (plan.end < plan.start) {
+        // Empty file with no Range header — serve an empty body, not a
+        // createReadStream with an inverted window.
+        return new Response(null, { status: plan.status, headers: plan.headers })
       }
-      if (range) {
-        const length = range.end - range.start + 1
-        const fh = await open(filePath, 'r')
-        try {
-          const buf = Buffer.allocUnsafe(length)
-          const { bytesRead } = await fh.read(buf, 0, length, range.start)
-          log.debug('MediaProtocol', `serving ${bytesRead} bytes (206 ${range.start}-${range.start + Math.max(0, bytesRead - 1)}/${size})`)
-          return new Response(bytesRead === length ? buf : buf.subarray(0, bytesRead), {
-            status: 206,
-            headers: {
-              ...baseHeaders,
-              'Content-Length': String(bytesRead),
-              'Content-Range': `bytes ${range.start}-${range.start + Math.max(0, bytesRead - 1)}/${size}`,
-            },
-          })
-        } finally {
-          await fh.close()
-        }
-      }
-      const data = await readFile(filePath)
-      log.debug('MediaProtocol', `serving ${data.byteLength} bytes, type: ${contentType}`)
-      return new Response(data, {
-        headers: { ...baseHeaders, 'Content-Length': String(data.byteLength) },
+      const nodeStream = createReadStream(filePath, { start: plan.start, end: plan.end })
+      // node:stream/web's ReadableStream is structurally the WHATWG stream
+      // Electron's Response consumes; BodyInit isn't nameable in this tsconfig.
+      return new Response(Readable.toWeb(nodeStream) as unknown as ConstructorParameters<typeof Response>[0], {
+        status: plan.status,
+        headers: plan.headers,
       })
     } catch (err) {
       log.error('MediaProtocol', `error serving ${request.url}: ${err instanceof Error ? err.message : String(err)}`)

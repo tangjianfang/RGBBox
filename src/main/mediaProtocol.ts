@@ -64,3 +64,50 @@ export function parseRangeHeader(header: string | null | undefined, size: number
   if (size === 0 || start >= size || start > end) return 'unsatisfiable'
   return { start, end: Math.min(end, size - 1) }
 }
+
+export interface MediaStreamPlan {
+  status: 200 | 206
+  /** inclusive first byte of the window the stream must serve */
+  start: number
+  /** inclusive last byte of the window the stream must serve */
+  end: number
+  headers: Record<string, string>
+}
+
+export interface MediaRangeUnsatisfiablePlan {
+  status: 416
+  headers: Record<string, string>
+}
+
+/**
+ * Turn a parsed Range header + file size into the exact response plan —
+ * status, headers, and the inclusive byte window for a `createReadStream`.
+ *
+ * R70.15: the handler STREAMS this window chunk-by-chunk. The previous shape
+ * materialized the whole range into one Buffer via a single fs.read, and a
+ * >2GiB window (e.g. the open-ended `bytes=0-` Chromium media sends at load
+ * on a 3.78GiB file) tripped Node's native int32 CHECK in node_file.cc — a
+ * fatal, uncatchable abort() that took the whole app down. Short of that,
+ * whole-range buffers also spiked main-process memory on every seek.
+ */
+export function mediaStreamPlan(
+  range: ByteRange | 'unsatisfiable' | null,
+  size: number,
+  contentType: string,
+): MediaStreamPlan | MediaRangeUnsatisfiablePlan {
+  if (range === 'unsatisfiable') {
+    return { status: 416, headers: { 'Content-Range': `bytes */${size}` } }
+  }
+  const start = range ? range.start : 0
+  // No-range on an empty file yields end=-1 (window length 0) — the handler
+  // serves an empty body for that instead of opening a stream.
+  const end = range ? range.end : size - 1
+  const headers: Record<string, string> = {
+    'Content-Type': contentType,
+    'Accept-Ranges': 'bytes',
+    'Access-Control-Allow-Origin': '*',
+    'Content-Length': String(end - start + 1),
+  }
+  if (range) headers['Content-Range'] = `bytes ${start}-${end}/${size}`
+  return { status: range ? 206 : 200, start, end, headers }
+}
