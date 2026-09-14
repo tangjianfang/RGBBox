@@ -41,7 +41,7 @@ describe('audioAiService (R90 P1)', () => {
     expect(findCached).toHaveBeenCalledWith('silero_vad.onnx')
   })
 
-  it('runVad follows the Silero v5 protocol (input/state/sr → output/stateN) with 64-sample context', async () => {
+  it('runVad follows the flattened-graph 512-step protocol (input/state/sr → output/stateN)', async () => {
     const sess = fakeSession([
       { output: { data: new Float32Array([0.2]), dims: [1, 1] }, stateN: { data: new Float32Array(256).fill(0.5), dims: [2, 1, 128] } },
       { output: { data: new Float32Array([0.9]), dims: [1, 1] }, stateN: { data: new Float32Array(256), dims: [2, 1, 128] } },
@@ -52,10 +52,10 @@ describe('audioAiService (R90 P1)', () => {
     const pcm = new Float32Array(16000 * 3)
     const out = await runVad(pcm)
     expect(out.prob).toBeCloseTo(0.9)
-    expect(out.frames).toBe(Math.floor(pcm.length / 1472))
-    // chunk 1 feeds {input, state, sr}: input[1,1536], state[2,1,128], sr=16000
+    expect(out.frames).toBe(Math.floor(pcm.length / 512))
+    // chunk 1 feeds {input, state, sr}: input[1,512], state[2,1,128], sr=16000
     const feeds = sess.run.mock.calls[0][0] as Record<string, { dims: number[]; data: Float32Array | BigInt64Array }>
-    expect(feeds.input.dims).toEqual([1, VAD_CHUNK])
+    expect(feeds.input.dims).toEqual([1, 512])
     expect(feeds.state.dims).toEqual([2, 1, 128])
     expect(Number(feeds.sr.data[0])).toBe(16000)
     // chunk 2 carries chunk-1's stateN

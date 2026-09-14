@@ -6,7 +6,7 @@
 // R90 review fixes (verified against silero-vad utils_vad.py + ONNX I/O tables
 // and transformers ASTFeatureExtractor):
 //  - Silero v5 feeds are { input, state, sr } and outputs are { output, stateN };
-//    each chunk is 64 samples of context + 1472 new samples = 1536.
+//    feeds are 512-sample steps (flattened-graph protocol, see VAD_CHUNK).
 //  - AST (optimum export) feed name is `input_values`.
 //  - A failed InferenceSession.create must NOT stay cached (sticky rejection).
 //  - disposeAudioAi() releases sessions on app quit (rapidOcrService parity).
@@ -14,10 +14,11 @@
 import * as ort from 'onnxruntime-node'
 import { astMelSpectrogram } from './audio/melSpectrogram'
 
-/** Silero v5 protocol (16kHz): feed = 64-sample context + 1472 new = 1536. */
-export const VAD_CHUNK = 1536
-const VAD_CONTEXT = 64
-const VAD_NEW_SAMPLES = VAD_CHUNK - VAD_CONTEXT // 1472
+/** Silero v5 flattened-graph protocol (16kHz): 512-sample steps - the internal
+ *  STFT frames per 512 samples; longer feeds explode the LSTM rank ({...,128,3}
+ *  with 1536 = 3 frames). Verified against the cached quantized model with
+ *  onnxruntime-node 1.29 (2026-09-14). */
+export const VAD_CHUNK = 512
 const VAD_STATE = [2, 1, 128]
 const AST_TOP_K = 5
 const MIN_PCM = 16000 // 1s
@@ -107,24 +108,17 @@ export async function runVad(pcm: Float32Array): Promise<{ prob: number; frames:
   requireState()
   const session = await getSession('silero_vad.onnx', 'vadSession')
   let stateData = new Float32Array(VAD_STATE[0] * VAD_STATE[1] * VAD_STATE[2])
-  let context = new Float32Array(VAD_CONTEXT) // zeros for the first chunk
   let maxProb = 0
   let frames = 0
-  for (let off = 0; off + VAD_NEW_SAMPLES <= pcm.length; off += VAD_NEW_SAMPLES) {
-    // feed = [context (64) || new samples (1472)] = 1536
-    const feed = new Float32Array(VAD_CHUNK)
-    feed.set(context, 0)
-    feed.set(pcm.subarray(off, off + VAD_NEW_SAMPLES), VAD_CONTEXT)
+  for (let off = 0; off + VAD_CHUNK <= pcm.length; off += VAD_CHUNK) {
     const out = await session.run({
-      input: new ort.Tensor('float32', feed, [1, VAD_CHUNK]),
+      input: new ort.Tensor('float32', pcm.subarray(off, off + VAD_CHUNK), [1, VAD_CHUNK]),
       state: new ort.Tensor('float32', stateData, VAD_STATE),
       sr: new ort.Tensor('int64', BigInt64Array.from([BigInt(16000)]), [1]),
     } as never)
     const prob = (out.output.data as Float32Array)[0]
     if (prob > maxProb) maxProb = prob
     frames++
-    // next context = the tail of what we just fed; state comes back as `stateN`
-    context = feed.slice(VAD_CHUNK - VAD_CONTEXT)
     const stateOut = (out as Record<string, { data: Float32Array; dims: number[] }>).stateN
     if (stateOut) stateData = new Float32Array(stateOut.data)
   }
@@ -160,7 +154,6 @@ const AST_CADENCE_MS = 1200
 
 interface StreamSession {
   vadState: Float32Array
-  context: Float32Array
   carry: Float32Array // partial VAD chunk awaiting more samples
   ring: Float32Array // last 3s of audio for AST
   ringFill: number
@@ -183,7 +176,6 @@ export function startStream(): void {
   if (stream !== null) return
   stream = {
     vadState: new Float32Array(VAD_STATE[0] * VAD_STATE[1] * VAD_STATE[2]),
-    context: new Float32Array(VAD_CONTEXT),
     carry: new Float32Array(0),
     ring: new Float32Array(AST_WINDOW),
     ringFill: 0,
@@ -236,21 +228,17 @@ async function feedStreamInner(pcm: Float32Array): Promise<StreamFeedResult> {
   let pos = 0
   let prob = -1
   while (pos + VAD_CHUNK <= combined.length) {
-    const feed = new Float32Array(VAD_CHUNK)
-    feed.set(stream.context, 0)
-    feed.set(combined.subarray(pos, pos + VAD_NEW_SAMPLES), VAD_CONTEXT)
     const vadSession = await getSession('silero_vad.onnx', 'vadSession')
     const out = await vadSession.run({
-      input: new ort.Tensor('float32', feed, [1, VAD_CHUNK]),
+      input: new ort.Tensor('float32', combined.subarray(pos, pos + VAD_CHUNK), [1, VAD_CHUNK]),
       state: new ort.Tensor('float32', stream.vadState, VAD_STATE),
       sr: new ort.Tensor('int64', BigInt64Array.from([BigInt(16000)]), [1]),
     } as never)
     const p = (out.output.data as Float32Array)[0]
     if (p > prob) prob = p
-    stream.context = feed.slice(VAD_CHUNK - VAD_CONTEXT)
     const stateOut = (out as Record<string, { data: Float32Array; dims: number[] }>).stateN
     if (stateOut) stream.vadState = new Float32Array(stateOut.data)
-    pos += VAD_NEW_SAMPLES
+    pos += VAD_CHUNK
   }
   stream.carry = combined.slice(pos)
 
