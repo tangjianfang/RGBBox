@@ -808,20 +808,26 @@ function registerIpc(): void {
   )
   initAudioAi({
     modelsDir,
+    // R90.9 ROOT CAUSE FIX: return the PLAIN PATH, never the file:// URL —
+    // onnxruntime-node's InferenceSession.create cannot load file:// URLs
+    // (byte-identical 'Load model from file:///... failed' reproduced locally;
+    // RapidOCR has always worked because it passes a plain path). This single
+    // mismatch is why every in-app inference since R90 P1 produced nothing.
     findCached: async (file) => {
-      const url = await getCachedModelUrl(file)
-      if (url === undefined) return null
+      const filePath = join(modelsDir, file)
+      try { await access(filePath) } catch { return null }
       const expected = audioModelBytes.get(file)
-      if (expected === undefined) return url
-      try {
-        const s = await stat(join(modelsDir, file))
-        if (Math.abs(s.size - expected) > expected * 0.1) {
-          log.warn('Model', `corrupt cache detected (${s.size}/${expected} bytes), deleting: ${file}`)
-          await unlink(join(modelsDir, file))
-          return null
-        }
-      } catch { /* stat failed — treat as cached */ }
-      return url
+      if (expected !== undefined) {
+        try {
+          const s = await stat(filePath)
+          if (Math.abs(s.size - expected) > expected * 0.1) {
+            log.warn('Model', `corrupt cache detected (${s.size}/${expected} bytes), deleting: ${file}`)
+            await unlink(filePath)
+            return null
+          }
+        } catch { /* stat failed — treat as cached */ }
+      }
+      return filePath
     },
   })
 
