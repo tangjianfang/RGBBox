@@ -3,7 +3,7 @@ import { useI18n } from '../i18n'
 import { useAiAudioStream } from '../hooks/useAiAudioStream'
 import { resampleTo16k, rmsLevel, synthTestTone } from '../tools/pcm'
 import type { SourceId } from '../tools/pcmSource'
-import labels from '../assets/audioset-labels.json'
+import { audiosetLabel } from '../tools/audiosetLabel'
 
 const VAD_THRESHOLD = 0.5
 
@@ -107,7 +107,7 @@ function StageLamp(props: { label: string; ok: boolean | null; detail?: string }
  *  ②「模型与自检」(model badges + self-test). The single overloaded card was
  *  the "layout unreasonable" complaint. */
 export function AiLabAudioTab(): JSX.Element {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [source, setSource] = useState<SourceId | null>('tone')
   const { silero, ast, astPercent, err, download } = useModelDownloads()
   const { stage, actualRate, error, level, vadProb, astTop, astState, astError, batches } = useAiAudioStream(source)
@@ -150,7 +150,7 @@ export function AiLabAudioTab(): JSX.Element {
       { item: 'resample', pass: resampleOk, detail: `48k→${rsOut.length}` },
       { item: 'rms', pass: maxRms > 0.1, detail: maxRms.toFixed(2) },
       { item: 'vad', pass: gotVad !== null, detail: gotVad === null ? undefined : gotVad.toFixed(2) },
-      { item: 'ast', pass: Array.isArray(gotAst) && gotAst.length === 5, detail: gotAst ? gotAst[0] && (labels[gotAst[0].index]?.label ?? `#${gotAst[0].index}`) : undefined },
+      { item: 'ast', pass: Array.isArray(gotAst) && gotAst.length === 5, detail: gotAst ? gotAst[0] && audiosetLabel(gotAst[0].index, lang) : undefined },
     ])
   }, [])
 
@@ -218,7 +218,7 @@ export function AiLabAudioTab(): JSX.Element {
               astError !== null ? astError
               : astTop === null
                 ? (astState === 'waiting-audio' ? t('ai.lab.audio.ast.waiting') : t('ai.lab.audio.ast.cadence'))
-                : (labels[astTop[0].index]?.label ?? `#${astTop[0].index}`)
+                : audiosetLabel(astTop[0].index, lang)
             }
           />
         </div>
@@ -236,7 +236,7 @@ export function AiLabAudioTab(): JSX.Element {
           <div data-field="ast-result" className="ai-ast">
             {astTop.map((row) => (
               <div key={row.index} className="ai-ast-row">
-                <span>{labels[row.index]?.label ?? `#${row.index}`}</span>
+                <span>{audiosetLabel(row.index, lang)}</span>
                 <span>{Math.round(row.score * 100)}%</span>
               </div>
             ))}

@@ -47,11 +47,15 @@ describe('MODELS_MANIFEST invariants (restored, R90 review fix)', () => {
     expect(ast.url).toContain('model_int8.onnx') // int8 ≈ 90.6MB ≤ 100MB budget
   })
 
-  it('audioset labels asset has 527 contiguous classes', () => {
+  it('audioset labels asset has 527 contiguous classes with zh translations', () => {
     const p = join(__dirname, '../../src/renderer/src/assets/audioset-labels.json')
-    const labels: Array<{ index: number; label: string }> = JSON.parse(readFileSync(p, 'utf-8'))
+    const labels: Array<{ index: number; label: string; labelZh: string }> = JSON.parse(readFileSync(p, 'utf-8'))
     expect(labels.length).toBe(527)
     expect(labels.every((l, i) => l.index === i && typeof l.label === 'string' && l.label !== '')).toBe(true)
     expect(labels[0].label).toBe('Speech')
+    // R90.9: every class has a non-empty Chinese label (1:1)
+    expect(labels.every((l) => typeof l.labelZh === 'string' && l.labelZh !== '')).toBe(true)
+    expect(labels[0].labelZh).toBe('语音')
+    expect(labels[140].labelZh).toBe('吉他')
   })
 })

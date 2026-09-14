@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type JSX } from 'react'
 import { BrainCircuit } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { useAiAudioStream } from '../hooks/useAiAudioStream'
-import labels from '../assets/audioset-labels.json'
+import { audiosetLabel } from '../tools/audiosetLabel'
 
 const VAD_THRESHOLD = 0.5
 const ERROR_KEYS: Record<string, string> = {
@@ -15,7 +15,7 @@ const ERROR_KEYS: Record<string, string> = {
  *  system loopback while media plays and shows live VAD/AST results.
  *  Mounted alongside (not inside) the player components — zero player changes. */
 export function AiListenOverlay(): JSX.Element {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [enabled, setEnabled] = useState(false)
   const [modelsReady, setModelsReady] = useState<boolean | null>(null) // null = checking
   const [downloading, setDownloading] = useState<number | null>(null)
@@ -109,7 +109,7 @@ export function AiListenOverlay(): JSX.Element {
           )}
           {rows.map((row) => (
             <div key={row.index} className="ai-listen-row">
-              <span>{labels[row.index]?.label ?? `#${row.index}`}</span>
+              <span>{audiosetLabel(row.index, lang)}</span>
               <strong className="on">{Math.round(row.score * 100)}%</strong>
             </div>
           ))}
