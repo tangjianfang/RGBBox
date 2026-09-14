@@ -18,7 +18,7 @@ import {
   AppWindow, Camera, CameraOff, ChevronDown, ChevronRight, Circle, Download, FileText,
   Film, FlipHorizontal, FolderOpen, Frame, Image as ImageIcon, Link as LinkIcon, Maximize2,
   Minimize2, Monitor, MonitorPlay, Pause, Play, Plus, RefreshCw, Scissors, SkipBack,
-  SkipForward, Square, Trash2, Video, Volume2, VolumeX,
+  SkipForward, SlidersHorizontal, Square, Trash2, Video, Volume2, VolumeX,
 } from 'lucide-react'
 import Hls from 'hls.js'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
@@ -31,6 +31,8 @@ import { freezeVideoFrame } from './video/frameCapture'
 import { RegionSnipOverlay } from './video/RegionSnipOverlay'
 import { buildPathEntries, ingestRestoredProgress, shouldOfferResume, type ProgressEntry } from './video/playlistProgress'
 import { MiniPlayerCard } from './video/MiniPlayerCard'
+import { ENHANCE_PRESETS, type EnhancePresetId } from './video/audioEnhance'
+import { useVideoAudioEnhance } from './video/useVideoAudioEnhance'
 import { AnnotateOverlay } from './video/AnnotateOverlay'
 import { CaptureFilmstrip } from './CaptureFilmstrip'
 import type { CaptureEntry } from '../../../shared/types'
@@ -306,6 +308,9 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
   // R75.1: player preview zoom
   const playerZoom = usePreviewZoom(playerWrapRef)
   const subFileInputRef = useRef<HTMLInputElement | null>(null)
+  // R91.3: 电影 EQ 链（懒建图；关闭=bypass）+ 面板开关
+  const audioFx = useVideoAudioEnhance(playerRef)
+  const [audioPanelOpen, setAudioPanelOpen] = useState(false)
 
   // ── Subtitles ─────────────────────────────────────────────────────────────
   const [subCues, setSubCues] = useState<SubCue[]>([])
@@ -1347,6 +1352,36 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                 )}
               </div>
 
+              {/* R91.3: 音频处理面板（影院/对白/夜间 + 增益） */}
+              {mode === 'player' && audioPanelOpen && mediaLoaded && (
+                <div className="video-audio-panel">
+                  <div className="video-audio-presets">
+                    {(Object.keys(ENHANCE_PRESETS) as EnhancePresetId[]).map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`video-btn ${audioFx.presetId === id ? 'active' : ''}`}
+                        onClick={() => audioFx.setPreset(id)}
+                      >{t(`video.audio.${id}` as never)}</button>
+                    ))}
+                  </div>
+                  <div className="video-audio-gain">
+                    <span className="video-label">{t('video.audio.gain')}</span>
+                    <input
+                      type="range" min={-12} max={12} step={0.5}
+                      value={audioFx.gainDb}
+                      onChange={(e) => audioFx.setGain(Number(e.target.value))}
+                    />
+                    <span className="video-audio-gain-val">{audioFx.gainDb > 0 ? '+' : ''}{audioFx.gainDb.toFixed(1)}dB</span>
+                  </div>
+                  {audioFx.enhanceError && (
+                    <div className="video-hint video-audio-warn">
+                      {audioFx.enhanceError === 'ERR_REMOTE' ? t('video.audio.remote') : t('video.audio.unavailable')}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* R91.1: 断点续播提示条 */}
               {resumePrompt && (
                 <div className="video-resume-bar">
@@ -1614,6 +1649,13 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
             {mode === 'player' && (
               <>
                 <button type="button" className="video-btn video-btn-primary" onClick={() => playerFileInputRef.current?.click()}><Video size={15} /> {t('video.player.open')}</button>
+                {/* R91.3: 电影 EQ 弹出面板 */}
+                <button
+                  type="button"
+                  className={`video-btn ${audioPanelOpen ? 'active' : ''}`}
+                  disabled={!mediaLoaded}
+                  onClick={() => setAudioPanelOpen((v) => !v)}
+                ><SlidersHorizontal size={15} /> {t('video.audio.button')}</button>
                 <input ref={playerFileInputRef} type="file" accept="video/*,.mkv,.mov,.avi,.flv,.ts" style={{ display: 'none' }} onChange={onPlayerFile} />
                 <input ref={videoFileInputRef} type="file" style={{ display: 'none' }} />
                 <input ref={videoFolderInputRef} type="file" style={{ display: 'none' }} />

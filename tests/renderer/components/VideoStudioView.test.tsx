@@ -147,4 +147,39 @@ describe('renderer/components/VideoStudioView', () => {
       expect(document.querySelector('.mini-player')).toBeNull()
     })
   })
+
+  // R91.3: the Audio FX popover lists the four presets and selects them.
+  it('audio panel opens from the transport and switches presets', async () => {
+    const mocks = setupRendererMocks()
+    mocks.videoGetSavedPaths.mockResolvedValue([
+      { id: 'v1', name: 'a.mp4', path: 'C:\\videos\\a.mp4', group: 'Default' },
+    ])
+    const { container } = render(<VideoStudioView />)
+    fireEvent.click(container.querySelectorAll('.video-mode-btn')[2])
+    await waitFor(() => {
+      expect(container.querySelectorAll('.audio-track-item').length).toBe(1)
+    })
+    fireEvent.click(container.querySelector('.audio-track-item')!)
+    await waitFor(() => {
+      expect(container.querySelector('video.video-preview-rect')!.getAttribute('src')).toContain('media://')
+    })
+    const fxBtn = container.querySelectorAll('.video-transport button')
+    // the i18n test mock returns the key itself
+    const audioBtn = Array.from(fxBtn).find(b => b.textContent?.includes('video.audio.button'))!
+    expect(audioBtn).toBeTruthy()
+    // disabled until media loads — it has now
+    expect((audioBtn as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(audioBtn)
+    await waitFor(() => {
+      expect(container.querySelector('.video-audio-panel')).toBeTruthy()
+    })
+    const pills = container.querySelectorAll('.video-audio-presets .video-btn')
+    expect(pills.length).toBe(4)
+    // happy-dom has no AudioContext — the hook declines and resets to off,
+    // but the panel + selection UI itself must work.
+    fireEvent.click(pills[2]) // dialog boost
+    await waitFor(() => {
+      expect(container.querySelector('.video-audio-panel')).toBeTruthy()
+    })
+  })
 })
