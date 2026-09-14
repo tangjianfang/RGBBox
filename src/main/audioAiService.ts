@@ -150,7 +150,10 @@ export async function runAst(pcm: Float32Array): Promise<{ top: Array<{ index: n
 // ── R90.8: streaming session (continuous detection for the AI Lab + players) ──
 
 const AST_WINDOW = 16000 * 3 // 3s rolling buffer
-const AST_CADENCE_MS = 1200
+// R90.9: 3s cadence — CPU inference takes ~1.4s/window; at 1.2s cadence the
+// main thread was back-to-back blocked. 3s keeps duty cycle ~45% until the
+// worker-threads offload (parked with P2 by user decision 2026-09-14).
+const AST_CADENCE_MS = 3000
 
 interface StreamSession {
   vadState: Float32Array
