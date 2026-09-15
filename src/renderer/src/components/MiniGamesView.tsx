@@ -1,4 +1,4 @@
-import { ArrowLeft, Crosshair, Heart, Maximize2, Minimize2, Play, RotateCcw, Shield, Trophy, Volume2, VolumeX, Zap } from 'lucide-react'
+import { ArrowLeft, Crosshair, Grid, Heart, Maximize2, Minimize2, Play, RotateCcw, Shield, Trophy, Volume2, VolumeX, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
 import { useI18n } from '../i18n'
 import {
@@ -18,7 +18,6 @@ import {
   tickGame,
   towerUpgradeCost,
   upgradeTower,
-  type GamePhase,
   type GameState,
   type TowerKind,
 } from '../games/td'
@@ -33,13 +32,21 @@ import {
   type UpgradeId,
 } from '../games/survival'
 import { isSfxEnabled, playSfx, setSfxEnabled } from '../games/sfx'
+import {
+  drawTetris,
+  initialTetrisState,
+  startTetris,
+  tickTetris,
+  type TetrisState,
+} from '../games/tetris'
 
-type Screen = 'hub' | 'td' | 'survival'
-type GameKey = 'td' | 'survival'
+type Screen = 'hub' | 'td' | 'survival' | 'tetris'
+type GameKey = 'td' | 'survival' | 'tetris'
 
 const BEST_KEYS: Record<GameKey, string> = {
   td: 'rgbbox:gamesBest:balloon',
   survival: 'rgbbox:gamesBest:survival',
+  tetris: 'rgbbox:gamesBest:tetris',
 }
 
 function readBest(game: GameKey): number {
@@ -67,7 +74,8 @@ export function MiniGamesView(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const tdStateRef = useRef<GameState>(initialState())
   const survivalRef = useRef<SurvivalState>(initialSurvivalState())
-  const bestRef = useRef<Record<GameKey, number>>({ td: readBest('td'), survival: readBest('survival') })
+  const tetrisRef = useRef<TetrisState>(initialTetrisState())
+  const bestRef = useRef<Record<GameKey, number>>({ td: readBest('td'), survival: readBest('survival'), tetris: readBest('tetris') })
   const [screen, setScreen] = useState<Screen>('hub')
   const [fullscreen, setFullscreen] = useState(false)
   const [sfxOn, setSfxOn] = useState(() => isSfxEnabled())
@@ -77,6 +85,7 @@ export function MiniGamesView(): JSX.Element {
   const [bests, setBests] = useState<Record<GameKey, number>>({ ...bestRef.current })
   const [tdSnapshot, setTdSnapshot] = useState<GameState>(() => ({ ...tdStateRef.current }))
   const [survivalSnapshot, setSurvivalSnapshot] = useState<SurvivalState>(() => ({ ...survivalRef.current, keys: new Set() }))
+  const [tetrisSnapshot, setTetrisSnapshot] = useState<TetrisState>(() => ({ ...tetrisRef.current, keys: new Set() }))
 
   const publishTd = useCallback(() => {
     setTdSnapshot({ ...tdStateRef.current, towers: [...tdStateRef.current.towers], balloons: [...tdStateRef.current.balloons], projectiles: [...tdStateRef.current.projectiles] })
@@ -84,6 +93,10 @@ export function MiniGamesView(): JSX.Element {
 
   const publishSurvival = useCallback(() => {
     setSurvivalSnapshot({ ...survivalRef.current, keys: new Set(survivalRef.current.keys), enemies: [...survivalRef.current.enemies], bullets: [...survivalRef.current.bullets], orbs: [...survivalRef.current.orbs] })
+  }, [])
+
+  const publishTetris = useCallback(() => {
+    setTetrisSnapshot({ ...tetrisRef.current, keys: new Set(tetrisRef.current.keys), queue: [...tetrisRef.current.queue] })
   }, [])
 
   const settleBest = useCallback((game: GameKey, score: number): void => {
@@ -95,7 +108,7 @@ export function MiniGamesView(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (screen !== 'td' && screen !== 'survival') return
+    if (screen !== 'td' && screen !== 'survival' && screen !== 'tetris') return
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
@@ -104,7 +117,7 @@ export function MiniGamesView(): JSX.Element {
     let frame = 0
     let last = performance.now()
     let snapshotTimer = 0
-    let lastPhase: GamePhase | SurvivalState['phase'] = screen === 'td' ? tdStateRef.current.phase : survivalRef.current.phase
+    let lastPhase: string = screen === 'td' ? tdStateRef.current.phase : screen === 'survival' ? survivalRef.current.phase : tetrisRef.current.phase
     const loop = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
@@ -117,7 +130,7 @@ export function MiniGamesView(): JSX.Element {
         }
         lastPhase = phase
         drawGame(ctx, tdStateRef.current, selectedTowerId, bestRef.current.td)
-      } else {
+      } else if (screen === 'survival') {
         tickSurvival(survivalRef.current, dt)
         const phase = survivalRef.current.phase
         if (phase === 'lost' && lastPhase !== phase) {
@@ -125,34 +138,52 @@ export function MiniGamesView(): JSX.Element {
         }
         lastPhase = phase
         drawSurvival(ctx, survivalRef.current, bestRef.current.survival)
+      } else {
+        tickTetris(tetrisRef.current, dt)
+        const phase = tetrisRef.current.phase
+        if (phase === 'lost' && lastPhase !== phase) {
+          settleBest('tetris', tetrisRef.current.score)
+        }
+        lastPhase = phase
+        drawTetris(ctx, tetrisRef.current, bestRef.current.tetris)
       }
       snapshotTimer += dt
       if (snapshotTimer > 0.18) {
         if (screen === 'td') publishTd()
-        else publishSurvival()
+        else if (screen === 'survival') publishSurvival()
+        else publishTetris()
         snapshotTimer = 0
       }
       frame = requestAnimationFrame(loop)
     }
     frame = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(frame)
-  }, [fullscreen, publishTd, publishSurvival, screen, selectedTowerId, settleBest, tdSpeed])
+  }, [fullscreen, publishTd, publishSurvival, publishTetris, screen, selectedTowerId, settleBest, tdSpeed])
 
   useEffect(() => {
-    if (screen !== 'survival' && !fullscreen) return
+    if (screen !== 'survival' && screen !== 'tetris' && !fullscreen) return
     const normalizeKey = (event: KeyboardEvent) => event.code === 'Space' ? 'space' : event.key.toLowerCase()
     const down = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setFullscreen(false)
         return
       }
-      if (screen !== 'survival') return
       const normalized = normalizeKey(event)
       if (MOVEMENT_KEYS.has(normalized) && !event.ctrlKey && !event.metaKey && !event.altKey) event.preventDefault()
-      survivalRef.current.keys.add(normalized)
+      if (screen === 'survival') {
+        survivalRef.current.keys.add(normalized)
+      } else if (screen === 'tetris') {
+        if (normalized === 'arrowleft') tetrisRef.current.commands.push('left')
+        else if (normalized === 'arrowright') tetrisRef.current.commands.push('right')
+        else if (normalized === 'arrowup') tetrisRef.current.commands.push('rotate')
+        else if (normalized === 'space') tetrisRef.current.commands.push('hard')
+        else if (normalized === 'arrowdown') tetrisRef.current.keys.add('arrowdown')
+      }
     }
     const up = (event: KeyboardEvent) => {
-      survivalRef.current.keys.delete(normalizeKey(event))
+      const normalized = normalizeKey(event)
+      survivalRef.current.keys.delete(normalized)
+      tetrisRef.current.keys.delete(normalized)
     }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
@@ -272,6 +303,19 @@ export function MiniGamesView(): JSX.Element {
     publishSurvival()
   }, [publishSurvival])
 
+  const startTetrisRun = useCallback(() => {
+    if (tetrisRef.current.phase === 'lost') {
+      tetrisRef.current = initialTetrisState()
+    }
+    startTetris(tetrisRef.current)
+    publishTetris()
+  }, [publishTetris])
+
+  const restartTetrisRun = useCallback(() => {
+    tetrisRef.current = initialTetrisState()
+    publishTetris()
+  }, [publishTetris])
+
   const chooseUpgrade = useCallback((id: UpgradeId) => {
     applyUpgrade(survivalRef.current, id)
     publishSurvival()
@@ -310,6 +354,15 @@ export function MiniGamesView(): JSX.Element {
             </span>
             <Play aria-hidden="true" size={16} />
           </button>
+          <button className="game-tile" type="button" style={{ '--game-accent': '#f0abfc' } as CSSProperties} onClick={() => enterGame('tetris')}>
+            <span className="tower-orb" style={{ background: '#f0abfc' }}><Grid aria-hidden="true" size={18} /></span>
+            <span className="game-tile-copy">
+              <strong>{t('games.tileTetrisTitle')}</strong>
+              <small>{t('games.tileTetrisSummary')}</small>
+              <em><Trophy aria-hidden="true" size={12} />{bests.tetris}</em>
+            </span>
+            <Play aria-hidden="true" size={16} />
+          </button>
           <div className="game-tile ghost" aria-hidden="true">
             <span className="tower-orb"><Crosshair aria-hidden="true" size={18} /></span>
             <span className="game-tile-copy">
@@ -323,10 +376,14 @@ export function MiniGamesView(): JSX.Element {
   }
 
   const isTd = screen === 'td'
-  const gameTitle = isTd ? t('games.tileTdTitle') : t('games.tileSwarmTitle')
-  const phase = isTd ? tdSnapshot.phase : survivalSnapshot.phase === 'levelup' ? 'ready' : survivalSnapshot.phase
+  const isSurvival = screen === 'survival'
+  const gameTitle = isTd ? t('games.tileTdTitle') : isSurvival ? t('games.tileSwarmTitle') : t('games.tileTetrisTitle')
+  const rawPhase = isTd ? tdSnapshot.phase : isSurvival ? (survivalSnapshot.phase === 'levelup' ? 'ready' : survivalSnapshot.phase) : tetrisSnapshot.phase
+  const phase = rawPhase as 'ready' | 'running' | 'won' | 'lost'
   const phaseLabel = phase === 'won' ? t('games.statusWon') : phase === 'lost' ? t('games.statusLost') : phase === 'ready' ? t('games.statusReady') : t('games.statusRunning')
-  const best = isTd ? bests.td : bests.survival
+  const best = isTd ? bests.td : isSurvival ? bests.survival : bests.tetris
+  const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : startTetrisRun
+  const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
 
   return (
     <div className={`games-view games-screen ${fullscreen ? 'fs' : ''}`}>
@@ -349,11 +406,11 @@ export function MiniGamesView(): JSX.Element {
               {tdSpeed}×
             </button>
           ) : null}
-          <button className="aspect-lock-btn" type="button" onClick={isTd ? startOrNextWave : startSurvivalRun}>
+          <button className="aspect-lock-btn" type="button" onClick={startHandler}>
             <Play size={13} />
             {isTd && tdSnapshot.wave > 0 ? t('games.nextWave') : t('games.start')}
           </button>
-          <button className="aspect-lock-btn" type="button" onClick={isTd ? restartTd : restartSurvivalRun}>
+          <button className="aspect-lock-btn" type="button" onClick={restartHandler}>
             <RotateCcw size={13} />
             {t('games.restart')}
           </button>
@@ -368,12 +425,16 @@ export function MiniGamesView(): JSX.Element {
         <span role="listitem" aria-label={t('games.ariaStatus').replace('{value}', phaseLabel)} title={t('games.ariaStatus').replace('{value}', phaseLabel)}><Shield aria-hidden="true" size={15} />{phaseLabel}</span>
         {isTd ? (
           <span role="listitem" aria-label={t('games.ariaWave').replace('{current}', String(tdSnapshot.wave)).replace('{max}', String(MAX_WAVE))} title={t('games.ariaWave').replace('{current}', String(tdSnapshot.wave)).replace('{max}', String(MAX_WAVE))}><Zap aria-hidden="true" size={15} />{t('games.wave')} {tdSnapshot.wave}/{MAX_WAVE}</span>
-        ) : (
+        ) : isSurvival ? (
           <span role="listitem" aria-label={t('games.ariaWave').replace('{current}', String(survivalSnapshot.level)).replace('{max}', '∞')} title={t('games.ariaWave').replace('{current}', String(survivalSnapshot.level)).replace('{max}', '∞')}><Zap aria-hidden="true" size={15} />LV {survivalSnapshot.level}</span>
+        ) : (
+          <span role="listitem" aria-label={t('games.ariaWave').replace('{current}', String(tetrisSnapshot.level)).replace('{max}', '∞')} title={t('games.ariaWave').replace('{current}', String(tetrisSnapshot.level)).replace('{max}', '∞')}><Zap aria-hidden="true" size={15} />LV {tetrisSnapshot.level}</span>
         )}
-        <span role="listitem" aria-label={t('games.ariaLives').replace('{value}', String(isTd ? tdSnapshot.lives : survivalSnapshot.player.hp))} title={t('games.ariaLives').replace('{value}', String(isTd ? tdSnapshot.lives : survivalSnapshot.player.hp))}><Heart aria-hidden="true" size={15} />{isTd ? tdSnapshot.lives : survivalSnapshot.player.hp}</span>
-        <span role="listitem" aria-label={t('games.ariaCoins').replace('{value}', String(isTd ? tdSnapshot.coins : survivalSnapshot.kills))} title={t('games.ariaCoins').replace('{value}', String(isTd ? tdSnapshot.coins : survivalSnapshot.kills))}><span aria-hidden="true">{isTd ? '◎' : '✕'}</span> {isTd ? tdSnapshot.coins : survivalSnapshot.kills}</span>
-        <span role="listitem" aria-label={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : survivalSnapshot.score))} title={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : survivalSnapshot.score))}><span aria-hidden="true">★</span> {isTd ? tdSnapshot.score : survivalSnapshot.score}</span>
+        {isTd || isSurvival ? (
+          <span role="listitem" aria-label={t('games.ariaLives').replace('{value}', String(isTd ? tdSnapshot.lives : survivalSnapshot.player.hp))} title={t('games.ariaLives').replace('{value}', String(isTd ? tdSnapshot.lives : survivalSnapshot.player.hp))}><Heart aria-hidden="true" size={15} />{isTd ? tdSnapshot.lives : survivalSnapshot.player.hp}</span>
+        ) : null}
+        <span role="listitem" aria-label={t('games.ariaCoins').replace('{value}', String(isTd ? tdSnapshot.coins : isSurvival ? survivalSnapshot.kills : tetrisSnapshot.lines))} title={t('games.ariaCoins').replace('{value}', String(isTd ? tdSnapshot.coins : isSurvival ? survivalSnapshot.kills : tetrisSnapshot.lines))}><span aria-hidden="true">{isTd ? '◎' : isSurvival ? '✕' : '≡'}</span> {isTd ? tdSnapshot.coins : isSurvival ? survivalSnapshot.kills : tetrisSnapshot.lines}</span>
+        <span role="listitem" aria-label={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score))} title={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score))}><span aria-hidden="true">★</span> {isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score}</span>
         <span role="listitem" aria-label={t('games.ariaBest').replace('{value}', String(best))} title={t('games.ariaBest').replace('{value}', String(best))}><Trophy aria-hidden="true" size={15} />{best}</span>
       </div>
 
@@ -409,7 +470,7 @@ export function MiniGamesView(): JSX.Element {
             <span>
               {isTd
                 ? `${t('games.wave')} ${tdSnapshot.wave}/${MAX_WAVE}${tdSnapshot.phase === 'running' && tdSnapshot.waveQueue + tdSnapshot.balloons.length > 0 ? ` · ${t('games.balloonsLeft').replace('{value}', String(tdSnapshot.waveQueue + tdSnapshot.balloons.length))}` : ''}`
-                : t('games.swarmHint')}
+                : isSurvival ? t('games.swarmHint') : t('games.tetrisHint')}
             </span>
             <span>
               {isTd && tdSnapshot.phase === 'running' && tdSnapshot.waveQueue === 0 && tdSnapshot.balloons.length === 0 && tdSnapshot.wave < MAX_WAVE
@@ -470,7 +531,7 @@ export function MiniGamesView(): JSX.Element {
                 </ul>
               </div>
             </>
-          ) : (
+          ) : isSurvival ? (
             <div className="games-rules">
               <strong>{t('games.controlsTitle')}</strong>
               <p>{t('games.swarmControls')}</p>
@@ -481,6 +542,18 @@ export function MiniGamesView(): JSX.Element {
                 <li>{t('games.swarmRule3')}</li>
               </ul>
               <p className="games-help">{t('games.swarmRule4')}</p>
+            </div>
+          ) : (
+            <div className="games-rules">
+              <strong>{t('games.controlsTitle')}</strong>
+              <p>{t('games.tetrisControls')}</p>
+              <strong>{t('games.rulesTitle')}</strong>
+              <ul>
+                <li>{t('games.tetrisRule1')}</li>
+                <li>{t('games.tetrisRule2')}</li>
+                <li>{t('games.tetrisRule3')}</li>
+              </ul>
+              <p className="games-help">{t('games.tetrisRule4')}</p>
             </div>
           )}
         </aside>

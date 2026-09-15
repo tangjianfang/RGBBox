@@ -58,4 +58,44 @@ describe('renderer/games/survival engine (R99.3/R99.4)', () => {
     expect(state.stats.damage).toBe(3)
     expect(state.stats.moveSpeed).toBeGreaterThan(170)
   })
+
+  it('boss spawns on the timer and pays out 15 orbs + heal on death (R100.1)', () => {
+    const state = initialSurvivalState()
+    state.phase = 'running'
+    state.bossTimer = 0.01
+    tickSurvival(state, 0.016)
+    const boss = state.enemies.find((enemy) => enemy.kind === 'boss')
+    expect(boss).toBeDefined()
+    state.player.hp = 3
+    boss.hp = 0
+    const orbsBefore = state.orbs.length
+    tickSurvival(state, 0.016)
+    expect(state.orbs.length).toBe(orbsBefore + 15)
+    expect(state.player.hp).toBe(4)
+    expect(state.enemies.every((enemy) => enemy.kind !== 'boss')).toBe(true)
+  })
+
+  it('thorns reflect contact damage back at the attacker (R100.1)', () => {
+    const state = initialSurvivalState()
+    state.phase = 'running'
+    state.taken.thorns = 2
+    recomputeStats(state.stats, state.taken)
+    state.enemies.push({ id: 5, x: state.player.x + 10, y: state.player.y, vx: 0, vy: 0, size: 14, hp: 10, maxHp: 10, kind: 'chaser', elite: false, hitFlash: 0 })
+    const hpBefore = state.player.hp
+    tickSurvival(state, 0.016)
+    expect(state.player.hp).toBe(hpBefore - 1)
+    expect(state.enemies[0].hp).toBeLessThanOrEqual(10 - 2)
+  })
+
+  it('regen heals one HP per interval when damaged (R100.1)', () => {
+    const state = initialSurvivalState()
+    state.phase = 'running'
+    state.taken.regen = 1
+    recomputeStats(state.stats, state.taken)
+    expect(state.stats.regenInterval).toBe(30)
+    state.player.hp = 2
+    state.regenTimer = 29.99
+    tickSurvival(state, 0.016)
+    expect(state.player.hp).toBe(3)
+  })
 })

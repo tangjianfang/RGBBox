@@ -3,7 +3,7 @@
 import { playSfx } from './sfx'
 
 export type GamePhase = 'ready' | 'running' | 'won' | 'lost'
-export type TowerKind = 'dart' | 'frost' | 'storm'
+export type TowerKind = 'dart' | 'frost' | 'storm' | 'rail' | 'mint'
 
 export interface Point {
   x: number
@@ -120,6 +120,8 @@ export const TOWER_DEFINITIONS: TowerDefinition[] = [
   { kind: 'dart', label: 'Pulse Dart', cost: 70, range: 126, fireRate: 0.62, damage: 1, color: '#67e8f9', description: 'Fast single-target shots.' },
   { kind: 'frost', label: 'Frost Prism', cost: 105, range: 112, fireRate: 1.05, damage: 1, color: '#93c5fd', description: 'Slows dense balloon packs.' },
   { kind: 'storm', label: 'Storm Coil', cost: 145, range: 146, fireRate: 1.32, damage: 2, color: '#f0abfc', description: 'High damage with splash arcs.' },
+  { kind: 'rail', label: 'Rail Cannon', cost: 190, range: 210, fireRate: 2.2, damage: 4, color: '#fca5a5', description: 'Snipes the toughest balloon first.' },
+  { kind: 'mint', label: 'Mint Spire', cost: 120, range: 0, fireRate: 4, damage: 0, color: '#fde047', description: 'Mints +6 coins every 4 seconds.' },
 ]
 
 function distance(a: Point, b: Point): number {
@@ -241,9 +243,18 @@ export function launchWave(state: GameState): void {
 function nearestTarget(tower: Tower, balloons: Balloon[]): Balloon | undefined {
   let target: Balloon | undefined
   let bestProgress = -1
+  let bestHp = -1
+  const prioritizeToughest = tower.kind === 'rail'
   for (const balloon of balloons) {
     const pos = pointAtProgress(balloon.progress)
-    if (distance(tower, pos) <= tower.range && balloon.progress > bestProgress) {
+    if (distance(tower, pos) > tower.range) continue
+    if (prioritizeToughest) {
+      if (balloon.maxHp > bestHp || (balloon.maxHp === bestHp && balloon.progress > bestProgress)) {
+        target = balloon
+        bestHp = balloon.maxHp
+        bestProgress = balloon.progress
+      }
+    } else if (balloon.progress > bestProgress) {
       target = balloon
       bestProgress = balloon.progress
     }
@@ -281,7 +292,7 @@ export function sellTower(state: GameState, tower: Tower): void {
 }
 
 function makeProjectile(state: GameState, tower: Tower, target: Balloon, def: TowerDefinition): void {
-  state.projectiles.push({ id: state.nextId++, x: tower.x, y: tower.y, targetId: target.id, speed: tower.kind === 'storm' ? 420 : 520, damage: tower.damage, color: def.color, slow: tower.kind === 'frost', splash: tower.kind === 'storm', lx: tower.x, ly: tower.y })
+  state.projectiles.push({ id: state.nextId++, x: tower.x, y: tower.y, targetId: target.id, speed: tower.kind === 'storm' ? 420 : tower.kind === 'rail' ? 640 : 520, damage: tower.damage, color: def.color, slow: tower.kind === 'frost', splash: tower.kind === 'storm', lx: tower.x, ly: tower.y })
 }
 
 export function tickGame(state: GameState, dt: number): void {
@@ -327,6 +338,15 @@ export function tickGame(state: GameState, dt: number): void {
   }
   for (const tower of state.towers) {
     tower.cooldown = Math.max(0, tower.cooldown - dt)
+    if (tower.kind === 'mint') {
+      if (tower.cooldown <= 0) {
+        state.coins += 6
+        addText(state, tower.x, tower.y - 26, '+6', '#fde047')
+        spawnBurst(state, tower.x, tower.y, '#fde047', 5, 70)
+        tower.cooldown = tower.fireRate
+      }
+      continue
+    }
     const target = nearestTarget(tower, state.balloons)
     if (!target) continue
     const pos = pointAtProgress(target.progress)
@@ -469,22 +489,34 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, select
 
   for (const tower of state.towers) {
     const def = TOWER_DEFINITIONS.find((item) => item.kind === tower.kind) ?? TOWER_DEFINITIONS[0]
-    if (tower.id === selectedTowerId) {
+    if (tower.id === selectedTowerId && tower.range > 0) {
       ctx.setLineDash([8, 8])
       ctx.beginPath(); ctx.arc(tower.x, tower.y, tower.range, 0, Math.PI * 2); ctx.fillStyle = `${def.color}0d`; ctx.fill(); ctx.strokeStyle = `${def.color}99`; ctx.lineWidth = 1.5; ctx.stroke()
       ctx.setLineDash([])
     }
-    ctx.save()
-    ctx.translate(tower.x, tower.y)
-    ctx.rotate(tower.angle)
-    ctx.fillStyle = '#1c2b36'
-    ctx.fillRect(2, -5, 30, 10)
-    ctx.fillStyle = def.color
-    ctx.fillRect(24, -4, 8, 8)
-    ctx.restore()
+    if (tower.kind !== 'mint') {
+      ctx.save()
+      ctx.translate(tower.x, tower.y)
+      ctx.rotate(tower.angle)
+      ctx.fillStyle = '#1c2b36'
+      ctx.fillRect(2, -5, tower.kind === 'rail' ? 40 : 30, 10)
+      ctx.fillStyle = def.color
+      ctx.fillRect(tower.kind === 'rail' ? 34 : 24, -4, 8, 8)
+      ctx.restore()
+    }
     ctx.beginPath(); ctx.arc(tower.x, tower.y, 17, 0, Math.PI * 2); ctx.fillStyle = '#0f1720'; ctx.fill(); ctx.strokeStyle = '#31485a'; ctx.lineWidth = 5; ctx.stroke()
     ctx.beginPath(); ctx.arc(tower.x, tower.y, 12, 0, Math.PI * 2); ctx.strokeStyle = def.color; ctx.lineWidth = 3; ctx.stroke()
-    ctx.beginPath(); ctx.arc(tower.x, tower.y, 4.5, 0, Math.PI * 2); ctx.fillStyle = def.color; ctx.fill()
+    if (tower.kind === 'mint') {
+      const pulse = 1 + Math.sin(state.clock * 5) * 0.18
+      ctx.beginPath(); ctx.arc(tower.x, tower.y, 7 * pulse, 0, Math.PI * 2); ctx.fillStyle = def.color; ctx.fill()
+      ctx.fillStyle = '#0f1720'
+      ctx.font = '700 10px Inter, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('◎', tower.x, tower.y + 0.5)
+    } else {
+      ctx.beginPath(); ctx.arc(tower.x, tower.y, 4.5, 0, Math.PI * 2); ctx.fillStyle = def.color; ctx.fill()
+    }
     for (let i = 0; i < tower.level; i++) {
       ctx.fillStyle = def.color
       ctx.fillRect(tower.x - 10 + i * 8, tower.y + 22, 5, 5)

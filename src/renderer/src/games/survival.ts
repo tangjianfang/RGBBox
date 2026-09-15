@@ -6,7 +6,9 @@ import { playSfx } from './sfx'
 import { WIDTH, HEIGHT } from './td'
 
 export type SurvivalPhase = 'ready' | 'running' | 'levelup' | 'lost'
-export type UpgradeId = 'fireRate' | 'damage' | 'multishot' | 'pierce' | 'blade' | 'speed' | 'maxHp' | 'magnet' | 'crit' | 'bulletSpeed'
+export type UpgradeId = 'fireRate' | 'damage' | 'multishot' | 'pierce' | 'blade' | 'speed' | 'maxHp' | 'magnet' | 'crit' | 'bulletSpeed' | 'thorns' | 'regen'
+
+export const BOSS_INTERVAL = 90
 
 interface Point {
   x: number
@@ -20,7 +22,8 @@ interface Enemy extends Point {
   size: number
   hp: number
   maxHp: number
-  kind: 'chaser' | 'sprinter' | 'brute'
+  kind: 'chaser' | 'sprinter' | 'brute' | 'boss'
+  elite: boolean
   hitFlash: number
 }
 
@@ -83,6 +86,8 @@ export interface PlayerStats {
   magnet: number
   crit: number
   bulletSpeed: number
+  thorns: number
+  regenInterval: number
 }
 
 export interface SurvivalState {
@@ -108,6 +113,8 @@ export interface SurvivalState {
   banner: Banner | null
   keys: Set<string>
   spawnTimer: number
+  bossTimer: number
+  regenTimer: number
   bladeAngle: number
   bladeTimer: number
   lastMinute: number
@@ -130,6 +137,8 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'magnet', accent: '#4ade80', max: 3 },
   { id: 'crit', accent: '#fbbf24', max: 4 },
   { id: 'bulletSpeed', accent: '#e879f9', max: 3 },
+  { id: 'thorns', accent: '#f472b6', max: 3 },
+  { id: 'regen', accent: '#34d399', max: 2 },
 ]
 
 export function xpToNext(level: number): number {
@@ -147,6 +156,8 @@ function baseStats(): PlayerStats {
     magnet: 70,
     crit: 0,
     bulletSpeed: 420,
+    thorns: 0,
+    regenInterval: 0,
   }
 }
 
@@ -160,6 +171,8 @@ export function recomputeStats(stats: PlayerStats, taken: Record<UpgradeId, numb
   stats.magnet = 70 + 45 * taken.magnet
   stats.crit = 0.1 * taken.crit
   stats.bulletSpeed = 420 * (1 + 0.3 * taken.bulletSpeed)
+  stats.thorns = taken.thorns
+  stats.regenInterval = taken.regen === 0 ? 0 : taken.regen === 1 ? 30 : 16
 }
 
 export function initialSurvivalState(): SurvivalState {
@@ -176,7 +189,7 @@ export function initialSurvivalState(): SurvivalState {
     nextId: 1,
     player: { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 14, hp: 5, maxHp: 5, invuln: 0, fireTimer: 0, angle: -Math.PI / 2 },
     stats: baseStats(),
-    taken: { fireRate: 0, damage: 0, multishot: 0, pierce: 0, blade: 0, speed: 0, maxHp: 0, magnet: 0, crit: 0, bulletSpeed: 0 },
+    taken: { fireRate: 0, damage: 0, multishot: 0, pierce: 0, blade: 0, speed: 0, maxHp: 0, magnet: 0, crit: 0, bulletSpeed: 0, thorns: 0, regen: 0 },
     offers: [],
     enemies: [],
     bullets: [],
@@ -186,6 +199,8 @@ export function initialSurvivalState(): SurvivalState {
     banner: null,
     keys: new Set<string>(),
     spawnTimer: 1,
+    bossTimer: BOSS_INTERVAL,
+    regenTimer: 0,
     bladeAngle: 0,
     bladeTimer: 0,
     lastMinute: 0,
@@ -266,23 +281,48 @@ function spawnEnemy(state: SurvivalState): void {
   const side = Math.floor(Math.random() * 4)
   const x = side === 0 ? -30 : side === 1 ? WIDTH + 30 : Math.random() * WIDTH
   const y = side === 2 ? -30 : side === 3 ? HEIGHT + 30 : Math.random() * HEIGHT
+  const elite = state.time > 60 && Math.random() < 0.08
+  const scale = elite ? 2.5 : 1
   const roll = Math.random()
   if (state.time > 90 && roll < 0.12) {
-    const hp = 10 + Math.floor(state.time / 15)
-    state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 20, hp, maxHp: hp, kind: 'brute', hitFlash: 0 })
+    const hp = Math.round((10 + Math.floor(state.time / 15)) * scale)
+    state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 20, hp, maxHp: hp, kind: 'brute', elite, hitFlash: 0 })
   } else if (state.time > 40 && roll < 0.34) {
-    state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 11, hp: 2, maxHp: 2, kind: 'sprinter', hitFlash: 0 })
+    const hp = Math.round(2 * scale)
+    state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 11, hp, maxHp: hp, kind: 'sprinter', elite, hitFlash: 0 })
   } else {
-    const hp = 3 + Math.floor(state.time / 25)
-    state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 14, hp, maxHp: hp, kind: 'chaser', hitFlash: 0 })
+    const hp = Math.round((3 + Math.floor(state.time / 25)) * scale)
+    state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 14, hp, maxHp: hp, kind: 'chaser', elite, hitFlash: 0 })
   }
+}
+
+function spawnBoss(state: SurvivalState): void {
+  const hp = 60 + Math.floor(state.time / 10) * 6
+  const side = Math.floor(Math.random() * 4)
+  const x = side === 0 ? -50 : side === 1 ? WIDTH + 50 : Math.random() * WIDTH
+  const y = side === 2 ? -50 : side === 3 ? HEIGHT + 50 : Math.random() * HEIGHT
+  state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 34, hp, maxHp: hp, kind: 'boss', elite: false, hitFlash: 0 })
+  state.banner = { text: 'BOSS INBOUND', life: 1.6 }
+  playSfx('wave')
 }
 
 function killEnemy(state: SurvivalState, enemy: Enemy): void {
   state.kills += 1
+  if (enemy.kind === 'boss') {
+    spawnBurst(state, enemy.x, enemy.y, '#f472b6', 34, 260)
+    spawnBurst(state, enemy.x, enemy.y, '#fde68a', 20, 180)
+    for (let i = 0; i < 15; i++) {
+      state.orbs.push({ id: state.nextId++, x: enemy.x + (Math.random() - 0.5) * 110, y: enemy.y + (Math.random() - 0.5) * 110, value: 1 })
+    }
+    state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
+    state.banner = { text: 'BOSS DOWN', life: 1.8 }
+    state.shake = 8
+    playSfx('levelup')
+    return
+  }
   const color = enemy.kind === 'brute' ? '#f472b6' : enemy.kind === 'sprinter' ? '#fbbf24' : '#fb7185'
   spawnBurst(state, enemy.x, enemy.y, color, enemy.kind === 'brute' ? 18 : 9, 140)
-  const drops = enemy.kind === 'brute' ? 3 : 1
+  const drops = enemy.elite || enemy.kind === 'brute' ? 3 : 1
   for (let i = 0; i < drops; i++) {
     state.orbs.push({ id: state.nextId++, x: enemy.x + (Math.random() - 0.5) * 18, y: enemy.y + (Math.random() - 0.5) * 18, value: 1 })
   }
@@ -330,6 +370,20 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     spawnEnemy(state)
     if (state.time > 60 && Math.random() < 0.35) spawnEnemy(state)
     state.spawnTimer = directorSpawnInterval(state)
+  }
+  state.bossTimer -= dt
+  if (state.bossTimer <= 0) {
+    spawnBoss(state)
+    state.bossTimer = BOSS_INTERVAL
+  }
+  if (stats.regenInterval > 0 && player.hp < player.maxHp) {
+    state.regenTimer += dt
+    if (state.regenTimer >= stats.regenInterval) {
+      state.regenTimer = 0
+      player.hp += 1
+      addText(state, player.x, player.y - 34, '+HP', '#34d399')
+      spawnBurst(state, player.x, player.y, '#34d399', 8, 90)
+    }
   }
 
   player.fireTimer -= dt
@@ -396,6 +450,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   const speedFor = (enemy: Enemy): number => {
     if (enemy.kind === 'sprinter') return 132
     if (enemy.kind === 'brute') return 40
+    if (enemy.kind === 'boss') return 34
     return Math.min(112, 64 + state.time * 0.12)
   }
   for (const enemy of state.enemies) {
@@ -407,11 +462,15 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     if (player.invuln <= 0 && distance(enemy, player) < enemy.size + player.size) {
       player.hp -= 1
       player.invuln = 0.9
-      state.shake = 6
+      state.shake = enemy.kind === 'boss' ? 9 : 6
       playSfx('hurt')
       spawnBurst(state, player.x, player.y, '#f87171', 12, 150)
       enemy.x -= (player.x - enemy.x) / dist * 46
       enemy.y -= (player.y - enemy.y) / dist * 46
+      if (stats.thorns > 0) {
+        enemy.hp -= stats.thorns
+        enemy.hitFlash = 0.1
+      }
       if (player.hp <= 0) {
         state.phase = 'lost'
         spawnBurst(state, player.x, player.y, '#f87171', 30, 230)
@@ -558,8 +617,36 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
   }
 
   for (const enemy of state.enemies) {
+    if (enemy.elite) {
+      ctx.shadowColor = '#fde68a'
+      ctx.shadowBlur = 14
+    }
     ctx.fillStyle = enemy.hitFlash > 0 ? '#ffffff' : enemy.kind === 'brute' ? '#f472b6' : enemy.kind === 'sprinter' ? '#fbbf24' : '#fb7185'
-    if (enemy.kind === 'sprinter') {
+    if (enemy.kind === 'boss') {
+      ctx.save()
+      ctx.translate(enemy.x, enemy.y)
+      ctx.rotate(state.clock * 0.8)
+      ctx.fillStyle = enemy.hitFlash > 0 ? '#ffffff' : '#db2777'
+      ctx.beginPath()
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * Math.PI) / 3
+        const px = Math.cos(angle) * enemy.size
+        const py = Math.sin(angle) * enemy.size
+        if (i === 0) ctx.moveTo(px, py)
+        else ctx.lineTo(px, py)
+      }
+      ctx.closePath(); ctx.fill()
+      ctx.strokeStyle = '#f9a8d4'
+      ctx.lineWidth = 3
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * Math.PI) / 3
+        ctx.beginPath()
+        ctx.moveTo(Math.cos(angle) * enemy.size, Math.sin(angle) * enemy.size)
+        ctx.lineTo(Math.cos(angle) * (enemy.size + 12), Math.sin(angle) * (enemy.size + 12))
+        ctx.stroke()
+      }
+      ctx.restore()
+    } else if (enemy.kind === 'sprinter') {
       const angle = Math.atan2(state.player.y - enemy.y, state.player.x - enemy.x)
       ctx.save(); ctx.translate(enemy.x, enemy.y); ctx.rotate(angle)
       ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-9, -8); ctx.lineTo(-9, 8); ctx.closePath(); ctx.fill()
@@ -569,12 +656,26 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
     } else {
       ctx.beginPath(); ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2); ctx.fill()
     }
-    if (enemy.hp < enemy.maxHp) {
+    ctx.shadowBlur = 0
+    if (enemy.kind !== 'boss' && enemy.hp < enemy.maxHp) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.fillRect(enemy.x - 14, enemy.y - enemy.size - 10, 28, 3)
       ctx.fillStyle = '#86efac'
       ctx.fillRect(enemy.x - 14, enemy.y - enemy.size - 10, 28 * (enemy.hp / enemy.maxHp), 3)
     }
+  }
+
+  const boss = state.enemies.find((enemy) => enemy.kind === 'boss')
+  if (boss) {
+    ctx.fillStyle = 'rgba(219, 39, 119, 0.25)'
+    ctx.fillRect(WIDTH / 2 - 160, 64, 320, 10)
+    ctx.fillStyle = '#f472b6'
+    ctx.fillRect(WIDTH / 2 - 160, 64, 320 * clamp(boss.hp / boss.maxHp, 0, 1), 10)
+    ctx.fillStyle = '#f9a8d4'
+    ctx.font = '800 12px Inter, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillText('BOSS', WIDTH / 2, 58)
   }
 
   for (const particle of state.particles) {
