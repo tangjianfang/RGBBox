@@ -1,21 +1,26 @@
 import { describe, it, expect } from 'vitest'
 import {
+  ARTIFACTS,
   DISSOLVE_XP,
   EMPTY_PERM,
+  EMPTY_STATS,
   PERM_MAX,
   PERM_UPGRADES,
   RARITY_LEVELS,
   UPGRADES,
   buyPerm,
+  isArtifactUnlocked,
   permCost,
   pickOffers,
   rollRarity,
   rollRouletteItem,
   rollRouletteStat,
   runCoins,
+  runCoinsFor,
+  scoreMultiplier,
   type UpgradeId,
 } from '../../../src/renderer/src/games/swarmMeta'
-import { initialSurvivalState, tickSurvival } from '../../../src/renderer/src/games/survival'
+import { directorSpawnInterval, initialSurvivalState, tickSurvival } from '../../../src/renderer/src/games/survival'
 
 function zeroTaken(): Record<UpgradeId, number> {
   return Object.fromEntries(UPGRADES.map((upgrade) => [upgrade.id, 0])) as Record<UpgradeId, number>
@@ -120,5 +125,43 @@ describe('renderer/games/swarmMeta (R101)', () => {
     expect(state.comboBonus).toBe(1 + 2 + 3)
     tickSurvival(state, 0.016)
     expect(state.score).toBeGreaterThanOrEqual(30 + 6)
+  })
+
+  it('artifacts unlock by run stats; none unlock on a fresh profile (R104)', () => {
+    expect(ARTIFACTS.filter((artifact) => isArtifactUnlocked(artifact, EMPTY_STATS)).length).toBe(0)
+    const maxed = { runs: 10, totalKills: 2000, bosses: 5, bestCombo: 20, bestScore: 2000 }
+    expect(ARTIFACTS.every((artifact) => isArtifactUnlocked(artifact, maxed))).toBe(true)
+  })
+
+  it('score multiplier composes risk and ease artifacts', () => {
+    expect(scoreMultiplier([])).toBe(0)
+    expect(scoreMultiplier(['glass', 'bounty'])).toBeCloseTo(0.2, 5)
+  })
+
+  it('artifacts inject run modifiers at init (R104)', () => {
+    expect(initialSurvivalState('wisp', EMPTY_PERM, ['glass']).player.maxHp).toBe(1)
+    expect(initialSurvivalState('wisp', EMPTY_PERM, ['glass']).scoreMult).toBeCloseTo(1.3, 5)
+    const mutantis = initialSurvivalState('wisp', EMPTY_PERM, ['mutantis'])
+    expect(directorSpawnInterval(mutantis)).toBeLessThan(directorSpawnInterval(initialSurvivalState('wisp', EMPTY_PERM, [])))
+    expect(initialSurvivalState('wisp', EMPTY_PERM, ['chrono']).timeScale).toBe(1.25)
+    expect(initialSurvivalState('wisp', EMPTY_PERM, ['famine']).xpMult).toBeLessThan(initialSurvivalState('wisp', EMPTY_PERM, []).xpMult)
+    expect(initialSurvivalState('wisp', EMPTY_PERM, ['bounty']).coinMult).toBe(2)
+    expect(initialSurvivalState('wisp', EMPTY_PERM, ['magnetWell']).stats.magnet).toBeCloseTo(130, 5)
+    expect(initialSurvivalState('wisp', EMPTY_PERM, ['pain']).invulnWindow).toBe(0.5)
+  })
+
+  it('score multiplier flows through the tick formula', () => {
+    const state = initialSurvivalState('wisp', EMPTY_PERM, ['mutantis'])
+    state.phase = 'running'
+    state.spawnTimer = 10
+    state.enemies.push({ id: 9, x: state.player.x + 300, y: state.player.y, vx: 0, vy: 0, size: 12, hp: 0, maxHp: 1, kind: 'chaser', elite: false, hitFlash: 0 })
+    tickSurvival(state, 0.016)
+    tickSurvival(state, 0.016)
+    expect(state.score).toBe(Math.floor((10 + 1) * 1.15))
+  })
+
+  it('runCoinsFor applies the bounty multiplier', () => {
+    expect(runCoinsFor(1000, 1)).toBe(50)
+    expect(runCoinsFor(1000, 2)).toBe(100)
   })
 })

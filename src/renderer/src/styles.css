@@ -1891,6 +1891,56 @@ input:not([type]):focus {
   font-size: 12px;
 }
 
+/* ── R104: artifact chips ───────────────────────────────────────────────── */
+
+.artifact-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  max-width: 580px;
+}
+
+.artifact-chip {
+  align-items: center;
+  background: #0d1620;
+  border: 1px solid #2b4653;
+  border-radius: 999px;
+  color: #dff8ff;
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  gap: 6px;
+  padding: 5px 12px;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.artifact-chip em {
+  color: #8aa2ad;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.artifact-chip.on {
+  border-color: #fde68a;
+  box-shadow: 0 0 10px rgba(253, 230, 138, 0.35);
+}
+
+.artifact-chip.on em {
+  color: #fde047;
+}
+
+.artifact-chip.locked {
+  border-style: dashed;
+  color: #55707c;
+  cursor: default;
+  opacity: 0.75;
+}
+
+.artifact-chip.locked em {
+  color: #55707c;
+}
+
 .swarm-roulette {
   background: rgba(4, 8, 12, 0.35);
 }

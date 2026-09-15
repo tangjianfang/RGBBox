@@ -79,6 +79,8 @@ export const EMPTY_PERM: PermMap = { damage: 0, fireRate: 0, moveSpeed: 0, maxHp
 export interface SwarmMeta {
   coins: number
   perm: PermMap
+  stats: RunStats
+  artifacts: Partial<Record<ArtifactId, boolean>>
 }
 
 const META_KEY = 'rgbbox:gamesMeta:swarm'
@@ -87,14 +89,16 @@ const CHAR_KEY = 'rgbbox:swarmChar'
 export function readMeta(): SwarmMeta {
   try {
     const raw = localStorage.getItem(META_KEY)
-    if (!raw) return { coins: 0, perm: { ...EMPTY_PERM } }
+    if (!raw) return { coins: 0, perm: { ...EMPTY_PERM }, stats: { ...EMPTY_STATS }, artifacts: {} }
     const parsed = JSON.parse(raw) as Partial<SwarmMeta>
     return {
       coins: Number.isFinite(parsed.coins) && (parsed.coins as number) > 0 ? Math.floor(parsed.coins as number) : 0,
       perm: { ...EMPTY_PERM, ...(parsed.perm ?? {}) },
+      stats: { ...EMPTY_STATS, ...(parsed.stats ?? {}) },
+      artifacts: { ...(parsed.artifacts ?? {}) },
     }
   } catch {
-    return { coins: 0, perm: { ...EMPTY_PERM } }
+    return { coins: 0, perm: { ...EMPTY_PERM }, stats: { ...EMPTY_STATS }, artifacts: {} }
   }
 }
 
@@ -135,11 +139,58 @@ export function buyPerm(meta: SwarmMeta, key: PermKey): SwarmMeta | null {
   if (level >= PERM_MAX) return null
   const cost = permCost(def, level)
   if (meta.coins < cost) return null
-  return { coins: meta.coins - cost, perm: { ...meta.perm, [key]: level + 1 } }
+  return { coins: meta.coins - cost, perm: { ...meta.perm, [key]: level + 1 }, stats: meta.stats, artifacts: meta.artifacts }
 }
 
 export function runCoins(score: number): number {
   return Math.floor(score / 20)
+}
+
+// ── R104: artifacts — rule changers with score risk multipliers ──
+
+export type ArtifactId = 'mutantis' | 'glass' | 'swift' | 'famine' | 'pain' | 'bounty' | 'chrono' | 'magnetWell'
+
+export interface RunStats {
+  runs: number
+  totalKills: number
+  bosses: number
+  bestCombo: number
+  bestScore: number
+}
+
+export const EMPTY_STATS: RunStats = { runs: 0, totalKills: 0, bosses: 0, bestCombo: 0, bestScore: 0 }
+
+export interface ArtifactDef {
+  id: ArtifactId
+  mult: number
+  unlock: (stats: RunStats) => boolean
+}
+
+export const ARTIFACTS: ArtifactDef[] = [
+  { id: 'mutantis', mult: 0.15, unlock: (stats) => stats.totalKills >= 500 },
+  { id: 'glass', mult: 0.3, unlock: (stats) => stats.bestScore >= 1500 },
+  { id: 'swift', mult: 0.2, unlock: (stats) => stats.totalKills >= 1500 },
+  { id: 'famine', mult: 0.2, unlock: (stats) => stats.runs >= 5 },
+  { id: 'pain', mult: 0.15, unlock: (stats) => stats.bosses >= 3 },
+  { id: 'bounty', mult: -0.1, unlock: (stats) => stats.totalKills >= 1000 },
+  { id: 'chrono', mult: 0.1, unlock: (stats) => stats.bestCombo >= 15 },
+  { id: 'magnetWell', mult: -0.1, unlock: (stats) => stats.runs >= 3 },
+]
+
+export function artifactById(id: ArtifactId): ArtifactDef {
+  return ARTIFACTS.find((artifact) => artifact.id === id) ?? ARTIFACTS[0]
+}
+
+export function isArtifactUnlocked(def: ArtifactDef, stats: RunStats): boolean {
+  return def.unlock(stats)
+}
+
+export function scoreMultiplier(artifacts: ArtifactId[]): number {
+  return artifacts.reduce((sum, id) => sum + artifactById(id).mult, 0)
+}
+
+export function runCoinsFor(score: number, coinMult: number): number {
+  return Math.floor((score / 20) * coinMult)
 }
 
 export type RouletteStat = 'damage' | 'fireRate' | 'moveSpeed' | 'magnet' | 'crit'

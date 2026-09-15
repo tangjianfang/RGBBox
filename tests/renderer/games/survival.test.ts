@@ -73,6 +73,7 @@ describe('renderer/games/survival engine (R99.3/R99.4)', () => {
     expect(state.orbs.length).toBe(orbsBefore + 15)
     expect(state.player.hp).toBe(4)
     expect(state.pendingSpins).toBe(1)
+    expect(state.bossKills).toBe(1)
     expect(state.enemies.every((enemy) => enemy.kind !== 'boss')).toBe(true)
   })
 

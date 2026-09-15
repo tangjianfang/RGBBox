@@ -8,6 +8,8 @@ import {
   UPGRADES,
   characterById,
   pickOffers as pickWeightedOffers,
+  scoreMultiplier,
+  type ArtifactId,
   type CharacterId,
   type PermMap,
   type RouletteResult,
@@ -135,6 +137,14 @@ export interface SurvivalState {
   banner: Banner | null
   keys: Set<string>
   axis: { x: number; y: number }
+  scoreMult: number
+  coinMult: number
+  timeScale: number
+  spawnMult: number
+  enemySpeedMult: number
+  invulnWindow: number
+  magnetBonus: number
+  bossKills: number
   spawnTimer: number
   bossTimer: number
   regenTimer: number
@@ -166,7 +176,7 @@ function baseStats(): PlayerStats {
 export function recomputeStats(
   stats: PlayerStats,
   taken: Record<UpgradeId, number>,
-  ctx?: { character?: CharacterId; perm?: PermMap; bonuses?: Partial<Record<RouletteStat, number>> },
+  ctx?: { character?: CharacterId; perm?: PermMap; bonuses?: Partial<Record<RouletteStat, number>>; magnetBonus?: number },
 ): void {
   const character = characterById(ctx?.character ?? 'wisp')
   const perm = ctx?.perm
@@ -177,16 +187,22 @@ export function recomputeStats(
   stats.pierce = taken.pierce
   stats.blade = taken.blade + character.innateBlade
   stats.moveSpeed = 170 * (1 + 0.12 * taken.speed) * (1 + 0.1 * (perm?.moveSpeed ?? 0)) * (1 + (bonuses?.moveSpeed ?? 0)) * character.speedMod
-  stats.magnet = (70 + 45 * taken.magnet) * (1 + (bonuses?.magnet ?? 0))
+  stats.magnet = (70 + 45 * taken.magnet + (ctx?.magnetBonus ?? 0)) * (1 + (bonuses?.magnet ?? 0))
   stats.crit = 0.1 * taken.crit + (bonuses?.crit ?? 0)
   stats.bulletSpeed = 420 * (1 + 0.3 * taken.bulletSpeed)
   stats.thorns = taken.thorns + character.innateThorns
   stats.regenInterval = taken.regen === 0 ? 0 : taken.regen === 1 ? 30 : 16
 }
 
-export function initialSurvivalState(character: CharacterId = 'wisp', perm: PermMap = { damage: 0, fireRate: 0, moveSpeed: 0, maxHp: 0, xpGain: 0, luck: 0 }): SurvivalState {
+export function initialSurvivalState(
+  character: CharacterId = 'wisp',
+  perm: PermMap = { damage: 0, fireRate: 0, moveSpeed: 0, maxHp: 0, xpGain: 0, luck: 0 },
+  artifacts: ArtifactId[] = [],
+): SurvivalState {
   const def = characterById(character)
-  const maxHp = Math.max(1, 5 + def.hpMod + perm.maxHp)
+  const has = (id: ArtifactId) => artifacts.includes(id)
+  let maxHp = Math.max(1, 5 + def.hpMod + perm.maxHp)
+  if (has('glass')) maxHp = 1
   const state: SurvivalState = {
     phase: 'ready',
     clock: 0,
@@ -196,7 +212,7 @@ export function initialSurvivalState(character: CharacterId = 'wisp', perm: Perm
     level: 1,
     xp: 0,
     xpNext: xpToNext(1),
-    xpMult: def.xpMod * (1 + 0.1 * perm.xpGain),
+    xpMult: def.xpMod * (1 + 0.1 * perm.xpGain) * (has('famine') ? 0.75 : 1),
     shake: 0,
     nextId: 1,
     player: { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 14, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2 },
@@ -219,6 +235,14 @@ export function initialSurvivalState(character: CharacterId = 'wisp', perm: Perm
     banner: null,
     keys: new Set<string>(),
     axis: { x: 0, y: 0 },
+    scoreMult: 1 + scoreMultiplier(artifacts),
+    coinMult: has('bounty') ? 2 : 1,
+    timeScale: has('chrono') ? 1.25 : 1,
+    spawnMult: has('mutantis') ? 1.6 : 1,
+    enemySpeedMult: has('swift') ? 1.35 : 1,
+    invulnWindow: has('pain') ? 0.5 : 0.9,
+    magnetBonus: has('magnetWell') ? 60 : 0,
+    bossKills: 0,
     spawnTimer: 1,
     bossTimer: BOSS_INTERVAL,
     regenTimer: 0,
@@ -226,7 +250,7 @@ export function initialSurvivalState(character: CharacterId = 'wisp', perm: Perm
     bladeTimer: 0,
     lastMinute: 0,
   }
-  recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses })
+  recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses, magnetBonus: state.magnetBonus })
   return state
 }
 
@@ -271,7 +295,7 @@ export function directorSpawnInterval(state: SurvivalState): number {
   const minutes = state.time / 60
   const base = clamp(1.5 - minutes * 0.28 - state.level * 0.05, 0.32, 1.5)
   const factor = state.player.hp <= 1 ? 1.25 : state.player.hp >= state.player.maxHp ? 0.85 : 1
-  return base * factor
+  return (base * factor) / state.spawnMult
 }
 
 function pickOffers(state: SurvivalState): UpgradeId[] {
@@ -286,7 +310,7 @@ export function applyUpgrade(state: SurvivalState, id: UpgradeId): void {
     state.player.maxHp += 1
     state.player.hp = Math.min(state.player.maxHp, state.player.hp + 2)
   }
-  recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses })
+  recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses, magnetBonus: state.magnetBonus })
   state.offers = []
   state.phase = 'running'
   spawnBurst(state, state.player.x, state.player.y, def.accent, 18, 150)
@@ -317,7 +341,7 @@ export function applyRouletteResult(state: SurvivalState, result: RouletteResult
     spawnBurst(state, state.player.x, state.player.y, '#fde68a', 22, 180)
     addText(state, state.player.x, state.player.y - 34, `${result.stat} +${result.pct}%`, '#fde68a')
   }
-  recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses })
+  recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses, magnetBonus: state.magnetBonus })
   playSfx('levelup')
   state.phase = 'running'
 }
@@ -375,6 +399,7 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
     }
     state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
     state.pendingSpins += 1
+    state.bossKills += 1
     state.banner = { text: 'BOSS DOWN — ROULETTE +1', life: 1.8 }
     state.shake = 8
     playSfx('levelup')
@@ -389,6 +414,7 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
 }
 
 export function tickSurvival(state: SurvivalState, dt: number): void {
+  dt *= state.timeScale
   state.clock += dt
   state.shake = Math.max(0, state.shake - dt * 14)
   for (const text of state.texts) {
@@ -412,7 +438,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   state.time += dt
   state.comboTimer = Math.max(0, state.comboTimer - dt)
   if (state.comboTimer === 0 && state.combo > 0) state.combo = 0
-  state.score = state.kills * 10 + state.comboBonus + Math.floor(state.time)
+  state.score = Math.floor((state.kills * 10 + state.comboBonus + Math.floor(state.time)) * state.scoreMult)
   const player = state.player
   const stats = state.stats
   player.invuln = Math.max(0, player.invuln - dt)
@@ -518,10 +544,10 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   state.bullets = state.bullets.filter((bullet) => bullet.life > 0 && bullet.pierce >= 0 && bullet.x > -20 && bullet.x < WIDTH + 20 && bullet.y > -20 && bullet.y < HEIGHT + 20)
 
   const speedFor = (enemy: Enemy): number => {
-    if (enemy.kind === 'sprinter') return 132
-    if (enemy.kind === 'brute') return 40
-    if (enemy.kind === 'boss') return 34
-    return Math.min(112, 64 + state.time * 0.12)
+    if (enemy.kind === 'sprinter') return 132 * state.enemySpeedMult
+    if (enemy.kind === 'brute') return 40 * state.enemySpeedMult
+    if (enemy.kind === 'boss') return 34 * state.enemySpeedMult
+    return Math.min(112, 64 + state.time * 0.12) * state.enemySpeedMult
   }
   for (const enemy of state.enemies) {
     const dist = Math.max(1, distance(enemy, player))
@@ -531,7 +557,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     enemy.hitFlash = Math.max(0, enemy.hitFlash - dt)
     if (player.invuln <= 0 && distance(enemy, player) < enemy.size + player.size) {
       player.hp -= 1
-      player.invuln = 0.9
+      player.invuln = state.invulnWindow
       state.shake = enemy.kind === 'boss' ? 9 : 6
       playSfx('hurt')
       spawnBurst(state, player.x, player.y, '#f87171', 12, 150)

@@ -1,5 +1,5 @@
 import { ArrowLeft, Crosshair, Grid, Heart, Maximize2, Minimize2, Play, RotateCcw, Shield, Trophy, Volume2, VolumeX, Zap } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
 import { useI18n } from '../i18n'
 import {
   HEIGHT,
@@ -35,19 +35,22 @@ import {
   type UpgradeId,
 } from '../games/survival'
 import {
+  ARTIFACTS,
   CHARACTERS,
   PERM_UPGRADES,
   PERM_MAX,
   RARITY_COLORS,
   buyPerm,
+  isArtifactUnlocked,
   permCost,
   readCharacter,
   readMeta,
   rollRouletteItem,
   rollRouletteStat,
-  runCoins,
+  runCoinsFor,
   writeCharacter,
   writeMeta,
+  type ArtifactId,
   type CharacterId,
   type PermKey,
   type RouletteResult,
@@ -213,14 +216,24 @@ export function MiniGamesView(): JSX.Element {
         const phase = survivalRef.current.phase
         if (phase === 'lost' && lastPhase !== phase) {
           settleBest('survival', survivalRef.current.score)
-          const earned = runCoins(survivalRef.current.score)
-          if (earned > 0) {
-            setMeta((prev) => {
-              const next = { coins: prev.coins + earned, perm: prev.perm }
-              writeMeta(next)
-              return next
-            })
-          }
+          const run = survivalRef.current
+          const earned = runCoinsFor(run.score, run.coinMult)
+          setMeta((prev) => {
+            const next = {
+              coins: prev.coins + earned,
+              perm: prev.perm,
+              stats: {
+                runs: prev.stats.runs + 1,
+                totalKills: prev.stats.totalKills + run.kills,
+                bosses: prev.stats.bosses + run.bossKills,
+                bestCombo: Math.max(prev.stats.bestCombo, run.comboBest),
+                bestScore: Math.max(prev.stats.bestScore, run.score),
+              },
+              artifacts: prev.artifacts,
+            }
+            writeMeta(next)
+            return next
+          })
         }
         lastPhase = phase
         drawSurvival(ctx, survivalRef.current)
@@ -379,20 +392,34 @@ export function MiniGamesView(): JSX.Element {
     publishTd()
   }, [publishTd, selectedTower, selectedTowerId])
 
+  const enabledArtifacts = useMemo(() => ARTIFACTS
+    .filter((artifact) => meta.artifacts[artifact.id] && isArtifactUnlocked(artifact, meta.stats))
+    .map((artifact) => artifact.id), [meta])
+
   const startSurvivalRun = useCallback(() => {
     if (survivalRef.current.phase === 'lost' || survivalRef.current.phase === 'ready') {
-      survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm)
+      survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts)
     }
     startSurvival(survivalRef.current)
     publishSurvival()
-  }, [meta, publishSurvival, swarmCharacter])
+  }, [enabledArtifacts, meta, publishSurvival, swarmCharacter])
 
   startRunRef.current = startSurvivalRun
 
   const restartSurvivalRun = useCallback(() => {
-    survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm)
+    survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts)
     publishSurvival()
-  }, [meta, publishSurvival, swarmCharacter])
+  }, [enabledArtifacts, meta, publishSurvival, swarmCharacter])
+
+  const toggleArtifact = useCallback((id: ArtifactId) => {
+    setMeta((prev) => {
+      const def = ARTIFACTS.find((artifact) => artifact.id === id)
+      if (!def || !isArtifactUnlocked(def, prev.stats)) return prev
+      const next = { ...prev, artifacts: { ...prev.artifacts, [id]: !prev.artifacts[id] } }
+      writeMeta(next)
+      return next
+    })
+  }, [])
 
   const selectCharacter = useCallback((id: CharacterId) => {
     setSwarmCharacter(id)
@@ -608,6 +635,25 @@ export function MiniGamesView(): JSX.Element {
                     </button>
                   ))}
                 </div>
+                <div className="artifact-bar">
+                  {ARTIFACTS.map((artifact) => {
+                    const unlocked = isArtifactUnlocked(artifact, meta.stats)
+                    const on = unlocked && !!meta.artifacts[artifact.id]
+                    return (
+                      <button
+                        key={artifact.id}
+                        type="button"
+                        className={`artifact-chip ${on ? 'on' : ''} ${unlocked ? '' : 'locked'}`}
+                        disabled={!unlocked}
+                        onClick={() => toggleArtifact(artifact.id)}
+                        title={unlocked ? t(`games.art.${artifact.id}.desc`) : t(`games.art.${artifact.id}.lock`)}
+                      >
+                        <span>{unlocked ? t(`games.art.${artifact.id}`) : t(`games.art.${artifact.id}.lock`)}</span>
+                        <em>{artifact.mult >= 0 ? '+' : ''}{artifact.mult.toFixed(2)}×</em>
+                      </button>
+                    )
+                  })}
+                </div>
                 <p className="swarm-setup-hint">{t('games.setupHint')}</p>
               </div>
             ) : null}
@@ -653,7 +699,7 @@ export function MiniGamesView(): JSX.Element {
                   <span>{t('games.summaryKills')} {survivalSnapshot.kills}</span>
                   <span>{t('games.summaryTime')} {Math.floor(survivalSnapshot.time)}s</span>
                   <span>{t('games.summaryCombo')} ×{survivalSnapshot.comboBest}</span>
-                  <span>{t('games.summaryCoins')} +{runCoins(survivalSnapshot.score)}</span>
+                  <span>{t('games.summaryCoins')} +{runCoinsFor(survivalSnapshot.score, survivalSnapshot.coinMult)}</span>
                 </div>
                 <div className="swarm-summary-build">
                   {Object.entries(survivalSnapshot.taken).filter(([, level]) => level > 0).map(([id, level]) => (
