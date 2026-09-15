@@ -1534,6 +1534,7 @@ input:not([type]):focus {
   flex: 1;
   flex-direction: column;
   gap: 18px;
+  min-height: 0;
   overflow-y: auto;
   padding: 24px;
   scrollbar-width: thin;
@@ -1548,36 +1549,10 @@ input:not([type]):focus {
   justify-content: space-between;
 }
 
-.games-hero {
-  align-items: center;
-  /* Offset glows frame the hero copy and stat cards without reducing contrast. */
-  background:
-    radial-gradient(circle at 18% 0%, rgb(103 232 249 / 14%), transparent 28%),
-    radial-gradient(circle at 82% 20%, rgb(240 171 252 / 13%), transparent 32%),
-    #101820;
-  border-radius: 14px;
-  display: flex;
-  gap: 18px;
-  justify-content: space-between;
-  padding: 20px;
-}
-
-.games-hero h3 {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  margin: 4px 0 8px;
-}
-
-.games-hero p {
-  color: #9fb7c1;
-  max-width: 720px;
-}
-
 .games-stat-grid {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(2, minmax(118px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
 }
 
 .games-stat-grid span {
@@ -1602,7 +1577,68 @@ input:not([type]):focus {
 }
 
 .games-canvas-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   padding: 10px;
+}
+
+.games-canvas-status {
+  color: #8aa2ad;
+  display: flex;
+  font-size: 12px;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.tower-detail {
+  background: #0d1620;
+  border: 1px solid #2b4653;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.tower-detail-head {
+  align-items: baseline;
+  color: #dff8ff;
+  display: flex;
+  font-size: 13px;
+  justify-content: space-between;
+}
+
+.tower-detail-head span {
+  color: #86efac;
+  font-weight: 700;
+}
+
+.tower-stats {
+  display: grid;
+  font-size: 11px;
+  gap: 6px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.tower-stats span {
+  color: #8aa2ad;
+}
+
+.tower-stats b {
+  color: #dff8ff;
+  display: block;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.tower-detail-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.tower-detail-actions button {
+  flex: 1;
 }
 
 .games-canvas {
@@ -1631,53 +1667,6 @@ input:not([type]):focus {
 .tower-card-list {
   display: grid;
   gap: 10px;
-}
-
-.game-card-list {
-  display: grid;
-  gap: 8px;
-  max-height: 310px;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
-}
-
-.game-card {
-  align-items: center;
-  background: #101a21;
-  border: 1px solid #273a43;
-  border-radius: 10px;
-  color: #dceff4;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 34px 1fr;
-  padding: 10px;
-  text-align: left;
-  transition: background 120ms, border-color 120ms, transform 120ms;
-}
-
-.game-card:hover,
-.game-card.selected {
-  background: #13252b;
-  border-color: var(--game-accent, #46c6a8);
-  transform: translateY(-1px);
-}
-
-.game-card strong,
-.game-card small {
-  display: block;
-}
-
-.game-card strong {
-  font-size: 12px;
-}
-
-.game-card small {
-  color: #8aa2ad;
-  font-size: 10px;
-  line-height: 1.35;
-  margin-top: 3px;
 }
 
 .tower-card {
@@ -2400,7 +2389,6 @@ input:not([type]):focus {
     grid-template-columns: 1fr;
   }
 
-  .games-hero,
   .games-header {
     align-items: flex-start;
     flex-direction: column;
