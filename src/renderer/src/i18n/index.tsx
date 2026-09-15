@@ -309,6 +309,7 @@ const EN = {
   'games.ariaCoins': 'Available coins: {value}',
   'games.ariaScore': 'Total score: {value}',
   'games.ariaTower': 'Select {name} tower, costs {cost} coins',
+  'games.speed': 'Playback speed',
   // Quick customize
   'quick.title': 'Quick Customize',
   'quick.profile': 'Profile',
@@ -1196,6 +1197,7 @@ const ZH: TranslationTable = {
   'games.ariaCoins': '可用金币：{value}',
   'games.ariaScore': '总分：{value}',
   'games.ariaTower': '选择 {name} 防御塔，花费 {cost} 金币',
+  'games.speed': '加速播放',
   // Quick customize
   'quick.title': '快速自定义',
   'quick.profile': '用户场景',

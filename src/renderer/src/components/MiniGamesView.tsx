@@ -23,9 +23,10 @@ interface Balloon {
   color: string
 }
 
-interface Tower extends Point {
+export interface Tower extends Point {
   id: number
   kind: TowerKind
+  level: number
   range: number
   cooldown: number
   fireRate: number
@@ -115,13 +116,28 @@ interface ArcadeState {
   mouse: Point
   keys: Set<string>
   obstacles: ArcadeEntity[]
+  pickups: ArcadeEntity[]
   texts: FloatingText[]
   message: string
+  invuln: number
+  milestone: number
+  starTimer: number
+  cameraY: number
+  depth: number
+  cargo: number
 }
 
 const WIDTH = 900
 const HEIGHT = 520
 const MAX_WAVE = 12
+const AUTO_WAVE_SECONDS = 8
+const TOWER_MAX_LEVEL = 3
+const MINE_DEPTH = 1520
+const ORE_COUNT = 96
+const CARGO_CAP = 60
+const MOTHERLOAD_GOAL = 260
+const BEST_KEY_PREFIX = 'rgbbox:gamesBest:'
+const GAME_KEYS = new Set(['space', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'])
 
 const PATH: Point[] = [
   { x: -40, y: 284 },
@@ -153,6 +169,24 @@ function distance(a: Point, b: Point): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
+}
+
+function readBest(id: GameId): number {
+  try {
+    const raw = localStorage.getItem(BEST_KEY_PREFIX + id)
+    const value = raw === null ? 0 : Number(raw)
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+  } catch {
+    return 0
+  }
+}
+
+function writeBest(id: GameId, score: number): void {
+  try {
+    localStorage.setItem(BEST_KEY_PREFIX + id, String(Math.floor(score)))
+  } catch {
+    return
+  }
 }
 
 function pathLength(): number {
@@ -193,7 +227,7 @@ function distanceToPath(point: Point): number {
   return min
 }
 
-function initialState(): GameState {
+export function initialState(): GameState {
   return {
     phase: 'ready',
     wave: 0,
@@ -203,7 +237,7 @@ function initialState(): GameState {
     nextId: 1,
     waveQueue: 0,
     spawnTimer: 0,
-    waveCooldown: 0,
+    waveCooldown: AUTO_WAVE_SECONDS,
     balloons: [],
     towers: [],
     projectiles: [],
@@ -211,7 +245,7 @@ function initialState(): GameState {
   }
 }
 
-function createArcadeState(id: ArcadeGameId): ArcadeState {
+export function createArcadeState(id: ArcadeGameId): ArcadeState {
   const player: ArcadeEntity = { id: 1, x: 150, y: 320, vx: 0, vy: 0, size: 18, hp: 5 }
   const base: ArcadeState = {
     phase: 'ready',
@@ -222,25 +256,30 @@ function createArcadeState(id: ArcadeGameId): ArcadeState {
     player,
     distance: 0,
     fuel: 100,
-    resources: 45,
+    resources: 0,
     mouseDown: false,
     mouse: { x: WIDTH / 2, y: HEIGHT / 2 },
     keys: new Set<string>(),
     obstacles: [],
+    pickups: [],
     texts: [],
     message: 'Press Start',
+    invuln: 0,
+    milestone: 0,
+    starTimer: 1.2,
+    cameraY: 0,
+    depth: 0,
+    cargo: 0,
   }
 
   if (id === 'helicopter') {
     base.player = { ...player, x: 150, y: HEIGHT / 2, size: 16 }
-    base.lives = 1
+    base.lives = 3
     base.obstacles = Array.from({ length: 7 }, (_, index) => makeCaveColumn(base, 360 + index * 150))
   }
   if (id === 'motherload') {
     base.player = { ...player, x: WIDTH / 2, y: 82, size: 17 }
-    base.fuel = 100
-    base.resources = 0
-    base.obstacles = Array.from({ length: 34 }, () => makeOre(base))
+    base.obstacles = Array.from({ length: ORE_COUNT }, () => makeOre(base, 150, 100 + MINE_DEPTH))
   }
   return base
 }
@@ -277,7 +316,7 @@ function launchWave(state: GameState): void {
   state.wave += 1
   state.waveQueue = 12 + state.wave * 3
   state.spawnTimer = 0.2
-  state.waveCooldown = 0
+  state.waveCooldown = AUTO_WAVE_SECONDS
   state.phase = 'running'
 }
 
@@ -294,16 +333,46 @@ function nearestTarget(tower: Tower, balloons: Balloon[]): Balloon | undefined {
   return target
 }
 
+export function towerUpgradeCost(tower: Tower): number {
+  const def = TOWER_DEFINITIONS.find((item) => item.kind === tower.kind) ?? TOWER_DEFINITIONS[0]
+  return Math.round(def.cost * (tower.level === 1 ? 0.85 : 1.35))
+}
+
+export function upgradeTower(state: GameState, tower: Tower): boolean {
+  if (tower.level >= TOWER_MAX_LEVEL) return false
+  const def = TOWER_DEFINITIONS.find((item) => item.kind === tower.kind) ?? TOWER_DEFINITIONS[0]
+  const cost = towerUpgradeCost(tower)
+  if (state.coins < cost) return false
+  state.coins -= cost
+  tower.level += 1
+  tower.damage = Math.max(1, Math.round(def.damage * (1 + 0.6 * (tower.level - 1))))
+  tower.range = Math.round(def.range * (1 + 0.16 * (tower.level - 1)))
+  tower.fireRate = def.fireRate / (1 + 0.22 * (tower.level - 1))
+  return true
+}
+
 function makeEntity(state: ArcadeState, x: number, y: number, vx: number, vy: number, size: number, kind?: string, value?: number): ArcadeEntity {
   return { id: state.nextId++, x, y, vx, vy, size, kind, value, hp: value ?? 1 }
 }
 
-function makeCaveColumn(state: ArcadeState, x: number): ArcadeEntity {
-  return makeEntity(state, x, 130 + Math.random() * 230, -190, 0, 78 + Math.random() * 34, 'cave')
+export function caveGapHalf(distance: number): number {
+  return clamp(96 - distance * 0.024, 58, 96)
 }
 
-function makeOre(state: ArcadeState): ArcadeEntity {
-  return makeEntity(state, 50 + Math.random() * (WIDTH - 100), 150 + Math.random() * 320, 0, 0, 14, Math.random() > 0.72 ? 'gem' : 'ore', Math.random() > 0.72 ? 25 : 10)
+export function caveSpeed(distance: number): number {
+  return 190 + Math.min(120, distance * 0.055)
+}
+
+function makeCaveColumn(state: ArcadeState, x: number): ArcadeEntity {
+  return makeEntity(state, x, 130 + Math.random() * 230, -caveSpeed(state.distance), 0, caveGapHalf(state.distance) + Math.random() * 10, 'cave')
+}
+
+function makeOre(state: ArcadeState, minY: number, maxY: number): ArcadeEntity {
+  const y = minY + Math.random() * Math.max(1, maxY - minY)
+  const depthFrac = clamp((y - 100) / MINE_DEPTH, 0, 1)
+  const gem = Math.random() < 0.16 + depthFrac * 0.34
+  const value = gem ? Math.round(24 + depthFrac * 36) : Math.round(10 + depthFrac * 16)
+  return makeEntity(state, 50 + Math.random() * (WIDTH - 100), y, 0, 0, gem ? 9 : 13, gem ? 'gem' : 'ore', value)
 }
 
 function key(state: ArcadeState, value: string): boolean {
@@ -350,8 +419,21 @@ function updateArcade(state: ArcadeState, id: ArcadeGameId, dt: number): void {
   }
 }
 
-function updateHelicopter(state: ArcadeState, dt: number): void {
+function helicopterCrash(state: ArcadeState): void {
+  state.lives -= 1
+  if (state.lives <= 0) {
+    loseArcade(state, 'Cave crash')
+    return
+  }
+  state.invuln = 1.6
+  state.player.y = HEIGHT / 2
+  state.player.vy = 0
+  addText(state, state.player.x, state.player.y - 34, 'Shields!', '#fca5a5')
+}
+
+export function updateHelicopter(state: ArcadeState, dt: number): void {
   const player = state.player
+  state.invuln = Math.max(0, state.invuln - dt)
   player.vy += (state.mouseDown || key(state, ' ') || key(state, 'space') ? -820 : 560) * dt
   player.vy = clamp(player.vy, -310, 330)
   player.y += player.vy * dt
@@ -360,35 +442,77 @@ function updateHelicopter(state: ArcadeState, dt: number): void {
     column.x += column.vx * dt
     if (column.x < -60) Object.assign(column, makeCaveColumn(state, WIDTH + 70))
     const gap = column.size
-    if (Math.abs(player.x - column.x) < 28 && (player.y < column.y - gap || player.y > column.y + gap)) loseArcade(state, 'Cave crash')
+    if (state.invuln <= 0 && Math.abs(player.x - column.x) < 28 && (player.y < column.y - gap || player.y > column.y + gap)) {
+      helicopterCrash(state)
+      if (state.phase !== 'running') return
+    }
   }
-  if (player.y < 18 || player.y > HEIGHT - 18) loseArcade(state, 'Cave crash')
+  if (state.invuln <= 0 && (player.y < 18 || player.y > HEIGHT - 18)) {
+    helicopterCrash(state)
+    if (state.phase !== 'running') return
+  }
+  state.starTimer -= dt
+  if (state.starTimer <= 0) {
+    state.pickups.push(makeEntity(state, WIDTH + 40, 90 + Math.random() * (HEIGHT - 180), -caveSpeed(state.distance), 0, 9, 'star', 30))
+    state.starTimer = 1.6 + Math.random() * 1.2
+  }
+  state.pickups = state.pickups.filter((star) => {
+    star.x += star.vx * dt
+    if (distance(player, star) < player.size + star.size) {
+      state.resources += star.value ?? 30
+      addText(state, star.x, star.y, `+${star.value ?? 30}`, '#fde68a')
+      return false
+    }
+    return star.x > -30
+  })
+  if (state.distance >= state.milestone + 500) {
+    state.milestone += 500
+    addText(state, player.x + 60, player.y - 40, `${state.milestone}m`, '#86efac')
+  }
+  state.score = Math.floor(state.distance) + state.resources
   if (state.distance > 1800) winArcade(state, 'Clean flight')
 }
 
-function updateMotherload(state: ArcadeState, dt: number): void {
+export function updateMotherload(state: ArcadeState, dt: number): void {
   const player = state.player
   const dx = (key(state, 'arrowright') || key(state, 'd') ? 1 : 0) - (key(state, 'arrowleft') || key(state, 'a') ? 1 : 0)
   const dy = (key(state, 'arrowdown') || key(state, 's') ? 1 : 0) - (key(state, 'arrowup') || key(state, 'w') ? 1 : 0)
   player.x = clamp(player.x + dx * 150 * dt, 24, WIDTH - 24)
-  player.y = clamp(player.y + dy * 130 * dt, 70, HEIGHT - 26)
-  state.fuel -= (Math.abs(dx) + Math.abs(dy) * 1.3) * dt * 4
+  player.y = clamp(player.y + dy * 130 * dt, 70, 100 + MINE_DEPTH - 14)
+  const moving = dx !== 0 || dy !== 0
+  state.fuel -= (moving ? Math.abs(dx) + Math.abs(dy) * 1.3 : 0.15) * 4 * dt
+  state.depth = Math.max(state.depth, player.y - 100)
+  state.cameraY = clamp(player.y - HEIGHT * 0.45, 0, 100 + MINE_DEPTH - HEIGHT)
   if (player.y <= 78) {
     state.fuel = Math.min(100, state.fuel + 42 * dt)
-    state.distance = Math.max(state.distance, state.resources * 35)
+    if (state.cargo > 0) {
+      state.resources += state.cargo
+      addText(state, player.x, player.y - 28, `Bank +${state.cargo}`, '#86efac')
+      state.cargo = 0
+    }
+    if (state.fuel > 40) state.milestone = 0
   }
   for (const ore of state.obstacles) {
     if (distance(player, ore) < player.size + ore.size) {
-      state.resources += ore.value ?? 10
-      addText(state, ore.x, ore.y, ore.kind === 'gem' ? '+gem' : '+ore', ore.kind === 'gem' ? '#67e8f9' : '#fb923c')
-      Object.assign(ore, makeOre(state))
+      const value = ore.value ?? 10
+      if (state.cargo + value <= CARGO_CAP) {
+        state.cargo += value
+        addText(state, ore.x, ore.y, `+${value}`, ore.kind === 'gem' ? '#67e8f9' : '#fb923c')
+        Object.assign(ore, makeOre(state, Math.max(150, ore.y - 60), Math.min(100 + MINE_DEPTH - 20, ore.y + 60)))
+      }
     }
   }
+  if (state.fuel < 25 && state.fuel > 0 && state.milestone === 0) {
+    state.milestone = 1
+    addText(state, player.x, player.y - 34, 'Low fuel!', '#fca5a5')
+  }
+  state.score = state.resources * 2 + Math.floor(state.depth * 0.6)
+  state.distance = state.depth
   if (state.fuel <= 0) loseArcade(state, 'Out of fuel')
-  if (state.resources >= 220) winArcade(state, 'Motherlode found')
+  if (state.resources >= MOTHERLOAD_GOAL) winArcade(state, 'Motherlode found')
 }
 
-function drawGame(ctx: CanvasRenderingContext2D, state: GameState): void {
+function drawGame(ctx: CanvasRenderingContext2D, state: GameState, best: number): void {
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   drawPanelBackground(ctx, '#071118', '#141025')
   ctx.strokeStyle = 'rgba(72, 187, 255, 0.08)'
@@ -412,7 +536,7 @@ function drawGame(ctx: CanvasRenderingContext2D, state: GameState): void {
     const def = TOWER_DEFINITIONS.find((item) => item.kind === tower.kind) ?? TOWER_DEFINITIONS[0]
     ctx.beginPath(); ctx.arc(tower.x, tower.y, tower.range, 0, Math.PI * 2); ctx.fillStyle = `${def.color}12`; ctx.fill(); ctx.strokeStyle = `${def.color}44`; ctx.lineWidth = 1; ctx.stroke()
     ctx.beginPath(); ctx.arc(tower.x, tower.y, 18, 0, Math.PI * 2); ctx.fillStyle = '#0f1720'; ctx.fill(); ctx.strokeStyle = def.color; ctx.lineWidth = 3; ctx.stroke()
-    ctx.fillStyle = def.color; ctx.font = '700 12px Inter, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(tower.kind === 'dart' ? 'D' : tower.kind === 'frost' ? 'F' : 'S', tower.x, tower.y)
+    ctx.fillStyle = def.color; ctx.font = '700 12px Inter, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(`${tower.kind === 'dart' ? 'D' : tower.kind === 'frost' ? 'F' : 'S'}${tower.level > 1 ? tower.level : ''}`, tower.x, tower.y)
   }
 
   for (const projectile of state.projectiles) {
@@ -431,10 +555,20 @@ function drawGame(ctx: CanvasRenderingContext2D, state: GameState): void {
   }
 
   drawTexts(ctx, state.texts)
-  if (state.phase !== 'running') drawOverlay(ctx, state.phase === 'won' ? 'Defense Perfect' : state.phase === 'lost' ? 'Core Breached' : 'Balloon TD Arena', 'Place RGB towers, pop waves, protect the desktop core.')
+  if (state.phase !== 'running') {
+    const title = state.phase === 'won' ? 'Defense Perfect' : state.phase === 'lost' ? 'Core Breached' : 'Balloon TD Arena'
+    const subtitle = state.phase === 'ready' ? 'Place RGB towers, pop waves, protect the desktop core.' : `Wave ${state.wave}/${MAX_WAVE}`
+    const footer = state.phase === 'ready' ? (best > 0 ? `Best ★${best}` : '') : `Score ★${state.score} · Best ★${best} — Press Start to play again`
+    drawOverlay(ctx, title, subtitle, footer)
+  }
 }
 
-function tickGame(state: GameState, dt: number): void {
+export function tickGame(state: GameState, dt: number): void {
+  for (const text of state.texts) {
+    text.y -= 28 * dt
+    text.life -= dt
+  }
+  state.texts = state.texts.filter((text) => text.life > 0)
   if (state.phase !== 'running') return
   if (state.waveQueue > 0) {
     state.spawnTimer -= dt
@@ -496,11 +630,6 @@ function tickGame(state: GameState, dt: number): void {
     }
     state.balloons = state.balloons.filter((balloon) => balloon.hp > 0)
   }
-  for (const text of state.texts) {
-    text.y -= 28 * dt
-    text.life -= dt
-  }
-  state.texts = state.texts.filter((text) => text.life > 0)
   if (state.lives <= 0) {
     state.lives = 0
     state.phase = 'lost'
@@ -510,9 +639,9 @@ function tickGame(state: GameState, dt: number): void {
     state.phase = 'won'
     return
   }
-  if (state.waveQueue === 0 && state.balloons.length === 0) {
-    state.waveCooldown += dt
-    if (state.waveCooldown > 2.4) launchWave(state)
+  if (state.waveQueue === 0 && state.balloons.length === 0 && state.wave < MAX_WAVE) {
+    state.waveCooldown -= dt
+    if (state.waveCooldown <= 0) launchWave(state)
   }
 }
 
@@ -535,20 +664,25 @@ function drawTexts(ctx: CanvasRenderingContext2D, texts: FloatingText[]): void {
   }
 }
 
-function drawOverlay(ctx: CanvasRenderingContext2D, title: string, subtitle: string): void {
+function drawOverlay(ctx: CanvasRenderingContext2D, title: string, subtitle: string, footer = ''): void {
   ctx.fillStyle = 'rgba(5, 10, 14, 0.68)'
   ctx.fillRect(0, 0, WIDTH, HEIGHT)
   ctx.fillStyle = '#e2f8ff'
   ctx.font = '800 34px Inter, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(title, WIDTH / 2, HEIGHT / 2 - 18)
+  ctx.fillText(title, WIDTH / 2, HEIGHT / 2 - 30)
   ctx.fillStyle = '#9fb7c1'
   ctx.font = '500 15px Inter, sans-serif'
-  ctx.fillText(subtitle, WIDTH / 2, HEIGHT / 2 + 18)
+  ctx.fillText(subtitle, WIDTH / 2, HEIGHT / 2 + 14)
+  if (footer) {
+    ctx.fillStyle = '#c9ecff'
+    ctx.font = '600 13px Inter, sans-serif'
+    ctx.fillText(footer, WIDTH / 2, HEIGHT / 2 + 56)
+  }
 }
 
-function drawArcade(ctx: CanvasRenderingContext2D, state: ArcadeState, id: ArcadeGameId, def: GameDefinition): void {
+function drawArcade(ctx: CanvasRenderingContext2D, state: ArcadeState, id: ArcadeGameId, def: GameDefinition, best: number): void {
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   drawPanelBackground(ctx, '#08111a', '#171225')
   ctx.save()
@@ -559,7 +693,12 @@ function drawArcade(ctx: CanvasRenderingContext2D, state: ArcadeState, id: Arcad
   ctx.restore()
   drawTexts(ctx, state.texts)
   drawHud(ctx, state, def)
-  if (state.phase !== 'running') drawOverlay(ctx, state.phase === 'won' ? state.message : state.phase === 'lost' ? state.message : def.title, def.controls)
+  if (state.phase !== 'running') {
+    const title = state.phase === 'won' || state.phase === 'lost' ? state.message : def.title
+    const subtitle = state.phase === 'ready' ? def.controls : 'Run complete'
+    const footer = state.phase === 'ready' ? (best > 0 ? `Best ★${best}` : '') : `Score ★${Math.floor(state.score)} · Best ★${best} — Press Start to play again`
+    drawOverlay(ctx, title, subtitle, footer)
+  }
 }
 
 function drawHud(ctx: CanvasRenderingContext2D, state: ArcadeState, def: GameDefinition): void {
@@ -569,7 +708,9 @@ function drawHud(ctx: CanvasRenderingContext2D, state: ArcadeState, def: GameDef
   ctx.strokeRect(14, 14, 270, 40)
   ctx.fillStyle = '#e5f6ff'
   ctx.font = '800 13px Inter, sans-serif'
-  ctx.fillText(`${def.title}  ★ ${Math.floor(state.score)}`, 28, 39)
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(`${def.title}  ★ ${Math.floor(state.score)}`, 28, 35)
 }
 
 function drawHelicopter(ctx: CanvasRenderingContext2D, state: ArcadeState): void {
@@ -578,18 +719,75 @@ function drawHelicopter(ctx: CanvasRenderingContext2D, state: ArcadeState): void
     ctx.fillStyle = '#22c55e'
     ctx.fillRect(column.x - 22, 0, 44, column.y - column.size)
     ctx.fillRect(column.x - 22, column.y + column.size, 44, HEIGHT)
+    ctx.fillStyle = 'rgba(190, 255, 205, 0.55)'
+    ctx.fillRect(column.x - 22, column.y - column.size - 5, 44, 5)
+    ctx.fillRect(column.x - 22, column.y + column.size, 44, 5)
+  }
+  for (const star of state.pickups) {
+    ctx.save()
+    ctx.translate(star.x, star.y)
+    ctx.rotate(Math.PI / 4)
+    ctx.fillStyle = '#fde68a'
+    ctx.fillRect(-star.size * 0.7, -star.size * 0.7, star.size * 1.4, star.size * 1.4)
+    ctx.restore()
   }
   const p = state.player
+  if (state.invuln > 0 && Math.floor(state.invuln * 12) % 2 === 0) ctx.globalAlpha = 0.35
   ctx.fillStyle = '#fde68a'; ctx.fillRect(p.x - 20, p.y - 8, 38, 17); ctx.fillStyle = '#f97316'; ctx.fillRect(p.x + 18, p.y - 3, 14, 6); ctx.strokeStyle = '#fef3c7'; ctx.beginPath(); ctx.moveTo(p.x - 26, p.y - 13); ctx.lineTo(p.x + 14, p.y - 13); ctx.stroke()
+  ctx.globalAlpha = 1
+  for (let i = 0; i < state.lives; i++) {
+    ctx.beginPath(); ctx.arc(WIDTH - 28 - i * 20, 30, 6, 0, Math.PI * 2); ctx.fillStyle = '#f87171'; ctx.fill()
+  }
 }
 
+const MINE_STRATA = ['#7c4a1e', '#6b3f16', '#5a3410', '#4a2b0c', '#3a2209', '#2c1a07']
+
 function drawMotherload(ctx: CanvasRenderingContext2D, state: ArcadeState): void {
-  ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, WIDTH, 100); ctx.fillStyle = '#78350f'; ctx.fillRect(0, 100, WIDTH, HEIGHT - 100)
-  for (let y = 140; y < HEIGHT; y += 50) { ctx.strokeStyle = 'rgba(251, 146, 60, 0.18)'; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke() }
-  for (const ore of state.obstacles) { ctx.fillStyle = ore.kind === 'gem' ? '#67e8f9' : '#fb923c'; ctx.beginPath(); ctx.arc(ore.x, ore.y, ore.size, 0, Math.PI * 2); ctx.fill() }
+  ctx.fillStyle = '#0f172a'
+  ctx.fillRect(0, 0, WIDTH, 100)
+  ctx.save()
+  ctx.translate(0, -state.cameraY)
+  const bandHeight = MINE_DEPTH / MINE_STRATA.length
+  for (let index = 0; index < MINE_STRATA.length; index++) {
+    ctx.fillStyle = MINE_STRATA[index]
+    ctx.fillRect(0, 100 + index * bandHeight, WIDTH, bandHeight + 2)
+  }
+  const viewTop = state.cameraY
+  const viewBottom = state.cameraY + HEIGHT
+  for (let y = Math.max(140, Math.ceil(viewTop / 50) * 50); y < Math.min(100 + MINE_DEPTH, viewBottom); y += 50) {
+    ctx.strokeStyle = 'rgba(251, 146, 60, 0.18)'
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke()
+  }
+  for (const ore of state.obstacles) {
+    if (ore.y < viewTop - 20 || ore.y > viewBottom + 20) continue
+    ctx.fillStyle = ore.kind === 'gem' ? '#67e8f9' : '#fb923c'
+    if (ore.kind === 'gem') {
+      ctx.shadowColor = '#67e8f9'
+      ctx.shadowBlur = 8
+    }
+    ctx.beginPath(); ctx.arc(ore.x, ore.y, ore.size, 0, Math.PI * 2); ctx.fill()
+    ctx.shadowBlur = 0
+  }
   const p = state.player
   ctx.fillStyle = '#eab308'; ctx.fillRect(p.x - 17, p.y - 14, 34, 28); ctx.fillStyle = '#94a3b8'; ctx.beginPath(); ctx.moveTo(p.x, p.y + 20); ctx.lineTo(p.x - 12, p.y + 4); ctx.lineTo(p.x + 12, p.y + 4); ctx.fill()
-  ctx.fillStyle = '#22c55e'; ctx.fillRect(24, 70, state.fuel * 2, 8)
+  ctx.restore()
+  ctx.fillStyle = state.fuel < 25 ? '#ef4444' : '#22c55e'
+  ctx.fillRect(24, 70, state.fuel * 2, 8)
+  ctx.fillStyle = '#fbbf24'
+  ctx.fillRect(24, 86, (state.cargo / CARGO_CAP) * 120, 6)
+  ctx.fillStyle = '#9fb7c1'
+  ctx.font = '700 10px Inter, sans-serif'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillText('FUEL', 24, 64)
+  ctx.fillText('ORE', 24, 102)
+  ctx.textAlign = 'right'
+  ctx.font = '700 14px Inter, sans-serif'
+  ctx.fillStyle = '#e5f6ff'
+  ctx.fillText(`${Math.floor(state.depth)}m`, WIDTH - 24, 40)
+  ctx.fillStyle = '#9fb7c1'
+  ctx.font = '600 11px Inter, sans-serif'
+  ctx.fillText(`Banked ${state.resources}/${MOTHERLOAD_GOAL}`, WIDTH - 24, 58)
 }
 
 export function MiniGamesView(): JSX.Element {
@@ -598,8 +796,14 @@ export function MiniGamesView(): JSX.Element {
   const tdStateRef = useRef<GameState>(initialState())
   const arcadeStatesRef = useRef<Record<ArcadeGameId, ArcadeState>>(createArcadeStateMap())
   const arcadeRef = useRef<ArcadeState>(arcadeStatesRef.current.helicopter)
+  const bestRef = useRef<Record<GameId, number>>({
+    balloon: readBest('balloon'),
+    helicopter: readBest('helicopter'),
+    motherload: readBest('motherload'),
+  })
   const [activeGame, setActiveGame] = useState<GameId>('balloon')
   const [selectedTower, setSelectedTower] = useState<TowerKind>('dart')
+  const [tdSpeed, setTdSpeed] = useState<1 | 2>(1)
   const [tdSnapshot, setTdSnapshot] = useState<GameState>(() => ({ ...tdStateRef.current }))
   const [arcadeSnapshot, setArcadeSnapshot] = useState<ArcadeState>(() => ({ ...arcadeRef.current, keys: new Set() }))
 
@@ -608,7 +812,7 @@ export function MiniGamesView(): JSX.Element {
 
   const publishSnapshot = useCallback(() => {
     setTdSnapshot({ ...tdStateRef.current, towers: [...tdStateRef.current.towers], balloons: [...tdStateRef.current.balloons] })
-    setArcadeSnapshot({ ...arcadeRef.current, keys: new Set(arcadeRef.current.keys), obstacles: [...arcadeRef.current.obstacles] })
+    setArcadeSnapshot({ ...arcadeRef.current, keys: new Set(arcadeRef.current.keys), obstacles: [...arcadeRef.current.obstacles], pickups: [...arcadeRef.current.pickups] })
   }, [])
 
   useEffect(() => {
@@ -625,16 +829,29 @@ export function MiniGamesView(): JSX.Element {
     let frame = 0
     let last = performance.now()
     let snapshotTimer = 0
+    let lastPhase: GamePhase = activeGame === 'balloon' ? tdStateRef.current.phase : arcadeRef.current.phase
     const loop = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
+      let phase: GamePhase
       if (activeGame === 'balloon') {
-        tickGame(tdStateRef.current, dt)
-        drawGame(ctx, tdStateRef.current)
+        tickGame(tdStateRef.current, dt * tdSpeed)
+        phase = tdStateRef.current.phase
+        drawGame(ctx, tdStateRef.current, bestRef.current.balloon)
       } else {
         updateArcade(arcadeRef.current, activeGame, dt)
-        drawArcade(ctx, arcadeRef.current, activeGame, activeDefinition)
+        phase = arcadeRef.current.phase
+        drawArcade(ctx, arcadeRef.current, activeGame, activeDefinition, bestRef.current[activeGame])
       }
+      if ((phase === 'won' || phase === 'lost') && lastPhase !== phase) {
+        const finalScore = activeGame === 'balloon' ? tdStateRef.current.score : arcadeRef.current.score
+        if (finalScore > bestRef.current[activeGame]) {
+          bestRef.current[activeGame] = finalScore
+          writeBest(activeGame, finalScore)
+          addText(activeGame === 'balloon' ? tdStateRef.current : arcadeRef.current, WIDTH / 2, HEIGHT / 2 + 96, 'NEW BEST!', '#fde68a')
+        }
+      }
+      lastPhase = phase
       snapshotTimer += dt
       if (snapshotTimer > 0.18) {
         publishSnapshot()
@@ -644,12 +861,14 @@ export function MiniGamesView(): JSX.Element {
     }
     frame = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(frame)
-  }, [activeDefinition, activeGame, publishSnapshot])
+  }, [activeDefinition, activeGame, publishSnapshot, tdSpeed])
 
   useEffect(() => {
     const normalizeKey = (event: KeyboardEvent) => event.code === 'Space' ? 'space' : event.key.toLowerCase()
     const down = (event: KeyboardEvent) => {
-      arcadeRef.current.keys.add(normalizeKey(event))
+      const normalized = normalizeKey(event)
+      if (GAME_KEYS.has(normalized) && !event.ctrlKey && !event.metaKey && !event.altKey) event.preventDefault()
+      arcadeRef.current.keys.add(normalized)
     }
     const up = (event: KeyboardEvent) => {
       arcadeRef.current.keys.delete(normalizeKey(event))
@@ -664,15 +883,28 @@ export function MiniGamesView(): JSX.Element {
 
   const startOrNextWave = useCallback(() => {
     if (activeGame !== 'balloon') {
+      const arcade = arcadeRef.current
+      if (arcade.phase === 'won' || arcade.phase === 'lost') {
+        arcadeStatesRef.current[activeGame] = createArcadeState(activeGame)
+        arcadeRef.current = arcadeStatesRef.current[activeGame]
+      }
       startArcade(arcadeRef.current)
       publishSnapshot()
       return
+    }
+    if (tdStateRef.current.phase === 'won' || tdStateRef.current.phase === 'lost') {
+      tdStateRef.current = initialState()
     }
     const state = tdStateRef.current
     if (state.phase === 'ready') {
       state.phase = 'running'
       if (state.wave === 0) launchWave(state)
-    } else if (state.phase === 'running' && state.waveQueue === 0 && state.balloons.length === 0) {
+    } else if (state.phase === 'running' && state.waveQueue === 0 && state.balloons.length === 0 && state.wave < MAX_WAVE) {
+      const bonus = Math.max(0, Math.round(state.waveCooldown * 4))
+      if (bonus > 0) {
+        state.coins += bonus
+        addText(state, WIDTH / 2, 96, `Early +${bonus}`, '#fde68a')
+      }
       launchWave(state)
     }
     publishSnapshot()
@@ -699,20 +931,28 @@ export function MiniGamesView(): JSX.Element {
       arcadeRef.current.mouse = point
       return
     }
-    const def = TOWER_DEFINITIONS.find((item) => item.kind === selectedTower) ?? TOWER_DEFINITIONS[0]
     const state = tdStateRef.current
+    const tower = state.towers.find((item) => distance(item, point) < 22)
+    if (tower) {
+      if (tower.level >= TOWER_MAX_LEVEL) addText(state, tower.x, tower.y - 26, 'Max level', '#9fb7c1')
+      else if (upgradeTower(state, tower)) addText(state, tower.x, tower.y - 26, `Lv${tower.level}`, '#86efac')
+      else addText(state, tower.x, tower.y - 26, 'Need coins', '#fca5a5')
+      publishSnapshot()
+      return
+    }
+    const def = TOWER_DEFINITIONS.find((item) => item.kind === selectedTower) ?? TOWER_DEFINITIONS[0]
     if (state.coins < def.cost) {
       addText(state, point.x, point.y, 'Need coins', '#fca5a5')
       publishSnapshot()
       return
     }
-    if (distanceToPath(point) < 42 || state.towers.some((tower) => distance(tower, point) < 44)) {
+    if (distanceToPath(point) < 42 || state.towers.some((item) => distance(item, point) < 44)) {
       addText(state, point.x, point.y, 'Blocked', '#fca5a5')
       publishSnapshot()
       return
     }
     state.coins -= def.cost
-    state.towers.push({ id: state.nextId++, kind: def.kind, x: point.x, y: point.y, range: def.range, cooldown: 0, fireRate: def.fireRate, damage: def.damage })
+    state.towers.push({ id: state.nextId++, kind: def.kind, level: 1, x: point.x, y: point.y, range: def.range, cooldown: 0, fireRate: def.fireRate, damage: def.damage })
     if (state.phase === 'ready') state.phase = 'running'
     if (state.wave === 0) launchWave(state)
     publishSnapshot()
@@ -746,6 +986,12 @@ export function MiniGamesView(): JSX.Element {
           <h2>{t('games.title')}</h2>
         </div>
         <div className="games-header-actions">
+          {isBalloon ? (
+            <button className="aspect-lock-btn" type="button" aria-label={t('games.speed')} title={t('games.speed')} onClick={() => setTdSpeed((speed) => (speed === 1 ? 2 : 1))}>
+              <Zap aria-hidden="true" size={13} />
+              {tdSpeed}×
+            </button>
+          ) : null}
           <button className="aspect-lock-btn" type="button" onClick={startOrNextWave}>
             <Play size={13} />
             {isBalloon && tdSnapshot.wave > 0 ? t('games.nextWave') : t('games.start')}
