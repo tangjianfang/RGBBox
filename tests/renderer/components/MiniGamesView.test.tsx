@@ -20,6 +20,17 @@ describe('renderer/components/MiniGamesView', () => {
     expect(container.querySelectorAll('button, [role="button"]').length).toBeGreaterThan(0)
   })
 
+  it('renders exactly the three curated game cards (R96 cut)', () => {
+    const { container } = render(<MiniGamesView />)
+    const cards = container.querySelectorAll('.game-card')
+    expect(cards.length).toBe(3)
+    expect(Array.from(cards).map((card) => card.querySelector('strong')?.textContent)).toEqual([
+      'Balloon TD Arena',
+      'Helicopter Game',
+      'Motherload',
+    ])
+  })
+
   it('transitions to a game when one is clicked', () => {
     const { container } = render(<MiniGamesView />)
     const buttons = container.querySelectorAll('button')
