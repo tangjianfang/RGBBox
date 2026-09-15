@@ -1641,6 +1641,180 @@ input:not([type]):focus {
   flex: 1;
 }
 
+/* ── R99: games hub tiles + fullscreen + level-up cards ─────────────────── */
+
+.games-hub {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.game-tile {
+  align-items: center;
+  background: #101a21;
+  border: 1px solid #273a43;
+  border-radius: 14px;
+  color: #dceff4;
+  display: flex;
+  gap: 14px;
+  padding: 18px;
+  text-align: left;
+  transition: background 120ms, border-color 120ms, transform 120ms;
+}
+
+.game-tile:hover {
+  background: #13252b;
+  border-color: var(--game-accent, #46c6a8);
+  transform: translateY(-2px);
+}
+
+.game-tile .tower-orb {
+  flex-shrink: 0;
+  height: 44px;
+  width: 44px;
+}
+
+.game-tile > svg {
+  color: var(--game-accent, #46c6a8);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.game-tile-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.game-tile-copy strong {
+  font-size: 15px;
+}
+
+.game-tile-copy small {
+  color: #8aa2ad;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.game-tile-copy em {
+  align-items: center;
+  color: #86efac;
+  display: flex;
+  font-size: 11px;
+  font-style: normal;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.game-tile.ghost {
+  border-style: dashed;
+  color: #55707c;
+  opacity: 0.75;
+}
+
+.game-tile.ghost .tower-orb {
+  background: #16222b;
+  color: #55707c;
+}
+
+.games-screen.fs {
+  background: #05090d;
+  inset: 0;
+  overflow: hidden;
+  padding: 14px 20px;
+  position: fixed;
+  z-index: 70;
+}
+
+.games-screen.fs .games-layout {
+  flex: 1;
+  min-height: 0;
+}
+
+.games-screen.fs .games-canvas-panel {
+  justify-content: center;
+}
+
+.games-screen.fs .games-canvas-wrap {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.games-screen.fs .games-canvas {
+  height: 100%;
+  max-height: calc(100vh - 190px);
+  width: auto;
+}
+
+.games-canvas-wrap {
+  display: flex;
+  position: relative;
+}
+
+.levelup-overlay {
+  align-items: center;
+  background: rgba(4, 8, 12, 0.78);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+  z-index: 5;
+}
+
+.levelup-overlay > p {
+  color: #fde68a;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.levelup-cards {
+  display: flex;
+  gap: 12px;
+  padding: 0 24px;
+}
+
+.levelup-card {
+  background: #0d1620;
+  border: 1px solid var(--game-accent, #46c6a8);
+  border-radius: 12px;
+  color: #dff8ff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 190px;
+  padding: 16px 14px;
+  text-align: left;
+  transition: transform 120ms, box-shadow 120ms;
+}
+
+.levelup-card:hover {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--game-accent, #46c6a8) 35%, transparent);
+  transform: translateY(-3px);
+}
+
+.levelup-card strong {
+  color: var(--game-accent, #46c6a8);
+  font-size: 14px;
+}
+
+.levelup-card small {
+  color: #9fb7c1;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.levelup-card em {
+  color: #55707c;
+  font-size: 10px;
+  font-style: normal;
+}
+
 .games-canvas {
   aspect-ratio: 900 / 520;
   background: #071118;

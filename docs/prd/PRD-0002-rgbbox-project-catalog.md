@@ -946,6 +946,20 @@
 - **验收点**：①typecheck 0 error；②全量 `yarn test` 0 失败；③真机 CDP 断言：建塔→点选→面板出现→升级扣费→出售返还→详情消失、状态条文案、速度钮、零页面错误；④截图复核：按钮无裁切、芯片无溢出、画布下无死空白（状态条占位）、粒子/炮管/横幅可见；⑤`grep -E 'helicopter|motherload|ArcadeState'` src/tests 零命中。
 - **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **83 files / 761 passed / 0 失败**（删 heli/mine 3 用例，+单作外壳/出售用例；`tests/renderer/setup.ts` lucide mock +Trophy）；③真机 CDP 冒烟 `scripts/verify-r98-td.mjs` **11/11 PASS**：单作外壳（3 塔卡/0 游戏卡）、新局 220 金币/0 波、Best 芯片在位、建塔 220→150、点塔出详情面板（Lv1/伤害/射程/射速/升级 ◎60/出售 +◎49）、面板升级 Lv2 扣费 150→90、出售返还 70%（90+91=181）面板关闭、重建自动开波 1/12、状态条「波次 1/12 · 剩余气球 15」、2× 速度钮、全程 0 页面错误；④截图视觉复核两轮（`docs/screenshots/r98-td-{ready,play}.png`）：第一轮确认 U1 按钮完整无裁切 / U3 6 芯片一行无溢出 / U4 状态条占位，同时揪出两处返工——♛ 字符在应用字体下形似垃圾桶 → 换 lucide Trophy；塔造型辨识度低 → 加粗炮管（含炮口块）+双环底座+彩色核心+方块等级标记，第二轮复核确认「炮管指向目标/环形底座/中心彩点/等级标记可辨，远超占位符式观感」；⑤死引用 `grep -E 'helicopter|motherload|ArcadeState|GAME_KEYS'` 于 src/ + tests/ 零命中；旧 `verify-r97-playability.mjs` 已删除。**状态：✅（R96.4 遗留在单作语境下仅余画布内英文文案（U7 残余）与 C6 残余计分公式待后续 R-N；U1/U3/U4/C5 已随本条消灭）**
 
+### R99. 迷你游戏平台化——dashboard 游戏库磁贴 + 全屏模式 + Goobies 式生存竞技场 + 全局音效震感（2026-09-16 用户两条指令）
+
+> 触发场景：R98 单作化收尾时用户追加两条指令：①「游戏列表也做成 dashboard 的方式，每一个游戏是一个模块，点击进去，可以设置全屏游戏模式。增加一些智能模式的游戏策略，让人越来越上头。游戏的内容和 UI 和动作、声音、视觉多些震感」②「游戏可以参考 Goobies 这款小游戏一样，设计更多有意思的」。方向：games 视图从「单游戏页」升级为「游戏平台」——磁贴库 + 逐游戏进入 + 全屏 + 令人上头的新玩法 + 音效层。
+- **R99.1 游戏库 hub（dashboard 式磁贴）**：MiniGamesView 改两级结构——hub（游戏磁贴网格：图标/标题/简介/最高分/进入）+ 游戏屏（画布+面板+「← 返回游戏库」）；磁贴数据驱动 `GAMES` 注册表，为后续增补游戏留扩展位；App.tsx 路由不动（仍单 `games` 视图）。
+- **R99.2 全屏游戏模式**：游戏屏顶栏「全屏」按钮 → `.games-screen.fs` 固定层铺满窗口（画布按视口高度等比放大、面板/顶栏内嵌），Esc/退出按钮还原；纯 CSS 定位方案（Electron 稳妥，不动 window 全局状态）。
+- **R99.3 新游戏「Nova Swarm」（Goobies 式生存竞技场）**：玩家 WASD 移动 + **自动索敌射击**；敌潮三型（追击/疾跑/重装）从边缘涌入；击杀掉经验珠 → 升级 → **三选一强化卡**（射速/伤害/多重射击/穿透/环刃/移速/生命/磁吸/暴击/弹速 10 种）→ 无限升级波次；接触伤害 + 0.9s 无敌帧 + 击退；计分=击杀×10+存活时间，最高分持久化 `rgbbox:gamesBest:survival`。
+- **R99.4 智能难度导演（adaptive director）**：刷怪间隔随分钟数/玩家等级收敛，并按表现自适应——满血高击杀率 → 压迫感 +15%；残血 → 仁慈 +25% 缓冲；「越来越上头」的节奏曲线落在机制上而非口号。
+- **R99.5 全局合成音效层（零资源文件）**：新 `games/sfx.ts` WebAudio 振荡器合成（射击/命中/爆破/经验/升级/受伤/波次/终局），TD 与 Nova Swarm 共用，射击类 90ms 节流防爆音；顶栏 🔊/🔇 开关（记忆 localStorage）。
+- **R99.6 视觉震感补强**：Nova Swarm 星空视差背景/推进器粒子/敌群血条/环刃拖尾/升级金光；TD 保留 R98 粒子+震动并接音效。
+- **架构**：游戏引擎从 MiniGamesView 拆出——新目录 `src/renderer/src/games/`：`td.ts`（R98 引擎原样迁移）、`survival.ts`（新引擎）、`sfx.ts`；MiniGamesView 只留 hub/壳/面板/全屏逻辑。
+- **受影响文件**：新 `games/{td,survival,sfx}.ts`、`MiniGamesView.tsx` 重构、`styles.css`（+hub 磁贴/全屏层）、`i18n/index.tsx`（+hub/全屏/Nova Swarm 文案/10 张强化卡 zh/en ≈ 50 keys）、`tests/.../MiniGamesView.test.tsx` + 新 `tests/renderer/games/survival.test.ts`、`scripts/verify-r99-platform.mjs`。
+- **验收点**：①typecheck 0 error；②全量 `yarn test` 0 失败（survival 引擎 ≥4 用例：经验曲线/导演自适应/强化应用/多重弹道）；③真机 CDP：hub 磁贴渲染 → 进入 TD 回归（建塔/升级/出售链路不回归）→ 进入 Nova Swarm 移动击杀得分 > 0 → 升级卡三选一出现并可选 → **全屏进入/退出** → 音效开关记忆 → 0 页面错误；④截图：hub 磁贴、Nova Swarm 战斗（敌群/弹道/经验珠）、全屏态；⑤TD 旧存档（best）不受影响。
+- **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **84 files / 766 passed / 0 失败**（+`tests/renderer/games/survival.test.ts` 5 用例：经验曲线增长/导演仁慈-满血压迫-时间收敛/多重弹道×3+齐射伤害/xp 溢出冻结+三选一+应用恢复/强化复利；组件测试改 hub 断言）；③真机 CDP 冒烟 `scripts/verify-r99-platform.mjs` **11/11 PASS**：hub 两磁贴+幽灵占位（且无游戏画布）→ TD 全链路零回归（建塔 220→150/选中面板 Lv1/升级 150→90/出售 181/重建自动开波 1/12）→ 全屏层激活/Esc 退出 → Nova Swarm 8 秒自动索敌得分 191 → 音效开关落盘 `rgbbox:gamesSfx=off` → 全程 0 页面错误；④截图 3 张（`docs/screenshots/r99-{hub,swarm-play,td-fullscreen}.png`），swarm-play 恰好定格**升级三选一浮层真实弹出**（16 击杀→LV2，三色卡片红/黄/青可辨，HUD 数据自洽 191=16×10+31s），视觉复核评「霓虹街机感强、压迫感到位」；⑤TD best 持久化键未动（`rgbbox:gamesBest:balloon` 原值保留）。**踩坑记录（如实入档）**：①hub「无画布」断言初版误判——keep-alive 视频视图的隐藏 canvas 仍在 DOM，断言须限定 `.games-hub` 作用域；②zh aria「总分」≠「得分」，脚本解析词要对齐 i18n 实文；③图片分析 MCP 单次 45s+，转后台任务并阻塞等待是正解。**状态：✅（升级卡浮层的逐卡点击选择已由单测覆盖、真机由截图定格证实；后续可扩：磁吸/环刃等强化的真机长局验证、更多游戏模块按 R99.1 注册表增补）**
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

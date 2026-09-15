@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, cleanup, fireEvent } from '@testing-library/react'
+import { MiniGamesView } from '../../../src/renderer/src/components/MiniGamesView'
 import {
-  MiniGamesView,
   towerUpgradeCost,
   upgradeTower,
   sellTower,
   tickGame,
   initialState,
   type Tower,
-} from '../../../src/renderer/src/components/MiniGamesView'
+} from '../../../src/renderer/src/games/td'
 import { setupRendererMocks } from '../_helpers'
 
 beforeEach(() => {
@@ -22,24 +22,27 @@ function makeTower(overrides: Partial<Tower> = {}): Tower {
 }
 
 describe('renderer/components/MiniGamesView', () => {
-  it('renders the mini-games view container', () => {
+  it('renders the games hub (R99 platform shell)', () => {
     const { container } = render(<MiniGamesView />)
-    expect(container).toBeTruthy()
+    expect(container.querySelectorAll('.game-tile:not(.ghost)').length).toBe(2)
+    expect(container.querySelectorAll('.game-tile.ghost').length).toBe(1)
+    expect(container.querySelectorAll('canvas').length).toBe(0)
   })
 
-  it('renders the single-game tower defense shell (R98 cut)', () => {
+  it('enters the tower defense game from its hub tile', () => {
     const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[0])
     expect(container.querySelectorAll('canvas').length).toBe(1)
     expect(container.querySelectorAll('.tower-card').length).toBe(3)
-    expect(container.querySelectorAll('.game-card').length).toBe(0)
     expect(container.querySelector('.games-canvas-status')).toBeTruthy()
   })
 
-  it('transitions when the start button is clicked', () => {
+  it('enters nova swarm from its hub tile', () => {
     const { container } = render(<MiniGamesView />)
-    const buttons = container.querySelectorAll('button')
-    if (buttons.length > 0) fireEvent.click(buttons[0])
-    expect(container).toBeTruthy()
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    expect(container.querySelectorAll('canvas').length).toBe(1)
+    expect(container.querySelectorAll('.tower-card').length).toBe(0)
+    expect(container.querySelector('.games-canvas-status')).toBeTruthy()
   })
 
   it('tower upgrades scale stats, rise in cost, and cap at level 3 (R97.2)', () => {
