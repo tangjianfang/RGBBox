@@ -111,6 +111,11 @@ export function MiniGamesView(): JSX.Element {
   const [swarmCharacter, setSwarmCharacter] = useState<CharacterId>(() => readCharacter())
   const [meta, setMeta] = useState<SwarmMeta>(() => readMeta())
   const [roulette, setRoulette] = useState<{ stage: 'pick' | 'spin' | 'result'; result?: RouletteResult }>({ stage: 'pick' })
+  const [gamepadName, setGamepadName] = useState<string | null>(null)
+  const screenRootRef = useRef<HTMLDivElement | null>(null)
+  const gamepadNameRef = useRef<string | null>(null)
+  const prevStartRef = useRef(false)
+  const startRunRef = useRef<() => void>(() => undefined)
 
   const publishTd = useCallback(() => {
     setTdSnapshot({ ...tdStateRef.current, towers: [...tdStateRef.current.towers], balloons: [...tdStateRef.current.balloons], projectiles: [...tdStateRef.current.projectiles] })
@@ -130,6 +135,53 @@ export function MiniGamesView(): JSX.Element {
       writeBest(game, score)
       setBests({ ...bestRef.current })
     }
+  }, [])
+
+  // R103: poll any connected gamepad each frame — presence detection (no
+  // pairing-event dependency), left stick as analog movement, Start to run.
+  const pollGamepad = useCallback(() => {
+    if (typeof navigator.getGamepads !== 'function') return
+    const pads = navigator.getGamepads()
+    const pad = Array.from(pads).find((item) => item && item.connected) ?? null
+    if (pad) {
+      survivalRef.current.axis = { x: pad.axes[0] ?? 0, y: pad.axes[1] ?? 0 }
+      if (gamepadNameRef.current !== pad.id) {
+        gamepadNameRef.current = pad.id
+        setGamepadName(pad.id)
+      }
+      const startPressed = pad.buttons[9]?.pressed === true
+      if (startPressed && !prevStartRef.current) {
+        const phase = survivalRef.current.phase
+        if (phase === 'ready' || phase === 'lost') startRunRef.current()
+      }
+      prevStartRef.current = startPressed
+    } else {
+      survivalRef.current.axis = { x: 0, y: 0 }
+      prevStartRef.current = false
+      if (gamepadNameRef.current !== null) {
+        gamepadNameRef.current = null
+        setGamepadName(null)
+      }
+    }
+  }, [])
+
+  // R102: native fullscreen state sync — Esc / OS exit flips the layout back.
+  useEffect(() => {
+    const onChange = () => {
+      if (!document.fullscreenElement) setFullscreen(false)
+    }
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      setFullscreen(false)
+      void document.exitFullscreen?.().catch(() => undefined)
+      return
+    }
+    setFullscreen(true)
+    void screenRootRef.current?.requestFullscreen?.().catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -156,6 +208,7 @@ export function MiniGamesView(): JSX.Element {
         lastPhase = phase
         drawGame(ctx, tdStateRef.current, selectedTowerId, bestRef.current.td)
       } else if (screen === 'survival') {
+        pollGamepad()
         tickSurvival(survivalRef.current, dt)
         const phase = survivalRef.current.phase
         if (phase === 'lost' && lastPhase !== phase) {
@@ -191,7 +244,7 @@ export function MiniGamesView(): JSX.Element {
     }
     frame = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(frame)
-  }, [fullscreen, publishTd, publishSurvival, publishTetris, screen, selectedTowerId, settleBest, tdSpeed])
+  }, [fullscreen, pollGamepad, publishTd, publishSurvival, publishTetris, screen, selectedTowerId, settleBest, tdSpeed])
 
   useEffect(() => {
     if (screen !== 'survival' && screen !== 'tetris' && !fullscreen) return
@@ -199,6 +252,7 @@ export function MiniGamesView(): JSX.Element {
     const down = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setFullscreen(false)
+        if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
         return
       }
       const normalized = normalizeKey(event)
@@ -228,11 +282,13 @@ export function MiniGamesView(): JSX.Element {
 
   const enterGame = useCallback((next: Screen) => {
     setFullscreen(false)
+    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
     setScreen(next)
   }, [])
 
   const backToHub = useCallback(() => {
     setFullscreen(false)
+    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
     setScreen('hub')
   }, [])
 
@@ -330,6 +386,8 @@ export function MiniGamesView(): JSX.Element {
     startSurvival(survivalRef.current)
     publishSurvival()
   }, [meta, publishSurvival, swarmCharacter])
+
+  startRunRef.current = startSurvivalRun
 
   const restartSurvivalRun = useCallback(() => {
     survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm)
@@ -459,7 +517,7 @@ export function MiniGamesView(): JSX.Element {
   const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
 
   return (
-    <div className={`games-view games-screen ${fullscreen ? 'fs' : ''}`}>
+    <div ref={screenRootRef} className={`games-view games-screen ${fullscreen ? 'fs' : ''}`}>
       <header className="workspace-header games-header">
         <div>
           <p className="eyebrow">{t('games.eyebrow')}</p>
@@ -487,7 +545,7 @@ export function MiniGamesView(): JSX.Element {
             <RotateCcw size={13} />
             {t('games.restart')}
           </button>
-          <button className="aspect-lock-btn" type="button" aria-label={t('games.fullscreen')} title={t('games.fullscreen')} onClick={() => setFullscreen((value) => !value)}>
+          <button className="aspect-lock-btn" type="button" aria-label={t('games.fullscreen')} title={t('games.fullscreen')} onClick={toggleFullscreen}>
             {fullscreen ? <Minimize2 aria-hidden="true" size={13} /> : <Maximize2 aria-hidden="true" size={13} />}
             {fullscreen ? t('games.exitFullscreen') : t('games.fullscreen')}
           </button>
@@ -613,7 +671,7 @@ export function MiniGamesView(): JSX.Element {
             <span>
               {isTd
                 ? `${t('games.wave')} ${tdSnapshot.wave}/${MAX_WAVE}${tdSnapshot.phase === 'running' && tdSnapshot.waveQueue + tdSnapshot.balloons.length > 0 ? ` · ${t('games.balloonsLeft').replace('{value}', String(tdSnapshot.waveQueue + tdSnapshot.balloons.length))}` : ''}`
-                : isSurvival ? t('games.swarmHint') : t('games.tetrisHint')}
+                : isSurvival ? `${t('games.swarmHint')}${gamepadName ? ` · 🎮 ${gamepadName}` : ''}` : t('games.tetrisHint')}
             </span>
             <span>
               {isTd && tdSnapshot.phase === 'running' && tdSnapshot.waveQueue === 0 && tdSnapshot.balloons.length === 0 && tdSnapshot.wave < MAX_WAVE

@@ -134,6 +134,7 @@ export interface SurvivalState {
   texts: FloatText[]
   banner: Banner | null
   keys: Set<string>
+  axis: { x: number; y: number }
   spawnTimer: number
   bossTimer: number
   regenTimer: number
@@ -217,6 +218,7 @@ export function initialSurvivalState(character: CharacterId = 'wisp', perm: Perm
     texts: [],
     banner: null,
     keys: new Set<string>(),
+    axis: { x: 0, y: 0 },
     spawnTimer: 1,
     bossTimer: BOSS_INTERVAL,
     regenTimer: 0,
@@ -417,11 +419,19 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
 
   const dx = (key(state, 'arrowright') || key(state, 'd') ? 1 : 0) - (key(state, 'arrowleft') || key(state, 'a') ? 1 : 0)
   const dy = (key(state, 'arrowdown') || key(state, 's') ? 1 : 0) - (key(state, 'arrowup') || key(state, 'w') ? 1 : 0)
-  const len = Math.hypot(dx, dy) || 1
-  player.x = clamp(player.x + (dx / len) * stats.moveSpeed * dt, 16, WIDTH - 16)
-  player.y = clamp(player.y + (dy / len) * stats.moveSpeed * dt, 16, HEIGHT - 16)
-  if (dx !== 0 || dy !== 0) {
-    player.angle = Math.atan2(dy, dx)
+  let moveX = dx
+  let moveY = dy
+  const axisLen = Math.hypot(state.axis.x, state.axis.y)
+  if (axisLen > 0.18) {
+    moveX = state.axis.x
+    moveY = state.axis.y
+  }
+  const moveLen = Math.hypot(moveX, moveY)
+  const moveScale = Math.min(1, moveLen)
+  if (moveLen > 0.0001) {
+    player.x = clamp(player.x + (moveX / moveLen) * moveScale * stats.moveSpeed * dt, 16, WIDTH - 16)
+    player.y = clamp(player.y + (moveY / moveLen) * moveScale * stats.moveSpeed * dt, 16, HEIGHT - 16)
+    player.angle = Math.atan2(moveY, moveX)
     if (Math.random() < dt * 40) state.particles.push({ x: player.x - Math.cos(player.angle) * 14, y: player.y - Math.sin(player.angle) * 14, vx: -Math.cos(player.angle) * 60, vy: -Math.sin(player.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: '#67e8f9' })
   }
 

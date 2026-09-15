@@ -1717,7 +1717,8 @@ input:not([type]):focus {
   color: #55707c;
 }
 
-.games-screen.fs {
+.games-screen.fs,
+.games-screen:fullscreen {
   background: #05090d;
   inset: 0;
   overflow: hidden;
@@ -1739,12 +1740,15 @@ input:not([type]):focus {
   align-items: center;
   display: flex;
   flex: 1;
+  justify-content: center;
   min-height: 0;
 }
 
+/* Viewport-unit height keeps the replaced-element ratio algorithm free of the
+   grid/flex parent chain (align-items:start breaks height:100% resolution). */
 .games-screen.fs .games-canvas {
-  height: 100%;
-  max-height: calc(100vh - 190px);
+  height: calc(100vh - 210px);
+  max-width: 100%;
   width: auto;
 }
 

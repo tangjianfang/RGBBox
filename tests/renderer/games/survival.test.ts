@@ -99,4 +99,24 @@ describe('renderer/games/survival engine (R99.3/R99.4)', () => {
     tickSurvival(state, 0.016)
     expect(state.player.hp).toBe(3)
   })
+
+  it('analog axis keeps tilt magnitude and respects the deadzone (R103)', () => {
+    const state = initialSurvivalState('wisp')
+    state.phase = 'running'
+    state.spawnTimer = 10
+    const x0 = state.player.x
+    state.axis = { x: 0.5, y: 0 }
+    for (let i = 0; i < 10; i++) tickSurvival(state, 0.05)
+    const halfTilt = state.player.x - x0
+    expect(halfTilt).toBeGreaterThan(30)
+    expect(halfTilt).toBeLessThan(55)
+    const x1 = state.player.x
+    state.axis = { x: 1, y: 0 }
+    for (let i = 0; i < 10; i++) tickSurvival(state, 0.05)
+    expect(state.player.x - x1).toBeGreaterThan(halfTilt * 1.5)
+    const x2 = state.player.x
+    state.axis = { x: 0.1, y: 0 }
+    for (let i = 0; i < 10; i++) tickSurvival(state, 0.05)
+    expect(state.player.x - x2).toBe(0)
+  })
 })

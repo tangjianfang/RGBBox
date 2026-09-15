@@ -986,6 +986,27 @@
 - **验收点**：①typecheck 0 error；②全量 `yarn test` 0 失败（新用例 ≥6：角色被动数值、稀有度权重分布、轮盘道具/属性掷点与分解、金币数学与购买流、连击加分、永久强化注入）；③真机 CDP：选战机→开局→侧栏构筑栏出现→boss 轮盘按钮→转盘→领取→效果入构筑→死亡战报（金币+N）→金币入商店→购买永久强化→下局属性生效；④截图：选战机浮层、轮盘转盘、死亡战报；⑤既有 TD/Tetris/升级卡链路零回归。
 - **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **86 files / 784 passed / 0 失败**（+`swarmMeta.test.ts` 9 用例：三角色被动注入/永久强化复利/幸运偏移稀有度分布/满级过滤+去重/道具轮盘档位钳制+分解映射/属性轮盘 10-30%/商店价格递增与贫穷满级守卫/金币=⌊分/20⌋/连击链加分；survival 套件+pendingSpins 断言）；③真机 CDP `scripts/verify-r101-goobies.mjs` **9/9 PASS**：三战机卡、选磐壳持久化（`rgbbox:swarmChar=bulwark`）、商店 6 行+种子 200 金币、购买伤害扣至 140 且 meta 落盘（damage:1）、开局磐壳 8 HP（角色注入实证）、45s 内真机弹出三张稀有度升级卡、点选后构筑栏出条目、0 页面错误；④截图 3 张（`r101-{setup,shop,levelup}.png`），选机浮层视觉复核：三卡完整（名字/被动/HP）、磐壳琥珀发光选中、布局无裁切、商店/构筑栏/金币全可见。**范围如实说明（R101.3 轮盘与 R101.6 战报的真机路径未覆盖）**：boss 90s 刷出成本高，轮盘开盘/领取/分解与死亡战报由单测+组件路径覆盖（applyRouletteResult/dissolveRoulette/战报纯渲染），真机仅验证到「boss 击杀 pendingSpins+1」引擎层；后续顺手补长局真机验证。**踩坑记录**：①`export { X } from` 与同名 import 合并冲突——改为本地 import + 裸 `export { X }`；②i18n `t()` 是字面量联合类型，`Object.entries` 出的 string key 需断言回 `UpgradeId`；③score 在 tick 开头结算，当拍击杀下一拍入账——连击单测需多 tick 一拍；④zh 块手滑多出一个 `games.perm.moveRate.desc` 赘键，已清。**状态：✅（FRD 未落项：岛屿推进 M09、神器 M12、成就 M14、百科 M15、BGM M17——留档待后续 R-N 按需立项）**
 
+### R102. 游戏全屏模式修复——CSS 覆盖层升级为真·全屏（铺满显示器）（2026-09-16 用户报告）
+
+> 触发场景：用户指出 R99 的「全屏」只是窗口内 CSS fixed 覆盖层（`.games-screen.fs`），系统标题栏仍在、未铺满显示器——不符合「全屏」语义。修复目标：**点击全屏 → 游戏屏铺满当前显示器（真全屏）**。
+- **R102.1 方案**：不新增 IPC（避免动 main/preload 白名单）——对 `.games-screen` 根元素调用 **HTML5 Fullscreen API**（`element.requestFullscreen()` / `document.exitFullscreen()`，Electron 渲染层原生支持，元素进入顶层铺满显示器）；既有 `.fs` 布局类保留（状态不变），原生全屏由元素顶层自动覆盖。
+- **R102.2 状态同步**：监听 `fullscreenchange`——Esc 原生退出/系统退出时自动把 React `fullscreen` 状态翻回 false（按钮文案/布局类同步回收）；返回游戏库（backToHub）时若在全屏则主动 `exitFullscreen()`。
+- **R102.3 画布适配**：真全屏下 `100vh` = 显示器高，既有 `max-height: calc(100vh - 190px)` 等比缩放规则直接生效；复核画布+侧栏在 1080p 全屏下的排版。
+- **受影响文件**：`MiniGamesView.tsx`（rootRef + toggle 改造 + fullscreenchange 监听）。
+- **验收点**：①typecheck 0 error + 全量 `yarn test` 0 失败；②真机 CDP：点击全屏 → `document.fullscreenElement` 非空、`innerWidth ≥ 屏宽-2`、画布宽 ≥ 窗口态的 1.5×；Esc → `fullscreenElement` 为空且按钮文案复原；返回游戏库自动退出全屏；③全屏态截图复核排版无裁切。
+- **实施证据（2026-09-16）**：typecheck 0 error；全量 `yarn test` **86 files / 785 passed / 0 失败**；真机 CDP `scripts/verify-r102-r103.mjs` **8/8 PASS**——`fullscreenElement` 置位、视口 1280→**1920 铺满显示器**、画布 790→**1505**（1.9×）、Esc 退出原生全屏+按钮文案复原；截图 `r102-td-native-fullscreen.png` 视觉复核：无系统标题栏/任务栏残留、按钮行+芯片+五塔面板排版完整。**踩坑记录**：①初版画布仅放大到 902px——`.games-layout` 为 grid 且 `align-items:start` 断了 `height:100%` 解析链，改**视口单位直接定高**（`height: calc(100vh - 210px)` + 替换元素等比算法）后达 1505；②CDP 合成 Esc 不触发浏览器级「Esc 退出全屏」快捷键，自有 Esc 处理器需显式 `document.exitFullscreen()`；③断言边界：1920 ≥ 1280×1.5 恰好相等，用 ≥ 而非 >。**状态：✅**
+
+### R103. Nova Swarm 手柄支持——任意标准手柄左摇杆移动 + Start 开局（2026-09-16 用户要求「射击游戏要支持所有的手柄控制器」）
+
+> 触发场景：用户要求射击游戏支持所有手柄控制器（Goobies FRD FR-101/102 对应项）。方案：**Gamepad API 轮询**——不依赖配对事件，任意插入即用（XInput/DInput/蓝牙手柄均按 Standard Mapping 暴露 axes/buttons）。
+- **R103.1 引擎模拟轴**：`SurvivalState.axis`——组件每帧从 `navigator.getGamepads()` 读左摇杆（axes[0]/[1]）写入；引擎移动逻辑改为键盘向量与摇杆向量合流，**模拟量保留**（轻推慢走：速度×min(1,|axis|)），死区 0.18。
+- **R103.2 按键**：Start（buttons[9]）边沿触发=开始/重开一局（ready/lost 态）；射击本就全自动，无需映射。
+- **R103.3 连接反馈**：轮询检测手柄在线（不依赖 gamepadconnected 事件，拔插即时反映），swarm 状态条显示「🎮 {name}」；无手柄不显示。
+- **R103.4 健壮性**：`getGamepads` 不存在/空列表/非 standard mapping 一律安全降级到键盘；happy-dom 单测环境不受影响。
+- **受影响文件**：`games/survival.ts`（axis+移动合流）、`MiniGamesView.tsx`（轮询+Start 边沿+状态条）。
+- **验收点**：①typecheck + 全量 `yarn test` 0 失败（+引擎用例：模拟量减速/死区/方向）；②真机 CDP 注入 `getGamepads` stub（axes=[1,0]）→ 状态条出现 🎮 TestPad 且游戏正常零错误（模拟移动由单测覆盖——CDP 无手柄事件注入通道）；③键盘链路零回归。
+- **实施证据（2026-09-16）**：全量 `yarn test` **86 files / 785 passed / 0 失败**（+用例：半倾斜 42.5px 精确落区间 / 满倾斜 >1.5× / 死区 0.1 零位移）；真机 CDP（与 R102 同脚本）——注入 stub（axes=[0.6,0]）→ 状态条即时显示「🎮 TestPad (vendor: 1234 product: 5678)」、带手柄运行 3.5s 零页面错误、移除 stub 后芯片即时消失（轮询检测拔插，不依赖配对事件）。**踩坑记录**：跨脚本运行的 swarm 可能冻结在 levelup 相位，「开始」对其 no-op——脚本需先「重新开始」归零（应用行为本身正确）。**状态：✅（真实物理手柄的实机手感待用户顺手验证；模拟量/死区/Start 边沿均已被单测与 stub 链路覆盖）**
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。
