@@ -23,14 +23,36 @@ import {
 } from '../games/td'
 import {
   UPGRADES,
+  applyRouletteResult,
   applyUpgrade,
+  dissolveRoulette,
   drawSurvival,
   initialSurvivalState,
+  openRoulette,
   startSurvival,
   tickSurvival,
   type SurvivalState,
   type UpgradeId,
 } from '../games/survival'
+import {
+  CHARACTERS,
+  PERM_UPGRADES,
+  PERM_MAX,
+  RARITY_COLORS,
+  buyPerm,
+  permCost,
+  readCharacter,
+  readMeta,
+  rollRouletteItem,
+  rollRouletteStat,
+  runCoins,
+  writeCharacter,
+  writeMeta,
+  type CharacterId,
+  type PermKey,
+  type RouletteResult,
+  type SwarmMeta,
+} from '../games/swarmMeta'
 import { isSfxEnabled, playSfx, setSfxEnabled } from '../games/sfx'
 import {
   drawTetris,
@@ -86,6 +108,9 @@ export function MiniGamesView(): JSX.Element {
   const [tdSnapshot, setTdSnapshot] = useState<GameState>(() => ({ ...tdStateRef.current }))
   const [survivalSnapshot, setSurvivalSnapshot] = useState<SurvivalState>(() => ({ ...survivalRef.current, keys: new Set() }))
   const [tetrisSnapshot, setTetrisSnapshot] = useState<TetrisState>(() => ({ ...tetrisRef.current, keys: new Set() }))
+  const [swarmCharacter, setSwarmCharacter] = useState<CharacterId>(() => readCharacter())
+  const [meta, setMeta] = useState<SwarmMeta>(() => readMeta())
+  const [roulette, setRoulette] = useState<{ stage: 'pick' | 'spin' | 'result'; result?: RouletteResult }>({ stage: 'pick' })
 
   const publishTd = useCallback(() => {
     setTdSnapshot({ ...tdStateRef.current, towers: [...tdStateRef.current.towers], balloons: [...tdStateRef.current.balloons], projectiles: [...tdStateRef.current.projectiles] })
@@ -135,9 +160,17 @@ export function MiniGamesView(): JSX.Element {
         const phase = survivalRef.current.phase
         if (phase === 'lost' && lastPhase !== phase) {
           settleBest('survival', survivalRef.current.score)
+          const earned = runCoins(survivalRef.current.score)
+          if (earned > 0) {
+            setMeta((prev) => {
+              const next = { coins: prev.coins + earned, perm: prev.perm }
+              writeMeta(next)
+              return next
+            })
+          }
         }
         lastPhase = phase
-        drawSurvival(ctx, survivalRef.current, bestRef.current.survival)
+        drawSurvival(ctx, survivalRef.current)
       } else {
         tickTetris(tetrisRef.current, dt)
         const phase = tetrisRef.current.phase
@@ -291,17 +324,57 @@ export function MiniGamesView(): JSX.Element {
   }, [publishTd, selectedTower, selectedTowerId])
 
   const startSurvivalRun = useCallback(() => {
-    if (survivalRef.current.phase === 'lost') {
-      survivalRef.current = initialSurvivalState()
+    if (survivalRef.current.phase === 'lost' || survivalRef.current.phase === 'ready') {
+      survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm)
     }
     startSurvival(survivalRef.current)
     publishSurvival()
-  }, [publishSurvival])
+  }, [meta, publishSurvival, swarmCharacter])
 
   const restartSurvivalRun = useCallback(() => {
-    survivalRef.current = initialSurvivalState()
+    survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm)
+    publishSurvival()
+  }, [meta, publishSurvival, swarmCharacter])
+
+  const selectCharacter = useCallback((id: CharacterId) => {
+    setSwarmCharacter(id)
+    writeCharacter(id)
+  }, [])
+
+  const beginRoulette = useCallback(() => {
+    openRoulette(survivalRef.current)
+    setRoulette({ stage: 'pick' })
     publishSurvival()
   }, [publishSurvival])
+
+  const spinRoulette = useCallback((kind: 'item' | 'stat') => {
+    const state = survivalRef.current
+    const luck = 0.12 * state.perm.luck
+    const result = kind === 'item' ? rollRouletteItem(state.taken, luck) : rollRouletteStat(luck)
+    setRoulette({ stage: 'spin', result })
+    window.setTimeout(() => setRoulette((current) => (current.stage === 'spin' ? { ...current, stage: 'result' } : current)), 1700)
+  }, [])
+
+  const claimRoulette = useCallback(() => {
+    if (roulette.result) applyRouletteResult(survivalRef.current, roulette.result)
+    setRoulette({ stage: 'pick' })
+    publishSurvival()
+  }, [publishSurvival, roulette.result])
+
+  const dissolveCurrentRoulette = useCallback(() => {
+    if (roulette.result) dissolveRoulette(survivalRef.current, roulette.result)
+    setRoulette({ stage: 'pick' })
+    publishSurvival()
+  }, [publishSurvival, roulette.result])
+
+  const buyPermanent = useCallback((key: PermKey) => {
+    setMeta((prev) => {
+      const next = buyPerm(prev, key)
+      if (!next) return prev
+      writeMeta(next)
+      return next
+    })
+  }, [])
 
   const startTetrisRun = useCallback(() => {
     if (tetrisRef.current.phase === 'lost') {
@@ -455,7 +528,7 @@ export function MiniGamesView(): JSX.Element {
                     const def = UPGRADES.find((upgrade) => upgrade.id === id)
                     const takenCount = survivalSnapshot.taken[id] ?? 0
                     return (
-                      <button className="levelup-card" type="button" key={id} style={{ '--game-accent': def?.accent ?? '#67e8f9' } as CSSProperties} onClick={() => chooseUpgrade(id)}>
+                      <button className="levelup-card" type="button" key={id} style={{ '--game-accent': RARITY_COLORS[def?.rarity ?? 0] } as CSSProperties} onClick={() => chooseUpgrade(id)}>
                         <strong>{t(`games.up.${id}`)}</strong>
                         <small>{t(`games.up.${id}.desc`)}</small>
                         <em>{takenCount}/{def?.max ?? 0}</em>
@@ -464,6 +537,76 @@ export function MiniGamesView(): JSX.Element {
                   })}
                 </div>
               </div>
+            ) : null}
+            {isSurvival && survivalSnapshot.phase === 'ready' ? (
+              <div className="swarm-setup">
+                <p className="swarm-setup-title">{t('games.setupTitle')}</p>
+                <div className="char-cards">
+                  {CHARACTERS.map((character) => (
+                    <button key={character.id} type="button" className={`char-card ${swarmCharacter === character.id ? 'selected' : ''}`} style={{ '--game-accent': character.accent } as CSSProperties} onClick={() => selectCharacter(character.id)}>
+                      <strong>{t(`games.char.${character.id}`)}</strong>
+                      <small>{t(`games.char.${character.id}.desc`)}</small>
+                      <em>HP {5 + character.hpMod}</em>
+                    </button>
+                  ))}
+                </div>
+                <p className="swarm-setup-hint">{t('games.setupHint')}</p>
+              </div>
+            ) : null}
+            {isSurvival && survivalSnapshot.phase === 'roulette' ? (
+              <div className="swarm-roulette">
+                {roulette.stage === 'pick' ? (
+                  <>
+                    <p>{t('games.roulettePick')}</p>
+                    <div className="roulette-wheels">
+                      <button type="button" onClick={() => spinRoulette('item')}>
+                        <strong>{t('games.wheelItem')}</strong>
+                        <small>{t('games.wheelItem.desc')}</small>
+                      </button>
+                      <button type="button" onClick={() => spinRoulette('stat')}>
+                        <strong>{t('games.wheelStat')}</strong>
+                        <small>{t('games.wheelStat.desc')}</small>
+                      </button>
+                    </div>
+                  </>
+                ) : roulette.stage === 'spin' ? (
+                  <div className="roulette-disc spinning" aria-label={t('games.rouletteSpinning')}>?</div>
+                ) : roulette.result ? (
+                  <div className="roulette-result" style={{ '--game-accent': RARITY_COLORS[roulette.result.rarity] } as CSSProperties}>
+                    <span>{t(`games.rarity.${roulette.result.rarity}`)}</span>
+                    <strong>
+                      {roulette.result.kind === 'item'
+                        ? t('games.rouletteItemResult').replace('{name}', t(`games.up.${roulette.result.upgradeId}`)).replace('{levels}', String(roulette.result.levels))
+                        : t('games.rouletteStatResult').replace('{stat}', t(`games.stat.${roulette.result.stat}`)).replace('{pct}', String(roulette.result.pct))}
+                    </strong>
+                    <div className="roulette-actions">
+                      <button type="button" onClick={claimRoulette}>{t('games.claim')}</button>
+                      <button type="button" onClick={dissolveCurrentRoulette}>{t('games.dissolve').replace('{xp}', String(roulette.result.xpValue))}</button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {isSurvival && survivalSnapshot.phase === 'lost' ? (
+              <div className="swarm-summary">
+                <p className="swarm-summary-title">{t('games.summaryTitle')}</p>
+                <div className="swarm-summary-rows">
+                  <span>★ {survivalSnapshot.score}</span>
+                  <span>{t('games.summaryKills')} {survivalSnapshot.kills}</span>
+                  <span>{t('games.summaryTime')} {Math.floor(survivalSnapshot.time)}s</span>
+                  <span>{t('games.summaryCombo')} ×{survivalSnapshot.comboBest}</span>
+                  <span>{t('games.summaryCoins')} +{runCoins(survivalSnapshot.score)}</span>
+                </div>
+                <div className="swarm-summary-build">
+                  {Object.entries(survivalSnapshot.taken).filter(([, level]) => level > 0).map(([id, level]) => (
+                    <em key={id} style={{ borderColor: RARITY_COLORS[UPGRADES.find((upgrade) => upgrade.id === (id as UpgradeId))?.rarity ?? 0] }}>{t(`games.up.${id as UpgradeId}`)} {level}</em>
+                  ))}
+                </div>
+                <p className="swarm-setup-hint">{t('games.summaryAgain')}</p>
+              </div>
+            ) : null}
+            {isSurvival && survivalSnapshot.phase === 'running' && survivalSnapshot.pendingSpins > 0 ? (
+              <button type="button" className="spin-fab" onClick={beginRoulette}>{t('games.spinFab').replace('{n}', String(survivalSnapshot.pendingSpins))}</button>
             ) : null}
           </div>
           <div className="games-canvas-status">
@@ -532,17 +675,64 @@ export function MiniGamesView(): JSX.Element {
               </div>
             </>
           ) : isSurvival ? (
-            <div className="games-rules">
-              <strong>{t('games.controlsTitle')}</strong>
-              <p>{t('games.swarmControls')}</p>
-              <strong>{t('games.rulesTitle')}</strong>
-              <ul>
-                <li>{t('games.swarmRule1')}</li>
-                <li>{t('games.swarmRule2')}</li>
-                <li>{t('games.swarmRule3')}</li>
-              </ul>
-              <p className="games-help">{t('games.swarmRule4')}</p>
-            </div>
+            <>
+              <div className="games-rules">
+                <strong>{t('games.controlsTitle')}</strong>
+                <p>{t('games.swarmControls')}</p>
+                <strong>{t('games.rulesTitle')}</strong>
+                <ul>
+                  <li>{t('games.swarmRule1')}</li>
+                  <li>{t('games.swarmRule2')}</li>
+                  <li>{t('games.swarmRule3')}</li>
+                </ul>
+                <p className="games-help">{t('games.swarmRule4')}</p>
+              </div>
+              <div className="swarm-panel">
+                <strong>{t('games.invTitle')}</strong>
+                {Object.entries(survivalSnapshot.taken).filter(([, level]) => level > 0).length === 0 ? (
+                  <small className="games-help">{t('games.invEmpty')}</small>
+                ) : (
+                  <ul className="swarm-inv">
+                    {Object.entries(survivalSnapshot.taken).filter(([, level]) => level > 0).map(([id, level]) => {
+                      const upgradeId = id as UpgradeId
+                      const def = UPGRADES.find((upgrade) => upgrade.id === upgradeId)
+                      return (
+                        <li key={id}>
+                          <span className="rarity-dot" style={{ background: RARITY_COLORS[def?.rarity ?? 0] }} />
+                          {t(`games.up.${upgradeId}`)}
+                          <em>Lv{level}/{def?.max ?? 0}</em>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+              <div className="swarm-panel swarm-shop">
+                <strong>{t('games.shopTitle')}</strong>
+                <span className="swarm-coins">◎ {meta.coins}</span>
+                {PERM_UPGRADES.map((def) => {
+                  const level = meta.perm[def.key]
+                  const cost = permCost(def, level)
+                  return (
+                    <div className="shop-row" key={def.key}>
+                      <span className="shop-copy">
+                        {t(`games.perm.${def.key}`)}
+                        <small>{t(`games.perm.${def.key}.desc`)}</small>
+                        <span className="shop-pips">{'●'.repeat(level)}{'○'.repeat(PERM_MAX - level)}</span>
+                      </span>
+                      {level >= PERM_MAX ? (
+                        <b className="shop-max">{t('games.maxedShort')}</b>
+                      ) : (
+                        <button className="aspect-lock-btn" type="button" disabled={meta.coins < cost} onClick={() => buyPermanent(def.key)}>
+                          {t('games.buy').replace('{cost}', String(cost))}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+                <small className="games-help">{t('games.shopHint')}</small>
+              </div>
+            </>
           ) : (
             <div className="games-rules">
               <strong>{t('games.controlsTitle')}</strong>

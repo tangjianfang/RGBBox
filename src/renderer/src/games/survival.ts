@@ -4,9 +4,22 @@
 // based on how well the run is going.
 import { playSfx } from './sfx'
 import { WIDTH, HEIGHT } from './td'
+import {
+  UPGRADES,
+  characterById,
+  pickOffers as pickWeightedOffers,
+  type CharacterId,
+  type PermMap,
+  type RouletteResult,
+  type RouletteStat,
+  type UpgradeDef,
+  type UpgradeId,
+} from './swarmMeta'
 
-export type SurvivalPhase = 'ready' | 'running' | 'levelup' | 'lost'
-export type UpgradeId = 'fireRate' | 'damage' | 'multishot' | 'pierce' | 'blade' | 'speed' | 'maxHp' | 'magnet' | 'crit' | 'bulletSpeed' | 'thorns' | 'regen'
+export { UPGRADES }
+export type { UpgradeDef, UpgradeId }
+
+export type SurvivalPhase = 'ready' | 'running' | 'levelup' | 'roulette' | 'lost'
 
 export const BOSS_INTERVAL = 90
 
@@ -99,12 +112,21 @@ export interface SurvivalState {
   level: number
   xp: number
   xpNext: number
+  xpMult: number
   shake: number
   nextId: number
   player: PlayerState
   stats: PlayerStats
   taken: Record<UpgradeId, number>
+  bonuses: Partial<Record<RouletteStat, number>>
+  character: CharacterId
+  perm: PermMap
   offers: UpgradeId[]
+  pendingSpins: number
+  combo: number
+  comboTimer: number
+  comboBest: number
+  comboBonus: number
   enemies: Enemy[]
   bullets: Bullet[]
   orbs: Orb[]
@@ -119,27 +141,6 @@ export interface SurvivalState {
   bladeTimer: number
   lastMinute: number
 }
-
-export interface UpgradeDef {
-  id: UpgradeId
-  accent: string
-  max: number
-}
-
-export const UPGRADES: UpgradeDef[] = [
-  { id: 'fireRate', accent: '#67e8f9', max: 5 },
-  { id: 'damage', accent: '#fb7185', max: 5 },
-  { id: 'multishot', accent: '#fde68a', max: 3 },
-  { id: 'pierce', accent: '#a78bfa', max: 3 },
-  { id: 'blade', accent: '#38bdf8', max: 3 },
-  { id: 'speed', accent: '#86efac', max: 4 },
-  { id: 'maxHp', accent: '#f87171', max: 4 },
-  { id: 'magnet', accent: '#4ade80', max: 3 },
-  { id: 'crit', accent: '#fbbf24', max: 4 },
-  { id: 'bulletSpeed', accent: '#e879f9', max: 3 },
-  { id: 'thorns', accent: '#f472b6', max: 3 },
-  { id: 'regen', accent: '#34d399', max: 2 },
-]
 
 export function xpToNext(level: number): number {
   return 5 + level * 3
@@ -161,22 +162,31 @@ function baseStats(): PlayerStats {
   }
 }
 
-export function recomputeStats(stats: PlayerStats, taken: Record<UpgradeId, number>): void {
-  stats.fireRate = 2 * (1 + 0.22 * taken.fireRate)
-  stats.damage = 1 + taken.damage
+export function recomputeStats(
+  stats: PlayerStats,
+  taken: Record<UpgradeId, number>,
+  ctx?: { character?: CharacterId; perm?: PermMap; bonuses?: Partial<Record<RouletteStat, number>> },
+): void {
+  const character = characterById(ctx?.character ?? 'wisp')
+  const perm = ctx?.perm
+  const bonuses = ctx?.bonuses
+  stats.fireRate = 2 * (1 + 0.22 * taken.fireRate) * (1 + 0.15 * (perm?.fireRate ?? 0)) * (1 + (bonuses?.fireRate ?? 0)) * character.fireRateMod
+  stats.damage = (1 + taken.damage) * (1 + 0.1 * (perm?.damage ?? 0)) * (1 + (bonuses?.damage ?? 0))
   stats.multishot = 1 + taken.multishot
   stats.pierce = taken.pierce
-  stats.blade = taken.blade
-  stats.moveSpeed = 170 * (1 + 0.12 * taken.speed)
-  stats.magnet = 70 + 45 * taken.magnet
-  stats.crit = 0.1 * taken.crit
+  stats.blade = taken.blade + character.innateBlade
+  stats.moveSpeed = 170 * (1 + 0.12 * taken.speed) * (1 + 0.1 * (perm?.moveSpeed ?? 0)) * (1 + (bonuses?.moveSpeed ?? 0)) * character.speedMod
+  stats.magnet = (70 + 45 * taken.magnet) * (1 + (bonuses?.magnet ?? 0))
+  stats.crit = 0.1 * taken.crit + (bonuses?.crit ?? 0)
   stats.bulletSpeed = 420 * (1 + 0.3 * taken.bulletSpeed)
-  stats.thorns = taken.thorns
+  stats.thorns = taken.thorns + character.innateThorns
   stats.regenInterval = taken.regen === 0 ? 0 : taken.regen === 1 ? 30 : 16
 }
 
-export function initialSurvivalState(): SurvivalState {
-  return {
+export function initialSurvivalState(character: CharacterId = 'wisp', perm: PermMap = { damage: 0, fireRate: 0, moveSpeed: 0, maxHp: 0, xpGain: 0, luck: 0 }): SurvivalState {
+  const def = characterById(character)
+  const maxHp = Math.max(1, 5 + def.hpMod + perm.maxHp)
+  const state: SurvivalState = {
     phase: 'ready',
     clock: 0,
     time: 0,
@@ -185,12 +195,21 @@ export function initialSurvivalState(): SurvivalState {
     level: 1,
     xp: 0,
     xpNext: xpToNext(1),
+    xpMult: def.xpMod * (1 + 0.1 * perm.xpGain),
     shake: 0,
     nextId: 1,
-    player: { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 14, hp: 5, maxHp: 5, invuln: 0, fireTimer: 0, angle: -Math.PI / 2 },
+    player: { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 14, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2 },
     stats: baseStats(),
     taken: { fireRate: 0, damage: 0, multishot: 0, pierce: 0, blade: 0, speed: 0, maxHp: 0, magnet: 0, crit: 0, bulletSpeed: 0, thorns: 0, regen: 0 },
+    bonuses: {},
+    character,
+    perm: { ...perm },
     offers: [],
+    pendingSpins: 0,
+    combo: 0,
+    comboTimer: 0,
+    comboBest: 0,
+    comboBonus: 0,
     enemies: [],
     bullets: [],
     orbs: [],
@@ -205,6 +224,8 @@ export function initialSurvivalState(): SurvivalState {
     bladeTimer: 0,
     lastMinute: 0,
   }
+  recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses })
+  return state
 }
 
 function key(state: SurvivalState, value: string): boolean {
@@ -252,14 +273,7 @@ export function directorSpawnInterval(state: SurvivalState): number {
 }
 
 function pickOffers(state: SurvivalState): UpgradeId[] {
-  const pool = UPGRADES.filter((upgrade) => state.taken[upgrade.id] < upgrade.max)
-  const offers: UpgradeId[] = []
-  while (offers.length < 3 && pool.length > 0) {
-    const index = Math.floor(Math.random() * pool.length)
-    offers.push(pool[index].id)
-    pool.splice(index, 1)
-  }
-  return offers
+  return pickWeightedOffers(state.taken, 3, 0.12 * state.perm.luck)
 }
 
 export function applyUpgrade(state: SurvivalState, id: UpgradeId): void {
@@ -270,11 +284,50 @@ export function applyUpgrade(state: SurvivalState, id: UpgradeId): void {
     state.player.maxHp += 1
     state.player.hp = Math.min(state.player.maxHp, state.player.hp + 2)
   }
-  recomputeStats(state.stats, state.taken)
+  recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses })
   state.offers = []
   state.phase = 'running'
   spawnBurst(state, state.player.x, state.player.y, def.accent, 18, 150)
   addText(state, state.player.x, state.player.y - 30, `+${id}`, def.accent)
+}
+
+export function openRoulette(state: SurvivalState): void {
+  if (state.phase !== 'running' || state.pendingSpins <= 0) return
+  state.phase = 'roulette'
+}
+
+export function applyRouletteResult(state: SurvivalState, result: RouletteResult): void {
+  if (state.phase !== 'roulette') return
+  state.pendingSpins = Math.max(0, state.pendingSpins - 1)
+  if (result.kind === 'item') {
+    const def = UPGRADES.find((upgrade) => upgrade.id === result.upgradeId)
+    const before = state.taken[result.upgradeId]
+    state.taken[result.upgradeId] = Math.min(def?.max ?? 1, before + result.levels)
+    if (result.upgradeId === 'maxHp') {
+      const gained = state.taken[result.upgradeId] - before
+      state.player.maxHp += gained
+      state.player.hp = Math.min(state.player.maxHp, state.player.hp + gained * 2)
+    }
+    spawnBurst(state, state.player.x, state.player.y, def?.accent ?? '#fde68a', 22, 180)
+    addText(state, state.player.x, state.player.y - 34, `+${result.upgradeId} x${result.levels}`, def?.accent ?? '#fde68a')
+  } else {
+    state.bonuses[result.stat] = (state.bonuses[result.stat] ?? 0) + result.pct / 100
+    spawnBurst(state, state.player.x, state.player.y, '#fde68a', 22, 180)
+    addText(state, state.player.x, state.player.y - 34, `${result.stat} +${result.pct}%`, '#fde68a')
+  }
+  recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses })
+  playSfx('levelup')
+  state.phase = 'running'
+}
+
+export function dissolveRoulette(state: SurvivalState, result: RouletteResult): void {
+  if (state.phase !== 'roulette') return
+  state.pendingSpins = Math.max(0, state.pendingSpins - 1)
+  state.xp += result.xpValue
+  spawnBurst(state, state.player.x, state.player.y, '#4ade80', 16, 140)
+  addText(state, state.player.x, state.player.y - 34, `+${result.xpValue} XP`, '#4ade80')
+  playSfx('xp')
+  state.phase = 'running'
 }
 
 function spawnEnemy(state: SurvivalState): void {
@@ -308,6 +361,10 @@ function spawnBoss(state: SurvivalState): void {
 
 function killEnemy(state: SurvivalState, enemy: Enemy): void {
   state.kills += 1
+  state.combo = state.comboTimer > 0 ? state.combo + 1 : 1
+  state.comboTimer = 2.5
+  state.comboBest = Math.max(state.comboBest, state.combo)
+  state.comboBonus += Math.min(state.combo, 25)
   if (enemy.kind === 'boss') {
     spawnBurst(state, enemy.x, enemy.y, '#f472b6', 34, 260)
     spawnBurst(state, enemy.x, enemy.y, '#fde68a', 20, 180)
@@ -315,7 +372,8 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
       state.orbs.push({ id: state.nextId++, x: enemy.x + (Math.random() - 0.5) * 110, y: enemy.y + (Math.random() - 0.5) * 110, value: 1 })
     }
     state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
-    state.banner = { text: 'BOSS DOWN', life: 1.8 }
+    state.pendingSpins += 1
+    state.banner = { text: 'BOSS DOWN — ROULETTE +1', life: 1.8 }
     state.shake = 8
     playSfx('levelup')
     return
@@ -350,7 +408,9 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   if (state.phase !== 'running') return
 
   state.time += dt
-  state.score = state.kills * 10 + Math.floor(state.time)
+  state.comboTimer = Math.max(0, state.comboTimer - dt)
+  if (state.comboTimer === 0 && state.combo > 0) state.combo = 0
+  state.score = state.kills * 10 + state.comboBonus + Math.floor(state.time)
   const player = state.player
   const stats = state.stats
   player.invuln = Math.max(0, player.invuln - dt)
@@ -501,7 +561,6 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     if (enemy.hp <= 0) killEnemy(state, enemy)
   }
   state.enemies = state.enemies.filter((enemy) => enemy.hp > 0)
-  if (state.enemies.length > 0) state.score = state.kills * 10 + Math.floor(state.time)
 
   state.orbs = state.orbs.filter((orb) => {
     const dist = distance(orb, player)
@@ -511,7 +570,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       orb.y += ((player.y - orb.y) / dist) * speed * dt
     }
     if (dist < player.size + 8) {
-      state.xp += orb.value
+      state.xp += orb.value * state.xpMult
       playSfx('xp')
       return false
     }
@@ -545,25 +604,17 @@ const STARS = Array.from({ length: 42 }, (_, i) => ({
   phase: (Math.sin(i * 45.7) * 0.5 + 0.5) * Math.PI * 2,
 }))
 
-function drawOverlay(ctx: CanvasRenderingContext2D, title: string, subtitle: string, footer = ''): void {
-  ctx.fillStyle = 'rgba(5, 10, 14, 0.68)'
-  ctx.fillRect(0, 0, WIDTH, HEIGHT)
-  ctx.fillStyle = '#e2f8ff'
-  ctx.font = '800 34px Inter, sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(title, WIDTH / 2, HEIGHT / 2 - 30)
-  ctx.fillStyle = '#9fb7c1'
-  ctx.font = '500 15px Inter, sans-serif'
-  ctx.fillText(subtitle, WIDTH / 2, HEIGHT / 2 + 14)
-  if (footer) {
-    ctx.fillStyle = '#c9ecff'
-    ctx.font = '600 13px Inter, sans-serif'
-    ctx.fillText(footer, WIDTH / 2, HEIGHT / 2 + 56)
+function dimScene(ctx: CanvasRenderingContext2D, phase: SurvivalPhase): void {
+  if (phase === 'ready' || phase === 'lost') {
+    ctx.fillStyle = 'rgba(5, 10, 14, 0.68)'
+    ctx.fillRect(0, 0, WIDTH, HEIGHT)
+  } else if (phase === 'roulette') {
+    ctx.fillStyle = 'rgba(5, 10, 14, 0.55)'
+    ctx.fillRect(0, 0, WIDTH, HEIGHT)
   }
 }
 
-export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState, best: number): void {
+export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState): void {
   const player = state.player
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   ctx.save()
@@ -716,6 +767,14 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
     ctx.fill()
   }
 
+  if (state.combo >= 3) {
+    ctx.fillStyle = state.combo >= 10 ? '#fde68a' : '#e2f8ff'
+    ctx.font = `800 ${14 + Math.min(6, Math.floor(state.combo / 4))}px Inter, sans-serif`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillText(`COMBO ×${state.combo}`, 26, 62)
+  }
+
   ctx.fillStyle = 'rgba(74, 222, 128, 0.18)'
   ctx.fillRect(40, HEIGHT - 22, WIDTH - 80, 8)
   ctx.fillStyle = '#4ade80'
@@ -735,9 +794,5 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
     ctx.globalAlpha = 1
   }
   ctx.restore()
-  if (state.phase === 'ready') {
-    drawOverlay(ctx, 'Nova Swarm', 'Auto-fire survival: move, collect XP, pick upgrades, outlast the swarm.', best > 0 ? `Best ★${best}` : '')
-  } else if (state.phase === 'lost') {
-    drawOverlay(ctx, 'Swarmed', `Level ${state.level} · ${state.kills} kills · ${Math.floor(state.time)}s`, `Score ★${state.score} · Best ★${best} — Press Start to play again`)
-  }
+  dimScene(ctx, state.phase)
 }
