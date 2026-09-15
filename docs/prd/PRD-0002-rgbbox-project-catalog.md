@@ -902,6 +902,17 @@
 - **受影响文件**：`VideoStudioView.tsx`（crossOrigin 条件 + key + 两处 try/catch toast）、`video/usePreviewZoom.ts`（量测生命周期）、`i18n/*`（+`video.capture.fail` zh/en）、`tests/renderer/components/VideoStudioView.test.tsx`（crossOrigin 断言）、`scripts/verify-photo-player.mjs`（真机回归脚本入库）+ `scripts/verify-photo-fix.mjs`。
 - **验收点与证据**：①真机端到端（verify-photo-player.mjs，真实按钮驱动 3.78GiB HEVC 影片）：拍照 captures 11→12 ✓、局部截图拖选生成 400px 选区 + 8 手柄 → Enter 确认 → captures 12→13 + 标注器打开 ✓、页面异常 0 ✓；②单测：VideoStudioView 6/6（新增 crossOrigin=anonymous 精确匹配 media:// 用例）+ usePreviewZoom 5/5；③`yarn typecheck` 0 error；④全量回归 `yarn test` 80 files / 737 passed / 0 失败；⑤摄像头/屏幕模式与 blob:/远程 URL 路径代码语义未动（crossOrigin 对 srcObject 无影响）。**状态：✅（实机复测待用户：真 UI 播放影片点拍照/局部截图）**
 
+### R95. 发布包瘦身——onnxruntime 跨平台二进制剪除 + asar 去死重 + 高压缩产物（2026-09-15 用户对 v0.3.47 包体反馈）
+
+> 触发场景：用户检查 v0.3.47（zip 253.6MB / win-unpacked 716MB）指出：① `app.asar.unpacked/node_modules/onnxruntime-node` 含全平台二进制（实测 napi-v6 下 win32/x64 64M + win32/arm64 62M + darwin/arm64 84M + linux/x64 44M + linux/arm64 24M = 276M，win-x64 构建只需其中 64M）；② app.asar 81MB 过大（实测根因：three/gaussian-splats/hls.js/lucide-react/react/wavesurfer 等 **renderer 专用依赖被 vite 打包后又整包塞进 asar node_modules**——main/preload 零引用，纯死重）；③ 要求评估更高压缩率的压缩包（本机有 7-Zip）。
+- **R95.1 renderer 依赖移 devDependencies**：`three`、`@mkkellogg/gaussian-splats-3d`、`hls.js`、`lucide-react`、`react`、`react-dom`、`wavesurfer.js`、`@vitejs/plugin-react` 移入 devDependencies（electron-builder 只打包生产依赖；这些全部经 vite 进 `out/renderer`，main/preload 零 import 已核验）；`dependencies` 仅留 `onnxruntime-node`。
+- **R95.2 asarUnpack 收窄**：`**/node_modules/onnxruntime-node/**` → `**/node_modules/onnxruntime-node/bin/**`（JS 留 asar 内，仅原生库落盘）。
+- **R95.3 afterPack 平台剪除**：按 `context.electronPlatformName` + arch 保留 `bin/napi-v6/<platform>/<arch>`，删除其余平台/架构目录（win-x64 构建剪掉 darwin/linux/arm64 ≈212MB）。
+- **R95.4 压缩升级**：build 配置 `compression: "maximum"`；新增 `scripts/dist-archive7z.mjs`（7-Zip LZMA2 `-mx=9` 从 win-unpacked 产 `RGBBox-<ver>-win.7z`）+ `yarn dist:7z` 脚本（不动既有 dist:win）。
+- **验收点**：①瘦身后的**打包产物**实测可跑：launch `release/win-unpacked/RGBBox.exe` + CDP，跑 denoise 全链路（utilityProcess 加载剪除后的 onnxruntime-node 并推理出非零音频）+ 基础 UI 冒烟；②体积对比表（旧 zip 253.6MB vs 新 zip vs 7z）入档；③`yarn test` 全量 0 失败（依赖移动不影响构建）；④dev 工作流（yarn dev/build）回归正常。
+- **受影响文件**：`package.json`（deps 移组 + build.files/asarUnpack/compression + dist:7z 脚本）、`scripts/afterPack.mjs`、新 `scripts/dist-archive7z.mjs`、yarn.lock。
+- **实施证据（2026-09-15，v0.3.48 实测）**：**体积对比**——zip 253.6MB → **180.3MB（-29%）**；新增 7z（LZMA2 -mx=9）**121.6MB（-52%）**；win-unpacked 716 → 428MB；app.asar 81 → **5.4MB**（renderer 依赖移 devDependencies）；asar.unpacked 277 → 64MB（afterPack 剪除后仅存 `napi-v6/win32/x64`）；打包产物验证 `scripts/verify-packaged-app.mjs` **4/4 PASS**（打包 exe 启动 + UI 冒烟 + **剪除后的 ort 原生在 utilityProcess 里真推理出非零音频** + 存活）；`yarn test` 83 files / 758 passed 0 失败。**踩坑记录（如实入档）**：①`context.arch` 是 app-builder-lib 数字枚举且 26.x 值序为 ia32=0/x64=1/armv7l=2/arm64=3（与旧版 1-based 不同）——初版按旧值序硬编码映射把 `pruned to win32/ia32` 误删 x64 目录，已改为 `Arch[archRaw]` 反查（对值序免疫）；②`yarn dist` 会先跑 `predist` 钩子里的 npm version patch（与 dist:win 双重 bump 来源），版本管理需注意；③Defender/索引器短暂锁新写大文件导致 dist-clean EPERM，改名移开可解。**状态：✅**
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

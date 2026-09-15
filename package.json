@@ -1,6 +1,6 @@
 {
   "name": "rgbbox",
-  "version": "0.3.47",
+  "version": "0.3.48",
   "description": "Local-first desktop RGB lighting controller with multi-display screen sampling.",
   "author": "RGBBox Contributors",
   "homepage": "https://github.com/tangjianfang/RGBBox",
@@ -21,22 +21,16 @@
     "dist:win": "npm version patch --no-git-tag-version && yarn predist:clean && yarn build && electron-builder --win",
     "dist:mac": "npm version patch --no-git-tag-version && yarn predist:clean && yarn build && electron-builder --mac",
     "dist:dir": "npm version patch --no-git-tag-version && yarn predist:clean && yarn build && electron-builder --dir",
+    "dist:7z": "node scripts/dist-archive7z.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@mkkellogg/gaussian-splats-3d": "0.4.7",
-    "@vitejs/plugin-react": "5.2.0",
-    "hls.js": "1.5.17",
-    "lucide-react": "1.14.0",
-    "onnxruntime-node": "^1.29.0",
-    "react": "19.2.5",
-    "react-dom": "19.2.5",
-    "three": "0.184.0",
-    "wavesurfer.js": "^7.12.8"
+    "onnxruntime-node": "^1.29.0"
   },
   "devDependencies": {
+    "@mkkellogg/gaussian-splats-3d": "0.4.7",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
@@ -44,24 +38,32 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/three": "0.184.1",
+    "@vitejs/plugin-react": "5.2.0",
     "@vitest/coverage-v8": "^4.1.7",
     "electron": "41.4.0",
     "electron-builder": "26.8.1",
     "electron-vite": "5.0.0",
     "gl": "^8.1.6",
     "happy-dom": "^15.11.7",
+    "hls.js": "1.5.17",
+    "lucide-react": "1.14.0",
     "rcedit": "2",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "three": "0.184.0",
     "typescript": "6.0.3",
     "vite": "6.4.2",
-    "vitest": "4.1.7"
+    "vitest": "4.1.7",
+    "wavesurfer.js": "^7.12.8"
   },
   "build": {
     "appId": "app.rgbbox.desktop",
     "productName": "RGBBox",
     "copyright": "Copyright © 2025 RGBBox Contributors",
     "afterPack": "./scripts/afterPack.mjs",
+    "compression": "maximum",
     "asarUnpack": [
-      "**/node_modules/onnxruntime-node/**"
+      "**/node_modules/onnxruntime-node/bin/**"
     ],
     "directories": {
       "output": "release",

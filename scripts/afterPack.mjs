@@ -1,22 +1,57 @@
 /**
- * afterPack hook: embed icon into the Windows executable using rcedit.
- * Runs after electron-builder packs the app but before archiving.
- * Required because signAndEditExecutable=false skips electron-builder's
- * built-in rcedit step (which needs winCodeSign, failing on Windows
- * without Developer Mode due to symlink permissions).
+ * afterPack hook:
+ *  1. embed icon into the Windows executable using rcedit (signAndEditExecutable
+ *     =false skips electron-builder's built-in rcedit step, which needs
+ *     winCodeSign — fails on Windows without Developer Mode due to symlink
+ *     permissions).
+ *  2. R95: prune onnxruntime-node's cross-platform native binaries — the
+ *     package ships win/linux/darwin × x64/arm64 (~276MB); only the current
+ *     build's platform/arch dir is kept (~64MB for win-x64).
  */
-import { existsSync } from 'node:fs'
+import { existsSync, rmSync, readdirSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
+// Arch enum via the SAME app-builder-lib electron-builder uses — reverse
+// mapping gives the name regardless of numeric ordering (26.x: ia32=0, x64=1,
+// armv7l=2, arm64=3, universal=4 — DIFFERENT from the old 1-based order).
+const { Arch } = require('app-builder-lib')
 
 /** @param {import('electron-builder').AfterPackContext} context */
 export default async function afterPack(context) {
-  // Only run for Windows targets
-  if (context.electronPlatformName !== 'win32') return
+  const { appOutDir, packager, electronPlatformName } = context
+  const archRaw = context.arch
+  const arch = typeof archRaw === 'string' ? archRaw : Arch[archRaw] ?? String(archRaw)
 
-  const { appOutDir, packager } = context
+  // ── R95: platform pruning (all platforms) ─────────────────────────────
+  const ortNapiBin = join(
+    appOutDir, 'resources', 'app.asar.unpacked', 'node_modules',
+    'onnxruntime-node', 'bin',
+  )
+  if (existsSync(ortNapiBin)) {
+    for (const napiDir of readdirSync(ortNapiBin)) {
+      const platformRoot = join(ortNapiBin, napiDir)
+      for (const platform of readdirSync(platformRoot)) {
+        const keep = platform === electronPlatformName
+        if (!keep) {
+          rmSync(join(platformRoot, platform), { recursive: true, force: true })
+          continue
+        }
+        // within the current platform, drop other architectures
+        for (const archDir of readdirSync(join(platformRoot, platform))) {
+          if (archDir !== arch) {
+            rmSync(join(platformRoot, platform, archDir), { recursive: true, force: true })
+          }
+        }
+      }
+    }
+    console.log(`[afterPack] pruned onnxruntime-node to ${electronPlatformName}/${arch}`)
+  }
+
+  // ── icon embedding (Windows only) ─────────────────────────────────────
+  if (electronPlatformName !== 'win32') return
+
   const productName = packager.appInfo.productFilename
   const exePath = join(appOutDir, `${productName}.exe`)
 
