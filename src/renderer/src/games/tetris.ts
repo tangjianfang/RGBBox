@@ -290,7 +290,19 @@ function drawOverlay(ctx: CanvasRenderingContext2D, title: string, subtitle: str
   }
 }
 
-export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, best: number): void {
+export interface TetrisLabels {
+  readySubtitle: string
+  lostTitle: string
+  replaySuffix: string
+}
+
+const TETRIS_LABELS: TetrisLabels = {
+  readySubtitle: '← → move · ↑ rotate · ↓ soft drop · Space hard drop',
+  lostTitle: 'Stack Out',
+  replaySuffix: '— Press Start to play again',
+}
+
+export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, best: number, labels: TetrisLabels = TETRIS_LABELS): void {
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   ctx.save()
   if (state.shake > 0.2) ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake)
@@ -368,8 +380,8 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
   }
   ctx.restore()
   if (state.phase === 'ready') {
-    drawOverlay(ctx, 'Neon Blocks', '← → move · ↑ rotate · ↓ soft drop · Space hard drop', best > 0 ? `Best ★${best}` : '')
+    drawOverlay(ctx, 'Neon Blocks', labels.readySubtitle, best > 0 ? `Best ★${best}` : '')
   } else if (state.phase === 'lost') {
-    drawOverlay(ctx, 'Stack Out', `Level ${state.level} · ${state.lines} lines`, `Score ★${state.score} · Best ★${best} — Press Start to play again`)
+    drawOverlay(ctx, labels.lostTitle, `Level ${state.level} · ${state.lines} lines`, `Score ★${state.score} · Best ★${best} ${labels.replaySuffix}`)
   }
 }

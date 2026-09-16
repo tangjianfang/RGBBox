@@ -25,6 +25,25 @@ describe('renderer/games/survival engine (R99.3/R99.4)', () => {
     expect(directorSpawnInterval(state)).toBeLessThan(baseline)
   })
 
+  it('spawn pacing eases during the 12s opening grace window (R109)', () => {
+    const state = initialSurvivalState('wisp')
+    state.phase = 'running'
+    state.time = 5
+    const early = directorSpawnInterval(state)
+    state.time = 15
+    expect(early).toBeGreaterThan(directorSpawnInterval(state))
+  })
+
+  it('level-ups heal one HP (R109)', () => {
+    const state = initialSurvivalState('wisp')
+    state.phase = 'running'
+    state.player.hp = 2
+    state.xp = state.xpNext
+    tickSurvival(state, 0.016)
+    expect(state.level).toBe(2)
+    expect(state.player.hp).toBe(3)
+  })
+
   it('multishot fires one bullet per projectile and volleys damage enemies', () => {
     const state = initialSurvivalState()
     state.phase = 'running'
@@ -128,9 +147,9 @@ describe('renderer/games/survival engine (R99.3/R99.4)', () => {
     state.phase = 'running'
     state.taken.regen = 1
     recomputeStats(state.stats, state.taken)
-    expect(state.stats.regenInterval).toBe(30)
+    expect(state.stats.regenInterval).toBe(24)
     state.player.hp = 2
-    state.regenTimer = 29.99
+    state.regenTimer = 23.99
     tickSurvival(state, 0.016)
     expect(state.player.hp).toBe(3)
   })

@@ -457,7 +457,27 @@ function drawOverlay(ctx: CanvasRenderingContext2D, title: string, subtitle: str
   }
 }
 
-export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, selectedTowerId: number | null, best: number): void {
+export interface TdLabels {
+  readyTitle: string
+  readySubtitle: string
+  wonTitle: string
+  lostTitle: string
+  waveLabel: (wave: number) => string
+  nextWaveHint: (seconds: number, bonus: number) => string
+  replaySuffix: string
+}
+
+const TD_LABELS: TdLabels = {
+  readyTitle: 'Balloon TD Arena',
+  readySubtitle: 'Place RGB towers, pop waves, protect the desktop core.',
+  wonTitle: 'Defense Perfect',
+  lostTitle: 'Core Breached',
+  waveLabel: (wave) => `Wave ${wave}/${MAX_WAVE}`,
+  nextWaveHint: (seconds, bonus) => `Next wave in ${seconds}s  ·  early start +${bonus}`,
+  replaySuffix: '— Press Start to play again',
+}
+
+export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, selectedTowerId: number | null, best: number, labels: TdLabels = TD_LABELS): void {
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   ctx.save()
   if (state.shake > 0.2) ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake)
@@ -568,13 +588,13 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, select
     ctx.font = '600 13px Inter, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(`Next wave in ${Math.ceil(Math.max(0, state.waveCooldown))}s  ·  early start +${bonus}`, WIDTH / 2, 58)
+    ctx.fillText(labels.nextWaveHint(Math.ceil(Math.max(0, state.waveCooldown)), bonus), WIDTH / 2, 58)
   }
   ctx.restore()
   if (state.phase !== 'running') {
-    const title = state.phase === 'won' ? 'Defense Perfect' : state.phase === 'lost' ? 'Core Breached' : 'Balloon TD Arena'
-    const subtitle = state.phase === 'ready' ? 'Place RGB towers, pop waves, protect the desktop core.' : `Wave ${state.wave}/${MAX_WAVE}`
-    const footer = state.phase === 'ready' ? (best > 0 ? `Best ★${best}` : '') : `Score ★${state.score} · Best ★${best} — Press Start to play again`
+    const title = state.phase === 'won' ? labels.wonTitle : state.phase === 'lost' ? labels.lostTitle : labels.readyTitle
+    const subtitle = state.phase === 'ready' ? labels.readySubtitle : labels.waveLabel(state.wave)
+    const footer = state.phase === 'ready' ? (best > 0 ? `Best ★${best}` : '') : `Score ★${state.score} · Best ★${best} ${labels.replaySuffix}`
     drawOverlay(ctx, title, subtitle, footer)
   }
 }

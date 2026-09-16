@@ -193,7 +193,7 @@ export function recomputeStats(
   stats.crit = 0.1 * taken.crit + (bonuses?.crit ?? 0)
   stats.bulletSpeed = 420 * (1 + 0.3 * taken.bulletSpeed)
   stats.thorns = taken.thorns + character.innateThorns
-  stats.regenInterval = taken.regen === 0 ? 0 : taken.regen === 1 ? 30 : 16
+  stats.regenInterval = taken.regen === 0 ? 0 : taken.regen === 1 ? 24 : 12
 }
 
 export function initialSurvivalState(
@@ -299,7 +299,8 @@ export function directorSpawnInterval(state: SurvivalState): number {
   const minutes = state.time / 60
   const base = clamp(1.5 - minutes * 0.28 - state.level * 0.05, 0.32, 1.5)
   const factor = state.player.hp <= 1 ? 1.25 : state.player.hp >= state.player.maxHp ? 0.85 : 1
-  return (base * factor) / (state.spawnMult * (1 + 0.15 * (state.island - 1)))
+  const grace = state.time < 15 ? 2 : 1
+  return (base * factor * grace) / (state.spawnMult * (1 + 0.15 * (state.island - 1)))
 }
 
 export function advanceIsland(state: SurvivalState): void {
@@ -406,6 +407,13 @@ function spawnBoss(state: SurvivalState): void {
   state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 34, hp, maxHp: hp, kind: 'boss', elite: false, hitFlash: 0 })
   state.banner = { text: 'BOSS INBOUND', life: 1.6 }
   playSfx('wave')
+}
+
+/** E2E seam (R109): lets the verification script place a boss on demand so the
+ *  roulette/portal chain can be driven live without a 90s survival run. */
+export function debugSpawnBoss(state: SurvivalState): void {
+  if (state.phase !== 'running') return
+  spawnBoss(state)
 }
 
 function killEnemy(state: SurvivalState, enemy: Enemy): void {
@@ -642,6 +650,8 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     state.xp -= state.xpNext
     state.level += 1
     state.xpNext = xpToNext(state.level)
+    state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
+    addText(state, state.player.x, state.player.y - 44, '+HP', '#86efac')
     state.offers = pickOffers(state)
     if (state.offers.length > 0) {
       state.phase = 'levelup'

@@ -25,6 +25,7 @@ import {
   UPGRADES,
   applyRouletteResult,
   applyUpgrade,
+  debugSpawnBoss,
   dissolveRoulette,
   drawSurvival,
   initialSurvivalState,
@@ -132,6 +133,16 @@ export function MiniGamesView(): JSX.Element {
     setTdSnapshot({ ...tdStateRef.current, towers: [...tdStateRef.current.towers], balloons: [...tdStateRef.current.balloons], projectiles: [...tdStateRef.current.projectiles] })
   }, [])
 
+  // R109: E2E seam for the verification scripts — local single-player debug
+  // surface only (see PRD R109.2). Removed on unmount.
+  useEffect(() => {
+    const seam = { spawnBoss: () => debugSpawnBoss(survivalRef.current) }
+    ;(window as unknown as { __rgbboxGames?: typeof seam }).__rgbboxGames = seam
+    return () => {
+      delete (window as unknown as { __rgbboxGames?: typeof seam }).__rgbboxGames
+    }
+  }, [])
+
   const publishSurvival = useCallback(() => {
     setSurvivalSnapshot({ ...survivalRef.current, keys: new Set(survivalRef.current.keys), enemies: [...survivalRef.current.enemies], bullets: [...survivalRef.current.bullets], orbs: [...survivalRef.current.orbs] })
   }, [])
@@ -218,7 +229,15 @@ export function MiniGamesView(): JSX.Element {
           if (tdStateRef.current.score >= bestRef.current.td) addText(tdStateRef.current, WIDTH / 2, HEIGHT / 2 + 96, 'NEW BEST!', '#fde68a')
         }
         lastPhase = phase
-        drawGame(ctx, tdStateRef.current, selectedTowerId, bestRef.current.td)
+        drawGame(ctx, tdStateRef.current, selectedTowerId, bestRef.current.td, {
+          readyTitle: t('games.td.readyTitle'),
+          readySubtitle: t('games.td.readySubtitle'),
+          wonTitle: t('games.td.won'),
+          lostTitle: t('games.td.lost'),
+          waveLabel: (wave) => t('games.td.wave').replace('{n}', String(wave)).replace('{max}', String(MAX_WAVE)),
+          nextWaveHint: (seconds, bonus) => `${t('games.nextIn').replace('{seconds}', String(seconds))} · ${t('games.earlyBonus').replace('{bonus}', String(bonus))}`,
+          replaySuffix: t('games.replay'),
+        })
       } else if (screen === 'survival') {
         pollGamepad()
         tickSurvival(survivalRef.current, dt)
@@ -262,7 +281,11 @@ export function MiniGamesView(): JSX.Element {
           settleBest('tetris', tetrisRef.current.score)
         }
         lastPhase = phase
-        drawTetris(ctx, tetrisRef.current, bestRef.current.tetris)
+        drawTetris(ctx, tetrisRef.current, bestRef.current.tetris, {
+          readySubtitle: t('games.tetrisHint'),
+          lostTitle: t('games.tetris.lost'),
+          replaySuffix: t('games.replay'),
+        })
       }
       snapshotTimer += dt
       if (snapshotTimer > 0.18) {
