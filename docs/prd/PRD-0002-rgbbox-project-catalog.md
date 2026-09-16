@@ -1094,7 +1094,11 @@
 - **R111.3 AI8 Tab 接线**：无 token 态改为**主按钮「打开官网登录」**（内联 CTA 布局：图标+说明+按钮，手工粘贴框折叠为备用入口）；`ai8OpenLogin()` 成功 → `writeStoredToken` + 刷新 token 态 + 自动拉取余额；失败/取消静默回原态；已登录态保留「更换 token」入口（重开登录窗）。
 - **受影响文件**：`shared/ipc.ts`、`main/index.ts`（AI handler 区）、`preload/index.ts`、`AiLabAi8Tab.tsx`、`i18n/index.tsx`（+5 keys）、`scripts/verify-r111-ai8-login.mjs`。
 - **验收点**：①typecheck + 全量 `yarn test` 0 失败；②真机 CDP 全链：点击「打开官网登录」→ 登录窗出现（CDP 页面列表出现 ai8.rcouyi.com）→ **向该页注入伪造 `userStore`** → 主进程轮询捕获 → IPC 返回 token → 渲染层 token 态就绪（无需真实登录）；③手工关闭登录窗 → 渲染层保持无 token 态不崩溃；④R110 既有断言零回归；⑤真实官网登录人工验证（流式对话同 R110 遗留）。
-- **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **88 files / 802 passed / 0 失败**（AiLabView 两个 tab 计数断言 4→5 随 R110 遗漏同步更新）；③真机 CDP `scripts/verify-r111-ai8-login.mjs` **7/7 PASS**：CTA 渲染 → 点击后子窗口真实打开 ai8.rcouyi.com（站点重定向 /chat）→ 向该页注入伪造 `userStore{auth.token,user{nickname,isLogin,uid}}` → 主进程轮询捕获 → 渲染层「AI8 token 已就绪 · E2E Tester」（账户名展示）→ 窗口 800ms 延时自动关闭；取消路径：手动关闭子窗 → 渲染层 CTA 复现、无 token、零崩溃；全程 0 页面错误。**关键防御（真站实证）**：GoAmzAI 未登录也持久化 `userStore`（游客态）——捕获条件收紧为「token + 真实用户记录（isLogin/uid/id/username 任一）」后，真站加载 20+ 秒轮询零误捕获，注入后才命中。**踩坑记录**：①点击后自禁用的按钮触发 Playwright 二次可点性重试超时（首击已生效）→ `force:true`；②脚本删 localStorage 不会重置已挂载组件的内存 token 态 → 一律走 UI 清除按钮；③.mjs 里写 TS 断言直接 SyntaxError。**状态：✅（真实官网登录 + 流式对话仍待用户人工实测——自动捕获链路已全绿）**
+- **实施证据（2026-09-16，含用户实测反馈两轮修复）**：①typecheck 0 error；②全量 `yarn test` **88 files / 802 passed / 0 失败**（AiLabView 两个 tab 计数断言 4→5 随 R110 遗漏同步更新）；③真机 CDP `scripts/verify-r111-ai8-login.mjs`（v2，兼容持久化登录/登出双形态）**7/7 PASS**：CTA 渲染 → 子窗口真实打开官网 → 持久化会话自动捕获（真 token len=245）→ 渲染层 token-ok → 窗口自动关闭 → 二次打开渲染层健康；**关键防御（真站实证）**：GoAmzAI 未登录也持久化 `userStore`（游客态）——捕获条件收紧为「token + 真实用户记录」后真站零误捕获。
+- **用户实测反馈两轮修复（真实数据实证）**：
+  - **修复 A（「登录成功但一直等待」）**：真实分区 dump 证实——登录当场 `auth.token` 为空（站点只存内存），下次页面加载才持久化 → 轮询饿死。修复：轮询读到「已登录（`user.isLogin===true`，真实字段）但 token 空」→ **自动重载登录窗一次**逼站点持久化，随后正常捕获。重访场景（分区已有会话）实测秒捕获。
+  - **修复 B（「发消息没有任何回复」）**：页内 A/B 实验实锤——Go 后端要求 `sessionId` 为 **int64 数字**，字符串即 400（`cannot unmarshal string into ... sessionId of type int64`），且 400 以 SSE content-type 返回被解析器静默吞掉。修复：sessionId 保持数字 + 流结束仍无增量时兜底显示错误。**修复后真机实测真实流式回复渲染成功**（`r111-ai8-chat.png`：「我是由欧亿公司打造的欧亿 AI 助手…」）。
+  - **踩坑记录**：①测试注入的伪造 userStore 会污染 persist:ai8 分区（账户名显示 E2E Tester 属测试残留，清除后重新登录即恢复）；②自禁用按钮触发 Playwright 二次可点性重试超时（首击已生效）→ `force:true`；③脚本删 localStorage 不会重置已挂载组件的内存态 → 走 UI 清除按钮；④.mjs 里写 TS 断言直接 SyntaxError。**状态：✅**
 
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 

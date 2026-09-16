@@ -552,6 +552,8 @@ function registerIpc(): void {
     }
     return new Promise<{ ok: boolean; token?: string; account?: string }>((resolve) => {
       let settled = false
+      const openedAt = Date.now()
+      let reloadedForToken = false
       const finish = (result: { ok: boolean; token?: string; account?: string }) => {
         if (settled) return
         settled = true
@@ -562,34 +564,38 @@ function registerIpc(): void {
         ai8LoginWindow = null
         finish({ ok: false })
       })
-      const readToken = async (): Promise<{ token: string; account: string } | null> => {
+      // GoAmzAI keeps a freshly-signed-in token in memory only — localStorage's
+      // auth.token fills in on the NEXT page load. So: token present → capture;
+      // signed-in (user.isLogin, a real site field) but tokenless → reload once
+      // to force the persist, then let the normal poll take over.
+      const readState = async (): Promise<{ token: string; account: string; signedIn: boolean } | null> => {
         if (win.isDestroyed()) return null
         try {
-          // GoAmzAI stores a userStore even while logged OUT (guest flow) — only
-          // accept it when a real user record accompanies the token.
           return await win.webContents.executeJavaScript(
-            `(() => { try { const raw = localStorage.getItem('userStore'); if (!raw) return null; const u = JSON.parse(raw); const t = u?.auth?.token; const usr = u?.user; if (typeof t !== 'string' || t === '' || !usr || typeof usr !== 'object') return null; const signedIn = usr.isLogin === true || usr.id !== undefined || usr.uid !== undefined || (typeof usr.username === 'string' && usr.username !== ''); if (!signedIn) return null; const a = usr.nickname || usr.account || usr.email || usr.username || ''; return { token: t, account: String(a) }; } catch { return null; } })()`,
+            `(() => { try { const raw = localStorage.getItem('userStore'); if (!raw) return { token: '', account: '', signedIn: false }; const u = JSON.parse(raw); const t = typeof u?.auth?.token === 'string' ? u.auth.token : ''; const usr = u?.user && typeof u.user === 'object' ? u.user : null; const signedIn = !!usr && (usr.isLogin === true || (typeof usr.uid === 'number' && usr.uid > 0) || usr.id !== undefined || (typeof usr.username === 'string' && usr.username !== '')); const a = usr ? (usr.nickname || usr.account || usr.email || usr.username || '') : ''; return { token: t, account: String(a), signedIn }; } catch { return { token: '', account: '', signedIn: false }; } })()`,
           )
         } catch {
           return null
         }
       }
+      const handleState = (state: { token: string; account: string; signedIn: boolean } | null) => {
+        if (state === null || settled) return
+        if (state.token !== '') {
+          finish({ ok: true, token: state.token, account: state.account })
+          setTimeout(() => { if (!win.isDestroyed()) win.close() }, 800)
+          return
+        }
+        if (state.signedIn && !reloadedForToken && Date.now() - openedAt > 5000) {
+          reloadedForToken = true
+          if (!win.isDestroyed()) win.webContents.reload()
+        }
+      }
       void win.loadURL('https://ai8.rcouyi.com/').catch(() => undefined)
       win.webContents.on('did-navigate', () => {
-        void readToken().then((hit) => {
-          if (hit && hit.token !== '') {
-            finish({ ok: true, token: hit.token, account: hit.account })
-            setTimeout(() => { if (!win.isDestroyed()) win.close() }, 800)
-          }
-        })
+        void readState().then(handleState)
       })
       poller = setInterval(() => {
-        void readToken().then((hit) => {
-          if (hit && hit.token !== '') {
-            finish({ ok: true, token: hit.token, account: hit.account })
-            setTimeout(() => { if (!win.isDestroyed()) win.close() }, 800)
-          }
-        })
+        void readState().then(handleState)
       }, 1500)
     })
   })

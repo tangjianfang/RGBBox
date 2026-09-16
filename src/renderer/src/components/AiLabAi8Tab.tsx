@@ -22,7 +22,9 @@ export function AiLabAi8Tab(): JSX.Element {
   const [models, setModels] = useState<Ai8Model[]>([])
   const [modelsError, setModelsError] = useState('')
   const [modelValue, setModelValue] = useState('')
-  const [sessionId, setSessionId] = useState<string | null>(null)
+  // R111 fix: the ai8 Go backend requires a NUMERIC sessionId — stringifying it
+  // makes /chat/completions 400 ("cannot unmarshal string into ... int64").
+  const [sessionId, setSessionId] = useState<string | number | null>(null)
   const [turns, setTurns] = useState<Ai8Turn[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -85,7 +87,8 @@ export function AiLabAi8Tab(): JSX.Element {
     if (!token || !modelValue) return
     try {
       const created = await client().createSession<{ id: string | number }>({ model: modelValue })
-      setSessionId(String(created.id))
+      const raw = created.id
+      setSessionId(typeof raw === 'number' ? raw : Number.isFinite(Number(raw)) ? Number(raw) : raw)
       setTurns([])
     } catch (error) {
       const code = error instanceof Ai8Error ? error.code : 0
@@ -143,8 +146,19 @@ export function AiLabAi8Tab(): JSX.Element {
         return next
       })
     } finally {
+      // R111 fix: a stream that ends without any delta (e.g. an error response
+      // wrapped in an SSE content-type) must not stay silently empty.
       abortRef.current = null
       setStreaming(false)
+      setTurns((list) => {
+        const last = list[list.length - 1]
+        if (last?.role === 'assistant' && last.content === '' && last.error === undefined) {
+          const next = [...list]
+          next[next.length - 1] = { role: 'assistant', content: '', error: 'network' }
+          return next
+        }
+        return list
+      })
     }
   }
 
