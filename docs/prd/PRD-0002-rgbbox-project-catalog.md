@@ -1086,6 +1086,16 @@
 - **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **88 files / 802 passed / 0 失败**（+新 `tests/renderer/ai8/client.test.ts` 4 用例：SSE delta 累积/[DONE]+中途错误终态/extra 与脏行容错/Ai8Error 业务码）；③真机 CDP `scripts/verify-r110-ai8.mjs` **6/6 PASS**：AI8 Tab 可激活、**公开 /chat/tmpl 真实加载 287 模型**（免 token 实网）、无 token 守卫（token 行必现）、假 token 落盘 `rgbbox:ai8Token`、假 token 建会话→业务错误优雅展示（「Token 失效或缺失」）、全程 0 页面错误；④截图 `r110-ai8-tab.png` 入库（图像分析工具本轮不可用，以 DOM 断言为证、截图供人工复核）。**踩坑记录（如实入档）**：①首轮真机 4 tab 旧渲染——Tab 按钮数组漏加 `'ai8'`（类型联合与面板挂载都改了、唯独渲染按钮的 map 数组没改），bundle 已含新代码但无入口；CDP 侧表现为「脚本找 `.ai-tab[data-tab=ai8]` 超时+应用莫名退出（single-instance+多实例竞态）」，用「页内 fetch 自身 bundle 查标记」定位到包是新的、缺的是按钮。②真机流式对话路径（真 token）待用户实测。**状态：✅**
 - **边界与合规**：token 由用户自行从官网提取（README §二），不入库不日志；请求频率与站点条款由用户自负。
 
+### R111. AI8 官网内嵌登录——首次使用自适应开窗+登录成功自动抓取 token（2026-09-16 用户指令，补全 R110 的 token 获取体验）
+
+> 触发场景：用户要求「第一次启动，自适应打开官方网址，合理布局。登录成功之后自动获取缓存后续需要的如 token 等所有数据」。即 R110 手工贴 token 升级为**内嵌官网登录 + 自动捕获**（参考 README §五 方案 B：BrowserWindow 加载官网 + 读其 localStorage `userStore`）。
+- **R111.1 新 IPC 通道**（走流程新增，非顺手）：`ai8OpenLogin: 'rgbbox:ai8:open-login'`——`shared/ipc.ts` 常量 + `main/index.ts` handler + `preload/index.ts` 白名单（RgbBoxApi 自动携带类型）。
+- **R111.2 登录窗（main）**：单飞守卫（已有窗则 focus 拒绝重复）；`partition: 'persist:ai8'`（站点自身登录态跨次保留）；自适应尺寸 `min(1280, workArea×0.85) × min(860, workArea×0.85)` 居中；加载 `https://ai8.rcouyi.com/`；**捕获循环**——`did-navigate` + 1.5s 轮询 `executeJavaScript` 读 `localStorage.userStore` 的 `auth.token`（+ `user.nickname/account`），命中即 resolve `{ok:true,token,account}` 并延时 800ms 自动关窗；用户手动关窗 resolve `{ok:false}`；结果入审计 console。
+- **R111.3 AI8 Tab 接线**：无 token 态改为**主按钮「打开官网登录」**（内联 CTA 布局：图标+说明+按钮，手工粘贴框折叠为备用入口）；`ai8OpenLogin()` 成功 → `writeStoredToken` + 刷新 token 态 + 自动拉取余额；失败/取消静默回原态；已登录态保留「更换 token」入口（重开登录窗）。
+- **受影响文件**：`shared/ipc.ts`、`main/index.ts`（AI handler 区）、`preload/index.ts`、`AiLabAi8Tab.tsx`、`i18n/index.tsx`（+5 keys）、`scripts/verify-r111-ai8-login.mjs`。
+- **验收点**：①typecheck + 全量 `yarn test` 0 失败；②真机 CDP 全链：点击「打开官网登录」→ 登录窗出现（CDP 页面列表出现 ai8.rcouyi.com）→ **向该页注入伪造 `userStore`** → 主进程轮询捕获 → IPC 返回 token → 渲染层 token 态就绪（无需真实登录）；③手工关闭登录窗 → 渲染层保持无 token 态不崩溃；④R110 既有断言零回归；⑤真实官网登录人工验证（流式对话同 R110 遗留）。
+- **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **88 files / 802 passed / 0 失败**（AiLabView 两个 tab 计数断言 4→5 随 R110 遗漏同步更新）；③真机 CDP `scripts/verify-r111-ai8-login.mjs` **7/7 PASS**：CTA 渲染 → 点击后子窗口真实打开 ai8.rcouyi.com（站点重定向 /chat）→ 向该页注入伪造 `userStore{auth.token,user{nickname,isLogin,uid}}` → 主进程轮询捕获 → 渲染层「AI8 token 已就绪 · E2E Tester」（账户名展示）→ 窗口 800ms 延时自动关闭；取消路径：手动关闭子窗 → 渲染层 CTA 复现、无 token、零崩溃；全程 0 页面错误。**关键防御（真站实证）**：GoAmzAI 未登录也持久化 `userStore`（游客态）——捕获条件收紧为「token + 真实用户记录（isLogin/uid/id/username 任一）」后，真站加载 20+ 秒轮询零误捕获，注入后才命中。**踩坑记录**：①点击后自禁用的按钮触发 Playwright 二次可点性重试超时（首击已生效）→ `force:true`；②脚本删 localStorage 不会重置已挂载组件的内存 token 态 → 一律走 UI 清除按钮；③.mjs 里写 TS 断言直接 SyntaxError。**状态：✅（真实官网登录 + 流式对话仍待用户人工实测——自动捕获链路已全绿）**
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

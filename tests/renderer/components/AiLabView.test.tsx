@@ -19,10 +19,10 @@ async function openTab(container: HTMLElement, tab: 'config' | 'chat' | 'ocr') {
 }
 
 describe('AiLabView (R89)', () => {
-  it('renders four tabs (config/chat/ocr/audio) and switches between them', { timeout: 15000 }, async () => {
+  it('renders five tabs (config/chat/ocr/audio/ai8) and switches between them', { timeout: 15000 }, async () => {
     const { container } = mount()
     const tabs = container.querySelectorAll('.ai-tab')
-    expect(tabs.length).toBe(4)
+    expect(tabs.length).toBe(5)
     const audioTab = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === 'audio') as HTMLElement
     fireEvent.click(audioTab)
     await waitFor(() => expect(audioTab.classList.contains('active')).toBe(true))
@@ -32,7 +32,7 @@ describe('AiLabView (R89)', () => {
   it('renders the legacy three core tabs and switches between them', async () => {
     const { container } = mount()
     const tabs = container.querySelectorAll('.ai-tab')
-    expect(tabs.length).toBe(4)
+    expect(tabs.length).toBe(5)
     expect(tabs[0].classList.contains('active')).toBe(true) // config default
     await openTab(container, 'chat')
     expect(container.querySelector('textarea[data-field="chat-input"]')).not.toBeNull()

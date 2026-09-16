@@ -202,6 +202,10 @@ const api = {
     ipcRenderer.invoke(ipcChannels.aiSaveProfile, profile),
   aiDeleteProfile: (id: string): Promise<void> =>
     ipcRenderer.invoke(ipcChannels.aiDeleteProfile, id),
+  // R111: AI8 embedded login — resolves {ok:true, token, account} once the
+  // user signs in inside the child window, {ok:false} if it was closed.
+  ai8OpenLogin: (): Promise<{ ok: boolean; token?: string; account?: string }> =>
+    ipcRenderer.invoke(ipcChannels.ai8OpenLogin),
   aiSetActiveProfile: (id: string): Promise<void> =>
     ipcRenderer.invoke(ipcChannels.aiSetActiveProfile, id),
   // R90 P1: audio AI test lab (pcm = mono Float32Array @16kHz, 1–30s)

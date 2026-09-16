@@ -16,7 +16,9 @@ export function AiLabAi8Tab(): JSX.Element {
   const { t } = useI18n()
   const [token, setToken] = useState(() => readStoredToken())
   const [tokenDraft, setTokenDraft] = useState('')
-  const [showTokenRow, setShowTokenRow] = useState(() => readStoredToken() === '')
+  const [showTokenRow, setShowTokenRow] = useState(false)
+  const [loginBusy, setLoginBusy] = useState(false)
+  const [loginAccount, setLoginAccount] = useState('')
   const [models, setModels] = useState<Ai8Model[]>([])
   const [modelsError, setModelsError] = useState('')
   const [modelValue, setModelValue] = useState('')
@@ -43,6 +45,27 @@ export function AiLabAi8Tab(): JSX.Element {
 
   const client = () => new Ai8Client({ token, onTokenExpired: () => setShowTokenRow(true) })
 
+  /** R111: open the official site in a child window; main captures the token
+   *  from the site's localStorage once the user signs in. */
+  const openOfficialLogin = async () => {
+    if (loginBusy) return
+    setLoginBusy(true)
+    try {
+      const out = await window.rgbbox.ai8OpenLogin()
+      if (out.ok && out.token) {
+        setToken(out.token)
+        writeStoredToken(out.token)
+        setLoginAccount(out.account ?? '')
+        setShowTokenRow(false)
+      }
+    } catch {
+      // window failed to open — fall back to the manual paste row
+      setShowTokenRow(true)
+    } finally {
+      setLoginBusy(false)
+    }
+  }
+
   const saveToken = () => {
     const trimmed = tokenDraft.trim()
     setToken(trimmed)
@@ -55,7 +78,7 @@ export function AiLabAi8Tab(): JSX.Element {
     setToken('')
     writeStoredToken('')
     setSessionId(null)
-    setShowTokenRow(true)
+    setShowTokenRow(false)
   }
 
   const newSession = async () => {
@@ -80,7 +103,7 @@ export function AiLabAi8Tab(): JSX.Element {
     const content = input.trim()
     if (!content || streaming) return
     if (!token) {
-      setShowTokenRow(true)
+      void openOfficialLogin()
       return
     }
     if (sessionId === null) {
@@ -129,29 +152,39 @@ export function AiLabAi8Tab(): JSX.Element {
 
   return (
     <div className="ai-ai8">
-      <div className="ai-ai8-tokenrow">
-        {showTokenRow ? (
-          <>
-            <input
-              data-field="ai8-token"
-              type="password"
-              value={tokenDraft}
-              placeholder={t('ai.ai8.tokenPlaceholder')}
-              onChange={(e) => setTokenDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') saveToken() }}
-            />
-            <button type="button" data-action="ai8-save-token" onClick={saveToken} disabled={tokenDraft.trim() === ''}>
-              {t('ai.ai8.tokenSave')}
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="ai-status on">{t('ai.ai8.tokenOk')}</span>
-            <button type="button" data-action="ai8-change-token" onClick={() => setShowTokenRow(true)}>{t('ai.ai8.tokenChange')}</button>
-          </>
-        )}
-        {token !== '' && <button type="button" data-action="ai8-clear-token" onClick={clearToken}>{t('ai.ai8.tokenClear')}</button>}
-      </div>
+      {token === '' ? (
+        <div className="ai-ai8-login" data-field="ai8-login">
+          <p className="ai-ai8-login-title">{t('ai.ai8.loginTitle')}</p>
+          <p className="ai-ai8-login-desc">{t('ai.ai8.loginDesc')}</p>
+          <button type="button" data-action="ai8-open-login" onClick={() => void openOfficialLogin()} disabled={loginBusy}>
+            {loginBusy ? t('ai.ai8.loginWaiting') : t('ai.ai8.loginButton')}
+          </button>
+          <button type="button" className="linklike" data-action="ai8-show-paste" onClick={() => setShowTokenRow(true)}>
+            {t('ai.ai8.tokenManual')}
+          </button>
+        </div>
+      ) : (
+        <div className="ai-ai8-tokenrow">
+          <span className="ai-status on">{t('ai.ai8.tokenOk')}{loginAccount !== '' ? ` · ${loginAccount}` : ''}</span>
+          <button type="button" data-action="ai8-change-token" onClick={() => void openOfficialLogin()}>{t('ai.ai8.tokenChange')}</button>
+          <button type="button" data-action="ai8-clear-token" onClick={clearToken}>{t('ai.ai8.tokenClear')}</button>
+        </div>
+      )}
+      {token !== '' && showTokenRow ? (
+        <div className="ai-ai8-tokenrow">
+          <input
+            data-field="ai8-token"
+            type="password"
+            value={tokenDraft}
+            placeholder={t('ai.ai8.tokenPlaceholder')}
+            onChange={(e) => setTokenDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveToken() }}
+          />
+          <button type="button" data-action="ai8-save-token" onClick={saveToken} disabled={tokenDraft.trim() === ''}>
+            {t('ai.ai8.tokenSave')}
+          </button>
+        </div>
+      ) : null}
       <p className="ai-privacy-note">{t('ai.ai8.privacyNote')}</p>
 
       <div className="ai-ai8-row">

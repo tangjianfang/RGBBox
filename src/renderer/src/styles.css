@@ -7191,6 +7191,48 @@ input[type='range'].video-player-volume {
   color: #fde047;
   margin-left: auto;
 }
+
+/* R111: embedded-login call to action */
+.ai-ai8-login {
+  align-items: center;
+  background: #101a21;
+  border: 1px solid #273a43;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 18px;
+  text-align: center;
+}
+
+.ai-ai8-login-title {
+  color: #dff8ff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.ai-ai8-login-desc {
+  color: #9fb7c1;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ai-ai8-login button[data-action='ai8-open-login'] {
+  background: #14332b;
+  border-color: #46c6a8;
+  color: #8fe8cf;
+  font-weight: 700;
+  padding: 8px 22px;
+}
+
+.ai-ai8-login button.linklike {
+  background: none;
+  border: none;
+  color: #55707c;
+  font-size: 11px;
+  text-decoration: underline;
+}
 .ai-msg {
   border-left: 2px solid var(--border-subtle);
   padding: 6px 10px;

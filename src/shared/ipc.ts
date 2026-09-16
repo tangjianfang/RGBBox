@@ -153,6 +153,9 @@ export const ipcChannels = {
   aiSaveProfile: 'rgbbox:ai:save-profile',
   aiDeleteProfile: 'rgbbox:ai:delete-profile',
   aiSetActiveProfile: 'rgbbox:ai:set-active-profile',
+  // R111: AI8 embedded login — open the official site in a child window and
+  // auto-capture the token from its localStorage once the user signs in
+  ai8OpenLogin: 'rgbbox:ai8:open-login',
   // R90 P1: audio AI test lab
   audioAiStatus: 'rgbbox:audio-ai:status',
   audioAiRunVad: 'rgbbox:audio-ai:run-vad',

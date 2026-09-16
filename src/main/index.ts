@@ -513,6 +513,86 @@ function registerIpc(): void {
     const s = await loadSystemSettings()
     return testConnection(asAiSettings(s.ai))
   })
+
+  // R111: AI8 embedded login. Opens the official site in a child window with a
+  // persistent partition (the site keeps its own session), polls its
+  // localStorage for the GoAmzAI userStore token, and resolves the invoking
+  // renderer with the captured token. Single-flight: one login window at a time.
+  let ai8LoginWindow: BrowserWindow | null = null
+  ipcMain.handle(ipcChannels.ai8OpenLogin, async () => {
+    if (ai8LoginWindow && !ai8LoginWindow.isDestroyed()) {
+      ai8LoginWindow.focus()
+      return { ok: false as const }
+    }
+    const workArea = screen.getPrimaryDisplay().workArea
+    const width = Math.min(1280, Math.round(workArea.width * 0.85))
+    const height = Math.min(860, Math.round(workArea.height * 0.85))
+    const win = new BrowserWindow({
+      width,
+      height,
+      x: workArea.x + Math.round((workArea.width - width) / 2),
+      y: workArea.y + Math.round((workArea.height - height) / 2),
+      title: 'AI8 登录',
+      autoHideMenuBar: true,
+      webPreferences: {
+        // Login flow for an external site — nodeIntegration stays off; the only
+        // privileged reader is main via executeJavaScript below.
+        nodeIntegration: false,
+        contextIsolation: true,
+        partition: 'persist:ai8',
+      },
+    })
+    ai8LoginWindow = win
+    let poller: ReturnType<typeof setInterval> | null = null
+    const stopPolling = () => {
+      if (poller !== null) {
+        clearInterval(poller)
+        poller = null
+      }
+    }
+    return new Promise<{ ok: boolean; token?: string; account?: string }>((resolve) => {
+      let settled = false
+      const finish = (result: { ok: boolean; token?: string; account?: string }) => {
+        if (settled) return
+        settled = true
+        stopPolling()
+        resolve(result)
+      }
+      win.on('closed', () => {
+        ai8LoginWindow = null
+        finish({ ok: false })
+      })
+      const readToken = async (): Promise<{ token: string; account: string } | null> => {
+        if (win.isDestroyed()) return null
+        try {
+          // GoAmzAI stores a userStore even while logged OUT (guest flow) — only
+          // accept it when a real user record accompanies the token.
+          return await win.webContents.executeJavaScript(
+            `(() => { try { const raw = localStorage.getItem('userStore'); if (!raw) return null; const u = JSON.parse(raw); const t = u?.auth?.token; const usr = u?.user; if (typeof t !== 'string' || t === '' || !usr || typeof usr !== 'object') return null; const signedIn = usr.isLogin === true || usr.id !== undefined || usr.uid !== undefined || (typeof usr.username === 'string' && usr.username !== ''); if (!signedIn) return null; const a = usr.nickname || usr.account || usr.email || usr.username || ''; return { token: t, account: String(a) }; } catch { return null; } })()`,
+          )
+        } catch {
+          return null
+        }
+      }
+      void win.loadURL('https://ai8.rcouyi.com/').catch(() => undefined)
+      win.webContents.on('did-navigate', () => {
+        void readToken().then((hit) => {
+          if (hit && hit.token !== '') {
+            finish({ ok: true, token: hit.token, account: hit.account })
+            setTimeout(() => { if (!win.isDestroyed()) win.close() }, 800)
+          }
+        })
+      })
+      poller = setInterval(() => {
+        void readToken().then((hit) => {
+          if (hit && hit.token !== '') {
+            finish({ ok: true, token: hit.token, account: hit.account })
+            setTimeout(() => { if (!win.isDestroyed()) win.close() }, 800)
+          }
+        })
+      }, 1500)
+    })
+  })
   ipcMain.handle(ipcChannels.aiChat, async (_event, p: unknown) => {
     const messages = validateChatMessages(p)
     if (messages === null) return { ok: false, text: '', hint: 'parse', latencyMs: 0 }
