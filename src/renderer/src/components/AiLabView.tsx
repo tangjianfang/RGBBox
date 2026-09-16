@@ -4,6 +4,7 @@ import { useI18n } from '../i18n'
 import { AI_PROVIDER_PRESETS, FALLBACK_MODEL, isKeylessLocal, matchProviderPreset } from '../../../shared/aiProviders'
 import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile } from '../../../shared/types'
 import { AiLabAudioTab } from './AiLabAudioTab'
+import { AiLabAi8Tab } from './AiLabAi8Tab'
 
 interface ChatTurn extends AiChatMessage {
   latencyMs?: number
@@ -16,7 +17,7 @@ type ConnState =
   | { kind: 'ok'; latencyMs: number; model: string }
   | { kind: 'fail'; hint?: AiErrorHint }
 
-type AiLabTab = 'config' | 'chat' | 'ocr' | 'audio'
+type AiLabTab = 'config' | 'chat' | 'ocr' | 'audio' | 'ai8'
 
 interface EditMirror {
   name: string
@@ -238,7 +239,7 @@ export function AiLabView(): JSX.Element {
   return (
     <div className="ai-lab">
       <div className="ai-tabs" role="tablist" aria-label="AI Lab sections">
-        {(['config', 'chat', 'ocr', 'audio'] as const).map((key) => (
+        {(['config', 'chat', 'ocr', 'audio', 'ai8'] as const).map((key) => (
           <button
             key={key}
             type="button"
@@ -404,6 +405,8 @@ export function AiLabView(): JSX.Element {
       )}
 
       {tab === 'audio' && <AiLabAudioTab />}
+
+      {tab === 'ai8' && <AiLabAi8Tab />}
     </div>
   )
 }

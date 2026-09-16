@@ -1075,6 +1075,17 @@
 - **验收点**：①typecheck+全量 `yarn test` 0 失败；②真机长局：轮盘领取后 `taken` 增加 + 岛屿 ≥2 达成 + 全程零页面错误；③TD/Tetris 覆盖层中文渲染（ready/won/lost 态）；④C6 关账记录在案。
 - **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **87 files / 798 passed / 0 失败**；③真机长局 `scripts/verify-r109-finale.mjs` **5/5 PASS**——完整链路真机贯通：boss（E2E seam 注入）→ 自动炮火击杀 → 轮盘 FAB → 道具轮盘旋转 → 领取（构筑 2→3、浮层关闭、游戏恢复）→ 视觉寻门（canvas 像素扫描青色门环）→ **接触传送门跳岛成功**（状态条「岛屿 2+」）→ 全程 0 页面错误；④`r109-td-ready-zh.png` 供中文覆盖层人工复核；⑤**C6 正式关账**：通用计分公式随 R98 裁切消亡，现行三游戏均为专属计分，无遗留。**随本条落地的玩法修正（验证驱动的平衡发现，如实入档）**：①新手宽限——开局 15s 内刷怪间隔 ×2（满配置脚本局反复死于 43~81s 的数据支撑）；②升级回血 +1 HP（幸存者类经典正反馈）；③`window.__rgbboxGames.spawnBoss` E2E 测试缝（本地单机调试面，组件卸载即删，见 R109.2）。**踩坑记录（脚本工程，如实入档）**：①canvas 视觉寻门——4px 细环在 5px 采样网格下漏检，3px 步进+双色带才稳；金色通道误匹配击杀金粒子（污染质心），纯青+n 上限修复；②键盘航位推算漂移 → 近场八角扫掠暴力穿过 30px 接触圈；③升级卡冻结与 FAB 卸载的竞态 → 全链路 timeout+容错重试；④`page.evaluate` 多参须包对象。**状态：✅（清留档目标全部达成：M09/M14/M15/M17 + U7 + C6 六项全关）**
 
+### R110. AI 实验室第五 Tab「AI8」——欧亿 AI 站点直连集成（2026-09-16 用户提供 `ai8-electron` 逆向文档与客户端参考实现）
+
+> 触发场景：用户提供 `C:\Users\tjf\.zcode\workspace\default\ai8-electron`（ai8.rcouyi.com API 逆向 README + 零依赖客户端 `ai8-client.mjs`），要求在现有 AI 实验室（config/chat/ocr/audio 四 Tab）增加 AI8 Tab。**架构决策**：ai8 站点 CORS `Access-Control-Allow-Origin: *` → 渲染进程直连 fetch，**不动 main/preload**（P0/P1 零接触）；不走 OpenAI 兼容层（站点无此端点），按其自有协议实现。
+- **R110.1 TS 客户端**：新 `src/renderer/src/ai8/client.ts`——`ai8-client.mjs` 的 TS 移植（`Ai8Error{code}`/`unwrap{code,data,msg}`/Authorization **无 Bearer 前缀**/`X-APP-VERSION: 3.4.0`/`X-Locale: zh-CN`）；能力：getChatTemplate(公开)/getModels/createSession/updateSession/listSessions/deleteSession/listRecords/getBalance/chat(SSE async generator: meta/delta/extra/error/done)/AbortController 中断。
+- **R110.2 AI8 Tab UI**（新 `AiLabAi8Tab.tsx`，挂入 `AiLabTab` 联合）：①token 行——粘贴框+保存/清除（localStorage `rgbbox:ai8Token`，附隐私提示：v1 明文本地存储，safeStorage 迁移留后续 R-N）+额度显示（getBalance）；②模型选择——公开 `/chat/tmpl` 免 token 预载 287 模型（chat 类型过滤、显示积分标签）；③会话区——「新会话」（createSession 绑定所选模型）+ thinking/webSearch 勾选；④对话区——SSE 流式增量渲染 + 发送/停止（AbortController）+ 会话记录本地态（卸载即清）。
+- **R110.3 i18n**：`ai.lab.tab.ai8` + AI8 面板 ≈14 keys zh/en。
+- **受影响文件**：新 `src/renderer/src/ai8/client.ts`、`src/renderer/src/components/AiLabAi8Tab.tsx`；改 `AiLabView.tsx`（tab 联合+挂载）、`i18n/index.tsx`；新 `tests/renderer/ai8/client.test.ts`（SSE 解析/unwrap/code=2 映射/无 token 守卫，纯函数不打真实网络）；`scripts/verify-r110-ai8.mjs`。
+- **验收点**：①typecheck 0 error + 全量 `yarn test` 0 失败；②真机 CDP：AI8 Tab 渲染 → 模型列表真实加载（公开接口免 token）→ 无 token 发送被守卫 → 粘贴假 token 保存落盘 → 对话返回业务错误被优雅展示（code≠0 路径）；③既有四 Tab 零回归；④真实对话流式效果待用户贴 token 实测。
+- **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **88 files / 802 passed / 0 失败**（+新 `tests/renderer/ai8/client.test.ts` 4 用例：SSE delta 累积/[DONE]+中途错误终态/extra 与脏行容错/Ai8Error 业务码）；③真机 CDP `scripts/verify-r110-ai8.mjs` **6/6 PASS**：AI8 Tab 可激活、**公开 /chat/tmpl 真实加载 287 模型**（免 token 实网）、无 token 守卫（token 行必现）、假 token 落盘 `rgbbox:ai8Token`、假 token 建会话→业务错误优雅展示（「Token 失效或缺失」）、全程 0 页面错误；④截图 `r110-ai8-tab.png` 入库（图像分析工具本轮不可用，以 DOM 断言为证、截图供人工复核）。**踩坑记录（如实入档）**：①首轮真机 4 tab 旧渲染——Tab 按钮数组漏加 `'ai8'`（类型联合与面板挂载都改了、唯独渲染按钮的 map 数组没改），bundle 已含新代码但无入口；CDP 侧表现为「脚本找 `.ai-tab[data-tab=ai8]` 超时+应用莫名退出（single-instance+多实例竞态）」，用「页内 fetch 自身 bundle 查标记」定位到包是新的、缺的是按钮。②真机流式对话路径（真 token）待用户实测。**状态：✅**
+- **边界与合规**：token 由用户自行从官网提取（README §二），不入库不日志；请求频率与站点条款由用户自负。
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。
