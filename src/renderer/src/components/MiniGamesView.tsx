@@ -1,4 +1,4 @@
-import { ArrowLeft, Crosshair, Grid, Heart, Maximize2, Minimize2, Play, RotateCcw, Shield, Trophy, Volume2, VolumeX, Zap } from 'lucide-react'
+import { ArrowLeft, Crosshair, Grid, Heart, Maximize2, Minimize2, Music, Play, RotateCcw, Shield, Trophy, Volume2, VolumeX, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
 import { useI18n } from '../i18n'
 import {
@@ -59,7 +59,7 @@ import {
   type RouletteResult,
   type SwarmMeta,
 } from '../games/swarmMeta'
-import { isSfxEnabled, playSfx, setSfxEnabled } from '../games/sfx'
+import { isBgmEnabled, isSfxEnabled, playSfx, setBgmEnabled, setSfxEnabled, startBgm, stopBgm } from '../games/sfx'
 import {
   drawTetris,
   initialTetrisState,
@@ -118,6 +118,7 @@ export function MiniGamesView(): JSX.Element {
   const [meta, setMeta] = useState<SwarmMeta>(() => readMeta())
   const [roulette, setRoulette] = useState<{ stage: 'pick' | 'spin' | 'result'; result?: RouletteResult }>({ stage: 'pick' })
   const [gamepadName, setGamepadName] = useState<string | null>(null)
+  const [bgmOn, setBgmOn] = useState(() => isBgmEnabled())
   const [newAchievements, setNewAchievements] = useState<string[]>([])
   const [showCodex, setShowCodex] = useState(false)
   const metaRef = useRef<SwarmMeta>(meta)
@@ -199,6 +200,7 @@ export function MiniGamesView(): JSX.Element {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
+    startBgm()
     canvas.width = WIDTH
     canvas.height = HEIGHT
     let frame = 0
@@ -272,7 +274,10 @@ export function MiniGamesView(): JSX.Element {
       frame = requestAnimationFrame(loop)
     }
     frame = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(frame)
+    return () => {
+      cancelAnimationFrame(frame)
+      stopBgm()
+    }
   }, [fullscreen, pollGamepad, publishTd, publishSurvival, publishTetris, screen, selectedTowerId, settleBest, tdSpeed])
 
   useEffect(() => {
@@ -327,6 +332,12 @@ export function MiniGamesView(): JSX.Element {
     if (sfxOn) return
     playSfx('coin')
   }, [sfxOn])
+
+  const toggleBgm = useCallback(() => {
+    setBgmEnabled(!bgmOn)
+    setBgmOn(!bgmOn)
+    if (!bgmOn && (screen === 'td' || screen === 'survival' || screen === 'tetris')) startBgm()
+  }, [bgmOn, screen])
 
   const startOrNextWave = useCallback(() => {
     if (tdStateRef.current.phase === 'won' || tdStateRef.current.phase === 'lost') {
@@ -504,6 +515,10 @@ export function MiniGamesView(): JSX.Element {
             <h2>{t('games.title')}</h2>
           </div>
           <div className="games-header-actions">
+            <button className="aspect-lock-btn" type="button" aria-label={t('games.bgmToggle')} title={t('games.bgmToggle')} onClick={toggleBgm}>
+              <Music aria-hidden="true" size={13} />
+              {bgmOn ? '' : '×'}
+            </button>
             <button className="aspect-lock-btn" type="button" aria-label={t('games.sfxToggle')} title={t('games.sfxToggle')} onClick={toggleSfx}>
               {sfxOn ? <Volume2 aria-hidden="true" size={13} /> : <VolumeX aria-hidden="true" size={13} />}
             </button>
@@ -570,6 +585,10 @@ export function MiniGamesView(): JSX.Element {
           <button className="aspect-lock-btn" type="button" onClick={backToHub}>
             <ArrowLeft aria-hidden="true" size={13} />
             {t('games.backToHub')}
+          </button>
+          <button className="aspect-lock-btn" type="button" aria-label={t('games.bgmToggle')} title={t('games.bgmToggle')} onClick={toggleBgm}>
+            <Music aria-hidden="true" size={13} />
+            {bgmOn ? '' : '×'}
           </button>
           <button className="aspect-lock-btn" type="button" aria-label={t('games.sfxToggle')} title={t('games.sfxToggle')} onClick={toggleSfx}>
             {sfxOn ? <Volume2 aria-hidden="true" size={13} /> : <VolumeX aria-hidden="true" size={13} />}

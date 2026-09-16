@@ -1056,6 +1056,15 @@
 - **验收点**：①typecheck+全量 `yarn test` 0 失败；②真机 CDP：打开图鉴 → 四分区条目计数 3/5/12/8 → 关闭恢复；③截图复核排版；④零回归。
 - **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **86 files / 794 passed / 0 失败**（+组件用例：图鉴开→28 条目→关）；③真机 CDP `scripts/verify-r107-codex.mjs` **4/4 PASS**：浮层 4 分区 28 条目、中文 Lore 正确渲染（「好奇的火花——…」）、关闭恢复、0 页面错误；④截图 `r107-codex.png` 入库（本轮图像分析 MCP 不在会话可用工具内，视觉以 DOM 断言为证、留截图供人工复核）。**踩坑记录**：i18n 测试 mock 返回 key 本身，按钮查找用 📚 锚点而非文案。**状态：✅**
 
+### R108. 迷你游戏 BGM——WebAudio 程序化琶音循环 + 音乐开关（2026-09-16 续作 Goobies FRD M17，清留档第 4/4 项）
+
+> 触发场景：用户目标「完成所有剩余留档」。FRD M17（BGM）按零资源约束落地：与 SFX 同源的 WebAudio 合成，Am 琶音 8 步循环 + 低八度贝斯，无任何音频文件。
+- **R108.1 程序化 BGM**：`sfx.ts` 扩展——三角波琶音（A2→C3→E3→A3→C4→E4→A3→E3，步进 280ms、音量 0.018）+ 每 4 步正弦低音（音量 0.026）；`startBgm()/stopBgm()` 幂等；AudioContext 不可用（测试环境）安全空转。
+- **R108.2 生命周期与开关**：进入任意游戏屏（TD/Swarm/Tetris）自动 `startBgm()`，切屏/返回游戏库/卸载即 `stopBgm()`；顶栏 🎵/🔇 音乐开关（与音效开关分立），`rgbbox:gamesBgm` 持久化。
+- **受影响文件**：`games/sfx.ts`、`MiniGamesView.tsx`、`i18n/index.tsx`（+2 keys）、`tests/renderer/games/sfx.test.ts`（新）、`scripts/verify-r108-bgm.mjs`。
+- **验收点**：①typecheck+全量 `yarn test` 0 失败（+sfx 开关持久化用例）；②真机 CDP：音乐开关切换落盘、进游戏屏零错误（BGM 播放路径真实执行）、TD/Swarm/Tetris 零回归；③听感待用户实机确认。
+- **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **87 files / 796 passed / 0 失败**（+新 `sfx.test.ts` 2 用例：BGM/SFX 开关状态与 localStorage 双向一致）；③真机 CDP `scripts/verify-r108-bgm.mjs` **5/5 PASS**：hub 音乐钮在位、off/on 切换均落盘、BGM 激活态下 swarm 运行 4s 零页面错误（AudioContext 真实调度路径无异常）；④听感（琶音密度/音量）待用户实机评价。**状态：✅（听感调优随时可改 BGM_ARPEGGIO/BGM_STEP_MS/音量三常量）**
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

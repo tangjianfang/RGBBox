@@ -96,3 +96,73 @@ export function playSfx(kind: SfxKind): void {
     audioCtx = null
   }
 }
+
+// ── R108: procedural BGM — zero-asset Am arpeggio loop ──
+
+const BGM_KEY = 'rgbbox:gamesBgm'
+const BGM_STEP_MS = 280
+const BGM_ARPEGGIO = [110, 130.81, 164.81, 220, 261.63, 329.63, 220, 164.81]
+
+let bgmEnabled = (() => {
+  try {
+    return localStorage.getItem(BGM_KEY) !== 'off'
+  } catch {
+    return true
+  }
+})()
+let bgmTimer: ReturnType<typeof setInterval> | null = null
+let bgmStep = 0
+
+export function isBgmEnabled(): boolean {
+  return bgmEnabled
+}
+
+export function setBgmEnabled(value: boolean): void {
+  bgmEnabled = value
+  try {
+    localStorage.setItem(BGM_KEY, value ? 'on' : 'off')
+  } catch {
+    return
+  }
+  if (!value) stopBgm()
+}
+
+function playBgmNote(freq: number, duration: number, type: OscillatorType, volume: number): void {
+  if (!audioCtx) return
+  const at = audioCtx.currentTime
+  const osc = audioCtx.createOscillator()
+  const gain = audioCtx.createGain()
+  osc.type = type
+  osc.frequency.setValueAtTime(freq, at)
+  gain.gain.setValueAtTime(volume, at)
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + duration)
+  osc.connect(gain)
+  gain.connect(audioCtx.destination)
+  osc.start(at)
+  osc.stop(at + duration + 0.02)
+}
+
+export function startBgm(): void {
+  if (!bgmEnabled || bgmTimer !== null) return
+  try {
+    audioCtx ??= new AudioContext()
+    if (audioCtx.state === 'suspended') void audioCtx.resume()
+  } catch {
+    audioCtx = null
+    return
+  }
+  bgmStep = 0
+  bgmTimer = setInterval(() => {
+    if (!bgmEnabled || !audioCtx) return
+    playBgmNote(BGM_ARPEGGIO[bgmStep % BGM_ARPEGGIO.length], 0.26, 'triangle', 0.018)
+    if (bgmStep % 4 === 0) playBgmNote(BGM_ARPEGGIO[bgmStep % BGM_ARPEGGIO.length] / 2, 0.5, 'sine', 0.026)
+    bgmStep += 1
+  }, BGM_STEP_MS)
+}
+
+export function stopBgm(): void {
+  if (bgmTimer !== null) {
+    clearInterval(bgmTimer)
+    bgmTimer = null
+  }
+}
