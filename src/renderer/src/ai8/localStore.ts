@@ -81,10 +81,37 @@ export function writePrefs(prefs: Ai8Prefs): void {
   }
 }
 
-/** R113.1: group models per provider, newest `perProvider` entries each. */
+/** R113.1: group models per provider, newest `perProvider` entries each.
+ *  The API order is NOT newest-first — rank by version tokens parsed from the
+ *  label ("Gpt 5.4 Nano" → [5,4]); same version pushes nano/mini/lite last. */
 export interface Ai8ProviderGroup {
   provider: string
   models: { label: string; value: string; integral?: string }[]
+}
+
+const SMALL_MODEL_HINTS = ['nano', 'mini', 'lite', 'small', 'tiny']
+
+function versionTokens(label: string): number[] {
+  const matches = label.toLowerCase().match(/\d+(?:\.\d+)+/g) ?? []
+  const parsed = matches.map((m) => m.split('.').map(Number))
+  parsed.sort((a, b) => {
+    const len = Math.max(a.length, b.length)
+    for (let i = 0; i < len; i++) {
+      const d = (b[i] ?? 0) - (a[i] ?? 0)
+      if (d !== 0) return d
+    }
+    return 0
+  })
+  return parsed[0] ?? [0]
+}
+
+function cmpVersionDesc(a: number[], b: number[]): number {
+  const len = Math.max(a.length, b.length)
+  for (let i = 0; i < len; i++) {
+    const d = (b[i] ?? 0) - (a[i] ?? 0)
+    if (d !== 0) return d
+  }
+  return 0
 }
 
 export function groupModelsByProvider(models: { label: string; value: string; attr?: { providerKey?: string; integral?: string } }[], perProvider = 6): Ai8ProviderGroup[] {
@@ -96,10 +123,19 @@ export function groupModelsByProvider(models: { label: string; value: string; at
       byProvider.set(provider, [])
       order.push(provider)
     }
-    const bucket = byProvider.get(provider) as { label: string; value: string; integral?: string }[]
-    if (bucket.length < perProvider) bucket.push({ label: model.label, value: model.value, integral: model.attr?.integral })
+    byProvider.get(provider)?.push({ label: model.label, value: model.value, integral: model.attr?.integral })
   }
-  return order.map((provider) => ({ provider, models: byProvider.get(provider) as Ai8ProviderGroup['models'] }))
+  return order.map((provider) => {
+    const bucket = byProvider.get(provider) as Ai8ProviderGroup['models']
+    bucket.sort((a, b) => {
+      const v = cmpVersionDesc(versionTokens(a.label), versionTokens(b.label))
+      if (v !== 0) return v
+      const pa = SMALL_MODEL_HINTS.some((hint) => a.label.toLowerCase().includes(hint)) ? 1 : 0
+      const pb = SMALL_MODEL_HINTS.some((hint) => b.label.toLowerCase().includes(hint)) ? 1 : 0
+      return pa - pb
+    })
+    return { provider, models: bucket.slice(0, perProvider) }
+  })
 }
 
 /** ChatGPT-style title: first user message, truncated. */

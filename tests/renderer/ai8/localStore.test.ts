@@ -14,17 +14,24 @@ import {
 describe('renderer/ai8 localStore (R113)', () => {
   beforeEach(() => localStorage.clear())
 
-  it('groupModelsByProvider caps each provider at 6 newest', () => {
+  it('groupModelsByProvider caps each provider at 6, ranked by version desc', () => {
     const models = [
-      ...Array.from({ length: 9 }, (_, i) => ({ label: `o${i}`, value: `openai_chat::m${i}`, attr: { providerKey: 'openai_chat' } })),
-      ...Array.from({ length: 2 }, (_, i) => ({ label: `g${i}`, value: `gemini_chat::m${i}`, attr: { providerKey: 'gemini_chat' } })),
+      { label: 'Gpt 5.4 Nano', value: 'openai_chat::nano', attr: { providerKey: 'openai_chat' } },
+      { label: 'Gpt 3.8', value: 'openai_chat::old', attr: { providerKey: 'openai_chat' } },
+      ...Array.from({ length: 7 }, (_, i) => ({ label: `Gpt 5.${i}`, value: `openai_chat::v${i}`, attr: { providerKey: 'openai_chat' } })),
+      { label: 'Gpt 5.7', value: 'openai_chat::top', attr: { providerKey: 'openai_chat' } },
+      { label: 'Gemini 3.1 Pro', value: 'gemini_chat::pro', attr: { providerKey: 'gemini_chat' } },
     ]
     const groups = groupModelsByProvider(models)
     const openai = groups.find((g) => g.provider === 'openai_chat')
     expect(openai?.models.length).toBe(6)
-    expect(openai?.models[0].value).toBe('openai_chat::m0')
-    const gemini = groups.find((g) => g.provider === 'gemini_chat')
-    expect(gemini?.models.length).toBe(2)
+    // highest version first; the 3.8 legacy and the nano variant must not lead
+    expect(openai?.models[0].value).toBe('openai_chat::top')
+    expect(openai?.models.map((m) => m.value)).not.toContain('openai_chat::old')
+    // 5.4 Nano 与 Gpt 5.4 同版本：排在同版本之后（小模型垫底），但不跌出其版本档
+    const values = openai?.models.map((m) => m.value) ?? []
+    expect(values.indexOf('openai_chat::v4')).toBeLessThan(values.indexOf('openai_chat::nano'))
+    expect(groups.find((g) => g.provider === 'gemini_chat')?.models.length).toBe(1)
   })
 
   it('sessions round-trip through localStorage', () => {

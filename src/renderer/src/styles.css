@@ -7503,8 +7503,10 @@ input[type='range'].video-player-volume {
 
 .ai8-btn-primary {
   background: #14332b; border-color: #46c6a8; color: #8fe8cf; font-weight: 600;
-  width: 100%;
 }
+
+/* 仅侧栏「新会话」占满整行；输入行的主按钮必须定宽，否则把输入框挤扁 */
+.ai8-side .ai8-btn-primary { width: 100%; }
 
 .ai8-sessions {
   display: flex; flex: 1; flex-direction: column; gap: 4px;
@@ -7589,7 +7591,7 @@ input[type='range'].video-player-volume {
 
 .ai8-placeholder small { color: #55707c; }
 
-.ai8-input-row { display: flex; gap: 8px; }
+.ai8-input-row { align-items: stretch; display: flex; gap: 8px; }
 
 .ai8-input-row textarea {
   background: rgba(13, 21, 25, 0.9); border: 1px solid rgba(255, 255, 255, 0.14);
@@ -7598,3 +7600,37 @@ input[type='range'].video-player-volume {
 }
 
 .ai8-input-row .ai8-btn { align-self: stretch; }
+
+.ai8-input-row .ai8-btn {
+  flex-shrink: 0; min-width: 96px; align-self: stretch;
+}
+
+/* R113.6: 消息排版——换行保留、角色标签、块状分隔（对话页与 AI8 共用） */
+.ai-msg {
+  background: rgba(13, 21, 25, 0.75); border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px; margin-bottom: 10px; padding: 9px 12px;
+}
+
+.ai-msg-role {
+  color: #46c6a8; display: inline-block; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.1em; margin-right: 10px; text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+.ai-msg-text { white-space: pre-wrap; word-break: break-word; }
+
+.ai8-input-row textarea,
+.ai-chat-input-row textarea { flex: 1; min-height: 64px; width: 100%; }
+
+.ai-chat-input-row { align-items: stretch; display: flex; gap: 8px; }
+
+.ai-chat-input-row button {
+  background: #14332b; border: 1px solid #46c6a8; border-radius: 8px;
+  color: #8fe8cf; cursor: pointer; flex-shrink: 0; font-size: 12.5px;
+  font-weight: 600; padding: 7px 14px;
+}
+
+.ai-chat-input-row button:disabled {
+  background: rgba(13, 21, 25, 0.9); border-color: rgba(255, 255, 255, 0.14);
+  color: #55707c; cursor: not-allowed;
+}
