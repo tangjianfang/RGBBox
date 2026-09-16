@@ -1100,6 +1100,15 @@
   - **修复 B（「发消息没有任何回复」）**：页内 A/B 实验实锤——Go 后端要求 `sessionId` 为 **int64 数字**，字符串即 400（`cannot unmarshal string into ... sessionId of type int64`），且 400 以 SSE content-type 返回被解析器静默吞掉。修复：sessionId 保持数字 + 流结束仍无增量时兜底显示错误。**修复后真机实测真实流式回复渲染成功**（`r111-ai8-chat.png`：「我是由欧亿公司打造的欧亿 AI 助手…」）。
   - **踩坑记录**：①测试注入的伪造 userStore 会污染 persist:ai8 分区（账户名显示 E2E Tester 属测试残留，清除后重新登录即恢复）；②自禁用按钮触发 Playwright 二次可点性重试超时（首击已生效）→ `force:true`；③脚本删 localStorage 不会重置已挂载组件的内存态 → 走 UI 清除按钮；④.mjs 里写 TS 断言直接 SyntaxError。**状态：✅**
 
+### R112. 截图会话 Esc 取消修复 + 提示条 X 关闭按钮（2026-09-16 用户报告「按快捷键启动截图之后，无法按 Esc 取消截图模式」）
+
+> 触发场景：用户报告热键（Alt+A 等）启动截图后 Esc 无法取消。根因：热键从**主进程**触发开窗，Windows 前台锁（foreground lock）下新建的全屏窗常拿不到系统键盘焦点——渲染层的 `keydown` 监听（SnipView 已有）根本收不到 Esc；鼠标路径不受影响。修复取截图工具标准做法：**会话期间在主进程注册全局 Esc**，不依赖窗口焦点。
+- **R112.1 全局 Esc（main/snipManager）**：导出 `SNIP_CANCEL_ACCEL = 'Escape'`；`startSnip` 会话激活后 `globalShortcut.register(SNIP_CANCEL_ACCEL, cancelSnip)`（失败仅告警，渲染层 Esc 仍是兜底）；`cancelSnip` 首行 `unregister`（未注册时安全无害；destroy 重入亦幂等）。
+- **R112.2 提示条 X 按钮（SnipView）**：`.snip-hint`（原 `pointer-events:none`）改为 `.snip-hint-row` 容器——提示文案 + lucide `X` 图标按钮，点击即 `snipCancel()`；按钮恢复 pointer-events；新增 `snip.cancel` i18n（zh/en）。
+- **受影响文件**：`snipManager.ts`、`SnipView.tsx`、`styles.css`、`i18n/index.tsx`、`tests/main/snipManager.test.ts`、`tests/renderer/components/SnipView.test.tsx`。
+- **验收点**：①typecheck + 全量 `yarn test` 0 失败（+常量/按钮用例）；②真机端到端：PowerShell SendKeys 全局发 Alt+A 触发截图会话（不经渲染层）→ CDP 找到 snip 窗口且 X 按钮可点 → 全局发 Esc → 会话整场取消（snip 窗口全部消失）；③手工粘贴路径（snipGetFrame）零回归。
+- **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **88 files / 804 passed / 0 失败**（+2：SNIP_CANCEL_ACCEL 常量、SnipView X 按钮 render+点击调 snipCancel）；③**真机端到端全链（OS 级按键注入）**：`SendKeys('%a')` 全局触发 Alt+A → snip 会话真实开启（CDP 见 `?snip=1` 窗口，提示条+X 按钮渲染）→ **点击 X → 会话整场取消**（窗口全消）→ 再次 Alt+A 重开 → `SendKeys('{ESC}')` 全局 Esc → **会话取消成功**（修复本体：Esc 不依赖截图窗口键盘焦点）→ 截图 `r112-snip-hint-x.png` 入库。**踩坑记录**：①bash 双引号里写 PowerShell 会吞 `$var` → 用无变量管道写法；②真机验证截图会话只能靠 OS 级按键注入（globalShortcut 从 CDP 不可达）。**状态：✅**
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

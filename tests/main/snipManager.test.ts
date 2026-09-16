@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { isPresetSnipHotkey, matchDisplayToSource, physicalThumbSize, resolveFinishAction, PRESET_SNIP_HOTKEYS } from '../../src/main/snipManager'
+import { isPresetSnipHotkey, matchDisplayToSource, physicalThumbSize, resolveFinishAction, PRESET_SNIP_HOTKEYS, SNIP_CANCEL_ACCEL } from '../../src/main/snipManager'
 import { ipcChannels } from '../../src/shared/ipc'
 
 describe('snipManager pure (R80.2)', () => {
+  it('R112: global cancel accelerator is Escape', () => {
+    expect(SNIP_CANCEL_ACCEL).toBe('Escape')
+  })
+
   it('matchDisplayToSource pairs by display_id string; unmatched displays skipped', () => {
     const sources = [
       { id: 'screen:0', display_id: '123' },

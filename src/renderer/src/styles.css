@@ -6754,9 +6754,25 @@ input[type='range'].video-player-volume {
   background: rgba(5, 8, 10, 0.85); color: #46c6a8; font-size: 12px; pointer-events: none;
 }
 .snip-hint {
+  padding: 6px 0 6px 14px; border-radius: 6px 0 0 6px; background: rgba(5, 8, 10, 0.8);
+  color: rgba(255, 255, 255, 0.82); font-size: 13px; margin: 0;
+}
+
+/* R112.2: 提示条 + 手动取消 X 按钮（按钮必须可点，容器不再整体 pointer-events:none） */
+.snip-hint-row {
   position: absolute; bottom: 48px; left: 50%; transform: translateX(-50%);
-  padding: 6px 14px; border-radius: 6px; background: rgba(5, 8, 10, 0.8);
-  color: rgba(255, 255, 255, 0.82); font-size: 13px; pointer-events: none;
+  display: flex; align-items: stretch;
+}
+
+.snip-hint-close {
+  align-items: center; border: none; border-radius: 0 6px 6px 0;
+  background: rgba(5, 8, 10, 0.8); border-left: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.82); cursor: pointer; display: flex;
+  padding: 0 10px;
+}
+
+.snip-hint-close:hover {
+  background: rgba(248, 113, 113, 0.35); color: #fff;
 }
 
 /* ── R83: AI 整理配置行 ────────────────────────────────────────────── */

@@ -14,6 +14,10 @@ import type { CaptureEntry } from './captureStore'
 
 export const SNIP_HOTKEY = 'Alt+A'
 
+/** R112: 会话期全局 Esc——热键触发的全屏窗在 Windows 前台锁下常拿不到键盘
+ *  焦点，渲染层 keydown 收不到 Esc；主进程全局注册不依赖任何窗口焦点。 */
+export const SNIP_CANCEL_ACCEL = 'Escape'
+
 export interface SnipSourceLike { id: string; display_id?: string }
 export interface DisplayLike { id: number; bounds: { width: number; height: number }; scaleFactor: number }
 
@@ -146,6 +150,14 @@ export async function startSnip(): Promise<boolean> {
   }
   for (const [displayId, src] of pairs) snipFrames.set(displayId, src.thumbnail)
   sessionActive = true
+  // R112: 会话期接管全局 Esc（见 SNIP_CANCEL_ACCEL 注释）；注册失败仅告警——
+  // 渲染层自身的 Esc/右键/X 按钮仍是兜底
+  try {
+    globalShortcut.register(SNIP_CANCEL_ACCEL, () => cancelSnip())
+    if (!globalShortcut.isRegistered(SNIP_CANCEL_ACCEL)) log().warn('Snip', 'global Escape unavailable — falling back to in-window cancel only')
+  } catch (err) {
+    log().warn('Snip', `global Escape register failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
   // R80.10: 先开窗——窗口加载与帧编码（懒编码）重叠，不再让 toDataURL 串行阻塞开窗
   for (const displayId of pairs.keys()) openSnipWindow(displayId)
   log().info('Snip', `session start — ${pairs.size} display(s); capture ${tCapture}ms, windows opened +${Date.now() - t0}ms`)
@@ -172,6 +184,7 @@ export function finishSnip(dataUrl: string, action: 'copy' | 'save'): boolean {
 }
 
 export function cancelSnip(): void {
+  try { globalShortcut.unregister(SNIP_CANCEL_ACCEL) } catch { /* 未注册 */ }
   sessionActive = false
   snipFrames.clear()
   for (const [, win] of snipWindows) {

@@ -26,6 +26,17 @@ describe('SnipView select phase (R80.5)', () => {
     expect(container.querySelector('.snip-hint')).toBeTruthy()
   })
 
+  it('R112.2: hint row exposes an X button that cancels the session', async () => {
+    const cancelSpy = vi.fn(() => Promise.resolve())
+    ;(window as unknown as { rgbbox: Record<string, () => unknown> }).rgbbox.snipCancel = cancelSpy
+    const { container } = render(<SnipView displayId={1} />)
+    await waitFor(() => expect(container.querySelector('.snip-mask')).toBeTruthy())
+    const close = container.querySelector('button.snip-hint-close') as HTMLButtonElement | null
+    expect(close).toBeTruthy()
+    fireEvent.click(close as HTMLButtonElement)
+    expect(cancelSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('drag ≥8px enters annotate phase (AnnotateOverlay mounted)', async () => {
     const { container } = render(<SnipView displayId={1} />)
     await waitFor(() => expect(container.querySelector('.snip-mask')).toBeTruthy())

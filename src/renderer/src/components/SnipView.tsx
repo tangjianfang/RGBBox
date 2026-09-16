@@ -5,6 +5,7 @@
  * 无水印铁律（R75.2）：裁剪/导出只搬运像素。
  */
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { X } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { AnnotateOverlay } from './video/AnnotateOverlay'
 import { cropToDataUrl } from './video/frameCapture'
@@ -177,7 +178,21 @@ export function SnipView({ displayId }: { displayId: number }): JSX.Element {
           {Math.round(selCss.w * dpr)} × {Math.round(selCss.h * dpr)}
         </span>
       )}
-      {phase === 'select' && <p className="snip-hint">{t('snip.hint' as never)}</p>}
+      {phase === 'select' && (
+        <div className="snip-hint-row">
+          <p className="snip-hint">{t('snip.hint' as never)}</p>
+          {/* R112.2: 手动取消入口——热键触发的会话窗口可能没有键盘焦点，鼠标点击始终可用 */}
+          <button
+            type="button"
+            className="snip-hint-close"
+            onClick={() => window.rgbbox.snipCancel()}
+            aria-label={t('snip.cancel' as never)}
+            title={t('snip.cancel' as never)}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
       {phase === 'annotate' && (
         <AnnotateOverlay
           source={frameUrl}
