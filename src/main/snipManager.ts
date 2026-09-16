@@ -6,7 +6,7 @@
  * （R74 screensaver 窗口模式），渲染端 SnipView 负责拖选 + 就地标注。
  * 已知边界：secure desktop（锁屏/UAC）截不到 → 黑帧，ESC 可退。
  */
-import { BrowserWindow, clipboard, desktopCapturer, globalShortcut, nativeImage, screen } from 'electron'
+import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, nativeImage, screen } from 'electron'
 import { join } from 'node:path'
 import { getLogger, type Logger } from '../shared/logger'
 import { PRESET_SNIP_HOTKEYS as PRESET_SNIP_HOTKEYS_SHARED, isPresetSnipHotkey } from '../shared/snipHotkeys'
@@ -57,10 +57,14 @@ function log(): Logger {
 }
 
 const snipWindows = new Map<number, BrowserWindow>()
+// R112.3: 会话内创建过的每一个窗口（含竞态重开被覆盖的）都记录在案——
+// cancelSnip 必须能杀掉所有窗口，否则孤儿冻结帧会盖住整个屏幕且无法退出
+const allSnipWindows = new Set<BrowserWindow>()
 // R80.10: 存 nativeImage（不做同步 PNG 编码）——编码推迟到渲染端请求时（懒编码），
 // startSnip 只做捕获 + 开窗，窗口加载与编码时间重叠
 const snipFrames = new Map<number, Electron.NativeImage>()
 let sessionActive = false
+let snipStarting = false
 let deps: SnipDeps | null = null
 let isDev = false
 let devUrl: string | undefined
@@ -93,6 +97,10 @@ export function disposeSnipManager(): void {
 function openSnipWindow(displayId: number): void {
   const display = screen.getAllDisplays().find((x) => x.id === displayId)
   if (!display) return
+  // R112.3: 竞态重入（startSnip 双开）会覆盖登记表——先杀掉同屏旧窗口，
+  // 防止孤儿冻结帧残留
+  const prev = snipWindows.get(displayId)
+  if (prev && !prev.isDestroyed()) prev.destroy()
   const b = display.bounds
   const win = new BrowserWindow({
     x: b.x, y: b.y, width: b.width, height: b.height,
@@ -120,20 +128,66 @@ function openSnipWindow(displayId: number): void {
     win.setAlwaysOnTop(true, 'screen-saver')
     win.moveTop()
     win.focus()
+    // R112.3: Windows 前台锁下 win.focus() 可能不生效（尤其全局热键触发时
+    // 没有任何前台窗口可移交焦点）——强制抢占，保证 Esc 键路径可用
+    app.focus({ steal: true })
+  })
+  // R112.3: Electron 层按键拦截（先于渲染层 JS）——即使渲染层脚本异常、
+  // 或系统焦点异常导致 keydown 没进页面，Esc 也能在此处直接取消会话
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'Escape' && sessionActive) {
+      event.preventDefault()
+      log().info('Snip', 'cancel via before-input-event')
+      cancelSnip()
+    }
   })
   // 任一窗口被关（Alt+F4/系统）→ 整个会话收摊
   win.on('closed', () => {
-    snipWindows.delete(displayId)
-    if (sessionActive) cancelSnip()
+    // 竞态重入时 destroy(prev) 也会走这里——只清理仍指向自己的登记项
+    if (snipWindows.get(displayId) === win) snipWindows.delete(displayId)
+    allSnipWindows.delete(win)
+    if (sessionActive) {
+      log().info('Snip', 'cancel via window closed cascade')
+      cancelSnip()
+    }
   })
   const query = `snip=1&displayId=${displayId}`
   if (isDev && devUrl) win.loadURL(`${devUrl}?${query}`)
   else win.loadFile(join(__dirname, '../renderer/index.html'), { search: query })
+  allSnipWindows.add(win)
   snipWindows.set(displayId, win)
 }
 
 export async function startSnip(): Promise<boolean> {
-  if (sessionActive) return false
+  // R112.3: 防重入闸门必须在 await 之前置位——sessionActive 要等
+  // desktopCapturer（~700ms）完成才写入，热键连触发会双开两套窗口
+  if (sessionActive || snipStarting) return false
+  snipStarting = true
+  try {
+    return await startSnipInner()
+  } finally {
+    // 成功路径 sessionActive=true 已接管防重入；这里必须复位，
+    // 否则一次会话结束后闸门永久卡死，截图再也无法启动（R112 回归）
+    snipStarting = false
+  }
+}
+
+/** R112.3: desktopCapturer 在 Windows 上有已知卡死（销毁窗口后立刻再捕获，
+ *  实测单次 stall 51s）——3s 超时 + 最多 3 次尝试，失败快速返回让用户重按。 */
+async function getSourcesWithRetry(opts: Electron.SourcesOptions): Promise<Electron.DesktopCapturerSource[]> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const result = await Promise.race([
+      desktopCapturer.getSources(opts),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+    ])
+    if (result) return result
+    log().warn('Snip', `desktopCapturer stalled (attempt ${attempt}/3)`)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+  }
+  return []
+}
+
+async function startSnipInner(): Promise<boolean> {
   const t0 = Date.now()
   const displays = screen.getAllDisplays()
   if (displays.length === 0) return false
@@ -141,11 +195,11 @@ export async function startSnip(): Promise<boolean> {
   const sizes = displays.map(physicalThumbSize)
   const maxW = Math.max(...sizes.map((s) => s.width))
   const maxH = Math.max(...sizes.map((s) => s.height))
-  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: maxW, height: maxH } })
+  const sources = await getSourcesWithRetry({ types: ['screen'], thumbnailSize: { width: maxW, height: maxH } })
   const tCapture = Date.now() - t0
   const pairs = matchDisplayToSource(sources, displays)
   if (pairs.size === 0) {
-    log().error('Snip', 'no display source matched — abort')
+    log().error('Snip', `no display source matched — abort (capture took ${tCapture}ms)`)
     return false
   }
   for (const [displayId, src] of pairs) snipFrames.set(displayId, src.thumbnail)
@@ -153,7 +207,7 @@ export async function startSnip(): Promise<boolean> {
   // R112: 会话期接管全局 Esc（见 SNIP_CANCEL_ACCEL 注释）；注册失败仅告警——
   // 渲染层自身的 Esc/右键/X 按钮仍是兜底
   try {
-    globalShortcut.register(SNIP_CANCEL_ACCEL, () => cancelSnip())
+    globalShortcut.register(SNIP_CANCEL_ACCEL, () => { log().info("Snip", "cancel via global Escape"); cancelSnip() })
     if (!globalShortcut.isRegistered(SNIP_CANCEL_ACCEL)) log().warn('Snip', 'global Escape unavailable — falling back to in-window cancel only')
   } catch (err) {
     log().warn('Snip', `global Escape register failed: ${err instanceof Error ? err.message : String(err)}`)
@@ -185,11 +239,16 @@ export function finishSnip(dataUrl: string, action: 'copy' | 'save'): boolean {
 
 export function cancelSnip(): void {
   try { globalShortcut.unregister(SNIP_CANCEL_ACCEL) } catch { /* 未注册 */ }
+  if (!sessionActive) return
+  log().info('Snip', 'session cancelled')
   sessionActive = false
   snipFrames.clear()
-  for (const [, win] of snipWindows) {
-    if (!win.isDestroyed()) win.destroy()   // destroy 防重入（closed 里再调 cancelSnip）
+  // R112.3: 清所有窗口（含竞态孤儿）——destroy 会同步触发 closed，
+  // closed 里读到的 sessionActive 已是 false，不会重入
+  for (const win of allSnipWindows) {
+    if (!win.isDestroyed()) win.destroy()
   }
+  allSnipWindows.clear()
   snipWindows.clear()
 }
 

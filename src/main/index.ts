@@ -11,7 +11,7 @@ import { defaultProfile } from '../shared/defaultProfile'
 import { createCaptureStore } from './captureStore'
 import { recognizeImage } from './ocrService'
 import { ipcChannels } from '../shared/ipc'
-import { initLogger } from '../shared/logger'
+import { getLogger, initLogger } from '../shared/logger'
 import { MODELS_MANIFEST } from '../shared/modelsManifest'
 import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
 import type { AiProfile, CaptureEntry, DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, RgbFrame, ScreenCaptureRequest } from '../shared/types'
@@ -316,7 +316,12 @@ function registerIpc(): void {
       q?.action === 'save' ? 'save' : 'copy',
     )
   })
-  ipcMain.on(ipcChannels.snipCancel, () => cancelSnip())
+  ipcMain.on(ipcChannels.snipCancel, (event) => {
+    // R112 诊断：确认取消请求来自哪个窗口（sender id vs snip 窗口 id）
+    const senders = BrowserWindow.getAllWindows().map((w) => `${w.id}${w.isDestroyed() ? '!' : ''}`).join(',')
+    getLogger().info('Snip', `cancel via IPC from sender #${event.sender.id} (windows: ${senders})`)
+    cancelSnip()
+  })
   // R80.12: 界面语言切换 → 重建托盘菜单（含启动时同步持久化语言）
   ipcMain.on(ipcChannels.uiSetLocale, (_event, l: unknown) => {
     uiLocale = asUiLocale(l)
