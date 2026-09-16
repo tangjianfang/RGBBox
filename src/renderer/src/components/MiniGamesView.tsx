@@ -119,6 +119,7 @@ export function MiniGamesView(): JSX.Element {
   const [roulette, setRoulette] = useState<{ stage: 'pick' | 'spin' | 'result'; result?: RouletteResult }>({ stage: 'pick' })
   const [gamepadName, setGamepadName] = useState<string | null>(null)
   const [newAchievements, setNewAchievements] = useState<string[]>([])
+  const [showCodex, setShowCodex] = useState(false)
   const metaRef = useRef<SwarmMeta>(meta)
   metaRef.current = meta
   const screenRootRef = useRef<HTMLDivElement | null>(null)
@@ -798,6 +799,9 @@ export function MiniGamesView(): JSX.Element {
             </>
           ) : isSurvival ? (
             <>
+              <button className="aspect-lock-btn" type="button" onClick={() => setShowCodex(true)}>
+                📚 {t('games.codexTitle')}
+              </button>
               <div className="games-rules">
                 <strong>{t('games.controlsTitle')}</strong>
                 <p>{t('games.swarmControls')}</p>
@@ -885,6 +889,52 @@ export function MiniGamesView(): JSX.Element {
           )}
         </aside>
       </div>
+      {isSurvival && showCodex ? (
+        <div className="codex-overlay">
+          <div className="codex-inner">
+            <header className="codex-head">
+              <strong>{t('games.codexTitle')}</strong>
+              <button className="aspect-lock-btn" type="button" onClick={() => setShowCodex(false)}>{t('games.codexClose')}</button>
+            </header>
+            <p className="codex-section">{t('games.codexChars')}</p>
+            <div className="codex-grid">
+              {CHARACTERS.map((character) => (
+                <div className="codex-entry" key={character.id} style={{ '--game-accent': character.accent } as CSSProperties}>
+                  <strong>{t(`games.char.${character.id}`)}</strong>
+                  <small>{t(`games.codex.char.${character.id}.lore`)}</small>
+                </div>
+              ))}
+            </div>
+            <p className="codex-section">{t('games.codexEnemies')}</p>
+            <div className="codex-grid">
+              {(['chaser', 'sprinter', 'brute', 'elite', 'boss'] as const).map((kind) => (
+                <div className="codex-entry" key={kind} style={{ '--game-accent': { chaser: '#fb7185', sprinter: '#fbbf24', brute: '#f472b6', elite: '#fde68a', boss: '#db2777' }[kind] } as CSSProperties}>
+                  <strong>{t(`games.codex.enemy.${kind}`)}</strong>
+                  <small>{t(`games.codex.enemy.${kind}.lore`)}</small>
+                </div>
+              ))}
+            </div>
+            <p className="codex-section">{t('games.codexUpgrades')}</p>
+            <div className="codex-grid">
+              {UPGRADES.map((upgrade) => (
+                <div className="codex-entry" key={upgrade.id} style={{ '--game-accent': RARITY_COLORS[upgrade.rarity] } as CSSProperties}>
+                  <strong>{t(`games.up.${upgrade.id}`)}</strong>
+                  <small>{t(`games.up.${upgrade.id}.desc`)}</small>
+                </div>
+              ))}
+            </div>
+            <p className="codex-section">{t('games.codexArtifacts')}</p>
+            <div className="codex-grid">
+              {ARTIFACTS.map((artifact) => (
+                <div className="codex-entry" key={artifact.id} style={{ '--game-accent': artifact.mult >= 0 ? '#fde68a' : '#9aa5ad' } as CSSProperties}>
+                  <strong>{t(`games.art.${artifact.id}`)}</strong>
+                  <small>{t(`games.art.${artifact.id}.desc`)}</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

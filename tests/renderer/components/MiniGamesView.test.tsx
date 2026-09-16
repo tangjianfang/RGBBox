@@ -45,6 +45,19 @@ describe('renderer/components/MiniGamesView', () => {
     expect(container.querySelector('.games-canvas-status')).toBeTruthy()
   })
 
+  it('codex overlay lists all four sections with full entry counts (R107)', () => {
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    const codexButton = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('📚'))
+    expect(codexButton).toBeTruthy()
+    fireEvent.click(codexButton as HTMLButtonElement)
+    expect(container.querySelectorAll('.codex-overlay').length).toBe(1)
+    expect(container.querySelectorAll('.codex-entry').length).toBe(3 + 5 + 12 + 8)
+    const close = [...container.querySelectorAll('.codex-head button')][0] as HTMLButtonElement
+    fireEvent.click(close)
+    expect(container.querySelectorAll('.codex-overlay').length).toBe(0)
+  })
+
   it('tower upgrades scale stats, rise in cost, and cap at level 3 (R97.2)', () => {
     const tower = makeTower()
     const firstCost = towerUpgradeCost(tower)
