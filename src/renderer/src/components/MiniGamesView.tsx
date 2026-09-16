@@ -35,12 +35,14 @@ import {
   type UpgradeId,
 } from '../games/survival'
 import {
+  ACHIEVEMENTS,
   ARTIFACTS,
   CHARACTERS,
   PERM_UPGRADES,
   PERM_MAX,
   RARITY_COLORS,
   buyPerm,
+  checkAchievements,
   isArtifactUnlocked,
   permCost,
   readCharacter,
@@ -50,6 +52,7 @@ import {
   runCoinsFor,
   writeCharacter,
   writeMeta,
+  type AchievementId,
   type ArtifactId,
   type CharacterId,
   type PermKey,
@@ -115,6 +118,9 @@ export function MiniGamesView(): JSX.Element {
   const [meta, setMeta] = useState<SwarmMeta>(() => readMeta())
   const [roulette, setRoulette] = useState<{ stage: 'pick' | 'spin' | 'result'; result?: RouletteResult }>({ stage: 'pick' })
   const [gamepadName, setGamepadName] = useState<string | null>(null)
+  const [newAchievements, setNewAchievements] = useState<string[]>([])
+  const metaRef = useRef<SwarmMeta>(meta)
+  metaRef.current = meta
   const screenRootRef = useRef<HTMLDivElement | null>(null)
   const gamepadNameRef = useRef<string | null>(null)
   const prevStartRef = useRef(false)
@@ -218,22 +224,31 @@ export function MiniGamesView(): JSX.Element {
           settleBest('survival', survivalRef.current.score)
           const run = survivalRef.current
           const earned = runCoinsFor(run.score, run.coinMult)
-          setMeta((prev) => {
-            const next = {
-              coins: prev.coins + earned,
-              perm: prev.perm,
-              stats: {
-                runs: prev.stats.runs + 1,
-                totalKills: prev.stats.totalKills + run.kills,
-                bosses: prev.stats.bosses + run.bossKills,
-                bestCombo: Math.max(prev.stats.bestCombo, run.comboBest),
-                bestScore: Math.max(prev.stats.bestScore, run.score),
-              },
-              artifacts: prev.artifacts,
-            }
-            writeMeta(next)
-            return next
-          })
+          const prevMeta = metaRef.current
+          const stats = {
+            runs: prevMeta.stats.runs + 1,
+            totalKills: prevMeta.stats.totalKills + run.kills,
+            bosses: prevMeta.stats.bosses + run.bossKills,
+            bestCombo: Math.max(prevMeta.stats.bestCombo, run.comboBest),
+            bestScore: Math.max(prevMeta.stats.bestScore, run.score),
+          }
+          const satisfied = checkAchievements(stats)
+          const fresh = satisfied.filter((id) => !prevMeta.achievements[id])
+          const next = {
+            coins: prevMeta.coins + earned,
+            perm: prevMeta.perm,
+            stats,
+            artifacts: prevMeta.artifacts,
+            achievements: Object.fromEntries(satisfied.map((id) => [id, true])) as Record<string, boolean>,
+          }
+          writeMeta(next)
+          metaRef.current = next
+          setMeta(next)
+          if (fresh.length > 0) {
+            setNewAchievements(fresh)
+            window.setTimeout(() => setNewAchievements([]), 4500)
+            playSfx('levelup')
+          }
         }
         lastPhase = phase
         drawSurvival(ctx, survivalRef.current)
@@ -712,6 +727,9 @@ export function MiniGamesView(): JSX.Element {
             {isSurvival && survivalSnapshot.phase === 'running' && survivalSnapshot.pendingSpins > 0 ? (
               <button type="button" className="spin-fab" onClick={beginRoulette}>{t('games.spinFab').replace('{n}', String(survivalSnapshot.pendingSpins))}</button>
             ) : null}
+            {isSurvival && newAchievements.length > 0 ? (
+              <div className="ach-toast">🏆 {newAchievements.map((id) => t(`games.ach.${id as AchievementId}`)).join(' · ')}</div>
+            ) : null}
           </div>
           <div className="games-canvas-status">
             <span>
@@ -835,6 +853,21 @@ export function MiniGamesView(): JSX.Element {
                   )
                 })}
                 <small className="games-help">{t('games.shopHint')}</small>
+              </div>
+              <div className="swarm-panel">
+                <strong>{t('games.achTitle')} {ACHIEVEMENTS.filter((achievement) => meta.achievements[achievement.id]).length}/{ACHIEVEMENTS.length}</strong>
+                <ul className="ach-list">
+                  {ACHIEVEMENTS.map((achievement) => {
+                    const done = !!meta.achievements[achievement.id]
+                    return (
+                      <li key={achievement.id} className={done ? 'done' : ''}>
+                        <span aria-hidden="true">{done ? '🏆' : '🔒'}</span>
+                        {t(`games.ach.${achievement.id}`)}
+                        {!done ? <em>{t(`games.ach.${achievement.id}.cond`)}</em> : null}
+                      </li>
+                    )
+                  })}
+                </ul>
               </div>
             </>
           ) : (

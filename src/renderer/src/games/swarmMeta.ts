@@ -81,6 +81,7 @@ export interface SwarmMeta {
   perm: PermMap
   stats: RunStats
   artifacts: Partial<Record<ArtifactId, boolean>>
+  achievements: Record<string, boolean>
 }
 
 const META_KEY = 'rgbbox:gamesMeta:swarm'
@@ -89,16 +90,17 @@ const CHAR_KEY = 'rgbbox:swarmChar'
 export function readMeta(): SwarmMeta {
   try {
     const raw = localStorage.getItem(META_KEY)
-    if (!raw) return { coins: 0, perm: { ...EMPTY_PERM }, stats: { ...EMPTY_STATS }, artifacts: {} }
+    if (!raw) return { coins: 0, perm: { ...EMPTY_PERM }, stats: { ...EMPTY_STATS }, artifacts: {}, achievements: {} }
     const parsed = JSON.parse(raw) as Partial<SwarmMeta>
     return {
       coins: Number.isFinite(parsed.coins) && (parsed.coins as number) > 0 ? Math.floor(parsed.coins as number) : 0,
       perm: { ...EMPTY_PERM, ...(parsed.perm ?? {}) },
       stats: { ...EMPTY_STATS, ...(parsed.stats ?? {}) },
       artifacts: { ...(parsed.artifacts ?? {}) },
+      achievements: { ...(parsed.achievements ?? {}) },
     }
   } catch {
-    return { coins: 0, perm: { ...EMPTY_PERM }, stats: { ...EMPTY_STATS }, artifacts: {} }
+    return { coins: 0, perm: { ...EMPTY_PERM }, stats: { ...EMPTY_STATS }, artifacts: {}, achievements: {} }
   }
 }
 
@@ -139,7 +141,7 @@ export function buyPerm(meta: SwarmMeta, key: PermKey): SwarmMeta | null {
   if (level >= PERM_MAX) return null
   const cost = permCost(def, level)
   if (meta.coins < cost) return null
-  return { coins: meta.coins - cost, perm: { ...meta.perm, [key]: level + 1 }, stats: meta.stats, artifacts: meta.artifacts }
+  return { coins: meta.coins - cost, perm: { ...meta.perm, [key]: level + 1 }, stats: meta.stats, artifacts: meta.artifacts, achievements: meta.achievements }
 }
 
 export function runCoins(score: number): number {
@@ -191,6 +193,34 @@ export function scoreMultiplier(artifacts: ArtifactId[]): number {
 
 export function runCoinsFor(score: number, coinMult: number): number {
   return Math.floor((score / 20) * coinMult)
+}
+
+// ── R105: achievements — pure functions over run stats ──
+
+export type AchievementId = 'firstRun' | 'runs10' | 'kills100' | 'kills1000' | 'kills5000' | 'score1000' | 'score5000' | 'score20000' | 'boss1' | 'boss10' | 'combo10' | 'combo25'
+
+export interface AchievementDef {
+  id: AchievementId
+  check: (stats: RunStats) => boolean
+}
+
+export const ACHIEVEMENTS: AchievementDef[] = [
+  { id: 'firstRun', check: (s) => s.runs >= 1 },
+  { id: 'runs10', check: (s) => s.runs >= 10 },
+  { id: 'kills100', check: (s) => s.totalKills >= 100 },
+  { id: 'kills1000', check: (s) => s.totalKills >= 1000 },
+  { id: 'kills5000', check: (s) => s.totalKills >= 5000 },
+  { id: 'score1000', check: (s) => s.bestScore >= 1000 },
+  { id: 'score5000', check: (s) => s.bestScore >= 5000 },
+  { id: 'score20000', check: (s) => s.bestScore >= 20000 },
+  { id: 'boss1', check: (s) => s.bosses >= 1 },
+  { id: 'boss10', check: (s) => s.bosses >= 10 },
+  { id: 'combo10', check: (s) => s.bestCombo >= 10 },
+  { id: 'combo25', check: (s) => s.bestCombo >= 25 },
+]
+
+export function checkAchievements(stats: RunStats): string[] {
+  return ACHIEVEMENTS.filter((achievement) => achievement.check(stats)).map((achievement) => achievement.id)
 }
 
 export type RouletteStat = 'damage' | 'fireRate' | 'moveSpeed' | 'magnet' | 'crit'

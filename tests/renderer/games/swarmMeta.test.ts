@@ -5,6 +5,7 @@ import {
   EMPTY_PERM,
   EMPTY_STATS,
   PERM_MAX,
+  checkAchievements,
   PERM_UPGRADES,
   RARITY_LEVELS,
   UPGRADES,
@@ -163,5 +164,16 @@ describe('renderer/games/swarmMeta (R101)', () => {
   it('runCoinsFor applies the bounty multiplier', () => {
     expect(runCoinsFor(1000, 1)).toBe(50)
     expect(runCoinsFor(1000, 2)).toBe(100)
+  })
+
+  it('achievements gate purely on run stats (R105)', () => {
+    expect(checkAchievements(EMPTY_STATS)).toHaveLength(0)
+    const partial = { runs: 1, totalKills: 150, bosses: 1, bestCombo: 12, bestScore: 1200 }
+    const ids = checkAchievements(partial)
+    expect(ids).toEqual(expect.arrayContaining(['firstRun', 'kills100', 'boss1', 'combo10', 'score1000']))
+    expect(ids).not.toContain('runs10')
+    expect(ids).not.toContain('kills1000')
+    const maxed = { runs: 20, totalKills: 6000, bosses: 15, bestCombo: 30, bestScore: 30000 }
+    expect(checkAchievements(maxed)).toHaveLength(12)
   })
 })
