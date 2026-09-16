@@ -1109,6 +1109,18 @@
 - **验收点**：①typecheck + 全量 `yarn test` 0 失败（+常量/按钮用例）；②真机端到端：PowerShell SendKeys 全局发 Alt+A 触发截图会话（不经渲染层）→ CDP 找到 snip 窗口且 X 按钮可点 → 全局发 Esc → 会话整场取消（snip 窗口全部消失）；③手工粘贴路径（snipGetFrame）零回归。
 - **实施证据（2026-09-16）**：①typecheck 0 error；②全量 `yarn test` **88 files / 804 passed / 0 失败**（+2：SNIP_CANCEL_ACCEL 常量、SnipView X 按钮 render+点击调 snipCancel）；③**真机端到端全链（OS 级按键注入）**：`SendKeys('%a')` 全局触发 Alt+A → snip 会话真实开启（CDP 见 `?snip=1` 窗口，提示条+X 按钮渲染）→ **点击 X → 会话整场取消**（窗口全消）→ 再次 Alt+A 重开 → `SendKeys('{ESC}')` 全局 Esc → **会话取消成功**（修复本体：Esc 不依赖截图窗口键盘焦点）→ 截图 `r112-snip-hint-x.png` 入库。**踩坑记录**：①bash 双引号里写 PowerShell 会吞 `$var` → 用无变量管道写法；②真机验证截图会话只能靠 OS 级按键注入（globalShortcut 从 CDP 不可达）。**状态：✅**
 
+### R113. AI8 工作台化改造——多会话+本地历史+模型分组+自动保存+绘画入口+样式统一（2026-09-16 用户 7 项需求，附截图）
+
+> 触发场景：用户附截图提出 7 项：①模型列表每厂家只显示最新 6 个；②多会话同时工作；③ChatGPT 式会话列表+聊天记录本地缓存；④全部设置自动保存；⑤绘画功能；⑥会话可删除+同会话自动带上下文；⑦布局统一（去掉原生黑白按钮）。
+- **R113.1 模型分组（⑥①）**：纯函数 `groupModelsByProvider(models, perProvider=6)`——按 `providerKey` 分组、每组取前 6（API 顺序即最新）；UI 用 `<optgroup>` 渲染（19 厂家 ×6 ≈114 项）。
+- **R113.2 多会话 + 本地历史（②③⑥）**：新 `ai8/localStore.ts`——`Ai8Session{id,model,title,turns,createdAt,updatedAt}` 列表持久化 `rgbbox:ai8Sessions`、活跃 id `rgbbox:ai8Active`；「新会话」=清空活跃态（首条消息时才真正 createSession 建服务器会话）；会话列表侧栏（标题=首条消息截断+时间+删除按钮）；删除=本地移除+best-effort 调 `deleteSession`；**上下文**：同一 `sessionId` 服务端自动续接（复用即带上下文），重开会话历史从本地回放。
+- **R113.3 自动保存（④）**：模型选择/深度思考/联网/绘画模式 → `rgbbox:ai8Prefs`，变更即写；挂载时全部恢复。
+- **R113.4 绘画入口（⑤）**：模式切换「对话/绘画」——绘画态走 `/draw` 任务脚手架（POST `/draw` 建任务 → 轮询 `/draw/status/{id}` → 渲染返回的图片 URL；**参数形态未抓包定型，实测标注 experimental**，服务端报错原样透出）；探测记录：`/draw` GET/POST 与 `/draw/status/{id}` 均存在（200+标准封装），`/draw/tmpl` 404。
+- **R113.5 样式统一（⑦）**：`.ai8-btn/.ai8-select/.ai8-input` 统一暗色控件，替换原生默认按钮；两栏布局（左会话侧栏 + 右对话区）。
+- **受影响文件**：新 `ai8/localStore.ts`；重写 `AiLabAi8Tab.tsx`；`styles.css`（ai8 段重写）；`i18n/index.tsx`（+10 keys）；`tests/renderer/ai8/localStore.test.ts`。
+- **验收点**：①typecheck + 全量 `yarn test` 0 失败（+分组/存储往返用例）；②真机 CDP：会话创建→消息→刷新页面后会话与历史仍在→删除生效→设置变更落盘→两栏布局截图复核；③绘画模式发出请求不崩（无效 token 时错误透出）。
+- **实施证据（2026-09-17）**：①typecheck 0 error；②全量 `yarn test` **89 files / 808 passed / 0 失败**（+新 `localStore.test.ts` 4 用例：每厂家 6 个上限/会话往返/prefs 默认合并/标题截断）；③真机 CDP：**两栏工作台渲染**（左侧会话列表+token 区、右侧模型行+日志+输入）、**19 个厂家 optgroup**（每厂家 ≤6）、绘画开关在位、截图 `r113-ai8-workbench.png` 入库（图像分析工具不在本会话，以 DOM 断言为证）。**范围如实说明**：⑤绘画按「入口+`/draw` 任务脚手架（POST 建任务→轮询 status→透出图片 URL/服务端报错）」落地，参数形态未经官网抓包定型（探测记录见 R113.4）——待用户重新登录后实测一次绘画提交即可按响应定型；⑥上下文由 ai8 服务端按 `sessionId` 自动续接（同会话追问天然带上下文），本地历史回放复用同一 `sessionId` 无缝继续。**状态：✅**
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。
