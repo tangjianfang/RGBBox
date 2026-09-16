@@ -135,6 +135,8 @@ export interface SurvivalState {
   particles: Particle[]
   texts: FloatText[]
   banner: Banner | null
+  island: number
+  portal: Point | null
   keys: Set<string>
   axis: { x: number; y: number }
   scoreMult: number
@@ -233,6 +235,8 @@ export function initialSurvivalState(
     particles: [],
     texts: [],
     banner: null,
+    island: 1,
+    portal: null,
     keys: new Set<string>(),
     axis: { x: 0, y: 0 },
     scoreMult: 1 + scoreMultiplier(artifacts),
@@ -295,7 +299,25 @@ export function directorSpawnInterval(state: SurvivalState): number {
   const minutes = state.time / 60
   const base = clamp(1.5 - minutes * 0.28 - state.level * 0.05, 0.32, 1.5)
   const factor = state.player.hp <= 1 ? 1.25 : state.player.hp >= state.player.maxHp ? 0.85 : 1
-  return (base * factor) / state.spawnMult
+  return (base * factor) / (state.spawnMult * (1 + 0.15 * (state.island - 1)))
+}
+
+export function advanceIsland(state: SurvivalState): void {
+  if (!state.portal) return
+  for (const enemy of state.enemies) {
+    spawnBurst(state, enemy.x, enemy.y, '#9fb7c1', 6, 110)
+  }
+  state.enemies = []
+  state.bullets = []
+  state.orbs = []
+  state.island += 1
+  state.portal = null
+  state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
+  state.comboBonus += 150 * state.island
+  state.banner = { text: `ISLAND ${state.island}`, life: 1.8 }
+  state.shake = 5
+  spawnBurst(state, state.player.x, state.player.y, '#67e8f9', 24, 190)
+  playSfx('wave')
 }
 
 function pickOffers(state: SurvivalState): UpgradeId[] {
@@ -361,7 +383,8 @@ function spawnEnemy(state: SurvivalState): void {
   const x = side === 0 ? -30 : side === 1 ? WIDTH + 30 : Math.random() * WIDTH
   const y = side === 2 ? -30 : side === 3 ? HEIGHT + 30 : Math.random() * HEIGHT
   const elite = state.time > 60 && Math.random() < 0.08
-  const scale = elite ? 2.5 : 1
+  const islandMult = 1 + 0.25 * (state.island - 1)
+  const scale = (elite ? 2.5 : 1) * islandMult
   const roll = Math.random()
   if (state.time > 90 && roll < 0.12) {
     const hp = Math.round((10 + Math.floor(state.time / 15)) * scale)
@@ -400,6 +423,7 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
     state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
     state.pendingSpins += 1
     state.bossKills += 1
+    state.portal = { x: clamp(enemy.x, 60, WIDTH - 60), y: clamp(enemy.y, 60, HEIGHT - 60) }
     state.banner = { text: 'BOSS DOWN — ROULETTE +1', life: 1.8 }
     state.shake = 8
     playSfx('levelup')
@@ -467,6 +491,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     if (state.time > 60 && Math.random() < 0.35) spawnEnemy(state)
     state.spawnTimer = directorSpawnInterval(state)
   }
+  if (state.portal && distance(state.player, state.portal) < 30) advanceIsland(state)
   state.bossTimer -= dt
   if (state.bossTimer <= 0) {
     spawnBoss(state)
@@ -640,6 +665,15 @@ const STARS = Array.from({ length: 42 }, (_, i) => ({
   phase: (Math.sin(i * 45.7) * 0.5 + 0.5) * Math.PI * 2,
 }))
 
+// R106.3: five rotating island themes (background + star tint)
+const ISLAND_THEMES = [
+  { bg: '#050a12', star: '#9fb7c1' },
+  { bg: '#0a0512', star: '#c7b7d1' },
+  { bg: '#05120c', star: '#b7d1c3' },
+  { bg: '#120a05', star: '#d1c3b7' },
+  { bg: '#050f12', star: '#b7cdd1' },
+]
+
 function dimScene(ctx: CanvasRenderingContext2D, phase: SurvivalPhase): void {
   if (phase === 'ready' || phase === 'lost') {
     ctx.fillStyle = 'rgba(5, 10, 14, 0.68)'
@@ -655,14 +689,33 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   ctx.save()
   if (state.shake > 0.2) ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake)
-  ctx.fillStyle = '#050a12'
+  const theme = ISLAND_THEMES[(state.island - 1) % ISLAND_THEMES.length]
+  ctx.fillStyle = theme.bg
   ctx.fillRect(0, 0, WIDTH, HEIGHT)
   for (const star of STARS) {
     ctx.globalAlpha = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(state.clock * 2 + star.phase))
-    ctx.fillStyle = '#9fb7c1'
+    ctx.fillStyle = theme.star
     ctx.fillRect(star.x - player.x * 0.02, star.y - player.y * 0.02, star.size, star.size)
   }
   ctx.globalAlpha = 1
+
+  if (state.portal) {
+    const p = state.portal
+    ctx.save()
+    ctx.translate(p.x, p.y)
+    ctx.rotate(state.clock * 2.4)
+    ctx.strokeStyle = '#67e8f9'
+    ctx.lineWidth = 4
+    ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 1.2); ctx.stroke()
+    ctx.rotate(Math.PI)
+    ctx.strokeStyle = '#fde68a'
+    ctx.lineWidth = 3
+    ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 1.2); ctx.stroke()
+    ctx.restore()
+    const glow = 0.5 + 0.5 * Math.sin(state.clock * 5)
+    ctx.fillStyle = `rgba(103, 232, 249, ${0.25 + glow * 0.35})`
+    ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI * 2); ctx.fill()
+  }
 
   for (const orb of state.orbs) {
     ctx.save()

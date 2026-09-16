@@ -74,7 +74,41 @@ describe('renderer/games/survival engine (R99.3/R99.4)', () => {
     expect(state.player.hp).toBe(4)
     expect(state.pendingSpins).toBe(1)
     expect(state.bossKills).toBe(1)
+    expect(state.portal).toBeDefined()
     expect(state.enemies.every((enemy) => enemy.kind !== 'boss')).toBe(true)
+  })
+
+  it('entering the portal advances the island: clear field, heal, bonus, banner (R106)', () => {
+    const state = initialSurvivalState('wisp')
+    state.phase = 'running'
+    state.island = 2
+    state.portal = { x: state.player.x, y: state.player.y }
+    state.player.hp = 2
+    state.enemies.push({ id: 20, x: 400, y: 300, vx: 0, vy: 0, size: 14, hp: 5, maxHp: 5, kind: 'chaser', elite: false, hitFlash: 0 })
+    tickSurvival(state, 0.016)
+    expect(state.island).toBe(3)
+    expect(state.enemies).toHaveLength(0)
+    expect(state.orbs).toHaveLength(0)
+    expect(state.portal).toBeNull()
+    expect(state.player.hp).toBe(3)
+    expect(state.comboBonus).toBe(150 * 3)
+    expect(state.banner?.text).toBe('ISLAND 3')
+  })
+
+  it('enemy HP and spawn pacing scale with island depth (R106)', () => {
+    const shallow = initialSurvivalState('wisp')
+    const deep = initialSurvivalState('wisp')
+    deep.island = 5
+    expect(directorSpawnInterval(deep)).toBeLessThan(directorSpawnInterval(shallow))
+    shallow.phase = 'running'
+    deep.phase = 'running'
+    shallow.spawnTimer = -1
+    deep.spawnTimer = -1
+    tickSurvival(shallow, 0.016)
+    tickSurvival(deep, 0.016)
+    const deepHp = deep.enemies[0]?.hp ?? 0
+    const shallowHp = shallow.enemies[0]?.hp ?? 0
+    expect(deepHp).toBeGreaterThan(shallowHp)
   })
 
   it('thorns reflect contact damage back at the attacker (R100.1)', () => {

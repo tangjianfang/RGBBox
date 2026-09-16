@@ -735,7 +735,7 @@ export function MiniGamesView(): JSX.Element {
             <span>
               {isTd
                 ? `${t('games.wave')} ${tdSnapshot.wave}/${MAX_WAVE}${tdSnapshot.phase === 'running' && tdSnapshot.waveQueue + tdSnapshot.balloons.length > 0 ? ` · ${t('games.balloonsLeft').replace('{value}', String(tdSnapshot.waveQueue + tdSnapshot.balloons.length))}` : ''}`
-                : isSurvival ? `${t('games.swarmHint')}${gamepadName ? ` · 🎮 ${gamepadName}` : ''}` : t('games.tetrisHint')}
+                : isSurvival ? `${t('games.swarmHint')} · ${t('games.island').replace('{n}', String(survivalSnapshot.island))}${gamepadName ? ` · 🎮 ${gamepadName}` : ''}` : t('games.tetrisHint')}
             </span>
             <span>
               {isTd && tdSnapshot.phase === 'running' && tdSnapshot.waveQueue === 0 && tdSnapshot.balloons.length === 0 && tdSnapshot.wave < MAX_WAVE
