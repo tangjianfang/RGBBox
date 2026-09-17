@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
+import { MarkdownView } from '../ai8/markdown'
 import { Ai8Client, Ai8Error, readStoredToken, writeStoredToken, type Ai8Model } from '../ai8/client'
 import { groupModelsByProvider, readActiveId, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
 
@@ -364,10 +365,24 @@ export function AiLabAi8Tab(): JSX.Element {
           )}
           {turns.map((turn, i) => (
             <div key={i} className={`ai-msg ai-msg-${turn.role}`}>
+              {turn.role === 'assistant' && turn.error === undefined && turn.content !== '' ? (
+                <button
+                  type="button"
+                  className="md-copy ai8-msg-copy"
+                  data-action="ai8-copy-msg"
+                  onClick={() => { void navigator.clipboard.writeText(turn.content).catch(() => undefined) }}
+                  aria-label={t('ai.ai8.copy')}
+                  title={t('ai.ai8.copy')}
+                >
+                  ⧉
+                </button>
+              ) : null}
               <span className="ai-msg-role">{turn.role}</span>
               {turn.error !== undefined
                 ? <span className="ai-msg-error">{turn.error === 'expired' || turn.error === 'nokey' ? t('ai.ai8.errToken') : `${t('ai.ai8.errNetwork')} (${turn.error})`}</span>
-                : <span className="ai-msg-text">{turn.content}</span>}
+                : turn.role === 'assistant'
+                  ? <MarkdownView text={turn.content} copyLabel={t('ai.ai8.copy')} copiedLabel={t('ai.ai8.copied')} />
+                  : <span className="ai-msg-text">{turn.content}</span>}
             </div>
           ))}
         </div>
