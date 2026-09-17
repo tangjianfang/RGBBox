@@ -7536,6 +7536,14 @@ input[type='range'].video-player-volume {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* R117.2/R117.4: 💬/🎨 kind badge + model short name lead the entry */
+.ai8-session-kind { margin-right: 4px; }
+
+.ai8-session-model {
+  color: #6fa898; font-size: 10px; font-weight: 500; margin-right: 5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 .ai8-session small { color: #55707c; font-size: 10px; flex-shrink: 0; }
 
 .ai8-session-del {
@@ -7769,6 +7777,38 @@ input[type='range'].video-player-volume {
 }
 
 .ai8-attach button:hover { color: #f87171; }
+
+/* ── R117: draw image grid + artifact shortcuts + import hint ────────────── */
+
+.ai8-draw-grid {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px;
+}
+
+.ai8-draw-grid img {
+  border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+  cursor: zoom-in; height: 168px; object-fit: cover; width: 168px;
+  transition: border-color 120ms;
+}
+
+.ai8-draw-grid img:hover { border-color: #46c6a8; }
+
+.ai8-draw-open { margin-top: 6px; }
+
+.ai8-import-hint { color: #f8a871; font-size: 11.5px; margin: 0; }
+
+.md-code-actions { display: inline-flex; gap: 6px; }
+
+/* R117.10: pipe tables — horizontal scroll inside narrow panes */
+.md-table-wrap { margin: 4px 0; overflow-x: auto; }
+
+.md-table { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+
+.md-table th,
+.md-table td { border: 1px solid rgba(255, 255, 255, 0.12); padding: 5px 9px; text-align: left; vertical-align: top; }
+
+.md-table th { background: rgba(70, 198, 168, 0.1); color: #cfe8f0; font-weight: 600; }
+
+.md-table td { color: rgba(255, 255, 255, 0.85); line-height: 1.5; }
 
 .ai8-attach-btn {
   align-items: center; align-self: stretch; background: rgba(13, 21, 25, 0.9);

@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { MarkdownView, ThinkPanel, copyRichText, markdownToHtml, splitThinkBlocks, stripThink } from '../ai8/markdown'
 import { Ai8Client, Ai8Error, readStoredToken, writeStoredToken, type Ai8Model } from '../ai8/client'
-import { cleanGeneratedTitle, groupModelsByProvider, matchCurated, readActiveId, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
+import { cleanGeneratedTitle, groupModelsByProvider, matchCurated, pushInputHistory, readActiveId, readInputHistory, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
 
 /** R113: AI8 workbench — two-pane layout (session sidebar + chat), multiple
  *  concurrent sessions, ChatGPT-style local history, auto-saved prefs, draw
@@ -18,6 +18,40 @@ async function readImageFile(file: File): Promise<{ name: string; dataUrl: strin
     reader.readAsDataURL(file)
   })
   return { name: file.name || 'clipboard.png', dataUrl }
+}
+
+/** R117.3: fetch a generated image and cache it on disk via ai8SaveArtifact —
+ *  returns the absolute path (or null when anything fails; best-effort only,
+ *  bounded by a 20s timeout so a stalled CDN can't hang the flow). */
+async function cacheRemoteImage(url: string, baseName: string, signal?: AbortSignal): Promise<string | null> {
+  try {
+    const timeout = AbortSignal.timeout(20_000)
+    const composed = signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout
+    const blob = await fetch(url, { signal: composed }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.blob()
+    })
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(blob)
+    })
+    const ext = url.match(/\.(png|jpe?g|webp|gif)(?:[?#]|$)/i)?.[1]?.toLowerCase() ?? 'png'
+    return await window.rgbbox.ai8SaveArtifact(`${baseName}.${ext === 'jpeg' ? 'jpg' : ext}`, dataUrl)
+  } catch {
+    return null
+  }
+}
+
+/** R117.5: fenced-code language → artifact file extension. */
+const CODE_ARTIFACT_EXT: Record<string, string> = {
+  html: '.html', md: '.md', markdown: '.md', json: '.json', svg: '.svg', xml: '.xml',
+  css: '.css', js: '.js', javascript: '.js', mjs: '.mjs', ts: '.ts', typescript: '.ts',
+  tsx: '.tsx', jsx: '.jsx', py: '.py', python: '.py', java: '.java', c: '.c', cpp: '.cpp',
+  'c++': '.cpp', cs: '.cs', go: '.go', rs: '.rs', rust: '.rs', rb: '.rb', ruby: '.rb',
+  php: '.php', sql: '.sql', sh: '.sh', bash: '.sh', shell: '.sh', ps1: '.ps1',
+  yaml: '.yaml', yml: '.yml', toml: '.toml', ini: '.ini', env: '.env', txt: '.txt',
 }
 
 /** R116 (round 4): one-click copy that yields a structured document — both
@@ -43,6 +77,12 @@ function MessageCopyButton({ text, label }: { text: string; label: string }): JS
   )
 }
 
+/** R117.7/P2-8: module-level template caches — remounting the tab (every page
+ *  switch) must not refetch; one fetch per app session is enough. */
+let chatTmplCache: Ai8Model[] | null = null
+let drawTmplCache: { label: string; value: string }[] | null = null
+let drawTmplDefault = ''
+
 export function AiLabAi8Tab(): JSX.Element {
   const { t } = useI18n()
   const [token, setToken] = useState(() => readStoredToken())
@@ -50,15 +90,22 @@ export function AiLabAi8Tab(): JSX.Element {
   const [showTokenRow, setShowTokenRow] = useState(false)
   const [loginBusy, setLoginBusy] = useState(false)
   const [loginAccount, setLoginAccount] = useState('')
-  const [models, setModels] = useState<Ai8Model[]>([])
+  const [models, setModels] = useState<Ai8Model[]>(chatTmplCache ?? [])
   const [modelsError, setModelsError] = useState('')
+  const [drawModels, setDrawModels] = useState<{ label: string; value: string }[]>(drawTmplCache ?? [])
   const [prefs, setPrefs] = useState<Ai8Prefs>(() => readPrefs())
   const [sessions, setSessions] = useState<Ai8Session[]>(() => readSessions())
   const [activeId, setActiveId] = useState<string | number | null>(() => readActiveId())
   const [input, setInput] = useState('')
   const [attachment, setAttachment] = useState<{ name: string; dataUrl: string } | null>(null)
-  const [streaming, setStreaming] = useState(false)
-  const abortRef = useRef<AbortController | null>(null)
+  // R117.9: transient hint for rejected text imports (oversize / unreadable)
+  const [importHint, setImportHint] = useState('')
+  // R117.1: per-session streaming — several sessions can stream concurrently
+  const [streamingIds, setStreamingIds] = useState<string[]>([])
+  const abortMap = useRef<Map<string, AbortController>>(new Map())
+  // R117.8: ↑/↓ input history navigation (Claude Code style)
+  const histIdx = useRef(-1)
+  const histDraft = useRef('')
 
   const patchPrefs = useCallback((patch: Partial<Ai8Prefs>) => {
     setPrefs((prev) => {
@@ -68,13 +115,33 @@ export function AiLabAi8Tab(): JSX.Element {
     })
   }, [])
 
-  // R113: the model template is PUBLIC — browseable without a token.
+  // R113/R117.7: the model template is PUBLIC and cached at module level —
+  // switching pages and back must render instantly (no refetch).
   useEffect(() => {
+    if (chatTmplCache !== null) return
     const client = new Ai8Client({ token: '' })
     client.getChatTemplate()
-      .then((tmpl) => setModels((tmpl.models ?? []).filter((m) => m.attr?.modelType === 'chat')))
+      .then((tmpl) => {
+        chatTmplCache = (tmpl.models ?? []).filter((m) => m.attr?.modelType === 'chat')
+        setModels(chatTmplCache)
+      })
       .catch(() => setModelsError('network'))
   }, [])
+
+  // R117.3/P2-8: the draw template is public too; cached at module level like
+  // the chat template — one fetch per app session.
+  useEffect(() => {
+    if (drawTmplCache !== null) return
+    new Ai8Client({ token: '' }).getDrawTemplate<{ models?: { label?: string; value?: string; attr?: { modelType?: string } }[]; meta?: { defInput?: { model?: string } } }>()
+      .then((tmpl) => {
+        drawTmplCache = (tmpl.models ?? [])
+          .filter((m): m is { label: string; value: string } => typeof m.value === 'string' && m.label !== undefined)
+        drawTmplDefault = tmpl.meta?.defInput?.model ?? ''
+        setDrawModels(drawTmplCache)
+        if (drawTmplDefault !== '' && prefs.drawModel === '') patchPrefs({ drawModel: drawTmplDefault })
+      })
+      .catch(() => undefined)
+  }, [prefs.drawModel])
 
   const client = () => new Ai8Client({ token, onTokenExpired: () => setShowTokenRow(true) })
 
@@ -199,77 +266,103 @@ export function AiLabAi8Tab(): JSX.Element {
     }
   }, [token])
 
-  const stopStreaming = () => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    setStreaming(false)
+  // R117.1: streaming bookkeeping is keyed by session id — concurrent chats
+  // each get their own abort controller and stop button.
+  const markStreaming = (id: string | number, on: boolean) => {
+    setStreamingIds((ids) => (on ? (ids.includes(String(id)) ? ids : [...ids, String(id)]) : ids.filter((x) => x !== String(id))))
+  }
+
+  const stopStreaming = (id: string | number) => {
+    abortMap.current.get(String(id))?.abort()
+    abortMap.current.delete(String(id))
+    markStreaming(id, false)
   }
 
   const send = async () => {
     const content = input.trim()
-    if (!content || streaming) return
+    // R117.1: only the ACTIVE session's stream blocks this composer — other
+    // sessions may stream concurrently.
+    if (!content || (activeId !== null && streamingIds.includes(String(activeId)))) return
     if (!token) {
       void openOfficialLogin()
       return
     }
     // R116.1: a session without a model is rejected by the server
     // (「模型 是必填项」) — the send button is already disabled for this case;
-    // this guard covers the Enter path.
-    if (prefs.model === '') return
+    // this guard covers the Enter path. Draw tasks use the draw model space.
+    if (!prefs.draw && prefs.model === '') return
+    if (prefs.draw && prefs.drawModel === '' && drawModels.length > 0) return
     // R115.1: image attachment rides along as files:[{name,url}] — data URL
     // form; server rejection surfaces as a normal error turn (probe pending).
     const files = attachment ? [{ name: attachment.name, url: attachment.dataUrl }] : []
     const attach = attachment
     setAttachment(null)
-    // R113.4 draw mode: POST /draw task then poll /draw/status/{id}. The site's
-    // parameter shape is not yet reverse-engineered (experimental) — server
-    // errors surface verbatim in the log.
+    pushInputHistory(content)
+    histIdx.current = -1
+    // R117.3 draw mode: the site's own protocol — POST /draw
+    // {model, action:'IMAGINE', prompt, public, fast} → poll /draw/status/{id}
+    // until `end` or a non-empty list[].url; images render as a preview grid
+    // and auto-cache to disk via ai8SaveArtifact.
     if (prefs.draw) {
+      const drawModel = prefs.drawModel || drawModels[0]?.value || ''
       setInput('')
       const draftId = `draw-${Date.now()}`
       setSessions((list) => {
-        const next = [{ id: draftId, model: prefs.model, title: titleFromContent(content), turns: [{ role: 'user', content }, { role: 'assistant', content: t('ai.ai8.drawPending') }], createdAt: Date.now(), updatedAt: Date.now() } as Ai8Session, ...list]
+        const next = [{ id: draftId, kind: 'draw' as const, model: drawModel, title: titleFromContent(content), turns: [{ role: 'user', content }, { role: 'assistant', content: t('ai.ai8.drawPending') }], createdAt: Date.now(), updatedAt: Date.now() } as Ai8Session, ...list]
         writeSessions(next)
         return next
       })
       setActiveId(draftId)
       writeActiveId(draftId)
-      setStreaming(true)
+      markStreaming(draftId, true)
+      // R117.1: the stop button must also abort draw polling
+      const drawAbort = new AbortController()
+      abortMap.current.set(String(draftId), drawAbort)
       try {
-        const created = await fetch('https://ai8.rcouyi.com/api/draw', {
-          method: 'POST',
-          headers: { Authorization: token, 'X-APP-VERSION': '3.4.0', 'X-Locale': 'zh-CN', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: content }),
-        }).then((r) => r.json().catch(() => ({ code: -1, msg: `HTTP ${r.status}` })))
-        if (created.code !== 0) {
-          patchLastAssistant(draftId, { error: created.msg || 'draw rejected' })
-          return
-        }
-        const taskId = (created.data as { id?: string | number } | null)?.id
-        if (taskId === undefined) {
+        const created = await client().draw<{ id?: string | number }>({ model: drawModel, prompt: content })
+        const taskId = created?.id
+        if (taskId === undefined || taskId === null) {
           patchLastAssistant(draftId, { error: 'draw task id missing' })
           return
         }
-        for (let poll = 0; poll < 36; poll++) {
+        for (let poll = 0; poll < 60; poll++) {
           await new Promise((resolve) => setTimeout(resolve, 2500))
-          const status = await fetch(`https://ai8.rcouyi.com/api/draw/status/${taskId}`, { headers: { Authorization: token, 'X-APP-VERSION': '3.4.0', 'X-Locale': 'zh-CN' } })
-            .then((r) => r.json().catch(() => ({ code: -1 })))
-          if (status.code !== 0) {
-            patchLastAssistant(draftId, { error: status.msg || 'draw status error' })
+          if (drawAbort.signal.aborted) {
+            // P2-2 review fix: a stopped draw must not stay「绘画中…」forever
+            patchLastAssistant(draftId, { error: 'stopped' })
             return
           }
-          const list = (status.data as { list?: { url?: string; status?: number }[] } | null)?.list ?? []
-          const urls = list.map((item) => item.url).filter((u): u is string => typeof u === 'string' && u !== '')
-          if (urls.length > 0) {
-            patchLastAssistant(draftId, { content: urls.join('\n') })
+          const status = await client().drawStatus<{ end?: boolean; list?: { url?: string }[] }>(taskId)
+          const urls = (status?.list ?? []).map((item) => item.url).filter((u): u is string => typeof u === 'string' && u !== '')
+          if (urls.length > 0 || status?.end === true) {
+            if (urls.length === 0) {
+              patchLastAssistant(draftId, { error: 'draw empty' })
+              return
+            }
+            patchLastAssistant(draftId, { content: urls.join('\n'), images: urls })
+            // R117.3 review fix: the turn is DONE here — clear the streaming
+            // flag before the (optional, best-effort) local caching runs, and
+            // cache fire-and-forget with a timeout so a stalled CDN cannot
+            // keep the Stop button alive for minutes.
+            markStreaming(draftId, false)
+            void (async () => {
+              const base = cleanGeneratedTitle(content) || 'ai8-draw'
+              const saved: string[] = []
+              for (const url of urls) {
+                const path = await cacheRemoteImage(url, `${base}-${saved.length + 1}`, drawAbort.signal)
+                if (path) saved.push(path)
+              }
+              if (saved.length > 0) patchLastAssistant(draftId, { saved })
+            })()
             return
           }
         }
         patchLastAssistant(draftId, { error: 'draw timeout' })
-      } catch {
-        patchLastAssistant(draftId, { error: 'network' })
+      } catch (error) {
+        patchLastAssistant(draftId, { error: error instanceof Ai8Error ? error.message : 'network' })
       } finally {
-        setStreaming(false)
+        abortMap.current.delete(String(draftId))
+        markStreaming(draftId, false)
       }
       return
     }
@@ -312,9 +405,9 @@ export function AiLabAi8Tab(): JSX.Element {
     }
     appendTurn(sessionId, { role: 'user', content: attach ? `${content}\n[🖼 ${attach.name}]` : content })
     appendTurn(sessionId, { role: 'assistant', content: '' })
-    setStreaming(true)
+    markStreaming(sessionId, true)
     const controller = new AbortController()
-    abortRef.current = controller
+    abortMap.current.set(String(sessionId), controller)
     try {
       for await (const ev of client().chat(sessionId, content, { thinking: prefs.thinking, webSearch: prefs.webSearch, signal: controller.signal, files })) {
         if (ev.type === 'delta') {
@@ -342,8 +435,8 @@ export function AiLabAi8Tab(): JSX.Element {
       const hint = code === 2 ? 'expired' : code === -1 ? 'nokey' : 'network'
       patchLastAssistant(sessionId, { error: hint })
     } finally {
-      abortRef.current = null
-      setStreaming(false)
+      abortMap.current.delete(String(sessionId))
+      markStreaming(sessionId, false)
       // empty-reply guard: a stream that ended without any delta must not stay
       // silently blank
       setSessions((list) => {
@@ -378,6 +471,22 @@ export function AiLabAi8Tab(): JSX.Element {
   // R116.2: assistant messages carry a small model badge instead of the raw
   // 'assistant' role label
   const activeModelLabel = models.find((m) => m.value === activeSession?.model)?.label ?? 'AI'
+  // R117.2: sidebar entries lead with the model short name; draw sessions use
+  // the draw model namespace (R117.3)
+  const labelOf = (model: string) => models.find((m) => m.value === model)?.label ?? drawModels.find((m) => m.value === model)?.label ?? ''
+  // R117.1: the composer reflects the ACTIVE session only
+  const activeStreaming = activeId !== null && streamingIds.includes(String(activeId))
+
+  /** R117.5: persist a fenced code block as a local file (userData/
+   *  ai8-artifacts) — returns the path for the "open folder" shortcut. */
+  const saveCodeArtifact = useCallback(async (lang: string, body: string): Promise<string | null> => {
+    const ext = CODE_ARTIFACT_EXT[lang.toLowerCase()] ?? (lang === '' ? '.txt' : `.${lang.toLowerCase().replace(/[^a-z0-9]/g, '') || 'txt'}`)
+    try {
+      return await window.rgbbox.ai8SaveArtifact(`ai8-snippet${ext}`, body)
+    } catch {
+      return null
+    }
+  }, [])
 
   return (
     <div className="ai8" data-field="ai8-root">
@@ -391,7 +500,11 @@ export function AiLabAi8Tab(): JSX.Element {
           {sessions.length === 0 && <p className="ai8-empty">{t('ai.ai8.noSessions')}</p>}
           {[...sessions].sort((a, b) => b.updatedAt - a.updatedAt).map((s) => (
             <div key={s.id} className={`ai8-session${String(s.id) === String(activeId) ? ' active' : ''}`} onClick={() => { setActiveId(s.id); writeActiveId(s.id) }}>
-              <strong>{s.title || t('ai.ai8.untitled')}</strong>
+              <strong>
+                <span className="ai8-session-kind">{s.kind === 'draw' ? '🎨' : '💬'}</span>
+                {labelOf(s.model) !== '' ? <span className="ai8-session-model">{labelOf(s.model)}</span> : null}
+                <span className="ai8-session-title">{s.title || t('ai.ai8.untitled')}</span>
+              </strong>
               <small>{new Date(s.updatedAt).toLocaleString()}</small>
               <button
                 type="button"
@@ -438,30 +551,45 @@ export function AiLabAi8Tab(): JSX.Element {
 
       <section className="ai8-main">
         <div className="ai8-controls">
-          <select
-            className="ai8-select"
-            data-field="ai8-model"
-            value={prefs.model}
-            onChange={(e) => patchPrefs({ model: e.target.value })}
-          >
-            <option value="">{models.length === 0 ? (modelsError !== '' ? t('ai.ai8.modelsError') : t('ai.ai8.modelsLoading')) : t('ai.ai8.pickModel')}</option>
-            {(['flagship', 'fast', 'free', 'budget'] as const).map((groupId) => (
-              curated[groupId] ? (
-                <optgroup key={groupId} label={t(`ai.ai8.curated.${groupId}`)} className="ai8-curated">
-                  {curated[groupId].map((m) => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
+          {prefs.draw ? (
+            // R117.3: draw mode swaps the picker to the draw-model namespace
+            <select
+              className="ai8-select"
+              data-field="ai8-draw-model"
+              value={prefs.drawModel}
+              onChange={(e) => patchPrefs({ drawModel: e.target.value })}
+            >
+              <option value="">{drawModels.length === 0 ? t('ai.ai8.modelsLoading') : t('ai.ai8.pickModel')}</option>
+              {drawModels.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          ) : (
+            <select
+              className="ai8-select"
+              data-field="ai8-model"
+              value={prefs.model}
+              onChange={(e) => patchPrefs({ model: e.target.value })}
+            >
+              <option value="">{models.length === 0 ? (modelsError !== '' ? t('ai.ai8.modelsError') : t('ai.ai8.modelsLoading')) : t('ai.ai8.pickModel')}</option>
+              {(['flagship', 'fast', 'free', 'budget'] as const).map((groupId) => (
+                curated[groupId] ? (
+                  <optgroup key={groupId} label={t(`ai.ai8.curated.${groupId}`)} className="ai8-curated">
+                    {curated[groupId].map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </optgroup>
+                ) : null
+              ))}
+              {groups.map((group) => (
+                <optgroup key={group.provider} label={group.provider}>
+                  {group.models.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}{m.integral ? ` · ${m.integral}` : ''}</option>
                   ))}
                 </optgroup>
-              ) : null
-            ))}
-            {groups.map((group) => (
-              <optgroup key={group.provider} label={group.provider}>
-                {group.models.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}{m.integral ? ` · ${m.integral}` : ''}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+              ))}
+            </select>
+          )}
           <label className="ai8-check">
             <input type="checkbox" checked={prefs.draw} onChange={(e) => patchPrefs({ draw: e.target.checked })} />
             {t('ai.ai8.drawMode')}
@@ -490,20 +618,40 @@ export function AiLabAi8Tab(): JSX.Element {
               ) : null}
               {turn.error !== undefined
                 ? <span className="ai-msg-error">{turn.error === 'expired' || turn.error === 'nokey' ? t('ai.ai8.errToken') : `${t('ai.ai8.errNetwork')} (${turn.error})`}</span>
-                : turn.role === 'assistant'
+                : turn.role === 'assistant' && (turn.images !== undefined || (activeSession?.kind === 'draw' && /^https?:\/\/\S+$/.test(turn.content.trim())))
                   ? (
-                    <>
-                      <span className="ai-msg-role">{activeModelLabel}</span>
-                      {splitThinkBlocks(turn.content).map((seg, j) => (
-                        seg.kind === 'think'
-                          ? <ThinkPanel key={j} body={seg.body} closed={seg.closed} thinkingLabel={t('ai.ai8.thinkingNow')} thoughtLabel={t('ai.ai8.thought')} />
-                          : seg.body.trim() === ''
-                            ? null
-                            : <MarkdownView key={j} text={seg.body} copyLabel={t('ai.ai8.copy')} copiedLabel={t('ai.ai8.copied')} />
+                    // R117.3: draw replies render as an image grid + cached-file
+                    // shortcuts (legacy turns kept plain-URL content)
+                    <div className="ai8-draw-grid" data-field="ai8-draw-grid">
+                      {(turn.images ?? turn.content.trim().split(/\s+/)).map((url) => (
+                        <img key={url} src={url} alt={t('ai.ai8.drawImage')} loading="lazy" onClick={() => { if (/^https?:\/\//.test(url)) window.open(url, '_blank') }} />
                       ))}
-                    </>
+                      {turn.saved !== undefined && turn.saved.length > 0 ? (
+                        <button
+                          type="button"
+                          className="ai8-btn ai8-draw-open"
+                          data-action="ai8-open-draw-folder"
+                          onClick={() => { void window.rgbbox.ai8ShowItemInFolder(turn.saved![0]) }}
+                        >
+                          📂 {t('ai.ai8.openFolder')}
+                        </button>
+                      ) : null}
+                    </div>
                   )
-                  : <span className="ai-msg-text">{turn.content}</span>}
+                  : turn.role === 'assistant'
+                    ? (
+                      <>
+                        <span className="ai-msg-role">{activeModelLabel}</span>
+                        {splitThinkBlocks(turn.content).map((seg, j) => (
+                          seg.kind === 'think'
+                            ? <ThinkPanel key={j} body={seg.body} closed={seg.closed} thinkingLabel={t('ai.ai8.thinkingNow')} thoughtLabel={t('ai.ai8.thought')} />
+                            : seg.body.trim() === ''
+                              ? null
+                              : <MarkdownView key={j} text={seg.body} copyLabel={t('ai.ai8.copy')} copiedLabel={t('ai.ai8.copied')} onSaveCode={saveCodeArtifact} saveFileLabel={t('ai.ai8.saveFile')} openFolderLabel={t('ai.ai8.openFolder')} />
+                        ))}
+                      </>
+                    )
+                    : <span className="ai-msg-text">{turn.content}</span>}
             </div>
           ))}
         </div>
@@ -516,17 +664,32 @@ export function AiLabAi8Tab(): JSX.Element {
           </div>
         ) : null}
 
+        {importHint !== '' ? <p className="ai8-import-hint">{importHint}</p> : null}
         <div className="ai8-input-row">
           <label className="ai8-attach-btn" title={t('ai.ai8.attach')} aria-label={t('ai.ai8.attach')}>
             📎
             <input
               type="file"
-              accept="image/*"
+              accept={prefs.draw ? '.txt,.md,.markdown,.json,.log,.csv,.xml,.yaml,.yml,.html,.js,.ts,.py' : 'image/*,.txt,.md,.markdown,.json,.log,.csv,.xml,.yaml,.yml,.html,.js,.ts,.py'}
               data-field="ai8-file"
               style={{ display: 'none' }}
               onChange={(e) => {
+                // R117.9: images ride along as attachments; text files import
+                // their content straight into the composer (no giant paste).
+                // Draw mode has no files field in its protocol — text only.
                 const file = e.target.files?.[0]
-                if (file) void readImageFile(file).then(setAttachment).catch(() => undefined)
+                if (file) {
+                  if (file.type.startsWith('image/') && !prefs.draw) {
+                    void readImageFile(file).then(setAttachment).catch(() => undefined)
+                  } else if (file.size > 512 * 1024) {
+                    setImportHint(t('ai.ai8.fileTooLarge'))
+                    window.setTimeout(() => setImportHint(''), 2600)
+                  } else {
+                    void file.text().then((text) => {
+                      setInput((prev) => (prev.trim() === '' ? '' : prev + '\n\n') + `【${file.name}】\n${text}`)
+                    }).catch(() => undefined)
+                  }
+                }
                 e.target.value = ''
               }}
             />
@@ -535,7 +698,12 @@ export function AiLabAi8Tab(): JSX.Element {
             data-field="ai8-input"
             value={input}
             placeholder={token === '' ? t('ai.ai8.needLogin') : prefs.draw ? t('ai.ai8.drawPlaceholder') : t('ai.lab.chat.placeholder')}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              // R117.8 review fix: editing exits history-recall mode — ↓ must
+              // not restore the pre-recall draft over the user's edit
+              histIdx.current = -1
+              setInput(e.target.value)
+            }}
             onPaste={(e) => {
               // R115.1: pasted screenshots (clipboard image) become the attachment
               const item = [...(e.clipboardData?.items ?? [])].find((i) => i.type.startsWith('image/'))
@@ -547,15 +715,32 @@ export function AiLabAi8Tab(): JSX.Element {
             }}
             onKeyDown={(e) => {
               const native = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
+              // R117.8: Claude-Code-style ↑/↓ recall of recently sent prompts
+              // (only while the caret sits at the very start, so multiline
+              // editing keeps its arrow keys; IME never intercepted)
+              if (e.key === 'ArrowUp' && !native.isComposing && e.currentTarget.selectionStart === 0) {
+                const hist = readInputHistory()
+                if (hist.length > 0 && (input === '' || histIdx.current >= 0)) {
+                  if (histIdx.current === -1) histDraft.current = input
+                  histIdx.current = Math.min(histIdx.current + 1, hist.length - 1)
+                  setInput(hist[histIdx.current])
+                  e.preventDefault()
+                }
+              } else if (e.key === 'ArrowDown' && !native.isComposing && histIdx.current >= 0) {
+                const hist = readInputHistory()
+                histIdx.current -= 1
+                setInput(histIdx.current === -1 ? histDraft.current : hist[histIdx.current])
+                e.preventDefault()
+              }
               if (e.key === 'Enter' && !e.shiftKey && !native.isComposing) {
                 e.preventDefault()
                 void send()
               }
             }}
           />
-          {streaming
-            ? <button type="button" className="ai8-btn" data-action="ai8-stop" onClick={stopStreaming}>{t('ai.ai8.stop')}</button>
-            : <button type="button" className="ai8-btn ai8-btn-primary" data-action="ai8-send" onClick={() => void send()} disabled={input.trim() === '' || prefs.model === ''} title={prefs.model === '' ? t('ai.ai8.needModel') : undefined}>{t('ai.lab.chat.send')}</button>}
+          {activeStreaming && activeId !== null
+            ? <button type="button" className="ai8-btn" data-action="ai8-stop" onClick={() => stopStreaming(activeId)}>{t('ai.ai8.stop')}</button>
+            : <button type="button" className="ai8-btn ai8-btn-primary" data-action="ai8-send" onClick={() => void send()} disabled={input.trim() === '' || (!prefs.draw && prefs.model === '') || (prefs.draw && drawModels.length > 0 && prefs.drawModel === '')} title={!prefs.draw && prefs.model === '' ? t('ai.ai8.needModel') : prefs.draw && drawModels.length > 0 && prefs.drawModel === '' ? t('ai.ai8.needModel') : undefined}>{t('ai.lab.chat.send')}</button>}
         </div>
       </section>
     </div>

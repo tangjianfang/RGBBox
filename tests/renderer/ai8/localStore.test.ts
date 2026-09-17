@@ -5,6 +5,8 @@ import {
   cleanGeneratedTitle,
   groupModelsByProvider,
   matchCurated,
+  pushInputHistory,
+  readInputHistory,
   readPrefs,
   readSessions,
   titleFromContent,
@@ -87,5 +89,24 @@ describe('renderer/ai8 localStore (R113)', () => {
     const sessions: Ai8Session[] = [{ id: 9, model: 'm', title: 't', turns: [], createdAt: 1, updatedAt: 2, titled: true }]
     writeSessions(sessions)
     expect(readSessions()[0].titled).toBe(true)
+  })
+
+  it('input history dedupes, fronts, and caps at 50 (R117.8)', () => {
+    expect(readInputHistory()).toEqual([])
+    pushInputHistory('第一条')
+    pushInputHistory('第二条')
+    expect(readInputHistory()).toEqual(['第二条', '第一条'])
+    pushInputHistory('第一条')
+    expect(readInputHistory()).toEqual(['第一条', '第二条'])
+    for (let i = 0; i < 60; i++) pushInputHistory(`h${i}`)
+    expect(readInputHistory().length).toBe(50)
+    expect(readInputHistory()[0]).toBe('h59')
+    expect(pushInputHistory('   ')).toEqual(readInputHistory())
+  })
+
+  it('sessions round-trip the draw kind (R117.4)', () => {
+    const sessions: Ai8Session[] = [{ id: 'draw-1', kind: 'draw', model: 'mj', title: '猫', turns: [], createdAt: 1, updatedAt: 2 }]
+    writeSessions(sessions)
+    expect(readSessions()[0].kind).toBe('draw')
   })
 })

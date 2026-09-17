@@ -5,7 +5,7 @@ import { get as httpGet } from 'node:http'
 import { get as httpsGet } from 'node:https'
 import { pipeline } from 'node:stream/promises'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join, basename } from 'node:path'
+import { join, basename, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { defaultProfile } from '../shared/defaultProfile'
 import { createCaptureStore } from './captureStore'
@@ -603,6 +603,41 @@ function registerIpc(): void {
         void readState().then(handleState)
       }, 1500)
     })
+  })
+
+  // R117.5: AI8 artifact cache — write generated docs (html/md/…) and images
+  // (data URLs) under userData/ai8-artifacts, and reveal them in Explorer.
+  ipcMain.handle(ipcChannels.ai8SaveArtifact, async (_event, name: unknown, content: unknown) => {
+    if (typeof name !== 'string' || typeof content !== 'string' || name === '' || content === '') return null
+    const safe = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 120)
+    const dir = join(app.getPath('userData'), 'ai8-artifacts')
+    try {
+      await mkdir(dir, { recursive: true })
+      // P2-4 review fix: ms precision + random suffix — two saves within the
+      // same second must not silently overwrite each other
+      const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      const path = join(dir, `${stamp}-${safe}`)
+      if (content.startsWith('data:')) {
+        const match = content.match(/^data:[^,]+,/)
+        const bin = Buffer.from(content.slice(match ? match[0].length : 5), 'base64')
+        await writeFile(path, bin)
+      } else {
+        await writeFile(path, content, 'utf8')
+      }
+      return path
+    } catch (err) {
+      log.warn('ai8', `ai8SaveArtifact failed: ${String(err)}`)
+      return null
+    }
+  })
+  ipcMain.handle(ipcChannels.ai8ShowItemInFolder, (_event, path: unknown) => {
+    // P2-5 review fix: only reveal items inside the artifacts dir — the path
+    // originates from the renderer and must stay contained
+    if (typeof path !== 'string' || path === '') return false
+    const dir = join(app.getPath('userData'), 'ai8-artifacts')
+    if (!path.startsWith(dir + sep)) return false
+    shell.showItemInFolder(path)
+    return true
   })
   ipcMain.handle(ipcChannels.aiChat, async (_event, p: unknown) => {
     const messages = validateChatMessages(p)

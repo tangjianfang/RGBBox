@@ -5,6 +5,10 @@ export interface Ai8Turn {
   role: 'user' | 'assistant'
   content: string
   error?: string
+  /** R117.3: draw replies — returned image URLs (rendered as a grid). */
+  images?: string[]
+  /** R117.5: absolute local paths of cached artifacts (docs / images). */
+  saved?: string[]
 }
 
 export interface Ai8Session {
@@ -17,6 +21,8 @@ export interface Ai8Session {
   /** R116.3: true once the AI-generated title attempt has run (one-shot guard;
    *  a failed attempt keeps the truncated fallback title). */
   titled?: boolean
+  /** R117.4: chat (default) vs draw — draw sessions render image grids. */
+  kind?: 'chat' | 'draw'
 }
 
 export interface Ai8Prefs {
@@ -24,13 +30,15 @@ export interface Ai8Prefs {
   thinking: boolean
   webSearch: boolean
   draw: boolean
+  /** R117.3: the selected DRAW model (draw template namespace). */
+  drawModel: string
 }
 
 const SESSIONS_KEY = 'rgbbox:ai8Sessions'
 const ACTIVE_KEY = 'rgbbox:ai8Active'
 const PREFS_KEY = 'rgbbox:ai8Prefs'
 
-export const DEFAULT_PREFS: Ai8Prefs = { model: '', thinking: false, webSearch: false, draw: false }
+export const DEFAULT_PREFS: Ai8Prefs = { model: '', thinking: false, webSearch: false, draw: false, drawModel: '' }
 
 export function readSessions(): Ai8Session[] {
   try {
@@ -82,6 +90,36 @@ export function writePrefs(prefs: Ai8Prefs): void {
   } catch {
     return
   }
+}
+
+// ── R117.8: sent-input history (Claude Code style ↑/↓ recall) ──────────────
+
+const INPUT_HISTORY_KEY = 'rgbbox:ai8InputHistory'
+const INPUT_HISTORY_CAP = 50
+/** P2-9 review fix: per-entry cap — an imported 512KB prompt ×50 would blow
+ *  past the localStorage quota and silently kill persistence. */
+const INPUT_ENTRY_CAP = 4000
+
+export function readInputHistory(): string[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(INPUT_HISTORY_KEY) ?? '[]')
+    return Array.isArray(list) ? list.filter((x) => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+export function pushInputHistory(entry: string): string[] {
+  let trimmed = entry.trim()
+  if (trimmed === '') return readInputHistory()
+  if (trimmed.length > INPUT_ENTRY_CAP) trimmed = trimmed.slice(0, INPUT_ENTRY_CAP) + '…'
+  const next = [trimmed, ...readInputHistory().filter((x) => x !== trimmed)].slice(0, INPUT_HISTORY_CAP)
+  try {
+    localStorage.setItem(INPUT_HISTORY_KEY, JSON.stringify(next))
+  } catch {
+    return next
+  }
+  return next
 }
 
 /** R113.1: group models per provider, newest `perProvider` entries each.

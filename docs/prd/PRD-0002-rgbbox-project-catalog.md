@@ -1156,6 +1156,24 @@
   - **用户实测反馈第四轮（同日两项：「返回结果要支持一键复制，复制结果是结构化文档」+「点击复制没有效果」）→ 结构化复制系统**：①复制失效根因=**R76 同款坑**——`navigator.clipboard` 在 Electron 渲染层被权限静默拒绝且 `.catch(()=>undefined)` 吞掉；②新增 IPC `clipboardWriteRich: 'rgbbox:clipboard:write-rich'`（shared/ipc.ts + main `clipboard.write({text,html})` + preload 白名单，RgbBoxApi 类型自动携带）；③`copyRichText()` 共享函数（markdown.tsx 导出）：**原生 IPC 双格式优先** → clipboardWriteText 纯文本 → navigator ClipboardItem → writeText 四层兜底，消息级与代码块级复制按钮统一接入；④**结构化文档**=`markdownToHtml()`（parseMarkdown 复用 → h2-h4/ul/ol 聚合/pre 代码块转义/blockquote/inline 样式，**亮色系内联样式**——暗色主题直接粘贴 Word 会黑底黑字）+ `stripThink()`（复制内容剔除思维链）；⑤复制按钮常显（opacity .45→hover 1）+ ✓ 反馈 2s。验证：typecheck 0 error；全量 `yarn test` **90 files / 822 passed / 0 失败**（+3 用例：stripThink 三态/markdownToHtml 语义标签+转义/ol 聚合）；verify-r116-ai8.mjs v4 **28/28 PASS**（+I 组：**点击复制→OS 剪贴板 round-trip 读回干净正文**（`clipboardReadText` 通道）不含 `<think>`、按钮 ✓ 反馈）。
   - **环境异常记录（如实入档）**：会话中段本机 node 运行时被外部卸载（`D:\Program Files\nodejs` 仅剩 shim）——中途 zip 版 node 24.21.0 续跑，用户 MSI 重装 v24.21.0 恢复；electron 二进制两次经 npmmirror 镜像重拉（GitHub 直连 ECONNRESET）。**状态：✅（真实站点回归挂起用户重测）**
 
+### R117. AI8 深度优化批次——并发会话/绘画 v2/产物文件化/输入体验（2026-09-17 用户 8 项需求）
+
+> 触发场景：用户提出 8 项对标主流智能体的优化：①多会话同时进行（现单流锁死）②会话命名前加模型名 ③绘画功能真实化（参数/模型选择+会话类型区分+图片预览+自动缓存本机）④返回值 html/md 等直接缓存本地文件+快速打开文件夹 ⑤评估深度思考/联网是否真实有效 ⑥模型列表切页回来重载慢 ⑥'发送历史提示词切换（Claude Code 式 ↑↓）⑦导入文件作提示词。**绘画协议调研（抓官网 draw-HaYo0BLq.js 实证）**：`GET /draw/template`（models+`meta.defInput` 默认参数）、`POST /draw` body=`{model, action:'IMAGINE', prompt, public, fast}`（R113 只发 {text} 是错误的）、`GET /draw/status/{id}` 以 `end` 判定完成。
+- **R117.1 多会话并发流式**：`streaming:boolean`+单 `abortRef` → `streamingIds:Set<string>`+`abortMap:Map`；发送/停止/守卫/停止按钮全部 per-session；切换会话互不阻塞。
+- **R117.2 会话标题带模型名**：侧栏条目=模型短名徽章（models label 截短）+标题。
+- **R117.3 绘画 v2**：挂载拉 `/draw/template`（公开接口，免 token）→ 绘画模式下模型下拉切换为绘画模型（defInput 默认）；提交 body 按官网协议 `{model, action:'IMAGINE', prompt, public:false, fast:false}`；status 轮询以 `end`/`list[].url` 收敛；返回 URL 渲染**图片预览网格**（点击新窗看大图）+ **自动缓存本机**（userData/ai8-artifacts/，文件名=会话标题+序号）。
+- **R117.4 会话类型区分**：`Ai8Session.kind:'chat'|'draw'`；侧栏 💬/🎨 徽章；draw 会话 turns 渲染图片而非纯文本。
+- **R117.5 产物文件缓存（新 IPC，走流程）**：`ai8SaveArtifact(name, content|dataUrl)`——main `app.getPath('userData')/ai8-artifacts/` 落盘（文本直写/图片 dataURL 解码），返回绝对路径；`ai8ShowItemInFolder(path)`——`shell.showItemInFolder`。assistant 消息含 html/md/markdown/json/svg/xml/css/js 代码块时，代码块头显示「存为文件」（成功后可点「打开文件夹」）；绘画图片缓存同通道。
+- **R117.6 thinking/webSearch 评估结论（实证）**：两字段在发送 body 中与官网线上前端**逐一全等**（`thinking:H.thinking, webSearch:c`，已在 R116 二轮 verify C2 断言）；`<think>` 链仅在勾选深度思考后出现——参数确实传到服务端并改变模型行为，**真实有效**（服务端内部路由无法离线证明，以官网同协议为准）。
+- **R117.7 模型列表缓存**：`/chat/tmpl` 结果 module 级缓存（一次 app 会话内共享，切页回来零请求秒显；显式失败才重试）。
+- **R117.8 输入历史**：最近 50 条发送记录（`rgbbox:ai8InputHistory`）；输入框空时 ↑ 取上一条、再按继续上翻、↓ 下翻、编辑即退出历史模式（Claude Code 式）。
+- **R117.9 文件导入提示词**：📎 同时接受文本文件（txt/md/json/log 等 ≤512KB）——选择后内容读入输入框（可见可改），不整段粘贴。
+- **受影响文件**：`ai8/client.ts`（drawTemplate/draw 方法）、`ai8/localStore.ts`（kind/inputHistory）、`AiLabAi8Tab.tsx`（重构）、`markdown.tsx`（存为文件按钮）、`shared/ipc.ts`+`main/index.ts`+`preload/index.ts`（2 新通道）、`styles.css`、`i18n/index.tsx`（+8 keys）、tests、verify 脚本。
+- **验收点**：①typecheck+全量 `yarn test` 0 失败（+新纯函数用例）；②真机 CDP：两会话交替发送互不阻塞、模型列表二次进入秒显、↑↓ 历史、📎 导入文本进输入框、draw 提交 body 断言（mock 官网协议）、图片预览+落盘、html 代码块存文件+打开文件夹（mock shell）、侧栏 💬/🎨 徽章与模型名；③对话/OCR/audio 零回归。
+- **追加（R117.10，用户同轮补充）**：Markdown **管道表格渲染**——`|…|`+`|---|` 此前被当普通段落拼行显示错乱；解析器加 `table` block（检测置于段落分支前防吞行）、React 渲染 `<table>`（表头 tint、横向滚动）、markdownToHtml 同步导出带边框表格。
+- **实施证据（2026-09-17）**：①typecheck 0 error；②全量 `yarn test` **90 files / 827 passed / 0 失败**（+5 用例：表格解析/无分隔行退化/表格中断段落/HTML 表格导出转义/输入历史去重上限 + draw kind 往返）；③真机 CDP `scripts/verify-r117-ai8.mjs`（继承 R116 全部 28 断言 + J 组 10 项）**38/38 PASS**：**绘画端到端**（draw/template 模型下拉切换、**POST /draw body 与官网逐一全等** `{model:'mj',action:'IMAGINE',prompt,public:false,fast:false}`、图片网格渲染、**自动落盘 userData/ai8-artifacts + 打开文件夹按钮**）、表格 th/td 断言、代码块 💾 按钮、**切页再回零重拉**（tmpl 计数不变）、↑ 恢复最近发送、📎 文本导入进输入框（【file】标记+内容）、侧栏 🎨+MJ 徽章；④draw 停止按钮接 AbortController（轮询可中断）。
+- **独立 code review + 自我迭代（同日，reviewer agent 全量审查 +13 项全采纳修复）**：P1×3——①sanitize 正则误写入原始 NUL/0x1F 控制字节致 main/index.ts 被 grep 判为二进制（改 `\x00-\x1f` 转义，文件恢复纯文本）；②输入历史「编辑后按 ↓ 清空编辑」（onChange 重置 histIdx）；③绘画图片缓存期间 streaming 标志滞留+无超时（先落 turn 清标志、缓存改 fire-and-forget + `AbortSignal.timeout(20s)`）；P2×10——draw 守卫/禁用一致、停止绘画不再滞留「绘画中…」、draw 模式 📎 仅收文本、产物文件名毫秒+随机后缀防同秒覆盖、show-item 限制 artifacts 目录、`window.open` 仅放行 http(s)、表格可中断段落（+回归用例）、alt 文案 i18n、draw template 同样 module 缓存、历史条目 4KB 上限防 localStorage 配额击穿；verify 快照补 `rgbbox:ai8InputHistory`。修复后全链复验：typecheck 0 error / 827 passed / 38/38。**状态：✅（真实站点绘画提交待用户实测）**
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

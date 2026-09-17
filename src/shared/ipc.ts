@@ -132,6 +132,9 @@ export const ipcChannels = {
   clipboardWriteText: 'rgbbox:clipboard:write-text',
   // R116: dual-format clipboard write (text+html) for structured-document copy
   clipboardWriteRich: 'rgbbox:clipboard:write-rich',
+  // R117: AI8 artifact cache — save generated docs/images locally + reveal
+  ai8SaveArtifact: 'rgbbox:ai8:save-artifact',
+  ai8ShowItemInFolder: 'rgbbox:ai8:show-item-in-folder',
   clipboardReadText: 'rgbbox:clipboard:read-text',
   ocrRecognize: 'rgbbox:ocr:recognize',
   // R80: standalone global snip tool (frozen-frame windows + annotator)

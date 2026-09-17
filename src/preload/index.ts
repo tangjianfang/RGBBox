@@ -161,6 +161,11 @@ const api = {
   // R116: dual-format clipboard write (text + html) — structured-document copy
   clipboardWriteRich: (text: string, html: string): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.clipboardWriteRich, text, html),
+  // R117: AI8 artifact cache — returns the absolute path written (or null)
+  ai8SaveArtifact: (name: string, content: string): Promise<string | null> =>
+    ipcRenderer.invoke(ipcChannels.ai8SaveArtifact, name, content),
+  ai8ShowItemInFolder: (path: string): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.ai8ShowItemInFolder, path),
   clipboardReadText: (): Promise<string> => ipcRenderer.invoke(ipcChannels.clipboardReadText),
   ocrRecognize: (dataUrl: string): Promise<{ ok: boolean; text: string; hint?: string; engine?: 'rapid' | 'winrt' }> =>
     ipcRenderer.invoke(ipcChannels.ocrRecognize, dataUrl),

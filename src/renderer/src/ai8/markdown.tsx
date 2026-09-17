@@ -65,6 +65,7 @@ export type MdBlock =
   | { kind: 'quote'; text: string }
   | { kind: 'hr' }
   | { kind: 'para'; text: string }
+  | { kind: 'table'; head: string[]; rows: string[][] }
 
 export function parseMarkdown(text: string): MdBlock[] {
   const blocks: MdBlock[] = []
@@ -120,6 +121,24 @@ export function parseMarkdown(text: string): MdBlock[] {
       blocks.push({ kind: 'quote', text: body.join(' ') })
       continue
     }
+    // R117.10: pipe table — a header row followed by a |---|---| delimiter
+    // row, then body rows. Must run BEFORE the paragraph branch (a leading
+    // | would otherwise be swallowed into running text and render mangled).
+    if (/^\s*\|.+\|\s*$/.test(line)) {
+      const next = lines[i + 1] ?? ''
+      const cells = (row: string) => row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim())
+      if (/^\s*\|[\s:|-]+\|\s*$/.test(next) && next.includes('-')) {
+        const head = cells(line)
+        i += 2
+        const rows: string[][] = []
+        while (i < lines.length && /^\s*\|.+\|\s*$/.test(lines[i])) {
+          rows.push(cells(lines[i]))
+          i++
+        }
+        blocks.push({ kind: 'table', head, rows })
+        continue
+      }
+    }
     const bullet = line.match(/^\s*[-*+]\s+(.*)$/)
     if (bullet) {
       resetList(false)
@@ -136,10 +155,11 @@ export function parseMarkdown(text: string): MdBlock[] {
       i++
       continue
     }
-    // paragraph: consecutive non-empty non-marker lines joined
+    // paragraph: consecutive non-empty non-marker lines joined. A pipe row
+    // (potential table header) interrupts — LLMs often skip the blank line.
     const para: string[] = [line]
     i++
-    while (i < lines.length && lines[i].trim() !== '' && !/^\s*(```|~~~|#{1,6}\s|>|[-*+]\s|\d+[.)]\s)/.test(lines[i])) {
+    while (i < lines.length && lines[i].trim() !== '' && !/^\s*(```|~~~|#{1,6}\s|>|[-*+]\s|\d+[.)]\s|\|)/.test(lines[i])) {
       para.push(lines[i])
       i++
     }
@@ -186,7 +206,35 @@ function CopyButton({ getText, label, copiedLabel }: { getText: () => string; la
   )
 }
 
-export function MarkdownView({ text, copyLabel, copiedLabel }: { text: string; copyLabel: string; copiedLabel: string }): JSX.Element {
+/** R117.5: save a fenced code block as a local file; once saved the button
+ *  flips into an "open folder" shortcut (shell.showItemInFolder via preload). */
+function SaveCodeButton({ lang, body, onSave, saveLabel, openLabel }: { lang: string; body: string; onSave: (lang: string, body: string) => Promise<string | null>; saveLabel: string; openLabel: string }): JSX.Element {
+  const [path, setPath] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  return (
+    <button
+      type="button"
+      className="md-copy"
+      onClick={() => {
+        if (path !== null) {
+          void window.rgbbox?.ai8ShowItemInFolder?.(path)
+          return
+        }
+        if (busy) return
+        setBusy(true)
+        void onSave(lang, body).then((p) => {
+          setBusy(false)
+          if (p) setPath(p)
+        })
+      }}
+      title={path !== null ? path : undefined}
+    >
+      {busy ? '…' : path !== null ? `📂 ${openLabel}` : `💾 ${saveLabel}`}
+    </button>
+  )
+}
+
+export function MarkdownView({ text, copyLabel, copiedLabel, onSaveCode, saveFileLabel, openFolderLabel }: { text: string; copyLabel: string; copiedLabel: string; onSaveCode?: (lang: string, body: string) => Promise<string | null>; saveFileLabel?: string; openFolderLabel?: string }): JSX.Element {
   const blocks = parseMarkdown(text)
   return (
     <div className="md-view">
@@ -205,13 +253,27 @@ export function MarkdownView({ text, copyLabel, copiedLabel }: { text: string; c
               <div key={i} className="md-code-block">
                 <div className="md-code-head">
                   <span>{block.lang || 'code'}</span>
-                  <CopyButton getText={() => block.body} label={copyLabel} copiedLabel={copiedLabel} />
+                  <span className="md-code-actions">
+                    {onSaveCode && saveFileLabel ? <SaveCodeButton lang={block.lang} body={block.body} onSave={onSaveCode} saveLabel={saveFileLabel} openLabel={openFolderLabel ?? saveFileLabel} /> : null}
+                    <CopyButton getText={() => block.body} label={copyLabel} copiedLabel={copiedLabel} />
+                  </span>
                 </div>
                 <pre className="md-code-body">{block.body}</pre>
               </div>
             )
           case 'quote':
             return <blockquote key={i} className="md-quote">{renderInline(block.text)}</blockquote>
+          case 'table':
+            return (
+              <div key={i} className="md-table-wrap">
+                <table className="md-table">
+                  <thead><tr>{block.head.map((cell, j) => <th key={j}>{renderInline(cell)}</th>)}</tr></thead>
+                  <tbody>{block.rows.map((row, ri) => (
+                    <tr key={ri}>{row.map((cell, ci) => <td key={ci}>{renderInline(cell)}</td>)}</tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )
           case 'hr':
             return <hr key={i} className="md-hr" />
           default:
@@ -297,6 +359,13 @@ export function markdownToHtml(text: string): string {
         closeList()
         out.push(`<blockquote style="border-left:3px solid #d0d7de;margin:0.6em 0;padding:2px 12px;color:#57606a">${inlineToHtml(block.text)}</blockquote>`)
         break
+      case 'table': {
+        closeList()
+        const th = block.head.map((c) => `<th style="border:1px solid #d0d7de;background:#f6f8fa;padding:6px 10px;text-align:left">${inlineToHtml(c)}</th>`).join('')
+        const trs = block.rows.map((r) => `<tr>${r.map((c) => `<td style="border:1px solid #d0d7de;padding:6px 10px">${inlineToHtml(c)}</td>`).join('')}</tr>`).join('')
+        out.push(`<table style="border-collapse:collapse;margin:0.6em 0;font-size:13px;max-width:100%"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`)
+        break
+      }
       case 'hr':
         closeList()
         out.push('<hr style="border:none;border-top:1px solid #d0d7de;margin:0.8em 0">')

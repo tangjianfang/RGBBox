@@ -188,6 +188,26 @@ export class Ai8Client {
     return this.unwrap<Ai8ChatTemplate>(res)
   }
 
+  /** R117.3: the site's own draw flow — GET /draw/template is public. */
+  async getDrawTemplate<T>(): Promise<T> {
+    const res = await fetch(this.baseUrl + '/draw/template', {
+      headers: { 'X-APP-VERSION': AI8_APP_VERSION, 'X-Locale': 'zh-CN' },
+    })
+    return this.unwrap<T>(res)
+  }
+
+  /** R117.3: submit a draw task — the exact body shape the live site sends
+   *  (verified against draw-HaYo0BLq.js): {model, action, prompt, public, fast}. */
+  draw<T>(body: { model: string; prompt: string; action?: string; public?: boolean; fast?: boolean }): Promise<T> {
+    return this.post<T>('/draw', { action: 'IMAGINE', public: false, fast: false, ...body })
+  }
+
+  /** R117.3: poll a draw task — the site ends polling on `data.end` or a
+   *  non-empty `data.list[].url`. */
+  drawStatus<T>(taskId: string | number): Promise<T> {
+    return this.get<T>(`/draw/status/${taskId}`)
+  }
+
   async getModels(modelType = 'chat'): Promise<Ai8Model[]> {
     const tmpl = await this.getChatTemplate()
     const models = tmpl?.models ?? []

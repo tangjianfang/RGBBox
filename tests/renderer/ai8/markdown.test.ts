@@ -29,6 +29,18 @@ describe('renderer/ai8 markdown parser (R114)', () => {
     expect(open[1]).toEqual({ kind: 'code', lang: 'js', body: 'const x = 1' })
   })
 
+  it('parses pipe tables; delimiter-less pipes stay paragraphs (R117.10)', () => {
+    const blocks = parseMarkdown('| 项 | 值 |\n| --- | :-: |\n| 模式 | 流光 |\n| 速度 | 快 |')
+    expect(blocks[0]).toEqual({ kind: 'table', head: ['项', '值'], rows: [['模式', '流光'], ['速度', '快']] })
+    expect(parseMarkdown('| 只是 | 一行 |')).toEqual([{ kind: 'para', text: '| 只是 | 一行 |' }])
+  })
+
+  it('lets a table interrupt a paragraph without a blank line (P2-6)', () => {
+    const blocks = parseMarkdown('对比如下：\n| 项 | 值 |\n| --- | --- |\n| a | 1 |')
+    expect(blocks[0]).toEqual({ kind: 'para', text: '对比如下：' })
+    expect(blocks[1]).toEqual({ kind: 'table', head: ['项', '值'], rows: [['a', '1']] })
+  })
+
   it('renders inline bold, code and links as elements', () => {
     const html = renderToString(createElement('span', null, ...renderInline('**粗体** 和 `code` 与 [链接](https://example.com)')))
     expect(html).toContain('<strong>粗体</strong>')
@@ -90,5 +102,12 @@ describe('renderer/ai8 markdownToHtml (R116 round 4)', () => {
     expect(html.match(/<ol/g)?.length).toBe(1)
     expect(html.match(/<li/g)?.length).toBe(2)
     expect(html).toContain('<p')
+  })
+
+  it('exports tables as bordered HTML documents', () => {
+    const html = markdownToHtml('| 项 | 值 |\n| --- | --- |\n| a < b | x |')
+    expect(html).toContain('<table')
+    expect(html).toContain('<th')
+    expect(html).toContain('a &lt; b')
   })
 })
