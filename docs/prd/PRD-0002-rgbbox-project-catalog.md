@@ -1186,6 +1186,15 @@
 - **验收点**：①typecheck+全量 `yarn test` 0 失败（+isAi8Settings/分流 probe/prompt 映射用例）；②真机（mock ai8 站点）：config 选「欧亿 AI8」→ 填 token → 激活 → OCR Tab 翻译走 ai8 协议（systemPrompt/text、contextCount=0 会话、无 messages）；③传统 provider 零回归；④标注器问 AI 可用。
 - **实施证据（2026-09-17）**：①typecheck 0 error；②全量 `yarn test` **91 files / 831 passed / 0 失败**（+新 `tests/main/ai8Provider.test.ts` 4 用例：伪协议判定/nokey/probe 走 balance/工具会话创建与 prompt 映射及复用；aiProviders preset 校验放宽允许 `ai8://` 伪协议）；③真机 CDP `scripts/verify-r118-ai8-provider.mjs` **6/6 PASS**——**关键架构发现与解法**：OCR/翻译在 **main 进程** fetch，`page.route` 只能拦渲染层 → ai8Provider 加测试缝 `RGBBOX_AI8_BASE_URL`（env 覆盖 baseUrl，默认官网），verify 起**本地 node http mock server** 接管 main 流量：断言 config 建 ai8 profile 激活 → OCR Tab 翻译 → main 发出的会话创建 body `{model:'openai_chat::gpt-5.4', contextCount:0}` + chat body **与官网形态逐一全等**（`text/sessionId/systemPrompt` 等 9 键、无 model/messages）→ 译文落 OCR 结果框 → 单工具会话复用（sessions=1）→ 零页面错误；测试后自动删除测试 profile。④active profile→`asAiSettings`→`chatCompletion` 分流链路核实（R89 的 active profile 机制天然打通所有消费方——AnnotateOverlay 清理/翻译、AI Lab 对话、OCR Tab、连接测试全部自动获得 AI8）。**状态：✅（真实站点 OCR/翻译待用户实测）**
 
+### R119. 全局划词 AI——任意应用选中文字→热键→AI 处理浮窗（R118.5 后续指针落地）
+
+> 触发场景：R118.5 留的指针；对标 uTools/PopClip：在**任意应用**选中文字 → 全局热键 → 小浮窗选择指令（翻译/润色/解释/自定义）→ 走 active profile（传统 OpenAI 或 AI8 均可）→ 结果展示 + 一键复制。复用 snipManager 的成熟模式（全局热键/query 路由/deps 注入）与 R112 的 SendKeys 经验。
+- **R119.1 main/selectionAiManager.ts（新）**：热键 `Alt+Q`（托盘菜单同步加「划词 AI」入口）；触发流程=PowerShell SendKeys `^c`（spawn 数组参数，无 bash 转义坑）模拟复制选中 → 250ms 后 clipboard.readText 取词 → 空文本静默放弃（无选区不扰民）→ 开 560×430 浮窗（光标附近、`?selectionAi=1` query 路由）；main 暂存 pendingText，渲染层挂载后拉取；`deps` 注入 `runChat`（index.ts 的 loadSystemSettings→asAiSettings→chatCompletion 闭包，AI8 分流自动生效）。
+- **R119.2 3 条 IPC**：`selectionAiGetText`（取暂存原文，取后即清）、`selectionAiRun({action, text, custom})`（prompt 映射=纯函数 `buildSelectionPrompt`：translate/polish/explain/custom → system 指令 + user 原文；返回 AiChatOutcome）、`selectionAiClose`。
+- **R119.3 渲染层 SelectionAiView.tsx**：原文区（截断 240 字）+ 指令按钮组 + 自定义指令输入 + 结果区（pre-wrap）+ 复制按钮（clipboardWriteText）+ Esc 关窗；空态/失败态行内提示。
+- **受影响文件**：新 `main/selectionAiManager.ts`、新 `renderer/src/components/SelectionAiView.tsx`；`main/index.ts`（init+热键+托盘+3 handler）、`shared/ipc.ts`、`preload/index.ts`、`renderer/src/main.tsx`（query 分支）、`styles.css`、`i18n/index.tsx`（+9 keys）、`tests/main/selectionAiManager.test.ts`（prompt 映射纯函数）。
+- **实施证据（2026-09-17）**：①typecheck 0 error；②全量 `yarn test` **92 files / 833 passed / 0 失败**（+`tests/main/selectionAiManager.test.ts` 2 用例：四动作 system 指令互异且各自落位/custom 指令内嵌）；③真机 `scripts/verify-r119-sel-ai.mjs` **5/5 PASS**：三条 IPC 通路（空 pending 守卫 parse、未知动作拒绝、close true）+ 零页面错误；**热键→SendKeys→浮窗全链为 OS 级行为（CDP 不可注入，同 R112 教训），留用户实测**：任意应用选中文字 → Alt+Q（或托盘「划词 AI」）→ 浮窗四指令 → 结果一键复制；AI8/传统 profile 由 R118 分流自动双通。**状态：✅（热键取词全链挂起用户实测）**
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

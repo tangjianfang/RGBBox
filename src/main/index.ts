@@ -21,6 +21,7 @@ import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOv
 import { armShutdown, cancelShutdown, getShutdownStatus } from './shutdownScheduler'
 import { closeAllScreensaverWindows, disposeScreensaver, getScreensaverSettings, initScreensaver, setScreensaverSettings } from './screensaverManager'
 import { cancelSnip, disposeSnipManager, finishSnip, getSnipFrame, getSnipHotkeyPref, initSnipHotkeyPref, initSnipManager, isPresetSnipHotkey, registerSnipHotkey, setSnipHotkeyPref, startSnip } from './snipManager'
+import { disposeSelectionAiManager, disposeSelectionAiWindow, initSelectionAiManager, registerSelectionAiHotkey, runSelectionAi, takeSelectionText, triggerSelectionAi } from './selectionAiManager'
 import { asUiLocale, trayMenuLabels, type UiLocale } from './trayMenu'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
@@ -299,6 +300,26 @@ function registerIpc(): void {
 
   // R80: standalone global snip tool
   initSnipManager({ addPng: (url, kind) => captureStore.addPng(url, kind) }, isDevelopment, process.env.ELECTRON_RENDERER_URL)
+  // R119: global selection AI — runs through the ACTIVE profile's pipeline
+  // (chatCompletion dispatch: AI8 pseudo-protocol included)
+  initSelectionAiManager({
+    runChat: async (messages) => {
+      const s = await loadSystemSettings()
+      return chatCompletion(messages, asAiSettings(s.ai), { temperature: 0.3 })
+    },
+  }, isDevelopment, process.env.ELECTRON_RENDERER_URL)
+  registerSelectionAiHotkey()
+  ipcMain.handle(ipcChannels.selectionAiGetText, () => takeSelectionText())
+  ipcMain.handle(ipcChannels.selectionAiRun, async (_event, action: unknown, custom: unknown) => {
+    const acts = ['translate', 'polish', 'explain', 'custom'] as const
+    const act = acts.find((a) => a === action)
+    if (act === undefined) return { ok: false, text: '', hint: 'parse', latencyMs: 0 }
+    return runSelectionAi(act, typeof custom === 'string' ? custom : undefined)
+  })
+  ipcMain.handle(ipcChannels.selectionAiClose, () => {
+    disposeSelectionAiWindow()
+    return true
+  })
   // R82: RapidOCR 优先、WinRT 回退（dynamic import，避免 vitest node 环境加载原生模块）
   setRapidOcrRunner(null)
   void import('./rapidOcrService').then(async (m) => {
@@ -1225,6 +1246,7 @@ function createTray(): void {
     const contextMenu = Menu.buildFromTemplate([
       { label: L.toggle, click: toggleMainWindow },
       { label: L.snip, click: () => { void startSnip() } },
+      { label: L.selectionAi, click: () => { void triggerSelectionAi() } },
       { type: 'separator' },
       {
         label: L.quit,
@@ -1435,6 +1457,8 @@ app.on('before-quit', () => {
   disposeScreensaver()
   // R80: close snip session + unregister global hotkey
   disposeSnipManager()
+  // R119: close selection-AI window + unregister its hotkey
+  disposeSelectionAiManager()
 })
 
 app.on('window-all-closed', () => {
