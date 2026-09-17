@@ -102,7 +102,7 @@ export function AiLabAi8Tab(): JSX.Element {
 
   const deleteSession = useCallback((id: string | number) => {
     setSessions((list) => {
-      const next = list.filter((s) => s.id !== id)
+      const next = list.filter((s) => String(s.id) !== String(id))
       writeSessions(next)
       return next
     })
@@ -115,8 +115,8 @@ export function AiLabAi8Tab(): JSX.Element {
 
   const upsertSession = useCallback((session: Ai8Session) => {
     setSessions((list) => {
-      const idx = list.findIndex((s) => s.id === session.id)
-      const next = idx >= 0 ? list.map((s) => (s.id === session.id ? session : s)) : [session, ...list]
+      const idx = list.findIndex((s) => String(s.id) === String(session.id))
+      const next = idx >= 0 ? list.map((s) => (String(s.id) === String(session.id) ? session : s)) : [session, ...list]
       writeSessions(next)
       return next
     })
@@ -127,7 +127,7 @@ export function AiLabAi8Tab(): JSX.Element {
   const appendTurn = useCallback((sessionId: string | number, turn: Ai8Turn, patch?: Partial<Ai8Session>) => {
     setSessions((list) => {
       const next = list.map((s) => {
-        if (s.id !== sessionId) return s
+        if (String(s.id) !== String(sessionId)) return s
         const merged: Ai8Session = { ...s, ...patch, turns: [...s.turns, turn], updatedAt: Date.now() }
         if (turn.role === 'user' && !s.turns.some((x) => x.role === 'user')) merged.title = titleFromContent(turn.content)
         return merged
@@ -140,7 +140,7 @@ export function AiLabAi8Tab(): JSX.Element {
   const patchLastAssistant = useCallback((sessionId: string | number, patch: Partial<Ai8Turn>) => {
     setSessions((list) => {
       const next = list.map((s) => {
-        if (s.id !== sessionId) return s
+        if (String(s.id) !== String(sessionId)) return s
         const turns = [...s.turns]
         const last = turns[turns.length - 1]
         if (last?.role === 'assistant') turns[turns.length - 1] = { ...last, ...patch }
@@ -151,36 +151,26 @@ export function AiLabAi8Tab(): JSX.Element {
     })
   }, [])
 
-  /** R116.3: one-shot AI title generation (ChatGPT/Claude style). Runs in a
-   *  throwaway server session so the title prompt never pollutes the real
-   *  conversation context; uses the currently selected model. Marks `titled`
-   *  BEFORE the request (a failed attempt keeps the truncated fallback). */
-  const generateTitle = useCallback(async (opts: { id: string | number; user: string; assistant: string; model: string; syncServer: boolean }) => {
-    const { id, user, assistant, model, syncServer } = opts
+  /** R116.3 (round 2): the site's NATIVE generate-title endpoint — the server
+   *  derives the title from the session content itself, so no throwaway
+   *  session and no prompt pollution. One-shot via `titled`; failure silently
+   *  keeps the truncated fallback. Local draw drafts have no server session
+   *  and keep their prompt-derived title. */
+  const refreshTitle = useCallback(async (sessionId: string | number) => {
     setSessions((list) => {
-      const next = list.map((s) => (String(s.id) === String(id) ? { ...s, titled: true } : s))
+      const next = list.map((s) => (String(s.id) === String(sessionId) ? { ...s, titled: true } : s))
       writeSessions(next)
       return next
     })
     try {
-      const created = await client().createSession<{ id: string | number }>({ model })
-      const raw0 = created.id
-      const tmpId = typeof raw0 === 'number' ? raw0 : Number.isFinite(Number(raw0)) ? Number(raw0) : raw0
-      let raw = ''
-      const prompt = `请从下面的对话中提取主题，生成一个不超过16个字的会话标题。只输出标题本身：不要引号、不要句号、不要序号、不要任何解释。\n用户：${user.slice(0, 600)}\n助手：${assistant.slice(0, 600)}`
-      for await (const ev of client().chat(tmpId, prompt, { model })) {
-        if (ev.type === 'delta') raw += ev.text
-        else if (ev.type === 'error') { raw = ''; break }
-      }
-      void client().deleteSession(tmpId).catch(() => undefined)
-      const title = cleanGeneratedTitle(raw)
+      const out = await client().generateTitle(sessionId)
+      const title = cleanGeneratedTitle(String(out?.name ?? ''))
       if (title === '') return
       setSessions((list) => {
-        const next = list.map((s) => (String(s.id) === String(id) ? { ...s, title } : s))
+        const next = list.map((s) => (String(s.id) === String(sessionId) ? { ...s, title } : s))
         writeSessions(next)
         return next
       })
-      if (syncServer) void client().updateSession(id, { name: title }).catch(() => undefined)
     } catch {
       // silent — the truncated fallback title stays
     }
@@ -199,8 +189,9 @@ export function AiLabAi8Tab(): JSX.Element {
       void openOfficialLogin()
       return
     }
-    // R116.1: the server REQUIRES model in the chat body — the send button is
-    // already disabled for this case; the guard covers the Enter path.
+    // R116.1: a session without a model is rejected by the server
+    // (「模型 是必填项」) — the send button is already disabled for this case;
+    // this guard covers the Enter path.
     if (prefs.model === '') return
     // R115.1: image attachment rides along as files:[{name,url}] — data URL
     // form; server rejection surfaces as a normal error turn (probe pending).
@@ -248,9 +239,6 @@ export function AiLabAi8Tab(): JSX.Element {
           const urls = list.map((item) => item.url).filter((u): u is string => typeof u === 'string' && u !== '')
           if (urls.length > 0) {
             patchLastAssistant(draftId, { content: urls.join('\n') })
-            // R116.3: draw sessions are local drafts — title locally only (no
-            // server session to rename)
-            void generateTitle({ id: draftId, user: content, assistant: urls.join('\n'), model: prefs.model, syncServer: false })
             return
           }
         }
@@ -283,18 +271,34 @@ export function AiLabAi8Tab(): JSX.Element {
       }
     }
     setInput('')
+    // R116.1 (round 2): the server routes a chat by the SESSION's stored
+    // model. A session whose model diverges from the picker (stale sessions
+    // created before the model guard, or a mid-conversation switch) must be
+    // patched first, or the server rejects with「模型 是必填项」.
+    if (sessionBefore !== null && sessionBefore.model !== prefs.model) {
+      try {
+        await client().updateSession(sessionId, { model: prefs.model, name: sessionBefore.title })
+        setSessions((list) => {
+          const next = list.map((s) => (String(s.id) === String(sessionId) ? { ...s, model: prefs.model } : s))
+          writeSessions(next)
+          return next
+        })
+      } catch {
+        // best-effort: the send itself will surface any server rejection
+      }
+    }
     appendTurn(sessionId, { role: 'user', content: attach ? `${content}\n[🖼 ${attach.name}]` : content })
     appendTurn(sessionId, { role: 'assistant', content: '' })
     setStreaming(true)
     const controller = new AbortController()
     abortRef.current = controller
     try {
-      for await (const ev of client().chat(sessionId, content, { model: prefs.model, thinking: prefs.thinking, webSearch: prefs.webSearch, signal: controller.signal, files })) {
+      for await (const ev of client().chat(sessionId, content, { thinking: prefs.thinking, webSearch: prefs.webSearch, signal: controller.signal, files })) {
         if (ev.type === 'delta') {
           replyText += ev.text
           setSessions((list) => {
             const next = list.map((s) => {
-              if (s.id !== sessionId) return s
+              if (String(s.id) !== String(sessionId)) return s
               const turns = [...s.turns]
               const last = turns[turns.length - 1]
               if (last?.role === 'assistant') turns[turns.length - 1] = { ...last, content: last.content + ev.text }
@@ -321,7 +325,7 @@ export function AiLabAi8Tab(): JSX.Element {
       // silently blank
       setSessions((list) => {
         const next = list.map((s) => {
-          if (s.id !== sessionId) return s
+          if (String(s.id) !== String(sessionId)) return s
           const turns = [...s.turns]
           const last = turns[turns.length - 1]
           if (last?.role === 'assistant' && last.content === '' && last.error === undefined) turns[turns.length - 1] = { ...last, error: 'network' }
@@ -331,9 +335,9 @@ export function AiLabAi8Tab(): JSX.Element {
         return next
       })
       // R116.3: after the FIRST completed exchange, replace the truncated
-      // fallback title with an AI-generated one (one-shot via `titled`)
+      // fallback title via the site's native generate-title endpoint
       if (isFirstExchange && !hadError && replyText.trim() !== '') {
-        void generateTitle({ id: sessionId, user: content, assistant: replyText, model: prefs.model, syncServer: true })
+        void refreshTitle(sessionId)
       }
     }
   }

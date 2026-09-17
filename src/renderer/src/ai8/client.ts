@@ -45,7 +45,6 @@ export type Ai8SseEvent =
   | { type: 'done'; full: string }
 
 export interface Ai8ChatOptions {
-  model?: string
   thinking?: boolean
   webSearch?: boolean
   systemPrompt?: string
@@ -54,14 +53,16 @@ export interface Ai8ChatOptions {
   files?: { name: string; url: string }[]
 }
 
-/** R116.1: the /chat/completions body. `model` is REQUIRED by the server —
- *  omitting it fails with「模型 是必填项」even though createSession already
- *  bound a model. Kept as an exported pure function for unit testing. */
+/** R116.1 (round 2): the /chat/completions body, byte-for-byte the fields the
+ *  live site's own frontend sends (verified against the production bundle).
+ *  NO `model` here — the server routes by the session's stored model and its
+ *  strict decoder 400s on unknown fields (an extra `model` key surfaces as a
+ *  silent SSE-swallowed「请求失败 (network)」). Model belongs to the SESSION:
+ *  set it at createSession / updateSession time. */
 export function buildChatBody(sessionId: string | number, text: string, opts: Ai8ChatOptions = {}): Record<string, unknown> {
   return {
     text,
     sessionId,
-    model: opts.model ?? '',
     files: opts.files ?? [],
     thinking: !!opts.thinking,
     webSearch: !!opts.webSearch,
@@ -214,6 +215,13 @@ export class Ai8Client {
       headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(patch ?? {}),
     }).then((res) => this.unwrap<T>(res))
+  }
+
+  /** R116.3 (round 2): the site's NATIVE title endpoint — the server derives
+   *  the title from the session content itself (POST /chat/generate-title/{id}
+   *  → { name }), exactly what the web app calls after the first exchange. */
+  generateTitle<T = { name?: string }>(sessionId: string | number): Promise<T> {
+    return this.post<T>(`/chat/generate-title/${sessionId}`)
   }
 
   deleteSession(sessionId: string | number): Promise<unknown> {

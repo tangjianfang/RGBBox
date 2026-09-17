@@ -37,10 +37,11 @@ describe('renderer/ai8 client (R110)', () => {
   })
 })
 
-describe('renderer/ai8 buildChatBody (R116.1)', () => {
-  it('carries the model — the server rejects a chat without it (模型 是必填项)', () => {
-    const body = buildChatBody(7, 'hi', { model: 'openai_chat::gpt-5.4', thinking: true })
-    expect(body.model).toBe('openai_chat::gpt-5.4')
+describe('renderer/ai8 buildChatBody (R116.1 round 2 — live-site protocol)', () => {
+  it('sends exactly the site frontend fields — model lives on the SESSION, not the body', () => {
+    const body = buildChatBody(7, 'hi', { thinking: true })
+    expect(Object.keys(body).sort()).toEqual(['files', 'nativeToolOptions', 'nativeTools', 'reasoningEffort', 'sessionId', 'text', 'thinking', 'webSearch'])
+    expect('model' in body).toBe(false) // extra key → strict decoder 400 (silent network error)
     expect(body.text).toBe('hi')
     expect(body.sessionId).toBe(7)
     expect(body.thinking).toBe(true)
@@ -48,11 +49,10 @@ describe('renderer/ai8 buildChatBody (R116.1)', () => {
     expect(body.files).toEqual([])
   })
 
-  it('keeps a numeric sessionId as a number and defaults model to empty', () => {
-    const body = buildChatBody('123', 'q', { files: [{ name: 'a.png', url: 'data:image/png;base64,x' }] })
+  it('keeps a numeric sessionId as a number and adds systemPrompt only when set', () => {
+    const body = buildChatBody('123', 'q', { files: [{ name: 'a.png', url: 'data:image/png;base64,x' }], systemPrompt: 'be brief' })
     expect(body.sessionId).toBe('123')
-    expect(body.model).toBe('')
     expect(body.files).toEqual([{ name: 'a.png', url: 'data:image/png;base64,x' }])
-    expect(body.systemPrompt).toBeUndefined()
+    expect(body.systemPrompt).toBe('be brief')
   })
 })
