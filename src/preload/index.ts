@@ -158,6 +158,9 @@ const api = {
   // R78: clipboard text + native OCR
   clipboardWriteText: (text: string): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.clipboardWriteText, text),
+  // R116: dual-format clipboard write (text + html) — structured-document copy
+  clipboardWriteRich: (text: string, html: string): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.clipboardWriteRich, text, html),
   clipboardReadText: (): Promise<string> => ipcRenderer.invoke(ipcChannels.clipboardReadText),
   ocrRecognize: (dataUrl: string): Promise<{ ok: boolean; text: string; hint?: string; engine?: 'rapid' | 'winrt' }> =>
     ipcRenderer.invoke(ipcChannels.ocrRecognize, dataUrl),

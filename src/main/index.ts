@@ -671,6 +671,13 @@ function registerIpc(): void {
     clipboard.writeText(text)
     return true
   })
+  // R116: dual-format write so pasting into Word/mail keeps the document
+  // structure (headings/lists/code blocks) instead of flat text
+  ipcMain.handle(ipcChannels.clipboardWriteRich, (_event, text: unknown, html: unknown) => {
+    if (typeof text !== 'string' || typeof html !== 'string') return false
+    clipboard.write({ text, html })
+    return true
+  })
   ipcMain.handle(ipcChannels.clipboardReadText, () => clipboard.readText())
   ipcMain.handle(ipcChannels.ocrRecognize, (_event, dataUrl: unknown) =>
     typeof dataUrl === 'string' ? recognizeImage(dataUrl) : Promise.resolve({ ok: false, text: '', hint: 'decode' }))

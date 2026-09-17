@@ -130,6 +130,8 @@ export const ipcChannels = {
   capturesImport: 'rgbbox:captures:import',
   // R78: clipboard text (annotator copy/paste) + native OCR
   clipboardWriteText: 'rgbbox:clipboard:write-text',
+  // R116: dual-format clipboard write (text+html) for structured-document copy
+  clipboardWriteRich: 'rgbbox:clipboard:write-rich',
   clipboardReadText: 'rgbbox:clipboard:read-text',
   ocrRecognize: 'rgbbox:ocr:recognize',
   // R80: standalone global snip tool (frozen-frame windows + annotator)

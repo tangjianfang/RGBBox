@@ -35,6 +35,14 @@ export function splitThinkBlocks(text: string): ThinkSegment[] {
   return segments
 }
 
+/** The visible reply only — think chains stripped (what "copy" should give). */
+export function stripThink(text: string): string {
+  return splitThinkBlocks(text)
+    .filter((seg): seg is { kind: 'text'; body: string } => seg.kind === 'text')
+    .map((seg) => seg.body)
+    .join('')
+}
+
 export function ThinkPanel({ body, closed, thinkingLabel, thoughtLabel }: { body: string; closed: boolean; thinkingLabel: string; thoughtLabel: string }): JSX.Element {
   const [open, setOpen] = useState(!closed)
   useEffect(() => { setOpen(!closed) }, [closed])
@@ -166,10 +174,11 @@ function CopyButton({ getText, label, copiedLabel }: { getText: () => string; la
       type="button"
       className="md-copy"
       onClick={() => {
-        void navigator.clipboard.writeText(getText()).then(() => {
+        void copyRichText(getText()).then((ok) => {
+          if (!ok) return
           setCopied(true)
           window.setTimeout(() => setCopied(false), 2000)
-        }).catch(() => undefined)
+        })
       }}
     >
       {copied ? copiedLabel : label}
@@ -211,4 +220,92 @@ export function MarkdownView({ text, copyLabel, copiedLabel }: { text: string; c
       })}
     </div>
   )
+}
+
+// ── R116 (round 4): structured-document copy ───────────────────────────────
+// "复制" must yield a structured DOCUMENT, not raw markdown source: we put
+// BOTH formats on the clipboard — text/plain (clean markdown, think chains
+// stripped) and text/html (semantic tags with light inline styles), so pasting
+// into Word / mail / docs keeps headings, lists and code blocks. The HTML uses
+// LIGHT colors — the app's dark palette would paste black-on-black.
+
+export function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+/** R116 (round 4): dual-format clipboard write with a deterministic Electron
+ *  path. navigator.clipboard silently fails in Electron renderers (the R76
+ *  lesson — permission-gated), so the preload's native IPC channel goes first;
+ *  the web-API fallbacks keep the function usable outside Electron (tests).
+ *  Returns true when some format definitely landed on the clipboard. */
+export async function copyRichText(text: string, html?: string): Promise<boolean> {
+  const api = (window as unknown as { rgbbox?: { clipboardWriteRich?: (t: string, h: string) => Promise<boolean>; clipboardWriteText?: (t: string) => Promise<boolean> } }).rgbbox
+  try {
+    if (api?.clipboardWriteRich && html !== undefined && (await api.clipboardWriteRich(text, html))) return true
+  } catch { /* fall through */ }
+  try {
+    if (api?.clipboardWriteText && (await api.clipboardWriteText(text))) return true
+  } catch { /* fall through */ }
+  if (html !== undefined && typeof ClipboardItem !== 'undefined') {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob([text], { type: 'text/plain' }), 'text/html': new Blob([html], { type: 'text/html' }) })])
+      return true
+    } catch { /* fall through */ }
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function inlineToHtml(text: string): string {
+  return escapeHtml(text)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\s][^*]*)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code style="background:#f0f0f0;border-radius:3px;padding:1px 4px;font-family:Consolas,monospace;font-size:13px">$1</code>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2">$1</a>')
+}
+
+export function markdownToHtml(text: string): string {
+  const blocks = parseMarkdown(text)
+  const out: string[] = []
+  let listType: 'ul' | 'ol' | null = null
+  const closeList = () => {
+    if (listType !== null) { out.push(`</${listType}>`); listType = null }
+  }
+  for (const block of blocks) {
+    switch (block.kind) {
+      case 'heading': {
+        closeList()
+        const level = Math.min(4, block.level)
+        out.push(`<h${level} style="margin:0.7em 0 0.3em;line-height:1.3">${inlineToHtml(block.text)}</h${level}>`)
+        break
+      }
+      case 'listItem': {
+        const want = block.ordered ? 'ol' : 'ul'
+        if (listType !== want) { closeList(); listType = want; out.push(`<${want} style="margin:0.4em 0;padding-left:1.4em">`) }
+        out.push(`<li style="margin:0.15em 0">${inlineToHtml(block.text)}</li>`)
+        break
+      }
+      case 'code':
+        closeList()
+        out.push(`<pre style="background:#f5f6f7;border:1px solid #e1e4e8;border-radius:6px;padding:10px 12px;margin:0.6em 0;overflow-x:auto"><code style="font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.5;color:#24292f">${escapeHtml(block.body)}</code></pre>`)
+        break
+      case 'quote':
+        closeList()
+        out.push(`<blockquote style="border-left:3px solid #d0d7de;margin:0.6em 0;padding:2px 12px;color:#57606a">${inlineToHtml(block.text)}</blockquote>`)
+        break
+      case 'hr':
+        closeList()
+        out.push('<hr style="border:none;border-top:1px solid #d0d7de;margin:0.8em 0">')
+        break
+      default:
+        closeList()
+        out.push(`<p style="margin:0.5em 0">${inlineToHtml(block.text)}</p>`)
+    }
+  }
+  closeList()
+  return `<div style="font-family:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.7;color:#1f2328;max-width:760px">${out.join('\n')}</div>`
 }

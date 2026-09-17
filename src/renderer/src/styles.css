@@ -7715,7 +7715,7 @@ input[type='range'].video-player-volume {
 .md-copy:hover { border-color: #46c6a8; color: #8fe8cf; }
 
 .ai8-msg-copy {
-  opacity: 0; position: absolute; right: 8px; top: 6px; transition: opacity 120ms;
+  opacity: 0.45; position: absolute; right: 8px; top: 6px; transition: opacity 120ms;
 }
 
 .ai-msg:hover .ai8-msg-copy { opacity: 1; }

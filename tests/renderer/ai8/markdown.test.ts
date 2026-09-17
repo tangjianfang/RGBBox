@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
-import { parseMarkdown, renderInline, splitThinkBlocks } from '../../../src/renderer/src/ai8/markdown'
+import { markdownToHtml, parseMarkdown, renderInline, splitThinkBlocks, stripThink } from '../../../src/renderer/src/ai8/markdown'
 
 describe('renderer/ai8 markdown parser (R114)', () => {
   it('parses headings, lists, quotes, hr and paragraphs', () => {
@@ -63,5 +63,32 @@ describe('renderer/ai8 think-block splitting (R116 round 3)', () => {
       { kind: 'think', body: '中间思考', closed: true },
       { kind: 'text', body: '结尾。' },
     ])
+  })
+
+  it('stripThink keeps only the visible reply (R116 round 4)', () => {
+    expect(stripThink('<think>reasoning…</think>答案')).toBe('答案')
+    expect(stripThink('没有标签')).toBe('没有标签')
+    expect(stripThink('<think>a</think>前<think>b</think>后')).toBe('前后')
+  })
+})
+
+describe('renderer/ai8 markdownToHtml (R116 round 4)', () => {
+  it('emits semantic light-themed document markup', () => {
+    const html = markdownToHtml('## 标题\n\n- 甲\n- 乙\n\n```js\nif (a < b) { x() }\n```\n\n> 引用 **粗体** `code`')
+    expect(html).toContain('<h2')
+    expect(html).toContain('<ul')
+    expect(html).toMatch(/<li[^>]*>甲<\/li>/)
+    expect(html).toContain('if (a &lt; b)') // code body escaped
+    expect(html).toContain('<pre')
+    expect(html).toContain('<blockquote')
+    expect(html).toContain('<strong>粗体</strong>')
+    expect(html).toContain('<code style=')
+  })
+
+  it('aggregates consecutive ordered items into one ol', () => {
+    const html = markdownToHtml('1. 一\n2. 二\n\n段落')
+    expect(html.match(/<ol/g)?.length).toBe(1)
+    expect(html.match(/<li/g)?.length).toBe(2)
+    expect(html).toContain('<p')
   })
 })

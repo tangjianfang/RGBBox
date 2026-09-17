@@ -151,6 +151,13 @@ check('H1 think: chain renders as the collapsed thought panel', await page.evalu
 check('H2 think: raw <think> markup never reaches the reply body', await page.evaluate(() => !(document.querySelector('.ai8-log .ai-msg-assistant .md-view')?.textContent ?? '').includes('<think>')))
 await page.locator('.ai8-log .ai-msg-assistant .ai8-think-toggle').first().click()
 check('H3 think: panel expands on click', await page.evaluate(() => (document.querySelector('.ai8-log .ai-msg-assistant .ai8-think-body')?.textContent ?? '').includes('User asks about lights')))
+
+// ── I. one-click structured-document copy (native clipboard round-trip) ────
+await page.locator('button[data-action="ai8-copy-msg"]').first().click()
+await sleep(600)
+const clip = await page.evaluate(() => window.rgbbox.clipboardReadText())
+check('I1 copy: OS clipboard receives the clean reply text', clip.includes('RGB 灯效') && !clip.includes('<think>'), `clip=${clip.slice(0, 50)}`)
+check('I2 copy: button shows the copied feedback', (await page.locator('button[data-action="ai8-copy-msg"]').first().textContent()) === '✓')
 await page.screenshot({ path: 'docs/screenshots/r116-ai8-workbench.png' })
 
 // ── F. error turn dressing + autoscroll on history reload ─────────────────

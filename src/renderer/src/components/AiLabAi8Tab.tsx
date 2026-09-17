@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
-import { MarkdownView, ThinkPanel, splitThinkBlocks } from '../ai8/markdown'
+import { MarkdownView, ThinkPanel, copyRichText, markdownToHtml, splitThinkBlocks, stripThink } from '../ai8/markdown'
 import { Ai8Client, Ai8Error, readStoredToken, writeStoredToken, type Ai8Model } from '../ai8/client'
 import { cleanGeneratedTitle, groupModelsByProvider, matchCurated, readActiveId, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
 
@@ -18,6 +18,29 @@ async function readImageFile(file: File): Promise<{ name: string; dataUrl: strin
     reader.readAsDataURL(file)
   })
   return { name: file.name || 'clipboard.png', dataUrl }
+}
+
+/** R116 (round 4): one-click copy that yields a structured document — both
+ *  formats go on the clipboard: text/plain (clean markdown, think chains
+ *  stripped) and text/html (semantic tags with light inline styles, so Word /
+ *  mail / docs keep headings, lists and code blocks on paste). The write goes
+ *  through the preload's native clipboard IPC (navigator.clipboard silently
+ *  fails in Electron — R76 lesson). */
+function MessageCopyButton({ text, label }: { text: string; label: string }): JSX.Element {
+  const [copied, setCopied] = useState(false)
+  const copy = () => {
+    const md = stripThink(text).trim()
+    void copyRichText(md, markdownToHtml(md)).then((ok) => {
+      if (!ok) return
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    })
+  }
+  return (
+    <button type="button" className="md-copy ai8-msg-copy" data-action="ai8-copy-msg" onClick={copy} aria-label={label} title={label}>
+      {copied ? '✓' : '⧉'}
+    </button>
+  )
 }
 
 export function AiLabAi8Tab(): JSX.Element {
@@ -463,16 +486,7 @@ export function AiLabAi8Tab(): JSX.Element {
           {turns.map((turn, i) => (
             <div key={i} className={`ai-msg ai-msg-${turn.role}`}>
               {turn.role === 'assistant' && turn.error === undefined && turn.content !== '' ? (
-                <button
-                  type="button"
-                  className="md-copy ai8-msg-copy"
-                  data-action="ai8-copy-msg"
-                  onClick={() => { void navigator.clipboard.writeText(turn.content).catch(() => undefined) }}
-                  aria-label={t('ai.ai8.copy')}
-                  title={t('ai.ai8.copy')}
-                >
-                  ⧉
-                </button>
+                <MessageCopyButton text={turn.content} label={t('ai.ai8.copy')} />
               ) : null}
               {turn.error !== undefined
                 ? <span className="ai-msg-error">{turn.error === 'expired' || turn.error === 'nokey' ? t('ai.ai8.errToken') : `${t('ai.ai8.errNetwork')} (${turn.error})`}</span>
