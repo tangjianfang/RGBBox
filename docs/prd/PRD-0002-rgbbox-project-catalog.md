@@ -1130,6 +1130,16 @@
 - **受影响文件**：新 `ai8/markdown.tsx`；`AiLabAi8Tab.tsx`（接入渲染+复制）；`styles.css`（md-* 排版）；`i18n/index.tsx`（+2 keys）；`tests/renderer/ai8/markdown.test.ts`。
 - **验收点**：①typecheck+全量 `yarn test` 0 失败（+解析器用例：标题/列表/代码块/未闭合围栏/inline 组合）；②真机：含代码块与多级列表的回复正确排版、代码块复制落剪贴板、消息复制反馈；③纯文本回复零回归；④流式过程中渲染不闪坏。
 
+### R115. AI8 最强模型清单（推荐分组）+ 图片粘贴/文件输入（2026-09-17 用户提供实现方案.md + 图片输入评估指令）
+
+> 触发场景：①用户要求模型选择器「完全参考实现方案.md 的对话模型清单」——顶部推荐分组（🏆旗舰/⚡快速/🆓免费/💰白菜价）+ 按厂商最新最强/最快；②评估图片输入支持；③完成后自动提交推送。
+- **R115.1 图片输入评估结论（实证）**：`/chat/tmpl` 公开数据 137/287 模型 `capabilities.imageInput:true`（openai 62/x 18/gemini 16/claude 15/moonshot 8/zhipu 7）；对话协议 `files:[{name,url}]`（README+前端 vision UI 组件双源确认）；常见上传路由 404，前端上传调用经 axios 封装藏于懒加载 chunk，静态未定位；**data URL 直传待一次带 token 真实请求定型**。→ UI 先行：粘贴（paste 事件 clipboardData 图片）+ 📎 文件按钮 → dataURL 附件预览 → 随对话发送 `files:[{name,url:dataURL}]`；服务端拒绝时错误透出，不阻塞文本对话。
+- **R115.2 推荐分组**：`localStore.ts` 增 `CURATED_MODELS`（🏆旗舰 gpt-6-astra-vip/gpt-5.5-vip/claude-opus-5-vip/gemini-3.1-pro/grok-4.5/kimi-k3/glm-5.2/deepseek-v4-pro；⚡快速 gpt-5.4-mini/claude-sonnet-4-6-vip/gemini-3.7-flash/grok-4.3-fast/deepseek-v4-flash/kimi-k2-250905；🆓免费 qwen3-max-preview/qwen3-vl-flash/gemma-4-31b-it/ernie-4.0-8k；💰白菜价 ouyi-chat/gpt-5-nano/deepseek-v3.2）——按 value 子串匹配 tmpl 实数据，**匹配不到自动隐藏**（实现方案.md §五.5 兜底策略）；推荐组置于厂商 optgroup 之上。
+- **受影响文件**：`ai8/localStore.ts`（CURATED+匹配）、`AiLabAi8Tab.tsx`（附件 state+paste+📎+files 发送）、`i18n/index.tsx`、`styles.css`（附件条）、`tests/renderer/ai8/localStore.test.ts`。
+- **验收点**：①typecheck+全量 `yarn test` 0 失败（+推荐匹配用例）；②真机：模型下拉含 4 推荐分组（隐藏不匹配项）、粘贴图片出现附件条可移除、带附件发送走 files 路径（服务端响应透出）；③纯文本对话零回归。
+- **追加（用户同轮补充）**：AI 实验室全控件统一样式——对话/OCR 页 textarea、config 页 input/select 原生无样式 → `.ai-lab/.ai-ocr` 范围暗色主题（圆角 10px、主题底色、focus 青色描边）。
+- **实施证据（2026-09-17）**：①typecheck 0 error；②全量 `yarn test` **90 files / 812 passed / 0 失败**（+matchCurated 匹配/隐藏用例）；③真机 CDP：模型下拉**4 推荐分组置顶**（🏆旗舰/⚡快速/🆓免费/💰白菜价，均按 live tmpl 匹配）+ 厂商 optgroup 随后；**粘贴 1×1 PNG → 附件条出现（shot.png）**可移除；📎 隐藏文件输入在位；对话/OCR textarea computed style 统一（radius 10px / 主题底色）；截图 `r115-{ai8-curated,lab-inputs-themed}.png` 入库。**图片直传验证状态（如实说明）**：data URL 随 `files` 发送的路径已接通，但当前 token 过期无法做带附件的真实请求——用户重新登录后发一张图即可完成定型（服务端拒绝则错误原样透出，不阻塞文本对话）。**状态：✅（附件 data URL 直传的最终验证挂起用户重新登录）**
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

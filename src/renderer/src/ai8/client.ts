@@ -50,6 +50,7 @@ export interface Ai8ChatOptions {
   systemPrompt?: string
   reasoningEffort?: '' | 'low' | 'medium' | 'high'
   signal?: AbortSignal
+  files?: { name: string; url: string }[]
 }
 
 const TOKEN_KEY = 'rgbbox:ai8Token'
@@ -209,7 +210,7 @@ export class Ai8Client {
     const body = {
       text,
       sessionId,
-      files: [],
+      files: opts.files ?? [],
       thinking: !!opts.thinking,
       webSearch: !!opts.webSearch,
       nativeTools: [],

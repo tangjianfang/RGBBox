@@ -143,3 +143,32 @@ export function titleFromContent(content: string): string {
   const trimmed = content.replace(/\s+/g, ' ').trim()
   return trimmed.length <= 24 ? trimmed : trimmed.slice(0, 24) + '…'
 }
+
+// ── R115.2: curated recommendation groups (实现方案.md §一) — matched against
+// live tmpl data by value substring; entries that no longer exist are hidden.
+
+export interface CuratedGroup {
+  id: string
+  models: string[]  // value 子串（如 'gpt-6-astra-vip'）
+}
+
+export const CURATED_GROUPS: CuratedGroup[] = [
+  { id: 'flagship', models: ['gpt-6-astra-vip', 'gpt-5.5-vip', 'claude-opus-5-vip', 'gemini-3.1-pro', 'grok-4.5', 'kimi-k3', 'glm-5.2', 'deepseek-v4-pro'] },
+  { id: 'fast', models: ['gpt-5.4-mini', 'claude-sonnet-4-6-vip', 'gemini-3.7-flash', 'grok-4.3-fast', 'deepseek-v4-flash', 'kimi-k2-250905'] },
+  { id: 'free', models: ['qwen3-max-preview', 'qwen3-vl-flash', 'gemma-4-31b-it', 'ERNIE-4.0-8K'] },
+  { id: 'budget', models: ['ouyi_chat::ouyi-chat', 'gpt-5-nano', 'deepseek-v3.2'] },
+]
+
+/** Match curated substrings against live models; unmatched entries dropped. */
+export function matchCurated(models: { label: string; value: string }[]): Record<string, { label: string; value: string }[]> {
+  const out: Record<string, { label: string; value: string }[]> = {}
+  for (const group of CURATED_GROUPS) {
+    const hits: { label: string; value: string }[] = []
+    for (const fragment of group.models) {
+      const found = models.find((m) => m.value.toLowerCase().includes(fragment.toLowerCase()))
+      if (found) hits.push(found)
+    }
+    if (hits.length > 0) out[group.id] = hits
+  }
+  return out
+}

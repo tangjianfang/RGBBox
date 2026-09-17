@@ -3,11 +3,22 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { MarkdownView } from '../ai8/markdown'
 import { Ai8Client, Ai8Error, readStoredToken, writeStoredToken, type Ai8Model } from '../ai8/client'
-import { groupModelsByProvider, readActiveId, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
+import { groupModelsByProvider, matchCurated, readActiveId, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
 
 /** R113: AI8 workbench — two-pane layout (session sidebar + chat), multiple
  *  concurrent sessions, ChatGPT-style local history, auto-saved prefs, draw
  *  mode entry. All renderer-direct fetch (site CORS is `*`). */
+
+/** R115.1: read an image File into {name, dataUrl} for the attachment chip. */
+async function readImageFile(file: File): Promise<{ name: string; dataUrl: string }> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+  return { name: file.name || 'clipboard.png', dataUrl }
+}
 
 export function AiLabAi8Tab(): JSX.Element {
   const { t } = useI18n()
@@ -22,6 +33,7 @@ export function AiLabAi8Tab(): JSX.Element {
   const [sessions, setSessions] = useState<Ai8Session[]>(() => readSessions())
   const [activeId, setActiveId] = useState<string | number | null>(() => readActiveId())
   const [input, setInput] = useState('')
+  const [attachment, setAttachment] = useState<{ name: string; dataUrl: string } | null>(null)
   const [streaming, setStreaming] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -45,6 +57,7 @@ export function AiLabAi8Tab(): JSX.Element {
 
   const activeSession = useMemo(() => sessions.find((s) => String(s.id) === String(activeId)) ?? null, [sessions, activeId])
   const groups = useMemo(() => groupModelsByProvider(models), [models])
+  const curated = useMemo(() => matchCurated(models), [models])
 
   const saveToken = () => {
     const trimmed = tokenDraft.trim()
@@ -151,6 +164,11 @@ export function AiLabAi8Tab(): JSX.Element {
       void openOfficialLogin()
       return
     }
+    // R115.1: image attachment rides along as files:[{name,url}] — data URL
+    // form; server rejection surfaces as a normal error turn (probe pending).
+    const files = attachment ? [{ name: attachment.name, url: attachment.dataUrl }] : []
+    const attach = attachment
+    setAttachment(null)
     // R113.4 draw mode: POST /draw task then poll /draw/status/{id}. The site's
     // parameter shape is not yet reverse-engineered (experimental) — server
     // errors surface verbatim in the log.
@@ -219,13 +237,13 @@ export function AiLabAi8Tab(): JSX.Element {
       }
     }
     setInput('')
-    appendTurn(sessionId, { role: 'user', content })
+    appendTurn(sessionId, { role: 'user', content: attach ? `${content}\n[🖼 ${attach.name}]` : content })
     appendTurn(sessionId, { role: 'assistant', content: '' })
     setStreaming(true)
     const controller = new AbortController()
     abortRef.current = controller
     try {
-      for await (const ev of client().chat(sessionId, content, { thinking: prefs.thinking, webSearch: prefs.webSearch, signal: controller.signal })) {
+      for await (const ev of client().chat(sessionId, content, { thinking: prefs.thinking, webSearch: prefs.webSearch, signal: controller.signal, files })) {
         if (ev.type === 'delta') {
           setSessions((list) => {
             const next = list.map((s) => {
@@ -334,6 +352,15 @@ export function AiLabAi8Tab(): JSX.Element {
             onChange={(e) => patchPrefs({ model: e.target.value })}
           >
             <option value="">{models.length === 0 ? (modelsError !== '' ? t('ai.ai8.modelsError') : t('ai.ai8.modelsLoading')) : t('ai.ai8.pickModel')}</option>
+            {(['flagship', 'fast', 'free', 'budget'] as const).map((groupId) => (
+              curated[groupId] ? (
+                <optgroup key={groupId} label={t(`ai.ai8.curated.${groupId}`)} className="ai8-curated">
+                  {curated[groupId].map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </optgroup>
+              ) : null
+            ))}
             {groups.map((group) => (
               <optgroup key={group.provider} label={group.provider}>
                 {group.models.map((m) => (
@@ -387,12 +414,43 @@ export function AiLabAi8Tab(): JSX.Element {
           ))}
         </div>
 
+        {attachment ? (
+          <div className="ai8-attach" data-field="ai8-attach">
+            <img src={attachment.dataUrl} alt={attachment.name} />
+            <span className="ai8-attach-name">{attachment.name}</span>
+            <button type="button" data-action="ai8-remove-attach" onClick={() => setAttachment(null)} aria-label={t('ai.ai8.removeAttach')}>✕</button>
+          </div>
+        ) : null}
+
         <div className="ai8-input-row">
+          <label className="ai8-attach-btn" title={t('ai.ai8.attach')} aria-label={t('ai.ai8.attach')}>
+            📎
+            <input
+              type="file"
+              accept="image/*"
+              data-field="ai8-file"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void readImageFile(file).then(setAttachment).catch(() => undefined)
+                e.target.value = ''
+              }}
+            />
+          </label>
           <textarea
             data-field="ai8-input"
             value={input}
             placeholder={token === '' ? t('ai.ai8.needLogin') : prefs.draw ? t('ai.ai8.drawPlaceholder') : t('ai.lab.chat.placeholder')}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={(e) => {
+              // R115.1: pasted screenshots (clipboard image) become the attachment
+              const item = [...(e.clipboardData?.items ?? [])].find((i) => i.type.startsWith('image/'))
+              const file = item?.getAsFile()
+              if (file) {
+                e.preventDefault()
+                void readImageFile(file).then(setAttachment).catch(() => undefined)
+              }
+            }}
             onKeyDown={(e) => {
               const native = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
               if (e.key === 'Enter' && !e.shiftKey && !native.isComposing) {

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   DEFAULT_PREFS,
   groupModelsByProvider,
+  matchCurated,
   readPrefs,
   readSessions,
   titleFromContent,
@@ -51,5 +52,18 @@ describe('renderer/ai8 localStore (R113)', () => {
   it('titleFromContent truncates and collapses whitespace', () => {
     expect(titleFromContent('  hello   world  ')).toBe('hello world')
     expect(titleFromContent('x'.repeat(40))).toBe('x'.repeat(24) + '…')
+  })
+
+  it('matchCurated resolves live values and hides missing entries (R115.2)', () => {
+    const models = [
+      { label: 'Gpt 6 Astra VIP', value: 'openai_chat::gpt-6-astra-vip' },
+      { label: 'Gpt 5.4 Mini', value: 'openai_chat::gpt-5.4-mini' },
+      { label: 'Kimi K3', value: 'moonshot_chat::kimi-k3' },
+    ]
+    const curated = matchCurated(models)
+    expect(curated.flagship?.map((m) => m.value)).toEqual(['openai_chat::gpt-6-astra-vip', 'moonshot_chat::kimi-k3'])
+    expect(curated.fast?.map((m) => m.value)).toEqual(['openai_chat::gpt-5.4-mini'])
+    expect(curated.free).toBeUndefined()
+    expect(curated.budget).toBeUndefined()
   })
 })
