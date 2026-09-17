@@ -9,6 +9,8 @@ export interface Ai8Turn {
   images?: string[]
   /** R117.5: absolute local paths of cached artifacts (docs / images). */
   saved?: string[]
+  /** R121: video replies — the playable video URL. */
+  videoUrl?: string
 }
 
 export interface Ai8Session {
@@ -21,24 +23,31 @@ export interface Ai8Session {
   /** R116.3: true once the AI-generated title attempt has run (one-shot guard;
    *  a failed attempt keeps the truncated fallback title). */
   titled?: boolean
-  /** R117.4: chat (default) vs draw — draw sessions render image grids. */
-  kind?: 'chat' | 'draw'
+  /** R117.4/R121: chat (default) vs draw vs video — draw renders image grids,
+   *  video renders an inline player. */
+  kind?: 'chat' | 'draw' | 'video'
 }
+
+/** R121: three workbench modes — chat / draw / video. */
+export type Ai8Mode = 'chat' | 'draw' | 'video'
 
 export interface Ai8Prefs {
   model: string
   thinking: boolean
   webSearch: boolean
-  draw: boolean
+  mode: Ai8Mode
   /** R117.3: the selected DRAW model (draw template namespace). */
   drawModel: string
+  /** R121: selected video provider id + version value. */
+  videoModel: string
+  videoVersion: string
 }
 
 const SESSIONS_KEY = 'rgbbox:ai8Sessions'
 const ACTIVE_KEY = 'rgbbox:ai8Active'
 const PREFS_KEY = 'rgbbox:ai8Prefs'
 
-export const DEFAULT_PREFS: Ai8Prefs = { model: '', thinking: false, webSearch: false, draw: false, drawModel: '' }
+export const DEFAULT_PREFS: Ai8Prefs = { model: '', thinking: false, webSearch: false, mode: 'chat', drawModel: '', videoModel: '', videoVersion: '' }
 
 export function readSessions(): Ai8Session[] {
   try {
@@ -78,7 +87,13 @@ export function writeActiveId(id: string | number | null): void {
 export function readPrefs(): Ai8Prefs {
   try {
     const raw = localStorage.getItem(PREFS_KEY)
-    return raw === null ? { ...DEFAULT_PREFS } : { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<Ai8Prefs>) }
+    if (raw === null) return { ...DEFAULT_PREFS }
+    // R121 migration: the pre-video prefs stored `draw: boolean` — map it onto
+    // the new `mode` field (and drop the legacy key) so nothing resets on the
+    // first run after the upgrade.
+    const { draw, ...parsed } = JSON.parse(raw) as Partial<Ai8Prefs> & { draw?: boolean }
+    const mode: Ai8Mode = parsed.mode ?? (draw === true ? 'draw' : 'chat')
+    return { ...DEFAULT_PREFS, ...parsed, mode }
   } catch {
     return { ...DEFAULT_PREFS }
   }

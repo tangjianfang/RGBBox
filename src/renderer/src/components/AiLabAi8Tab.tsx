@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { MarkdownView, ThinkPanel, copyRichText, markdownToHtml, splitThinkBlocks, stripThink } from '../ai8/markdown'
-import { Ai8Client, Ai8Error, readStoredToken, writeStoredToken, type Ai8Model } from '../../../shared/ai8Client'
+import { AI8_VIDEO_PROVIDERS, Ai8Client, Ai8Error, parseDrawTemplate, parseVideoTemplate, readStoredToken, writeStoredToken, type Ai8DrawModelGroup, type Ai8Model, type Ai8VideoProvider } from '../../../shared/ai8Client'
 import { cleanGeneratedTitle, groupModelsByProvider, matchCurated, pushInputHistory, readActiveId, readInputHistory, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
 
 /** R113: AI8 workbench — two-pane layout (session sidebar + chat), multiple
@@ -78,10 +78,14 @@ function MessageCopyButton({ text, label }: { text: string; label: string }): JS
 }
 
 /** R117.7/P2-8: module-level template caches — remounting the tab (every page
- *  switch) must not refetch; one fetch per app session is enough. */
+ *  switch) must not refetch; one fetch per app session is enough. R120: the
+ *  draw cache holds the parsed group structure; a FAILED fetch is not cached
+ *  (so re-entering the tab retries) and surfaces an error placeholder.
+ *  R121: the video template needs the token and is fetched once per session. */
 let chatTmplCache: Ai8Model[] | null = null
-let drawTmplCache: { label: string; value: string }[] | null = null
+let drawTmplCache: Ai8DrawModelGroup[] | null = null
 let drawTmplDefault = ''
+let videoTmplCache: { providers: Ai8VideoProvider[]; notice: string } | null = null
 
 export function AiLabAi8Tab(): JSX.Element {
   const { t } = useI18n()
@@ -92,7 +96,12 @@ export function AiLabAi8Tab(): JSX.Element {
   const [loginAccount, setLoginAccount] = useState('')
   const [models, setModels] = useState<Ai8Model[]>(chatTmplCache ?? [])
   const [modelsError, setModelsError] = useState('')
-  const [drawModels, setDrawModels] = useState<{ label: string; value: string }[]>(drawTmplCache ?? [])
+  const [drawGroups, setDrawGroups] = useState<Ai8DrawModelGroup[]>(drawTmplCache ?? [])
+  const [drawModelsError, setDrawModelsError] = useState('')
+  // R121: video provider catalog — the full hardcoded mirror is the base; the
+  //  authed template narrows it to the live providers when available.
+  const [videoProviders, setVideoProviders] = useState<Ai8VideoProvider[]>(videoTmplCache?.providers ?? AI8_VIDEO_PROVIDERS)
+  const [videoNotice, setVideoNotice] = useState(videoTmplCache?.notice ?? '')
   const [prefs, setPrefs] = useState<Ai8Prefs>(() => readPrefs())
   const [sessions, setSessions] = useState<Ai8Session[]>(() => readSessions())
   const [activeId, setActiveId] = useState<string | number | null>(() => readActiveId())
@@ -128,22 +137,58 @@ export function AiLabAi8Tab(): JSX.Element {
       .catch(() => setModelsError('network'))
   }, [])
 
-  // R117.3/P2-8: the draw template is public too; cached at module level like
-  // the chat template — one fetch per app session.
+  // R120: the draw template is public; parse the live cms-grouped shape (the
+  // flat `models[]` era is gone — that misread is what kept the picker at
+  // 「模型加载中…」forever). Cached at module level on SUCCESS only.
   useEffect(() => {
     if (drawTmplCache !== null) return
-    new Ai8Client({ token: '' }).getDrawTemplate<{ models?: { label?: string; value?: string; attr?: { modelType?: string } }[]; meta?: { defInput?: { model?: string } } }>()
+    new Ai8Client({ token: '' }).getDrawTemplate<unknown>()
       .then((tmpl) => {
-        drawTmplCache = (tmpl.models ?? [])
-          .filter((m): m is { label: string; value: string } => typeof m.value === 'string' && m.label !== undefined)
-        drawTmplDefault = tmpl.meta?.defInput?.model ?? ''
-        setDrawModels(drawTmplCache)
+        const parsed = parseDrawTemplate(tmpl)
+        if (parsed.groups.length === 0) {
+          setDrawModelsError('network')
+          return
+        }
+        drawTmplCache = parsed.groups
+        drawTmplDefault = parsed.defaultModel
+        setDrawGroups(parsed.groups)
         if (drawTmplDefault !== '' && prefs.drawModel === '') patchPrefs({ drawModel: drawTmplDefault })
       })
-      .catch(() => undefined)
+      .catch(() => setDrawModelsError('network'))
   }, [prefs.drawModel])
 
+  // R121: video template (auth) — one fetch per app session; failures fall
+  //  back to the hardcoded catalog silently (video still works, just shows
+  //  every provider). The notice (beta 3/day) is surfaced under the picker.
+  useEffect(() => {
+    if (videoTmplCache !== null || token === '') return
+    client().getVideoTemplate<unknown>()
+      .then((tmpl) => {
+        videoTmplCache = parseVideoTemplate(tmpl)
+        setVideoProviders(videoTmplCache.providers)
+        setVideoNotice(videoTmplCache.notice)
+      })
+      .catch(() => undefined)
+  }, [token])
+
+  // R121: keep the video picker coherent — first provider when unset/removed
+  //  by the template, and a version that belongs to the selected provider.
+  useEffect(() => {
+    if (prefs.mode !== 'video') return
+    const provider = videoProviders.find((p) => p.id === prefs.videoModel)
+    if (provider === undefined) {
+      const first = videoProviders[0]
+      if (first !== undefined) patchPrefs({ videoModel: first.id, videoVersion: first.versions[0]?.value ?? '' })
+    } else if (!provider.versions.some((v) => v.value === prefs.videoVersion)) {
+      patchPrefs({ videoVersion: provider.versions[0]?.value ?? '' })
+    }
+  }, [prefs.mode, prefs.videoModel, prefs.videoVersion, videoProviders])
+
   const client = () => new Ai8Client({ token, onTokenExpired: () => setShowTokenRow(true) })
+
+  /** R120: flat view over the grouped draw list — send guards and labelOf
+   *  don't care about providers, the picker renders the groups. */
+  const drawModels = useMemo(() => drawGroups.flatMap((g) => g.models), [drawGroups])
 
   const activeSession = useMemo(() => sessions.find((s) => String(s.id) === String(activeId)) ?? null, [sessions, activeId])
   const groups = useMemo(() => groupModelsByProvider(models), [models])
@@ -305,9 +350,11 @@ export function AiLabAi8Tab(): JSX.Element {
     }
     // R116.1: a session without a model is rejected by the server
     // (「模型 是必填项」) — the send button is already disabled for this case;
-    // this guard covers the Enter path. Draw tasks use the draw model space.
-    if (!prefs.draw && prefs.model === '') return
-    if (prefs.draw && prefs.drawModel === '' && drawModels.length > 0) return
+    // this guard covers the Enter path. Draw/video tasks use their own model
+    // namespaces (R117.3 / R121).
+    if (prefs.mode === 'chat' && prefs.model === '') return
+    if (prefs.mode === 'draw' && prefs.drawModel === '' && drawModels.length > 0) return
+    if (prefs.mode === 'video' && (videoProviders.length === 0 || prefs.videoModel === '' || prefs.videoVersion === '')) return
     // R115.1: image attachment rides along as files:[{name,url}] — data URL
     // form; server rejection surfaces as a normal error turn (probe pending).
     const files = attachment ? [{ name: attachment.name, url: attachment.dataUrl }] : []
@@ -315,11 +362,63 @@ export function AiLabAi8Tab(): JSX.Element {
     setAttachment(null)
     pushInputHistory(content)
     histIdx.current = -1
+    // R121 video mode: the site's protocol — POST /video {model, action:'all',
+    // isPublic:false, prompt, params:{version}} → poll GET /video/{id} until
+    // `end`; the playable file is `videoUrl`. Video is far slower than draw —
+    // poll every 5s for up to 10 minutes. No local caching (large files).
+    if (prefs.mode === 'video') {
+      const provider = videoProviders.find((p) => p.id === prefs.videoModel) ?? videoProviders[0]
+      const version = prefs.videoVersion || provider?.versions[0]?.value || ''
+      setInput('')
+      const draftId = `video-${Date.now()}`
+      setSessions((list) => {
+        const next = [{ id: draftId, kind: 'video' as const, model: provider?.id ?? '', title: titleFromContent(content), turns: [{ role: 'user', content }, { role: 'assistant', content: t('ai.ai8.videoPending') }], createdAt: Date.now(), updatedAt: Date.now() } as Ai8Session, ...list]
+        writeSessions(next)
+        return next
+      })
+      setActiveId(draftId)
+      writeActiveId(draftId)
+      markStreaming(draftId, true)
+      const videoAbort = new AbortController()
+      abortMap.current.set(String(draftId), videoAbort)
+      try {
+        const created = await client().videoSubmit({ model: provider?.id ?? '', version, prompt: content })
+        const taskId = (created as { id?: string | number } | null)?.id
+        if (taskId === undefined || taskId === null) {
+          patchLastAssistant(draftId, { error: 'video task id missing' })
+          return
+        }
+        for (let poll = 0; poll < 120; poll++) {
+          await new Promise((resolve) => setTimeout(resolve, 5000))
+          if (videoAbort.signal.aborted) {
+            patchLastAssistant(draftId, { error: 'stopped' })
+            return
+          }
+          const status = await client().videoStatus<{ end?: boolean; videoUrl?: string; url?: string }>(taskId)
+          const videoUrl = typeof status?.videoUrl === 'string' && status.videoUrl !== '' ? status.videoUrl : typeof status?.url === 'string' ? status.url : ''
+          if (videoUrl !== '' || status?.end === true) {
+            if (videoUrl === '') {
+              patchLastAssistant(draftId, { error: 'video empty' })
+              return
+            }
+            patchLastAssistant(draftId, { content: videoUrl, videoUrl })
+            return
+          }
+        }
+        patchLastAssistant(draftId, { error: 'video timeout' })
+      } catch (error) {
+        patchLastAssistant(draftId, { error: error instanceof Ai8Error ? error.message : 'network' })
+      } finally {
+        abortMap.current.delete(String(draftId))
+        markStreaming(draftId, false)
+      }
+      return
+    }
     // R117.3 draw mode: the site's own protocol — POST /draw
     // {model, action:'IMAGINE', prompt, public, fast} → poll /draw/status/{id}
     // until `end` or a non-empty list[].url; images render as a preview grid
     // and auto-cache to disk via ai8SaveArtifact.
-    if (prefs.draw) {
+    if (prefs.mode === 'draw') {
       const drawModel = prefs.drawModel || drawModels[0]?.value || ''
       setInput('')
       const draftId = `draw-${Date.now()}`
@@ -487,9 +586,9 @@ export function AiLabAi8Tab(): JSX.Element {
   // R116.2: assistant messages carry a small model badge instead of the raw
   // 'assistant' role label
   const activeModelLabel = models.find((m) => m.value === activeSession?.model)?.label ?? 'AI'
-  // R117.2: sidebar entries lead with the model short name; draw sessions use
-  // the draw model namespace (R117.3)
-  const labelOf = (model: string) => models.find((m) => m.value === model)?.label ?? drawModels.find((m) => m.value === model)?.label ?? ''
+  // R117.2: sidebar entries lead with the model short name; draw/video
+  // sessions use their own model namespaces (R117.3 / R121)
+  const labelOf = (model: string) => models.find((m) => m.value === model)?.label ?? drawModels.find((m) => m.value === model)?.label ?? videoProviders.find((p) => p.id === model)?.label ?? ''
   // R117.1: the composer reflects the ACTIVE session only
   const activeStreaming = activeId !== null && streamingIds.includes(String(activeId))
 
@@ -517,7 +616,7 @@ export function AiLabAi8Tab(): JSX.Element {
           {[...sessions].sort((a, b) => b.updatedAt - a.updatedAt).map((s) => (
             <div key={s.id} className={`ai8-session${String(s.id) === String(activeId) ? ' active' : ''}`} onClick={() => { setActiveId(s.id); writeActiveId(s.id) }}>
               <strong>
-                <span className="ai8-session-kind">{s.kind === 'draw' ? '🎨' : '💬'}</span>
+                <span className="ai8-session-kind">{s.kind === 'draw' ? '🎨' : s.kind === 'video' ? '🎬' : '💬'}</span>
                 {labelOf(s.model) !== '' ? <span className="ai8-session-model">{labelOf(s.model)}</span> : null}
                 <span className="ai8-session-title">{s.title || t('ai.ai8.untitled')}</span>
               </strong>
@@ -567,7 +666,7 @@ export function AiLabAi8Tab(): JSX.Element {
 
       <section className="ai8-main">
         <div className="ai8-controls">
-          {prefs.draw ? (
+          {prefs.mode === 'draw' ? (
             // R117.3: draw mode swaps the picker to the draw-model namespace
             <select
               className="ai8-select"
@@ -575,11 +674,46 @@ export function AiLabAi8Tab(): JSX.Element {
               value={prefs.drawModel}
               onChange={(e) => patchPrefs({ drawModel: e.target.value })}
             >
-              <option value="">{drawModels.length === 0 ? t('ai.ai8.modelsLoading') : t('ai.ai8.pickModel')}</option>
-              {drawModels.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
+              <option value="">{drawModels.length === 0 ? (drawModelsError !== '' ? t('ai.ai8.modelsError') : t('ai.ai8.modelsLoading')) : t('ai.ai8.pickModel')}</option>
+              {drawGroups.map((group, gi) =>
+                group.provider !== '' ? (
+                  <optgroup key={`${group.provider}-${gi}`} label={group.provider}>
+                    {group.models.map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </optgroup>
+                ) : (
+                  group.models.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))
+                ),
+              )}
             </select>
+          ) : prefs.mode === 'video' ? (
+            // R121: video mode — provider + version pickers (catalog narrowed
+            // by the authed template when available)
+            <>
+              <select
+                className="ai8-select"
+                data-field="ai8-video-model"
+                value={prefs.videoModel}
+                onChange={(e) => patchPrefs({ videoModel: e.target.value })}
+              >
+                {videoProviders.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
+              <select
+                className="ai8-select"
+                data-field="ai8-video-version"
+                value={prefs.videoVersion}
+                onChange={(e) => patchPrefs({ videoVersion: e.target.value })}
+              >
+                {(videoProviders.find((p) => p.id === prefs.videoModel)?.versions ?? []).map((v) => (
+                  <option key={v.value} value={v.value}>{v.label}</option>
+                ))}
+              </select>
+            </>
           ) : (
             <select
               className="ai8-select"
@@ -606,25 +740,40 @@ export function AiLabAi8Tab(): JSX.Element {
               ))}
             </select>
           )}
-          <label className="ai8-check">
-            <input type="checkbox" checked={prefs.draw} onChange={(e) => patchPrefs({ draw: e.target.checked })} />
-            {t('ai.ai8.drawMode')}
-          </label>
-          <label className="ai8-check">
-            <input type="checkbox" checked={prefs.thinking} onChange={(e) => patchPrefs({ thinking: e.target.checked })} />
-            {t('ai.ai8.thinking')}
-          </label>
-          <label className="ai8-check">
-            <input type="checkbox" checked={prefs.webSearch} onChange={(e) => patchPrefs({ webSearch: e.target.checked })} />
-            {t('ai.ai8.webSearch')}
-          </label>
+          {/* R121: three workbench modes replace the draw checkbox */}
+          <div className="ai8-mode-seg" data-field="ai8-mode">
+            {(['chat', 'draw', 'video'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`ai8-mode-btn${prefs.mode === m ? ' active' : ''}`}
+                data-action={`ai8-mode-${m}`}
+                onClick={() => patchPrefs({ mode: m })}
+              >
+                {t(`ai.ai8.mode.${m}`)}
+              </button>
+            ))}
+          </div>
+          {prefs.mode === 'chat' ? (
+            <>
+              <label className="ai8-check">
+                <input type="checkbox" checked={prefs.thinking} onChange={(e) => patchPrefs({ thinking: e.target.checked })} />
+                {t('ai.ai8.thinking')}
+              </label>
+              <label className="ai8-check">
+                <input type="checkbox" checked={prefs.webSearch} onChange={(e) => patchPrefs({ webSearch: e.target.checked })} />
+                {t('ai.ai8.webSearch')}
+              </label>
+            </>
+          ) : null}
         </div>
+        {prefs.mode === 'video' && videoNotice !== '' ? <p className="ai8-video-notice" data-field="ai8-video-notice">{videoNotice}</p> : null}
 
         <div className="ai8-log" data-field="ai8-log" ref={logRef}>
           {turns.length === 0 && (
             <div className="ai8-placeholder">
               <p>{activeSession ? t('ai.ai8.hintReady') : t('ai.ai8.hintNew')}</p>
-              <small>{prefs.draw ? t('ai.ai8.drawHint') : t('ai.ai8.contextHint')}</small>
+              <small>{prefs.mode === 'draw' ? t('ai.ai8.drawHint') : prefs.mode === 'video' ? t('ai.ai8.videoHint') : t('ai.ai8.contextHint')}</small>
             </div>
           )}
           {turns.map((turn, i) => (
@@ -634,7 +783,23 @@ export function AiLabAi8Tab(): JSX.Element {
               ) : null}
               {turn.error !== undefined
                 ? <span className="ai-msg-error">{turn.error === 'expired' || turn.error === 'nokey' ? t('ai.ai8.errToken') : `${t('ai.ai8.errNetwork')} (${turn.error})`}</span>
-                : turn.role === 'assistant' && (turn.images !== undefined || (activeSession?.kind === 'draw' && /^https?:\/\/\S+$/.test(turn.content.trim())))
+                : turn.role === 'assistant' && turn.videoUrl !== undefined
+                  ? (
+                    // R121: video replies render an inline player + a raw-file
+                    // link (no local caching — video files are large)
+                    <div className="ai8-video-result" data-field="ai8-video-result">
+                      <video className="ai8-video-player" src={turn.videoUrl} controls preload="metadata" />
+                      <button
+                        type="button"
+                        className="ai8-btn ai8-draw-open"
+                        data-action="ai8-open-video"
+                        onClick={() => { if (/^https?:\/\//.test(turn.videoUrl ?? '')) window.open(turn.videoUrl, '_blank') }}
+                      >
+                        🎬 {t('ai.ai8.videoOpen')}
+                      </button>
+                    </div>
+                  )
+                  : turn.role === 'assistant' && (turn.images !== undefined || (activeSession?.kind === 'draw' && /^https?:\/\/\S+$/.test(turn.content.trim())))
                   ? (
                     // R117.3: draw replies render as an image grid + cached-file
                     // shortcuts (legacy turns kept plain-URL content)
@@ -686,7 +851,7 @@ export function AiLabAi8Tab(): JSX.Element {
             📎
             <input
               type="file"
-              accept={prefs.draw ? '.txt,.md,.markdown,.json,.log,.csv,.xml,.yaml,.yml,.html,.js,.ts,.py' : 'image/*,.txt,.md,.markdown,.json,.log,.csv,.xml,.yaml,.yml,.html,.js,.ts,.py'}
+              accept={prefs.mode !== 'chat' ? '.txt,.md,.markdown,.json,.log,.csv,.xml,.yaml,.yml,.html,.js,.ts,.py' : 'image/*,.txt,.md,.markdown,.json,.log,.csv,.xml,.yaml,.yml,.html,.js,.ts,.py'}
               data-field="ai8-file"
               style={{ display: 'none' }}
               onChange={(e) => {
@@ -695,7 +860,7 @@ export function AiLabAi8Tab(): JSX.Element {
                 // Draw mode has no files field in its protocol — text only.
                 const file = e.target.files?.[0]
                 if (file) {
-                  if (file.type.startsWith('image/') && !prefs.draw) {
+                  if (file.type.startsWith('image/') && prefs.mode === 'chat') {
                     void readImageFile(file).then(setAttachment).catch(() => undefined)
                   } else if (file.size > 512 * 1024) {
                     setImportHint(t('ai.ai8.fileTooLarge'))
@@ -713,7 +878,7 @@ export function AiLabAi8Tab(): JSX.Element {
           <textarea
             data-field="ai8-input"
             value={input}
-            placeholder={token === '' ? t('ai.ai8.needLogin') : prefs.draw ? t('ai.ai8.drawPlaceholder') : t('ai.lab.chat.placeholder')}
+            placeholder={token === '' ? t('ai.ai8.needLogin') : prefs.mode === 'draw' ? t('ai.ai8.drawPlaceholder') : prefs.mode === 'video' ? t('ai.ai8.videoPlaceholder') : t('ai.lab.chat.placeholder')}
             onChange={(e) => {
               // R117.8 review fix: editing exits history-recall mode — ↓ must
               // not restore the pre-recall draft over the user's edit
@@ -756,7 +921,7 @@ export function AiLabAi8Tab(): JSX.Element {
           />
           {activeStreaming && activeId !== null
             ? <button type="button" className="ai8-btn" data-action="ai8-stop" onClick={() => stopStreaming(activeId)}>{t('ai.ai8.stop')}</button>
-            : <button type="button" className="ai8-btn ai8-btn-primary" data-action="ai8-send" onClick={() => void send()} disabled={input.trim() === '' || (!prefs.draw && prefs.model === '') || (prefs.draw && drawModels.length > 0 && prefs.drawModel === '')} title={!prefs.draw && prefs.model === '' ? t('ai.ai8.needModel') : prefs.draw && drawModels.length > 0 && prefs.drawModel === '' ? t('ai.ai8.needModel') : undefined}>{t('ai.lab.chat.send')}</button>}
+            : <button type="button" className="ai8-btn ai8-btn-primary" data-action="ai8-send" onClick={() => void send()} disabled={input.trim() === '' || (prefs.mode === 'chat' && prefs.model === '') || (prefs.mode === 'draw' && drawModels.length > 0 && prefs.drawModel === '') || (prefs.mode === 'video' && (videoProviders.length === 0 || prefs.videoModel === '' || prefs.videoVersion === ''))} title={(prefs.mode === 'chat' && prefs.model === '') || (prefs.mode === 'draw' && drawModels.length > 0 && prefs.drawModel === '') || (prefs.mode === 'video' && (videoProviders.length === 0 || prefs.videoModel === '' || prefs.videoVersion === '')) ? t('ai.ai8.needModel') : undefined}>{t('ai.lab.chat.send')}</button>}
         </div>
       </section>
     </div>

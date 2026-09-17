@@ -37,6 +37,171 @@ export interface Ai8ChatTemplate {
   webSearchOpen?: boolean
 }
 
+// ── R120: draw template parsing — the live /draw/template moved its model
+// list from a flat top-level `models[]` into `cms[].models[]` (grouped per
+// provider), and `meta` is now null. Pure function so tests can pin both the
+// live shape and the legacy flat one (kept for the e2e mock).
+
+export interface Ai8DrawModel {
+  label: string
+  value: string
+}
+
+export interface Ai8DrawModelGroup {
+  provider: string
+  models: Ai8DrawModel[]
+}
+
+export interface Ai8DrawTemplateParsed {
+  groups: Ai8DrawModelGroup[]
+  /** First concrete model of the first group — mirrors the site's
+   * firstModel (its `_csp_` platform entry resolves to the platform's first
+   * concrete model on selection). */
+  defaultModel: string
+}
+
+export function parseDrawTemplate(raw: unknown): Ai8DrawTemplateParsed {
+  const tmpl = (raw ?? {}) as {
+    models?: { label?: string; value?: string }[]
+    meta?: { defInput?: { model?: string } } | null
+    cms?: { name?: string; platform?: string; models?: { label?: string; value?: string }[] }[]
+  }
+  const pick = (m: { label?: string; value?: string }): Ai8DrawModel | null =>
+    typeof m.value === 'string' && m.value !== '' ? { label: typeof m.label === 'string' && m.label !== '' ? m.label : m.value, value: m.value } : null
+  // live shape: cms[].models[] grouped per provider (即梦/千问…)
+  const groups: Ai8DrawModelGroup[] = []
+  for (const provider of tmpl.cms ?? []) {
+    const models = (provider.models ?? []).map(pick).filter((m): m is Ai8DrawModel => m !== null)
+    if (models.length === 0) continue
+    const name = typeof provider.name === 'string' && provider.name !== '' ? provider.name : provider.platform ?? ''
+    groups.push({ provider: name, models })
+  }
+  if (groups.length > 0) return { groups, defaultModel: groups[0].models[0].value }
+  // legacy flat shape (R117.3 era + e2e mock): models[] + meta.defInput.model
+  const flat = (tmpl.models ?? []).map(pick).filter((m): m is Ai8DrawModel => m !== null)
+  return { groups: flat.length > 0 ? [{ provider: '', models: flat }] : [], defaultModel: tmpl.meta?.defInput?.model ?? (flat[0]?.value ?? '') }
+}
+
+// ── R121: video generation protocol. The site's video board is in beta (its
+// own notice caps generation at 3/day). /video/template needs the token and
+// only tells WHICH providers are live (`state[].id`); the per-provider version
+// lists are hardcoded in the site's frontend chunks — mirrored here from the
+// production bundles (video-*.js + the 9 provider chunks, 2026-09-17).
+
+export interface Ai8VideoVersion {
+  label: string
+  value: string
+}
+
+export interface Ai8VideoProvider {
+  id: string
+  label: string
+  versions: Ai8VideoVersion[]
+}
+
+export const AI8_VIDEO_PROVIDERS: Ai8VideoProvider[] = [
+  {
+    id: 'seedance',
+    label: '即梦 Seedance',
+    versions: [
+      { label: '2.0', value: '2.0' },
+      { label: '2.0 关键帧', value: '2.0-kf' },
+      { label: '2.0 Fast', value: '2.0-fast' },
+      { label: '2.0 Fast 关键帧', value: '2.0-fast-kf' },
+      { label: '2.0 Mini', value: '2.0-mini' },
+      { label: '1.5 Pro', value: '1.5-pro' },
+      { label: '1.5 Pro 关键帧', value: '1.5-pro-kf' },
+      { label: '1.0 Pro', value: 'pro' },
+      { label: '1.0 Pro Fast', value: 'pro-fast' },
+      { label: 'Lite 文生视频', value: 'lite-t2v' },
+      { label: 'Lite 图生视频', value: 'lite-i2v' },
+    ],
+  },
+  { id: 'sora', label: 'Sora', versions: [{ label: 'v2 Pro', value: 'v2-pro' }, { label: 'v2', value: 'v2' }] },
+  {
+    id: 'kling',
+    label: '可灵 Kling',
+    versions: [
+      { label: 'V3 Turbo', value: 'v3-turbo' },
+      { label: 'V3', value: 'v3' },
+      { label: 'V3 Omni', value: 'v3-omni' },
+      { label: 'O1', value: 'video-o1' },
+      { label: '2.6', value: 'v2-6' },
+      { label: '2.5 Turbo', value: 'v2-5-turbo' },
+    ],
+  },
+  { id: 'cogvideox', label: 'CogVideoX', versions: [{ label: 'V3', value: '3' }, { label: 'V2', value: '2' }, { label: 'V1', value: '1' }] },
+  {
+    id: 'veo',
+    label: 'Veo',
+    versions: [
+      { label: 'Veo 3.1', value: 'veo3.1' },
+      { label: 'Veo 3.1 Fast', value: 'veo3.1-fast' },
+      { label: 'Veo 3.1 Lite', value: 'veo3.1-lite' },
+    ],
+  },
+  {
+    id: 'vidu',
+    label: 'Vidu',
+    versions: [
+      { label: 'Q3', value: 'q3' },
+      { label: 'Q3 Pro', value: 'q3pro' },
+      { label: 'Q3 Turbo', value: 'q3turbo' },
+      { label: 'Q3 Pro Fast（图生）', value: 'q3profast' },
+      { label: 'Q2', value: 'q2' },
+      { label: 'Q1', value: 'q1' },
+      { label: 'Q3 Pro 关键帧', value: 'q3pro-kf' },
+      { label: 'Q3 Turbo 关键帧', value: 'q3turbo-kf' },
+    ],
+  },
+  {
+    id: 'minimax',
+    label: 'MiniMax 海螺',
+    versions: [
+      { label: 'MiniMax H3', value: 'h3' },
+      { label: 'Hailuo 2.3', value: 'hailuo2.3' },
+      { label: 'Hailuo 2.3 Fast（仅图生）', value: 'hailuo2.3-fast' },
+      { label: 'Hailuo 02', value: 'hailuo02' },
+    ],
+  },
+  { id: 'wan', label: '万相 Wan', versions: [{ label: 'Wan 2.7', value: 'wan2.7' }, { label: 'Wan 2.6', value: 'wan2.6' }, { label: 'Wan 2.6 Fast', value: 'wan2.6-fast' }] },
+  { id: 'xai', label: 'Grok Imagine', versions: [{ label: 'Grok Imagine', value: 'grok-imagine-video' }] },
+]
+
+export interface Ai8VideoTemplateParsed {
+  providers: Ai8VideoProvider[]
+  /** Beta notice from the template (HTML stripped); '' when absent. */
+  notice: string
+}
+
+/** Filter the hardcoded catalog by the live template: `state[].id` keeps only
+ *  enabled providers (anonymous/failed → full catalog as a usable fallback);
+ *  a state entry carrying a `versions` map further filters its version list.
+ *  `notice` (html) → plain text. */
+export function parseVideoTemplate(raw: unknown): Ai8VideoTemplateParsed {
+  const tmpl = (raw ?? {}) as { state?: unknown; notice?: unknown }
+  let enabled: { id?: unknown; versions?: Record<string, unknown> }[] = []
+  if (Array.isArray(tmpl.state)) enabled = tmpl.state.filter((e): e is { id?: unknown; versions?: Record<string, unknown> } => typeof e === 'object' && e !== null)
+  const ids = new Set(enabled.map((e) => e.id).filter((id): id is string => typeof id === 'string' && id !== ''))
+  const byId = new Map(enabled.map((e) => [e.id, e]))
+  const providers = (ids.size > 0 ? AI8_VIDEO_PROVIDERS.filter((p) => ids.has(p.id)) : AI8_VIDEO_PROVIDERS.slice()).map((p) => {
+    const versions = byId.get(p.id)?.versions
+    if (versions === undefined || versions === null || typeof versions !== 'object' || Array.isArray(versions)) return p
+    const keep = new Set(Object.keys(versions))
+    const filtered = p.versions.filter((v) => keep.has(v.value))
+    return filtered.length > 0 ? { ...p, versions: filtered } : p
+  })
+  const notice = typeof tmpl.notice === 'string' ? tmpl.notice.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : ''
+  return { providers, notice }
+}
+
+/** R121: the exact POST /video body the site's frontend sends —
+ *  {model: <provider id>, action: 'all', isPublic, prompt, params:{version}}
+ *  (bundle: `e.prompt=…; delete i.prompt; e.params=i`). */
+export function buildVideoBody({ model, version, prompt }: { model: string; version: string; prompt: string }): Record<string, unknown> {
+  return { model, action: 'all', isPublic: false, prompt, params: { version } }
+}
+
 export type Ai8SseEvent =
   | { type: 'meta'; taskId: string }
   | { type: 'delta'; text: string }
@@ -208,6 +373,23 @@ export class Ai8Client {
    *  non-empty `data.list[].url`. */
   drawStatus<T>(taskId: string | number): Promise<T> {
     return this.get<T>(`/draw/status/${taskId}`)
+  }
+
+  /** R121: video board — /video/template needs the token (anonymous returns
+   *  empty state/subs); the notice board + live provider ids come from here. */
+  getVideoTemplate<T>(): Promise<T> {
+    return this.get<T>('/video/template')
+  }
+
+  /** R121: submit a video task (site body: buildVideoBody). */
+  videoSubmit<T>(body: { model: string; version: string; prompt: string }): Promise<T> {
+    return this.post<T>('/video', buildVideoBody(body))
+  }
+
+  /** R121: poll a video task — converges on `data.end`; the playable file is
+   *  `data.videoUrl` (records also carry `url`). */
+  videoStatus<T>(taskId: string | number): Promise<T> {
+    return this.get<T>(`/video/${taskId}`)
   }
 
   async getModels(modelType = 'chat'): Promise<Ai8Model[]> {

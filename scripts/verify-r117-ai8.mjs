@@ -5,7 +5,17 @@
  * import, code-block save-to-file. ALL ai8.rcouyi.com traffic is mocked via
  * page.route — zero credits, zero token needed.
  */
-import { chromium } from 'file:///C:/Users/admin/AppData/Local/Temp/pw-cdp/node_modules/playwright-core/index.mjs'
+// R120: portable playwright-core resolution (the original hardcoded an admin
+// profile temp path; machines differ — first hit wins)
+let chromium
+for (const candidate of [
+  `file:///${process.env.LOCALAPPDATA ?? 'C:/Users/tjf/AppData/Local'}/Temp/pw-cdp/node_modules/playwright-core/index.mjs`,
+  'file:///C:/Users/tjf/node_modules/playwright-core/index.mjs',
+  'file:///C:/Users/admin/AppData/Local/Temp/pw-cdp/node_modules/playwright-core/index.mjs',
+]) {
+  try { ({ chromium } = await import(candidate)); break } catch {}
+}
+if (!chromium) { console.error('FAIL playwright-core not found'); process.exit(1) }
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 
@@ -70,7 +80,14 @@ await page.route('**/ai8.rcouyi.com/**', async (route) => {
     ]))
   }
   if (path === '/api/draw/template') {
-    return route.fulfill(ok({ models: [{ label: 'MJ 绘画', value: 'mj' }, { label: 'OpenAI Draw', value: 'openai-draw' }], meta: { defInput: { model: 'mj' } } }))
+    // R120: the LIVE shape — models moved under cms[].models[] (meta is null).
+    // 'mj' stays the first concrete model so the flow below keeps its default.
+    return route.fulfill(ok({
+      meta: null,
+      cms: [
+        { name: 'MJ 测试', platform: 'mj', models: [{ label: 'MJ 绘画', value: 'mj' }, { label: 'OpenAI Draw', value: 'openai-draw' }] },
+      ],
+    }))
   }
   if (path === '/api/draw' && method === 'POST') {
     drawBodies.push(JSON.parse(req.postData() || '{}'))
@@ -240,8 +257,9 @@ await page.setInputFiles('input[data-field="ai8-file"]', { name: 'prompt.txt', m
 for (let i = 0; i < 10; i++) { if ((await ta.inputValue()).includes('来自文件的提示词')) break; await sleep(300) }
 check('J5 import: text file loads its content into the composer', (await ta.inputValue()).includes('【prompt.txt】') && (await ta.inputValue()).includes('来自文件的提示词'))
 // draw e2e: flip to draw mode, the picker swaps to draw models, submit → grid
+// (R121: the draw checkbox became a mode segment button)
 await ta.fill('')
-await page.locator('input[type="checkbox"]').first().check()
+await page.locator('button[data-action="ai8-mode-draw"]').click()
 await sleep(400)
 check('J6 draw: the picker swaps to the draw model namespace', (await page.locator('select[data-field="ai8-draw-model"]').count()) === 1 && (await page.locator('select[data-field="ai8-draw-model"] option').count()) >= 2)
 await ta.fill('一只发光的猫')
