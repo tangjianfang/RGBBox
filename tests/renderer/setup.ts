@@ -60,7 +60,7 @@ vi.mock('lucide-react', () => {
     'GitPullRequest','Globe','Grid','Gauge','HardDrive','Hash','Headphones','Heart','HelpCircle',
     'Hexagon','Home','Image','Inbox','Info','Instagram','Italic','Key','Languages','Layers','Layout',
     'LifeBuoy','Link','Link2','Link2Off','Linkedin','List','Loader','Lock','LogIn','LogOut','Mail','Map','MapPin',
-    'Maximize','Maximize2','Menu','MessageCircle','MessageSquare','Mic','MicOff','Minimize','Minimize2','Minus',
+    'Maximize','Maximize2','Menu','MessageCircle','MessageCircleQuestion','MessageSquare','Mic','MicOff','Minimize','Minimize2','Minus',
     'Monitor','MonitorPlay','Moon','MoreHorizontal','MoreVertical','Mouse','Music','Navigation',
     'Octagon','Package','Paperclip','Pause','PenTool','Pencil','Percent','Phone','PhoneCall','PhoneOff',
     'PieChart','Play','PlayCircle','Plus','PlusCircle','Pocket','Power','Printer','Radio',

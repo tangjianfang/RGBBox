@@ -8,7 +8,9 @@ describe('AI_PROVIDER_PRESETS (R88.5)', () => {
     expect(ids).toContain('custom')
     for (const p of AI_PROVIDER_PRESETS) {
       if (p.id === 'custom') continue
-      expect(p.baseUrl).toMatch(/^https?:\/\//)
+      // R118: the ai8 preset uses the `ai8://chat` pseudo-protocol marker that
+      // chatCompletion dispatches on — URL-ish is all we assert
+      expect(p.baseUrl).toMatch(/^(https?:\/\/|ai8:\/\/)/)
       expect(p.models.length).toBeGreaterThan(0)
     }
   })

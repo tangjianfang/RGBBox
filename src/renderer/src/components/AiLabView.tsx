@@ -329,6 +329,7 @@ export function AiLabView(): JSX.Element {
                   value={cfg.apiKey}
                   autoComplete="new-password"
                   spellCheck={false}
+                  placeholder={provider.id === 'ai8' ? t('ai.lab.ai8KeyHint') : undefined}
                   onChange={(e) => { setCfg({ ...cfg, apiKey: e.target.value }); setUnreadableIds((ids) => ids.filter((i) => i !== editId)) }}
                 />
                 <button type="button" className="icon-button" data-action="toggle-key" onClick={() => setShowKey((v) => !v)}

@@ -48,6 +48,14 @@ export const AI_PROVIDER_PRESETS: AiProviderPreset[] = [
     baseUrl: 'http://localhost:11434/v1',
     models: ['qwen3.6:35b', 'deepseek-v4:flash'],
   },
+  {
+    // R118: AI8 direct — apiKey carries the AI8 token (auto-synced from the
+    // AI8 tab on login), model is an ai8 value from /chat/tmpl.
+    id: 'ai8',
+    label: '欧亿 AI8（直连）',
+    baseUrl: 'ai8://chat',
+    models: ['openai_chat::gpt-5.4', 'moonshot_chat::kimi-k3', 'qwen3-max-preview', 'ouyi_chat::ouyi-chat'],
+  },
   { id: 'custom', label: '', baseUrl: '', models: [] },
 ]
 

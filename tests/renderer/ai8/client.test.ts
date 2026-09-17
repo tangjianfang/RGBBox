@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Ai8Error, buildChatBody, parseAi8SseLine } from '../../../src/renderer/src/ai8/client'
+import { Ai8Error, buildChatBody, parseAi8SseLine } from '../../../src/shared/ai8Client'
 
 describe('renderer/ai8 client (R110)', () => {
   it('parses delta payloads and accumulates the full text', () => {

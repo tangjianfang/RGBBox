@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { MarkdownView, ThinkPanel, copyRichText, markdownToHtml, splitThinkBlocks, stripThink } from '../ai8/markdown'
-import { Ai8Client, Ai8Error, readStoredToken, writeStoredToken, type Ai8Model } from '../ai8/client'
+import { Ai8Client, Ai8Error, readStoredToken, writeStoredToken, type Ai8Model } from '../../../shared/ai8Client'
 import { cleanGeneratedTitle, groupModelsByProvider, matchCurated, pushInputHistory, readActiveId, readInputHistory, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
 
 /** R113: AI8 workbench — two-pane layout (session sidebar + chat), multiple
@@ -149,12 +149,27 @@ export function AiLabAi8Tab(): JSX.Element {
   const groups = useMemo(() => groupModelsByProvider(models), [models])
   const curated = useMemo(() => matchCurated(models), [models])
 
+  /** R118.3: keep any ai8://chat profile's apiKey in sync with the live
+   *  token, so the underlying abilities (OCR/translate/AI Lab chat) pick it
+   *  up immediately after a (re)login. */
+  const syncTokenToProfiles = useCallback(async (tk: string) => {
+    if (tk === '') return
+    try {
+      const { profiles } = await window.rgbbox.aiGetProfiles()
+      const target = profiles.find((p) => p.baseUrl.trim() === 'ai8://chat')
+      if (target !== undefined && target.apiKey !== tk) await window.rgbbox.aiSaveProfile({ ...target, apiKey: tk })
+    } catch {
+      // best-effort — the config tab stays manually editable
+    }
+  }, [])
+
   const saveToken = () => {
     const trimmed = tokenDraft.trim()
     setToken(trimmed)
     writeStoredToken(trimmed)
     setTokenDraft('')
     if (trimmed !== '') setShowTokenRow(false)
+    void syncTokenToProfiles(trimmed)
   }
 
   const clearToken = () => {
@@ -175,6 +190,7 @@ export function AiLabAi8Tab(): JSX.Element {
         writeStoredToken(out.token)
         setLoginAccount(out.account ?? '')
         setShowTokenRow(false)
+        void syncTokenToProfiles(out.token)
       }
     } catch {
       setShowTokenRow(true)

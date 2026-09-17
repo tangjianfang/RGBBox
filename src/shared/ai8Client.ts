@@ -136,7 +136,9 @@ export class Ai8Client {
   }
 
   private async unwrap<T>(res: Response): Promise<T> {
-    const body = await res.json().catch(() => ({}) as { code?: number; data?: T; msg?: string })
+    // typed explicitly: the node tsconfig types res.json() as unknown (the
+    // web one says any) — this file compiles under BOTH now (R118 shared move)
+    const body = (await res.json().catch(() => ({}))) as { code?: number; data?: T; msg?: string }
     if (body.code === 0) return body.data as T
     if (body.code === 2) {
       this.onTokenExpired?.(body.msg ?? '')

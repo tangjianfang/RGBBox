@@ -6,6 +6,7 @@
  */
 
 import { isKeylessLocal } from '../shared/aiProviders'
+import { ai8ChatCompletion, isAi8Settings } from './ai8Provider'
 import type { AiChatMessage, AiChatOutcome, AiErrorHint } from '../shared/types'
 
 export interface AiCleanupSettings {
@@ -82,6 +83,9 @@ export async function chatCompletion(
   s: AiCleanupSettings,
   opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean },
 ): Promise<AiChatOutcome> {
+  // R118: ai8://chat profiles (OCR cleanup / translate / AI Lab chat) route
+  // through the site's own protocol instead of the OpenAI-compatible one.
+  if (isAi8Settings(s)) return ai8ChatCompletion(messages, s, opts)
   const hasKey = s.apiKey.trim() !== ''
   if (!hasKey && !isKeylessLocal(s.baseUrl)) return { ok: false, text: '', hint: 'nokey', latencyMs: 0 }
   if (messages.length === 0) return { ok: false, text: '', hint: 'parse', latencyMs: 0 }

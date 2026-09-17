@@ -14,7 +14,7 @@ import {
 } from 'react'
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDownToLine, ArrowUpRight, ArrowUpToLine,
-  Bold, Check, ChevronDown, ChevronUp, Circle, Copy, Grid3x3, Languages, MousePointer2, Pencil,
+  Bold, Check, ChevronDown, ChevronUp, Circle, Copy, Grid3x3, Languages, MessageCircleQuestion, MousePointer2, Pencil,
   Redo2, Scan, Square, Trash2, Type, Undo2, X, ScanText, Sparkles,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
@@ -602,6 +602,24 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
     setOcr(o => (o.status === 'done' ? { ...o, text: origText } : o))
     setOrigText(null)
   }, [origText])
+  // R118.4: 自由提问——对 OCR 文本发问（provider 无关：传统 OpenAI 兼容或
+  // AI8 直连档案都走同一条 aiChat 管线）
+  const [askDraft, setAskDraft] = useState('')
+  const [askBusy, setAskBusy] = useState(false)
+  const [askAnswer, setAskAnswer] = useState('')
+  const runAskAi = useCallback(() => {
+    const q = askDraft.trim()
+    if (askBusy || q === '' || ocr.status !== 'done' || !ocr.text.trim()) return
+    setAskBusy(true)
+    setAiFail(null)
+    window.rgbbox.aiChat([
+      { role: 'system', content: `你是截图内容助手。仅依据下面的截图 OCR 文本回答用户问题；文本里没有的信息就直说不知道。\n\nOCR 文本：\n${ocr.text.slice(0, 8000)}` },
+      { role: 'user', content: q },
+    ])
+      .then(r => { if (r.ok) setAskAnswer(r.text); else setAiFail(r.hint ?? 'http') })
+      .catch(() => setAiFail('network'))
+      .finally(() => setAskBusy(false))
+  }, [askBusy, askDraft, ocr])
   const recognizeDataUrl = useCallback((dataUrl: string) => {
     setOcr({ status: 'running', text: '' })
     window.rgbbox.ocrRecognize(dataUrl)
@@ -783,6 +801,31 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
                   onClick={() => { void window.rgbbox.clipboardWriteText(ocr.text) }}
                 ><Copy size={13} /> {t('video.annotate.ocrCopyAll')}</button>
               </div>
+              {/* R118.4: 问 AI —— 对 OCR 文本自由提问 */}
+              <div className="video-annotate-ask-row">
+                <input
+                  data-field="annotate-ask"
+                  value={askDraft}
+                  placeholder={t('video.annotate.askPlaceholder')}
+                  onChange={(e) => setAskDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); runAskAi() } }}
+                />
+                <button
+                  type="button"
+                  className="video-btn video-annotate-ocr-ai"
+                  data-action="annotate-ask"
+                  disabled={askBusy || askDraft.trim() === ''}
+                  onClick={runAskAi}
+                ><MessageCircleQuestion size={13} /> {t(askBusy ? 'video.annotate.askRunning' : 'video.annotate.askSend')}</button>
+              </div>
+              {askAnswer !== '' && (
+                <div className="video-annotate-ask-answer">
+                  <p>{askAnswer}</p>
+                  <button type="button" className="video-btn" onClick={() => { void window.rgbbox.clipboardWriteText(askAnswer) }}>
+                    <Copy size={12} /> {t('video.annotate.ocrCopyAll')}
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
