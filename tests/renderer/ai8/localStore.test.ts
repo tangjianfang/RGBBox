@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   DEFAULT_PREFS,
+  cleanGeneratedTitle,
   groupModelsByProvider,
   matchCurated,
   readPrefs,
@@ -65,5 +66,26 @@ describe('renderer/ai8 localStore (R113)', () => {
     expect(curated.fast?.map((m) => m.value)).toEqual(['openai_chat::gpt-5.4-mini'])
     expect(curated.free).toBeUndefined()
     expect(curated.budget).toBeUndefined()
+  })
+
+  it('cleanGeneratedTitle strips decorations and caps length (R116.3)', () => {
+    expect(cleanGeneratedTitle('RGB 灯效调优')).toBe('RGB 灯效调优')
+    expect(cleanGeneratedTitle('「RGB 灯效调优」')).toBe('RGB 灯效调优')
+    expect(cleanGeneratedTitle('标题：RGB 灯效调优')).toBe('RGB 灯效调优')
+    expect(cleanGeneratedTitle('### RGB 灯效调优')).toBe('RGB 灯效调优')
+    expect(cleanGeneratedTitle('RGB 灯效调优。')).toBe('RGB 灯效调优')
+    // multi-line: first non-empty line wins
+    expect(cleanGeneratedTitle('\n\nRGB 灯效调优\n第二行解释')).toBe('RGB 灯效调优')
+    // over-length title caps at 24 chars
+    expect(cleanGeneratedTitle('一'.repeat(40))).toBe('一'.repeat(24))
+    // nothing usable → '' (caller keeps the fallback)
+    expect(cleanGeneratedTitle('')).toBe('')
+    expect(cleanGeneratedTitle('。。。')).toBe('')
+  })
+
+  it('sessions round-trip the titled flag (R116.3)', () => {
+    const sessions: Ai8Session[] = [{ id: 9, model: 'm', title: 't', turns: [], createdAt: 1, updatedAt: 2, titled: true }]
+    writeSessions(sessions)
+    expect(readSessions()[0].titled).toBe(true)
   })
 })

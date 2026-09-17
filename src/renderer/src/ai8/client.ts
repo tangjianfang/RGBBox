@@ -45,12 +45,31 @@ export type Ai8SseEvent =
   | { type: 'done'; full: string }
 
 export interface Ai8ChatOptions {
+  model?: string
   thinking?: boolean
   webSearch?: boolean
   systemPrompt?: string
   reasoningEffort?: '' | 'low' | 'medium' | 'high'
   signal?: AbortSignal
   files?: { name: string; url: string }[]
+}
+
+/** R116.1: the /chat/completions body. `model` is REQUIRED by the server —
+ *  omitting it fails with「模型 是必填项」even though createSession already
+ *  bound a model. Kept as an exported pure function for unit testing. */
+export function buildChatBody(sessionId: string | number, text: string, opts: Ai8ChatOptions = {}): Record<string, unknown> {
+  return {
+    text,
+    sessionId,
+    model: opts.model ?? '',
+    files: opts.files ?? [],
+    thinking: !!opts.thinking,
+    webSearch: !!opts.webSearch,
+    nativeTools: [],
+    nativeToolOptions: {},
+    reasoningEffort: opts.reasoningEffort ?? '',
+    ...(opts.systemPrompt ? { systemPrompt: opts.systemPrompt } : {}),
+  }
 }
 
 const TOKEN_KEY = 'rgbbox:ai8Token'
@@ -207,17 +226,7 @@ export class Ai8Client {
 
   /** SSE chat. Yields meta/delta/extra/error/done events; abort via opts.signal. */
   async *chat(sessionId: string | number, text: string, opts: Ai8ChatOptions = {}): AsyncGenerator<Ai8SseEvent> {
-    const body = {
-      text,
-      sessionId,
-      files: opts.files ?? [],
-      thinking: !!opts.thinking,
-      webSearch: !!opts.webSearch,
-      nativeTools: [],
-      nativeToolOptions: {},
-      reasoningEffort: opts.reasoningEffort ?? '',
-      ...(opts.systemPrompt ? { systemPrompt: opts.systemPrompt } : {}),
-    }
+    const body = buildChatBody(sessionId, text, opts)
     const res = await fetch(this.baseUrl + '/chat/completions', {
       method: 'POST',
       headers: this.headers({ 'Content-Type': 'application/json' }),

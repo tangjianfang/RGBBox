@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Ai8Error, parseAi8SseLine } from '../../../src/renderer/src/ai8/client'
+import { Ai8Error, buildChatBody, parseAi8SseLine } from '../../../src/renderer/src/ai8/client'
 
 describe('renderer/ai8 client (R110)', () => {
   it('parses delta payloads and accumulates the full text', () => {
@@ -34,5 +34,25 @@ describe('renderer/ai8 client (R110)', () => {
     const error = new Ai8Error(2, '登录已过期')
     expect(error.code).toBe(2)
     expect(error.message).toBe('登录已过期')
+  })
+})
+
+describe('renderer/ai8 buildChatBody (R116.1)', () => {
+  it('carries the model — the server rejects a chat without it (模型 是必填项)', () => {
+    const body = buildChatBody(7, 'hi', { model: 'openai_chat::gpt-5.4', thinking: true })
+    expect(body.model).toBe('openai_chat::gpt-5.4')
+    expect(body.text).toBe('hi')
+    expect(body.sessionId).toBe(7)
+    expect(body.thinking).toBe(true)
+    expect(body.webSearch).toBe(false)
+    expect(body.files).toEqual([])
+  })
+
+  it('keeps a numeric sessionId as a number and defaults model to empty', () => {
+    const body = buildChatBody('123', 'q', { files: [{ name: 'a.png', url: 'data:image/png;base64,x' }] })
+    expect(body.sessionId).toBe('123')
+    expect(body.model).toBe('')
+    expect(body.files).toEqual([{ name: 'a.png', url: 'data:image/png;base64,x' }])
+    expect(body.systemPrompt).toBeUndefined()
   })
 })

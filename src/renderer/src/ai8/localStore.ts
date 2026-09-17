@@ -14,6 +14,9 @@ export interface Ai8Session {
   turns: Ai8Turn[]
   createdAt: number
   updatedAt: number
+  /** R116.3: true once the AI-generated title attempt has run (one-shot guard;
+   *  a failed attempt keeps the truncated fallback title). */
+  titled?: boolean
 }
 
 export interface Ai8Prefs {
@@ -142,6 +145,25 @@ export function groupModelsByProvider(models: { label: string; value: string; at
 export function titleFromContent(content: string): string {
   const trimmed = content.replace(/\s+/g, ' ').trim()
   return trimmed.length <= 24 ? trimmed : trimmed.slice(0, 24) + '…'
+}
+
+/** R116.3: clean a model-generated title — take the first non-empty line, drop
+ *  markdown headings /「标题：」prefixes / wrapping quotes / trailing punctuation,
+ *  cap at 24 chars. Returns '' when nothing usable remains (caller keeps the
+ *  truncated fallback). */
+export function cleanGeneratedTitle(raw: string): string {
+  const QUOTE_PAIRS: [string, string][] = [['「', '」'], ['『', '』'], ['“', '”'], ['"', '"'], ["'", "'"]]
+  let line = raw.split('\n').map((l) => l.trim()).find((l) => l !== '') ?? ''
+  line = line.replace(/^#+\s*/, '').replace(/^(标题|题目|title)\s*[:：]\s*/i, '').trim()
+  for (let i = 0; i < 2; i++) {
+    const pair = QUOTE_PAIRS.find(([open]) => line.startsWith(open))
+    if (!pair) break
+    const close = pair[1]
+    if (!line.endsWith(close) || line.length <= 2) break
+    line = line.slice(1, -1).trim()
+  }
+  line = line.replace(/[。．.!！?？，,;；~～\s]+$/, '').trim()
+  return line.slice(0, 24)
 }
 
 // ── R115.2: curated recommendation groups (实现方案.md §一) — matched against

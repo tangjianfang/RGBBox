@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { MarkdownView } from '../ai8/markdown'
 import { Ai8Client, Ai8Error, readStoredToken, writeStoredToken, type Ai8Model } from '../ai8/client'
-import { groupModelsByProvider, matchCurated, readActiveId, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
+import { cleanGeneratedTitle, groupModelsByProvider, matchCurated, readActiveId, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
 
 /** R113: AI8 workbench — two-pane layout (session sidebar + chat), multiple
  *  concurrent sessions, ChatGPT-style local history, auto-saved prefs, draw
@@ -151,6 +151,41 @@ export function AiLabAi8Tab(): JSX.Element {
     })
   }, [])
 
+  /** R116.3: one-shot AI title generation (ChatGPT/Claude style). Runs in a
+   *  throwaway server session so the title prompt never pollutes the real
+   *  conversation context; uses the currently selected model. Marks `titled`
+   *  BEFORE the request (a failed attempt keeps the truncated fallback). */
+  const generateTitle = useCallback(async (opts: { id: string | number; user: string; assistant: string; model: string; syncServer: boolean }) => {
+    const { id, user, assistant, model, syncServer } = opts
+    setSessions((list) => {
+      const next = list.map((s) => (String(s.id) === String(id) ? { ...s, titled: true } : s))
+      writeSessions(next)
+      return next
+    })
+    try {
+      const created = await client().createSession<{ id: string | number }>({ model })
+      const raw0 = created.id
+      const tmpId = typeof raw0 === 'number' ? raw0 : Number.isFinite(Number(raw0)) ? Number(raw0) : raw0
+      let raw = ''
+      const prompt = `请从下面的对话中提取主题，生成一个不超过16个字的会话标题。只输出标题本身：不要引号、不要句号、不要序号、不要任何解释。\n用户：${user.slice(0, 600)}\n助手：${assistant.slice(0, 600)}`
+      for await (const ev of client().chat(tmpId, prompt, { model })) {
+        if (ev.type === 'delta') raw += ev.text
+        else if (ev.type === 'error') { raw = ''; break }
+      }
+      void client().deleteSession(tmpId).catch(() => undefined)
+      const title = cleanGeneratedTitle(raw)
+      if (title === '') return
+      setSessions((list) => {
+        const next = list.map((s) => (String(s.id) === String(id) ? { ...s, title } : s))
+        writeSessions(next)
+        return next
+      })
+      if (syncServer) void client().updateSession(id, { name: title }).catch(() => undefined)
+    } catch {
+      // silent — the truncated fallback title stays
+    }
+  }, [token])
+
   const stopStreaming = () => {
     abortRef.current?.abort()
     abortRef.current = null
@@ -164,6 +199,9 @@ export function AiLabAi8Tab(): JSX.Element {
       void openOfficialLogin()
       return
     }
+    // R116.1: the server REQUIRES model in the chat body — the send button is
+    // already disabled for this case; the guard covers the Enter path.
+    if (prefs.model === '') return
     // R115.1: image attachment rides along as files:[{name,url}] — data URL
     // form; server rejection surfaces as a normal error turn (probe pending).
     const files = attachment ? [{ name: attachment.name, url: attachment.dataUrl }] : []
@@ -210,6 +248,9 @@ export function AiLabAi8Tab(): JSX.Element {
           const urls = list.map((item) => item.url).filter((u): u is string => typeof u === 'string' && u !== '')
           if (urls.length > 0) {
             patchLastAssistant(draftId, { content: urls.join('\n') })
+            // R116.3: draw sessions are local drafts — title locally only (no
+            // server session to rename)
+            void generateTitle({ id: draftId, user: content, assistant: urls.join('\n'), model: prefs.model, syncServer: false })
             return
           }
         }
@@ -221,6 +262,11 @@ export function AiLabAi8Tab(): JSX.Element {
       }
       return
     }
+    // R116.3: track the first completed exchange locally — no state-read race
+    const sessionBefore = activeSession
+    const isFirstExchange = sessionBefore === null || !sessionBefore.turns.some((x) => x.role === 'user')
+    let hadError = false
+    let replyText = ''
     let sessionId = activeId
     let title = ''
     if (sessionId === null) {
@@ -243,8 +289,9 @@ export function AiLabAi8Tab(): JSX.Element {
     const controller = new AbortController()
     abortRef.current = controller
     try {
-      for await (const ev of client().chat(sessionId, content, { thinking: prefs.thinking, webSearch: prefs.webSearch, signal: controller.signal, files })) {
+      for await (const ev of client().chat(sessionId, content, { model: prefs.model, thinking: prefs.thinking, webSearch: prefs.webSearch, signal: controller.signal, files })) {
         if (ev.type === 'delta') {
+          replyText += ev.text
           setSessions((list) => {
             const next = list.map((s) => {
               if (s.id !== sessionId) return s
@@ -257,11 +304,13 @@ export function AiLabAi8Tab(): JSX.Element {
             return next
           })
         } else if (ev.type === 'error') {
+          hadError = true
           patchLastAssistant(sessionId, { error: ev.message })
           break
         }
       }
     } catch (error) {
+      hadError = true
       const code = error instanceof Ai8Error ? error.code : 0
       const hint = code === 2 ? 'expired' : code === -1 ? 'nokey' : 'network'
       patchLastAssistant(sessionId, { error: hint })
@@ -281,10 +330,27 @@ export function AiLabAi8Tab(): JSX.Element {
         writeSessions(next)
         return next
       })
+      // R116.3: after the FIRST completed exchange, replace the truncated
+      // fallback title with an AI-generated one (one-shot via `titled`)
+      if (isFirstExchange && !hadError && replyText.trim() !== '') {
+        void generateTitle({ id: sessionId, user: content, assistant: replyText, model: prefs.model, syncServer: true })
+      }
     }
   }
 
   const turns = activeSession?.turns ?? []
+
+  // R116.2: keep the newest message in view while streaming (ChatGPT-style
+  // inner scroll instead of growing the whole page)
+  const logRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = logRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [turns])
+
+  // R116.2: assistant messages carry a small model badge instead of the raw
+  // 'assistant' role label
+  const activeModelLabel = models.find((m) => m.value === activeSession?.model)?.label ?? 'AI'
 
   return (
     <div className="ai8" data-field="ai8-root">
@@ -383,7 +449,7 @@ export function AiLabAi8Tab(): JSX.Element {
           </label>
         </div>
 
-        <div className="ai8-log" data-field="ai8-log">
+        <div className="ai8-log" data-field="ai8-log" ref={logRef}>
           {turns.length === 0 && (
             <div className="ai8-placeholder">
               <p>{activeSession ? t('ai.ai8.hintReady') : t('ai.ai8.hintNew')}</p>
@@ -404,11 +470,15 @@ export function AiLabAi8Tab(): JSX.Element {
                   ⧉
                 </button>
               ) : null}
-              <span className="ai-msg-role">{turn.role}</span>
               {turn.error !== undefined
                 ? <span className="ai-msg-error">{turn.error === 'expired' || turn.error === 'nokey' ? t('ai.ai8.errToken') : `${t('ai.ai8.errNetwork')} (${turn.error})`}</span>
                 : turn.role === 'assistant'
-                  ? <MarkdownView text={turn.content} copyLabel={t('ai.ai8.copy')} copiedLabel={t('ai.ai8.copied')} />
+                  ? (
+                    <>
+                      <span className="ai-msg-role">{activeModelLabel}</span>
+                      <MarkdownView text={turn.content} copyLabel={t('ai.ai8.copy')} copiedLabel={t('ai.ai8.copied')} />
+                    </>
+                  )
                   : <span className="ai-msg-text">{turn.content}</span>}
             </div>
           ))}
@@ -461,7 +531,7 @@ export function AiLabAi8Tab(): JSX.Element {
           />
           {streaming
             ? <button type="button" className="ai8-btn" data-action="ai8-stop" onClick={stopStreaming}>{t('ai.ai8.stop')}</button>
-            : <button type="button" className="ai8-btn ai8-btn-primary" data-action="ai8-send" onClick={() => void send()} disabled={input.trim() === ''}>{t('ai.lab.chat.send')}</button>}
+            : <button type="button" className="ai8-btn ai8-btn-primary" data-action="ai8-send" onClick={() => void send()} disabled={input.trim() === '' || prefs.model === ''} title={prefs.model === '' ? t('ai.ai8.needModel') : undefined}>{t('ai.lab.chat.send')}</button>}
         </div>
       </section>
     </div>

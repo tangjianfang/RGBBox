@@ -237,7 +237,9 @@ export function AiLabView(): JSX.Element {
   )
 
   return (
-    <div className="ai-lab">
+    // R116.2: on the AI8 tab the workbench fills the viewport (its own inner
+    // scroll + a pinned composer) instead of growing the whole page.
+    <div className={tab === 'ai8' ? 'ai-lab ai-lab-flush' : 'ai-lab'}>
       <div className="ai-tabs" role="tablist" aria-label="AI Lab sections">
         {(['config', 'chat', 'ocr', 'audio', 'ai8'] as const).map((key) => (
           <button
