@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
-import { MarkdownView } from '../ai8/markdown'
+import { MarkdownView, ThinkPanel, splitThinkBlocks } from '../ai8/markdown'
 import { Ai8Client, Ai8Error, readStoredToken, writeStoredToken, type Ai8Model } from '../ai8/client'
 import { cleanGeneratedTitle, groupModelsByProvider, matchCurated, readActiveId, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
 
@@ -480,7 +480,13 @@ export function AiLabAi8Tab(): JSX.Element {
                   ? (
                     <>
                       <span className="ai-msg-role">{activeModelLabel}</span>
-                      <MarkdownView text={turn.content} copyLabel={t('ai.ai8.copy')} copiedLabel={t('ai.ai8.copied')} />
+                      {splitThinkBlocks(turn.content).map((seg, j) => (
+                        seg.kind === 'think'
+                          ? <ThinkPanel key={j} body={seg.body} closed={seg.closed} thinkingLabel={t('ai.ai8.thinkingNow')} thoughtLabel={t('ai.ai8.thought')} />
+                          : seg.body.trim() === ''
+                            ? null
+                            : <MarkdownView key={j} text={seg.body} copyLabel={t('ai.ai8.copy')} copiedLabel={t('ai.ai8.copied')} />
+                      ))}
                     </>
                   )
                   : <span className="ai-msg-text">{turn.content}</span>}

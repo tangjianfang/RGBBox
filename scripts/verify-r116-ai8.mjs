@@ -61,7 +61,7 @@ await page.route('**/ai8.rcouyi.com/**', async (route) => {
   }
   if (path === '/api/chat/completions' && method === 'POST') {
     chatBodies.push(JSON.parse(req.postData() || '{}'))
-    return route.fulfill(sse(['好的，我们来优化 RGB 灯效。']))
+    return route.fulfill(sse(['<think>User asks about lights. Plan: suggest zones.</think>', '好的，我们来优化 RGB 灯效。']))
   }
   if (/^\/api\/chat\/generate-title\/\d+$/.test(path) && method === 'POST') {
     titleCalls.push(path.split('/').pop())
@@ -142,6 +142,15 @@ check('E2 style: user bubble is right-aligned', await page.evaluate(() => {
 check('E3 style: assistant message has no block background', await page.evaluate(() => getComputedStyle(document.querySelector('.ai8-log .ai-msg-assistant')).backgroundColor === 'rgba(0, 0, 0, 0)'))
 check('E4 style: assistant badge shows the model label', await page.evaluate(() => (document.querySelector('.ai8-log .ai-msg-assistant .ai-msg-role')?.textContent ?? '') === 'Gpt 5.4'))
 check('E5 style: message body is 13px', await page.evaluate(() => getComputedStyle(document.querySelector('.ai8-log .ai-msg')).fontSize === '13px'))
+
+// ── H. <think> reasoning chain renders as a collapsible panel ─────────────
+check('H1 think: chain renders as the collapsed thought panel', await page.evaluate(() => {
+  const panel = document.querySelector('.ai8-log .ai-msg-assistant .ai8-think')
+  return !!panel && (panel.querySelector('.ai8-think-toggle')?.textContent ?? '').includes('思考过程') && panel.querySelector('.ai8-think-body') === null
+}))
+check('H2 think: raw <think> markup never reaches the reply body', await page.evaluate(() => !(document.querySelector('.ai8-log .ai-msg-assistant .md-view')?.textContent ?? '').includes('<think>')))
+await page.locator('.ai8-log .ai-msg-assistant .ai8-think-toggle').first().click()
+check('H3 think: panel expands on click', await page.evaluate(() => (document.querySelector('.ai8-log .ai-msg-assistant .ai8-think-body')?.textContent ?? '').includes('User asks about lights')))
 await page.screenshot({ path: 'docs/screenshots/r116-ai8-workbench.png' })
 
 // ── F. error turn dressing + autoscroll on history reload ─────────────────

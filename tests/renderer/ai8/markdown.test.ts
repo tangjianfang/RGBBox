@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
-import { parseMarkdown, renderInline } from '../../../src/renderer/src/ai8/markdown'
+import { parseMarkdown, renderInline, splitThinkBlocks } from '../../../src/renderer/src/ai8/markdown'
 
 describe('renderer/ai8 markdown parser (R114)', () => {
   it('parses headings, lists, quotes, hr and paragraphs', () => {
@@ -34,5 +34,34 @@ describe('renderer/ai8 markdown parser (R114)', () => {
     expect(html).toContain('<strong>粗体</strong>')
     expect(html).toContain('<code class="md-inline-code">code</code>')
     expect(html).toContain('href="https://example.com"')
+  })
+})
+
+describe('renderer/ai8 think-block splitting (R116 round 3)', () => {
+  it('splits a closed think chain from the visible reply', () => {
+    const segs = splitThinkBlocks('<think>User asks what model I am.</think>\n我是 Kimi。')
+    expect(segs).toEqual([
+      { kind: 'think', body: 'User asks what model I am.', closed: true },
+      { kind: 'text', body: '\n我是 Kimi。' },
+    ])
+  })
+
+  it('treats an unclosed think tag as a live (streaming) segment', () => {
+    const segs = splitThinkBlocks('<think>The user asked: "你是什么')
+    expect(segs).toEqual([
+      { kind: 'think', body: 'The user asked: "你是什么', closed: false },
+    ])
+  })
+
+  it('keeps tag-free text intact and handles mid-message chains', () => {
+    expect(splitThinkBlocks('普通回复，没有思维链')).toEqual([
+      { kind: 'text', body: '普通回复，没有思维链' },
+    ])
+    const mid = splitThinkBlocks('开头。\n<think>中间思考</think>结尾。')
+    expect(mid).toEqual([
+      { kind: 'text', body: '开头。\n' },
+      { kind: 'think', body: '中间思考', closed: true },
+      { kind: 'text', body: '结尾。' },
+    ])
   })
 })

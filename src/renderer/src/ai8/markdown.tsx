@@ -2,7 +2,53 @@
 // (runtime deps are react-only by project convention). The parser is a pure
 // function over lines, tolerant of the unclosed code fence that streaming
 // always leaves at the tail of the latest assistant message.
-import { useState, type JSX, type ReactNode } from 'react'
+import { useEffect, useState, type JSX, type ReactNode } from 'react'
+
+// ── R116 (round 3): <think> reasoning chains ───────────────────────────────
+// Reasoning models (Kimi-k3, Grok, …) wrap their chain of thought in
+// <think>…</think>. Rendering that raw floods the chat; we split it out into
+// a collapsible panel instead (DeepSeek/ChatGPT style). While streaming the
+// tag is unclosed — the panel shows a live "thinking…" state and collapses
+// itself the moment the closing tag arrives.
+
+export type ThinkSegment =
+  | { kind: 'think'; body: string; closed: boolean }
+  | { kind: 'text'; body: string }
+
+export function splitThinkBlocks(text: string): ThinkSegment[] {
+  const segments: ThinkSegment[] = []
+  let rest = text
+  while (true) {
+    const open = rest.indexOf('<think>')
+    if (open === -1) break
+    if (open > 0) segments.push({ kind: 'text', body: rest.slice(0, open) })
+    const after = rest.slice(open + '<think>'.length)
+    const close = after.indexOf('</think>')
+    if (close === -1) {
+      segments.push({ kind: 'think', body: after, closed: false })
+      return segments
+    }
+    segments.push({ kind: 'think', body: after.slice(0, close), closed: true })
+    rest = after.slice(close + '</think>'.length)
+  }
+  if (rest !== '') segments.push({ kind: 'text', body: rest })
+  return segments
+}
+
+export function ThinkPanel({ body, closed, thinkingLabel, thoughtLabel }: { body: string; closed: boolean; thinkingLabel: string; thoughtLabel: string }): JSX.Element {
+  const [open, setOpen] = useState(!closed)
+  useEffect(() => { setOpen(!closed) }, [closed])
+  return (
+    <div className={`ai8-think${closed ? '' : ' live'}`}>
+      <button type="button" className="ai8-think-toggle" onClick={() => setOpen((v) => !v)}>
+        <span className="ai8-think-icon">💭</span>
+        <span>{closed ? thoughtLabel : thinkingLabel}</span>
+        <span className="ai8-think-arrow">{open ? '▾' : '▸'}</span>
+      </button>
+      {open ? <div className="ai8-think-body">{body}</div> : null}
+    </div>
+  )
+}
 
 export type MdBlock =
   | { kind: 'heading'; level: number; text: string }
