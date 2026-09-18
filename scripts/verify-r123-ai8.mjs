@@ -1,5 +1,5 @@
 /**
- * R121 real-machine smoke: remembered AI8 credentials + headless auto sign-in.
+ * R123 real-machine smoke: remembered AI8 credentials + headless auto sign-in.
  * A local http mock server stands in for ai8.rcouyi.com at the MAIN-process
  * layer (RGBBOX_AI8_BASE_URL seam — page.route cannot intercept main fetch).
  * ① the credentials row saves via IPC → userData/ai8-credentials.json on disk;

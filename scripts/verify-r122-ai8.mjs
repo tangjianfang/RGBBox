@@ -1,11 +1,11 @@
 /**
- * R120 real-machine smoke (no real network): draw recovery batch —
- * ① cms-shaped /draw/template parses into the model picker (R120.0);
+ * R122 real-machine smoke (no real network): draw recovery batch —
+ * ① cms-shaped /draw/template parses into the model picker (R120's parser);
  * ② the ONE-running-task limit rejection adopts the running task and receives
- *    its result (R120.3); ③ a freed slot resubmits once (R120.3);
- * ④ a「没有可用的渠道」rejection surfaces as-is — NO adoption (R120.0);
- * ⑤ restart recovery resumes a pending draw session (R120.5);
- * ⑥ the manual「查询最新绘画结果」button adopts the latest task (R120.4).
+ *    its result (R122.3); ③ a freed slot resubmits once (R122.3);
+ * ④ a「没有可用的渠道」rejection surfaces as-is — NO adoption (R122.1);
+ * ⑤ restart recovery resumes a pending draw session (R122.5);
+ * ⑥ the manual「查询最新绘画结果」button adopts the latest task (R122.4).
  * ALL ai8.rcouyi.com traffic is mocked via page.route — zero credits.
  */
 import { chromium } from 'file:///C:/Users/admin/AppData/Local/Temp/pw-cdp/node_modules/playwright-core/index.mjs'
@@ -119,13 +119,17 @@ const awaitGrid = async (name, timeoutMs = 12000) => {
   return false
 }
 
-// ── K. cms template parsing (R120.0) ───────────────────────────────────────
+// ── K. cms template parsing (R120 parser + R122 guard) ────────────────────
 await openAi8()
 for (let i = 0; i < 10; i++) { if (await page.locator('select[data-field="ai8-draw-model"] option').count() > 1) break; await sleep(500) }
-await page.locator('input[type="checkbox"]').first().check()
+await page.locator('button[data-action="ai8-mode-draw"]').click()
 await sleep(400)
-const optionTexts = await page.locator('select[data-field="ai8-draw-model"]').evaluate((el) => [...el.options].map((o) => o.textContent))
-check('K1 cms: draw picker lists cms models as「平台 模型」', optionTexts.join('|').includes('即梦 4.5') && optionTexts.join('|').includes('千问 max'), optionTexts.join('|'))
+const pickerInfo = await page.locator('select[data-field="ai8-draw-model"]').evaluate((el) => ({
+  groups: [...el.querySelectorAll('optgroup')].map((g) => ({ label: g.label, options: [...g.querySelectorAll('option')].map((o) => o.textContent) })),
+  flat: [...el.options].map((o) => o.textContent),
+}))
+const allText = pickerInfo.groups.map((g) => `${g.label}:${g.options.join(',')}`).join('|') + '|' + pickerInfo.flat.join('|')
+check('K1 cms: draw picker lists cms models under provider groups', allText.includes('即梦') && allText.includes('4.5') && allText.includes('千问') && allText.includes('max'), allText)
 check('K2 cms: default model auto-picks the first cms entry', await page.evaluate(() => (JSON.parse(localStorage.getItem('rgbbox:ai8Prefs') || '{}').drawModel ?? '') === 'doubao-seedream-4-5'))
 
 // ── L. limit rejection adopts the running task (R120.3) ────────────────────
