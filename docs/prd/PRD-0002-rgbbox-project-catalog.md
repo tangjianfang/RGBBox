@@ -1300,6 +1300,19 @@
 - **实施证据（2026-09-19）**：①`yarn typecheck` 0 error；②全量 `yarn test` **94 files / 869 passed / 0 失败**（一次 VideoStudioView 时序 flaky 单现，重跑全绿——该文件 1.1s 时序用例在并发负载下偶发，与本次无关）；③余额链路：token 变化（useEffect on refreshBalance）+ 每次绘画成功后刷新，失败静默置 null 徽标隐藏；④凭据块堆叠后输入框全宽（grid 布局 + 100% width + autoComplete），原 `data-field="ai8-cred-row/account/password"` 钩子保留。**状态：✅（用户重启应用后目视验收：账号旁 ⚡余额、出图后数字变小、凭据输入框全宽）**
 
 
+### R130. 全局截图秒开（<500ms）+ 快门白闪 ×2（2026-09-19 用户需求「按快捷键启动截图起码 3 秒，希望 500ms 以内」+「启动时闪烁两下」）
+
+> 根因定位：截图窗口复用主窗口 `index.html`，每次热键都要解析执行 4.4MB JS（God Component 全家桶，实际只渲染 SnipView）+ 懒 PNG 编码（全物理分辨率）+ base64 IPC + PNG 解码，叠加首次 `desktopCapturer` 图形捕获栈初始化，链路全串行 ≈3s。方案（brainstorm 确认 A+B 一步到位）：**轻量独立入口 + 捕获栈预热 + BGRA 位图直传 + 常驻预热窗口池**。验收口径 = 按键 → 冻结画面全屏出现 ≤500ms；闪烁 = 白色快门闪 ×2（0→35%→0，~90ms/脉冲，总 ~400ms，pointer-events:none）。设计文档：`docs/superpowers/specs/2026-09-19-r130-snip-fast-start-design.md`。
+- **R130.1 轻量入口**：新增 `src/renderer/snip.html` + `src/renderer/src/snipMain.tsx`（只装 I18nProvider + SnipView，bundle ~250KB vs 4.6MB）；`electron.vite.config.ts` renderer 加第二入口；snipManager 默认 load snip.html（dev 走 `${devUrl}/snip.html`）；`main.tsx` 旧 isSnip 分支保留作回退。不动 `package.json` scripts。
+- **R130.2 捕获栈预热**：app 就绪 +3s 空闲预热一次 `desktopCapturer.getSources`（1×1 缩略图触发 WGC/DXGI 初始化，结果丢弃）；显示器拓扑变化后重预热；预热与会话互斥；失败静默（R112.3 三重试保护保留）。
+- **R130.3 位图直传**：冻结帧改 `getBitmap()`（BGRA）二进制 IPC 直传，渲染端 R/B 交换 → ImageData → putImageData；删 `snip:get-frame` invoke 通道，新增 `snip:push-frame`（main→renderer）+ `snip:frame-painted`（ack）；preload 加 `snipOnFrame`（返回反注册函数）+ `snipAckPainted`。
+- **R130.4 预热窗口池**：app 就绪 +3s 为每屏建隐藏预载窗口（show:false、skipTaskbar）；热键 → 捕获 → 池取窗 → 推位图 → **等绘制 ack（300ms 超时兜底直接 show）→ show**（保证「窗口出现=画面就绪」）；会话结束销毁窗口并后台重建回池（不复用，杜绝标注器状态残留）；池窗口崩溃（render-process-gone）/池未命中/启动 3s 内 → 即时创建兜底路径。
+- **R130.5 白闪 ×2**：SnipView 首次进 select 相位挂 `.snip-flash`（CSS keyframes 两脉冲 400ms，`onAnimationEnd` 自移除，`pointer-events:none`，标注器返回不重播，`prefers-reduced-motion` 降级不闪）；闪烁在捕获之后不可能污染冻结帧。
+- **R130.6 分段耗时日志**：startSnip 记 hotkey→captured→frames-pushed→shown 全链路时间戳，供验收取证与后续诊断。
+- **受影响文件**：`electron.vite.config.ts`、`src/renderer/snip.html`（新）、`src/renderer/src/snipMain.tsx`（新）、`src/main/snipManager.ts`、`src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts`、`src/renderer/src/components/SnipView.tsx`、`src/renderer/src/styles.css`、`tests/renderer/_helpers.tsx`、`tests/renderer/components/SnipView.test.tsx`、`tests/main/snipManager.test.ts`。
+- **验收点**：①打包构建实机：热键→冻结画面出现 ≤500ms（日志取证，连续 5 次取最大值）；②白闪两下真机截图视觉复核（脉冲可见、不阻挡拖选）；③二次会话同样达标、无窗口泄漏；④池窗口内存实测（>100MB/窗 加开关回退 A）；⑤typecheck + 全量回归 0 失败；⑥Esc/右键/X 取消、标注/OCR/保存复制链路零回归。**状态：⏳**
+
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。
