@@ -1290,6 +1290,16 @@
 - **实施证据（2026-09-19）**：①TDD 红→绿：3 新用例（state 平台族按 `o` 排序且每版本成模型、volc 空 versions 跳过+动作开关排除、平台体 `{model:'openai-draw', args:{version:'gpt-image-2', area:'auto'}}` 与 mj 裸体）先红后绿，`client.test` **27/27**；②`yarn typecheck` 0 error；③全量 `yarn test` **94 files / 869 passed / 0 失败**；④单发三处 + 批量提交点统一 family-aware（cms→args.area 像素；平台→model:平台id+args.version；mj/niji→无 args）；⑤cms/flat/e2e mock 旧形状用例零回归。**状态：✅（用户真机 gpt-image/nano-banana 实际出图为最终验收；volc-draw 待站点 chunk 版本值实证后补）**
 
 
+### R129. AI8 积分余额显示 + 凭据输入框放大（2026-09-19 用户请求「账号旁边显示积分余额」+「账号密码输入框太小，登录会失败」）
+
+> 协议实证：`GET /user/frequency/balance` → `{total, remaining, used, lastReset, validity, remainingRate, isLogin}`（站点 chunk 缓存 balance.* 字段族实证；站点头部显示「剩余积分」）。输入框问题：凭据行账号+密码+保存+清除四元素挤单行 flex，侧栏宽度下输入框仅约 60px——密码看不见输没输全导致登录失败。
+- **R129.1 余额显示**：`AiLabAi8Tab` 增 `balance`（number|null）状态；token 变化时与每次绘画成功后静默刷新（`getBalance<{remaining?}>`，失败置 null 不打扰）；账号行追加 `⚡N` 徽标（`data-field="ai8-balance"`，点击手动刷新，title 提示）。
+- **R129.2 凭据块堆叠**：`ai8-cred-row` 单行 flex → `ai8-cred-block` 网格堆叠（账号全宽行 + 密码全宽行 + 按钮行）；输入框 100% 宽 + autoComplete/spellCheck 规范化；保留原 `data-field` 钩子（e2e 兼容）。
+- **受影响文件**：`AiLabAi8Tab.tsx`、`styles.css`。
+- **验收点**：①登录后账号旁出现 ⚡余额且出图后自动变小；②余额 GET 失败不报错只隐藏；③凭据输入框全宽可读；④typecheck+回归零失败。
+- **实施证据（2026-09-19）**：①`yarn typecheck` 0 error；②全量 `yarn test` **94 files / 869 passed / 0 失败**（一次 VideoStudioView 时序 flaky 单现，重跑全绿——该文件 1.1s 时序用例在并发负载下偶发，与本次无关）；③余额链路：token 变化（useEffect on refreshBalance）+ 每次绘画成功后刷新，失败静默置 null 徽标隐藏；④凭据块堆叠后输入框全宽（grid 布局 + 100% width + autoComplete），原 `data-field="ai8-cred-row/account/password"` 钩子保留。**状态：✅（用户重启应用后目视验收：账号旁 ⚡余额、出图后数字变小、凭据输入框全宽）**
+
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

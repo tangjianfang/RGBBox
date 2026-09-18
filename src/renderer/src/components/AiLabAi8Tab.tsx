@@ -172,6 +172,8 @@ export function AiLabAi8Tab(): JSX.Element {
   const [streamingIds, setStreamingIds] = useState<string[]>([])
   // R126: one folder batch at a time (the server caps running tasks at ONE)
   const [batchBusy, setBatchBusy] = useState(false)
+  // R129.1: the account's remaining credits (积分) — null while unknown
+  const [balance, setBalance] = useState<number | null>(null)
   const abortMap = useRef<Map<string, AbortController>>(new Map())
   // R117.8: ↑/↓ input history navigation (Claude Code style)
   const histIdx = useRef(-1)
@@ -246,6 +248,24 @@ export function AiLabAi8Tab(): JSX.Element {
   }, [prefs.mode, prefs.videoModel, prefs.videoVersion, videoProviders])
 
   const client = () => new Ai8Client({ token, onTokenExpired: () => setShowTokenRow(true) })
+
+  /** R129.1: silent balance refresh — /user/frequency/balance → the
+   *  `remaining` field (site header shows the same number). Failure just
+   *  clears the badge; never disturbs the flow. */
+  const refreshBalance = useCallback(() => {
+    if (token === '') {
+      setBalance(null)
+      return
+    }
+    client()
+      .getBalance<{ remaining?: unknown }>()
+      .then((out) => setBalance(typeof out?.remaining === 'number' ? out.remaining : null))
+      .catch(() => setBalance(null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+  useEffect(() => {
+    refreshBalance()
+  }, [refreshBalance])
 
   /** R120: flat view over the grouped draw list — send guards and labelOf
    *  don't care about providers, the picker renders the groups. */
@@ -502,6 +522,8 @@ export function AiLabAi8Tab(): JSX.Element {
     // fire-and-forget with a timeout so a stalled CDN cannot keep the Stop
     // button alive for minutes.
     markStreaming(sessionId, false)
+    // R129.1: a delivered image consumed credits — refresh the badge
+    refreshBalance()
     void (async () => {
       const saved: string[] = []
       for (const url of done) {
@@ -1014,6 +1036,9 @@ export function AiLabAi8Tab(): JSX.Element {
           ) : (
             <>
               <span className="ai8-token-ok">{t('ai.ai8.tokenOk')}{loginAccount !== '' ? ` · ${loginAccount}` : ''}</span>
+              {balance !== null ? (
+                <button type="button" className="ai8-balance" data-field="ai8-balance" data-action="ai8-refresh-balance" onClick={refreshBalance} title={t('ai.ai8.balanceHint')}>⚡ {balance}</button>
+              ) : null}
               <div className="ai8-token-actions">
                 <button type="button" className="ai8-btn" data-action="ai8-change-token" onClick={() => void openOfficialLogin()}>{t('ai.ai8.tokenChange')}</button>
                 <button type="button" className="ai8-btn" data-action="ai8-clear-token" onClick={clearToken}>{t('ai.ai8.tokenClear')}</button>
@@ -1023,10 +1048,12 @@ export function AiLabAi8Tab(): JSX.Element {
             </>
           )}
           {credOpen ? (
-            <div className="ai8-cred-row" data-field="ai8-cred-row">
+            <div className="ai8-cred-block" data-field="ai8-cred-row">
               <input
                 data-field="ai8-cred-account"
                 type="text"
+                autoComplete="username"
+                spellCheck={false}
                 value={credAccount}
                 placeholder={t('ai.ai8.credAccount')}
                 onChange={(e) => setCredAccount(e.target.value)}
@@ -1034,13 +1061,16 @@ export function AiLabAi8Tab(): JSX.Element {
               <input
                 data-field="ai8-cred-password"
                 type="password"
+                autoComplete="current-password"
                 value={credPassword}
                 placeholder={t('ai.ai8.credPassword')}
                 onChange={(e) => setCredPassword(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') void saveCredentials() }}
               />
-              <button type="button" className="ai8-btn" data-action="ai8-cred-save" onClick={() => void saveCredentials()} disabled={credAccount.trim() === '' || credPassword === ''}>{t('ai.ai8.credSave')}</button>
-              <button type="button" className="ai8-btn" data-action="ai8-cred-clear" onClick={() => void clearCredentials()}>{t('ai.ai8.credClear')}</button>
+              <div className="ai8-cred-actions">
+                <button type="button" className="ai8-btn" data-action="ai8-cred-save" onClick={() => void saveCredentials()} disabled={credAccount.trim() === '' || credPassword === ''}>{t('ai.ai8.credSave')}</button>
+                <button type="button" className="ai8-btn" data-action="ai8-cred-clear" onClick={() => void clearCredentials()}>{t('ai.ai8.credClear')}</button>
+              </div>
             </div>
           ) : null}
           {credHint !== '' ? <p className="ai8-import-hint" data-field="ai8-cred-hint">{credHint}</p> : null}

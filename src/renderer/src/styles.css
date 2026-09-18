@@ -7836,9 +7836,23 @@ input[type='range'].video-player-volume {
   border-radius: 999px;
 }
 
-/* R123.3: remembered-credentials row (account + password + save/clear) */
-.ai8-cred-row { display: flex; gap: 6px; margin-top: 6px; }
-.ai8-cred-row input { flex: 1 1 0; min-width: 0; }
+/* R123.3 → R129.2: remembered-credentials block — stacked full-width inputs
+ * (the old single flex row squeezed each input to ~60px in the narrow
+ * sidebar and users couldn't see the password they typed) */
+.ai8-cred-row, .ai8-cred-block { margin-top: 6px; }
+.ai8-cred-block { display: grid; gap: 6px; }
+.ai8-cred-block input { width: 100%; box-sizing: border-box; min-width: 0; font-size: 13px; padding: 6px 8px; }
+.ai8-cred-actions { display: flex; gap: 6px; }
+
+/* R129.1: remaining-credits badge next to the account chip (click = refresh) */
+.ai8-balance {
+  display: inline-block; margin-left: 4px; padding: 1px 8px;
+  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: #d8b36a; background: rgba(216, 179, 106, 0.12);
+  border: 1px solid rgba(216, 179, 106, 0.3); border-radius: 999px;
+  cursor: pointer;
+}
+.ai8-balance:hover { background: rgba(216, 179, 106, 0.22); }
 
 /* ── R121: chat/draw/video mode segment + video player + beta notice ─────── */
 
