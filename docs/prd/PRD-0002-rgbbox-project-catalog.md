@@ -1247,6 +1247,17 @@
 - **实施证据（2026-09-18）**：①TDD 红→绿：新增 6 用例先红（`parseDrawImages`/`isDrawDone` 未实现 + 版本断言）后绿，`yarn test tests/renderer/ai8/client.test.ts` **21/21**（含：live `outImages[]` 逐成员取 `url>imgUrl>smallImgUrl` / 顶层 `imgUrl` 兜底 / 旧 `list[].url` 兼容 / 垃圾载荷容错 / truthy `end`（true/1/'1' 过，'0'/'false' 拒）/ `AI8_APP_VERSION='3.4.1'`）；②`yarn typecheck` 0 error；③全量 `yarn test` **855 passed / 41 skipped / 0 失败**；④接线点两处（`runDrawTask` 轮询 + `findLatestDrawTask` records 解析）统一走共享解析，视频路径（R121 `/video/{id}`）零改动。**环境插曲（与 R124 无关的存量问题）**：本机 Node v26.1.0 下 node-env 测试裸用 `localStorage` 会因「--localstorage-file 未提供」得到 undefined（干净 main 基线同样 34 失败，stash 复现证实非本次引入）；全量绿需 `NODE_OPTIONS="--localstorage-file=<tmp>"` 前缀。**状态：✅（代码+测试闭环；用户真机实测绘画出图为最终验收）**
 
 
+### R125. AI8 绘画防卡死三件套——args 提交体 + 270s 轮询 + 超时 DELETE 逃生阀（2026-09-18 用户复测 R124 后仍卡「正在接收结果…」）
+
+> 根因续证（bundle + 行为双向实证）：①用户账号被**僵尸任务**卡死——昨日任务 `2100954848043208704` 无 endDate 挂在服务端，每账号 1 个进行中名额被占 → 每次新提交「上限」拒绝 → 接管僵尸 → 轮询超时死循环（用户所见「生成中…→正在接收结果…→无下文」）；②僵尸最可能成因=我方提交体缺 `args`——线上前端对 cms 模型**必带** `args`（`Br()` 实证默认值=模板控件 `value`（area 首选项 `1024x1024`），`yr()` 实证 `n.args=r` 随体提交）；③站点提供 `DELETE /draw/{taskId}`（`zr()` 实证）作清坑正规通道。附带发现：站点密码登录新增**图形验证码**（`图形验证码数据不能为空`），R123 无头自动登录可能间歇性失效——官网窗口兜底仍在，暂不动，记录在案。
+- **R125.1 提交体补 `args`**：`parseDrawTemplate` 为每个模型解析 `area[0].value` 作默认分辨率（`Ai8DrawModel.area?`）；`Ai8Client.draw()` 接受 `area?` 并在 body 组装 `args:{area}`（无 area 不带，mj/niji 不受影响——站点对它们走 prompt 内 `--ar` 而非 args）。
+- **R125.2 轮询窗口 150s → 270s**：`runDrawTask` 60×2.5s → 108×2.5s（Seedream 4K 档慢任务余量，与视频 10min 窗口的比例关系合理）。
+- **R125.3 超时逃生阀**：新增 `Ai8Client.drawDelete(taskId)`（`DELETE /draw/{taskId}`）；draw 超时路径：先 best-effort DELETE 清坑——**新提交场景**自动带 args 重试一次（镜像既有 limit-resubmit 模式），**接管/恢复场景**置错误文案 `draw stuck cleared`（不替旧 prompt 花费积分，用户一键重发即可）；DELETE 失败不影响错误呈现。
+- **受影响文件**：`src/shared/ai8Client.ts`（parseDrawTemplate/draw/drawDelete）、`src/renderer/src/components/AiLabAi8Tab.tsx`（drawModel→area 默认传递、轮询上限、超时分支）、`tests/renderer/ai8/client.test.ts`。（i18n 零改动：复用 `drawResubmit` 占位 + 错误串走 `errNetwork (${error})` 既有拼接。）
+- **验收点**：①area 解析/args 体/DELETE 端点单测全绿；②旧形状与既有用例零回归；③typecheck 0 error；④用户真机：清坑后新提交能出图、超时自动清坑重试可观察。
+- **实施证据（2026-09-18）**：①TDD 红→绿：3 新用例先红后绿，`yarn test tests/renderer/ai8/client.test.ts` **24/24**（cms 模型 `area[0]` 默认解析（无 area 不带键）/ `draw()` 带 `args:{area}` 且无 area 时 body 零 `args` 键 / `drawDelete` 发 `DELETE /draw/{taskId}` 带 Authorization）；②`yarn typecheck` 0 error；③全量 `yarn test` **93 files / 858 passed / 0 失败**（一次 VideoStudioView 既有 flaky 单现，隔离+重跑均过，与本次无关）；④轮询 60→108×2.5s=270s；超时→best-effort DELETE→新提交 `submitAndPoll` 重试一次（不再嵌套）/ 接管与恢复路径报 `draw stuck cleared`；limit-resubmit 与两处 POST 均带 area。**状态：✅（代码+测试闭环；用户真机出图为最终验收）**
+
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

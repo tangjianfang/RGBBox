@@ -53,6 +53,11 @@ export interface Ai8ChatTemplate {
 export interface Ai8DrawModel {
   label: string
   value: string
+  /** R125.1: the model's default resolution — first `area[]` option value
+   *  from the live template; sent as `args:{area}` on submit (the site's
+   *  frontend always ships args for cms models; a task without it can sit
+   *  "running" forever server-side and hold the ONE-task-per-account slot). */
+  area?: string
 }
 
 export interface Ai8DrawModelGroup {
@@ -72,10 +77,17 @@ export function parseDrawTemplate(raw: unknown): Ai8DrawTemplateParsed {
   const tmpl = (raw ?? {}) as {
     models?: { label?: string; value?: string }[]
     meta?: { defInput?: { model?: string } } | null
-    cms?: { name?: string; platform?: string; models?: { label?: string; value?: string }[] }[]
+    cms?: { name?: string; platform?: string; models?: { label?: string; value?: string; area?: { value?: unknown }[] }[] }[]
   }
-  const pick = (m: { label?: string; value?: string }): Ai8DrawModel | null =>
-    typeof m.value === 'string' && m.value !== '' ? { label: typeof m.label === 'string' && m.label !== '' ? m.label : m.value, value: m.value } : null
+  const pick = (m: { label?: string; value?: string; area?: { value?: unknown }[] }): Ai8DrawModel | null => {
+    if (typeof m.value !== 'string' || m.value === '') return null
+    const firstArea = m.area?.[0]?.value
+    return {
+      label: typeof m.label === 'string' && m.label !== '' ? m.label : m.value,
+      value: m.value,
+      ...(typeof firstArea === 'string' && firstArea !== '' ? { area: firstArea } : {}),
+    }
+  }
   // live shape: cms[].models[] grouped per provider (即梦/千问…)
   const groups: Ai8DrawModelGroup[] = []
   for (const provider of tmpl.cms ?? []) {
@@ -407,10 +419,20 @@ export class Ai8Client {
     return this.unwrap<T>(res)
   }
 
-  /** R117.3: submit a draw task — the exact body shape the live site sends
-   *  (verified against draw-HaYo0BLq.js): {model, action, prompt, public, fast}. */
-  draw<T>(body: { model: string; prompt: string; action?: string; public?: boolean; fast?: boolean }): Promise<T> {
-    return this.post<T>('/draw', { action: 'IMAGINE', public: false, fast: false, ...body })
+  /** R117.3/R125.1: submit a draw task — the site frontend's body shape
+   *  (verified against draw-HaYo0BLq.js): {model, action, prompt, public,
+   *  fast} plus `args:{area}` for cms models (default resolution from the
+   *  template — the site always ships args; without it a task can hang
+   *  server-side holding the account's one running slot). */
+  draw<T>(body: { model: string; prompt: string; action?: string; public?: boolean; fast?: boolean; area?: string }): Promise<T> {
+    const { area, ...rest } = body
+    return this.post<T>('/draw', { action: 'IMAGINE', public: false, fast: false, ...rest, ...(area !== undefined ? { args: { area } } : {}) })
+  }
+
+  /** R125.3: delete a draw task — the site's own escape hatch for a stuck
+   *  "running" task (it occupies the account's ONE running slot). */
+  drawDelete<T>(taskId: string | number): Promise<T> {
+    return fetch(this.baseUrl + `/draw/${taskId}`, { method: 'DELETE', headers: this.headers() }).then((res) => this.unwrap<T>(res))
   }
 
   /** R117.3/R124: poll a draw task — parse with `parseDrawImages` (live

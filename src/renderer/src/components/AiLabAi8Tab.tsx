@@ -403,13 +403,16 @@ export function AiLabAi8Tab(): JSX.Element {
 
   /** R122: shared draw polling core — submit, limit-error adoption and
    *  restart recovery all land here. `urls` pre-set = the task already
-   *  finished on the server (receive-only, skip polling). */
-  const runDrawTask = async (sessionId: string | number, taskId: string, abort: AbortController, baseName: string, urls?: string[]) => {
+   *  finished on the server (receive-only, skip polling). R125: poll window
+   *  108×2.5s≈270s (slow 4K models); on timeout the stuck task is DELETED
+   *  server-side (it holds the account's ONE running slot) and `resubmit`,
+   *  when provided by a fresh submit, fires exactly once. */
+  const runDrawTask = async (sessionId: string | number, taskId: string, abort: AbortController, baseName: string, urls?: string[], resubmit?: () => Promise<void>) => {
     // R122.2: persist the id FIRST — everything after this is resumable
     patchLastAssistant(sessionId, { taskId, error: undefined })
     let finalUrls = urls
     if (finalUrls === undefined) {
-      for (let poll = 0; poll < 60; poll++) {
+      for (let poll = 0; poll < 108; poll++) {
         await new Promise((resolve) => setTimeout(resolve, 2500))
         if (abort.signal.aborted) {
           // P2-2 review fix: a stopped draw must not stay「绘画中…」forever
@@ -430,7 +433,15 @@ export function AiLabAi8Tab(): JSX.Element {
         }
       }
       if (finalUrls === undefined) {
-        patchLastAssistant(sessionId, { error: 'draw timeout' })
+        // R125.3: stuck task — clear the server slot (best-effort), then
+        // retry once for a fresh submit or report for adoption/recovery.
+        await client().drawDelete(taskId).catch(() => undefined)
+        if (resubmit !== undefined && !abort.signal.aborted) {
+          patchLastAssistant(sessionId, { content: t('ai.ai8.drawResubmit'), error: undefined })
+          await resubmit()
+          return
+        }
+        patchLastAssistant(sessionId, { error: 'draw stuck cleared' })
         return
       }
     }
@@ -608,11 +619,14 @@ export function AiLabAi8Tab(): JSX.Element {
       return
     }
     // R117.3 draw mode: the site's own protocol — POST /draw
-    // {model, action:'IMAGINE', prompt, public, fast} → poll /draw/status/{id}
-    // until `end` or a non-empty list[].url; images render as a preview grid
-    // and auto-cache to disk via ai8SaveArtifact.
+    // {model, action:'IMAGINE', prompt, public, fast, args:{area}} → poll
+    // /draw/status/{id} until `end` or images (outImages/imgUrl, R124);
+    // images render as a preview grid and auto-cache to disk.
     if (prefs.mode === 'draw') {
       const drawModel = prefs.drawModel || drawModels[0]?.value || ''
+      // R125.1: the model's default resolution rides as args:{area} — without
+      // it a cms task can sit "running" forever server-side.
+      const drawArea = drawModels.find((m) => m.value === drawModel)?.area
       setInput('')
       const draftId = `draw-${Date.now()}`
       setSessions((list) => {
@@ -627,10 +641,20 @@ export function AiLabAi8Tab(): JSX.Element {
       const drawAbort = new AbortController()
       abortMap.current.set(String(draftId), drawAbort)
       const base = cleanGeneratedTitle(content) || 'ai8-draw'
+      // R125.3: one retry after a stuck task was cleared (no further nesting)
+      const submitAndPoll = async () => {
+        const created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel, prompt: content, area: drawArea })
+        const taskId = String(created?.taskId ?? created?.id ?? '')
+        if (taskId === '') {
+          patchLastAssistant(draftId, { error: 'draw task id missing' })
+          return
+        }
+        await runDrawTask(draftId, taskId, drawAbort, base)
+      }
       try {
         let created: { id?: string | number; taskId?: string | number } | undefined
         try {
-          created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel, prompt: content })
+          created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel, prompt: content, area: drawArea })
         } catch (error) {
           // R122.3: limit rejection — adopt the running task instead of a
           // dead-end error (it may have been submitted from the web app too)
@@ -649,14 +673,14 @@ export function AiLabAi8Tab(): JSX.Element {
             patchLastAssistant(draftId, { error: 'stopped' })
             return
           }
-          created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel, prompt: content })
+          created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel, prompt: content, area: drawArea })
         }
         const taskId = String(created?.taskId ?? created?.id ?? '')
         if (taskId === '') {
           patchLastAssistant(draftId, { error: 'draw task id missing' })
           return
         }
-        await runDrawTask(draftId, taskId, drawAbort, base)
+        await runDrawTask(draftId, taskId, drawAbort, base, undefined, submitAndPoll)
       } catch (error) {
         patchLastAssistant(draftId, { error: error instanceof Ai8Error ? error.message : 'network' })
       } finally {

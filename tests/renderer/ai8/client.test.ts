@@ -224,3 +224,63 @@ describe('renderer/ai8 draw result shape (R124 — live outImages/imgUrl era)', 
     expect(AI8_APP_VERSION).toBe('3.4.1')
   })
 })
+
+describe('renderer/ai8 draw anti-stuck (R125 — args body + DELETE escape hatch)', () => {
+  it('parseDrawTemplate carries each cms model default area (first option value)', () => {
+    const parsed = parseDrawTemplate({
+      cms: [
+        {
+          name: '即梦',
+          models: [
+            {
+              label: '5.0',
+              value: 'doubao-seedream-5-0',
+              area: [{ label: '头像', value: '1024x1024' }, { label: '4K超清', value: '4096x4096' }],
+            },
+            { label: '4.0', value: 'doubao-seedream-4-0' },
+          ],
+        },
+      ],
+    })
+    expect(parsed.groups[0].models[0].area).toBe('1024x1024')
+    expect(parsed.groups[0].models[1].area).toBeUndefined()
+  })
+
+  it('draw() assembles args:{area} when an area is given, and omits args otherwise', async () => {
+    const calls: { url: string; method?: string; body?: string }[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (url: string, init?: { method?: string; body?: string }) => {
+      calls.push({ url: String(url), method: init?.method, body: init?.body })
+      return new Response(JSON.stringify({ code: 0, data: { taskId: 't9' }, msg: '' }), { status: 200 })
+    }) as typeof fetch
+    try {
+      const client = new Ai8Client({ token: 'tk' })
+      await client.draw({ model: 'doubao-seedream-5-0', prompt: '一只猫', area: '1024x1024' })
+      await client.draw({ model: 'mj', prompt: 'a cat --ar 16:9' })
+      const withArgs = JSON.parse(String(calls[0].body))
+      expect(withArgs).toEqual({ action: 'IMAGINE', public: false, fast: false, model: 'doubao-seedream-5-0', prompt: '一只猫', args: { area: '1024x1024' } })
+      const withoutArgs = JSON.parse(String(calls[1].body))
+      expect(withoutArgs.args).toBeUndefined()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('drawDelete issues DELETE /draw/{taskId} with auth headers (best-effort unblock)', async () => {
+    const calls: { url: string; method?: string; headers?: Record<string, string> }[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (url: string, init?: { method?: string; headers?: Record<string, string> }) => {
+      calls.push({ url: String(url), method: init?.method, headers: init?.headers })
+      return new Response(JSON.stringify({ code: 0, data: null, msg: '' }), { status: 200 })
+    }) as typeof fetch
+    try {
+      const client = new Ai8Client({ token: 'tk' })
+      await client.drawDelete('2100954848043208704')
+      expect(calls[0].url).toBe('https://ai8.rcouyi.com/api/draw/2100954848043208704')
+      expect(calls[0].method).toBe('DELETE')
+      expect(calls[0].headers?.Authorization).toBe('tk')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
