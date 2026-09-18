@@ -9,6 +9,16 @@ describe('main/mediaProtocol (R70.1)', () => {
       expect(resolveMediaMime('track.opus')).toBe('audio/opus')
     })
 
+    it('maps image extensions for AI8 draw thumbnails (R127)', () => {
+      expect(resolveMediaMime('artifact.png')).toBe('image/png')
+      expect(resolveMediaMime('C:\\cache\\S01A-1.jpg')).toBe('image/jpeg')
+      expect(resolveMediaMime('thumb.jpeg')).toBe('image/jpeg')
+      expect(resolveMediaMime('a.webp')).toBe('image/webp')
+      expect(resolveMediaMime('a.gif')).toBe('image/gif')
+      expect(resolveMediaMime('a.bmp')).toBe('image/bmp')
+      expect(resolveMediaMime('a.avif')).toBe('image/avif')
+    })
+
     it('maps every video extension VideoStudioView can queue', () => {
       // Same extension set as VIDEO_FILTERS in src/main/index.ts
       const videoExts = ['mp4', 'webm', 'mkv', 'mov', 'avi', 'flv', 'ts', 'm4v', 'wmv']

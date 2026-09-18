@@ -1270,6 +1270,16 @@
 - **实施证据（2026-09-19）**：①TDD 红→绿：`tests/renderer/ai8/mdPrompt.test.ts` **6/6**（首围栏块逐字提取/无语言围栏/无围栏剥标记纯文本/空与空白与空围栏→''/自然排序 S2<S10 与大小写不敏感）；②localStore 往返用例钉住 `batch`/`file`/`timerStart`/`elapsed`；③`yarn typecheck` 0 error；④全量 `yarn test` **94 files / 865 passed / 0 失败**（+7）；⑤`runDrawTask` 返回值化（urls|null）供批量判定推进，单次绘画/接管/恢复路径行为零变化；⑥R122.5 自动恢复与 R122.4 手动「查询最新绘画结果」均已排除批量会话（summary turn 不可接管）；⑦图片写回源文件夹走 main 侧 `ai8BatchFolder` 白名单校验（非本会话所选文件夹一律拒绝），文件名消毒+扩展名由 dataUrl MIME 判定；⑦e2e mock 场景未单列 verify 脚本——批量队列逻辑与 runDrawTask 共核且已由单测+用户真机验收覆盖（真机跑真实场景文件夹为最终验收）。**状态：✅（代码+测试闭环；用户真机跑真实文件夹为最终验收）**
 
 
+### R127. AI8 绘画缩略图本地优先渲染——会话图片不再依赖 CDN 瞬态（2026-09-19 用户报告「会话聊天里面的图片缩略图无法正常显示（裂图）」）
+
+> 排查记录（四层取证，全部构造环境均正常）：①CDN 直连 curl 200、带 Origin 时 `Access-Control-Allow-Origin:*`、无 CORP/防盗链；②Electron 探针 data: origin `<img>` 解码 3200×3200 ✓；③隔离 userData 的打包态应用（file://、R126 构建）经 CDP 注入真实会话 turn 后 `.ai8-draw-grid img` `complete:true, w:2048` ✓；④http://127.0.0.1 origin 探针 ✓。应用无 CSP/COEP/权限拦截，渲染分支与样式正确，用户数据中 `turn.images`/`turn.saved` 结构完好。结论：故障为用户实例的瞬态网络/缓存态（无法在干净环境复现），但**根因类别明确=缩略图绑定远端 CDN**。修复策略：本地优先——每轮成功绘制均有 `saved` 工件（artifacts 缓存，顺序与 images 一致），缩略图改走 `media://local?p=<path>`（R70 既有特权协议），远端 URL 退为兜底与点击放大。附带把 `MEDIA_MIME` 表补上图片扩展名（png/jpg/jpeg/webp/gif/bmp/avif）。
+- **R127.1 mediaProtocol.ts**：`MEDIA_MIME` + 图片段（该表原仅音视频）。
+- **R127.2 AiLabAi8Tab.tsx**：图片网格 `src` 取 `saved[i] ? media://local?p=... : url`；`onClick` 保持开远端；`mediaLocalSrc(path)` 助手。
+- **受影响文件**：`src/main/mediaProtocol.ts`、`src/renderer/src/components/AiLabAi8Tab.tsx`、`tests/main/mediaProtocol.test.ts`（如存在则扩展）。
+- **验收点**：①图片 MIME 单测；②有 saved 的 turn 渲染 media:// 本地缩略图（CDN 故障也显示）；③无 saved 的旧 turn 保持远端行为不变；④typecheck + 全量回归。
+- **实施证据（2026-09-19）**：①`tests/main/mediaProtocol.test.ts` +图片 MIME 用例（png/jpg/jpeg/webp/gif/bmp/avif）全绿；②`yarn typecheck` 0 error；③目标测试集 `mediaProtocol + renderer/ai8`（5 files / **70/70**）；④全量 `yarn test` 94 files 中 93 过，唯一失败为 VideoStudioView「persists the mode tab」**既有并发 flaky**（隔离运行 11/11 过、R125 时期即复现于无渲染层改动的运行，与本条款无关）；⑤渲染改动为 grid src 三元（`saved[imgIdx] ? mediaLocalSrc : url`），无 saved 的旧 turn 走原远端路径零变化，onClick 保持开远端大图。**状态：✅（用户实例重开后缩略图走本地工件；若再现裂图说明 saved 缺失，另案排查）**
+
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

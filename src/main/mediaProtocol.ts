@@ -22,6 +22,9 @@ export const MEDIA_MIME: Record<string, string> = {
   mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mkv: 'video/x-matroska',
   mov: 'video/quicktime', avi: 'video/x-msvideo', flv: 'video/x-flv',
   ts: 'video/mp2t', wmv: 'video/x-ms-wmv',
+  // R127: images — AI8 draw thumbnails render local artifacts via media://
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+  gif: 'image/gif', bmp: 'image/bmp', avif: 'image/avif',
 }
 
 /** Resolve the Content-Type for a local media path (neutral fallback for unknown). */

@@ -62,6 +62,12 @@ function fmtElapsed(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 }
 
+/** R127: serve a local artifact path through the R70 media:// scheme — the
+ *  path rides as a query param to dodge Windows drive-letter mangling. */
+function mediaLocalSrc(path: string): string {
+  return `media://local?p=${encodeURIComponent(path)}`
+}
+
 /** R126: live ticking timer for the turn being generated (mounts per active
  *  turn only — settled turns render the persisted `elapsed` instead). */
 function ElapsedSince({ start }: { start: number }): JSX.Element {
@@ -1203,11 +1209,23 @@ export function AiLabAi8Tab(): JSX.Element {
                   : turn.role === 'assistant' && (turn.images !== undefined || (activeSession?.kind === 'draw' && /^https?:\/\/\S+$/.test(turn.content.trim())))
                   ? (
                     // R117.3: draw replies render as an image grid + cached-file
-                    // shortcuts (legacy turns kept plain-URL content)
+                    // shortcuts (legacy turns kept plain-URL content).
+                    // R127: thumbnails prefer the LOCAL artifact (media://,
+                    // saved[] order matches images[]) — the remote URL stays
+                    // as the no-artifact fallback and the click-through.
                     <div className="ai8-draw-grid" data-field="ai8-draw-grid">
-                      {(turn.images ?? turn.content.trim().split(/\s+/)).map((url) => (
-                        <img key={url} src={url} alt={t('ai.ai8.drawImage')} loading="lazy" onClick={() => { if (/^https?:\/\//.test(url)) window.open(url, '_blank') }} />
-                      ))}
+                      {(turn.images ?? turn.content.trim().split(/\s+/)).map((url, imgIdx) => {
+                        const local = turn.saved?.[imgIdx]
+                        return (
+                          <img
+                            key={url}
+                            src={local !== undefined ? mediaLocalSrc(local) : url}
+                            alt={t('ai.ai8.drawImage')}
+                            loading="lazy"
+                            onClick={() => { if (/^https?:\/\//.test(url)) window.open(url, '_blank') }}
+                          />
+                        )
+                      })}
                       {turn.saved !== undefined && turn.saved.length > 0 ? (
                         <button
                           type="button"
