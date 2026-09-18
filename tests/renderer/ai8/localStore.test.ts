@@ -124,6 +124,22 @@ describe('renderer/ai8 localStore (R113)', () => {
     expect(readSessions()[0].kind).toBe('draw')
   })
 
+  it('sessions round-trip the batch meta + per-file timer fields (R126)', () => {
+    const sessions: Ai8Session[] = [{
+      id: 'draw-b1', kind: 'draw', model: 'doubao-seedream-5-0', title: '批量 · scenes', createdAt: 1, updatedAt: 2,
+      batch: { folder: 'C:/scenes', total: 12, done: 3, failed: 1, startedAt: 1000, finished: false },
+      turns: [
+        { role: 'assistant', content: '绘画中…', file: 'S01A.md', timerStart: 1234 },
+        { role: 'assistant', content: 'https://cdn/a.png', images: ['https://cdn/a.png'], file: 'S00.md', elapsed: 47 },
+      ],
+    }]
+    writeSessions(sessions)
+    const back = readSessions()[0]
+    expect(back.batch).toEqual({ folder: 'C:/scenes', total: 12, done: 3, failed: 1, startedAt: 1000, finished: false })
+    expect(back.turns[0]).toMatchObject({ file: 'S01A.md', timerStart: 1234 })
+    expect(back.turns[1]).toMatchObject({ file: 'S00.md', elapsed: 47 })
+  })
+
   it('sessions round-trip the video kind + videoUrl turn (R121)', () => {
     const sessions: Ai8Session[] = [{ id: 'video-1', kind: 'video', model: 'kling', title: '猫追激光', turns: [{ role: 'assistant', content: 'https://v/x.mp4', videoUrl: 'https://v/x.mp4' }], createdAt: 1, updatedAt: 2 }]
     writeSessions(sessions)

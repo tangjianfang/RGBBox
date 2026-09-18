@@ -562,6 +562,54 @@ function registerIpc(): void {
     return ai8AutoLoginWith(cred, process.env.RGBBOX_AI8_BASE_URL)
   })
 
+  // R126: folder-batch draw — pick a folder of scene MD files. The dialog,
+  // the listing (top-level *.md) and the reads all live main-side; the
+  // renderer only receives names + contents. `ai8BatchFolder` also becomes
+  // the ONLY folder a save-image call may write into (this session's pick).
+  let ai8BatchFolder: string | null = null
+  ipcMain.handle(ipcChannels.ai8PickMdFolder, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: '选择 MD 场景文件夹（仅顶层 *.md，按文件名自然排序）',
+    })
+    const folder = result.filePaths[0]
+    if (folder === undefined) return { folder: '', files: [] }
+    let names: string[] = []
+    try {
+      names = (await readdir(folder)).filter((n) => n.toLowerCase().endsWith('.md'))
+    } catch {
+      return { folder: '', files: [] }
+    }
+    const files: { name: string; content: string }[] = []
+    for (const name of names) {
+      try {
+        files.push({ name, content: await readFile(join(folder, name), 'utf-8') })
+      } catch {
+        // unreadable entry — skip it; the batch records the file as failed
+      }
+    }
+    ai8BatchFolder = folder
+    return { folder, files }
+  })
+  ipcMain.handle(ipcChannels.ai8SaveImageToFolder, async (_event, folder: unknown, fileName: unknown, dataUrl: unknown) => {
+    // path containment: the folder must be THIS session's pick, the file name
+    // is sanitized — the renderer never dictates an absolute path
+    if (typeof folder !== 'string' || typeof fileName !== 'string' || typeof dataUrl !== 'string' || folder === '' || ai8BatchFolder !== folder) return null
+    const match = dataUrl.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,/)
+    if (match === null) return null
+    const safe = fileName.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 120)
+    if (safe === '') return null
+    const ext = match[1] === 'jpeg' ? 'jpg' : match[1]
+    try {
+      const path = join(folder, `${safe}.${ext}`)
+      await writeFile(path, Buffer.from(dataUrl.slice(match[0].length), 'base64'))
+      return path
+    } catch (err) {
+      log.warn('ai8', `ai8SaveImageToFolder failed: ${String(err)}`)
+      return null
+    }
+  })
+
   // R111: AI8 embedded login. Opens the official site in a child window with a
   // persistent partition (the site keeps its own session), polls its
   // localStorage for the GoAmzAI userStore token, and resolves the invoking

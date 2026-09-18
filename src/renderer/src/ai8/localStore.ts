@@ -14,6 +14,12 @@ export interface Ai8Turn {
   taskId?: string
   /** R121: video replies — the playable video URL. */
   videoUrl?: string
+  /** R126: batch draw — the source MD file name (renders as the turn's tag)
+   *  and the live/stopped generation timer (seconds while running, persisted
+   *  as the final elapsed once the turn settles). */
+  file?: string
+  timerStart?: number
+  elapsed?: number
 }
 
 export interface Ai8Session {
@@ -29,6 +35,17 @@ export interface Ai8Session {
   /** R117.4/R121: chat (default) vs draw vs video — draw renders image grids,
    *  video renders an inline player. */
   kind?: 'chat' | 'draw' | 'video'
+  /** R126: folder-batch draw — progress bookkeeping for the session header. */
+  batch?: {
+    folder: string
+    total: number
+    done: number
+    failed: number
+    /** epoch ms of the whole batch's start (drives the header total timer) */
+    startedAt?: number
+    /** true once every file settled (summary line rendered) */
+    finished?: boolean
+  }
 }
 
 /** R121: three workbench modes — chat / draw / video. */

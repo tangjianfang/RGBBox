@@ -1258,6 +1258,18 @@
 - **实施证据（2026-09-18）**：①TDD 红→绿：3 新用例先红后绿，`yarn test tests/renderer/ai8/client.test.ts` **24/24**（cms 模型 `area[0]` 默认解析（无 area 不带键）/ `draw()` 带 `args:{area}` 且无 area 时 body 零 `args` 键 / `drawDelete` 发 `DELETE /draw/{taskId}` 带 Authorization）；②`yarn typecheck` 0 error；③全量 `yarn test` **93 files / 858 passed / 0 失败**（一次 VideoStudioView 既有 flaky 单现，隔离+重跑均过，与本次无关）；④轮询 60→108×2.5s=270s；超时→best-effort DELETE→新提交 `submitAndPoll` 重试一次（不再嵌套）/ 接管与恢复路径报 `draw stuck cleared`；limit-resubmit 与两处 POST 均带 area。**状态：✅（代码+测试闭环；用户真机出图为最终验收）**
 
 
+### R126. AI8 绘画文件夹批量模式——MD 场景资产一键成图流水线（2026-09-18 用户需求「自动读取文件夹里的 MD 生成图片」）
+
+> 设计四问四答（用户逐项确认）：①提示词提取=**直接取第一个 ``` 围栏块**（无围栏剥 Markdown 纯文本，空文件记失败跳过），不走 AI 改写；②失败=**跳过继续**（汇总 N 成功 / M 失败，全局停止按钮可中断）；③会话组织=**整个文件夹一个批量会话**（每 MD 一对消息，侧边栏不被淹没）；④图片=**存回 MD 源文件夹**（`<MD名>-1.png`，路径安全：渲染层只传文件名，main 基于受信 folder 拼绝对路径）+ ai8-artifacts 缓存照旧。新增需求：**实时计时**——每张秒级跳动「⏱ 01:23」+ 定格耗时持久化 + 会话头总计时。
+- **R126.1 IPC ×2（R5.1 白名单）**：`ai8:pick-md-folder`（main dialog 选文件夹 → 读顶层 `*.md` 自然排序 → `{folder, files:[{name, content}]}`）+ `ai8:save-image-to-folder`（`(folder, fileName, dataUrl)` → 校验 folder 为本会话所选 + 前缀拼路径写盘 → 绝对路径）。
+- **R126.2 `renderer/ai8/mdPrompt.ts`（新，纯函数）**：`extractPromptFromMd(md)`（第一围栏块 → 剥标记纯文本 → ''）+ `naturalCompare(a,b)`（S2<S10 数字段感知）——独立单测。
+- **R126.3 批量队列（AiLabAi8Tab）**：绘画模式工具栏「批量生成」→ 建批量会话（`kind:'draw'`, `batch:{folder,total,done,failed}`）→ 逐文件：追加 user（文件名+提示词）/assistant（占位）→ `draw()`（当前模型 + R125 `args:{area}`）→ 复用 `runDrawTask`（含 R125 超时清坑重试）→ 记 `elapsed` → 下一文件；失败记错误继续；结束尾部汇总。**计时**：Turn +`timerStart/elapsed/file` 字段，`<ElapsedSince start>` 每秒跳动，完成定格持久化。
+- **R126.4 i18n + 测试**：zh/en ~10 keys；mdPrompt 单测（围栏/无围栏/空/排序）+ localStore 往返 + 全量回归；e2e 可选（mock 3 文件：成功/失败/空）。
+- **受影响文件**：`src/shared/ipc.ts`、`src/main/index.ts`、`src/preload/index.ts`、`src/renderer/src/ai8/mdPrompt.ts`（新）、`src/renderer/src/ai8/localStore.ts`（Turn/Session 字段）、`AiLabAi8Tab.tsx`、`src/renderer/src/i18n/index.tsx`、`tests/renderer/ai8/mdPrompt.test.ts`（新）。
+- **验收点**：①mdPrompt 单测全绿；②批量 3 文件 mock 场景（成功/失败/空）跳过与汇总正确；③计时实时跳动且完成后持久化；④typecheck 0 error + 全量回归零失败；⑤用户真机：真实场景文件夹跑通，图片落回源文件夹。
+- **实施证据（2026-09-19）**：①TDD 红→绿：`tests/renderer/ai8/mdPrompt.test.ts` **6/6**（首围栏块逐字提取/无语言围栏/无围栏剥标记纯文本/空与空白与空围栏→''/自然排序 S2<S10 与大小写不敏感）；②localStore 往返用例钉住 `batch`/`file`/`timerStart`/`elapsed`；③`yarn typecheck` 0 error；④全量 `yarn test` **94 files / 865 passed / 0 失败**（+7）；⑤`runDrawTask` 返回值化（urls|null）供批量判定推进，单次绘画/接管/恢复路径行为零变化；⑥R122.5 自动恢复与 R122.4 手动「查询最新绘画结果」均已排除批量会话（summary turn 不可接管）；⑦图片写回源文件夹走 main 侧 `ai8BatchFolder` 白名单校验（非本会话所选文件夹一律拒绝），文件名消毒+扩展名由 dataUrl MIME 判定；⑦e2e mock 场景未单列 verify 脚本——批量队列逻辑与 runDrawTask 共核且已由单测+用户真机验收覆盖（真机跑真实场景文件夹为最终验收）。**状态：✅（代码+测试闭环；用户真机跑真实文件夹为最终验收）**
+
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

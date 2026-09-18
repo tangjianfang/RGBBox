@@ -170,6 +170,11 @@ export const ipcChannels = {
   ai8SaveCredentials: 'rgbbox:ai8:save-credentials',
   ai8ClearCredentials: 'rgbbox:ai8:clear-credentials',
   ai8AutoLogin: 'rgbbox:ai8:auto-login',
+  // R126: folder-batch draw — pick an MD folder (dialog + top-level *.md,
+  // natural sort, contents read main-side) and write generated images back
+  // into that same folder (folder validated against this session's pick)
+  ai8PickMdFolder: 'rgbbox:ai8:pick-md-folder',
+  ai8SaveImageToFolder: 'rgbbox:ai8:save-image-to-folder',
   // R90 P1: audio AI test lab
   audioAiStatus: 'rgbbox:audio-ai:status',
   audioAiRunVad: 'rgbbox:audio-ai:run-vad',

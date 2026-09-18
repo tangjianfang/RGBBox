@@ -4,6 +4,7 @@ import { useI18n } from '../i18n'
 import { MarkdownView, ThinkPanel, copyRichText, markdownToHtml, splitThinkBlocks, stripThink } from '../ai8/markdown'
 import { AI8_VIDEO_PROVIDERS, Ai8Client, Ai8Error, isDrawDone, isDrawLimitError, parseDrawImages, parseDrawTemplate, parseVideoTemplate, readStoredToken, writeStoredToken, type Ai8DrawModelGroup, type Ai8Model, type Ai8VideoProvider } from '../../../shared/ai8Client'
 import { cleanGeneratedTitle, groupModelsByProvider, matchCurated, pushInputHistory, readActiveId, readInputHistory, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
+import { extractPromptFromMd, naturalCompare } from '../ai8/mdPrompt'
 
 /** R113: AI8 workbench — two-pane layout (session sidebar + chat), multiple
  *  concurrent sessions, ChatGPT-style local history, auto-saved prefs, draw
@@ -52,6 +53,46 @@ const CODE_ARTIFACT_EXT: Record<string, string> = {
   'c++': '.cpp', cs: '.cs', go: '.go', rs: '.rs', rust: '.rs', rb: '.rb', ruby: '.rb',
   php: '.php', sql: '.sql', sh: '.sh', bash: '.sh', shell: '.sh', ps1: '.ps1',
   yaml: '.yaml', yml: '.yml', toml: '.toml', ini: '.ini', env: '.env', txt: '.txt',
+}
+
+/** R126: seconds/ms → fixed mm:ss for the batch timers. */
+function fmtElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(s / 60)
+  return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** R126: live ticking timer for the turn being generated (mounts per active
+ *  turn only — settled turns render the persisted `elapsed` instead). */
+function ElapsedSince({ start }: { start: number }): JSX.Element {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+  return <span className="ai8-turn-timer" data-field="ai8-batch-timer">⏱ {fmtElapsed(now - start)}</span>
+}
+
+/** R126: batch draw — save a generated image into the MD source folder via
+ *  the main-side validated IPC (folder must be this session's pick). */
+async function saveUrlToFolder(folder: string, fileName: string, url: string, signal?: AbortSignal): Promise<string | null> {
+  try {
+    const timeout = AbortSignal.timeout(20_000)
+    const composed = signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout
+    const blob = await fetch(url, { signal: composed }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.blob()
+    })
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(blob)
+    })
+    return await window.rgbbox.ai8SaveImageToFolder(folder, fileName, dataUrl)
+  } catch {
+    return null
+  }
 }
 
 /** R116 (round 4): one-click copy that yields a structured document — both
@@ -123,6 +164,8 @@ export function AiLabAi8Tab(): JSX.Element {
   const [importHint, setImportHint] = useState('')
   // R117.1: per-session streaming — several sessions can stream concurrently
   const [streamingIds, setStreamingIds] = useState<string[]>([])
+  // R126: one folder batch at a time (the server caps running tasks at ONE)
+  const [batchBusy, setBatchBusy] = useState(false)
   const abortMap = useRef<Map<string, AbortController>>(new Map())
   // R117.8: ↑/↓ input history navigation (Claude Code style)
   const histIdx = useRef(-1)
@@ -406,8 +449,10 @@ export function AiLabAi8Tab(): JSX.Element {
    *  finished on the server (receive-only, skip polling). R125: poll window
    *  108×2.5s≈270s (slow 4K models); on timeout the stuck task is DELETED
    *  server-side (it holds the account's ONE running slot) and `resubmit`,
-   *  when provided by a fresh submit, fires exactly once. */
-  const runDrawTask = async (sessionId: string | number, taskId: string, abort: AbortController, baseName: string, urls?: string[], resubmit?: () => Promise<void>) => {
+   *  when provided by a fresh submit, fires exactly once. R126: returns the
+   *  delivered image URLs (null on any failure/stop) so the batch queue can
+   *  decide to advance. */
+  const runDrawTask = async (sessionId: string | number, taskId: string, abort: AbortController, baseName: string, urls?: string[], resubmit?: () => Promise<string[] | null>): Promise<string[] | null> => {
     // R122.2: persist the id FIRST — everything after this is resumable
     patchLastAssistant(sessionId, { taskId, error: undefined })
     let finalUrls = urls
@@ -417,7 +462,7 @@ export function AiLabAi8Tab(): JSX.Element {
         if (abort.signal.aborted) {
           // P2-2 review fix: a stopped draw must not stay「绘画中…」forever
           patchLastAssistant(sessionId, { error: 'stopped' })
-          return
+          return null
         }
         const status = await client().drawStatus<unknown>(taskId)
         // R124: live shape is outImages[]/imgUrl (list[].url is the legacy
@@ -426,7 +471,7 @@ export function AiLabAi8Tab(): JSX.Element {
         if (got.length > 0 || isDrawDone(status)) {
           if (got.length === 0) {
             patchLastAssistant(sessionId, { error: 'draw empty' })
-            return
+            return null
           }
           finalUrls = got
           break
@@ -438,11 +483,10 @@ export function AiLabAi8Tab(): JSX.Element {
         await client().drawDelete(taskId).catch(() => undefined)
         if (resubmit !== undefined && !abort.signal.aborted) {
           patchLastAssistant(sessionId, { content: t('ai.ai8.drawResubmit'), error: undefined })
-          await resubmit()
-          return
+          return await resubmit()
         }
         patchLastAssistant(sessionId, { error: 'draw stuck cleared' })
-        return
+        return null
       }
     }
     const done = finalUrls
@@ -460,6 +504,7 @@ export function AiLabAi8Tab(): JSX.Element {
       }
       if (saved.length > 0) patchLastAssistant(sessionId, { saved })
     })()
+    return done
   }
 
   /** R122.3: locate the server's LATEST draw task via GET /draw — prefers a
@@ -518,15 +563,115 @@ export function AiLabAi8Tab(): JSX.Element {
     }
   }
 
+  /** R126: patch the batch bookkeeping on a session (progress/counters). */
+  const patchBatch = useCallback((id: string | number, patch: (b: NonNullable<Ai8Session['batch']>) => Ai8Session['batch']) => {
+    setSessions((list) => {
+      const next = list.map((s) => (String(s.id) !== String(id) ? s : { ...s, batch: patch(s.batch ?? { folder: '', total: 0, done: 0, failed: 0 }) }))
+      writeSessions(next)
+      return next
+    })
+  }, [])
+
+  /** R126: folder-batch draw — one session for the whole folder, one turn
+   *  pair per MD file, strictly sequential (the server allows ONE running
+   *  task per account anyway). Prompt = the file's first fenced block
+   *  (fallback: stripped plain text); a file with nothing usable is recorded
+   *  failed and skipped. Per-file live timer (timerStart→elapsed) and a
+   *  batch total; images are written back into the source folder via the
+   *  main-validated IPC. Stop aborts between files and inside polling. */
+  const runBatchDraw = async () => {
+    if (batchBusy) return
+    if (!token) {
+      void openOfficialLogin()
+      return
+    }
+    const drawModel0 = prefs.drawModel || drawModels[0]?.value || ''
+    if (drawModel0 === '') return
+    const picked = await window.rgbbox.ai8PickMdFolder()
+    if (picked.folder === '') return
+    const files = [...picked.files].sort((a, b) => naturalCompare(a.name, b.name))
+    const folderName = picked.folder.split(/[\\/]/).filter(Boolean).pop() ?? picked.folder
+    const batchId = `draw-${Date.now()}`
+    const startedAt = Date.now()
+    const drawArea = drawModels.find((m) => m.value === drawModel0)?.area
+    setBatchBusy(true)
+    setSessions((list) => {
+      const next = [{ id: batchId, kind: 'draw' as const, model: drawModel0, title: `${t('ai.ai8.batchTitle')} · ${folderName}`, turns: [], createdAt: startedAt, updatedAt: startedAt, batch: { folder: picked.folder, total: files.length, done: 0, failed: 0, startedAt } } as Ai8Session, ...list]
+      writeSessions(next)
+      return next
+    })
+    setActiveId(batchId)
+    writeActiveId(batchId)
+    markStreaming(batchId, true)
+    const abort = new AbortController()
+    abortMap.current.set(String(batchId), abort)
+    let okCount = 0
+    let failCount = 0
+    /** stamp the final per-file elapsed onto the turn currently settling */
+    const settle = (startMs: number, patch: Partial<Ai8Turn>) => {
+      patchLastAssistant(batchId, { ...patch, timerStart: undefined, elapsed: Math.max(0, Math.round((Date.now() - startMs) / 1000)) })
+    }
+    try {
+      if (files.length === 0) {
+        appendTurn(batchId, { role: 'assistant', content: t('ai.ai8.batchNoFiles') })
+      }
+      for (const f of files) {
+        if (abort.signal.aborted) break
+        const baseName = f.name.replace(/\.md$/i, '')
+        const prompt = extractPromptFromMd(f.content)
+        appendTurn(batchId, { role: 'user', content: prompt === '' ? f.name : `${f.name}\n${prompt}`, file: f.name })
+        const startMs = Date.now()
+        if (prompt === '') {
+          appendTurn(batchId, { role: 'assistant', content: '', error: 'md empty prompt', file: f.name, elapsed: 0 })
+          failCount += 1
+          patchBatch(batchId, (b) => ({ ...b, done: b.done + 1, failed: b.failed + 1 }))
+          continue
+        }
+        appendTurn(batchId, { role: 'assistant', content: t('ai.ai8.drawPending'), file: f.name, timerStart: startMs })
+        let urls: string[] | null = null
+        try {
+          const created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel0, prompt, area: drawArea })
+          const taskId = String(created?.taskId ?? created?.id ?? '')
+          if (taskId === '') {
+            settle(startMs, { error: 'draw task id missing' })
+          } else {
+            urls = await runDrawTask(batchId, taskId, abort, baseName)
+          }
+        } catch (error) {
+          settle(startMs, { error: error instanceof Ai8Error ? error.message : 'network' })
+        }
+        if (urls !== null) {
+          okCount += 1
+          patchBatch(batchId, (b) => ({ ...b, done: b.done + 1 }))
+          settle(startMs, {})
+          urls.forEach((url, i) => {
+            void saveUrlToFolder(picked.folder, `${baseName}-${i + 1}`, url, abort.signal)
+          })
+        } else {
+          failCount += 1
+          patchBatch(batchId, (b) => ({ ...b, done: b.done + 1, failed: b.failed + 1 }))
+        }
+      }
+    } finally {
+      abortMap.current.delete(String(batchId))
+      markStreaming(batchId, false)
+      setBatchBusy(false)
+    }
+    const stopped = abort.signal.aborted
+    appendTurn(batchId, { role: 'assistant', content: `${stopped ? t('ai.ai8.batchStopped') : t('ai.ai8.batchDone')} — ${t('ai.ai8.batchOk')} ${okCount} / ${t('ai.ai8.batchFail')} ${failCount} · ⏱ ${fmtElapsed(Date.now() - startedAt)}` })
+    patchBatch(batchId, (b) => ({ ...b, finished: true }))
+  }
+
   // R122.5: restart recovery — a draw session left on the pending placeholder
   // (stop / quit / crash while the server task kept running) resumes polling
   // once a token exists. One attempt per session per mount; a session already
-  // streaming is skipped (its own poll loop owns it).
+  // streaming is skipped (its own poll loop owns it). R126: batch sessions are
+  // excluded — their last turn is a summary, never a resumable placeholder.
   const resumedRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (token === '') return
     for (const s of sessions) {
-      if (s.kind !== 'draw') continue
+      if (s.kind !== 'draw' || s.batch !== undefined) continue
       const last = s.turns[s.turns.length - 1]
       if (last === undefined || last.role !== 'assistant' || last.images !== undefined || last.error !== undefined) continue
       // the placeholder is the only non-URL, non-empty assistant content a
@@ -642,14 +787,14 @@ export function AiLabAi8Tab(): JSX.Element {
       abortMap.current.set(String(draftId), drawAbort)
       const base = cleanGeneratedTitle(content) || 'ai8-draw'
       // R125.3: one retry after a stuck task was cleared (no further nesting)
-      const submitAndPoll = async () => {
+      const submitAndPoll = async (): Promise<string[] | null> => {
         const created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel, prompt: content, area: drawArea })
         const taskId = String(created?.taskId ?? created?.id ?? '')
         if (taskId === '') {
           patchLastAssistant(draftId, { error: 'draw task id missing' })
-          return
+          return null
         }
-        await runDrawTask(draftId, taskId, drawAbort, base)
+        return await runDrawTask(draftId, taskId, drawAbort, base)
       }
       try {
         let created: { id?: string | number; taskId?: string | number } | undefined
@@ -976,6 +1121,13 @@ export function AiLabAi8Tab(): JSX.Element {
               ))}
             </select>
           )}
+          {prefs.mode === 'draw' ? (
+            // R126: folder-batch draw — pick a folder of scene MDs and run
+            // them sequentially into the current draw model
+            <button type="button" className="ai8-btn" data-action="ai8-batch-draw" onClick={() => { void runBatchDraw() }} disabled={batchBusy || token === ''}>
+              📁 {batchBusy ? t('ai.ai8.batchRunning') : t('ai.ai8.batchBtn')}
+            </button>
+          ) : null}
           {/* R121: three workbench modes replace the draw checkbox */}
           <div className="ai8-mode-seg" data-field="ai8-mode">
             {(['chat', 'draw', 'video'] as const).map((m) => (
@@ -1006,6 +1158,13 @@ export function AiLabAi8Tab(): JSX.Element {
         {prefs.mode === 'video' && videoNotice !== '' ? <p className="ai8-video-notice" data-field="ai8-video-notice">{videoNotice}</p> : null}
 
         <div className="ai8-log" data-field="ai8-log" ref={logRef}>
+          {activeSession?.batch !== undefined ? (
+            // R126: batch progress strip — counter + failures + live total
+            <div className="ai8-batch-strip" data-field="ai8-batch-strip">
+              📁 {activeSession.batch.done}/{activeSession.batch.total} · {t('ai.ai8.batchFail')} {activeSession.batch.failed}
+              {activeSession.batch.startedAt !== undefined && activeSession.batch.finished !== true ? <ElapsedSince start={activeSession.batch.startedAt} /> : null}
+            </div>
+          ) : null}
           {turns.length === 0 && (
             <div className="ai8-placeholder">
               <p>{activeSession ? t('ai.ai8.hintReady') : t('ai.ai8.hintNew')}</p>
@@ -1014,6 +1173,12 @@ export function AiLabAi8Tab(): JSX.Element {
           )}
           {turns.map((turn, i) => (
             <div key={i} className={`ai-msg ai-msg-${turn.role}`}>
+              {turn.file !== undefined ? <span className="ai8-turn-file" data-field="ai8-turn-file">📄 {turn.file}</span> : null}
+              {turn.timerStart !== undefined ? (
+                <ElapsedSince start={turn.timerStart} />
+              ) : turn.elapsed !== undefined && turn.file !== undefined ? (
+                <span className="ai8-turn-timer">⏱ {fmtElapsed(turn.elapsed * 1000)}</span>
+              ) : null}
               {turn.role === 'assistant' && turn.error === undefined && turn.content !== '' ? (
                 <MessageCopyButton text={turn.content} label={t('ai.ai8.copy')} />
               ) : null}
@@ -1072,8 +1237,10 @@ export function AiLabAi8Tab(): JSX.Element {
               {/* R122.4: manual recovery entry — error turns (limit/timeout/
                   stopped/channel) and stale pending turns offer「查询最新绘画
                   结果」to adopt the server's latest task and receive its
-                  result; hidden while this session is already polling. */}
-              {turn.role === 'assistant' && activeSession?.kind === 'draw' && turn.images === undefined && turn.videoUrl === undefined && !activeStreaming ? (
+                  result; hidden while this session is already polling.
+                  R126: batch sessions are excluded (their turns are per-file
+                  records, not adoptable single tasks). */}
+              {turn.role === 'assistant' && activeSession?.kind === 'draw' && activeSession?.batch === undefined && turn.images === undefined && turn.videoUrl === undefined && !activeStreaming ? (
                 <button
                   type="button"
                   className="ai8-btn ai8-draw-latest"

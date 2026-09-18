@@ -227,6 +227,12 @@ const api = {
     ipcRenderer.invoke(ipcChannels.ai8ClearCredentials),
   ai8AutoLogin: (): Promise<{ ok: boolean; token?: string; account?: string; reason?: string }> =>
     ipcRenderer.invoke(ipcChannels.ai8AutoLogin),
+  // R126: folder-batch draw — folder pick + MD reads happen main-side; the
+  // image write goes back into that same (main-validated) folder
+  ai8PickMdFolder: (): Promise<{ folder: string; files: { name: string; content: string }[] }> =>
+    ipcRenderer.invoke(ipcChannels.ai8PickMdFolder),
+  ai8SaveImageToFolder: (folder: string, fileName: string, dataUrl: string): Promise<string | null> =>
+    ipcRenderer.invoke(ipcChannels.ai8SaveImageToFolder, folder, fileName, dataUrl),
   aiSetActiveProfile: (id: string): Promise<void> =>
     ipcRenderer.invoke(ipcChannels.aiSetActiveProfile, id),
   // R90 P1: audio AI test lab (pcm = mono Float32Array @16kHz, 1–30s)
