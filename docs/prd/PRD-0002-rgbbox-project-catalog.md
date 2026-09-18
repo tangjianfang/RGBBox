@@ -1195,6 +1195,19 @@
 - **受影响文件**：新 `main/selectionAiManager.ts`、新 `renderer/src/components/SelectionAiView.tsx`；`main/index.ts`（init+热键+托盘+3 handler）、`shared/ipc.ts`、`preload/index.ts`、`renderer/src/main.tsx`（query 分支）、`styles.css`、`i18n/index.tsx`（+9 keys）、`tests/main/selectionAiManager.test.ts`（prompt 映射纯函数）。
 - **实施证据（2026-09-17）**：①typecheck 0 error；②全量 `yarn test` **92 files / 833 passed / 0 失败**（+`tests/main/selectionAiManager.test.ts` 2 用例：四动作 system 指令互异且各自落位/custom 指令内嵌）；③真机 `scripts/verify-r119-sel-ai.mjs` **5/5 PASS**：三条 IPC 通路（空 pending 守卫 parse、未知动作拒绝、close true）+ 零页面错误；**热键→SendKeys→浮窗全链为 OS 级行为（CDP 不可注入，同 R112 教训），留用户实测**：任意应用选中文字 → Alt+Q（或托盘「划词 AI」）→ 浮窗四指令 → 结果一键复制；AI8/传统 profile 由 R118 分流自动双通。**状态：✅（热键取词全链挂起用户实测）**
 
+### R120. AI8 绘画任务接管与恢复——「上限 1 个任务」错误自动接收最新结果 + 手动查询 + 重启恢复（2026-09-18 用户报告「画出三体小说最宏大的外太空对战场景 → 请求失败（您当前进行中的绘图任务数量已达到上限1个，请稍后再试）」）
+
+> 根因（逆向 ai8 前端 draw chunk 实证）：①服务端限制同账号同时仅 1 个进行中绘图任务，`POST /draw` 被拒时 R117.3 实现只显示错误文字，无补救入口；②`taskId` 只活在内存闭包未持久化——点停止/重启后服务器上仍在跑的任务在本应用内永远无法再查询。服务端能力（网站自己绘画页的协议）：`GET /draw?page=&size=`（需登录）→ `{records:[{taskId,prompt,status,progress,…}]}` 分页列出我的绘画任务（提交成功后官网也调它刷新列表）；`GET /draw/status/{taskId}` 轮询出图。
+- **R120.0 绘画模板 cms 结构适配**（2026-09-18 用户同日报告「请求失败（没有可用的渠道，请联系管理…）」；实测 template 探测定因）：服务端 `/draw/template` 已改版——顶层 `models` 置空、`meta.defInput` 移除，模型清单移入 `cms[]` 平台分组（实测：即梦 doubao-seedream-4-0/4-5/5-0、千问 qwen-image-max/plus、z-image-turbo；billing 全 ready=绘画未下线）。R117.3 解析读顶层 `models` → 下拉空 → 旧 send 守卫在 `drawModels.length===0` 时放行 → **空 model 提交** → 服务端按未知模型找渠道报「没有可用的渠道」。修复：解析改 cms 展开优先（label=`平台名 模型label`）+旧 `models` 兜底；默认模型取 cms 第一条；send 守卫改「drawModel 为空一律拦截（不看 drawModels 加载态）」。
+- **R120.1 client 列表接口**：`shared/ai8Client.ts` 增 `drawRecords(page,size)`（GET /draw）；上限错误识别=「提交失败且服务端 msg 含『上限』或『稍后再试』」（Ai8Error.message 正则，宽匹配防措辞微调）。
+- **R120.2 taskId 持久化**：draw 会话 assistant turn 增 `taskId` 字段（localStore 类型 + `patchLastAssistant` 通路），提交成功立即写入——轮询中断（停止/切走/重启）后可凭它恢复。
+- **R120.3 上限错误自动接管**：提交 `/draw` 抛上限类错误 → 自动 `drawRecords(1,5)` 找最新进行中任务（records 里未 end/无 url 的最新一条，含网页端提交的任务）→ 绑定到当前 draw 会话（pending 消息改为「检测到进行中的绘画任务，正在接收结果」）→ 复用标准轮询→出图照常渲染+本地缓存；若列表无进行中任务（服务端刚释放的竞态）→ 延迟 4s 自动重试提交一次，仍失败才落错误。
+- **R120.4 手动查询按钮**：draw 会话的 pending turn 与「上限/超时/停止」错误 turn 上提供「查询最新绘画结果」按钮 → 走同一接管逻辑（用户显式点按即接收最新任务结果）。
+- **R120.5 重启恢复**：进入 AI8 tab 时对仍处 pending（content 为「绘画中…」占位）且带 taskId 的 draw 会话自动恢复轮询（taskId 失效则回落 R120.3 列表兜底）；每会话一次、防重复。
+- **受影响文件**：`shared/ai8Client.ts`、`renderer/src/components/AiLabAi8Tab.tsx`（draw 流程重构：提交/接管/恢复三入口共用一个轮询核）、`renderer/src/i18n/index.tsx`（+4 keys）、`styles.css`（按钮样式复用 ai8-btn）、tests + verify 脚本。
+- **验收点**：①typecheck+全量 `yarn test` 0 失败（+drawRecords URL/上限识别用例）；②真机 mock：提交遇上限错误 → 断言自动 GET /draw → 绑定 taskId → 轮询出图网格+缓存按钮出现；③重启恢复：注入 pending+taskId 会话 → 进入 tab 自动出图；④手动按钮：错误 turn 上点击 → 接管出图；⑤正常绘画零回归。
+- **实施证据（2026-09-18）**：①typecheck 0 error；②全量 `yarn test` **92 files / 835 passed / 0 失败**（+`tests/renderer/ai8/client.test.ts` R120 组 2 用例：isDrawLimitError 只认「上限/稍后再试」措辞——「没有可用的渠道」/登录过期/network 均不接管；drawRecords 分页 URL+token 头）；③真机 CDP `scripts/verify-r120-ai8.mjs` **16/16 PASS**——K 组：cms 结构模板解析（下拉「即梦 4.5/千问 max/turbo」+默认模型自动落 cms 第一条）；L 组：上限错误提交→接管文案→GET /draw 列表→srv-9 status→图片网格+taskId 持久化，死路错误从未露给用户；M 组：列表无进行中任务→「正在重新提交」→4s 后重试 POST 成功出图；N 组：「没有可用的渠道」原文透传且**不**触发接管（GET /draw 零调用）；P 组：注入重启前 pending 会话→进 tab 自动恢复出图落回同一会话；Q 组：stopped 错误 turn 上「查询最新绘画结果」按钮渲染+点击接管出图；零页面错误；④协议逆向存档：draw chunk（draw-HaYo0BLq.js）含 `GET /draw?page=&size=`（records 携带 taskId/startDate/endDate/status/progress）、`PUT /draw/state/public/{id}`、`DELETE /draw/{id}`、`POST /draw/optimize-prompt`——后续如做任务管理页可复用。**状态：✅（真实站点上限接管/重启恢复挂起用户实测——用真实账号在绘画进行中再提交一条即可观察接管；服务端渠道故障属上游问题，客户端已原文透传）**
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

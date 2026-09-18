@@ -7811,6 +7811,9 @@ input[type='range'].video-player-volume {
 
 .ai8-draw-open { margin-top: 6px; }
 
+/* R120.4: manual「查询最新绘画结果」recovery entry on draw error/pending turns */
+.ai8-draw-latest { margin-top: 6px; font-size: 12px; }
+
 .ai8-import-hint { color: #f8a871; font-size: 11.5px; margin: 0; }
 
 .md-code-actions { display: inline-flex; gap: 6px; }

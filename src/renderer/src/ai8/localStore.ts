@@ -9,6 +9,9 @@ export interface Ai8Turn {
   images?: string[]
   /** R117.5: absolute local paths of cached artifacts (docs / images). */
   saved?: string[]
+  /** R120.2: draw tasks — the server task id, persisted the moment the submit
+   *  is accepted so polling can resume after a stop / restart. */
+  taskId?: string
 }
 
 export interface Ai8Session {

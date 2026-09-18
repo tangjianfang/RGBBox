@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Ai8Error, buildChatBody, parseAi8SseLine } from '../../../src/shared/ai8Client'
+import { Ai8Client, Ai8Error, buildChatBody, isDrawLimitError, parseAi8SseLine } from '../../../src/shared/ai8Client'
 
 describe('renderer/ai8 client (R110)', () => {
   it('parses delta payloads and accumulates the full text', () => {
@@ -34,6 +34,36 @@ describe('renderer/ai8 client (R110)', () => {
     const error = new Ai8Error(2, '登录已过期')
     expect(error.code).toBe(2)
     expect(error.message).toBe('登录已过期')
+  })
+})
+
+describe('renderer/ai8 draw recovery (R120)', () => {
+  it('isDrawLimitError matches only the ONE-running-task rejection wording', () => {
+    expect(isDrawLimitError(new Ai8Error(1, '您当前进行中的绘图任务数量已达到上限1个，请稍后再试'))).toBe(true)
+    expect(isDrawLimitError(new Ai8Error(1, '绘图任务已达上限，请稍候'))).toBe(true)
+    // server-side outages must surface as-is, never adopt
+    expect(isDrawLimitError(new Ai8Error(1, '没有可用的渠道，请联系管理检查本模块的渠道管理是否已配置或启用对应模型所属渠道'))).toBe(false)
+    expect(isDrawLimitError(new Ai8Error(2, 'login expired'))).toBe(false)
+    expect(isDrawLimitError(new TypeError('network'))).toBe(false)
+    expect(isDrawLimitError('a string')).toBe(false)
+  })
+
+  it('drawRecords pages through GET /draw with token headers', async () => {
+    const calls: { url: string; headers: Record<string, string> }[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (url: string, init?: { headers?: Record<string, string> }) => {
+      calls.push({ url: String(url), headers: init?.headers ?? {} })
+      return new Response(JSON.stringify({ code: 0, data: { records: [{ taskId: 't1' }] }, msg: '' }), { status: 200 })
+    }) as typeof fetch
+    try {
+      const client = new Ai8Client({ token: 'tk' })
+      const out = await client.drawRecords<{ records: { taskId: string }[] }>(2, 12)
+      expect(out.records).toEqual([{ taskId: 't1' }])
+      expect(calls[0].url).toBe('https://ai8.rcouyi.com/api/draw?page=2&size=12')
+      expect(calls[0].headers.Authorization).toBe('tk')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 })
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { MarkdownView, ThinkPanel, copyRichText, markdownToHtml, splitThinkBlocks, stripThink } from '../ai8/markdown'
-import { Ai8Client, Ai8Error, readStoredToken, writeStoredToken, type Ai8Model } from '../../../shared/ai8Client'
+import { Ai8Client, Ai8Error, isDrawLimitError, readStoredToken, writeStoredToken, type Ai8Model } from '../../../shared/ai8Client'
 import { cleanGeneratedTitle, groupModelsByProvider, matchCurated, pushInputHistory, readActiveId, readInputHistory, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
 
 /** R113: AI8 workbench — two-pane layout (session sidebar + chat), multiple
@@ -128,15 +128,26 @@ export function AiLabAi8Tab(): JSX.Element {
       .catch(() => setModelsError('network'))
   }, [])
 
-  // R117.3/P2-8: the draw template is public too; cached at module level like
-  // the chat template — one fetch per app session.
+  // R117.3/P2-8 + R120.0: the draw template is public too; cached at module
+  // level like the chat template — one fetch per app session. The server moved
+  // the model list into `cms[]` platform groups (top-level `models` is empty
+  // now, `meta.defInput` gone) — expand cms first (label = "平台 模型"), keep
+  // the legacy flat list as fallback; default = first cms entry.
   useEffect(() => {
     if (drawTmplCache !== null) return
-    new Ai8Client({ token: '' }).getDrawTemplate<{ models?: { label?: string; value?: string; attr?: { modelType?: string } }[]; meta?: { defInput?: { model?: string } } }>()
+    new Ai8Client({ token: '' }).getDrawTemplate<{
+      models?: { label?: string; value?: string; attr?: { modelType?: string } }[]
+      cms?: { name?: string; models?: { label?: string; value?: string }[] }[]
+      meta?: { defInput?: { model?: string } }
+    }>()
       .then((tmpl) => {
-        drawTmplCache = (tmpl.models ?? [])
-          .filter((m): m is { label: string; value: string } => typeof m.value === 'string' && m.label !== undefined)
-        drawTmplDefault = tmpl.meta?.defInput?.model ?? ''
+        const flat = (tmpl.models ?? []).filter((m): m is { label: string; value: string } => typeof m.value === 'string' && m.label !== undefined)
+        const fromCms = (tmpl.cms ?? []).flatMap((group) =>
+          (group.models ?? [])
+            .filter((m): m is { label: string; value: string } => typeof m.value === 'string' && m.label !== undefined)
+            .map((m) => ({ label: group.name !== undefined && group.name !== '' ? `${group.name} ${m.label}` : m.label, value: m.value })))
+        drawTmplCache = fromCms.length > 0 ? fromCms : flat
+        drawTmplDefault = tmpl.meta?.defInput?.model ?? drawTmplCache[0]?.value ?? ''
         setDrawModels(drawTmplCache)
         if (drawTmplDefault !== '' && prefs.drawModel === '') patchPrefs({ drawModel: drawTmplDefault })
       })
@@ -294,6 +305,130 @@ export function AiLabAi8Tab(): JSX.Element {
     markStreaming(id, false)
   }
 
+  /** R120: shared draw polling core — submit, limit-error adoption and
+   *  restart recovery all land here. `urls` pre-set = the task already
+   *  finished on the server (receive-only, skip polling). */
+  const runDrawTask = async (sessionId: string | number, taskId: string, abort: AbortController, baseName: string, urls?: string[]) => {
+    // R120.2: persist the id FIRST — everything after this is resumable
+    patchLastAssistant(sessionId, { taskId, error: undefined })
+    let finalUrls = urls
+    if (finalUrls === undefined) {
+      for (let poll = 0; poll < 60; poll++) {
+        await new Promise((resolve) => setTimeout(resolve, 2500))
+        if (abort.signal.aborted) {
+          // P2-2 review fix: a stopped draw must not stay「绘画中…」forever
+          patchLastAssistant(sessionId, { error: 'stopped' })
+          return
+        }
+        const status = await client().drawStatus<{ end?: boolean; list?: { url?: string }[] }>(taskId)
+        const got = (status?.list ?? []).map((item) => item.url).filter((u): u is string => typeof u === 'string' && u !== '')
+        if (got.length > 0 || status?.end === true) {
+          if (got.length === 0) {
+            patchLastAssistant(sessionId, { error: 'draw empty' })
+            return
+          }
+          finalUrls = got
+          break
+        }
+      }
+      if (finalUrls === undefined) {
+        patchLastAssistant(sessionId, { error: 'draw timeout' })
+        return
+      }
+    }
+    const done = finalUrls
+    patchLastAssistant(sessionId, { content: done.join('\n'), images: done })
+    // R117.3 review fix: the turn is DONE here — clear the streaming flag
+    // before the (optional, best-effort) local caching runs, and cache
+    // fire-and-forget with a timeout so a stalled CDN cannot keep the Stop
+    // button alive for minutes.
+    markStreaming(sessionId, false)
+    void (async () => {
+      const saved: string[] = []
+      for (const url of done) {
+        const path = await cacheRemoteImage(url, `${baseName}-${saved.length + 1}`, abort.signal)
+        if (path) saved.push(path)
+      }
+      if (saved.length > 0) patchLastAssistant(sessionId, { saved })
+    })()
+  }
+
+  /** R120.3: locate the server's LATEST draw task via GET /draw — prefers a
+   *  locally persisted taskId, then the RUNNING record (the server caps
+   *  running tasks at ONE per account), then the newest by startDate.
+   *  Returns the resolved status so callers can receive finished results
+   *  without re-polling. */
+  const findLatestDrawTask = async (preferTaskId?: string): Promise<{ taskId: string; end: boolean; urls: string[] } | null> => {
+    type DrawRec = { taskId?: string | number; startDate?: number | string; endDate?: number | string }
+    const page = await client().drawRecords<{ records?: DrawRec[] }>(1, 6)
+    const records = (page?.records ?? []).filter((r) => r.taskId !== undefined && r.taskId !== null && String(r.taskId) !== '')
+    if (records.length === 0) return null
+    const num = (v: number | string | undefined): number => {
+      const n = Number(v)
+      return Number.isFinite(n) ? n : 0
+    }
+    // a record without endDate is still running; ties broken by startDate
+    const running = records
+      .filter((r) => r.endDate === undefined || r.endDate === null || r.endDate === '' || num(r.endDate) === 0)
+      .sort((a, b) => num(b.startDate) - num(a.startDate))
+    const pool = running.length > 0 ? running : [...records].sort((a, b) => num(b.startDate) - num(a.startDate))
+    const prefer = preferTaskId !== undefined && preferTaskId !== '' ? records.find((r) => String(r.taskId) === preferTaskId) : undefined
+    const pick = prefer ?? pool[0]
+    const taskId = String(pick.taskId)
+    const status = await client().drawStatus<{ end?: boolean; list?: { url?: string }[] }>(taskId)
+    const urls = (status?.list ?? []).map((item) => item.url).filter((u): u is string => typeof u === 'string' && u !== '')
+    return { taskId, end: status?.end === true, urls }
+  }
+
+  /** R120.3/R120.4: bind the server's latest draw task onto a session — the
+   *  manual「查询最新绘画结果」button and restart recovery both go through
+   *  here (the limit-error takeover lives inline in send()). */
+  const adoptDrawTask = async (sessionId: string | number, preferTaskId?: string) => {
+    if (token === '') return
+    markStreaming(sessionId, true)
+    const abort = new AbortController()
+    abortMap.current.set(String(sessionId), abort)
+    try {
+      const session = sessions.find((s) => String(s.id) === String(sessionId))
+      const firstUser = session?.turns.find((x) => x.role === 'user')?.content ?? ''
+      const base = cleanGeneratedTitle(firstUser) || 'ai8-draw'
+      patchLastAssistant(sessionId, { content: t('ai.ai8.drawTakeover'), error: undefined })
+      const found = await findLatestDrawTask(preferTaskId)
+      if (found === null) {
+        patchLastAssistant(sessionId, { error: 'draw no task' })
+        return
+      }
+      await runDrawTask(sessionId, found.taskId, abort, base, found.end ? found.urls : undefined)
+    } catch (error) {
+      patchLastAssistant(sessionId, { error: error instanceof Ai8Error ? error.message : 'network' })
+    } finally {
+      abortMap.current.delete(String(sessionId))
+      markStreaming(sessionId, false)
+    }
+  }
+
+  // R120.5: restart recovery — a draw session left on the pending placeholder
+  // (stop / quit / crash while the server task kept running) resumes polling
+  // once a token exists. One attempt per session per mount; a session already
+  // streaming is skipped (its own poll loop owns it).
+  const resumedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (token === '') return
+    for (const s of sessions) {
+      if (s.kind !== 'draw') continue
+      const last = s.turns[s.turns.length - 1]
+      if (last === undefined || last.role !== 'assistant' || last.images !== undefined || last.error !== undefined) continue
+      // the placeholder is the only non-URL, non-empty assistant content a
+      // draw session can hold at this point
+      if (last.content.trim() === '' || /^https?:\/\//.test(last.content.trim())) continue
+      const key = String(s.id)
+      if (resumedRef.current.has(key) || streamingIds.includes(key)) continue
+      resumedRef.current.add(key)
+      void adoptDrawTask(s.id, last.taskId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, sessions])
+
   const send = async () => {
     const content = input.trim()
     // R117.1: only the ACTIVE session's stream blocks this composer — other
@@ -306,8 +441,11 @@ export function AiLabAi8Tab(): JSX.Element {
     // R116.1: a session without a model is rejected by the server
     // (「模型 是必填项」) — the send button is already disabled for this case;
     // this guard covers the Enter path. Draw tasks use the draw model space.
+    // R120.0: an EMPTY drawModel must always be blocked — the old
+    // `drawModels.length > 0` carve-out let an empty model slip through while
+    // the cms-shaped template parsed to zero entries (「没有可用的渠道」).
     if (!prefs.draw && prefs.model === '') return
-    if (prefs.draw && prefs.drawModel === '' && drawModels.length > 0) return
+    if (prefs.draw && prefs.drawModel === '') return
     // R115.1: image attachment rides along as files:[{name,url}] — data URL
     // form; server rejection surfaces as a normal error turn (probe pending).
     const files = attachment ? [{ name: attachment.name, url: attachment.dataUrl }] : []
@@ -318,7 +456,9 @@ export function AiLabAi8Tab(): JSX.Element {
     // R117.3 draw mode: the site's own protocol — POST /draw
     // {model, action:'IMAGINE', prompt, public, fast} → poll /draw/status/{id}
     // until `end` or a non-empty list[].url; images render as a preview grid
-    // and auto-cache to disk via ai8SaveArtifact.
+    // and auto-cache to disk via ai8SaveArtifact. R120: the ONE-running-task
+    // rejection is adopted (bind the running task, receive its result); a
+    // freed slot is retried once after 4s.
     if (prefs.draw) {
       const drawModel = prefs.drawModel || drawModels[0]?.value || ''
       setInput('')
@@ -334,46 +474,37 @@ export function AiLabAi8Tab(): JSX.Element {
       // R117.1: the stop button must also abort draw polling
       const drawAbort = new AbortController()
       abortMap.current.set(String(draftId), drawAbort)
+      const base = cleanGeneratedTitle(content) || 'ai8-draw'
       try {
-        const created = await client().draw<{ id?: string | number }>({ model: drawModel, prompt: content })
-        const taskId = created?.id
-        if (taskId === undefined || taskId === null) {
-          patchLastAssistant(draftId, { error: 'draw task id missing' })
-          return
-        }
-        for (let poll = 0; poll < 60; poll++) {
-          await new Promise((resolve) => setTimeout(resolve, 2500))
+        let created: { id?: string | number; taskId?: string | number } | undefined
+        try {
+          created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel, prompt: content })
+        } catch (error) {
+          // R120.3: limit rejection — adopt the running task instead of a
+          // dead-end error (it may have been submitted from the web app too)
+          if (!isDrawLimitError(error)) throw error
+          patchLastAssistant(draftId, { content: t('ai.ai8.drawTakeover') })
+          const found = await findLatestDrawTask()
+          if (found !== null) {
+            await runDrawTask(draftId, found.taskId, drawAbort, base, found.end ? found.urls : undefined)
+            return
+          }
+          // no running task left (the server freed it between reject and
+          // list) — resubmit once after a short wait
+          patchLastAssistant(draftId, { content: t('ai.ai8.drawResubmit') })
+          await new Promise((resolve) => setTimeout(resolve, 4000))
           if (drawAbort.signal.aborted) {
-            // P2-2 review fix: a stopped draw must not stay「绘画中…」forever
             patchLastAssistant(draftId, { error: 'stopped' })
             return
           }
-          const status = await client().drawStatus<{ end?: boolean; list?: { url?: string }[] }>(taskId)
-          const urls = (status?.list ?? []).map((item) => item.url).filter((u): u is string => typeof u === 'string' && u !== '')
-          if (urls.length > 0 || status?.end === true) {
-            if (urls.length === 0) {
-              patchLastAssistant(draftId, { error: 'draw empty' })
-              return
-            }
-            patchLastAssistant(draftId, { content: urls.join('\n'), images: urls })
-            // R117.3 review fix: the turn is DONE here — clear the streaming
-            // flag before the (optional, best-effort) local caching runs, and
-            // cache fire-and-forget with a timeout so a stalled CDN cannot
-            // keep the Stop button alive for minutes.
-            markStreaming(draftId, false)
-            void (async () => {
-              const base = cleanGeneratedTitle(content) || 'ai8-draw'
-              const saved: string[] = []
-              for (const url of urls) {
-                const path = await cacheRemoteImage(url, `${base}-${saved.length + 1}`, drawAbort.signal)
-                if (path) saved.push(path)
-              }
-              if (saved.length > 0) patchLastAssistant(draftId, { saved })
-            })()
-            return
-          }
+          created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel, prompt: content })
         }
-        patchLastAssistant(draftId, { error: 'draw timeout' })
+        const taskId = String(created?.taskId ?? created?.id ?? '')
+        if (taskId === '') {
+          patchLastAssistant(draftId, { error: 'draw task id missing' })
+          return
+        }
+        await runDrawTask(draftId, taskId, drawAbort, base)
       } catch (error) {
         patchLastAssistant(draftId, { error: error instanceof Ai8Error ? error.message : 'network' })
       } finally {
@@ -668,6 +799,20 @@ export function AiLabAi8Tab(): JSX.Element {
                       </>
                     )
                     : <span className="ai-msg-text">{turn.content}</span>}
+              {/* R120.4: manual recovery entry — error turns (limit/timeout/
+                  stopped/channel) and stale pending turns offer「查询最新绘画
+                  结果」to adopt the server's latest task and receive its
+                  result; hidden while this session is already polling. */}
+              {turn.role === 'assistant' && activeSession?.kind === 'draw' && turn.images === undefined && !activeStreaming ? (
+                <button
+                  type="button"
+                  className="ai8-btn ai8-draw-latest"
+                  data-action="ai8-draw-latest"
+                  onClick={() => { if (activeSession !== null) void adoptDrawTask(activeSession.id) }}
+                >
+                  ↻ {t('ai.ai8.drawLatest')}
+                </button>
+              ) : null}
             </div>
           ))}
         </div>
@@ -756,7 +901,7 @@ export function AiLabAi8Tab(): JSX.Element {
           />
           {activeStreaming && activeId !== null
             ? <button type="button" className="ai8-btn" data-action="ai8-stop" onClick={() => stopStreaming(activeId)}>{t('ai.ai8.stop')}</button>
-            : <button type="button" className="ai8-btn ai8-btn-primary" data-action="ai8-send" onClick={() => void send()} disabled={input.trim() === '' || (!prefs.draw && prefs.model === '') || (prefs.draw && drawModels.length > 0 && prefs.drawModel === '')} title={!prefs.draw && prefs.model === '' ? t('ai.ai8.needModel') : prefs.draw && drawModels.length > 0 && prefs.drawModel === '' ? t('ai.ai8.needModel') : undefined}>{t('ai.lab.chat.send')}</button>}
+            : <button type="button" className="ai8-btn ai8-btn-primary" data-action="ai8-send" onClick={() => void send()} disabled={input.trim() === '' || (!prefs.draw && prefs.model === '') || (prefs.draw && prefs.drawModel === '')} title={!prefs.draw && prefs.model === '' ? t('ai.ai8.needModel') : prefs.draw && prefs.drawModel === '' ? t('ai.ai8.needModel') : undefined}>{t('ai.lab.chat.send')}</button>}
         </div>
       </section>
     </div>

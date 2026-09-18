@@ -31,6 +31,14 @@ export interface Ai8Model {
   }
 }
 
+/** R120.1: the server enforces ONE running draw task per account — a submit
+ *  rejected for that reason carries「上限」/「稍后再试」in its msg. Only this
+ *  error class is adoptable (bind to the running task and receive its result);
+ *  e.g.「没有可用的渠道」is a server-side outage and must surface as-is. */
+export function isDrawLimitError(error: unknown): boolean {
+  return error instanceof Ai8Error && /上限|稍后再试/.test(error.message)
+}
+
 export interface Ai8ChatTemplate {
   defModel?: string
   models: Ai8Model[]
@@ -208,6 +216,14 @@ export class Ai8Client {
    *  non-empty `data.list[].url`. */
   drawStatus<T>(taskId: string | number): Promise<T> {
     return this.get<T>(`/draw/status/${taskId}`)
+  }
+
+  /** R120.1: page through MY draw tasks — the site's own draw page reloads
+   *  this right after a submit; records carry taskId/prompt/status/progress/
+   *  startDate/endDate. This is the recovery path for tasks whose polling
+   *  was lost (stop button / restart / submitted from the web). */
+  drawRecords<T>(page = 1, size = 6): Promise<T> {
+    return this.get<T>('/draw', { page, size })
   }
 
   async getModels(modelType = 'chat'): Promise<Ai8Model[]> {
