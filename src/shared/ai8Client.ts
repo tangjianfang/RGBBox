@@ -58,6 +58,10 @@ export interface Ai8DrawModel {
    *  frontend always ships args for cms models; a task without it can sit
    *  "running" forever server-side and hold the ONE-task-per-account slot). */
   area?: string
+  /** R128: state-family models submit as `model:<platform id>` with the
+   *  version riding in `args.version` (bundle: `_csp_`/`sn`/`Vr` evidence);
+   *  cms models leave this unset (model IS the version value). */
+  platform?: string
 }
 
 export interface Ai8DrawModelGroup {
@@ -78,6 +82,7 @@ export function parseDrawTemplate(raw: unknown): Ai8DrawTemplateParsed {
     models?: { label?: string; value?: string }[]
     meta?: { defInput?: { model?: string } } | null
     cms?: { name?: string; platform?: string; models?: { label?: string; value?: string; area?: { value?: unknown }[] }[] }[]
+    state?: Record<string, { o?: unknown; versions?: Record<string, unknown> }>
   }
   const pick = (m: { label?: string; value?: string; area?: { value?: unknown }[] }): Ai8DrawModel | null => {
     if (typeof m.value !== 'string' || m.value === '') return null
@@ -95,6 +100,40 @@ export function parseDrawTemplate(raw: unknown): Ai8DrawTemplateParsed {
     if (models.length === 0) continue
     const name = typeof provider.name === 'string' && provider.name !== '' ? provider.name : provider.platform ?? ''
     groups.push({ provider: name, models })
+  }
+  // R128: state[] carries the PLATFORM model families (GPT-Image / Nano
+  // Banana / MJ / Grok / Kling…). Non-cms platforms submit as
+  // `model:<platform>` + `args:{version}`; mj/niji have no versions (the
+  // site's default model is literally 'mj') and no args (params go into the
+  // prompt as `--ar` etc). volc-draw ships an EMPTY versions map here — its
+  // version list lives hardcoded in a site chunk (unverified → skipped).
+  const PLATFORM_LABELS: Record<string, string> = {
+    'google-draw': 'Google · Nano Banana',
+    'openai-draw': 'OpenAI',
+    mj: 'Midjourney',
+    niji: 'NijiJourney',
+    'xai-draw': 'xAI Grok',
+    'kling-draw': '可灵 Kling',
+    'qwen-draw': '通义 Qwen',
+    'wan-draw': '万相 Wan',
+    'minimax-draw': 'MiniMax',
+    'volc-draw': '火山 Volc',
+  }
+  const ACTION_SWITCHES = new Set(['blend', 'describe'])
+  const platforms = Object.entries(tmpl.state ?? {})
+    .filter(([key]) => !ACTION_SWITCHES.has(key))
+    .map(([key, val], idx) => ({ key, order: typeof val?.o === 'number' ? val.o : 100 + idx, versions: Object.keys(val?.versions ?? {}) }))
+    .sort((a, b) => a.order - b.order)
+  for (const p of platforms) {
+    if (p.versions.length > 0) {
+      groups.push({
+        provider: PLATFORM_LABELS[p.key] ?? p.key,
+        models: p.versions.map((v) => ({ label: v, value: v, platform: p.key })),
+      })
+    } else if (p.key === 'mj' || p.key === 'niji') {
+      groups.push({ provider: PLATFORM_LABELS[p.key] ?? p.key, models: [{ label: PLATFORM_LABELS[p.key] ?? p.key, value: p.key, platform: p.key }] })
+    }
+    // other versionless platforms (volc-draw today): skipped on purpose
   }
   if (groups.length > 0) return { groups, defaultModel: groups[0].models[0].value }
   // legacy flat shape (R117.3 era + e2e mock): models[] + meta.defInput.model
@@ -419,14 +458,21 @@ export class Ai8Client {
     return this.unwrap<T>(res)
   }
 
-  /** R117.3/R125.1: submit a draw task — the site frontend's body shape
+  /** R117.3/R125.1/R128: submit a draw task — the site frontend's body shape
    *  (verified against draw-HaYo0BLq.js): {model, action, prompt, public,
    *  fast} plus `args:{area}` for cms models (default resolution from the
-   *  template — the site always ships args; without it a task can hang
-   *  server-side holding the account's one running slot). */
-  draw<T>(body: { model: string; prompt: string; action?: string; public?: boolean; fast?: boolean; area?: string }): Promise<T> {
-    const { area, ...rest } = body
-    return this.post<T>('/draw', { action: 'IMAGINE', public: false, fast: false, ...rest, ...(area !== undefined ? { args: { area } } : {}) })
+   *  template) or `args:{version, area:'auto'}` for state-platform models
+   *  (`version` picks e.g. gpt-image-2; mj/niji take NO args — their params
+   *  ride inside the prompt as `--ar` flags). */
+  draw<T>(body: { model: string; prompt: string; action?: string; public?: boolean; fast?: boolean; area?: string; version?: string }): Promise<T> {
+    const { area, version, ...rest } = body
+    const args =
+      version !== undefined
+        ? { version, area: area ?? 'auto' }
+        : area !== undefined
+          ? { area }
+          : undefined
+    return this.post<T>('/draw', { action: 'IMAGINE', public: false, fast: false, ...rest, ...(args !== undefined ? { args } : {}) })
   }
 
   /** R125.3: delete a draw task — the site's own escape hatch for a stuck

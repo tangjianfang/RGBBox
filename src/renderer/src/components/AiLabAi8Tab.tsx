@@ -599,7 +599,12 @@ export function AiLabAi8Tab(): JSX.Element {
     const folderName = picked.folder.split(/[\\/]/).filter(Boolean).pop() ?? picked.folder
     const batchId = `draw-${Date.now()}`
     const startedAt = Date.now()
-    const drawArea = drawModels.find((m) => m.value === drawModel0)?.area
+    // R125.1/R128: family-aware request body (cms → args.area; platform →
+    // model:<platform> + args.version; mj/niji → bare)
+    const drawDef = drawModels.find((m) => m.value === drawModel0)
+    const drawPostModel = drawDef?.platform ?? drawModel0
+    const drawArea = drawDef?.platform === undefined ? drawDef?.area : undefined
+    const drawVersion = drawDef?.platform !== undefined && drawDef.platform !== 'mj' && drawDef.platform !== 'niji' ? drawModel0 : undefined
     setBatchBusy(true)
     setSessions((list) => {
       const next = [{ id: batchId, kind: 'draw' as const, model: drawModel0, title: `${t('ai.ai8.batchTitle')} · ${folderName}`, turns: [], createdAt: startedAt, updatedAt: startedAt, batch: { folder: picked.folder, total: files.length, done: 0, failed: 0, startedAt } } as Ai8Session, ...list]
@@ -636,7 +641,7 @@ export function AiLabAi8Tab(): JSX.Element {
         appendTurn(batchId, { role: 'assistant', content: t('ai.ai8.drawPending'), file: f.name, timerStart: startMs })
         let urls: string[] | null = null
         try {
-          const created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel0, prompt, area: drawArea })
+          const created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawPostModel, prompt, area: drawArea, version: drawVersion })
           const taskId = String(created?.taskId ?? created?.id ?? '')
           if (taskId === '') {
             settle(startMs, { error: 'draw task id missing' })
@@ -775,9 +780,14 @@ export function AiLabAi8Tab(): JSX.Element {
     // images render as a preview grid and auto-cache to disk.
     if (prefs.mode === 'draw') {
       const drawModel = prefs.drawModel || drawModels[0]?.value || ''
-      // R125.1: the model's default resolution rides as args:{area} — without
-      // it a cms task can sit "running" forever server-side.
-      const drawArea = drawModels.find((m) => m.value === drawModel)?.area
+      // R125.1/R128: request-body shape by family — cms models carry the
+      // template's default resolution as args:{area}; state-platform models
+      // (OpenAI/Google/MJ…) POST model:<platform> with the picked version in
+      // args:{version} (mj/niji: no args, params live in the prompt).
+      const drawDef = drawModels.find((m) => m.value === drawModel)
+      const drawPostModel = drawDef?.platform ?? drawModel
+      const drawArea = drawDef?.platform === undefined ? drawDef?.area : undefined
+      const drawVersion = drawDef?.platform !== undefined && drawDef.platform !== 'mj' && drawDef.platform !== 'niji' ? drawModel : undefined
       setInput('')
       const draftId = `draw-${Date.now()}`
       setSessions((list) => {
@@ -794,7 +804,7 @@ export function AiLabAi8Tab(): JSX.Element {
       const base = cleanGeneratedTitle(content) || 'ai8-draw'
       // R125.3: one retry after a stuck task was cleared (no further nesting)
       const submitAndPoll = async (): Promise<string[] | null> => {
-        const created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel, prompt: content, area: drawArea })
+        const created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawPostModel, prompt: content, area: drawArea, version: drawVersion })
         const taskId = String(created?.taskId ?? created?.id ?? '')
         if (taskId === '') {
           patchLastAssistant(draftId, { error: 'draw task id missing' })
@@ -805,7 +815,7 @@ export function AiLabAi8Tab(): JSX.Element {
       try {
         let created: { id?: string | number; taskId?: string | number } | undefined
         try {
-          created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel, prompt: content, area: drawArea })
+          created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawPostModel, prompt: content, area: drawArea, version: drawVersion })
         } catch (error) {
           // R122.3: limit rejection — adopt the running task instead of a
           // dead-end error (it may have been submitted from the web app too)
@@ -824,7 +834,7 @@ export function AiLabAi8Tab(): JSX.Element {
             patchLastAssistant(draftId, { error: 'stopped' })
             return
           }
-          created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawModel, prompt: content, area: drawArea })
+          created = await client().draw<{ id?: string | number; taskId?: string | number }>({ model: drawPostModel, prompt: content, area: drawArea, version: drawVersion })
         }
         const taskId = String(created?.taskId ?? created?.id ?? '')
         if (taskId === '') {

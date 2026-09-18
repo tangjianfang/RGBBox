@@ -1280,6 +1280,16 @@
 - **实施证据（2026-09-19）**：①`tests/main/mediaProtocol.test.ts` +图片 MIME 用例（png/jpg/jpeg/webp/gif/bmp/avif）全绿；②`yarn typecheck` 0 error；③目标测试集 `mediaProtocol + renderer/ai8`（5 files / **70/70**）；④全量 `yarn test` 94 files 中 93 过，唯一失败为 VideoStudioView「persists the mode tab」**既有并发 flaky**（隔离运行 11/11 过、R125 时期即复现于无渲染层改动的运行，与本条款无关）；⑤渲染改动为 grid src 三元（`saved[imgIdx] ? mediaLocalSrc : url`），无 saved 的旧 turn 走原远端路径零变化，onClick 保持开远端大图。**状态：✅（用户实例重开后缩略图走本地工件；若再现裂图说明 saved 缺失，另案排查）**
 
 
+### R128. AI8 绘画平台模型族接入——GPT-Image/Nano-Banana/MJ/Grok 等 10 家进下拉（2026-09-19 用户问「只有即梦和几家国产的，没有 ChatGPT 这些吗？」）
+
+> 根因实证（模板+bundle 双源）：线上 `/draw/template` 的 **`state` 段是平台级模型目录**（R120 只适配了 `cms[]` 分组，整个平台族被丢弃）：google-draw（nano-banana×4）/ openai-draw（gpt-image-1/1-5/2/2-5-flare）/ mj / volc-draw / xai-draw（grok-imagine）/ kling-draw（kolors×4）/ qwen-draw（qwen-image 2.0 系）/ wan-draw / minimax-draw（image-01 系）/ niji，按 `o` 字段排序；`integral` 表含各版本计费（grok 1 分/次最便宜，gpt-image-2 5000，kling-omni 100000）。**提交协议（bundle 实证）**：`_csp_` 前缀机制即「cms 组=平台+版本选择器」（model 传版本值——现行做法 ✓）；非 cms 平台 = `model:<平台id>` + `args:{version:<版本>, area:'auto'}`（`sn` 控制器实证 area 默认 'auto'，`Vr` 实证 version 默认=state 首版本）；mj/niji 走 prompt 内嵌 `--ar`、**不带 args**（`yr` 的 L 分支实证）。附带记录（2026-09-19 用户实测）：视频全模型报「没有可用的渠道」=服务端视频渠道未启用（匿名 /video/template `state:[]` 佐证，对全站生效），非 token 权限问题，应用侧无需修复。
+- **R128.1 parseDrawTemplate 扩展**：解析 `state` 段（跳过 blend/describe 动作开关）→ 按 `o` 排序的平台组，每版本一个模型项（`platform` 标记 + `value`=版本串）；mj/niji 无版本 → 单模型（value='mj'/'niji'）；**volc-draw state 版本为空先跳过**（版本表硬编码在站点子 chunk，未实证不入）；平台名映射美观标签（openai-draw→OpenAI 等，未知用原 key）。
+- **R128.2 draw() 版本参数**：`version?: string` → 非 mj 平台模型提交体 `{model:<platform>, args:{version, area:'auto'}}`；mj/niji 平台不带 args；cms 组维持现状（model=版本值 + args.area=模板像素）。`Ai8DrawModel.platform?` 字段贯通 UI→提交。
+- **受影响文件**：`src/shared/ai8Client.ts`、`src/renderer/src/components/AiLabAi8Tab.tsx`、`tests/renderer/ai8/client.test.ts`。
+- **验收点**：①state 解析单测（排序/版本枚举/mj 单模型/volc 跳过/标签）；②平台提交体与 mj 无 args 单测；③cms 现行为零回归；④typecheck + 全量；⑤用户真机用 gpt-image 系实际出图。
+- **实施证据（2026-09-19）**：①TDD 红→绿：3 新用例（state 平台族按 `o` 排序且每版本成模型、volc 空 versions 跳过+动作开关排除、平台体 `{model:'openai-draw', args:{version:'gpt-image-2', area:'auto'}}` 与 mj 裸体）先红后绿，`client.test` **27/27**；②`yarn typecheck` 0 error；③全量 `yarn test` **94 files / 869 passed / 0 失败**；④单发三处 + 批量提交点统一 family-aware（cms→args.area 像素；平台→model:平台id+args.version；mj/niji→无 args）；⑤cms/flat/e2e mock 旧形状用例零回归。**状态：✅（用户真机 gpt-image/nano-banana 实际出图为最终验收；volc-draw 待站点 chunk 版本值实证后补）**
+
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

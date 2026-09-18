@@ -284,3 +284,55 @@ describe('renderer/ai8 draw anti-stuck (R125 — args body + DELETE escape hatch
     }
   })
 })
+
+describe('renderer/ai8 draw platform families (R128 — state[] era)', () => {
+  // trimmed from the live 2026-09-19 /draw/template: cms groups + the state
+  // platform catalog (billing/integral omitted for brevity)
+  const liveShape = {
+    cms: [{ name: '即梦', platform: 'jimeng', models: [{ label: '5.0', value: 'doubao-seedream-5-0' }] }],
+    state: {
+      'google-draw': { o: 1, versions: { 'nano-banana': true, 'nano-banana-2': true } },
+      'openai-draw': { o: 2, versions: { 'gpt-image-1': true, 'gpt-image-2': true } },
+      mj: { o: 3 },
+      'volc-draw': { o: 4, versions: {} },
+      'xai-draw': { o: 5, versions: { 'grok-imagine-image': true } },
+      blend: { enabled: true },
+      describe: { enabled: true },
+    },
+  }
+
+  it('surfaces the state platform families ordered by o, each version a model', () => {
+    const parsed = parseDrawTemplate(liveShape)
+    expect(parsed.groups.map((g) => g.provider)).toEqual(['即梦', 'Google · Nano Banana', 'OpenAI', 'Midjourney', 'xAI Grok'])
+    const openai = parsed.groups.find((g) => g.provider === 'OpenAI')
+    expect(openai?.models.map((m) => m.value)).toEqual(['gpt-image-1', 'gpt-image-2'])
+    expect(openai?.models[0].platform).toBe('openai-draw')
+    expect(openai?.models[0].area).toBeUndefined()
+    const mj = parsed.groups.find((g) => g.provider === 'Midjourney')
+    expect(mj?.models).toEqual([{ label: 'Midjourney', value: 'mj', platform: 'mj' }])
+  })
+
+  it('skips volc-draw (state versions empty — values live in site chunks, unverified) and action switches', () => {
+    const parsed = parseDrawTemplate(liveShape)
+    expect(parsed.groups.some((g) => g.provider.includes('火山'))).toBe(false)
+    expect(parsed.groups.some((g) => g.provider === 'blend' || g.provider === 'describe')).toBe(false)
+  })
+
+  it('draw() sends model:<platform> + args:{version,area:auto} for platform models; mj sends no args', async () => {
+    const calls: { body?: string }[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string, init?: { body?: string }) => {
+      calls.push({ body: init?.body })
+      return new Response(JSON.stringify({ code: 0, data: { taskId: 't' }, msg: '' }), { status: 200 })
+    }) as typeof fetch
+    try {
+      const client = new Ai8Client({ token: 'tk' })
+      await client.draw({ model: 'openai-draw', prompt: 'a cat', version: 'gpt-image-2' })
+      await client.draw({ model: 'mj', prompt: 'a cat --ar 16:9' })
+      expect(JSON.parse(String(calls[0].body))).toEqual({ action: 'IMAGINE', public: false, fast: false, model: 'openai-draw', prompt: 'a cat', args: { version: 'gpt-image-2', area: 'auto' } })
+      expect(JSON.parse(String(calls[1].body))).toEqual({ action: 'IMAGINE', public: false, fast: false, model: 'mj', prompt: 'a cat --ar 16:9' })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
