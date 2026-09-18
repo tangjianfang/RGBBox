@@ -7814,6 +7814,10 @@ input[type='range'].video-player-volume {
 /* R120.4: manual「查询最新绘画结果」recovery entry on draw error/pending turns */
 .ai8-draw-latest { margin-top: 6px; font-size: 12px; }
 
+/* R121.3: remembered-credentials row (account + password + save/clear) */
+.ai8-cred-row { display: flex; gap: 6px; margin-top: 6px; }
+.ai8-cred-row input { flex: 1 1 0; min-width: 0; }
+
 .ai8-import-hint { color: #f8a871; font-size: 11.5px; margin: 0; }
 
 .md-code-actions { display: inline-flex; gap: 6px; }

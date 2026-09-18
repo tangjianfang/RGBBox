@@ -219,6 +219,14 @@ const api = {
   // user signs in inside the child window, {ok:false} if it was closed.
   ai8OpenLogin: (): Promise<{ ok: boolean; token?: string; account?: string }> =>
     ipcRenderer.invoke(ipcChannels.ai8OpenLogin),
+  // R121: remembered credentials — save/clear + the main-side auto sign-in
+  // (the plaintext password never crosses IPC after the save)
+  ai8SaveCredentials: (account: string, password: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(ipcChannels.ai8SaveCredentials, account, password),
+  ai8ClearCredentials: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(ipcChannels.ai8ClearCredentials),
+  ai8AutoLogin: (): Promise<{ ok: boolean; token?: string; account?: string; reason?: string }> =>
+    ipcRenderer.invoke(ipcChannels.ai8AutoLogin),
   aiSetActiveProfile: (id: string): Promise<void> =>
     ipcRenderer.invoke(ipcChannels.aiSetActiveProfile, id),
   // R90 P1: audio AI test lab (pcm = mono Float32Array @16kHz, 1–30s)

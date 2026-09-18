@@ -27,6 +27,7 @@ import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile,
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
 import { loadSystemSettings, saveSystemSettings, type SystemSettings } from './systemSettingsStore'
+import { ai8AutoLoginWith, clearAi8Credentials, loadAi8Credentials, saveAi8Credentials } from './ai8Credentials'
 import { setRapidOcrRunner } from './ocrService'
 import { cleanupOcrText, translateOcrText, chatCompletion, testConnection, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
 import { encodeApiKey, decodeApiKey, type SafeStorageCodec } from './aiSecretCodec'
@@ -538,6 +539,27 @@ function registerIpc(): void {
     }
     const s = await loadSystemSettings()
     return testConnection(asAiSettings(s.ai))
+  })
+
+  // R121: remembered AI8 credentials — the site's login window never restores
+  // its session (a valid 10-year token in the partition still hits the login
+  // form), so the app signs itself in via POST /user/login. The password is
+  // safeStorage-encrypted at rest and never crosses IPC after the save.
+  ipcMain.handle(ipcChannels.ai8SaveCredentials, (_event, account: unknown, password: unknown) => {
+    if (typeof account !== 'string' || typeof password !== 'string' || account.trim() === '' || password === '') {
+      return { ok: false }
+    }
+    saveAi8Credentials(app.getPath('userData'), safeStorageCodec, { account, password })
+    return { ok: true }
+  })
+  ipcMain.handle(ipcChannels.ai8ClearCredentials, () => {
+    clearAi8Credentials(app.getPath('userData'))
+    return { ok: true }
+  })
+  ipcMain.handle(ipcChannels.ai8AutoLogin, async () => {
+    const cred = loadAi8Credentials(app.getPath('userData'), safeStorageCodec)
+    if (cred === null) return { ok: false as const, reason: 'no-credentials' }
+    return ai8AutoLoginWith(cred, process.env.RGBBOX_AI8_BASE_URL)
   })
 
   // R111: AI8 embedded login. Opens the official site in a child window with a

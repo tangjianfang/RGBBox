@@ -165,6 +165,11 @@ export const ipcChannels = {
   // R111: AI8 embedded login — open the official site in a child window and
   // auto-capture the token from its localStorage once the user signs in
   ai8OpenLogin: 'rgbbox:ai8:open-login',
+  // R121: remembered AI8 credentials — save/clear (safeStorage at rest) and
+  // the main-side auto sign-in via the site's own POST /user/login
+  ai8SaveCredentials: 'rgbbox:ai8:save-credentials',
+  ai8ClearCredentials: 'rgbbox:ai8:clear-credentials',
+  ai8AutoLogin: 'rgbbox:ai8:auto-login',
   // R90 P1: audio AI test lab
   audioAiStatus: 'rgbbox:audio-ai:status',
   audioAiRunVad: 'rgbbox:audio-ai:run-vad',

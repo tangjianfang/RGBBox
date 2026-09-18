@@ -90,6 +90,18 @@ export function AiLabAi8Tab(): JSX.Element {
   const [showTokenRow, setShowTokenRow] = useState(false)
   const [loginBusy, setLoginBusy] = useState(false)
   const [loginAccount, setLoginAccount] = useState('')
+  // R121.3: remembered-credentials manager (account+password → safeStorage in
+  // main; "官网登录" then signs in headlessly via POST /user/login)
+  const [credOpen, setCredOpen] = useState(false)
+  const [credAccount, setCredAccount] = useState('')
+  const [credPassword, setCredPassword] = useState('')
+  const [credHint, setCredHint] = useState('')
+  const credTimer = useRef(0)
+  const showCredHint = (text: string) => {
+    setCredHint(text)
+    window.clearTimeout(credTimer.current)
+    credTimer.current = window.setTimeout(() => setCredHint(''), 3200)
+  }
   const [models, setModels] = useState<Ai8Model[]>(chatTmplCache ?? [])
   const [modelsError, setModelsError] = useState('')
   const [drawModels, setDrawModels] = useState<{ label: string; value: string }[]>(drawTmplCache ?? [])
@@ -195,6 +207,22 @@ export function AiLabAi8Tab(): JSX.Element {
     if (loginBusy) return
     setLoginBusy(true)
     try {
+      // R121.2: remembered credentials first — a direct main-side
+      // POST /user/login, zero window, zero typing. The site's own login
+      // window never restores its session, so this is the fast path.
+      try {
+        const auto = await window.rgbbox.ai8AutoLogin()
+        if (auto.ok && auto.token) {
+          setToken(auto.token)
+          writeStoredToken(auto.token)
+          setLoginAccount(auto.account ?? '')
+          setShowTokenRow(false)
+          void syncTokenToProfiles(auto.token)
+          return
+        }
+      } catch {
+        // no stored credentials / IPC hiccup → the window flow below
+      }
       const out = await window.rgbbox.ai8OpenLogin()
       if (out.ok && out.token) {
         setToken(out.token)
@@ -207,6 +235,40 @@ export function AiLabAi8Tab(): JSX.Element {
       setShowTokenRow(true)
     } finally {
       setLoginBusy(false)
+    }
+  }
+
+  /** R121.3: store the credentials, then immediately verify them with a
+   *  headless sign-in — a valid pair lands the token right away; an invalid
+   *  one stays saved (usable after fixing the password) with a hint. */
+  const saveCredentials = async () => {
+    const account = credAccount.trim()
+    if (account === '' || credPassword === '') return
+    try {
+      await window.rgbbox.ai8SaveCredentials(account, credPassword)
+      const auto = await window.rgbbox.ai8AutoLogin()
+      if (auto.ok && auto.token) {
+        setToken(auto.token)
+        writeStoredToken(auto.token)
+        setLoginAccount(account)
+        setShowTokenRow(false)
+        setCredPassword('')
+        void syncTokenToProfiles(auto.token)
+        showCredHint(t('ai.ai8.credOk'))
+      } else {
+        showCredHint(t('ai.ai8.credFail'))
+      }
+    } catch {
+      showCredHint(t('ai.ai8.credFail'))
+    }
+  }
+
+  const clearCredentials = async () => {
+    try {
+      await window.rgbbox.ai8ClearCredentials()
+      showCredHint(t('ai.ai8.credCleared'))
+    } catch {
+      showCredHint(t('ai.ai8.credFail'))
     }
   }
 
@@ -666,9 +728,14 @@ export function AiLabAi8Tab(): JSX.Element {
         </div>
         <div className="ai8-side-foot">
           {token === '' ? (
-            <button type="button" className="ai8-btn ai8-btn-primary" data-action="ai8-open-login" onClick={() => void openOfficialLogin()} disabled={loginBusy}>
-              {loginBusy ? t('ai.ai8.loginWaiting') : t('ai.ai8.loginButton')}
-            </button>
+            <>
+              <button type="button" className="ai8-btn ai8-btn-primary" data-action="ai8-open-login" onClick={() => void openOfficialLogin()} disabled={loginBusy}>
+                {loginBusy ? t('ai.ai8.loginWaiting') : t('ai.ai8.loginButton')}
+              </button>
+              <div className="ai8-token-actions">
+                <button type="button" className="ai8-btn" data-action="ai8-cred-toggle" onClick={() => { setCredOpen((v) => !v); setCredHint('') }}>{t('ai.ai8.credManage')}</button>
+              </div>
+            </>
           ) : (
             <>
               <span className="ai8-token-ok">{t('ai.ai8.tokenOk')}{loginAccount !== '' ? ` · ${loginAccount}` : ''}</span>
@@ -676,9 +743,32 @@ export function AiLabAi8Tab(): JSX.Element {
                 <button type="button" className="ai8-btn" data-action="ai8-change-token" onClick={() => void openOfficialLogin()}>{t('ai.ai8.tokenChange')}</button>
                 <button type="button" className="ai8-btn" data-action="ai8-clear-token" onClick={clearToken}>{t('ai.ai8.tokenClear')}</button>
                 <button type="button" className="ai8-btn" data-action="ai8-show-paste" onClick={() => setShowTokenRow((v) => !v)}>{t('ai.ai8.tokenManual')}</button>
+                <button type="button" className="ai8-btn" data-action="ai8-cred-toggle" onClick={() => { setCredOpen((v) => !v); setCredHint('') }}>{t('ai.ai8.credManage')}</button>
               </div>
             </>
           )}
+          {credOpen ? (
+            <div className="ai8-cred-row" data-field="ai8-cred-row">
+              <input
+                data-field="ai8-cred-account"
+                type="text"
+                value={credAccount}
+                placeholder={t('ai.ai8.credAccount')}
+                onChange={(e) => setCredAccount(e.target.value)}
+              />
+              <input
+                data-field="ai8-cred-password"
+                type="password"
+                value={credPassword}
+                placeholder={t('ai.ai8.credPassword')}
+                onChange={(e) => setCredPassword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void saveCredentials() }}
+              />
+              <button type="button" className="ai8-btn" data-action="ai8-cred-save" onClick={() => void saveCredentials()} disabled={credAccount.trim() === '' || credPassword === ''}>{t('ai.ai8.credSave')}</button>
+              <button type="button" className="ai8-btn" data-action="ai8-cred-clear" onClick={() => void clearCredentials()}>{t('ai.ai8.credClear')}</button>
+            </div>
+          ) : null}
+          {credHint !== '' ? <p className="ai8-import-hint" data-field="ai8-cred-hint">{credHint}</p> : null}
           {showTokenRow ? (
             <div className="ai8-paste-row">
               <input
