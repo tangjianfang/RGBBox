@@ -1236,6 +1236,17 @@
 - **受影响文件**：新 `main/ai8Credentials.ts`；`main/index.ts`（3 handler）、`shared/ipc.ts`、`preload/index.ts`、`AiLabAi8Tab.tsx`、`i18n`（+9 keys）、tests + verify 脚本。
 - **实施证据（2026-09-18）**：①typecheck 0 error；②全量 `yarn test` **0 失败**（+`tests/main/ai8Credentials.test.ts` 5 用例：加密 roundtrip 且密文不含明文/明文回落仍可读/clear 与坏文件容错/autoLogin POST {account,password} 形态全等且无 Authorization 头/code≠0→'code:N'、空 token→'no-token'）；③真机 CDP `scripts/verify-r123-ai8.mjs` **14/14 PASS**——本地 http mock 站点经 `RGBBOX_AI8_BASE_URL` 测试缝接管 **main 进程** login 流量：凭据行展开/保存 → main 发出 `POST /user/login` 形态全等 → token 落 localStorage → **无窗口弹出**（targets 1→1）→ 磁盘 account trim + **password enc:v1: 加密落盘** →「官网登录」二次触发仍 headless（logins=2）→ 错密码 → 失败提示 + 凭据保留 → 清除后文件删除；零页面错误。④环境插曲：验证期间 `node_modules/electron/dist` 二进制丢失，按 [[rgbbox-node-env-quirks]] 用 `ELECTRON_MIRROR=npmmirror` 重装恢复；verify 裸 spawn 的 userData 为 `%APPDATA%/Electron`（真实 dev/dist 实例为 rgbbox 目录）。**状态：✅（真实账号实测：AI8 Tab →「账号密码」→ 填入并保存 → 以后点「官网登录」即一键无窗更新 token）**
 
+### R124. AI8 绘画结果字段协议修复——线上响应图片字段已从 `list[].url` 迁到 `outImages`/`imgUrl`（2026-09-18 用户报告「绘画功能一直没有返回值」）
+
+> 根因实证（三层证据）：①**生产现场**——`%APPDATA%/rgbbox` localStorage 真实会话显示：提交成功（服务端 taskId `2100954848043208704` 已落盘）→ 轮询 150s 耗尽 → `error:"draw timeout"`；②**线上前端 bundle 实证**（当日 `draw-HaYo0BLq.js` + `draw-detail-*.js`）——图片渲染**只**读 `outImages[]`（成员 `.url`/`.imgUrl`/`.smallImgUrl`）与顶层 `imgUrl`/`smallImgUrl`，draw 协议层**零** `list` 字段引用（仅剩 UI 组件属性 `file-list`/`list-type`）；轮询终止用 **truthy `end`** 而非严格 `=== true`；③**我方客户端**——`drawStatus` 只解 `status.list[].url`、只认 `end === true`，且 `list` 形状**只存在于自家 e2e mock**（verify-r117/122），从未对真实服务器验证。这是 R116（chat 协议对齐）、R120（cms 模板结构）之后该站点第三次协议漂移。次要发现：站点版本已升 `3.4.1`（我方仍发 `3.4.0`）；线上提交体对 cms 模型带 `args`（area 等控制参数，我方未发但提交仍被接受，暂不动）。
+- **R124.1 shared/ai8Client.ts**：新增纯函数 `parseDrawImages(raw)`——从 status/records 响应提取图片 URL 列表，按线上实证优先级：`outImages[].url ?? .imgUrl ?? .smallImgUrl` → 顶层 `imgUrl`/`smallImgUrl` → 旧 `list[].url` 兜底（保 e2e mock 与历史兼容）；`end` 判定改 truthy（`end === true || end === 1` 等）；`AI8_APP_VERSION` → `3.4.1`。
+- **R124.2 AiLabAi8Tab.tsx 接入**：`runDrawTask` 轮询与 `findLatestDrawTask` records 解析统一走 `parseDrawImages`（两处同一形状漂移一起修）；成功条件与 `end` 分支同步更新。
+- **R124.3 测试**：单测固定新形状（outImages 多成员、仅 imgUrl、end=1、旧 list 兼容）+ 全量回归。
+- **受影响文件**：`src/shared/ai8Client.ts`、`src/renderer/src/components/AiLabAi8Tab.tsx`、`tests/renderer/ai8/client.test.ts`。
+- **验收点**：①新形状单测全绿；②旧 list 形状（e2e mock）不回归；③typecheck 0 error；④用户真机实测绘画出图。
+- **实施证据（2026-09-18）**：①TDD 红→绿：新增 6 用例先红（`parseDrawImages`/`isDrawDone` 未实现 + 版本断言）后绿，`yarn test tests/renderer/ai8/client.test.ts` **21/21**（含：live `outImages[]` 逐成员取 `url>imgUrl>smallImgUrl` / 顶层 `imgUrl` 兜底 / 旧 `list[].url` 兼容 / 垃圾载荷容错 / truthy `end`（true/1/'1' 过，'0'/'false' 拒）/ `AI8_APP_VERSION='3.4.1'`）；②`yarn typecheck` 0 error；③全量 `yarn test` **855 passed / 41 skipped / 0 失败**；④接线点两处（`runDrawTask` 轮询 + `findLatestDrawTask` records 解析）统一走共享解析，视频路径（R121 `/video/{id}`）零改动。**环境插曲（与 R124 无关的存量问题）**：本机 Node v26.1.0 下 node-env 测试裸用 `localStorage` 会因「--localstorage-file 未提供」得到 undefined（干净 main 基线同样 34 失败，stash 复现证实非本次引入）；全量绿需 `NODE_OPTIONS="--localstorage-file=<tmp>"` 前缀。**状态：✅（代码+测试闭环；用户真机实测绘画出图为最终验收）**
+
+
 ### R94. 视频工作站回归修复批次（2026-09-15 用户实测 R91 后四项反馈）
 
 > 触发场景：用户深度使用播放器后报告：① 视频播放列表「没有历史缓存」；② 缩放悬浮条不随控制条自动隐藏；③ 最大化后视频窗口不自适应/比例不协调；④ 未开 AI 降噪时左右声道不对称。诊断事实：播放列表主进程持久化（video-playlist.json）与恢复链路实测正常（用户实例文件含条目+进度），①的真实缺口=重启后播放器空白无现场。

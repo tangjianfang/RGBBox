@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AI8_VIDEO_PROVIDERS, Ai8Client, Ai8Error, buildChatBody, buildVideoBody, isDrawLimitError, parseAi8SseLine, parseDrawTemplate, parseVideoTemplate } from '../../../src/shared/ai8Client'
+import { AI8_APP_VERSION, AI8_VIDEO_PROVIDERS, Ai8Client, Ai8Error, buildChatBody, buildVideoBody, isDrawDone, isDrawLimitError, parseAi8SseLine, parseDrawImages, parseDrawTemplate, parseVideoTemplate } from '../../../src/shared/ai8Client'
 
 describe('renderer/ai8 client (R110)', () => {
   it('parses delta payloads and accumulates the full text', () => {
@@ -169,5 +169,58 @@ describe('renderer/ai8 draw recovery (R122)', () => {
     } finally {
       globalThis.fetch = originalFetch
     }
+  })
+})
+
+describe('renderer/ai8 draw result shape (R124 — live outImages/imgUrl era)', () => {
+  // live evidence (2026-09-18 draw-HaYo0BLq.js): the draw page renders images
+  // ONLY from outImages[] (members carry .url/.imgUrl/.smallImgUrl) or the
+  // top-level imgUrl/smallImgUrl — a `list` field no longer exists in the
+  // protocol layer; polling ends on truthy `end`.
+  it('parseDrawImages extracts the live outImages[] shape, best URL per member', () => {
+    const status = {
+      end: true,
+      outImages: [
+        { url: 'https://cdn/a.png', imgUrl: 'https://cdn/a-full.png', smallImgUrl: 'https://cdn/a-small.png' },
+        { imgUrl: 'https://cdn/b-full.png', smallImgUrl: 'https://cdn/b-small.png' },
+        { smallImgUrl: 'https://cdn/c-small.png' },
+        { url: '' },
+      ],
+    }
+    expect(parseDrawImages(status)).toEqual(['https://cdn/a.png', 'https://cdn/b-full.png', 'https://cdn/c-small.png'])
+  })
+
+  it('parseDrawImages falls back to the top-level imgUrl/smallImgUrl when outImages is absent', () => {
+    expect(parseDrawImages({ end: 1, imgUrl: 'https://cdn/full.png', smallImgUrl: 'https://cdn/small.png' })).toEqual(['https://cdn/full.png'])
+    expect(parseDrawImages({ end: 1, smallImgUrl: 'https://cdn/small.png' })).toEqual(['https://cdn/small.png'])
+  })
+
+  it('parseDrawImages keeps the legacy list[].url shape (e2e mock + old server)', () => {
+    expect(parseDrawImages({ end: true, list: [{ url: 'https://ai8.rcouyi.com/mock-draw/1.png' }, { url: '' }] })).toEqual(['https://ai8.rcouyi.com/mock-draw/1.png'])
+  })
+
+  it('parseDrawImages tolerates junk and half-formed payloads', () => {
+    expect(parseDrawImages(null)).toEqual([])
+    expect(parseDrawImages({ end: false })).toEqual([])
+    expect(parseDrawImages({ outImages: [{}, { url: 123 }] })).toEqual([])
+    expect(parseDrawImages({ outImages: 'nope', list: 42 })).toEqual([])
+  })
+
+  it('isDrawDone matches the site truthy end check, guarding string falsies', () => {
+    expect(isDrawDone({ end: true })).toBe(true)
+    expect(isDrawDone({ end: 1 })).toBe(true)
+    expect(isDrawDone({ end: '1' })).toBe(true)
+    expect(isDrawDone({ end: false })).toBe(false)
+    expect(isDrawDone({ end: 0 })).toBe(false)
+    expect(isDrawDone({ end: null })).toBe(false)
+    expect(isDrawDone({ end: undefined })).toBe(false)
+    expect(isDrawDone({ end: '0' })).toBe(false)
+    expect(isDrawDone({ end: 'false' })).toBe(false)
+    expect(isDrawDone({})).toBe(false)
+    expect(isDrawDone(null)).toBe(false)
+  })
+
+  it('AI8_APP_VERSION tracks the live site build (3.4.1, 2026-09-18)', () => {
+    expect(AI8_APP_VERSION).toBe('3.4.1')
   })
 })

@@ -6,7 +6,7 @@
 // code=0 ok, code=2 login expired, code=-2 not activated.
 
 export const AI8_BASE = 'https://ai8.rcouyi.com/api'
-export const AI8_APP_VERSION = '3.4.0'
+export const AI8_APP_VERSION = '3.4.1'
 
 export class Ai8Error extends Error {
   code: number
@@ -88,6 +88,42 @@ export function parseDrawTemplate(raw: unknown): Ai8DrawTemplateParsed {
   // legacy flat shape (R117.3 era + e2e mock): models[] + meta.defInput.model
   const flat = (tmpl.models ?? []).map(pick).filter((m): m is Ai8DrawModel => m !== null)
   return { groups: flat.length > 0 ? [{ provider: '', models: flat }] : [], defaultModel: tmpl.meta?.defInput?.model ?? (flat[0]?.value ?? '') }
+}
+
+// ── R124: draw RESULT shape. The live draw page (draw-HaYo0BLq.js,
+// draw-detail-*.js, 2026-09-18) renders images ONLY from `outImages[]`
+// (members carry .url/.imgUrl/.smallImgUrl) or the top-level
+// `imgUrl`/`smallImgUrl` — a protocol-level `list` field no longer exists
+// (its only surviving namesakes are UI props `file-list`/`list-type`). The
+// legacy `list[].url` read stays as the last branch so the e2e mocks and any
+// old-server response keep working. Pure functions, shared by the poller and
+// the records-adoption path (both drifted together).
+
+/** Extract image URLs from a /draw/status/{id} or /draw records entry,
+ *  best URL per outImages member (url > imgUrl > smallImgUrl). */
+export function parseDrawImages(raw: unknown): string[] {
+  const rec = (raw ?? {}) as {
+    outImages?: { url?: unknown; imgUrl?: unknown; smallImgUrl?: unknown }[]
+    imgUrl?: unknown
+    smallImgUrl?: unknown
+    list?: { url?: unknown }[]
+  }
+  const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null)
+  const fromMember = (m: { url?: unknown; imgUrl?: unknown; smallImgUrl?: unknown }): string | null => str(m.url) ?? str(m.imgUrl) ?? str(m.smallImgUrl)
+  const urls = Array.isArray(rec.outImages) ? rec.outImages.map(fromMember).filter((u): u is string => u !== null) : []
+  if (urls.length > 0) return urls
+  const top = str(rec.imgUrl) ?? str(rec.smallImgUrl)
+  if (top !== null) return [top]
+  return Array.isArray(rec.list) ? rec.list.map((item) => str(item?.url)).filter((u): u is string => u !== null) : []
+}
+
+/** The site's poll loop ends on truthy `end` (`t.end ? stop : repoll`); this
+ *  ports that check with a guard against JSON string falsies ("0"/"false"). */
+export function isDrawDone(raw: unknown): boolean {
+  const end = ((raw ?? {}) as { end?: unknown }).end
+  if (end === true || end === 1) return true
+  if (end === '1' || end === 'true') return true
+  return false
 }
 
 // ── R121: video generation protocol. The site's video board is in beta (its
@@ -377,16 +413,17 @@ export class Ai8Client {
     return this.post<T>('/draw', { action: 'IMAGINE', public: false, fast: false, ...body })
   }
 
-  /** R117.3: poll a draw task — the site ends polling on `data.end` or a
-   *  non-empty `data.list[].url`. */
+  /** R117.3/R124: poll a draw task — parse with `parseDrawImages` (live
+   *  outImages/imgUrl era) and end on truthy `end` (`isDrawDone`). */
   drawStatus<T>(taskId: string | number): Promise<T> {
     return this.get<T>(`/draw/status/${taskId}`)
   }
 
   /** R122.1: page through MY draw tasks — the site's own draw page reloads
    *  this right after a submit; records carry taskId/prompt/status/progress/
-   *  startDate/endDate. This is the recovery path for tasks whose polling
-   *  was lost (stop button / restart / submitted from the web). */
+   *  startDate/endDate and (R124) outImages/imgUrl on completion. This is
+   *  the recovery path for tasks whose polling was lost (stop button /
+   *  restart / submitted from the web). */
   drawRecords<T>(page = 1, size = 6): Promise<T> {
     return this.get<T>('/draw', { page, size })
   }

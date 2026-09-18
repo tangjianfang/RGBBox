@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { MarkdownView, ThinkPanel, copyRichText, markdownToHtml, splitThinkBlocks, stripThink } from '../ai8/markdown'
-import { AI8_VIDEO_PROVIDERS, Ai8Client, Ai8Error, isDrawLimitError, parseDrawTemplate, parseVideoTemplate, readStoredToken, writeStoredToken, type Ai8DrawModelGroup, type Ai8Model, type Ai8VideoProvider } from '../../../shared/ai8Client'
+import { AI8_VIDEO_PROVIDERS, Ai8Client, Ai8Error, isDrawDone, isDrawLimitError, parseDrawImages, parseDrawTemplate, parseVideoTemplate, readStoredToken, writeStoredToken, type Ai8DrawModelGroup, type Ai8Model, type Ai8VideoProvider } from '../../../shared/ai8Client'
 import { cleanGeneratedTitle, groupModelsByProvider, matchCurated, pushInputHistory, readActiveId, readInputHistory, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
 
 /** R113: AI8 workbench — two-pane layout (session sidebar + chat), multiple
@@ -416,9 +416,11 @@ export function AiLabAi8Tab(): JSX.Element {
           patchLastAssistant(sessionId, { error: 'stopped' })
           return
         }
-        const status = await client().drawStatus<{ end?: boolean; list?: { url?: string }[] }>(taskId)
-        const got = (status?.list ?? []).map((item) => item.url).filter((u): u is string => typeof u === 'string' && u !== '')
-        if (got.length > 0 || status?.end === true) {
+        const status = await client().drawStatus<unknown>(taskId)
+        // R124: live shape is outImages[]/imgUrl (list[].url is the legacy
+        // branch); `end` is truthy-checked like the site's own poll loop.
+        const got = parseDrawImages(status)
+        if (got.length > 0 || isDrawDone(status)) {
           if (got.length === 0) {
             patchLastAssistant(sessionId, { error: 'draw empty' })
             return
@@ -471,9 +473,11 @@ export function AiLabAi8Tab(): JSX.Element {
     const prefer = preferTaskId !== undefined && preferTaskId !== '' ? records.find((r) => String(r.taskId) === preferTaskId) : undefined
     const pick = prefer ?? pool[0]
     const taskId = String(pick.taskId)
-    const status = await client().drawStatus<{ end?: boolean; list?: { url?: string }[] }>(taskId)
-    const urls = (status?.list ?? []).map((item) => item.url).filter((u): u is string => typeof u === 'string' && u !== '')
-    return { taskId, end: status?.end === true, urls }
+    const status = await client().drawStatus<unknown>(taskId)
+    // R124: same live-shape extraction as the poller (outImages/imgUrl, then
+    // legacy list[].url); truthy end so a finished record receives instantly.
+    const urls = parseDrawImages(status)
+    return { taskId, end: isDrawDone(status), urls }
   }
 
   /** R122.3/R122.4: bind the server's latest draw task onto a session — the
