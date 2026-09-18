@@ -47,9 +47,23 @@ describe('renderer/ai8 localStore (R113)', () => {
 
   it('prefs merge over defaults', () => {
     expect(readPrefs()).toEqual(DEFAULT_PREFS)
-    writePrefs({ model: 'ouyi_chat::ouyi-chat', thinking: true, webSearch: false, draw: false })
+    writePrefs({ ...DEFAULT_PREFS, model: 'ouyi_chat::ouyi-chat', thinking: true })
     expect(readPrefs().thinking).toBe(true)
     expect(readPrefs().model).toBe('ouyi_chat::ouyi-chat')
+  })
+
+  it('migrates the pre-video draw flag onto mode (R121)', () => {
+    localStorage.setItem('rgbbox:ai8Prefs', JSON.stringify({ model: 'm', thinking: false, webSearch: false, draw: true, drawModel: 'mj' }))
+    const prefs = readPrefs()
+    expect(prefs.mode).toBe('draw')
+    expect(prefs.drawModel).toBe('mj')
+    localStorage.setItem('rgbbox:ai8Prefs', JSON.stringify({ model: 'm', thinking: false, webSearch: false, draw: false }))
+    expect(readPrefs().mode).toBe('chat')
+    localStorage.setItem('rgbbox:ai8Prefs', JSON.stringify({ model: 'm', thinking: false, webSearch: false, mode: 'video', videoModel: 'kling', videoVersion: 'v3', drawModel: '' }))
+    const video = readPrefs()
+    expect(video.mode).toBe('video')
+    expect(video.videoModel).toBe('kling')
+    expect(video.videoVersion).toBe('v3')
   })
 
   it('titleFromContent truncates and collapses whitespace', () => {
@@ -108,5 +122,13 @@ describe('renderer/ai8 localStore (R113)', () => {
     const sessions: Ai8Session[] = [{ id: 'draw-1', kind: 'draw', model: 'mj', title: '猫', turns: [], createdAt: 1, updatedAt: 2 }]
     writeSessions(sessions)
     expect(readSessions()[0].kind).toBe('draw')
+  })
+
+  it('sessions round-trip the video kind + videoUrl turn (R121)', () => {
+    const sessions: Ai8Session[] = [{ id: 'video-1', kind: 'video', model: 'kling', title: '猫追激光', turns: [{ role: 'assistant', content: 'https://v/x.mp4', videoUrl: 'https://v/x.mp4' }], createdAt: 1, updatedAt: 2 }]
+    writeSessions(sessions)
+    const back = readSessions()[0]
+    expect(back.kind).toBe('video')
+    expect(back.turns[0].videoUrl).toBe('https://v/x.mp4')
   })
 })
