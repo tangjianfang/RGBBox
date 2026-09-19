@@ -38,42 +38,51 @@ export interface CursorState {
   prevPalmX: number
   prevPalmY: number
   prevPalmT: number
-  /** clutch (open-palm) tracking */
-  openSince: number | null
+  /** R143: clutch = FIST sustained (open palm is the natural rest — it must
+   * NOT clutch, or a relaxed hand freezes the cursor permanently) */
+  fistSince: number | null
   frozen: boolean
+  /** R143.1: client-side prediction — local velocity integrated at display
+   * rate; snapshots re-anchor gently instead of snapping (netcode style) */
+  velX: number
+  velY: number
+  /** where the authoritative snapshot says we should be (re-anchor target) */
+  anchorX: number
+  anchorY: number
 }
 
 export function createCursorState(x = 0.5, y = 0.5): CursorState {
-  return { x, y, prevPalmX: NaN, prevPalmY: NaN, prevPalmT: NaN, openSince: null, frozen: false }
+  return { x, y, prevPalmX: NaN, prevPalmY: NaN, prevPalmT: NaN, fistSince: null, frozen: false, velX: 0, velY: 0, anchorX: x, anchorY: y }
 }
 
 /**
- * Advance the cursor one frame.
- * @param s      mutable state (createCursorState)
- * @param palm   predicted palm position (normalized 0..1) or null when unseen
- * @param openPalm true while the pinch distance is above release threshold
- * @param nowMs  performance.now() at this frame
- * @returns the updated state (same object)
+ * Feed an authoritative snapshot (palm from the pipeline). Runs at inference
+ * rate; updates the local velocity + re-anchor target.
  */
-export function cursorStep(s: CursorState, palm: { x: number; y: number } | null, openPalm: boolean, nowMs: number, cfg: CursorConfig = DEFAULT_CURSOR_CONFIG): CursorState {
-  // clutch: sustained open palm freezes the cursor while the hand relocates
-  if (openPalm) {
-    s.openSince ??= nowMs
-    if (nowMs - s.openSince >= cfg.clutchMs) s.frozen = true
+export function cursorSnapshot(s: CursorState, palm: { x: number; y: number } | null, fist: boolean, nowMs: number, cfg: CursorConfig = DEFAULT_CURSOR_CONFIG): void {
+  // clutch: sustained FIST freezes the cursor while the hand relocates
+  if (fist) {
+    s.fistSince ??= nowMs
+    if (nowMs - s.fistSince >= cfg.clutchMs) {
+      s.frozen = true
+      s.velX = 0
+      s.velY = 0
+    }
   } else {
-    s.openSince = null
+    s.fistSince = null
     s.frozen = false
   }
   if (!palm) {
-    // hand lost → keep the cursor where it is; reset delta baseline
     s.prevPalmX = NaN
-    return s
+    s.velX = 0
+    s.velY = 0
+    return
   }
   if (Number.isNaN(s.prevPalmX)) {
     s.prevPalmX = palm.x
     s.prevPalmY = palm.y
     s.prevPalmT = nowMs
-    return s
+    return
   }
   const dx = palm.x - s.prevPalmX
   const dy = palm.y - s.prevPalmY
@@ -81,15 +90,36 @@ export function cursorStep(s: CursorState, palm: { x: number; y: number } | null
   s.prevPalmX = palm.x
   s.prevPalmY = palm.y
   s.prevPalmT = nowMs
-  if (s.frozen) return s
+  if (s.frozen) return
   const dist = Math.hypot(dx, dy)
-  if (dist < cfg.tremorDeadZone) return s
-  // dynamic gain: speed-dependent pointer acceleration
+  if (dist < cfg.tremorDeadZone) return
   const speed = dist / dt
   const gain = Math.min(cfg.gainCap, cfg.gainBase + cfg.gainPerSpeed * Math.min(speed, 6))
-  s.x = clamp01(s.x + dx * gain)
-  s.y = clamp01(s.y + dy * gain)
-  return s
+  // authoritative target: cursor + gained delta; the integrator chases it
+  s.anchorX = clamp01(s.x + dx * gain)
+  s.anchorY = clamp01(s.y + dy * gain)
+  // velocity toward the anchor, expressed per display-second
+  s.velX = (s.anchorX - s.x) / Math.max(0.008, dt)
+  s.velY = (s.anchorY - s.y) / Math.max(0.008, dt)
+}
+
+/**
+ * Display-rate integrator (R143.1): advance EVERY frame with the local
+ * velocity, gently pulling toward the anchor. Called from rAF at 60fps —
+ * this is what makes the cursor feel directly attached despite a 100ms+
+ * pipeline behind it.
+ */
+export function cursorIntegrate(s: CursorState, dtSec: number): void {
+  if (s.frozen) return
+  const nx = clamp01(s.x + s.velX * dtSec)
+  const ny = clamp01(s.y + s.velY * dtSec)
+  // gentle re-anchor pull (≈12% per frame @60fps) kills drift without snap
+  const pull = 1 - Math.exp(-7.5 * dtSec)
+  s.x = nx + (s.anchorX - nx) * pull
+  s.y = ny + (s.anchorY - ny) * pull
+  // velocity decays toward zero as we approach the anchor
+  s.velX *= 1 - Math.min(0.9, 6 * dtSec)
+  s.velY *= 1 - Math.min(0.9, 6 * dtSec)
 }
 
 function clamp01(v: number): number {

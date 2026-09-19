@@ -1,18 +1,22 @@
 import { useEffect, useRef, type JSX } from 'react'
 import type { VisionInputHandle } from '../../hooks/useVisionInput'
-import { createCursorState, cursorStep, type CursorState } from '../../vision/cursor'
+import { createCursorState, cursorIntegrate, cursorSnapshot, type CursorState } from '../../vision/cursor'
+import { fingerStates } from '../../vision/fingerChords.js'
 
-// R142-L3: the relative-cursor overlay — a display-rate rAF loop advances the
-// cursor from the PREDICTED palm (frameRef, never throttled), draws a dot +
-// ring over the game canvas, hit-tests interactive elements for a hover
-// highlight, and CLICKS the hovered element on the rising edge of a pinch.
-// Zero React re-renders; the game loop never sees this work.
-export function VisionCursor({ vision, wrapRef, stateRef }: { vision: VisionInputHandle; wrapRef: React.RefObject<HTMLDivElement | null>; stateRef?: React.RefObject<CursorState> }): JSX.Element {
+// R142-L3 + R143: the relative-cursor overlay. Two clocks:
+//  - SNAPSHOTS (inference rate) feed cursorSnapshot → local velocity + anchor
+//  - EVERY DISPLAY FRAME runs cursorIntegrate (client-side prediction, netcode
+//    style) so the cursor moves at 60fps even between snapshots — this is
+//    what removes the stutter; the pipeline latency hides behind the integrator.
+// Clutch is a sustained FIST (R143.2) — an open palm is the natural resting
+// shape and must never freeze the cursor.
+export function VisionCursor({ vision, wrapRef, stateRef, suppressClick }: { vision: VisionInputHandle; wrapRef: React.RefObject<HTMLDivElement | null>; stateRef?: React.RefObject<CursorState>; suppressClick?: boolean }): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const localStateRef = useRef(createCursorState())
   const cursorRef = stateRef ?? localStateRef
   const pinchWasDownRef = useRef(false)
   const hoveredRef = useRef<Element | null>(null)
+  const lastFrameRef = useRef<unknown>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -29,16 +33,30 @@ export function VisionCursor({ vision, wrapRef, stateRef }: { vision: VisionInpu
     }
 
     let raf = 0
+    let lastDraw = performance.now()
     const loop = () => {
       try {
         const now = performance.now()
+        const dtSec = Math.min(0.05, (now - lastDraw) / 1000)
+        lastDraw = now
         const frame = vision.frameRef.current
-        const geom = frame?.geomPredicted ?? frame?.geom
-        const pinchOff = (frame?.profile?.pinchOff as number | undefined) ?? 0.85
-        const openPalm = geom != null && geom.pinch > pinchOff
-        const s = cursorStep(cursorRef.current, geom ? geom.palm : null, openPalm, now)
+        // feed the authoritative snapshot only when it CHANGED (per-inference)
+        if (frame != null && frame !== lastFrameRef.current) {
+          lastFrameRef.current = frame
+          const geom = frame.geomPredicted ?? frame.geom
+          const lm = frame.pickedLandmarks
+          let fist = false
+          if (geom != null && Array.isArray(lm) && lm.length === 21) {
+            const f = fingerStates(lm as Array<{ x: number; y: number; z: number }>)
+            fist = !f.thumb && !f.index && !f.middle && !f.ring && !f.pinky
+          }
+          cursorSnapshot(cursorRef.current, geom ? geom.palm : null, fist, now)
+        }
+        // display-rate prediction — every frame, snapshot or not
+        cursorIntegrate(cursorRef.current, dtSec)
+        const s = cursorRef.current
 
-        // draw (overlay-sized canvas, cleared per frame)
+        // draw
         const rect = wrap.getBoundingClientRect()
         if (canvas.width !== Math.round(rect.width) || canvas.height !== Math.round(rect.height)) {
           canvas.width = Math.max(1, Math.round(rect.width))
@@ -63,14 +81,14 @@ export function VisionCursor({ vision, wrapRef, stateRef }: { vision: VisionInpu
         const inWrap = interactive != null && wrap.contains(interactive)
         setHover(inWrap ? interactive : null)
 
-        // click on pinch rising edge while hovering
+        // click on pinch rising edge while hovering (R143.4: suppressible)
         const pinchDown = vision.heldRef.current.has('space')
-        if (pinchDown && !pinchWasDownRef.current && inWrap && interactive) {
+        if (!suppressClick && pinchDown && !pinchWasDownRef.current && inWrap && interactive) {
           ;(interactive as HTMLElement).click()
         }
         pinchWasDownRef.current = pinchDown
       } catch {
-        // never take the game down for cursor drawing
+        // never take the app down for cursor drawing
       }
       raf = requestAnimationFrame(loop)
     }
@@ -79,7 +97,7 @@ export function VisionCursor({ vision, wrapRef, stateRef }: { vision: VisionInpu
       cancelAnimationFrame(raf)
       hoveredRef.current?.classList?.remove('vision-hover')
     }
-  }, [vision.frameRef, vision.heldRef, wrapRef])
+  }, [vision.frameRef, vision.heldRef, wrapRef, suppressClick])
 
   return <canvas ref={canvasRef} className="vision-cursor" aria-hidden="true" />
 }

@@ -1,58 +1,73 @@
 import { describe, expect, it } from 'vitest'
-import { createCursorState, cursorStep, hitTest, DEFAULT_CURSOR_CONFIG } from '../../../src/renderer/src/vision/cursor'
+import { createCursorState, cursorSnapshot, cursorIntegrate, hitTest } from '../../../src/renderer/src/vision/cursor'
 
-describe('vision/cursor (R142-L3)', () => {
-  it('relative deltas: palm moves right → cursor moves right, proportionally to gain', () => {
+describe('vision/cursor (R143: prediction integrator + fist clutch)', () => {
+  it('relative deltas: authoritative snapshots set velocity + anchor', () => {
     const s = createCursorState(0.5, 0.5)
-    cursorStep(s, { x: 0.5, y: 0.5 }, false, 0) // baseline
-    cursorStep(s, { x: 0.51, y: 0.5 }, false, 33)
-    expect(s.x).toBeGreaterThan(0.5)
+    cursorSnapshot(s, { x: 0.5, y: 0.5 }, false, 0) // baseline
+    cursorSnapshot(s, { x: 0.51, y: 0.5 }, false, 33)
+    expect(s.anchorX).toBeGreaterThan(0.5)
+    expect(s.velX).toBeGreaterThan(0)
     expect(s.y).toBe(0.5)
   })
 
-  it('dynamic gain: the SAME delta at high speed moves the cursor further', () => {
-    const slow = createCursorState(0.5, 0.5)
-    cursorStep(slow, { x: 0.5, y: 0.5 }, false, 0)
-    cursorStep(slow, { x: 0.515, y: 0.5 }, false, 1000) // slow (long dt)
-    const fast = createCursorState(0.5, 0.5)
-    cursorStep(fast, { x: 0.5, y: 0.5 }, false, 0)
-    cursorStep(fast, { x: 0.515, y: 0.5 }, false, 16) // fast (short dt)
-    expect(fast.x - 0.5).toBeGreaterThan(slow.x - 0.5)
+  it('R143.1: the cursor advances EVERY display frame BETWEEN snapshots', () => {
+    const s = createCursorState(0.5, 0.5)
+    cursorSnapshot(s, { x: 0.5, y: 0.5 }, false, 0)
+    cursorSnapshot(s, { x: 0.56, y: 0.5 }, false, 33) // decisive right move
+    const x0 = s.x
+    // three display frames with NO new snapshot — the integrator keeps moving
+    cursorIntegrate(s, 1 / 60)
+    const x1 = s.x
+    cursorIntegrate(s, 1 / 60)
+    cursorIntegrate(s, 1 / 60)
+    expect(x1).toBeGreaterThan(x0) // moved without a snapshot
+    expect(s.x).toBeGreaterThan(x1)
+    // velocity decays toward the anchor — no runaway drift
+    for (let i = 0; i < 120; i++) cursorIntegrate(s, 1 / 60)
+    expect(Math.abs(s.x - s.anchorX)).toBeLessThan(0.01)
   })
 
-  it('tremor dead zone: sub-threshold jitter does not move the cursor', () => {
+  it('R143.2: OPEN PALM never clutches — a relaxed hand keeps the cursor live', () => {
     const s = createCursorState(0.5, 0.5)
-    cursorStep(s, { x: 0.5, y: 0.5 }, false, 0)
+    // open palm fed as a plain (non-fist) snapshot for a long time
+    for (let i = 0; i < 30; i++) cursorSnapshot(s, { x: 0.5, y: 0.5 }, false, i * 33)
+    expect(s.frozen).toBe(false)
+  })
+
+  it('R143.2: sustained FIST clutches (freeze) and unclutches on open', () => {
+    const s = createCursorState(0.5, 0.5)
+    cursorSnapshot(s, { x: 0.5, y: 0.5 }, false, 0)
+    for (let i = 0; i < 12; i++) cursorSnapshot(s, { x: 0.5, y: 0.5 }, true, 33 * (i + 1))
+    expect(s.frozen).toBe(true)
+    expect(s.velX).toBe(0)
+    // fist held while the hand relocates → cursor does not move
+    for (let i = 0; i < 10; i++) cursorSnapshot(s, { x: 0.8, y: 0.5 }, true, 500 + 33 * i)
+    expect(s.x).toBeCloseTo(0.5, 5)
+    cursorSnapshot(s, { x: 0.8, y: 0.5 }, false, 900)
+    expect(s.frozen).toBe(false)
+  })
+
+  it('dynamic gain: the SAME delta at high speed anchors further', () => {
+    const slow = createCursorState(0.5, 0.5)
+    cursorSnapshot(slow, { x: 0.5, y: 0.5 }, false, 0)
+    cursorSnapshot(slow, { x: 0.515, y: 0.5 }, false, 1000)
+    const fast = createCursorState(0.5, 0.5)
+    cursorSnapshot(fast, { x: 0.5, y: 0.5 }, false, 0)
+    cursorSnapshot(fast, { x: 0.515, y: 0.5 }, false, 16)
+    expect(fast.anchorX - 0.5).toBeGreaterThan(slow.anchorX - 0.5)
+  })
+
+  it('tremor dead zone + hand-loss re-baseline (no jump on reacquire)', () => {
+    const s = createCursorState(0.5, 0.5)
+    cursorSnapshot(s, { x: 0.5, y: 0.5 }, false, 0)
     for (let i = 0; i < 50; i++) {
-      cursorStep(s, { x: 0.5 + (i % 2 ? 1 : -1) * 0.001, y: 0.5 }, false, 33 * (i + 1))
+      cursorSnapshot(s, { x: 0.5 + (i % 2 ? 1 : -1) * 0.001, y: 0.5 }, false, 33 * (i + 1))
     }
     expect(s.x).toBeCloseTo(0.5, 5)
-  })
-
-  it('clutch: sustained open palm freezes the cursor while the hand moves', () => {
-    const s = createCursorState(0.5, 0.5)
-    cursorStep(s, { x: 0.5, y: 0.5 }, false, 0)
-    let t = 0
-    for (let i = 0; i < 20; i++) cursorStep(s, { x: 0.5, y: 0.5 }, true, (t += 33)) // hold open
-    expect(s.frozen).toBe(true)
-    const beforeX = s.x
-    for (let i = 0; i < 10; i++) cursorStep(s, { x: 0.5 + 0.02 * (i + 1), y: 0.5 }, true, (t += 33))
-    expect(s.x).toBe(beforeX) // frozen through hand relocation
-    // pinch closes → unfrozen, cursor continues from where it was
-    cursorStep(s, { x: 0.7, y: 0.5 }, false, (t += 33))
-    expect(s.frozen).toBe(false)
-    expect(s.x).toBe(beforeX)
-  })
-
-  it('clamps to the screen and re-baselines after hand loss', () => {
-    const s = createCursorState(0.9, 0.5)
-    cursorStep(s, { x: 0.9, y: 0.5 }, false, 0)
-    for (let i = 0; i < 30; i++) cursorStep(s, { x: 0.95 + i * 0.005, y: 0.5 }, false, 33 * (i + 1))
-    expect(s.x).toBeLessThanOrEqual(1)
-    cursorStep(s, null, false, 2000)
-    // hand returns at a new position → baseline resets, no jump
+    cursorSnapshot(s, null, false, 2000)
     const xBefore = s.x
-    cursorStep(s, { x: 0.2, y: 0.5 }, false, 2033)
+    cursorSnapshot(s, { x: 0.2, y: 0.5 }, false, 2033)
     expect(s.x).toBe(xBefore)
   })
 

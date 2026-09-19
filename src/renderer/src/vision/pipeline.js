@@ -188,7 +188,7 @@ export class VisionPipeline {
       this.predLast = null;
       this.predVel = { x: 0, y: 0 };
     }
-    if (snapshot) { snapshot.hostNowMs = nowMs; snapshot.chordBuffer = this.chords.buffer; }
+    if (snapshot) { snapshot.hostNowMs = nowMs; snapshot.chordBuffer = this.chords.buffer; snapshot.chordPreview = this.chords.currentPreview(); }
     // profile persistence is proxied to the main thread (workers lack localStorage)
     if (this.deps.onProfileSave && events.some((e) => e.name === 'calibrated')) {
       this.deps.onProfileSave(this.session.profile);

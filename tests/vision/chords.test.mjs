@@ -30,6 +30,17 @@ function chordHand({ extended = ['thumb', 'index', 'middle', 'ring', 'pinky'], n
   return lm
 }
 
+
+// R143.3 helper: form a chord (hold past the stability window), then release
+// to neutral — the commit fires on the release edge.
+function typeChord(eng, extended, opts = {}) {
+  const events = []
+  for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended, noise: opts.noise })))
+  if (opts.noRelease) return events
+  for (let i = 0; i < 6; i++) events.push(...eng.update(chordHand({ extended: [], noise: opts.noise })))
+  return events
+}
+
 function driveChord(extended, frames = 8, noise = 0) {
   const eng = new ChordEngine()
   const events = []
@@ -39,32 +50,49 @@ function driveChord(extended, frames = 8, noise = 0) {
   return events
 }
 
-test('vocabulary chords fire exactly once with the right name', () => {
+test('vocabulary chords commit exactly once on release with the right name', () => {
   for (const pattern of Object.keys(CHORD_VOCAB)) {
     const extended = pattern.split('+')
-    const events = driveChord(extended)
+    const events = typeChord(new ChordEngine(), extended)
     const names = events.map((e) => e.name)
     expect(names, pattern).toEqual([CHORD_VOCAB[pattern]])
   }
 })
 
 test('neutral shapes never emit: open palm, fist, 4-finger near-open', () => {
-  expect(driveChord(['thumb', 'index', 'middle', 'ring', 'pinky'])).toEqual([]) // open
-  expect(driveChord([])).toEqual([]) // fist
-  expect(driveChord(['thumb', 'index', 'middle', 'ring'])).toEqual([]) // near-open
+  expect(typeChord(new ChordEngine(), ['thumb', 'index', 'middle', 'ring', 'pinky'])).toEqual([]) // open
+  expect(typeChord(new ChordEngine(), [])).toEqual([]) // fist
+  expect(typeChord(new ChordEngine(), ['thumb', 'index', 'middle', 'ring'])).toEqual([]) // near-open
 })
 
 test('pinch shape (middle+ring+pinky extended) is not in the vocabulary — no collision', () => {
-  expect(driveChord(['middle', 'ring', 'pinky'])).toEqual([])
+  expect(typeChord(new ChordEngine(), ['middle', 'ring', 'pinky'])).toEqual([])
 })
 
-test('stability window: 3 transient frames do not fire, the 4th completes', () => {
+test('stability: transient frames do not arm; holding never commits; release does', () => {
   const eng = new ChordEngine()
   const events = []
   for (let i = 0; i < 3; i++) events.push(...eng.update(chordHand({ extended: ['index'] })))
   expect(events).toEqual([])
-  events.push(...eng.update(chordHand({ extended: ['index'] })))
+  expect(eng.currentPreview()).toBeNull()
+  for (let i = 0; i < 10; i++) events.push(...eng.update(chordHand({ extended: ['index'] })))
+  expect(events).toEqual([]) // armed, NOT committed while held
+  expect(eng.currentPreview()?.name).toBe('select')
+  for (let i = 0; i < 6; i++) events.push(...eng.update(chordHand({ extended: [] })))
   expect(events.map((e) => e.name)).toEqual(['select'])
+})
+
+// R143.3 regression: the ORIGINAL misfire — widening index → +middle → +ring
+// (reaching for the space chord) used to emit the intermediate 'menu'/'n'.
+test('widening a chord never commits the intermediate pattern (misfire regression)', () => {
+  const eng = new ChordEngine()
+  const events = []
+  for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended: ['index'] })))
+  for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended: ['index', 'middle'] })))
+  for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended: ['index', 'middle', 'ring'] })))
+  expect(events).toEqual([]) // nothing committed while shaping
+  for (let i = 0; i < 6; i++) events.push(...eng.update(chordHand({ extended: [] })))
+  expect(events.map((e) => e.name)).toEqual(['menu']) // only the FINAL shape
 })
 
 test('≥97% recognition under landmark noise (Monte Carlo, 200 hands × 4 chords)', () => {
@@ -74,7 +102,7 @@ test('≥97% recognition under landmark noise (Monte Carlo, 200 hands × 4 chord
   for (let run = 0; run < 200; run++) {
     for (const extended of chords) {
       total++
-      const events = driveChord(extended, 10, 0.006)
+      const events = typeChord(new ChordEngine(), extended, { noise: 0.006 })
       const want = CHORD_VOCAB[extended.join('+')]
       // a hit = the intended chord fires and nothing else did
       if (events.length === 1 && events[0].name === want) hit++
@@ -94,9 +122,14 @@ test('text mode: chords emit char events and build the buffer', () => {
   const events = []
   for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended: ['index'] })))
   for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended: ['index', 'middle'] })))
-  for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended: ['index', 'middle', 'ring'] }))) // space
-  expect(events.map((e) => e.name)).toEqual(['char:e', 'char:n', 'char: '])
-  expect(eng.buffer).toBe('en ')
+  for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended: ['index', 'middle', 'ring'] })))
+  for (let i = 0; i < 6; i++) events.push(...eng.update(chordHand({ extended: [] })))
+  expect(events.map((e) => e.name)).toEqual(['char: ']) // ONLY the final shape
+  expect(eng.buffer).toBe(' ')
+  for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended: ['middle'] })))
+  for (let i = 0; i < 6; i++) events.push(...eng.update(chordHand({ extended: [] })))
+  expect(events.map((e) => e.name)).toEqual(['char: ', 'char:t'])
+  expect(eng.buffer).toBe(' t')
 })
 
 test('text mode off: the same chords are commands again and the buffer clears', () => {
@@ -109,5 +142,6 @@ test('text mode off: the same chords are commands again and the buffer clears', 
   for (let i = 0; i < 6; i++) eng.update(chordHand({ extended: [] }))
   const ev = []
   for (let i = 0; i < 8; i++) ev.push(...eng.update(chordHand({ extended: ['index'] })))
+  for (let i = 0; i < 6; i++) ev.push(...eng.update(chordHand({ extended: [] })))
   expect(ev.map((e) => e.name)).toEqual(['select'])
 })

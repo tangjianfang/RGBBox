@@ -56,6 +56,8 @@ export interface VisionFrame {
   hostNowMs?: number
   /** R142-E5: committed chord-text characters (host-side buffer) */
   chordBuffer?: string
+  /** R143.3: chord currently HELD (armed preview, commits on release) */
+  chordPreview?: { pattern: string; kind: 'command' | 'char'; name: string } | null
   /** null when no hand passed the score floor this frame */
   geom?: { palm: { x: number; y: number }; pinch: number; scale: number } | null
   /** 21 landmarks of the tracked (primary) hand, selfie-space — skeleton layer */

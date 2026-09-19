@@ -84,7 +84,7 @@ function isNeutral(pattern, f) {
  */
 export class ChordEngine {
   constructor(cfg = {}) {
-    this.cfg = { stableFrames: 4, ...cfg };
+    this.cfg = { stableFrames: 4, previewFrames: 2, ...cfg };
     // R142-E5: text mode — the SAME chords emit characters instead of commands
     this.textMode = false;
     this.buffer = ''; // committed characters (host-side, echoed in snapshots)
@@ -95,6 +95,14 @@ export class ChordEngine {
     this.stablePattern = '';
     this.candidate = '';
     this.candidateFrames = 0;
+    // R143.3: commit-on-release state
+    this.preview = null; // { pattern, kind: 'command'|'char', name } — live, undoable
+    this.released = false;
+  }
+
+  /** live preview of the chord currently held (for UI feedback) */
+  currentPreview() {
+    return this.preview;
   }
 
   /** @returns {Array<{kind:'chord', name:string, down:true}>} */
@@ -110,6 +118,24 @@ export class ChordEngine {
       filtered[f] = this.medians[f].push(raw[f] ? 1 : 0) >= 0.5;
     }
     const pattern = patternOf(filtered);
+    // R143.3: RELEASE commit — a previously-armed preview commits when the
+    // pattern dissolves (fingers relaxing). Any change away from the armed
+    // pattern toward fewer extended fingers = release.
+    if (this.preview && this.preview.pattern !== pattern) {
+      const prevCount = this.preview.pattern ? this.preview.pattern.split('+').length : 0;
+      const nowCount = pattern ? pattern.split('+').length : 0;
+      const commit = this.preview;
+      this.preview = null;
+      if (nowCount < prevCount) {
+        // fingers released → COMMIT
+        if (commit.kind === 'char') this.buffer += commit.name;
+        return [{ kind: 'chord', name: commit.kind === 'char' ? 'char:' + commit.name : commit.name, down: true }];
+      }
+      // pattern CHANGED without releasing (wider chord or different shape):
+      // re-arm flow continues — the new pattern will arm its own preview
+      // when it stabilizes. No commit, no misfire.
+      if (pattern === this.stablePattern) { /* stable-pattern fallthrough */ }
+    }
     if (pattern === this.stablePattern) {
       this.candidate = '';
       this.candidateFrames = 0;
@@ -122,14 +148,17 @@ export class ChordEngine {
         this.candidate = '';
         this.candidateFrames = 0;
         if (isNeutral(pattern, filtered)) return [];
+        // R143.3: reaching stability ARMS a preview, not a commit —
+        // committing fires on RELEASE (fingers relaxing toward neutral),
+        // so passing through patterns on the way to a wider chord never fires.
         if (this.textMode) {
           const ch = CHORD_CHARS[pattern];
-          if (!ch) return [];
-          this.buffer += ch;
-          return [{ kind: 'chord', name: 'char:' + ch, down: true }];
+          this.preview = ch ? { pattern, kind: 'char', name: ch } : null;
+        } else {
+          const name = CHORD_VOCAB[pattern];
+          this.preview = name ? { pattern, kind: 'command', name } : null;
         }
-        const name = CHORD_VOCAB[pattern];
-        return name ? [{ kind: 'chord', name, down: true }] : [];
+        return [];
       }
       return [];
     }

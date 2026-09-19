@@ -6882,6 +6882,29 @@ input[type='range'].video-player-volume {
 /* ── R80: 独立全局截图窗口 ─────────────────────────────────────────── */
 .snip-root { position: fixed; inset: 0; background: #05080a; overflow: hidden; }
 .snip-canvas { width: 100vw; height: 100vh; display: block; }
+/* R130.5: 快门白闪 ×2 —— 冻结画面出现时两下 ~90ms 脉冲（0→35%→0），
+   pointer-events:none 不阻挡拖选；prefers-reduced-motion 用户降级为不闪 */
+.snip-flash {
+  position: fixed;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 40;
+  animation: snip-flash 400ms ease-out forwards;
+}
+@keyframes snip-flash {
+  0% { opacity: 0; }
+  11% { opacity: 0.35; }
+  22% { opacity: 0; }
+  45% { opacity: 0; }
+  56% { opacity: 0.35; }
+  67% { opacity: 0; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .snip-flash { animation: none; }
+}
 .snip-mask { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 .snip-size {
   position: absolute; transform: translateX(-50%); padding: 2px 8px; border-radius: 4px;
@@ -8202,4 +8225,18 @@ input[type='range'].video-player-volume {
   color: #fbbf24;
   font-style: normal;
   font-weight: 700;
+}
+
+.vision-chord-posture {
+  background: rgba(8, 13, 18, 0.9);
+  border: 1px solid rgba(103, 232, 249, 0.3);
+  border-radius: 8px;
+  bottom: 96px;
+  color: #a5e8f5;
+  font-size: 11px;
+  left: 14px;
+  max-width: 320px;
+  padding: 6px 10px;
+  position: fixed;
+  z-index: 62;
 }

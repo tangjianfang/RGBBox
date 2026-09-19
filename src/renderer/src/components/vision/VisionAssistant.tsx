@@ -98,6 +98,11 @@ export function VisionAssistant({ activeView, onNavigate, rootRef }: {
       else if (detail.kind === 'chord' && detail.name === 'back') {
         setMenuOpen(false)
         onNavigate('dashboard')
+      } else if (menuOpen && detail.kind === 'pinch' && detail.key === 'Space' && detail.down) {
+        // R143.4: event-driven confirm (cursor clicks suppressed while open)
+        const slot = MENU_SLOTS[menuSel].view
+        setMenuOpen(false)
+        if (slot) onNavigate(slot)
       } else if (menuOpen && detail.kind === 'direction' && detail.down && detail.dir) {
         const idx = DIR_INDEX[detail.dir]
         if (idx != null) setMenuSel(idx)
@@ -105,22 +110,8 @@ export function VisionAssistant({ activeView, onNavigate, rootRef }: {
     }
     window.addEventListener('vision-input', onVisionEvent)
     return () => window.removeEventListener('vision-input', onVisionEvent)
-  }, [vision.enabled, menuOpen, onNavigate])
+  }, [vision.enabled, menuOpen, menuSel, onNavigate])
 
-  // pinch/double-pinch confirm inside the menu: navigate to the selection
-  useEffect(() => {
-    if (!vision.enabled || !menuOpen) return
-    const check = (): void => {
-      if (vision.queueRef.current.includes('space')) {
-        vision.queueRef.current.length = 0
-        const slot = MENU_SLOTS[menuSel].view
-        setMenuOpen(false)
-        if (slot) onNavigate(slot)
-      }
-    }
-    const id = window.setInterval(check, 100)
-    return () => window.clearInterval(id)
-  }, [vision.enabled, vision.queueRef, menuOpen, menuSel, onNavigate])
 
   return (
     <>
@@ -150,6 +141,10 @@ export function VisionAssistant({ activeView, onNavigate, rootRef }: {
         </button>
       ) : null}
 
+      {textMode ? (
+        <div className='vision-chord-posture'>{t('games.vision.chordPosture')}</div>
+      ) : null}
+
       {textMode && trainer ? (
         <div className='vision-chord-trainer'>
           <strong>{t('games.vision.chordTrainer')}</strong>
@@ -161,7 +156,7 @@ export function VisionAssistant({ activeView, onNavigate, rootRef }: {
       {assistantOn && vision.enabled && activeView !== 'games' ? (
         <>
           <div className="vision-assistant-badge">{t('games.vision.assistantBadge')}</div>
-          <VisionCursor vision={vision} wrapRef={rootRef as React.RefObject<HTMLDivElement | null>} stateRef={cursorStateRef} />
+          <VisionCursor vision={vision} wrapRef={rootRef as React.RefObject<HTMLDivElement | null>} stateRef={cursorStateRef} suppressClick={menuOpen} />
         </>
       ) : null}
 
