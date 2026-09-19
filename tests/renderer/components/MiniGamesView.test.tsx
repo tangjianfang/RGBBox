@@ -299,4 +299,56 @@ describe('renderer/components/MiniGamesView', () => {
     expect(phase()).toBe('running')
     ctxSpy.mockRestore()
   })
+
+  // R139: roulette options via gestures — direction flips focus between the
+  // two buttons, DOUBLE pinch (<900ms apart) confirms; a single pinch must not.
+  it('roulette: direction flips vision-focus, double-pinch confirms (R139)', async () => {
+    const noopCtx = new Proxy({}, {
+      get: (_t, prop) => {
+        if (prop === 'canvas') return undefined
+        if (prop === 'measureText') return () => ({ width: 10 })
+        return () => undefined
+      },
+      set: () => true,
+    }) as unknown as CanvasRenderingContext2D
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm
+    await act(async () => {
+      await (window as unknown as { __rgbboxVision: { enableSynthetic(): Promise<void> } }).__rgbboxVision.enableSynthetic()
+    })
+    // force the roulette overlay via the debug seam
+    await act(async () => {
+      ;(window as unknown as { __rgbboxGames: { startRoulette(): void } }).__rgbboxGames.startRoulette()
+    })
+    await waitFor(() => {
+      expect(container.querySelector('.swarm-roulette')).toBeTruthy()
+    })
+    const wheels = container.querySelectorAll('.roulette-wheels button')
+    expect(wheels.length).toBe(2)
+    expect(wheels[0].className).toContain('vision-focus') // auto-highlight first
+    expect(container.textContent).toContain('games.vision.rouletteHint')
+    // one direction command flips focus to the second option
+    await act(async () => {
+      fakeHost.send({ type: 'events', events: [{ kind: 'direction', key: 'ArrowRight', down: true }] })
+    })
+    await new Promise((r) => setTimeout(r, 60))
+    expect(wheels[1].className).toContain('vision-focus')
+    expect(wheels[0].className).not.toContain('vision-focus')
+    // single pinch: arms the detector, must NOT confirm yet
+    await act(async () => {
+      fakeHost.send({ type: 'events', events: [{ kind: 'pinch', key: 'Space', down: true }] })
+    })
+    await new Promise((r) => setTimeout(r, 60))
+    expect(container.querySelector('.swarm-roulette')).toBeTruthy()
+    // second pinch within the window → confirms the focused (stat) wheel
+    await act(async () => {
+      fakeHost.send({ type: 'events', events: [{ kind: 'pinch', key: 'Space', down: true }] })
+    })
+    await waitFor(() => {
+      expect(container.querySelector('.roulette-disc.spinning')).toBeTruthy()
+    })
+    ctxSpy.mockRestore()
+  })
 })
+

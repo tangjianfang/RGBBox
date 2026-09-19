@@ -1832,6 +1832,18 @@ input:not([type]):focus {
   right: 8px;
 }
 
+/* R139: gesture focus highlight for the roulette option groups */
+.vision-focus {
+  border-color: #67e8f9 !important;
+  box-shadow: 0 0 0 2px rgba(103, 232, 249, 0.55), 0 0 18px rgba(103, 232, 249, 0.25) !important;
+}
+
+.vision-roulette-hint {
+  color: #8fb6c6;
+  font-size: 11.5px;
+  margin: 2px 0 4px;
+}
+
 .vision-banner-progress > div {
   background: #fbbf24;
   height: 100%;

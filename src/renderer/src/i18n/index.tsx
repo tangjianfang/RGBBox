@@ -458,6 +458,7 @@ const EN = {
   'games.vision.sens.fast': 'Fast',
   'games.vision.sens.sport': 'Sport',
   'games.vision.skipCalibration': 'Skip',
+  'games.vision.rouletteHint': 'Gestures: direction to switch · double-pinch to confirm',
   'games.swarmHint': 'WASD / arrows to move — auto-fire handles the rest',
   'games.swarmControls': 'WASD or arrows to move. Your ship auto-fires at the nearest enemy.',
   'games.swarmRule1': 'Collect green XP shards to level up.',
@@ -1657,6 +1658,8 @@ const ZH: TranslationTable = {
   'games.vision.sens.fast': '灵敏',
   'games.vision.sens.sport': '运动',
   'games.vision.skipCalibration': '跳过',
+  // R139: roulette gesture hint
+  'games.vision.rouletteHint': '手势：方向切换选项 · 快速捏合 2 次确认',
   'games.swarmHint': 'WASD / 方向键移动——开火全自动',
   'games.swarmControls': 'WASD 或方向键移动，飞船自动索敌开火。',
   'games.swarmRule1': '拾取绿色经验碎片升级。',

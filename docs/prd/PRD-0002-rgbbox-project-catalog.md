@@ -2870,3 +2870,21 @@
 | 2026-09-13 | 实施 R81（截图热键预设五选一：shared 白名单 + applyHotkey 回滚 + 设置下拉 + system.json 持久化 + 托盘标签跟随）；R82（本地 RapidOCR：onnxruntime-node CPU + ModelScope 官方直链 SHA256 模型下载 + CTC/连通域纯函数 6 用例 + rapid 优先 winrt 兜底路由 + OCR 面板引擎显示；rec 宽度 800 实测定稿；实机 4 行样本 3 行全对、warm 379ms）；R83（OCR 后 AI 整理：OpenAI 兼容接口 + 设置区 Key 配置 + 面板按钮/未配 Key 提示 + 纯函数 4 用例）；62 files / 621 passed（--maxWorkers=4）；三条款 ⏳ → ✅；实机复测待用户 | Claude |
 | 2026-09-13 | 追加并实施 R82.6（用户需求"模型预设并打包到安装包"）：模型三件入库 build/rapidocr/（SHA256 与官方实证一致）+ electron-builder extraResources → resources/rapidocr + resolveRapidOcrDir 内置优先（packaged/dev 双路径）+ 内置缺失自动切 userData 在线下载兜底（Program Files 只读兼容）；yarn dist:dir 实证产物含三文件（哈希核对）+ onnxruntime 原生模块 asar 解包；62 files / 621 passed；状态 ⏳ → ✅；安装包实机复测待用户 | Claude |
 | 2026-09-13 | 追加并实施 R84（用户复测四项）：①工具栏 OCR 双入口——框选识别（ScanText）+ 新增整图识别（Scan，点击直接整图识别不进框选），面板「整图」按钮同步换 Scan 图标（三入口图标语义区分）；②连续框选（面板已开后再点框选按钮可继续新一轮，组件测试钉住）；③云 LLM 中英互译（复用 R83 OpenAI 兼容配置，detectTranslateDirection 按 CJK/字母占比自动定向，纯函数 3 用例；「翻译」按钮译文替换 + 「显示原文」切回）；新 IPC ai:translate-text；62 files / 626 passed（+5）；状态 ⏳ → ✅；实机复测待用户 | Claude |
+
+### R139. 游戏选项手势化——升级轮盘方向选择 + 双捏合确认（2026-09-20 用户需求「游戏中如果出现选项，可以通过手势控制选项然后捏合 2 次表示确认」）
+
+> 现状选项点：Survival 升级轮盘两级按钮组（pick：物品轮盘/属性轮盘；result：领取/分解），鼠标点击；Tetris/无其他选项场景；TD 为鼠标作不接入。手势交互按用户指定：**方向=切换选项，快速捏合 2 次=确认**。
+- **R139.1 轮盘手势**：`pollVision` survival 分支增加 roulette 相位处理——任一方向命令（arrowleft/right/up/down）在当前按钮组内翻转焦点（两组均 2 选项）；**双捏合检测**（两次 'space' 命令间隔 <900ms）触发当前焦点按钮；轮盘出现/阶段切换/相位离开时焦点与捏合计数复位。焦点视觉：`.vision-focus` 高亮（styles.css）；vision.enabled 时轮盘内显示手势提示行（方向切换 · 捏合 2 次确认）。动作为 late-binding ref（pick→spinRoulette('item'|'stat')，result→claim/dissolve），沿用 startTetrisRef 模式。轮盘期间移动/模拟量写入保持无害（引擎该相位不消费移动）。
+- **R139.2 测试缝**：`__rgbboxGames` seam 增 `startRoulette`（openRoulette 直驱，R109 debugSpawnBoss 模式）供组件测试与 E2E。
+- **受影响文件**：`MiniGamesView.tsx`（焦点状态/双捏合/提示/按钮类名/seam）、`styles.css`（.vision-focus + 提示行，surgical）、`i18n`（rouletteHint zh/en）、`tests/renderer/components/MiniGamesView.test.tsx`（方向翻转焦点 + 双捏合确认 + 单捏合不确认）。
+- **验收点**：①typecheck + 全量 `yarn test` 0 失败；②组件测试：方向事件翻转 vision-focus、间隔 <900ms 双捏合触发 spinRoulette（stage→spin）、单次捏合不触发；③E2E 21/21 零回归；④真机：升级时方向选卡、快捏两次确认。**状态：✅**
+- **实施证据（2026-09-20）**：`yarn typecheck` 0 error；全量 `yarn test` **102 files / 955 passed / 0 失败**（+1 轮盘手势用例：seam.startRoulette 强置 → 方向事件翻转 vision-focus（第二张卡高亮）→ 单捏合仅布防不确认 → 第二次捏合触发 spinRoulette（.roulette-disc.spinning 出现））；`yarn dist:dir` 后 E2E 全绿 **0 FAIL**（既有断言零回归，rAF 60fps 保持）。**真机（用户）**：升级轮盘出现时方向选卡、快捏两次确认（pick 两轮盘与 result 领取/分解两组均生效）。**状态：✅（代码+自动化闭环；用户真机为最终验收）**
+
+### R140. 规划：全软件手势助手「VisionAssistant」——评估与分阶段路线（2026-09-20 用户需求「规划手势可以快速在整个软件作为一个助手实现手势控制整软件的功能，请评估和规划」；本条为规划条款，不随本轮实施）
+
+> **评估**（依据 RESEARCH_交互方案对比 三定律 + R131-R138 实测）：①人手输出带宽 ≈10 bits/s（定律 1）——手势助手**不可能也不应**替代鼠标做高频精确操作（指针、文本输入、连续拖拽），定位应为「免提导航/确认层」（TV 遥控式焦点导航 + 确认手势），服务展示/演示/无障碍场景；②防误触（定律 2）——全软件常开手势必误触（打字时挥手=焦点乱跳），**必须显式助手模式**（开启时全局边框徽标 + 张掌 1s 退出），模式内才消费手势；③基建已就绪 80%：隐藏宿主窗口是应用级服务（与游戏无关）、BroadcastChannel 事件总线全局可订阅、双捏合确认/方向环/张掌保持三个原语 R138/R139 已落地并有测试——增量在「焦点引擎 + overlay + 模式管理」，不在管线。
+- **P1（规划，估 2-3 天）——App 级导航助手**：宿主生命周期上移 App.tsd（离开游戏视图不再关闭，助手模式独立开关）；**焦点引擎**：方向=焦点沿可聚焦元素移动（`querySelectorAll('button,[role],input,select,a[href]')` 几何最近邻，TV-遥控式）、双捏合=激活焦点元素（click/Enter）、张掌保持 1s=返回上级/Esc；**视觉**：全局焦点高亮环（方向预览下一焦点）+ 助手模式徽标与方向盘常驻小窗。验收：rail 切 9 视图、开关按钮、对话框确认/取消全程免鼠标。
+- **P2（估 1-2 天）——上下文与快捷动作**：**8 向快捷菜单**（主手推方向+保持 = 呼出径向菜单，8 槽位可配置：切视图/引擎开关/全屏/截图等，配置入 localStorage）；当前视图可聚焦项上下文注册（避免长列表逐项移动——列表视图按页跳）。验收：任意视图 ≤2 个手势到达常用动作。
+- **P3（估 1 天）——设置与诊断**：手势-动作映射设置面板（复用灵敏度/镜像设置位）；诊断页并入 pad 三行数据（推理 fps/p95/delegate/采集延迟）。可选评估：注视粗定位+捏合确认（研究 P1，Vision Pro 范式；需 iris 关键点与精度实测，风险高单独立项）。
+- **Non-Goals**：文本输入（带宽墙）；指针级鼠标控制（研究矩阵方案 2 等效 DPI 25-50，体验劣于焦点导航）；TD 塔防放置（鼠标精度游戏）；全局常开模式（定律 2）。
+- **验收点（实施轮）**：P1-P3 各自立项 R-N 时细化；本条仅锁定定位、架构与顺序。**状态：📋 规划**

@@ -146,6 +146,13 @@ export function MiniGamesView(): JSX.Element {
   // a Tetris run on pinch without a TDZ-prone dependency.
   const vision = useVisionInput()
   const startTetrisRef = useRef<() => void>(() => undefined)
+  // R139: gesture-driven roulette selection — focus index within the active
+  // 2-option group (pick: item/stat wheel, result: claim/dissolve), plus the
+  // double-pinch confirm detector (two 'space' commands within 900ms).
+  const [rouletteFocus, setRouletteFocus] = useState(0)
+  const rouletteFocusRef = useRef(0)
+  const rouletteActionsRef = useRef<Array<() => void>>([])
+  const visionDoublePinchRef = useRef(0)
   // R132.3: transient "vision off" notice when the user (or a lifecycle rule)
   // disables the input source — otherwise the camera just silently goes away.
   const [visionExitNotice, setVisionExitNotice] = useState(false)
@@ -158,7 +165,16 @@ export function MiniGamesView(): JSX.Element {
   // R109: E2E seam for the verification scripts — local single-player debug
   // surface only (see PRD R109.2). Removed on unmount.
   useEffect(() => {
-    const seam = { spawnBoss: () => debugSpawnBoss(survivalRef.current) }
+    const seam = {
+      spawnBoss: () => debugSpawnBoss(survivalRef.current),
+      // force the level-up roulette regardless of game state (test/E2E only)
+      startRoulette: () => {
+        const s = survivalRef.current
+        if (s.phase !== 'running') s.phase = 'running'
+        if (s.pendingSpins <= 0) s.pendingSpins = 1
+        beginRoulette()
+      },
+    }
     ;(window as unknown as { __rgbboxGames?: typeof seam }).__rgbboxGames = seam
     return () => {
       delete (window as unknown as { __rgbboxGames?: typeof seam }).__rgbboxGames
@@ -254,6 +270,28 @@ export function MiniGamesView(): JSX.Element {
   const pollVision = useCallback(() => {
     if (!vision.enabled) return
     if (screen === 'survival') {
+      // R139: option selection — the roulette overlay takes gesture priority:
+      // any direction flips focus between the two options, double pinch (<900ms
+      // between 'space' commands) confirms the focused action.
+      if (survivalRef.current.phase === 'roulette') {
+        for (const cmd of vision.queueRef.current) {
+          if (cmd === 'space') {
+            const nowMs = performance.now()
+            if (nowMs - visionDoublePinchRef.current < 900) {
+              visionDoublePinchRef.current = 0
+              rouletteActionsRef.current[rouletteFocusRef.current]?.()
+            } else {
+              visionDoublePinchRef.current = nowMs
+            }
+          } else if (cmd === 'arrowleft' || cmd === 'arrowright' || cmd === 'arrowup' || cmd === 'arrowdown') {
+            const next = rouletteFocusRef.current === 0 ? 1 : 0
+            rouletteFocusRef.current = next
+            setRouletteFocus(next)
+          }
+        }
+        vision.queueRef.current.length = 0
+        return
+      }
       const held = vision.heldRef.current
       for (const key of VISION_PASSTHROUGH_KEYS) {
         if (held.has(key)) survivalRef.current.keys.add(key)
@@ -706,6 +744,19 @@ export function MiniGamesView(): JSX.Element {
     publishSurvival()
   }, [publishSurvival, roulette.result])
 
+  // R139: late-binding action list for the gesture focus — rebuilt per stage
+  // (pick → the two wheels, result → claim/dissolve); pollVision invokes it.
+  rouletteActionsRef.current = roulette.stage === 'pick'
+    ? [() => spinRoulette('item'), () => spinRoulette('stat')]
+    : [claimRoulette, dissolveCurrentRoulette]
+
+  // entering/re-entering the roulette resets the gesture selection
+  useEffect(() => {
+    setRouletteFocus(0)
+    rouletteFocusRef.current = 0
+    visionDoublePinchRef.current = 0
+  }, [survivalSnapshot.phase, roulette.stage])
+
   const buyPermanent = useCallback((key: PermKey) => {
     setMeta((prev) => {
       const next = buyPerm(prev, key)
@@ -984,12 +1035,13 @@ export function MiniGamesView(): JSX.Element {
                 {roulette.stage === 'pick' ? (
                   <>
                     <p>{t('games.roulettePick')}</p>
+                    {vision.enabled ? <p className="vision-roulette-hint">{t('games.vision.rouletteHint')}</p> : null}
                     <div className="roulette-wheels">
-                      <button type="button" onClick={() => spinRoulette('item')}>
+                      <button type="button" className={rouletteFocus === 0 ? 'vision-focus' : undefined} onClick={() => spinRoulette('item')}>
                         <strong>{t('games.wheelItem')}</strong>
                         <small>{t('games.wheelItem.desc')}</small>
                       </button>
-                      <button type="button" onClick={() => spinRoulette('stat')}>
+                      <button type="button" className={rouletteFocus === 1 ? 'vision-focus' : undefined} onClick={() => spinRoulette('stat')}>
                         <strong>{t('games.wheelStat')}</strong>
                         <small>{t('games.wheelStat.desc')}</small>
                       </button>
@@ -1006,8 +1058,8 @@ export function MiniGamesView(): JSX.Element {
                         : t('games.rouletteStatResult').replace('{stat}', t(`games.stat.${roulette.result.stat}`)).replace('{pct}', String(roulette.result.pct))}
                     </strong>
                     <div className="roulette-actions">
-                      <button type="button" onClick={claimRoulette}>{t('games.claim')}</button>
-                      <button type="button" onClick={dissolveCurrentRoulette}>{t('games.dissolve').replace('{xp}', String(roulette.result.xpValue))}</button>
+                      <button type="button" className={rouletteFocus === 0 ? 'vision-focus' : undefined} onClick={claimRoulette}>{t('games.claim')}</button>
+                      <button type="button" className={rouletteFocus === 1 ? 'vision-focus' : undefined} onClick={dissolveCurrentRoulette}>{t('games.dissolve').replace('{xp}', String(roulette.result.xpValue))}</button>
                     </div>
                   </div>
                 ) : null}
