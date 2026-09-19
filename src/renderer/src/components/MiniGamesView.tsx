@@ -240,6 +240,10 @@ export function MiniGamesView(): JSX.Element {
   // (joystick semantics), the dead zone falls out of the normalization, and
   // the exponential smoothing keeps it fluid at the ~30Hz inference cadence.
   const visionAnalogRef = useRef({ x: 0, y: 0 })
+  // R138: open-palm hold-to-start — hand held OPEN (pinch distance above the
+  // release threshold) at the ready/lost screen for ≥700ms; far more
+  // forgiving than a pinch. Timestamp-based so the duration is fps-independent.
+  const visionOpenPalmSinceRef = useRef<number | null>(null)
 
   // R131/R133/R135: poll the vision gesture source each frame — same model as
   // R103 gamepad. Events arrive pre-normalized ('arrowleft'…'space'); Survival
@@ -294,6 +298,18 @@ export function MiniGamesView(): JSX.Element {
       if (vision.queueRef.current.includes('space') && (survivalRef.current.phase === 'ready' || survivalRef.current.phase === 'lost')) {
         startRunRef.current()
       }
+      // R138: open-palm hold to (re)start — more forgiving than the pinch
+      const palmOpen = geom != null && geom.pinch > ((frame?.profile?.pinchOff as number | undefined) ?? 0.85)
+      if (palmOpen && (survivalRef.current.phase === 'ready' || survivalRef.current.phase === 'lost')) {
+        const nowMs = performance.now()
+        if (visionOpenPalmSinceRef.current == null) visionOpenPalmSinceRef.current = nowMs
+        else if (nowMs - visionOpenPalmSinceRef.current >= 700) {
+          visionOpenPalmSinceRef.current = null
+          startRunRef.current()
+        }
+      } else {
+        visionOpenPalmSinceRef.current = null
+      }
     } else if (screen === 'tetris') {
       for (const cmd of vision.queueRef.current) {
         if (cmd === 'space') {
@@ -303,6 +319,20 @@ export function MiniGamesView(): JSX.Element {
         } else if (cmd === 'arrowleft') tetrisRef.current.commands.push('left')
         else if (cmd === 'arrowright') tetrisRef.current.commands.push('right')
         else if (cmd === 'arrowup') tetrisRef.current.commands.push('rotate')
+      }
+      // R138: open-palm hold to (re)start (same gesture as Survival)
+      const frameT = vision.frameRef.current
+      const geomT = frameT?.geom
+      const palmOpenT = geomT != null && geomT.pinch > ((frameT?.profile?.pinchOff as number | undefined) ?? 0.85)
+      if (palmOpenT && (tetrisRef.current.phase === 'ready' || tetrisRef.current.phase === 'lost')) {
+        const nowMsT = performance.now()
+        if (visionOpenPalmSinceRef.current == null) visionOpenPalmSinceRef.current = nowMsT
+        else if (nowMsT - visionOpenPalmSinceRef.current >= 700) {
+          visionOpenPalmSinceRef.current = null
+          startTetrisRef.current()
+        }
+      } else {
+        visionOpenPalmSinceRef.current = null
       }
       if (vision.heldRef.current.has('arrowdown')) tetrisRef.current.keys.add('arrowdown')
       else tetrisRef.current.keys.delete('arrowdown')

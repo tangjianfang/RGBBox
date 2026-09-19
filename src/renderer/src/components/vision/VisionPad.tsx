@@ -258,11 +258,12 @@ function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn, 
     }
     ctx.strokeStyle = withAlpha(stateColor, 0.4)
     line(ctx, cx, cy, smooth.x, smooth.y)
-    ctx.fillStyle = geom.pinch != null && geom.pinch < 0.55 ? '#67e8f9' : '#e2e8f0'
-    ctx.shadowColor = '#67e8f9'
-    ctx.shadowBlur = 8
+    // glow without shadowBlur (notoriously expensive in canvas 2D): two
+    // stacked translucent circles read the same at a fraction of the cost
+    ctx.fillStyle = geom.pinch != null && geom.pinch < 0.55 ? 'rgba(103,232,249,0.25)' : 'rgba(226,232,240,0.22)'
+    circle(ctx, smooth.x, smooth.y, 9, true)
+    ctx.fillStyle = geom.pinch != null && geom.pinch < 0.55 ? 'rgba(103,232,249,0.85)' : '#e2e8f0'
     circle(ctx, smooth.x, smooth.y, 5, true)
-    ctx.shadowBlur = 0
   } else {
     smooth.seen = false
   }

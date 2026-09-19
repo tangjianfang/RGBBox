@@ -105,6 +105,26 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     await act(() => result.current.disable())
   })
 
+  it('handSeen loss needs 5 consecutive handless frames (R138 jitter guard)', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(() => result.current.enableSynthetic())
+    const geom = { palm: { x: 0.51, y: 0.54 }, pinch: 1.1, scale: 0.18 }
+    const snap = (g: unknown) => host.send({ type: 'snapshot', snapshot: { state: 'active', label: 'x', geom: g } })
+    act(() => snap(geom))
+    expect(result.current.handSeen).toBe(true) // presence publishes instantly
+    // detection flicker: 4 handless frames (below the threshold) → still seen
+    for (let i = 0; i < 4; i++) act(() => snap(null))
+    expect(result.current.handSeen).toBe(true)
+    // hand returns → counter resets, no flap
+    act(() => snap(geom))
+    for (let i = 0; i < 3; i++) act(() => snap(null))
+    expect(result.current.handSeen).toBe(true)
+    // 5 consecutive handless frames → publish the loss
+    for (let i = 0; i < 5; i++) act(() => snap(null))
+    expect(result.current.handSeen).toBe(false)
+    await act(() => result.current.disable())
+  })
+
   it('mirror + sensitivity controls round-trip to the host AND localStorage (R136.2/.3)', async () => {
     const { result } = renderHook(() => useVisionInput())
     await act(() => result.current.enableSynthetic())

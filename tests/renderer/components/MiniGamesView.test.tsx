@@ -259,4 +259,44 @@ describe('renderer/components/MiniGamesView', () => {
     expect(probe.x).toBeGreaterThan(0)
     expect(probe.y).toBeCloseTo(0, 1)
   })
+
+  // R138: open-palm hold (~24 frames) starts the run from the ready screen
+  it('open-palm hold for ~0.8s starts the survival run (R138)', async () => {
+    const noopCtx = new Proxy({}, {
+      get: (_t, prop) => {
+        if (prop === 'canvas') return undefined
+        if (prop === 'measureText') return () => ({ width: 10 })
+        return () => undefined
+      },
+      set: () => true,
+    }) as unknown as CanvasRenderingContext2D
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm
+    await act(async () => {
+      await (window as unknown as { __rgbboxVision: { enableSynthetic(): Promise<void> } }).__rgbboxVision.enableSynthetic()
+    })
+    const center = { x: 0.5, y: 0.55 }
+    const openPalmSnap = () => fakeHost.send({ type: 'snapshot', snapshot: {
+      state: 'active', label: 'x', ringCenter: center,
+      geom: { palm: { x: center.x, y: center.y }, pinch: 1.3, scale: 0.18 }, // released pinch = open palm
+      profile: { activeZone: 0.17, deadZone: 0.09, pinchOff: 0.85 },
+      stats: { infer: { n: 9, p50: 8, p95: 12, mean: 9 }, fps: 30, inferFps: 30, delegate: 'GPU', lowFps: false },
+    } })
+    const phase = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
+    expect(phase()).toBe('ready')
+    // hold open-palm snapshots for ~400ms — below the 700ms threshold
+    for (let i = 0; i < 10; i++) {
+      await act(async () => { openPalmSnap() })
+      await new Promise((r) => setTimeout(r, 40))
+    }
+    expect(phase()).toBe('ready') // still short of the hold
+    // keep holding past 700ms total → the run starts
+    for (let i = 0; i < 14 && phase() === 'ready'; i++) {
+      await act(async () => { openPalmSnap() })
+      await new Promise((r) => setTimeout(r, 40))
+    }
+    expect(phase()).toBe('running')
+    ctxSpy.mockRestore()
+  })
 })

@@ -1379,7 +1379,17 @@
 - **R137.2 连续方向**：模拟量指数平滑系数 0.3→0.45（更快跟手，仍抑 30Hz 抖动）；VisionPad 方向刻度 8→16、新增**连续方向射线**（中心→掌心方向的延长射线，角度连续非扇区量化）——用户可见"方向无限"。
 - **受影响文件**：`src/renderer/src/components/MiniGamesView.tsx`（极性 + 平滑系数）、`src/renderer/src/components/vision/VisionPad.tsx`（16 刻度 + 射线）、`tests/renderer/components/MiniGamesView.test.tsx`（极性回归 2 项）。
 - **验收点**：①typecheck + 全量 `yarn test` 0 失败（+极性正反回归）；②E2E 21/21 复跑零回归（swarm 闭环持续成立）；③真机（用户）：手上移=角色上移、连续比例转向（非 8 向顿挫）、方向盘 16 刻度+射线跟随。**状态：✅**
+
 - **实施证据（2026-09-19）**：`yarn typecheck` 0 error；全量 `yarn test` **102 files / 952 passed / 0 失败**（+极性回归 1 项：FakeHost 快照「掌心在中心上方/下方」→ probe().axis.y 负/正——该测试并揭示 happy-dom `getContext` 返回 null 导致组件测试中游戏循环从未运行，以 noop ctx Proxy 桩修复）；`yarn dist:dir` 后 E2E **21/21 PASS** 零回归；旁证：swarm 3s 位移 70→**182 units**（平滑 0.3→0.45 跟手性提升）、`game rAF fps: 60` 保持。**真机（用户）**：手上移=上移；连续转向手感 + 方向盘 16 刻度与虚线方向射线。**状态：✅（代码+自动化闭环；用户真机为最终验收）**
+### R138. 张掌开局 + handSeen 抖动重渲染治理 + pad 低开销绘制（2026-09-19 用户实测 R137 反馈「①开启手势之后应该可以由手势来控制游戏开始 ②现在的游戏有些卡顿、不丝滑」）
+
+> 诊断：①捏合开局自 R131 存在且 E2E 持续 PASS，但依赖校准完成 + 捏合动作精确，真机可靠性不足——补**张掌保持开局**（更宽容），ready 横幅明示两种开局手势；②合成源 E2E rAF 60fps，真机卡顿的头号嫌疑是 **handSeen 抖动风暴**——检测分数边缘抖动使 geom 间歇为 null，handSeen 即时翻转（R136 即时发布设计）→ MiniGamesView 整树重渲染，抖动密集时近每帧一次；③pad 掌心点 shadowBlur 是 canvas 2D 高开销操作，每帧执行。
+- **R138.1 张掌开局**：pollVision 在 survival/tetris 的 ready/lost 相位增加**张掌保持开局**——连续 ≥24 帧（≈0.8s@30fps）`geom.pinch > pinchOff`（profile 阈值，缺省 0.85）即触发对应 startRun（与既有捏合开局并存）；帧计数在 pinch 收拢或 geom 缺失时清零。ready 横幅/状态芯片提示文案更新为「捏合或张掌保持 1 秒开局」（zh/en）。
+- **R138.2 handSeen 帧滞回**：hook 发布策略修正——`true` 即时发布（出现手立即反馈），`false` 需**连续 5 帧无手**（≈165ms@30Hz）才发布（帧计数不依赖时钟，单测可驱动）；消除检测抖动引发的整树重渲染风暴。
+- **R138.3 pad 低开销**：掌心辉光 `shadowBlur` → 双同心圆透明度叠加（视觉近似，开销大降）；骨架/射线绘制保持。
+- **受影响文件**：`src/renderer/src/hooks/useVisionInput.ts`（滞回）、`src/renderer/src/components/MiniGamesView.tsx`（张掌开局）、`src/renderer/src/components/vision/VisionPad.tsx`（辉光）、`src/renderer/src/i18n/index.tsx`（startHint）、`tests/renderer/hooks/useVisionInput.test.tsx`（滞回正反）、`tests/renderer/components/MiniGamesView.test.tsx`（张掌开局）。
+- **验收点**：①typecheck + 全量 `yarn test` 0 失败（+滞回/张掌开局用例）；②E2E 21/21 零回归；③真机（用户）：ready 相位张掌 ~1s 或捏合即可开局；卡顿消失（handSeen 风泠除去后主线程仅剩 4Hz 文本级更新）。**状态：✅**
+- **实施证据（2026-09-19）**：`yarn typecheck` 0 error；全量 `yarn test` **102 files / 954 passed / 0 失败**（+2：handSeen 滞回「4 帧抖动不翻 false、手回归复位、连续 5 帧才 false」、张掌开局「<700ms 不开、≥700ms 开局」时间基用例）；`yarn dist:dir` 后 E2E **21/21 PASS** 零回归（swarm 3s 位移 46.6 units——合成源 6s 摆动周期与 3s 采样窗的相位对齐方差，闭环断言恒过；rAF 60fps 保持）。**真机（用户）**：ready 屏张掌约 1 秒或捏合开局；卡顿对比（handSeen 抖动风暴已除）。**状态：✅（代码+自动化闭环；用户真机为最终验收）**
 
 ### R133. 体感三修——推理跳帧边际 bug（延迟）+ Survival 轴合成（手柄覆盖致不可控）+ 转盘插值（丝滑）（2026-09-19 用户实测 R132 反馈「①体感控制延迟很高 ②移动手势时转盘显示不丝滑 ③控制不了 Nova Swarm 的方向和移动」）
 

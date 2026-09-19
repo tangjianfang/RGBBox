@@ -103,6 +103,8 @@ export function useVisionInput(): VisionInputHandle {
   const frameRef = useRef<Partial<VisionFrame> | null>(null)
   // publish throttle: label text at ~4Hz; state/handSeen/stepId INSTANTLY
   const lastLabelPublishRef = useRef(0)
+  // R138: consecutive handless frames — handSeen loss needs 5 before publish
+  const handlessFramesRef = useRef(0)
   const prevPublishRef = useRef<{ state: string; handSeen: boolean; stepId: string | null }>({ state: 'idle', handSeen: false, stepId: null })
 
   const onEvent = useCallback((event: VisionEvent) => {
@@ -120,10 +122,17 @@ export function useVisionInput(): VisionInputHandle {
 
   const onSnapshot = useCallback((snapshot: Partial<VisionFrame>) => {
     frameRef.current = snapshot
-    // instant publish for anything the banner must react to immediately;
-    // free-text label stays throttled
+    // instant publish for anything the banner must react to immediately —
+    // EXCEPT handSeen loss: detection-score jitter makes geom flicker null
+    // at the margin, and an immediate publish re-renders the whole games
+    // view per flicker. R138: require 5 consecutive handless frames (~165ms
+    // @30Hz) before publishing the loss; presence still publishes instantly.
+    const seen = snapshot.geom != null
+    if (seen) handlessFramesRef.current = 0
+    else handlessFramesRef.current++
     const prev = prevPublishRef.current
-    const next = { state: snapshot.state as string, handSeen: snapshot.geom != null, stepId: snapshot.stepId ?? null }
+    const handSeenNext = seen ? true : handlessFramesRef.current >= 5 ? false : prev.handSeen
+    const next = { state: snapshot.state as string, handSeen: handSeenNext, stepId: snapshot.stepId ?? null }
     if (next.state !== prev.state || next.handSeen !== prev.handSeen || next.stepId !== prev.stepId) {
       prevPublishRef.current = next
       setState(next.state as VisionState)
@@ -221,6 +230,7 @@ export function useVisionInput(): VisionInputHandle {
       void window.rgbbox.visionHostClose()
     }
     pausedRef.current = false
+    handlessFramesRef.current = 0
     heldRef.current.clear()
     queueRef.current.length = 0
     frameRef.current = null
