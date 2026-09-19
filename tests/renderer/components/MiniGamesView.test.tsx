@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, cleanup, fireEvent } from '@testing-library/react'
+import { render, cleanup, fireEvent, act, waitFor } from '@testing-library/react'
 import { MiniGamesView } from '../../../src/renderer/src/components/MiniGamesView'
 import {
   towerUpgradeCost,
@@ -12,8 +12,31 @@ import {
 } from '../../../src/renderer/src/games/td'
 import { setupRendererMocks } from '../_helpers'
 
+// R131: controlled fake for the vision module — the useVisionInput hook under
+// the component is real; only the camera/MediaPipe glue is faked.
+const visionInstances = vi.hoisted(() => ({
+  list: [] as Array<{ cameraStarted: boolean; stopped: boolean; settings: Record<string, number | null> | null }>,
+}))
+vi.mock('../../../src/renderer/src/vision/vision_input.js', () => ({
+  VisionInput: class {
+    cameraStarted = false
+    stopped = false
+    settings: Record<string, number | null> | null = null
+    constructor() {
+      visionInstances.list.push(this as unknown as (typeof visionInstances.list)[number])
+    }
+    async init() { /* noop */ }
+    async startCamera() { this.cameraStarted = true }
+    stop() { this.stopped = true }
+    setPaused() { /* noop */ }
+    recalibrate() { /* noop */ }
+    applySettings(patch: Record<string, number | null>) { this.settings = patch }
+  },
+}))
+
 beforeEach(() => {
   setupRendererMocks()
+  visionInstances.list.length = 0
   cleanup()
 })
 
@@ -107,5 +130,38 @@ describe('renderer/components/MiniGamesView', () => {
     state.balloons.push({ id: 11, progress: 0.21, speed: 0.1, hp: 5, maxHp: 5, reward: 10, slowUntil: 0, color: '#ffffff' })
     for (let i = 0; i < 40; i++) tickGame(state, 0.02)
     expect(state.balloons.find((balloon) => balloon.id === 11)?.hp).toBe(1)
+  })
+
+  it('vision input: eye toggle starts the camera, status chip appears, Tetris switches to 4-way (R131)', async () => {
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[2]) // Tetris
+    const eye = [...container.querySelectorAll('button')].find((button) => /^games\.vision\.(enable|disable)$/.test(button.getAttribute('aria-label') ?? ''))
+    expect(eye?.getAttribute('aria-label')).toBe('games.vision.enable')
+    await act(async () => {
+      fireEvent.click(eye as HTMLButtonElement)
+    })
+    expect(visionInstances.list.length).toBe(1)
+    expect(visionInstances.list[0].cameraStarted).toBe(true)
+    // Tetris runs the direction ring 4-way
+    expect(visionInstances.list[0].settings).toEqual({ dirs: 4 })
+    await waitFor(() => {
+      const status = container.querySelector('.games-canvas-status span')
+      expect(status?.textContent).toContain('👁')
+    })
+  })
+
+  it('vision input: back to the hub stops the camera (R131)', async () => {
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm
+    const eye = [...container.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === 'games.vision.enable')
+    await act(async () => {
+      fireEvent.click(eye as HTMLButtonElement)
+    })
+    await waitFor(() => {
+      expect(container.querySelector('.games-canvas-status span')?.textContent).toContain('👁')
+    })
+    const back = [...container.querySelectorAll('button')].find((button) => button.textContent === 'games.backToHub') as HTMLButtonElement
+    fireEvent.click(back)
+    expect(visionInstances.list[0].stopped).toBe(true)
   })
 })

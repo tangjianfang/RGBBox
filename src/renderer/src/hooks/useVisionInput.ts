@@ -1,0 +1,150 @@
+// R131: camera gesture input for the mini games — third input source beside
+// keyboard and gamepad (same R103 polling model: events are written into refs
+// each frame; nothing is injected at the OS level).
+//
+// The vision module is plain JS loaded lazily so the MediaPipe bundle + models
+// never touch the main bundle. Asset base: dev server serves them from
+// public/; the packaged file:// build must go through the media://app
+// privileged protocol (fetch of local files is blocked on file:// origins).
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { VisionEvent, VisionFrame, VisionInput, VisionInputOptions } from '../vision/vision_input'
+
+export type VisionState = 'idle' | 'searching' | 'calibrating' | 'active' | 'paused'
+
+/**
+ * Absolute URL base for the vision assets (ends with '/').
+ * - dev / http(s): document-relative → vite serves src/renderer/public at '/'
+ * - packaged file://: media://app/ maps to out/renderer (see main mediaProtocol)
+ */
+export function visionAssetBase(protocol: string = window.location.protocol): string {
+  return protocol === 'file:' ? 'media://app/' : document.baseURI
+}
+
+export interface VisionInputHandle {
+  enable(): Promise<void>
+  /** Camera-free variant for tests/E2E — synthetic landmarks, identical pipeline. */
+  enableSynthetic(): Promise<void>
+  disable(): void
+  recalibrate(): void
+  setPaused(paused: boolean): void
+  /** Live direction-ring tuning — Tetris runs 4-way (diagonals snap), Survival 8-way. */
+  applySettings(patch: Record<string, number | null>): void
+  enabled: boolean
+  label: string
+  state: VisionState
+  /** active calibration step while calibrating, else null */
+  stepId: 'center' | 'reach' | 'pinch' | null
+  /** normalized held keys ('arrowleft' … 'space'), same names as MiniGamesView.normalizeKey */
+  heldRef: { readonly current: Set<string> }
+  /** discrete commands ('arrowleft'|'arrowright'|'arrowup'|'space') drained per frame by pollVision */
+  queueRef: { readonly current: string[] }
+}
+
+export function useVisionInput(): VisionInputHandle {
+  const viRef = useRef<VisionInput | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [enabled, setEnabled] = useState(false)
+  const [label, setLabel] = useState('')
+  const [state, setState] = useState<VisionState>('idle')
+  const [stepId, setStepId] = useState<'center' | 'reach' | 'pinch' | null>(null)
+  // game-facing state (normalized key names)
+  const heldRef = useRef<Set<string>>(new Set())
+  const queueRef = useRef<string[]>([])
+  // ≥4Hz throttle for React state sync — onFrame fires at camera fps
+  const lastPublishRef = useRef(0)
+
+  const onEvent = useCallback((event: VisionEvent) => {
+    if (!event.key) return
+    const norm = event.key === 'Space' ? 'space' : event.key.toLowerCase()
+    if (event.down) {
+      heldRef.current.add(norm)
+      queueRef.current.push(norm)
+    } else {
+      heldRef.current.delete(norm)
+    }
+    // event bus retained for diagnostics/E2E (same shape as the standalone demo)
+    window.dispatchEvent(new CustomEvent<VisionEvent>('vision-input', { detail: event }))
+  }, [])
+
+  const onFrame = useCallback((frame: Partial<VisionFrame>) => {
+    const now = performance.now()
+    if (now - lastPublishRef.current < 250) return
+    lastPublishRef.current = now
+    setState(frame.state as VisionState)
+    setLabel(frame.label ?? '')
+    setStepId(frame.state === 'calibrating' ? frame.stepId ?? null : null)
+  }, [])
+
+  const start = useCallback(async (mode: 'camera' | 'synthetic') => {
+    if (viRef.current) return
+    const video = document.createElement('video')
+    video.style.display = 'none'
+    document.body.appendChild(video)
+    videoRef.current = video
+    try {
+      const { VisionInput: VisionInputCtor } = await import('../vision/vision_input.js')
+      const base = visionAssetBase()
+      const vi = new VisionInputCtor({
+        video,
+        config: {
+          wasmBase: new URL('vendor/mediapipe', base).href,
+          handModel: new URL('models/hand_landmarker.task', base).href,
+          faceModel: new URL('models/face_landmarker.task', base).href,
+          // calibration profile survives enable/disable cycles
+          session: { storage: localStorage },
+          pinch: { key: 'Space' },
+        },
+        onEvent,
+        onFrame,
+        onStatus: (status) => setLabel(status),
+      } satisfies VisionInputOptions)
+      viRef.current = vi
+      await vi.init()
+      if (mode === 'synthetic') vi.startSynthetic()
+      else await vi.startCamera()
+      setEnabled(true)
+    } catch (err) {
+      // camera denied / model load failure — tear down fully so the user can retry
+      video.remove()
+      videoRef.current = null
+      viRef.current = null
+      setEnabled(false)
+      setState('idle')
+      setStepId(null)
+      setLabel(err instanceof Error ? err.message : String(err))
+      throw err
+    }
+  }, [onEvent, onFrame])
+
+  const enable = useCallback(() => start('camera'), [start])
+
+  /** Camera-free pipeline exercise: synthetic landmarks drive the identical session (tests / E2E). */
+  const enableSynthetic = useCallback(() => start('synthetic'), [start])
+
+  const disable = useCallback(() => {
+    viRef.current?.stop()
+    viRef.current = null
+    heldRef.current.clear()
+    queueRef.current.length = 0
+    videoRef.current?.remove()
+    videoRef.current = null
+    setEnabled(false)
+    setState('idle')
+    setStepId(null)
+    setLabel('')
+  }, [])
+
+  const recalibrate = useCallback(() => viRef.current?.recalibrate(), [])
+
+  const setPaused = useCallback((paused: boolean) => viRef.current?.setPaused(paused), [])
+
+  const applySettings = useCallback((patch: Record<string, number | null>) => {
+    viRef.current?.applySettings(patch)
+  }, [])
+
+  // leaving the games view unmounts the hook → stop the camera, release keys
+  useEffect(() => disable, [disable])
+
+  return { enable, enableSynthetic, disable, recalibrate, setPaused, applySettings, enabled, label, state, stepId, heldRef, queueRef }
+}

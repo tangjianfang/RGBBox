@@ -1,0 +1,26 @@
+{
+  "name": "diagonal-and-expressions",
+  "description": "斜向 ↗ 双键,张嘴触发 E,微笑触发 Enter,全部回中释放",
+  "fps": 30,
+  "frames": [
+    { "n": 3, "cx": 0.5, "cy": 0.5 },
+    { "n": 8, "cx": 0.68, "cy": 0.35 },
+    { "n": 6, "cx": 0.5, "cy": 0.5 },
+    { "n": 6, "cx": 0.5, "cy": 0.5, "face": { "jawOpen": 0.85, "browInnerUp": 0.02, "mouthSmileLeft": 0.02, "mouthSmileRight": 0.02 } },
+    { "n": 6, "cx": 0.5, "cy": 0.5 },
+    { "n": 6, "cx": 0.5, "cy": 0.5, "face": { "jawOpen": 0.04, "browInnerUp": 0.03, "mouthSmileLeft": 0.7, "mouthSmileRight": 0.7 } },
+    { "n": 6, "cx": 0.5, "cy": 0.5 },
+    { "n": 80, "absent": true }
+  ],
+  "expect": [
+    { "kind": "direction", "key": "ArrowUp", "down": true },
+    { "kind": "direction", "key": "ArrowRight", "down": true },
+    { "kind": "direction", "key": "ArrowUp", "down": false },
+    { "kind": "direction", "key": "ArrowRight", "down": false },
+    { "kind": "face", "name": "jawOpen", "key": "KeyE", "down": true },
+    { "kind": "face", "name": "jawOpen", "key": "KeyE", "down": false },
+    { "kind": "face", "name": "smile", "key": "Enter", "down": true },
+    { "kind": "face", "name": "smile", "key": "Enter", "down": false }
+  ],
+  "noStuckKeys": true
+}

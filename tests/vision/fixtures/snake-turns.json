@@ -1,0 +1,25 @@
+{
+  "name": "snake-turn-sequence",
+  "description": "贪吃蛇式连续转向:右→上→左→下,每次只保留新方向的键",
+  "fps": 30,
+  "frames": [
+    { "n": 3, "cx": 0.5, "cy": 0.5 },
+    { "n": 8, "cx": 0.72, "cy": 0.5 },
+    { "n": 8, "cx": 0.5, "cy": 0.32 },
+    { "n": 8, "cx": 0.3, "cy": 0.5 },
+    { "n": 8, "cx": 0.5, "cy": 0.68 },
+    { "n": 8, "cx": 0.5, "cy": 0.5 },
+    { "n": 60, "absent": true }
+  ],
+  "expect": [
+    { "kind": "direction", "key": "ArrowRight", "down": true },
+    { "kind": "direction", "key": "ArrowRight", "down": false },
+    { "kind": "direction", "key": "ArrowUp", "down": true },
+    { "kind": "direction", "key": "ArrowUp", "down": false },
+    { "kind": "direction", "key": "ArrowLeft", "down": true },
+    { "kind": "direction", "key": "ArrowLeft", "down": false },
+    { "kind": "direction", "key": "ArrowDown", "down": true },
+    { "kind": "direction", "key": "ArrowDown", "down": false }
+  ],
+  "noStuckKeys": true
+}

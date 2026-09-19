@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MEDIA_MIME, mediaStreamPlan, parseRangeHeader, resolveMediaMime } from '../../src/main/mediaProtocol'
+import { MEDIA_MIME, mediaStreamPlan, parseRangeHeader, resolveAppAssetPath, resolveMediaMime } from '../../src/main/mediaProtocol'
 
 describe('main/mediaProtocol (R70.1)', () => {
   describe('resolveMediaMime', () => {
@@ -7,6 +7,14 @@ describe('main/mediaProtocol (R70.1)', () => {
       expect(resolveMediaMime('C:\\music\\song.MP3')).toBe('audio/mpeg')
       expect(resolveMediaMime('/home/user/tune.flac')).toBe('audio/flac')
       expect(resolveMediaMime('track.opus')).toBe('audio/opus')
+    })
+
+    it('maps vision asset extensions (R131: MediaPipe bundle / wasm / .task models)', () => {
+      // application/wasm is load-bearing — instantiateStreaming rejects otherwise
+      expect(resolveMediaMime('vision_wasm_internal.wasm')).toBe('application/wasm')
+      expect(resolveMediaMime('vision_bundle.js')).toBe('text/javascript')
+      expect(resolveMediaMime('loader.mjs')).toBe('text/javascript')
+      expect(resolveMediaMime('hand_landmarker.task')).toBe('application/octet-stream')
     })
 
     it('maps image extensions for AI8 draw thumbnails (R127)', () => {
@@ -33,6 +41,26 @@ describe('main/mediaProtocol (R70.1)', () => {
       expect(resolveMediaMime('file.xyz')).toBe('application/octet-stream')
       expect(resolveMediaMime('no-extension')).toBe('application/octet-stream')
       expect(resolveMediaMime('')).toBe('application/octet-stream')
+    })
+  })
+
+  describe('resolveAppAssetPath (R131: media://app → out/renderer)', () => {
+    it('maps subpaths under the renderer root, tolerating slashes/encoding', () => {
+      expect(resolveAppAssetPath('C:\\app\\resources\\out\\renderer', '/vendor/mediapipe/vision_bundle.js'))
+        .toBe('C:\\app\\resources\\out\\renderer/vendor/mediapipe/vision_bundle.js')
+      expect(resolveAppAssetPath('/opt/app/out/renderer/', 'models/hand_landmarker.task'))
+        .toBe('/opt/app/out/renderer/models/hand_landmarker.task')
+      expect(resolveAppAssetPath('/app/out/renderer', '/vendor/some%20dir/x.wasm'))
+        .toBe('/app/out/renderer/vendor/some dir/x.wasm')
+    })
+
+    it('rejects traversal, absolute drive segments, backslashes and empty paths', () => {
+      expect(resolveAppAssetPath('/app/out/renderer', '/../main/index.js')).toBeNull()
+      expect(resolveAppAssetPath('/app/out/renderer', '/a/../../etc/passwd')).toBeNull()
+      expect(resolveAppAssetPath('/app/out/renderer', '/C:/windows/system32/x')).toBeNull()
+      expect(resolveAppAssetPath('/app/out/renderer', '/a%5Cb/c')).toBeNull()
+      expect(resolveAppAssetPath('/app/out/renderer', '/')).toBeNull()
+      expect(resolveAppAssetPath('/app/out/renderer', '')).toBeNull()
     })
   })
 

@@ -1,0 +1,21 @@
+{
+  "name": "right-sweep-pinch-click",
+  "description": "向右扫动触发 ArrowRight,回中后捏合点击 Space,丢手释放",
+  "fps": 30,
+  "frames": [
+    { "n": 3, "cx": 0.5, "cy": 0.5 },
+    { "n": 4, "cx": 0.6, "cy": 0.5 },
+    { "n": 6, "cx": 0.72, "cy": 0.5 },
+    { "n": 8, "cx": 0.5, "cy": 0.5 },
+    { "n": 6, "cx": 0.5, "cy": 0.5, "pinch": 0.25 },
+    { "n": 6, "cx": 0.5, "cy": 0.5, "pinch": 1.3 },
+    { "n": 80, "absent": true }
+  ],
+  "expect": [
+    { "kind": "direction", "key": "ArrowRight", "down": true },
+    { "kind": "direction", "key": "ArrowRight", "down": false },
+    { "kind": "pinch", "key": "Space", "down": true },
+    { "kind": "pinch", "key": "Space", "down": false }
+  ],
+  "noStuckKeys": true
+}

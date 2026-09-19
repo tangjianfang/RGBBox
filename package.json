@@ -63,7 +63,9 @@
     "afterPack": "./scripts/afterPack.mjs",
     "compression": "maximum",
     "asarUnpack": [
-      "**/node_modules/onnxruntime-node/bin/**"
+      "**/node_modules/onnxruntime-node/bin/**",
+      "out/renderer/models/**",
+      "out/renderer/vendor/**"
     ],
     "directories": {
       "output": "release",

@@ -2,7 +2,8 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
+    // R131: tests/vision/*.test.mjs — vision module ports (node env below)
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'tests/**/*.test.mjs'],
     // Per-test environment is set inline via `// @vitest-environment` doc comments
     // (preferred for clarity) or via `environmentMatchGlobs` for fallback splitting.
     environmentMatchGlobs: [

@@ -25,12 +25,35 @@ export const MEDIA_MIME: Record<string, string> = {
   // R127: images — AI8 draw thumbnails render local artifacts via media://
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
   gif: 'image/gif', bmp: 'image/bmp', avif: 'image/avif',
+  // R131: vision assets — MediaPipe bundle (module script), wasm (must be
+  // application/wasm for instantiateStreaming) and .task model files.
+  js: 'text/javascript', mjs: 'text/javascript', wasm: 'application/wasm',
+  task: 'application/octet-stream',
 }
 
 /** Resolve the Content-Type for a local media path (neutral fallback for unknown). */
 export function resolveMediaMime(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
   return MEDIA_MIME[ext] ?? 'application/octet-stream'
+}
+
+/**
+ * R131: map a `media://app/<subpath>` pathname to a file under the packaged
+ * renderer root (`out/renderer`). The packaged app loads the renderer from
+ * `file://`, where Chromium blocks fetch()/wasm loading of local files — so
+ * bundled vision assets (vendor wasm + .task models) are fetched through the
+ * media:// privileged scheme instead. Pure path math so it stays unit-tested:
+ * rejects traversal (`..` segments) and keeps the mapping inside the root.
+ * Returns null for anything that escapes the root.
+ */
+export function resolveAppAssetPath(rendererRoot: string, pathname: string): string | null {
+  const segments = pathname
+    .split('/')
+    .map((segment) => decodeURIComponent(segment))
+    .filter((segment) => segment.length > 0 && segment !== '.')
+  if (segments.length === 0) return null
+  if (segments.some((segment) => segment === '..' || segment.includes('\\') || /^[a-zA-Z]:$/.test(segment))) return null
+  return `${rendererRoot.replace(/[\\/]+$/, '')}/${segments.join('/')}`
 }
 
 export interface ByteRange {

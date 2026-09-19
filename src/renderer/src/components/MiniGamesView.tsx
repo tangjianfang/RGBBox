@@ -1,5 +1,6 @@
-import { ArrowLeft, Crosshair, Grid, Heart, Maximize2, Minimize2, Music, Play, RotateCcw, Shield, Trophy, Volume2, VolumeX, Zap } from 'lucide-react'
+import { ArrowLeft, Crosshair, Eye, EyeOff, Grid, Heart, Maximize2, Minimize2, Music, Play, RotateCcw, Shield, Trophy, Volume2, VolumeX, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
+import { useVisionInput } from '../hooks/useVisionInput'
 import { useI18n } from '../i18n'
 import {
   HEIGHT,
@@ -128,6 +129,11 @@ export function MiniGamesView(): JSX.Element {
   const gamepadNameRef = useRef<string | null>(null)
   const prevStartRef = useRef(false)
   const startRunRef = useRef<() => void>(() => undefined)
+  // R131: vision gesture input (third source beside keyboard/gamepad) + a
+  // late-binding ref so pollVision (declared above startTetrisRun) can start
+  // a Tetris run on pinch without a TDZ-prone dependency.
+  const vision = useVisionInput()
+  const startTetrisRef = useRef<() => void>(() => undefined)
 
   const publishTd = useCallback(() => {
     setTdSnapshot({ ...tdStateRef.current, towers: [...tdStateRef.current.towers], balloons: [...tdStateRef.current.balloons], projectiles: [...tdStateRef.current.projectiles] })
@@ -142,6 +148,22 @@ export function MiniGamesView(): JSX.Element {
       delete (window as unknown as { __rgbboxGames?: typeof seam }).__rgbboxGames
     }
   }, [])
+
+  // R131: E2E seam for the verification scripts — synthetic source drives the
+  // identical gesture→game pipeline without a camera (PRD R131 验收②). The
+  // held-key view reads the live ref, so the closure never goes stale.
+  useEffect(() => {
+    const heldRef = vision.heldRef
+    const seam = {
+      enableSynthetic: () => vision.enableSynthetic(),
+      disable: () => vision.disable(),
+      held: () => [...heldRef.current],
+    }
+    ;(window as unknown as { __rgbboxVision?: typeof seam }).__rgbboxVision = seam
+    return () => {
+      delete (window as unknown as { __rgbboxVision?: typeof seam }).__rgbboxVision
+    }
+  }, [vision.enableSynthetic, vision.disable, vision.heldRef])
 
   const publishSurvival = useCallback(() => {
     setSurvivalSnapshot({ ...survivalRef.current, keys: new Set(survivalRef.current.keys), enemies: [...survivalRef.current.enemies], bullets: [...survivalRef.current.bullets], orbs: [...survivalRef.current.orbs] })
@@ -187,6 +209,37 @@ export function MiniGamesView(): JSX.Element {
     }
   }, [])
 
+  // R131: poll the vision gesture source each frame — same model as R103
+  // gamepad. Events arrive pre-normalized ('arrowleft'…'space'); Survival
+  // consumes the held-key set, Tetris the discrete command queue (with
+  // arrowdown as the only held key — soft drop).
+  const pollVision = useCallback(() => {
+    if (!vision.enabled) return
+    if (screen === 'survival') {
+      for (const key of MOVEMENT_KEYS) {
+        if (vision.heldRef.current.has(key)) survivalRef.current.keys.add(key)
+        else survivalRef.current.keys.delete(key)
+      }
+      // pinch to (re)start, mirroring the gamepad Start button (R103)
+      if (vision.queueRef.current.includes('space') && (survivalRef.current.phase === 'ready' || survivalRef.current.phase === 'lost')) {
+        startRunRef.current()
+      }
+    } else if (screen === 'tetris') {
+      for (const cmd of vision.queueRef.current) {
+        if (cmd === 'space') {
+          const phase = tetrisRef.current.phase
+          if (phase === 'ready' || phase === 'lost') startTetrisRef.current()
+          else tetrisRef.current.commands.push('hard')
+        } else if (cmd === 'arrowleft') tetrisRef.current.commands.push('left')
+        else if (cmd === 'arrowright') tetrisRef.current.commands.push('right')
+        else if (cmd === 'arrowup') tetrisRef.current.commands.push('rotate')
+      }
+      if (vision.heldRef.current.has('arrowdown')) tetrisRef.current.keys.add('arrowdown')
+      else tetrisRef.current.keys.delete('arrowdown')
+    }
+    vision.queueRef.current.length = 0
+  }, [screen, vision.enabled, vision.heldRef, vision.queueRef])
+
   // R102: native fullscreen state sync — Esc / OS exit flips the layout back.
   useEffect(() => {
     const onChange = () => {
@@ -195,6 +248,23 @@ export function MiniGamesView(): JSX.Element {
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
+
+  // R131: Tetris runs the direction ring 4-way (a diagonal would rotate + move
+  // in one gesture); Survival uses the full 8-way compass.
+  useEffect(() => {
+    if (!vision.enabled) return
+    vision.applySettings({ dirs: screen === 'tetris' ? 4 : 8 })
+  }, [screen, vision.applySettings, vision.enabled])
+
+  // R131: back to the hub or a hidden/minimized window stops the camera and
+  // releases every held key (leaving the games view unmounts the hook itself).
+  useEffect(() => {
+    if (screen === 'hub') vision.disable()
+  }, [screen, vision.disable])
+
+  useEffect(() => window.rgbbox.onMainWindowVisibilityChanged((visible) => {
+    if (!visible) vision.disable()
+  }), [vision.disable])
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
@@ -221,6 +291,7 @@ export function MiniGamesView(): JSX.Element {
     const loop = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
+      pollVision()
       if (screen === 'td') {
         tickGame(tdStateRef.current, dt * tdSpeed)
         const phase = tdStateRef.current.phase
@@ -301,7 +372,7 @@ export function MiniGamesView(): JSX.Element {
       cancelAnimationFrame(frame)
       stopBgm()
     }
-  }, [fullscreen, pollGamepad, publishTd, publishSurvival, publishTetris, screen, selectedTowerId, settleBest, tdSpeed])
+  }, [fullscreen, pollGamepad, pollVision, publishTd, publishSurvival, publishTetris, screen, selectedTowerId, settleBest, tdSpeed])
 
   useEffect(() => {
     if (screen !== 'survival' && screen !== 'tetris' && !fullscreen) return
@@ -519,6 +590,8 @@ export function MiniGamesView(): JSX.Element {
     publishTetris()
   }, [publishTetris])
 
+  startTetrisRef.current = startTetrisRun
+
   const restartTetrisRun = useCallback(() => {
     tetrisRef.current = initialTetrisState()
     publishTetris()
@@ -594,6 +667,16 @@ export function MiniGamesView(): JSX.Element {
   const phase = rawPhase as 'ready' | 'running' | 'won' | 'lost'
   const phaseLabel = phase === 'won' ? t('games.statusWon') : phase === 'lost' ? t('games.statusLost') : phase === 'ready' ? t('games.statusReady') : t('games.statusRunning')
   const best = isTd ? bests.td : isSurvival ? bests.survival : bests.tetris
+  // R131: vision status chip — localized wizard hint while calibrating (retry
+  // reasons from the engine stay verbatim — they are the actionable text),
+  // engine label otherwise; pinch-to-start hint on the ready/lost screens.
+  const visionSuffix = vision.enabled
+    ? ` · 👁 ${vision.state === 'active' && (phase === 'ready' || phase === 'lost')
+        ? t('games.vision.startHint')
+        : vision.state === 'calibrating' && vision.stepId && !vision.label.startsWith('重试')
+          ? t(`games.vision.hint.${vision.stepId}`)
+          : vision.label || t(`games.vision.state.${vision.state}`)}`
+    : vision.label ? ` · 👁 ${t('games.vision.error')}: ${vision.label}` : ''
   const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : startTetrisRun
   const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
 
@@ -616,6 +699,25 @@ export function MiniGamesView(): JSX.Element {
           <button className="aspect-lock-btn" type="button" aria-label={t('games.sfxToggle')} title={t('games.sfxToggle')} onClick={toggleSfx}>
             {sfxOn ? <Volume2 aria-hidden="true" size={13} /> : <VolumeX aria-hidden="true" size={13} />}
           </button>
+          {/* R131: vision gesture toggle — off by default; recalibrate while on */}
+          <button
+            className="aspect-lock-btn"
+            type="button"
+            aria-label={vision.enabled ? t('games.vision.disable') : t('games.vision.enable')}
+            title={vision.enabled ? t('games.vision.disable') : t('games.vision.enable')}
+            onClick={() => {
+              if (vision.enabled) vision.disable()
+              else void vision.enable().catch(() => undefined)
+            }}
+          >
+            {vision.enabled ? <Eye aria-hidden="true" size={13} /> : <EyeOff aria-hidden="true" size={13} />}
+            {t('games.vision.toggle')}
+          </button>
+          {vision.enabled ? (
+            <button className="aspect-lock-btn" type="button" aria-label={t('games.vision.calibrate')} title={t('games.vision.calibrate')} onClick={vision.recalibrate}>
+              <RotateCcw aria-hidden="true" size={13} />
+            </button>
+          ) : null}
           {isTd ? (
             <button className="aspect-lock-btn" type="button" aria-label={t('games.speed')} title={t('games.speed')} onClick={() => setTdSpeed((speed) => (speed === 1 ? 2 : 1))}>
               <Zap aria-hidden="true" size={13} />
@@ -778,7 +880,7 @@ export function MiniGamesView(): JSX.Element {
             <span>
               {isTd
                 ? `${t('games.wave')} ${tdSnapshot.wave}/${MAX_WAVE}${tdSnapshot.phase === 'running' && tdSnapshot.waveQueue + tdSnapshot.balloons.length > 0 ? ` · ${t('games.balloonsLeft').replace('{value}', String(tdSnapshot.waveQueue + tdSnapshot.balloons.length))}` : ''}`
-                : isSurvival ? `${t('games.swarmHint')} · ${t('games.island').replace('{n}', String(survivalSnapshot.island))}${gamepadName ? ` · 🎮 ${gamepadName}` : ''}` : t('games.tetrisHint')}
+                : isSurvival ? `${t('games.swarmHint')} · ${t('games.island').replace('{n}', String(survivalSnapshot.island))}${gamepadName ? ` · 🎮 ${gamepadName}` : ''}${visionSuffix}` : `${t('games.tetrisHint')}${visionSuffix}`}
             </span>
             <span>
               {isTd && tdSnapshot.phase === 'running' && tdSnapshot.waveQueue === 0 && tdSnapshot.balloons.length === 0 && tdSnapshot.wave < MAX_WAVE

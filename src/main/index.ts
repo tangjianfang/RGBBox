@@ -40,7 +40,7 @@ function mintProfileId(): string {
 import { validateChatMessages } from '../shared/aiChatValidation'
 import { initAudioAi, disposeAudioAi, isCached as audioAiIsCached, runVad as audioAiRunVadPcm, runAst as audioAiRunAstPcm, startStream as audioAiStartStream, feedStream as audioAiFeedStream, stopStream as audioAiStopStream } from './audioAiService'
 import { Readable } from 'node:stream'
-import { mediaStreamPlan, parseRangeHeader, resolveMediaMime } from './mediaProtocol'
+import { mediaStreamPlan, parseRangeHeader, resolveAppAssetPath, resolveMediaMime } from './mediaProtocol'
 import { registerDenoiseService } from './denoiseService'
 
 // Initialize file logger — must be done after imports but before app.whenReady
@@ -1397,9 +1397,19 @@ app.whenReady().then(() => {
   // that threshold whole-range buffers spiked main-process memory per seek.
   protocol.handle('media', async (request) => {
     try {
-      // Path is stored as query param ?p= to avoid Windows drive-letter mangling
-      // e.g. media://local?p=C%3A%5CUsers%5C...  →  C:\Users\...
-      const filePath = new URL(request.url).searchParams.get('p') ?? ''
+      const mediaUrl = new URL(request.url)
+      let filePath: string
+      if (mediaUrl.host === 'app') {
+        // R131: packaged renderer assets — the prod app loads the renderer via
+        // file:// where fetch()/wasm loading of local files is blocked, so the
+        // vision module fetches its wasm + .task models through this route:
+        // media://app/<subpath> → out/renderer/<subpath> (traversal-guarded).
+        filePath = resolveAppAssetPath(join(__dirname, '../renderer'), mediaUrl.pathname) ?? ''
+      } else {
+        // Path is stored as query param ?p= to avoid Windows drive-letter mangling
+        // e.g. media://local?p=C%3A%5CUsers%5C...  →  C:\Users\...
+        filePath = mediaUrl.searchParams.get('p') ?? ''
+      }
       // R53.8: was console.log — on Windows, the terminal's active codepage
       // (often GBK/936, not UTF-8) mangles non-ASCII (e.g. Chinese) file paths
       // into mojibake. The shared file logger always writes UTF-8 to disk

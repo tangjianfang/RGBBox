@@ -129,6 +129,8 @@ export function setupRendererMocks() {
     onOverlayClosed: vi.fn().mockReturnValue(() => undefined),
     onOverlayEffectChanged: vi.fn().mockReturnValue(() => undefined),
     onDisplayTopologyChanged: vi.fn().mockReturnValue(() => undefined),
+    // R131: main-window minimize/restore signal (vision input stops the camera)
+    onMainWindowVisibilityChanged: vi.fn().mockReturnValue(() => undefined),
     onPerfSelfTestCollectTiming: vi.fn().mockReturnValue(() => undefined),
     reportPerfSelfTestTiming: vi.fn().mockResolvedValue(undefined)
   }
