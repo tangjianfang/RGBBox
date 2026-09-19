@@ -30,7 +30,15 @@ export default defineConfig({
     plugins: [react()],
     build: {
       rollupOptions: {
-        input: resolve(__dirname, 'src/renderer/index.html'),
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          // R130.1: 轻量截图入口 —— 只装 SnipView 栈（~250KB vs 主入口 4.6MB），
+          // 让热键→冻结画面出现摆脱 God Component 全家桶的解析成本
+          snip: resolve(__dirname, 'src/renderer/snip.html'),
+          // R136: hidden vision pipeline host — the whole vision stack runs in
+          // this window's renderer process (off the game window's main thread)
+          visionHost: resolve(__dirname, 'src/renderer/visionHost.html'),
+        },
         output: {
           manualChunks(id: string) {
             if (id.includes('@mkkellogg/gaussian-splats-3d')) return 'vendor-splat'

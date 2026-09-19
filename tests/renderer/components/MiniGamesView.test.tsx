@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, cleanup, fireEvent, act, waitFor } from '@testing-library/react'
 import { MiniGamesView } from '../../../src/renderer/src/components/MiniGamesView'
 import {
@@ -12,33 +12,40 @@ import {
 } from '../../../src/renderer/src/games/td'
 import { setupRendererMocks } from '../_helpers'
 
-// R131: controlled fake for the vision module — the useVisionInput hook under
-// the component is real; only the camera/MediaPipe glue is faked.
-const visionInstances = vi.hoisted(() => ({
-  list: [] as Array<{ cameraStarted: boolean; stopped: boolean; settings: Record<string, number | null> | null }>,
-}))
-vi.mock('../../../src/renderer/src/vision/vision_input.js', () => ({
-  VisionInput: class {
-    cameraStarted = false
-    stopped = false
-    settings: Record<string, number | null> | null = null
-    session = { profile: null, forceReady() { /* noop */ } }
-    constructor() {
-      visionInstances.list.push(this as unknown as (typeof visionInstances.list)[number])
+// R136: the vision pipeline lives in the hidden host window; the component
+// talks to it over the (mocked) BroadcastChannel. FakeHost answers init with
+// 'ready' so the real hook completes enable; drives happen via the seam.
+class FakeHost {
+  channel: BroadcastChannel
+  sent: Array<{ type: string; [key: string]: unknown }> = []
+  constructor() {
+    this.channel = new BroadcastChannel('rgbbox-vision')
+    this.channel.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as { type: string }
+      this.sent.push(msg)
+      if (msg.type === 'init') this.channel.postMessage({ type: 'ready', delegate: 'GPU' })
     }
-    async init() { /* noop */ }
-    async startCamera() { this.cameraStarted = true }
-    stop() { this.stopped = true }
-    setPaused() { /* noop */ }
-    recalibrate() { /* noop */ }
-    applySettings(patch: Record<string, number | null>) { this.settings = patch }
-  },
-}))
+  }
+  send(msg: unknown): void {
+    this.channel.postMessage(msg)
+  }
+  dispose(): void {
+    this.channel.close()
+  }
+}
+
+let fakeHost: FakeHost
+let rgbboxMocks: ReturnType<typeof setupRendererMocks>
 
 beforeEach(() => {
-  setupRendererMocks()
-  visionInstances.list.length = 0
+  rgbboxMocks = setupRendererMocks()
+  localStorage.clear()
+  fakeHost = new FakeHost()
   cleanup()
+})
+
+afterEach(() => {
+  fakeHost.dispose()
 })
 
 function makeTower(overrides: Partial<Tower> = {}): Tower {
@@ -133,56 +140,66 @@ describe('renderer/components/MiniGamesView', () => {
     expect(state.balloons.find((balloon) => balloon.id === 11)?.hp).toBe(1)
   })
 
-  it('vision input: eye toggle starts the camera, status chip appears, Tetris switches to 4-way (R131)', async () => {
+  it('vision input: enabling via the seam starts the worker, status chip appears, Tetris switches to 4-way (R131/R136)', async () => {
     const { container } = render(<MiniGamesView />)
     fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[2]) // Tetris
     const eye = [...container.querySelectorAll('button')].find((button) => /^games\.vision\.(enable|disable)$/.test(button.getAttribute('aria-label') ?? ''))
     expect(eye?.getAttribute('aria-label')).toBe('games.vision.enable')
     await act(async () => {
-      fireEvent.click(eye as HTMLButtonElement)
+      await (window as unknown as { __rgbboxVision: { enableSynthetic(): Promise<void> } }).__rgbboxVision.enableSynthetic()
     })
-    expect(visionInstances.list.length).toBe(1)
-    expect(visionInstances.list[0].cameraStarted).toBe(true)
+    expect(rgbboxMocks.visionHostOpen).toHaveBeenCalled()
     // Tetris runs the direction ring 4-way
-    expect(visionInstances.list[0].settings).toEqual({ dirs: 4 })
     await waitFor(() => {
-      const status = container.querySelector('.games-canvas-status span')
-      expect(status?.textContent).toContain('👁')
+      const settings = fakeHost.sent.find((m) => m.type === 'settings') as { patch: { dirs: number } } | undefined
+      expect(settings?.patch.dirs).toBe(4)
+    })
+    await waitFor(() => {
+      expect(container.querySelector('.games-canvas-status span')?.textContent).toContain('👁')
     })
   })
 
-  it('vision pad overlay mounts with vision enabled and shows the exit notice when disabled (R132)', async () => {
+  it('vision pad + banner mount with vision enabled; exit notice on disable (R132/R136)', async () => {
     const { container } = render(<MiniGamesView />)
     expect(container.querySelector('.vision-pad')).toBeNull() // off by default
     fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[2]) // Tetris
-    const eye = [...container.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === 'games.vision.enable')
     await act(async () => {
-      fireEvent.click(eye as HTMLButtonElement)
+      await (window as unknown as { __rgbboxVision: { enableSynthetic(): Promise<void> } }).__rgbboxVision.enableSynthetic()
     })
     await waitFor(() => {
       expect(container.querySelector('.vision-pad canvas')).toBeTruthy()
     })
-    // disabling shows the transient "vision off" notice in the status chip
-    const eyeOff = [...container.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === 'games.vision.disable')
+    expect(container.querySelector('.vision-banner')).toBeTruthy()
+    // a snapshot with landmarks + calibrating step drives banner + skeleton data
     await act(async () => {
-      fireEvent.click(eyeOff as HTMLButtonElement)
+      fakeHost.send({ type: 'snapshot', snapshot: {
+        state: 'calibrating', label: '校准 1/3', stepId: 'center', stepProgress: 0.5,
+        geom: { palm: { x: 0.5, y: 0.5 }, pinch: 1.1, scale: 0.18 },
+        pickedLandmarks: new Array(21).fill(null).map(() => ({ x: 0.5, y: 0.5, z: 0 })),
+        stats: { infer: { n: 5, p50: 8, p95: 12, mean: 9 }, fps: 60, inferFps: 30, delegate: 'GPU', lowFps: false },
+      } })
+    })
+    expect(container.querySelector('.vision-banner')?.textContent).toContain('1/3')
+    expect(container.querySelector('.vision-banner-skip')).toBeTruthy()
+    // disabling shows the transient "vision off" notice in the status chip
+    await act(async () => {
+      ;(window as unknown as { __rgbboxVision: { disable(): void } }).__rgbboxVision.disable()
     })
     expect(container.querySelector('.vision-pad')).toBeNull()
     expect(container.querySelector('.games-canvas-status span')?.textContent).toContain('games.vision.exited')
   })
 
-  it('vision input: back to the hub stops the camera (R131)', async () => {
+  it('vision input: back to the hub terminates the worker (R131/R136)', async () => {
     const { container } = render(<MiniGamesView />)
     fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm
-    const eye = [...container.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === 'games.vision.enable')
     await act(async () => {
-      fireEvent.click(eye as HTMLButtonElement)
+      await (window as unknown as { __rgbboxVision: { enableSynthetic(): Promise<void> } }).__rgbboxVision.enableSynthetic()
     })
     await waitFor(() => {
       expect(container.querySelector('.games-canvas-status span')?.textContent).toContain('👁')
     })
     const back = [...container.querySelectorAll('button')].find((button) => button.textContent === 'games.backToHub') as HTMLButtonElement
     fireEvent.click(back)
-    expect(visionInstances.list[0].stopped).toBe(true)
+    expect(rgbboxMocks.visionHostClose).toHaveBeenCalled()
   })
 })

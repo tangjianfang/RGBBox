@@ -2,6 +2,7 @@ import { ArrowLeft, Crosshair, Eye, EyeOff, Grid, Heart, Maximize2, Minimize2, M
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
 import { useVisionInput } from '../hooks/useVisionInput'
 import { useI18n } from '../i18n'
+import { VisionBanner } from './vision/VisionBanner'
 import { VisionPad } from './vision/VisionPad'
 import {
   HEIGHT,
@@ -821,6 +822,29 @@ export function MiniGamesView(): JSX.Element {
               <RotateCcw aria-hidden="true" size={13} />
             </button>
           ) : null}
+          {/* R136: runtime mirror fix (reversed left/right) + latency/accuracy preset */}
+          {vision.enabled ? (
+            <button
+              className="aspect-lock-btn"
+              type="button"
+              aria-label={t('games.vision.mirrorToggle')}
+              title={t('games.vision.mirrorToggle')}
+              onClick={() => vision.setMirror(!vision.mirror)}
+            >
+              ⇄ {vision.mirror ? t('games.vision.mirrorOn') : t('games.vision.mirrorOff')}
+            </button>
+          ) : null}
+          {vision.enabled ? (
+            <button
+              className="aspect-lock-btn"
+              type="button"
+              aria-label={t('games.vision.sensitivity')}
+              title={t('games.vision.sensitivity')}
+              onClick={() => vision.setSensitivity(vision.sensitivity === 'standard' ? 'fast' : vision.sensitivity === 'fast' ? 'sport' : 'standard')}
+            >
+              ⚡ {t(`games.vision.sens.${vision.sensitivity}`)}
+            </button>
+          ) : null}
           {isTd ? (
             <button className="aspect-lock-btn" type="button" aria-label={t('games.speed')} title={t('games.speed')} onClick={() => setTdSpeed((speed) => (speed === 1 ? 2 : 1))}>
               <Zap aria-hidden="true" size={13} />
@@ -978,7 +1002,9 @@ export function MiniGamesView(): JSX.Element {
             {isSurvival && newAchievements.length > 0 ? (
               <div className="ach-toast">🏆 {newAchievements.map((id) => t(`games.ach.${id as AchievementId}`)).join(' · ')}</div>
             ) : null}
-            {/* R132.2: joystick-style overlay — own rAF, reads frameRef directly */}
+            {/* R136.2: immediate status banner — instant publish, progress via rAF */}
+            {vision.enabled ? <VisionBanner vision={vision} /> : null}
+            {/* R132.2: joystick + skeleton overlay — own rAF, reads frameRef directly */}
             {vision.enabled ? <VisionPad vision={vision} /> : null}
           </div>
           <div className="games-canvas-status">

@@ -77,8 +77,9 @@ export function setupRendererMocks() {
     clipboardWriteText: vi.fn().mockResolvedValue(true),
     clipboardReadText: vi.fn().mockResolvedValue(''),
     ocrRecognize: vi.fn().mockResolvedValue({ ok: true, text: '', hint: undefined, engine: undefined }),
-    // R80: standalone global snip tool
-    snipGetFrame: vi.fn().mockResolvedValue({ dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }),
+    // R80/R130: standalone global snip tool — 帧推送订阅（测试里由用例自行接管回调）+ 绘制 ack
+    snipOnFrame: vi.fn().mockReturnValue(() => undefined),
+    snipAckPainted: vi.fn(),
     snipFinish: vi.fn().mockResolvedValue(true),
     snipCancel: vi.fn(),
     setUiLocale: vi.fn(),
@@ -131,6 +132,9 @@ export function setupRendererMocks() {
     onDisplayTopologyChanged: vi.fn().mockReturnValue(() => undefined),
     // R131: main-window minimize/restore signal (vision input stops the camera)
     onMainWindowVisibilityChanged: vi.fn().mockReturnValue(() => undefined),
+    // R136: hidden vision pipeline host window lifecycle
+    visionHostOpen: vi.fn().mockResolvedValue(true),
+    visionHostClose: vi.fn().mockResolvedValue(true),
     onPerfSelfTestCollectTiming: vi.fn().mockReturnValue(() => undefined),
     reportPerfSelfTestTiming: vi.fn().mockResolvedValue(undefined)
   }

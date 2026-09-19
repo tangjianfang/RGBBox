@@ -156,6 +156,24 @@ try {
   ok('swarm: vision gestures MOVED the player (vision→movement closed loop)', moved > 5 && p2.phase === 'running')
   await page.screenshot({ path: `${OUT}/r133-swarm-playing.png` })
 
+  // ── R136: main-thread liberation + visibility ─────────────────────────────
+  // rAF fps of the GAME page while the worker pipeline runs — the structural
+  // proof that inference no longer starves the game loop.
+  const fpsSample = await page.evaluate(() => new Promise((resolve) => {
+    let frames = 0
+    const t0 = performance.now()
+    const loop = () => {
+      frames++
+      if (performance.now() - t0 < 2000) requestAnimationFrame(loop)
+      else resolve(frames / ((performance.now() - t0) / 1000))
+    }
+    requestAnimationFrame(loop)
+  }))
+  console.log(`  game rAF fps with vision running: ${fpsSample.toFixed(0)}`)
+  ok('rAF fps ≥ 55 while the vision worker pipeline runs', fpsSample >= 55)
+  ok('R136: vision banner mounted', !!(await page.evaluate(() => document.querySelector('.vision-banner'))))
+  ok('R136: skeleton source flows (pickedLandmarks in snapshot)', !!(await page.evaluate(() => window.__rgbboxVision.snapshot()?.pickedLandmarks)))
+
   // R132.3: exit notice — disable via the header toggle, expect the chip text
   await page.locator('button[aria-label="关闭视觉体感输入"]').first().click()
   await sleep(400)

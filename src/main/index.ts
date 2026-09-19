@@ -99,6 +99,8 @@ const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL)
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+// R136: hidden vision pipeline host window (see registerIpc visionHostOpen)
+let visionHostWindow: BrowserWindow | null = null
 // R80.12: 界面语言（渲染层 i18n 同步过来）+ 托盘菜单重建句柄
 let uiLocale: UiLocale = 'zh'
 let rebuildTrayMenu: (() => void) | null = null
@@ -899,6 +901,37 @@ function registerIpc(): void {
   })
   ipcMain.handle(ipcChannels.getAudioVizWindowIds, () => {
     return getAudioVizWindowIds()
+  })
+
+  // R136: hidden vision pipeline host — same shape as the AudioViz projector
+  // windows. The vision stack (MediaPipe + session engines) runs inside this
+  // window's renderer process so it can never starve the game window's main
+  // thread; data flows window↔window over the same-origin BroadcastChannel
+  // ('rgbbox-vision'), these handlers only manage the window lifecycle.
+  ipcMain.handle(ipcChannels.visionHostOpen, () => {
+    if (visionHostWindow && !visionHostWindow.isDestroyed()) return true
+    visionHostWindow = new BrowserWindow({
+      show: false,
+      skipTaskbar: true,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        // keep rVFC/the synthetic timer running while hidden
+        backgroundThrottling: false,
+      },
+    })
+    visionHostWindow.on('closed', () => { visionHostWindow = null })
+    if (isDevelopment) {
+      void visionHostWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}/visionHost.html`)
+    } else {
+      void visionHostWindow.loadFile(join(__dirname, '../renderer/visionHost.html'))
+    }
+    return true
+  })
+  ipcMain.handle(ipcChannels.visionHostClose, () => {
+    if (visionHostWindow && !visionHostWindow.isDestroyed()) visionHostWindow.close()
+    visionHostWindow = null
+    return true
   })
 
   // Return the first screen's desktopCapturer sourceId for system audio loopback (legacy)

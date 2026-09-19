@@ -112,6 +112,11 @@ export const ipcChannels = {
   openAudioVizWindow: 'rgbbox:audioviz:open',
   closeAudioVizWindow: 'rgbbox:audioviz:close',
   getAudioVizWindowIds: 'rgbbox:audioviz:get-ids',
+  // R136: hidden vision pipeline host window — the vision stack runs in its
+  // own renderer process; the game window talks to it over a same-origin
+  // BroadcastChannel ('rgbbox-vision'), these only manage the window itself.
+  visionHostOpen: 'rgbbox:vision-host:open',
+  visionHostClose: 'rgbbox:vision-host:close',
   // R73: OS-level scheduled shutdown (Windows `shutdown /s /t`, cancel /a)
   shutdownArm: 'rgbbox:system:shutdown-arm',
   shutdownCancel: 'rgbbox:system:shutdown-cancel',

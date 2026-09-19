@@ -1772,6 +1772,72 @@ input:not([type]):focus {
   z-index: 6;
 }
 
+/* R136.2: immediate status banner across the top of the game canvas — the
+   state color hits the eye before the text does. */
+.vision-banner {
+  align-items: center;
+  background: rgba(8, 13, 18, 0.86);
+  border: 1px solid rgba(103, 232, 249, 0.25);
+  border-radius: 8px;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  left: 50%;
+  max-width: min(92%, 560px);
+  padding: 6px 12px;
+  pointer-events: none;
+  position: absolute;
+  top: 10px;
+  transform: translateX(-50%);
+  z-index: 6;
+}
+
+.vision-banner-dot {
+  border-radius: 50%;
+  height: 8px;
+  width: 8px;
+}
+
+.vision-banner.active .vision-banner-dot { background: #4ade80; box-shadow: 0 0 8px #4ade80; }
+.vision-banner.calibrating .vision-banner-dot { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }
+.vision-banner.lost .vision-banner-dot, .vision-banner.searching .vision-banner-dot { background: #fb923c; box-shadow: 0 0 8px #fb923c; }
+.vision-banner.paused .vision-banner-dot { background: #94a3b8; }
+
+.vision-banner-text {
+  color: #d7e4ec;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vision-banner-skip {
+  background: rgba(103, 232, 249, 0.14);
+  border: 1px solid rgba(103, 232, 249, 0.4);
+  border-radius: 6px;
+  color: #a5e8f5;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 8px;
+  pointer-events: auto;
+}
+
+.vision-banner-progress {
+  background: rgba(148, 170, 184, 0.18);
+  border-radius: 3px;
+  bottom: 3px;
+  height: 3px;
+  left: 8px;
+  overflow: hidden;
+  position: absolute;
+  right: 8px;
+}
+
+.vision-banner-progress > div {
+  background: #fbbf24;
+  height: 100%;
+  width: 0;
+}
+
 .levelup-overlay {
   align-items: center;
   background: rgba(4, 8, 12, 0.78);

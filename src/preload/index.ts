@@ -174,9 +174,17 @@ const api = {
   clipboardReadText: (): Promise<string> => ipcRenderer.invoke(ipcChannels.clipboardReadText),
   ocrRecognize: (dataUrl: string): Promise<{ ok: boolean; text: string; hint?: string; engine?: 'rapid' | 'winrt' }> =>
     ipcRenderer.invoke(ipcChannels.ocrRecognize, dataUrl),
-  // R80: standalone global snip tool
-  snipGetFrame: (displayId: number): Promise<{ dataUrl: string } | null> =>
-    ipcRenderer.invoke(ipcChannels.snipGetFrame, displayId),
+  // R80/R130: standalone global snip tool — 冻结帧由主进程推送（BGRA 原始位图，
+  // 二进制 IPC 无 base64 膨胀）；渲染端绘制完成后回 ack，主进程等画面真正
+  // 上屏才 show 窗口（「窗口出现 = 冻结画面就绪」）
+  snipOnFrame: (callback: (frame: SnipPushFrame) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, frame: SnipPushFrame): void => callback(frame)
+    ipcRenderer.on(ipcChannels.snipPushFrame, handler)
+    return () => ipcRenderer.off(ipcChannels.snipPushFrame, handler)
+  },
+  snipAckPainted: (): void => {
+    ipcRenderer.send(ipcChannels.snipFramePainted)
+  },
   snipFinish: (dataUrl: string, action: 'copy' | 'save'): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.snipFinish, { dataUrl, action }),
   snipCancel: (): void => {

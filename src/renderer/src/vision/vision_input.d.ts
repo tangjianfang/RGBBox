@@ -52,6 +52,8 @@ export interface VisionFrame {
   faceEveryN: number
   /** null when no hand passed the score floor this frame */
   geom?: { palm: { x: number; y: number }; pinch: number; scale: number } | null
+  /** 21 landmarks of the tracked (primary) hand, selfie-space — skeleton layer */
+  pickedLandmarks?: Array<{ x: number; y: number; z: number }> | null
   /** normalized pinch distance (geom.pinch alias, always present for the pad) */
   pinch?: number | null
   /** live calibrated profile (center/activeZone/deadZone/pinchOn/pinchOff…) */

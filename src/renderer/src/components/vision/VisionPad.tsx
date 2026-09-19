@@ -22,6 +22,17 @@ const R = 62
 const GAIN_X = 1.4
 const GAIN_Y = 1.6
 
+// R136.2: hand skeleton overlay — MediaPipe's 21-point bone graph so the
+// user sees exactly what the system sees (pose in frame, mirror orientation).
+const HAND_BONES: Array<[number, number]> = [
+  [0, 1], [1, 2], [2, 3], [3, 4],
+  [0, 5], [5, 6], [6, 7], [7, 8],
+  [5, 9], [9, 10], [10, 11], [11, 12],
+  [9, 13], [13, 14], [14, 15], [15, 16],
+  [13, 17], [17, 18], [18, 19], [19, 20],
+  [0, 17],
+]
+
 const STATE_COLOR: Record<string, string> = {
   searching: '#8aa0ad',
   calibrating: '#fbbf24',
@@ -136,6 +147,17 @@ function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn, 
   // ── compass ──────────────────────────────────────────────────────────────
   const cx = PAD_W / 2
   const cy = TEXT_H + 4 + R + 8
+  // ── hand skeleton background layer (R136.2: see what the system sees) ────
+  const hand = frame?.pickedLandmarks
+  if (Array.isArray(hand) && hand.length === 21) {
+    const px = (i: number) => 8 + hand[i].x * (PAD_W - 16)
+    const py = (i: number) => TEXT_H + 2 + hand[i].y * (PAD_H - TEXT_H - 18)
+    ctx.strokeStyle = 'rgba(103,232,249,0.28)'
+    ctx.lineWidth = 1.5
+    for (const [a, b] of HAND_BONES) line(ctx, px(a), py(a), px(b), py(b))
+    ctx.fillStyle = 'rgba(226,232,240,0.55)'
+    for (let i = 0; i < 21; i++) circle(ctx, px(i), py(i), 1.6, true)
+  }
   const profile = (frame?.profile ?? {}) as {
     center?: { x: number; y: number }
     activeZone?: number
