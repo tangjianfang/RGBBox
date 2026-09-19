@@ -252,6 +252,7 @@ export class VisionInput {
       hand: snapshot.pickedLandmarks,
       score: snapshot.score,
       geom: snapshot.geom,
+      ringCenter: snapshot.ringCenter,
       faceBlend: snapshot.faceBlend,
       state: snapshot.state,
       label: snapshot.label,

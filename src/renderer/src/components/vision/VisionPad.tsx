@@ -141,7 +141,9 @@ function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn, 
     activeZone?: number
     deadZone?: number
   }
-  const center = profile.center ?? { x: 0.5, y: 0.5 }
+  // R135: prefer the ring's LIVE center (recenter keeps it current) — the
+  // calibrated profile.center is only the snapshot and drifts stale.
+  const center = frame?.ringCenter ?? profile.center ?? { x: 0.5, y: 0.5 }
   const activeZone = profile.activeZone ?? 0.17
   const deadZone = profile.deadZone ?? activeZone * 0.55
   const k = R / (activeZone * 1.7) // active ring at ~59% of R, headroom above

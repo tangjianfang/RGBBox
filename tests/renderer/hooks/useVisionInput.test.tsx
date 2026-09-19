@@ -16,7 +16,8 @@ interface FakeVisionInput {
       numHands: number
       maxFps: number
       session: Record<string, unknown>
-      camera: Record<string, unknown>
+      preferLowRes: boolean
+      cameraLowRes: { width: { ideal: number }; height: { ideal: number }; frameRate: { ideal: number } }
     }
     onEvent: (event: VisionEvent) => void
     onFrame: (frame: Partial<VisionFrame>) => void
@@ -105,16 +106,20 @@ describe('renderer/hooks/useVisionInput (R131)', () => {
     await act(() => result.current.disable())
   })
 
-  it('enable() runs the R132/R133 perf budget: faceless, one hand, 30fps cap, 640×480@60 camera', async () => {
+  it('enable() runs the R134/R135 budget: dual-hand, face @1/3 rate, 30fps cap, 640×360@60 capture', async () => {
     const { result } = renderHook(() => useVisionInput())
     await act(() => result.current.enable())
     const cfg = visionState.instances[0].opts.config
-    expect(cfg.faceModel).toBeNull()
-    expect(cfg.numHands).toBe(1)
+    expect(cfg.faceModel).toContain('face_landmarker.task') // R135: face modifiers back
+    expect(cfg.numHands).toBe(2) // R135: dual-hand
     expect(cfg.maxFps).toBe(30)
-    expect((cfg.camera.width as { ideal: number }).ideal).toBe(640)
-    expect((cfg.camera.frameRate as { ideal: number }).ideal).toBe(60)
+    expect(cfg.preferLowRes).toBe(true)
+    expect((cfg.cameraLowRes.width as { ideal: number }).ideal).toBe(640)
+    expect((cfg.cameraLowRes.height as { ideal: number }).ideal).toBe(360)
+    expect((cfg.cameraLowRes.frameRate as { ideal: number }).ideal).toBe(60)
     expect(cfg.session.requireFace).toBe(false)
+    expect(cfg.session.faceEveryN).toBe(3)
+    expect((cfg.session.dualHand as { enabled: boolean }).enabled).toBe(true)
     await act(() => result.current.disable())
   })
 

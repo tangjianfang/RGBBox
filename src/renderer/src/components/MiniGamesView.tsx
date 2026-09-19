@@ -100,6 +100,16 @@ function writeBest(game: GameKey, score: number): void {
 
 const MOVEMENT_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'space'])
 
+// R135 (guide §3.6/§3.7): vision passthrough keys — movement + face modifiers
+// (jaw=E, brow=Shift, smile=Enter) + off-hand pinch (KeyF). Games consume
+// keys.has('e') etc. when a skill mapping lands.
+const VISION_PASSTHROUGH_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'space', 'e', 'shift', 'enter', 'f']
+
+// DirectionRing defaults (gesture_engine.js, upstream v2) — the analog path
+// must apply the same transform the sector ring sees. Keep in sync.
+const VISION_GAIN_X = 1.4
+const VISION_GAIN_Y = 1.6
+
 export function MiniGamesView(): JSX.Element {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -223,28 +233,54 @@ export function MiniGamesView(): JSX.Element {
     }
   }, [])
 
-  // R131/R133: poll the vision gesture source each frame — same model as R103
-  // gamepad. Events arrive pre-normalized ('arrowleft'…'space'); Survival
-  // consumes the held-key set, Tetris the discrete command queue (with
-  // arrowdown as the only held key — soft drop). R133: in Survival the vision
-  // direction is ALSO added onto the gamepad axis (clamped to the unit
-  // circle) — survival.ts lets |axis| > 0.18 override keys entirely, so a
-  // connected gamepad with resting drift beyond its dead zone used to swallow
-  // every vision keypress. Must run AFTER pollGamepad() (which rewrites the
+  // R135: analog movement — the smoothed palm displacement relative to the
+  // ring's LIVE center, normalized by the calibrated activeZone. Replaces the
+  // R133 binary unit vector: displacement magnitude now scales speed
+  // (joystick semantics), the dead zone falls out of the normalization, and
+  // the exponential smoothing keeps it fluid at the ~30Hz inference cadence.
+  const visionAnalogRef = useRef({ x: 0, y: 0 })
+
+  // R131/R133/R135: poll the vision gesture source each frame — same model as
+  // R103 gamepad. Events arrive pre-normalized ('arrowleft'…'space'); Survival
+  // consumes the held-key set (now including the R135 face-modifier keys
+  // e/shift/enter and the off-hand pinch f) plus the analog axis, Tetris the
+  // discrete command queue. Must run AFTER pollGamepad() (which rewrites the
   // raw axis each frame) — see the loop below.
   const pollVision = useCallback(() => {
     if (!vision.enabled) return
     if (screen === 'survival') {
       const held = vision.heldRef.current
-      for (const key of MOVEMENT_KEYS) {
+      for (const key of VISION_PASSTHROUGH_KEYS) {
         if (held.has(key)) survivalRef.current.keys.add(key)
         else survivalRef.current.keys.delete(key)
       }
-      const vx = (held.has('arrowright') ? 1 : 0) - (held.has('arrowleft') ? 1 : 0)
-      const vy = (held.has('arrowdown') ? 1 : 0) - (held.has('arrowup') ? 1 : 0)
-      if (vx !== 0 || vy !== 0) {
-        const ax = survivalRef.current.axis.x + vx
-        const ay = survivalRef.current.axis.y + vy
+      // analog displacement → additive axis vector (joystick semantics)
+      const frame = vision.frameRef.current
+      const geom = frame?.geom
+      const ringCenter = frame?.ringCenter
+      let targetX = 0
+      let targetY = 0
+      if (geom && ringCenter) {
+        const activeZone = (frame?.profile?.activeZone as number | undefined) ?? 0.17
+        const deadZone = (frame?.profile?.deadZone as number | undefined) ?? activeZone * 0.55
+        // same transform as DirectionRing (gain 1.4/1.6, camera-up = screen-up)
+        const dx = (geom.palm.x - ringCenter.x) * VISION_GAIN_X
+        const dy = -(geom.palm.y - ringCenter.y) * VISION_GAIN_Y
+        const nx = dx / activeZone
+        const ny = dy / activeZone
+        const len = Math.hypot(nx, ny)
+        if (len > deadZone / activeZone) {
+          const scale = len > 1 ? 1 / len : 1
+          targetX = nx * scale
+          targetY = ny * scale
+        }
+      }
+      visionAnalogRef.current.x += (targetX - visionAnalogRef.current.x) * 0.3
+      visionAnalogRef.current.y += (targetY - visionAnalogRef.current.y) * 0.3
+      const analog = visionAnalogRef.current
+      if (analog.x !== 0 || analog.y !== 0) {
+        const ax = survivalRef.current.axis.x + analog.x
+        const ay = survivalRef.current.axis.y + analog.y
         const len = Math.hypot(ax, ay)
         survivalRef.current.axis = { x: ax / Math.max(1, len), y: ay / Math.max(1, len) }
       }

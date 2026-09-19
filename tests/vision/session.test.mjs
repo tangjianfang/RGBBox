@@ -221,3 +221,18 @@ test('requireFace default still enforces the center-step face gate', () => {
   assert.equal(d.session.state, 'calibrating');
   assert.ok(d.session.status.includes('面部') || d.session.status.includes('采样'), d.session.status);
 });
+
+// RGBBox (R135): the snapshot must expose the DirectionRing's LIVE center —
+// recenter drift-healing only updates the ring, profile.center goes stale,
+// and the analog movement path reads ringCenter.
+test('snapshot exposes the ring live center (ringCenter) and recenter moves it', () => {
+  const d = new SessionDriver({ cfg: QUICK_CFG });
+  d.calibrate();
+  const first = d.frame({ ...atPalm(CENTER.x, CENTER.y) }).snapshot;
+  assert.ok(first.ringCenter, 'ringCenter present after calibration');
+  assert.ok(Math.abs(first.ringCenter.x - CENTER.x) < 0.02, `center=${JSON.stringify(first.ringCenter)}`);
+  // resting frames inside the dead zone pull the live center toward the palm
+  d.collect(90, atPalm(CENTER.x + 0.02, CENTER.y));
+  const after = d.frame({ ...atPalm(CENTER.x + 0.02, CENTER.y) }).snapshot;
+  assert.ok(after.ringCenter.x > first.ringCenter.x, 'recenter must move the live center');
+});

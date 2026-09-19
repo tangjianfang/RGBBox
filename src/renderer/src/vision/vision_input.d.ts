@@ -43,6 +43,8 @@ export interface VisionFrame {
   state: string
   label: string
   status: string
+  /** DirectionRing LIVE center (recenter-updated); null before calibration */
+  ringCenter?: { x: number; y: number } | null
   stepId: 'center' | 'reach' | 'pinch' | null
   stepProgress: number
   score: number

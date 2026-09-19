@@ -67,6 +67,9 @@ export function useVisionInput(): VisionInputHandle {
   const lastPublishRef = useRef(0)
 
   const onEvent = useCallback((event: VisionEvent) => {
+    // R135: the diagnostics/E2E bus carries EVERY event — offhand pause and
+    // hands-apart/together carry no key but are future-R-N semantics.
+    window.dispatchEvent(new CustomEvent<VisionEvent>('vision-input', { detail: event }))
     if (!event.key) return
     const norm = event.key === 'Space' ? 'space' : event.key.toLowerCase()
     if (event.down) {
@@ -75,8 +78,6 @@ export function useVisionInput(): VisionInputHandle {
     } else {
       heldRef.current.delete(norm)
     }
-    // event bus retained for diagnostics/E2E (same shape as the standalone demo)
-    window.dispatchEvent(new CustomEvent<VisionEvent>('vision-input', { detail: event }))
   }, [])
 
   const onFrame = useCallback((frame: Partial<VisionFrame>) => {
@@ -104,12 +105,15 @@ export function useVisionInput(): VisionInputHandle {
         config: {
           wasmBase: new URL('vendor/mediapipe', base).href,
           handModel: new URL('models/hand_landmarker.task', base).href,
-          // R132 perf budget: faceless pipeline (expression keys are reserved,
-          // not consumed by the games) + single hand + capped inference rate +
-          // modest camera request — detection shares the main thread with the
-          // game loop, so this roughly halves the per-frame cost.
-          faceModel: null,
-          numHands: 1,
+          // R135 (research P0-2): the face pipeline is back for modifier keys
+          // (brow=Shift / jaw=E / smile=Enter). The R132 faceless cut is
+          // reversed at 1/3 rate — face is a slow signal, adaptFaceRate
+          // throttles further under load (p95 > 55ms → everyN escalates).
+          faceModel: new URL('models/face_landmarker.task', base).href,
+          // R135 (guide §3.6): dual-hand — off-hand pinch → KeyF (games
+          // consume keys.has('f') when a skill mapping lands), off-hand
+          // open-palm pause + hands apart/together ride the event bus.
+          numHands: 2,
           maxFps: 30,
           // R134 (upstream v2 / PERFORMANCE_RESEARCH): 640×360 capture — hand
           // inference scales with pixels, this halves it vs 640×480 on the GPU
@@ -117,7 +121,12 @@ export function useVisionInput(): VisionInputHandle {
           preferLowRes: true,
           cameraLowRes: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 60, min: 15 } },
           // calibration profile survives enable/disable cycles
-          session: { storage: localStorage, requireFace: false },
+          session: {
+            storage: localStorage,
+            requireFace: false,
+            faceEveryN: 3,
+            dualHand: { enabled: true, primaryHand: 'Right', offPinchKey: 'KeyF' },
+          },
           pinch: { key: 'Space' },
         },
         onEvent,

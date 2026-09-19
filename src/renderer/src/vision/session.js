@@ -536,6 +536,12 @@ export class SessionController {
     return {
       state: this.state,
       label: this.label(),
+      // RGBBox (R135): the DirectionRing's LIVE center — recenter drift-healing
+      // only updates the ring's internal center, so profile.center (the
+      // calibration snapshot) goes stale; analog consumers must read this.
+      // Cloned: recenter mutates the ring's object in place, and snapshots
+      // must not alias live engine state.
+      ringCenter: this.handEngine.direction.center ? { ...this.handEngine.direction.center } : null,
       stepIdx: this.calStepIdx,
       stepId: this.state === 'calibrating' ? CAL_STEPS[this.calStepIdx].id : null,
       stepProgress: this.state === 'calibrating'
