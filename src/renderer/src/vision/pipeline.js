@@ -108,6 +108,9 @@ export class VisionPipeline {
   forceReady(profile) { this.session.forceReady(profile); }
   applySettings(patch) { this.session.applySettings(patch); }
   setMirror(m) { this.mirror = m; }
+  setTextMode(on) { this.chords.setTextMode(on); }
+  chordBackspace() { this.chords.backspace(); }
+  chordBuffer() { return this.chords.buffer; }
 
   /**
    * One processed frame. Camera mode passes `bitmap` (ImageBitmap, already
@@ -185,7 +188,7 @@ export class VisionPipeline {
       this.predLast = null;
       this.predVel = { x: 0, y: 0 };
     }
-    if (snapshot) snapshot.hostNowMs = nowMs;
+    if (snapshot) { snapshot.hostNowMs = nowMs; snapshot.chordBuffer = this.chords.buffer; }
     // profile persistence is proxied to the main thread (workers lack localStorage)
     if (this.deps.onProfileSave && events.some((e) => e.name === 'calibrated')) {
       this.deps.onProfileSave(this.session.profile);

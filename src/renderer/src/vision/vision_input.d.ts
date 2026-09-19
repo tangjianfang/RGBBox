@@ -54,6 +54,8 @@ export interface VisionFrame {
   geomPredicted?: { palm: { x: number; y: number }; pinch: number; scale: number } | null
   /** host-side performance.now() when this snapshot was produced */
   hostNowMs?: number
+  /** R142-E5: committed chord-text characters (host-side buffer) */
+  chordBuffer?: string
   /** null when no hand passed the score floor this frame */
   geom?: { palm: { x: number; y: number }; pinch: number; scale: number } | null
   /** 21 landmarks of the tracked (primary) hand, selfie-space — skeleton layer */

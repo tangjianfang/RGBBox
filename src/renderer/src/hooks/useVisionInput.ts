@@ -53,6 +53,10 @@ export interface VisionInputHandle {
   setMirror(mirror: boolean): void
   mirror: boolean
   /** R141-B: capture precision — fast 640×360 (games) vs precise 960×540 (cursor/assistant). */
+  /** R142-E5: chord text mode — chords emit characters into chordBuffer() */
+  setChordTextMode(on: boolean): void
+  chordBackspace(): void
+  chordBuffer(): string
   setCapturePrecision(precise: boolean): void
   /** R136: latency-vs-accuracy preset (confirmMs 90/45/0). */
   setSensitivity(level: VisionSensitivity): void
@@ -287,6 +291,12 @@ export function useVisionInput(): VisionInputHandle {
     channelRef.current?.postMessage({ type: 'mirror', m })
   }, [])
 
+  const setChordTextMode = useCallback((on: boolean) => {
+    channelRef.current?.postMessage({ type: 'textmode', on })
+  }, [])
+  const chordBackspace = useCallback(() => channelRef.current?.postMessage({ type: 'backspace' }), [])
+  const chordBuffer = useCallback((): string => (frameRef.current?.chordBuffer as string | undefined) ?? '', [])
+
   const setCapturePrecision = useCallback((precise: boolean) => {
     channelRef.current?.postMessage({ type: 'capture', camera: precise ? { width: 960, height: 540, frameRate: 60 } : { width: 640, height: 360, frameRate: 60 } })
   }, [])
@@ -302,7 +312,7 @@ export function useVisionInput(): VisionInputHandle {
 
   return {
     enable, enableSynthetic, disable, recalibrate, setPaused, resumeActive, skipCalibration, applySettings,
-    setMirror, mirror, setCapturePrecision, setSensitivity, sensitivity,
+    setMirror, mirror, setChordTextMode, chordBackspace, chordBuffer, setCapturePrecision, setSensitivity, sensitivity,
     enabled, label, state, stepId, handSeen, frameRef, heldRef, queueRef,
   }
 }

@@ -162,6 +162,8 @@ channel.onmessage = async (ev) => {
     case 'recalibrate': pipeline.recalibrate(); break
     case 'forceReady': pipeline.forceReady(msg.profile); break
     case 'mirror': pipeline.setMirror(msg.m); break
+    case 'textmode': pipeline.setTextMode(msg.on); break
+    case 'backspace': pipeline.chordBackspace(); break
     case 'capture':
       // R141-B: precision mode switch — restart the stream with new constraints
       if (!msg.synthetic && stream) {

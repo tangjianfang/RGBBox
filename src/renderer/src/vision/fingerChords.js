@@ -42,6 +42,21 @@ export const CHORD_VOCAB = {
   'index+pinky': 'next',        // reserved: list paging (E4)
 };
 
+
+// ---- E5: chord TEXT entry (R142-E5) --------------------------------------
+// One chord = one character. Single fingers carry the most frequent letters
+// (ETAOIN order), pairs carry the rest — 5-key chord evidence: ~20 wpm after
+// ~6h practice (Academia study). Mode chords (pause/menu/…) never emit chars.
+export const CHORD_CHARS = {
+  'index': 'e', 'middle': 't', 'ring': 'a', 'pinky': 'o',
+  'thumb': 'i',
+  'index+middle': 'n', 'index+ring': 's', 'index+pinky': 'h',
+  'middle+ring': 'r', 'middle+pinky': 'd', 'ring+pinky': 'l',
+  'thumb+index': 'c', 'thumb+middle': 'u', 'thumb+ring': 'm',
+  'thumb+pinky': 'w',
+  'index+middle+ring': ' ', // space via the widest easy chord
+}
+
 function patternOf(f) {
   const parts = [];
   if (f.thumb) parts.push('thumb');
@@ -70,6 +85,9 @@ function isNeutral(pattern, f) {
 export class ChordEngine {
   constructor(cfg = {}) {
     this.cfg = { stableFrames: 4, ...cfg };
+    // R142-E5: text mode — the SAME chords emit characters instead of commands
+    this.textMode = false;
+    this.buffer = ''; // committed characters (host-side, echoed in snapshots)
     this.medians = {
       thumb: new Median3(), index: new Median3(), middle: new Median3(),
       ring: new Median3(), pinky: new Median3(),
@@ -80,6 +98,9 @@ export class ChordEngine {
   }
 
   /** @returns {Array<{kind:'chord', name:string, down:true}>} */
+  setTextMode(on) { this.textMode = !!on; if (!on) this.buffer = ''; }
+  backspace() { this.buffer = this.buffer.slice(0, -1); }
+
   update(lm) {
     if (!lm || lm.length < 21) return [];
     const raw = fingerStates(lm);
@@ -101,6 +122,12 @@ export class ChordEngine {
         this.candidate = '';
         this.candidateFrames = 0;
         if (isNeutral(pattern, filtered)) return [];
+        if (this.textMode) {
+          const ch = CHORD_CHARS[pattern];
+          if (!ch) return [];
+          this.buffer += ch;
+          return [{ kind: 'chord', name: 'char:' + ch, down: true }];
+        }
         const name = CHORD_VOCAB[pattern];
         return name ? [{ kind: 'chord', name, down: true }] : [];
       }

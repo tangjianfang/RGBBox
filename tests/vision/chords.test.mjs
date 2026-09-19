@@ -83,3 +83,31 @@ test('≥97% recognition under landmark noise (Monte Carlo, 200 hands × 4 chord
   const rate = hit / total
   expect(rate).toBeGreaterThanOrEqual(0.97)
 })
+
+// R142-E5: chord TEXT mode — same engine, same stability rules, characters
+// instead of commands; command vocabulary stays silent in text mode.
+import { ChordEngine as ChordEngineE5 } from '../../src/renderer/src/vision/fingerChords.js'
+
+test('text mode: chords emit char events and build the buffer', () => {
+  const eng = new ChordEngineE5()
+  eng.setTextMode(true)
+  const events = []
+  for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended: ['index'] })))
+  for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended: ['index', 'middle'] })))
+  for (let i = 0; i < 8; i++) events.push(...eng.update(chordHand({ extended: ['index', 'middle', 'ring'] }))) // space
+  expect(events.map((e) => e.name)).toEqual(['char:e', 'char:n', 'char: '])
+  expect(eng.buffer).toBe('en ')
+})
+
+test('text mode off: the same chords are commands again and the buffer clears', () => {
+  const eng = new ChordEngineE5()
+  eng.setTextMode(true)
+  for (let i = 0; i < 8; i++) eng.update(chordHand({ extended: ['index'] }))
+  eng.setTextMode(false)
+  expect(eng.buffer).toBe('')
+  // engine must see a non-neutral transition again: go neutral first
+  for (let i = 0; i < 6; i++) eng.update(chordHand({ extended: [] }))
+  const ev = []
+  for (let i = 0; i < 8; i++) ev.push(...eng.update(chordHand({ extended: ['index'] })))
+  expect(ev.map((e) => e.name)).toEqual(['select'])
+})

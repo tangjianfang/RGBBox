@@ -27,6 +27,7 @@ import { MetricsCollector } from './engine/metricsCollector'
 import { frameAgeState } from './engine/frameAge'
 import { loadStoredView, persistView, resolveInitialView, type View } from './hooks/tabNavigation'
 import { AppShell } from './components/AppShell'
+import { VisionAssistant } from './components/vision/VisionAssistant'
 import { ModuleRail } from './components/ModuleRail'
 import { DashboardView } from './components/DashboardView'
 import { SettingsView } from './components/SettingsView'
@@ -671,6 +672,8 @@ export function App(): JSX.Element {
     localStorage.getItem('rgbbox:selectedLayerId') ?? 'layer-rainbow'
   )
   // R86: single-view navigation — left rail direct switching, last view persisted
+  // R142-E4b: app root for the vision assistant's full-window cursor overlay
+  const appRootRef = useRef<HTMLElement | null>(null)
   const [activeView, setActiveView] = useState<View>(() =>
     resolveInitialView(loadStoredView(localStorage), MODEL3D_VIEW_ENABLED)
   )
@@ -1799,7 +1802,7 @@ export function App(): JSX.Element {
   return (
     <>
       <div className="titlebar-drag" aria-hidden="true" />
-      <main className="app-shell">
+      <main className="app-shell" ref={appRootRef}>
       <AppShell
         title={t(getTabMeta(activeView).labelKey)}
         onOpenSettings={() => setActiveView('settings')}
@@ -2966,6 +2969,7 @@ export function App(): JSX.Element {
 
       </section>
       </AppShell>
+      <VisionAssistant activeView={activeView} onNavigate={setActiveView} rootRef={appRootRef} />
     </main>
     </>
   )
