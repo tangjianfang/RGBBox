@@ -186,9 +186,20 @@ function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn, 
   ctx.strokeStyle = withAlpha(stateColor, 0.55)
   circle(ctx, cx, cy, activeZone * k, false)
 
-  // 8 sector spokes + highlight of the held sector(s)
+  // 8 sector spokes + highlight of the held sector(s). R137: 16 tick marks —
+  // the ANALOG path is continuous (no sector quantization for movement); the
+  // ticks show the finer resolution, the 8 fat spokes remain the key layout.
   const held = vision.heldRef.current
   const pinchHeld = held.has('space')
+  for (let t = 0; t < 16; t++) {
+    const rad = (t * 22.5 * Math.PI) / 180
+    const isCardinal = t % 2 === 0
+    const inner = deadZone * k
+    const outer = isCardinal ? R - 6 : R - 14
+    ctx.strokeStyle = 'rgba(148,170,184,0.22)'
+    ctx.lineWidth = 1
+    line(ctx, cx + Math.cos(rad) * inner, cy + Math.sin(rad) * inner, cx + Math.cos(rad) * outer, cy + Math.sin(rad) * outer)
+  }
   for (let s = 0; s < 8; s++) {
     const deg = s * 45
     const rad = (deg * Math.PI) / 180
@@ -233,6 +244,17 @@ function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn, 
     } else {
       smooth.x += (tx - smooth.x) * 0.35
       smooth.y += (ty - smooth.y) * 0.35
+    }
+    // R137: continuous direction ray — the exact analog angle extended from
+    // the palm dot to the rim (dashed), showing movement is NOT sectorized
+    const vx = smooth.x - cx
+    const vy = smooth.y - cy
+    const vlen = Math.hypot(vx, vy)
+    if (vlen > 6) {
+      ctx.strokeStyle = withAlpha(stateColor, 0.5)
+      ctx.setLineDash([4, 4])
+      line(ctx, smooth.x, smooth.y, cx + (vx / vlen) * (R - 2), cy + (vy / vlen) * (R - 2))
+      ctx.setLineDash([])
     }
     ctx.strokeStyle = withAlpha(stateColor, 0.4)
     line(ctx, cx, cy, smooth.x, smooth.y)

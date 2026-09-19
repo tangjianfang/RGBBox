@@ -1370,8 +1370,16 @@
 - **R136.4 校准降门槛**：校准中横幅给「跳过校准（用默认参数）」按钮 → `session.forceReady()`；跳过后仍可手动重新校准。
 - **Non-Goals**：隐藏 BrowserWindow 方案（worker 已达成同目标且免主进程/多窗生命周期）；注视+捏合/头姿/序列手势（研究 P1/P2 另立 R-N）；相机画面 PIP（骨架层已达"看见系统所见"目的，视频流跨窗成本高）；自动镜像检测（handedness 语义在自拍约定下不可靠，手动+可视是诚实方案）。
 - **受影响文件**：`src/renderer/src/vision/pipeline.ts`（新）、`visionWorker.ts`（新）、`src/renderer/src/hooks/useVisionInput.ts`（重写为 worker 客户端）、`src/renderer/src/components/vision/{VisionPad,VisionBanner}.tsx`（骨架层/新横幅）、`MiniGamesView.tsx`（镜像/档位/跳过按钮 + 横幅挂载）、`i18n/index.tsx`、`styles.css`（横幅样式，surgical hunk）、tests（pipeline 单测 + hook worker 协议 mock + 组件冒烟）、`scripts/verify-r131-vision.mjs`（延迟/fps/横幅取证扩展）。
-- **验收点（验证合理性）**：①typecheck + 全量 `yarn test` 0 失败；②**Pipeline 单测**：fake landmarker 下 事件流/镜像翻转两态方向映射正确（左挥→arrowleft，镜像开→反向）/confirmMs 档位透传/合成源闭环；③**E2E 量化**：a) 端到端延迟由档位单测（sport 0ms 即发）+ 主线程解放共同保证（合成源 onset 时刻不可观测，改为证据链）；b) 推理运行时游戏 **rAF fps ≥55**（主线程解放取证）；c) 骨架源数据流经快照（pickedLandmarks）；d) 横幅挂载与状态即时发布（hook 单测：state 变化绕过节流立即发布）；e) 既有断言零回归；④打包 dist:dir 内宿主窗口链路正常（含握手）。**状态：✅**
 - **实施证据（2026-09-19）**：`yarn typecheck` 0 error；全量 `yarn test` **102 files / 951 passed / 0 失败**（新增 pipeline 6 项：**镜像开/关同 raw 流方向映射反向的证明**、sport 0ms 即发、profile-save 代理、合成闭环；hook 重写为通道协议 10 项含「state 变化立即发布」；组件 3 项走 FakeHost 通道）；`yarn dist:dir` 后 `scripts/verify-r131-vision.mjs` **21/21 PASS**——决定性取证：**`game rAF fps with vision running: 60`**（推理与相机采集全部离开主线程，结构目标达成）+ `swarm player moved 70.0 units in 3s (axis 0.92,0.39)` 闭环零回归 + 横幅挂载 + 骨架源流动 + 打包产物宿主窗口握手正常（host-hello 竞态修复后）。调试过程考古（诊断脚本已删）：Worker 三方案败因与 BroadcastChannel 不缓存陷阱均已写入 R136.1 条款，防止后续重蹈。**真机（用户）复测**：延迟体感（sport 档 confirmMs=0）、方向不对时用 ⇄ 镜像开关一键纠正（pad 骨架可见系统所见）、横幅即时提示、卡顿应彻底消失（推理在独立进程）。**状态：✅（代码+自动化闭环；用户真机为最终验收）**
+
+### R137. 体感上下极性 bug 修复（R135 模拟量引入）+ 连续方向体验（2026-09-19 用户实测 R136 反馈「①体感上下方向搞反了 ②方向只有 8 个，尽可能扩展更多方向提高灵敏度和游戏体验」）
+
+> 根因（①）：R135 模拟量路径把方向环的数学约定 `dy = -(palm.y - center.y)`（**上为正**，供 atan2 扇区判定）直接写进 `survivalRef.axis`，而 Survival 引擎 axis 是屏幕坐标（**y 向下为正**，`player.y += moveY`）——手上移 → analog.y 为正 → 飞船下移。键盘路径（ArrowUp→引擎 dy=-1）极性正确，8 向时代无症状，模拟量时代上下颠倒——与用户报告精确吻合（组件级可复现：掌心 y<中心 y 的快照 → axis.y>0 错误为正）。②：模拟量本身已是 360° 连续（无扇区量化），本条把跟随调快 + 方向盘视觉连续化；8 向 keys 环保留（键盘语义上限=8 个方向键组合，Tetris 4 向）。
+- **R137.1 极性修复**：`pollVision` 模拟量改用屏幕约定直接计算 `dyDown = (palm.y - ringCenter.y) × gainY`（去掉负号；dx 不变——x 两约定同向）写入 axis；组件级回归测试钉死：FakeHost 快照「掌心在中心上方」→ 等一帧 → `__rgbboxVision.probe().axis.y < 0`（飞船上移），下方 → >0。
+- **R137.2 连续方向**：模拟量指数平滑系数 0.3→0.45（更快跟手，仍抑 30Hz 抖动）；VisionPad 方向刻度 8→16、新增**连续方向射线**（中心→掌心方向的延长射线，角度连续非扇区量化）——用户可见"方向无限"。
+- **受影响文件**：`src/renderer/src/components/MiniGamesView.tsx`（极性 + 平滑系数）、`src/renderer/src/components/vision/VisionPad.tsx`（16 刻度 + 射线）、`tests/renderer/components/MiniGamesView.test.tsx`（极性回归 2 项）。
+- **验收点**：①typecheck + 全量 `yarn test` 0 失败（+极性正反回归）；②E2E 21/21 复跑零回归（swarm 闭环持续成立）；③真机（用户）：手上移=角色上移、连续比例转向（非 8 向顿挫）、方向盘 16 刻度+射线跟随。**状态：✅**
+- **实施证据（2026-09-19）**：`yarn typecheck` 0 error；全量 `yarn test` **102 files / 952 passed / 0 失败**（+极性回归 1 项：FakeHost 快照「掌心在中心上方/下方」→ probe().axis.y 负/正——该测试并揭示 happy-dom `getContext` 返回 null 导致组件测试中游戏循环从未运行，以 noop ctx Proxy 桩修复）；`yarn dist:dir` 后 E2E **21/21 PASS** 零回归；旁证：swarm 3s 位移 70→**182 units**（平滑 0.3→0.45 跟手性提升）、`game rAF fps: 60` 保持。**真机（用户）**：手上移=上移；连续转向手感 + 方向盘 16 刻度与虚线方向射线。**状态：✅（代码+自动化闭环；用户真机为最终验收）**
 
 ### R133. 体感三修——推理跳帧边际 bug（延迟）+ Survival 轴合成（手柄覆盖致不可控）+ 转盘插值（丝滑）（2026-09-19 用户实测 R132 反馈「①体感控制延迟很高 ②移动手势时转盘显示不丝滑 ③控制不了 Nova Swarm 的方向和移动」）
 

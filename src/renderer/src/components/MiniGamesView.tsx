@@ -264,11 +264,15 @@ export function MiniGamesView(): JSX.Element {
       if (geom && ringCenter) {
         const activeZone = (frame?.profile?.activeZone as number | undefined) ?? 0.17
         const deadZone = (frame?.profile?.deadZone as number | undefined) ?? activeZone * 0.55
-        // same transform as DirectionRing (gain 1.4/1.6, camera-up = screen-up)
+        // R137: compute directly in the ENGINE's axis convention (screen
+        // coords — y grows downward, like survival.ts player.y). The R135 cut
+        // reused the DirectionRing's math convention (dy negated, up-positive
+        // for atan2) and wrote it straight into the axis, inverting up/down:
+        // hand up → axis.y positive → ship moved DOWN.
         const dx = (geom.palm.x - ringCenter.x) * VISION_GAIN_X
-        const dy = -(geom.palm.y - ringCenter.y) * VISION_GAIN_Y
+        const dyDown = (geom.palm.y - ringCenter.y) * VISION_GAIN_Y
         const nx = dx / activeZone
-        const ny = dy / activeZone
+        const ny = dyDown / activeZone
         const len = Math.hypot(nx, ny)
         if (len > deadZone / activeZone) {
           const scale = len > 1 ? 1 / len : 1
@@ -276,8 +280,9 @@ export function MiniGamesView(): JSX.Element {
           targetY = ny * scale
         }
       }
-      visionAnalogRef.current.x += (targetX - visionAnalogRef.current.x) * 0.3
-      visionAnalogRef.current.y += (targetY - visionAnalogRef.current.y) * 0.3
+      // R137: 0.45 convergence — snappier tracking, still smooths 30Hz steps
+      visionAnalogRef.current.x += (targetX - visionAnalogRef.current.x) * 0.45
+      visionAnalogRef.current.y += (targetY - visionAnalogRef.current.y) * 0.45
       const analog = visionAnalogRef.current
       if (analog.x !== 0 || analog.y !== 0) {
         const ax = survivalRef.current.axis.x + analog.x

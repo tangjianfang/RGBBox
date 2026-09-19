@@ -202,4 +202,61 @@ describe('renderer/components/MiniGamesView', () => {
     fireEvent.click(back)
     expect(rgbboxMocks.visionHostClose).toHaveBeenCalled()
   })
+
+  // R137: the R135 analog path reused the DirectionRing's up-positive math
+  // convention inside the engine's down-positive axis — hand up moved the
+  // ship DOWN. Pin the polarity in both directions via the seam probe.
+  it('analog polarity: palm ABOVE center drives axis.y negative (ship up), below → positive (R137)', async () => {
+    // happy-dom has no real 2D context — the game loop (and pollVision with
+    // it) never starts. Stub getContext with an all-noop proxy.
+    const noopCtx = new Proxy({}, {
+      get: (_t, prop) => {
+        if (prop === 'canvas') return undefined
+        if (prop === 'measureText') return () => ({ width: 10 })
+        return () => undefined
+      },
+      set: () => true,
+    }) as unknown as CanvasRenderingContext2D
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm
+    await act(async () => {
+      await (window as unknown as { __rgbboxVision: { enableSynthetic(): Promise<void> } }).__rgbboxVision.enableSynthetic()
+    })
+    const center = { x: 0.5, y: 0.55 }
+    const sendPalm = async (palmY: number) => {
+      await act(async () => {
+        fakeHost.send({ type: 'snapshot', snapshot: {
+          state: 'active', label: 'x', stepProgress: 0,
+          ringCenter: center,
+          geom: { palm: { x: center.x, y: palmY }, pinch: 1.1, scale: 0.18 },
+          profile: { activeZone: 0.17, deadZone: 0.09 },
+          stats: { infer: { n: 9, p50: 8, p95: 12, mean: 9 }, fps: 30, inferFps: 30, delegate: 'GPU', lowFps: false },
+        } })
+      })
+      // let the game rAF run pollVision at least once
+      await new Promise((r) => setTimeout(r, 60))
+      return (window as unknown as { __rgbboxVision: { probe(): { axis: { x: number; y: number } } } }).__rgbboxVision.probe().axis
+    }
+    const up = await sendPalm(center.y - 0.15) // hand above center → screen up
+    expect(up.y).toBeLessThan(0)
+    expect(up.x).toBeCloseTo(0, 1)
+    const down = await sendPalm(center.y + 0.15)
+    expect(down.y).toBeGreaterThan(0)
+    ctxSpy.mockRestore()
+    const right = await sendPalm(center.y + 0.15) // reuse baseline, then x
+    await act(async () => {
+      fakeHost.send({ type: 'snapshot', snapshot: {
+        state: 'active', label: 'x', ringCenter: center,
+        geom: { palm: { x: center.x + 0.15, y: center.y }, pinch: 1.1, scale: 0.18 },
+        profile: { activeZone: 0.17, deadZone: 0.09 },
+        stats: { infer: { n: 9, p50: 8, p95: 12, mean: 9 }, fps: 30, inferFps: 30, delegate: 'GPU', lowFps: false },
+      } })
+    })
+    await new Promise((r) => setTimeout(r, 60))
+    const probe = (window as unknown as { __rgbboxVision: { probe(): { axis: { x: number; y: number } } } }).__rgbboxVision.probe().axis
+    expect(right.y).toBeGreaterThan(0)
+    expect(probe.x).toBeGreaterThan(0)
+    expect(probe.y).toBeCloseTo(0, 1)
+  })
 })
