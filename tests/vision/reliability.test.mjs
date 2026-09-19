@@ -7,9 +7,9 @@
 //  PH-0  low/medium-score phantom flashes must produce ZERO events
 //  SK-0  no key may ever remain held after hand loss (stuck-key invariant)
 //  LT-P95 trigger latency from gesture onset P95 ≤ 200ms @30fps and @15fps
-// R131: ported from the vision-game-input module (node:test → vitest).
 
-import { test, expect } from 'vitest';
+import { test } from 'vitest';
+import assert from 'node:assert/strict'; // works under vitest node env
 import { SessionDriver, atPalm, CENTER, mulberry32, gaussian } from './helpers.mjs';
 
 const QUICK_CFG = { calSteps: { center: 500, reach: 700, pinch: 1100 } };
@@ -31,7 +31,7 @@ test('FP-0: idle hand with noise never fires inputs (20 runs × 30s)', () => {
       return atPalm(CENTER.x + gaussian(rng, sigma), CENTER.y + gaussian(rng, sigma));
     });
     const inputs = events.filter((e) => e.kind === 'direction' || (e.kind === 'pinch' && e.name !== 'calibrated'));
-    expect(inputs.length, `seed=${seed} sigma=${sigma.toFixed(3)} false events: ${JSON.stringify(inputs.slice(0, 5))}`).toBe(0);
+    assert.equal(inputs.length, 0, `seed=${seed} sigma=${sigma.toFixed(3)} false events: ${JSON.stringify(inputs.slice(0, 5))}`);
   }
 });
 
@@ -47,7 +47,7 @@ test('PH-0: single-frame phantom flashes never fire inputs (20 runs)', () => {
       return atPalm(CENTER.x + gaussian(rng, 0.004), CENTER.y + gaussian(rng, 0.004));
     });
     const inputs = events.filter((e) => e.kind === 'direction' || e.kind === 'pinch');
-    expect(inputs.length, `seed=${seed}: ${JSON.stringify(inputs.slice(0, 5))}`).toBe(0);
+    assert.equal(inputs.length, 0, `seed=${seed}: ${JSON.stringify(inputs.slice(0, 5))}`);
   }
 });
 
@@ -65,7 +65,7 @@ test('SK-0: no stuck keys across 200 random gesture/loss cycles', () => {
   d.collect(120, { absent: true }); // guaranteed full loss
   const events = d.session.stop();
   const stillHeld = events.filter((e) => e.down);
-  expect(stillHeld, 'stop() must release exactly the held keys, never press new ones').toEqual([]);
+  assert.deepEqual(stillHeld, [], 'stop() must release exactly the held keys, never press new ones');
 });
 
 test('LT-P95: pinch trigger latency P95 ≤ 200ms @30fps', () => {
@@ -83,13 +83,13 @@ test('LT-P95: pinch trigger latency P95 ≤ 200ms @30fps', () => {
       const { events } = d.frame({ ...atPalm(CENTER.x, CENTER.y), ...spec });
       if (onset >= 0 && events.some((e) => e.down && e.key === 'Space')) { fired = i - onset; break; }
     }
-    expect(fired >= 0, 'pinch must fire').toBeTruthy();
+    assert.ok(fired >= 0, 'pinch must fire');
     lat.push((fired + 1) * d.dt); // onset frame counts as detection latency too
     rng(); rng();
   }
   lat.sort((a, b) => a - b);
   const p95 = lat[Math.floor(lat.length * 0.95)];
-  expect(p95 <= 200, `P95 latency ${p95}ms — budget 200ms @30fps`).toBeTruthy();
+  assert.ok(p95 <= 200, `P95 latency ${p95}ms — budget 200ms @30fps`);
 });
 
 test('LT-P95: direction confirm latency P95 ≤ 250ms @30fps', () => {
@@ -103,12 +103,12 @@ test('LT-P95: direction confirm latency P95 ≤ 250ms @30fps', () => {
       const { events } = d.frame(spec);
       if (events.some((e) => e.down && e.key === 'ArrowRight')) { fired = i - 5; break; }
     }
-    expect(fired >= 0, 'direction must fire').toBeTruthy();
+    assert.ok(fired >= 0, 'direction must fire');
     lat.push((fired + 1) * d.dt);
   }
   lat.sort((a, b) => a - b);
   const p95 = lat[Math.floor(lat.length * 0.95)];
-  expect(p95 <= 250, `P95 latency ${p95}ms — budget 250ms @30fps`).toBeTruthy();
+  assert.ok(p95 <= 250, `P95 latency ${p95}ms — budget 250ms @30fps`);
 });
 
 test('LT-15fps: detection still works at 15fps (dim-light auto-exposure)', () => {
@@ -116,5 +116,5 @@ test('LT-15fps: detection still works at 15fps (dim-light auto-exposure)', () =>
   d.session.forceReady({});
   d.collect(4, atPalm(CENTER.x, CENTER.y));
   const ev = d.collect(10, { ...atPalm(CENTER.x, CENTER.y), pinch: 0.25 });
-  expect(ev.some((e) => e.down && e.key === 'Space'), 'pinch must fire at 15fps').toBeTruthy();
+  assert.ok(ev.some((e) => e.down && e.key === 'Space'), 'pinch must fire at 15fps');
 });

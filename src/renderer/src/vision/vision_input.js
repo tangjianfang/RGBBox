@@ -24,6 +24,11 @@ export const DEFAULT_CONFIG = {
   // integration doesn't consume expression keys and halves the per-frame
   // inference budget on the main thread.
   camera: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60, min: 30 } },
+  // upstream v2 (PERFORMANCE_RESEARCH): hand inference scales with capture
+  // pixels — 640×360 halves it vs 1280×720 on the GPU path, no precision
+  // loss (model input is 192/224px).
+  preferLowRes: true,
+  cameraLowRes: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 60, min: 15 } },
   numHands: 2,
   // R132: cap the inference rate — detection runs on the renderer main thread
   // next to the game loop, so a 60fps camera must not mean 60 inferences/s.
@@ -43,6 +48,14 @@ export class VisionInput {
     this.session = new SessionController({ ...this.cfg.session, pinch: this.cfg.pinch, direction: this.cfg.direction, faceBindings: this.cfg.faceBindings });
     this.inferMeter = new LatencyMeter();
     this.fps = new FpsCounter();
+    // upstream v2: per-stage latency meters — hand/face inference split, plus
+    // camera frame AGE at callback time (sensor → pipeline → us) from rVFC's
+    // presentationTime, and the camera's ACTUAL negotiated track settings
+    // (diagnosing "asked for 60fps, got 30fps" is impossible without it).
+    this.handMeter = new LatencyMeter();
+    this.faceMeter = new LatencyMeter();
+    this.acquireMeter = new LatencyMeter();
+    this.camSettings = null;
     // R133: rate of PROCESSED frames (this.fps counts camera ticks including
     // capped/skipped ones) — surfaced in stats so the pad shows real inference Hz.
     this.inferFpsCounter = new FpsCounter();
@@ -88,11 +101,17 @@ export class VisionInput {
   }
 
   async startCamera(deviceId) {
+    // upstream v2: preferLowRes — the benchmarked sweet spot for hand inference
+    const cam = this.cfg.preferLowRes ? this.cfg.cameraLowRes : this.cfg.camera;
     const constraints = {
       audio: false,
-      video: deviceId ? { ...this.cfg.camera, deviceId: { exact: deviceId } } : this.cfg.camera,
+      video: deviceId ? { ...cam, deviceId: { exact: deviceId } } : cam,
     };
     this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    // read back what the camera ACTUALLY negotiated — diagnosing "asked for
+    // 60fps, got 30fps" is impossible without this (upstream v2)
+    const track = this.stream.getVideoTracks()[0];
+    this.camSettings = track?.getSettings?.() ?? null;
     this.video.srcObject = this.stream;
     await new Promise((r) => (this.video.onloadedmetadata = r));
     await this.video.play();
@@ -102,9 +121,9 @@ export class VisionInput {
   }
 
   /** Camera-free demo: synthetic landmarks drive the identical session logic. */
-  startSynthetic() {
+  startSynthetic(opts = {}) {
     import('./synthetic.js').then(({ SyntheticSource }) => {
-      this.synthetic = new SyntheticSource();
+      this.synthetic = new SyntheticSource(opts);
       this._running = true;
       this.session.start(performance.now());
       this.onStatus('synthetic demo running (no camera)');
@@ -146,9 +165,12 @@ export class VisionInput {
     }
   }
 
-  _tick(now) {
+  _tick(now, meta) {
     if (!this._running) return;
     this.fps.tick(now);
+    // upstream v2: camera-frame age at callback time (sensor → pipeline → us).
+    // presentationTime is on the performance.now() clock; only rVFC provides it.
+    if (meta?.presentationTime) this.acquireMeter.push(now - meta.presentationTime);
     if (this.session.paused) {
       this._scheduleNext();
       return;
@@ -185,23 +207,29 @@ export class VisionInput {
         : (this.session.cal?.id ?? 'center'); // cooperate with the wizard
       const s = this.synthetic.sample(nowMs, phase);
       // selfie-space convention (flip once at entry), same as camera path
-      hands = [{ landmarks: s.hand.map((p) => ({ ...p, x: 1 - p.x })), score: 0.9 }];
+      hands = [{ landmarks: s.hand.map((p) => ({ ...p, x: 1 - p.x })), score: 0.9, handedness: 'Right' }];
+      if (s.hand2) hands.push({ landmarks: s.hand2.map((p) => ({ ...p, x: 1 - p.x })), score: 0.9, handedness: 'Left' });
       faceMap = this.face ? s.faceBlend : null;
     } else {
       let ts = Math.round(nowMs);
       if (ts <= this.lastTs) ts = this.lastTs + 1;
       this.lastTs = ts;
 
+      const th0 = performance.now();
       const hres = this.hand.detectForVideo(this.video, ts);
+      this.handMeter.push(performance.now() - th0);
       const hs = hres.handednesses || hres.handedness || [];
       hands = (hres.landmarks || []).map((lm, i) => ({
         // selfie-space flip happens once, here, for the camera path
         landmarks: lm.map((p) => ({ x: 1 - p.x, y: p.y, z: p.z })),
         score: hs[i]?.[0]?.score ?? 0,
+        handedness: hs[i]?.[0]?.categoryName ?? '',
       }));
 
       if (this.face && this.frameCount % this.session.faceEveryN === 0) {
+        const tf0 = performance.now();
         const fres = this.face.detectForVideo(this.video, ts);
+        this.faceMeter.push(performance.now() - tf0);
         if (fres.faceBlendshapes?.length) faceMap = blendshapeMap(fres.faceBlendshapes[0].categories);
       }
     }
@@ -244,10 +272,17 @@ export class VisionInput {
     const s = this.inferMeter.stats();
     return {
       infer: s,
+      hand: this.handMeter.stats(),
+      face: this.faceMeter.stats(),
+      acquire: this.acquireMeter.stats(),
       fps: this.fps.fps,
       inferFps: this.inferFpsCounter.fps,
       delegate: this.delegate,
       lowFps: this.fps.fps > 0 && this.fps.fps < 18,
+      cam: this.camSettings ? {
+        w: this.camSettings.width, h: this.camSettings.height,
+        fps: this.camSettings.frameRate,
+      } : null,
     };
   }
 }

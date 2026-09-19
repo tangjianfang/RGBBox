@@ -9,7 +9,7 @@
 //      ▲                            │ (retry step on bad data)            │
 //      └── lost ≥ handLostRecalFrames ◀── lost ≥ release frames ──────────┘
 
-import { HandEngine, handGeometry } from './gesture_engine.js';
+import { HandEngine, OffHandEngine, GapEngine, handGeometry } from './gesture_engine.js';
 import { FaceEngine, blendshapeMap } from './face_engine.js';
 
 export const DEFAULT_SESSION_CFG = {
@@ -19,15 +19,28 @@ export const DEFAULT_SESSION_CFG = {
   handLostRecalFrames: 45,
   faceLostReleaseFrames: 10,
   faceEveryN: 1,
-  // R132: the games integration runs the faceless pipeline (faceModel:null —
-  // expressions are reserved, not consumed). false skips the two face gates:
-  // calibration entry (searching needs hand+face) and the center-step faceN
-  // check. Default true keeps the upstream camera+face behavior.
+  // RGBBox (R132): the games integration runs the faceless pipeline
+  // (faceModel:null — expressions are reserved, not consumed). false skips
+  // the two face gates: calibration entry (searching needs hand+face) and
+  // the center-step faceN check. Default true keeps upstream behavior.
   requireFace: true,
-  // quality gates (industrial rule: reject bad calibration, never ship it)
-  maxCenterJitter: 0.03,     // normalized std of palm at rest
-  minReach: 0.14,            // p90 radius required from center step
-  minSectorsCovered: 5,      // of 8, during reach step
+  // dual-hand: primary hand drives direction+pinch, off hand drives secondary
+  // actions. handedness labels come from MediaPipe ('Left'/'Right', selfie
+  // convention); if a device reports them swapped, set swapHands: true.
+  dualHand: {
+    enabled: false,
+    primaryHand: 'Right',   // 'Right' | 'Left'
+    swapHands: false,       // some cameras report mirrored handedness
+    offPinchKey: 'KeyF',    // off-hand pinch → this key
+    gapOpen: 1.6,           // two-hand spread gesture (hand-scale units)
+    gapClose: 1.05,
+    offLostReleaseFrames: 5,
+  },
+  // quality gates (industrial rule: reject bad calibration, never ship it —
+  // but extend the window BEFORE retrying; see _gate)
+  maxCenterJitter: 0.038,    // normalized std of palm at rest (real-hand allowance)
+  minReach: 0.12,            // p90 radius required from center step
+  minSectorsCovered: 4,      // of 8, during reach step (cardinals suffice)
   minPinchSeparation: 0.25,  // p90(open) - p10(closed)
   storage: null,             // optional {getItem,setItem} (localStorage in browser)
 };
@@ -59,13 +72,21 @@ function std(samples) {
 export class SessionController {
   constructor(cfg = {}) {
     this.cfg = { ...DEFAULT_SESSION_CFG, ...cfg };
+    this.cfg.dualHand = { ...DEFAULT_SESSION_CFG.dualHand, ...(cfg.dualHand || {}) };
     this.handEngine = new HandEngine({ pinch: this.cfg.pinch, direction: this.cfg.direction });
+    this.offEngine = new OffHandEngine({
+      pinchKey: this.cfg.dualHand.offPinchKey,
+      pinch: this.cfg.pinch,
+    });
+    this.gap = new GapEngine({ open: this.cfg.dualHand.gapOpen, close: this.cfg.dualHand.gapClose });
     this.faceEngine = new FaceEngine({ bindings: this.cfg.faceBindings });
     this.state = 'idle';
     this.paused = false;
     this.score = 0;
     this.handLost = 0;
     this.faceLost = 0;
+    this.offLost = 0;
+    this._gapNorm = null;
     this.faceEveryN = this.cfg.faceEveryN;
     this.frameCount = 0;
     this.profile = null;
@@ -124,9 +145,14 @@ export class SessionController {
   }
 
   _releaseAll(state, status) {
-    const events = [...this.handEngine.onLost(), ...this.faceEngine.releaseAll()];
+    const events = [
+      ...this.handEngine.onLost(),
+      ...this.offEngine.releaseAll(),
+      ...this.gap.releaseAll(),
+      ...this.faceEngine.releaseAll(),
+    ];
     this.state = state;
-    this.handLost = this.faceLost = 0;
+    this.handLost = this.faceLost = this.offLost = 0;
     this.cal = null;
     this.status = status;
     return events;
@@ -147,21 +173,61 @@ export class SessionController {
   }
 
   _newStepAcc(id) {
-    const acc = { id, palm: { x: 0, y: 0 }, palmN: 0, xs: [], ys: [], radii: [], sectors: new Set(), pinchSamples: [], faceN: 0, faceSums: {} };
+    const acc = {
+      id,
+      stepMs: this.cfg.calSteps[id], // doubled once by the extend mechanism
+      extended: false,
+      frames: 0,        // all frames of this step (hand seen or not)
+      palm: { x: 0, y: 0 }, palmN: 0, xs: [], ys: [], radii: [], sectors: new Set(),
+      pinchSamples: [], pinchCycles: 0, pinchWasClosed: false,
+      faceN: 0, faceSums: {},
+    };
     if (id !== 'center') acc.palm = { ...this.profile.center }; // measure relative to center
     return acc;
   }
 
-  _stepMs() { return this.cfg.calSteps[CAL_STEPS[this.calStepIdx].id]; }
+  _stepMs() { return this.cal?.stepMs ?? this.cfg.calSteps[CAL_STEPS[this.calStepIdx].id]; }
+
+  /**
+   * Quality gate with a GRACEFUL path: when the window expires without
+   * sufficient data, extend the window once (KEEPING all samples) and tell
+   * the user exactly what is missing; only a second failure retries the step.
+   * Real-camera feedback: hard-restarting on insufficient data mid-gesture
+   * trapped users in an endless "捏合次数太少" retry loop.
+   */
+  _gate(ok, shortReason, retryReason, acc) {
+    if (ok) return null;
+    if (!acc.extended) {
+      acc.extended = true;
+      acc.stepMs *= 2;
+      this.status = `继续采样 — ${shortReason}`;
+      return [{ kind: 'face', key: null, down: false, name: 'cal-extend', value: shortReason }];
+    }
+    return this._retryStep(retryReason);
+  }
 
   _finishStep(nowMs) {
     const acc = this.cal;
     const stepId = acc.id;
     if (stepId === 'center') {
-      if (acc.palmN < 15) return this._retryStep('手未稳定停留在中心');
+      const handSeen = acc.frames ? acc.palmN / acc.frames : 0;
+      if (handSeen < 0.5) {
+        return this._gate(false,
+          `手可见率仅 ${Math.round(handSeen * 100)}%,请正对摄像头、手保持在画面中央`,
+          '手部检测不稳定,请改善光线/角度后重试', acc);
+      }
+      if (acc.palmN < 15) {
+        return this._gate(false, '还没看到稳定的手,请把手张开停在画面中央', '中心采样不足,重试', acc);
+      }
       const jitter = Math.max(std(acc.xs), std(acc.ys));
-      if (jitter > this.cfg.maxCenterJitter) return this._retryStep(`手抖动过大(σ=${jitter.toFixed(3)}),请支撑手肘重试`);
-      if (this.cfg.requireFace !== false && acc.faceN < 8) return this._retryStep('未检测到面部,请正对摄像头');
+      if (jitter > this.cfg.maxCenterJitter) {
+        return this._gate(false,
+          `手抖动较大(σ=${jitter.toFixed(3)}),请支撑手肘后放松`,
+          `手抖动过大(σ=${jitter.toFixed(3)}),请支撑手肘重试`, acc);
+      }
+      if (this.cfg.requireFace !== false && acc.faceN < 8) {
+        return this._gate(false, '未检测到面部,请正对摄像头', '未检测到面部,请正对摄像头重试', acc);
+      }
       const neutral = {};
       for (const [k, v] of Object.entries(acc.faceSums)) neutral[k] = v / acc.faceN;
       this.profile = {
@@ -173,8 +239,16 @@ export class SessionController {
     } else if (stepId === 'reach') {
       const sorted = [...acc.radii].sort((a, b) => a - b);
       const reach = percentile(sorted, 0.9);
-      if (!(reach >= this.cfg.minReach)) return this._retryStep('伸展幅度太小,请移到手肘支撑允许的最大范围');
-      if (acc.sectors.size < this.cfg.minSectorsCovered) return this._retryStep(`只覆盖了 ${acc.sectors.size}/8 个方向,请轮流伸展 8 个方向`);
+      if (!(reach >= this.cfg.minReach)) {
+        return this._gate(false,
+          `伸展幅度还差一点(p90=${reach.toFixed(2)}/${this.cfg.minReach}),继续向 8 个方向伸展`,
+          '伸展幅度太小,请移到手肘支撑允许的最大范围重试', acc);
+      }
+      if (acc.sectors.size < this.cfg.minSectorsCovered) {
+        return this._gate(false,
+          `已覆盖 ${acc.sectors.size}/${this.cfg.minSectorsCovered} 个方向,继续轮流伸展`,
+          `只覆盖了 ${acc.sectors.size}/8 个方向,请轮流伸展 8 个方向重试`, acc);
+      }
       this.profile.reach = reach;
       this.profile.sectors = acc.sectors.size;
       // auto-sensitivity from the user's measured comfortable range
@@ -182,18 +256,29 @@ export class SessionController {
       this._applyProfile({ activeZone: az, deadZone: az * 0.55 });
     } else if (stepId === 'pinch') {
       const sorted = [...acc.pinchSamples].sort((a, b) => a - b);
-      // enough samples for the configured step duration (~50% coverage)
-      const minSamples = Math.max(24, Math.round(this._stepMs() / 33 * 0.5));
-      if (sorted.length < minSamples) return this._retryStep('捏合次数太少,请保持节奏重复捏合');
+      // PRIMARY gate = distribution separability, NOT raw frame coverage.
+      // 24 samples (~0.8s @30fps) across 2+ pinch cycles give stable p10/p90;
+      // demanding 50% coverage of the whole window was unachievable on real
+      // cameras (detection quality dips while the fingers are together).
+      if (sorted.length < 24) {
+        return this._gate(false,
+          `已采样 ${sorted.length}/24 帧,请继续有节奏地捏合-张开(手保持在画面内)`,
+          '捏合采样不足,请保持手在画面内重复捏合重试', acc);
+      }
       const p10 = percentile(sorted, 0.10);
       const p90 = percentile(sorted, 0.90);
       const sep = p90 - p10;
-      if (sep < this.cfg.minPinchSeparation) return this._retryStep('捏合幅度区分度不够,请加大捏合深度');
+      if (sep < this.cfg.minPinchSeparation) {
+        return this._gate(false,
+          `开/合区分度 ${sep.toFixed(2)}(需 ≥${this.cfg.minPinchSeparation}),捏紧一点、张开一点`,
+          '捏合幅度区分度不够,请加大捏合深度重试', acc);
+      }
       const on = Math.min(0.6, Math.max(0.3, p10 + sep * 0.18));
       const off = Math.min(1.2, Math.max(on + 0.15, p90 - sep * 0.10));
       this.profile.pinchOn = on;
       this.profile.pinchOff = off;
       this.profile.pinchSeparation = sep;
+      this.profile.pinchCycles = acc.pinchCycles;
       this._applyProfile({ pinchOn: on, pinchOff: off });
     }
     // next step or finish
@@ -245,13 +330,13 @@ export class SessionController {
 
   _saveProfile() {
     try {
-      this.cfg.storage?.setItem('vgi-profile-v1', JSON.stringify(this.profile));
+      this.cfg.storage?.setItem('vgi-profile-v2', JSON.stringify(this.profile));
     } catch { /* private mode etc. — non-fatal */ }
   }
 
   loadProfile() {
     try {
-      const raw = this.cfg.storage?.getItem('vgi-profile-v1');
+      const raw = this.cfg.storage?.getItem('vgi-profile-v2');
       if (raw) this._applyProfile(JSON.parse(raw));
     } catch { /* corrupt profile → defaults */ }
   }
@@ -271,60 +356,107 @@ export class SessionController {
     const tSec = nowMs / 1000;
 
     if (this.paused || this.state === 'idle' || this.state === 'paused') {
+      // paused: keep watching the off hand for the open-palm resume gesture
+      const events = [];
+      if (this.state === 'paused') {
+        const { secondary } = this._pickHands(obs.hands);
+        if (secondary) {
+          events.push(...this.offEngine.palm.update(handOpenness(secondary.landmarks), nowMs));
+        } else {
+          this.offEngine.palm.since = null;
+        }
+      }
       return { events, snapshot: this._snapshot(null, 0) };
     }
 
-    const picked = this._pickHand(obs.hands);
+    const { primary, secondary } = this._pickHands(obs.hands);
+    this._picked = { primary, secondary };
     const faceMap = obs.face ?? null;
 
     if (this.state === 'searching') {
-      // R132: requireFace:false enters calibration on hand alone (faceless games path)
-      if (picked && (faceMap != null || this.cfg.requireFace === false)) {
+      // RGBBox (R132): requireFace:false enters calibration on hand alone
+      if (primary && (faceMap != null || this.cfg.requireFace === false)) {
         this._startCalibration(nowMs);
       } else {
         this._geom = null;
       }
       if (faceMap) this._faceBlend = faceMap;
     } else if (this.state === 'calibrating') {
-      events.push(...this._calibrateFrame(picked, faceMap, nowMs, tSec));
+      events.push(...this._calibrateFrame(primary, faceMap, nowMs, tSec));
     } else if (this.state === 'active') {
-      events.push(...this._activeFrame(picked, faceMap, nowMs, tSec));
+      events.push(...this._activeFrame(primary, secondary, faceMap, nowMs, tSec));
     }
+    // (_activeFrame may re-enter searching on long hand loss; its release
+    // events are already included in the returned array.)
 
     for (const ev of events) if (ev.name === 'cal-retry') this.status = `重试 — ${ev.value}`;
-    return { events, snapshot: this._snapshot(picked, obs.inferMs ?? 0) };
+    return { events, snapshot: this._snapshot(primary, obs.inferMs ?? 0) };
   }
 
-  _pickHand(hands) {
-    if (!hands?.length) return null;
+  /**
+   * Assign detections to primary/off hands.
+   * - dualHand disabled → best hand is primary (old behaviour)
+   * - dualHand enabled  → primary = best hand on cfg.dualHand.primaryHand side;
+   *   off = best hand on the other side. A single visible hand is treated
+   *   according to its side (off hand alone still drives off-hand actions).
+   * @returns {{primary:object|null, secondary:object|null}}
+   */
+  _pickHands(hands) {
+    const valid = (hands || []).filter((h) => h && h.landmarks && h.score >= this.cfg.minHandScore);
+    if (!valid.length) return { primary: null, secondary: null };
     const prev = this._geom?.palm;
-    let best = null;
-    for (const h of hands) {
-      if (h.score < this.cfg.minHandScore) continue; // phantom rejection
+    const rank = (h) => {
       const g = handGeometry(h.landmarks);
       const jump = prev ? Math.hypot(g.palm.x - prev.x, g.palm.y - prev.y) : 0;
-      const rank = h.score - jump * 0.5; // continuity: prefer the tracked hand
-      if (!best || rank > best.rank) best = { ...h, rank };
+      return h.score - jump * 0.5; // continuity: prefer the tracked hand
+    };
+    const dual = this.cfg.dualHand.enabled;
+    if (!dual) {
+      const best = [...valid].sort((a, b) => rank(b) - rank(a))[0];
+      return { primary: best, secondary: null };
     }
-    return best;
+    const want = this.cfg.dualHand.primaryHand;
+    const sideOf = (h) => {
+      let side = h.handedness || 'unknown';
+      if (this.cfg.dualHand.swapHands) side = side === 'Left' ? 'Right' : side === 'Right' ? 'Left' : side;
+      return side;
+    };
+    const primary = valid.filter((h) => sideOf(h) === want).sort((a, b) => rank(b) - rank(a))[0] ?? null;
+    const secondary = valid.filter((h) => sideOf(h) !== want).sort((a, b) => rank(b) - rank(a))[0] ?? null;
+    return { primary, secondary };
+  }
+
+  /** Normalized two-hand gap (in hand-scale units, depth invariant). */
+  _handGap(a, b) {
+    const ga = handGeometry(a);
+    const gb = handGeometry(b);
+    const scale = (ga.scale + gb.scale) / 2 || 1e-6;
+    return Math.hypot(ga.palm.x - gb.palm.x, ga.palm.y - gb.palm.y) / scale;
   }
 
   _calibrateFrame(picked, faceMap, nowMs, tSec) {
     const acc = this.cal;
+    acc.frames++;
     if (picked) {
       const g = handGeometry(picked.landmarks);
       acc.palm.x += g.palm.x; acc.palm.y += g.palm.y; acc.palmN++;
       if (acc.id === 'center') { acc.xs.push(g.palm.x); acc.ys.push(g.palm.y); }
       if (acc.id === 'reach' && this.profile?.center) {
         const dx = (g.palm.x - this.profile.center.x) * (this.cfg.direction?.gainX ?? 1.4);
-        const dy = -(g.palm.y - this.profile.center.y) * (this.cfg.direction?.gainY ?? 1.8);
+        const dy = -(g.palm.y - this.profile.center.y) * (this.cfg.direction?.gainY ?? 1.6);
         const r = Math.hypot(dx, dy);
         acc.radii.push(r);
         if (r > this.handEngine.direction.cfg.deadZone * 1.4) {
           acc.sectors.add(sectorOfDeg(Math.atan2(dy, dx) * 180 / Math.PI));
         }
       }
-      if (acc.id === 'pinch') acc.pinchSamples.push(g.pinch);
+      if (acc.id === 'pinch') {
+        acc.pinchSamples.push(g.pinch);
+        // live pinch-cycle counter (midpoint crossing): user feedback + quality
+        const closed = g.pinch < (this.handEngine.pinch.cfg.on + this.handEngine.pinch.cfg.off) / 2;
+        if (closed && !acc.pinchWasClosed) acc.pinchCycles++;
+        acc.pinchWasClosed = closed;
+      }
       this._geom = g;
       this.score = picked.score;
     }
@@ -333,26 +465,62 @@ export class SessionController {
       for (const [k, v] of Object.entries(faceMap)) acc.faceSums[k] = (acc.faceSums[k] || 0) + v;
       this._faceBlend = faceMap;
     }
-    if (nowMs - this.calStartMs >= this._stepMs()) {
+    // live progress feedback so the user sees the system counting their moves
+    if (!this.status.startsWith('重试') && !this.status.startsWith('继续采样')) {
+      if (acc.id === 'pinch' && acc.pinchSamples.length > 4) {
+        this.status = `捏合校准:已检测 ${acc.pinchCycles} 次捏合`;
+      } else if (acc.id === 'reach' && acc.sectors.size > 0) {
+        this.status = `行程校准:已覆盖 ${acc.sectors.size}/8 个方向`;
+      }
+    }
+    if (nowMs - this.calStartMs >= acc.stepMs) {
       return this._finishStep(nowMs);
     }
     return [];
   }
 
-  _activeFrame(picked, faceMap, nowMs, tSec) {
+  _activeFrame(primary, secondary, faceMap, nowMs, tSec) {
     const events = [];
-    if (picked) {
+    const dual = this.cfg.dualHand.enabled;
+
+    // ---- primary hand: direction + main pinch ----
+    if (primary) {
       this.handLost = 0;
-      this.score = picked.score;
-      const geom = handGeometry(picked.landmarks);
+      this.score = primary.score;
+      const geom = handGeometry(primary.landmarks);
       this._geom = geom;
-      events.push(...this.handEngine.update(picked.landmarks, tSec, nowMs));
+      events.push(...this.handEngine.update(primary.landmarks, tSec, nowMs, primary.score ?? 1));
     } else {
       this.handLost++;
       if (this.handLost >= this.cfg.handLostReleaseFrames) events.push(...this.handEngine.onLost());
-      if (this.handLost >= this.cfg.handLostRecalFrames) return this._enterSearching();
+      if (this.handLost >= this.cfg.handLostRecalFrames) {
+        events.push(...this._enterSearching()); // release + back to searching
+        return events;
+      }
       this._geom = null;
     }
+
+    // ---- off hand: secondary pinch + open-palm pause (dual-hand mode only) ----
+    if (dual) {
+      if (secondary) {
+        this.offLost = 0;
+        this.score = Math.max(this.score, secondary.score);
+        events.push(...this.offEngine.update(secondary.landmarks, tSec, nowMs, secondary.score ?? 1));
+      } else {
+        this.offLost = (this.offLost ?? 0) + 1;
+        if (this.offLost >= this.cfg.dualHand.offLostReleaseFrames) events.push(...this.offEngine.onLost());
+      }
+      // ---- two-hand gap gesture ----
+      if (primary && secondary) {
+        const gap = this._handGap(primary.landmarks, secondary.landmarks);
+        this._gapNorm = gap;
+        events.push(...this.gap.update(gap, tSec));
+      } else if (this.gap.state) {
+        events.push(...this.gap.releaseAll()); // a hand vanished → force 'together'
+        this._gapNorm = null;
+      }
+    }
+
     if (faceMap) {
       this.faceLost = 0;
       events.push(...this.faceEngine.update(faceMap, nowMs));
@@ -375,6 +543,12 @@ export class SessionController {
         : 0,
       score: this.score,
       pickedLandmarks: picked?.landmarks ?? null,
+      allHands: [
+        this._picked?.primary ? { landmarks: this._picked.primary.landmarks, role: 'primary', handedness: this._picked.primary.handedness } : null,
+        this._picked?.secondary ? { landmarks: this._picked.secondary.landmarks, role: 'off', handedness: this._picked.secondary.handedness } : null,
+      ].filter(Boolean),
+      gapNorm: this._gapNorm,
+      offHeld: this.offEngine.pinch.state === 'PRESSED',
       geom: this._geom,
       faceBlend: this._faceBlend,
       provisionalCenter: this.state === 'calibrating' && this.cal?.palmN > 2

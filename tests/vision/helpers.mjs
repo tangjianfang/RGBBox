@@ -16,6 +16,21 @@ export function makeHand({ cx = 0.5, cy = 0.5, pinchGap = 1.2, scale = 0.18 } = 
   const gap = pinchGap * scale;
   lm[8] = { x: cx - gap / 2, y: cy - scale * 0.9 };
   lm[4] = { x: cx + gap / 2, y: cy - scale * 0.75 };
+  // full finger chains (extended): middle / ring / pinky — handOpenness + drawing
+  lm[10] = { x: cx, y: cy - scale * 0.45 };
+  lm[11] = { x: cx, y: cy - scale * 0.75 };
+  lm[12] = { x: cx, y: cy - scale * 1.05 };
+  lm[14] = { x: cx + scale * 0.22, y: cy - scale * 0.35 };
+  lm[15] = { x: cx + scale * 0.24, y: cy - scale * 0.65 };
+  lm[16] = { x: cx + scale * 0.26, y: cy - scale * 0.9 };
+  lm[18] = { x: cx + scale * 0.5, y: cy - scale * 0.2 };
+  lm[19] = { x: cx + scale * 0.52, y: cy - scale * 0.45 };
+  lm[20] = { x: cx + scale * 0.55, y: cy - scale * 0.65 };
+  lm[1] = { x: cx - scale * 0.25, y: cy + scale * 0.55 };
+  lm[2] = { x: cx - scale * 0.4, y: cy + scale * 0.25 };
+  lm[3] = { x: cx - scale * 0.45, y: cy };
+  lm[6] = { x: cx - scale * 0.42, y: cy - scale * 0.25 };
+  lm[7] = { x: cx - scale * 0.45, y: cy - scale * 0.6 };
   return lm;
 }
 
@@ -54,15 +69,30 @@ export class SessionDriver {
     this.t = t0;
   }
 
-  /** frame spec: {cx,cy,pinch,score,face,absent} — defaults = resting open hand + neutral face */
+  /** frame spec: {cx,cy,pinch,score,handedness,face,absent,hand2:{cx,cy,pinch,score}} */
   frame(spec = {}) {
     if (spec.absent) {
       return this.session.onFrame({ nowMs: (this.t += this.dt), hands: [], face: null });
     }
-    const h = makeHand({ cx: spec.cx ?? 0.5, cy: spec.cy ?? 0.5, pinchGap: spec.pinch ?? 1.2 });
+    const hands = [{
+      landmarks: makeHand({ cx: spec.cx ?? 0.5, cy: spec.cy ?? 0.5, pinchGap: spec.pinch ?? 1.2 }),
+      score: spec.score ?? 0.92,
+      handedness: spec.handedness ?? 'Right',
+    }];
+    if (spec.hand2) {
+      hands.push({
+        landmarks: makeHand({
+          cx: spec.hand2.cx ?? 0.5,
+          cy: spec.hand2.cy ?? 0.5,
+          pinchGap: spec.hand2.pinch ?? 1.25,
+        }),
+        score: spec.hand2.score ?? 0.92,
+        handedness: spec.hand2.handedness ?? 'Left',
+      });
+    }
     return this.session.onFrame({
       nowMs: (this.t += this.dt),
-      hands: [{ landmarks: h, score: spec.score ?? 0.92 }],
+      hands,
       face: spec.face === undefined ? { ...NEUTRAL_FACE } : spec.face,
     });
   }
@@ -103,6 +133,7 @@ export function heldKeys(session) {
   const d = session.handEngine.direction;
   if (d.active != null) held.push(...(SECTORS_SAFE(d.active)));
   if (session.handEngine.pinch.state === 'PRESSED') held.push('Space');
+  if (session.offEngine?.pinch.state === 'PRESSED') held.push(session.offEngine.pinch.cfg.key);
   for (const b of session.faceEngine.bindings) if (b.state) held.push(b.key);
   return held;
 }

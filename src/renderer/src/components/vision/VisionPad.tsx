@@ -15,12 +15,12 @@ import type { VisionInputHandle } from '../../hooks/useVisionInput'
 // R-N) — keep in sync with gesture_engine.js DirectionRing cfg.
 
 const PAD_W = 168
-const PAD_H = 198
-const TEXT_H = 46
+const PAD_H = 214
+const TEXT_H = 62
 const R = 62
-// DirectionRing defaults (gesture_engine.js) — see header comment
+// DirectionRing defaults (gesture_engine.js, upstream v2) — see header comment
 const GAIN_X = 1.4
-const GAIN_Y = 1.8
+const GAIN_Y = 1.6
 
 const STATE_COLOR: Record<string, string> = {
   searching: '#8aa0ad',
@@ -124,6 +124,14 @@ function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn, 
     ? `${Math.round(frame?.stats?.inferFps ?? 0)}fps · p95 ${Math.round(infer.p95)}ms · ${frame?.stats?.delegate ?? '-'}`
     : '…'
   ctx.fillText(statsText, PAD_W / 2, 24)
+  // R134 (upstream v2): capture latency + the camera's ACTUAL negotiated mode —
+  // "asked for 60fps, got 30fps" becomes visible on the pad itself
+  const acquire = frame?.stats?.acquire
+  const cam = frame?.stats?.cam
+  const acquireText = acquire && acquire.n > 0
+    ? `采集 p95 ${Math.round(acquire.p95)}ms${cam?.w ? ` · ${cam.w}×${cam.h}@${Math.round(cam.fps ?? 0)}` : ''}`
+    : ''
+  ctx.fillText(acquireText, PAD_W / 2, 40)
 
   // ── compass ──────────────────────────────────────────────────────────────
   const cx = PAD_W / 2

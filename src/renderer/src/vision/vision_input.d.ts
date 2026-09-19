@@ -24,12 +24,18 @@ export interface VisionLatencyStats {
 
 export interface VisionStats {
   infer: VisionLatencyStats
+  hand: VisionLatencyStats
+  face: VisionLatencyStats
+  /** camera frame age at callback (rVFC presentationTime), upstream v2 */
+  acquire: VisionLatencyStats
   /** camera delivery rate (ticks, includes capped/skipped frames) */
   fps: number
   /** rate of actually-processed frames (R133 diagnostic) */
   inferFps: number
   delegate: string
   lowFps: boolean
+  /** ACTUAL negotiated camera track settings ("asked 60, got 30" detector) */
+  cam: { w?: number; h?: number; fps?: number } | null
 }
 
 /** Per-frame snapshot dispatched via onFrame (wizard label/progress, geom, stats). */
@@ -73,6 +79,13 @@ export interface VisionInputConfig {
   /** R132: null → faceless pipeline (no FaceLandmarker created/inferred). */
   faceModel: string | null
   camera?: {
+    width?: { ideal: number }
+    height?: { ideal: number }
+    frameRate?: { ideal: number; min?: number; max?: number }
+  }
+  /** upstream v2: use cameraLowRes (640×360) — halves hand-inference cost. */
+  preferLowRes?: boolean
+  cameraLowRes?: {
     width?: { ideal: number }
     height?: { ideal: number }
     frameRate?: { ideal: number; min?: number; max?: number }

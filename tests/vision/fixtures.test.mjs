@@ -1,14 +1,14 @@
 // Golden-action fixture tests: each JSON fixture replays a synthetic landmark
 // sequence through the full SessionController and asserts the EXACT ordered
-// action stream (recognition regressions are caught as stream diffs).
-// R131: ported from the vision-game-input module (node:test → vitest).
+// action stream (VMosue `tests/fixtures/actions` pattern — recognition
+// regressions are caught as stream diffs).
 
-import { test, expect } from 'vitest';
+import { test } from 'vitest';
+import assert from 'node:assert/strict'; // works under vitest node env
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { SessionDriver, atPalm, CENTER } from './helpers.mjs';
-import { SECTORS } from '../../src/renderer/src/vision/gesture_engine.js';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 
@@ -52,17 +52,17 @@ for (const file of readdirSync(join(dir, 'fixtures')).filter((f) => f.endsWith('
       }
       if (!found) missed.push({ expected: exp, afterIndex: ai });
     }
-    expect(missed, `missing events:\n${JSON.stringify(missed, null, 2)}\nactual(${actual.length}):\n${JSON.stringify(actual)}`).toEqual([]);
+    assert.deepEqual(missed, [], `missing events:\n${JSON.stringify(missed, null, 2)}\nactual(${actual.length}):\n${JSON.stringify(actual)}`);
 
     // extra events guard: nothing beyond expected kinds for these scenarios
     const extras = actual.filter((a) => !fx.expect.some((e) =>
       (!e.kind || a.kind === e.kind) && (!e.key || a.key === e.key) && (!e.name || a.name === e.name)));
-    expect(extras, `unexpected extra events: ${JSON.stringify(extras)}`).toEqual([]);
+    assert.deepEqual(extras, [], `unexpected extra events: ${JSON.stringify(extras)}`);
 
     if (fx.noStuckKeys) {
       d.collect(100, { absent: true });
       const held = heldKeysOf(d.session);
-      expect(held, `stuck keys: ${JSON.stringify(held)}`).toEqual([]);
+      assert.deepEqual(held, [], `stuck keys: ${JSON.stringify(held)}`);
     }
   });
 }
@@ -75,4 +75,5 @@ function heldKeysOf(session) {
   for (const b of session.faceEngine.bindings) if (b.state) held.push(b.key);
   return held.sort();
 }
+import { SECTORS } from '../../src/renderer/src/vision/gesture_engine.js';
 function SECTORS_KEYS(idx) { return SECTORS[idx]?.keys ?? []; }

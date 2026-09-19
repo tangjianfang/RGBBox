@@ -111,10 +111,11 @@ export function useVisionInput(): VisionInputHandle {
           faceModel: null,
           numHands: 1,
           maxFps: 30,
-          // R133: 60fps capture headroom — the 30fps inference cap slices this
-          // to exactly every other frame (fresher frames = lower latency) while
-          // a 30fps camera still processes every frame (margin in vision_input).
-          camera: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60, min: 15 } },
+          // R134 (upstream v2 / PERFORMANCE_RESEARCH): 640×360 capture — hand
+          // inference scales with pixels, this halves it vs 640×480 on the GPU
+          // path with no precision loss (model input is 192/224px).
+          preferLowRes: true,
+          cameraLowRes: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 60, min: 15 } },
           // calibration profile survives enable/disable cycles
           session: { storage: localStorage, requireFace: false },
           pinch: { key: 'Space' },
