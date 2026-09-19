@@ -30,9 +30,16 @@ interface FakeVisionInput {
   syntheticStarted: boolean
   stopped: boolean
   settings: Record<string, number | null> | null
+  forceReadyArg: Record<string, unknown> | null | undefined
+  session: { profile: Record<string, unknown> | null; forceReady(p?: Record<string, unknown>): void }
 }
 
-const visionState = vi.hoisted(() => ({ instances: [] as FakeVisionInput[], failInit: false }))
+const visionState = vi.hoisted(() => ({
+  instances: [] as FakeVisionInput[],
+  failInit: false,
+  // R133: persisted calibration to simulate a returning user (profile skip)
+  seedProfile: null as Record<string, unknown> | null,
+}))
 
 vi.mock('../../../src/renderer/src/vision/vision_input.js', () => ({
   VisionInput: class {
@@ -42,8 +49,17 @@ vi.mock('../../../src/renderer/src/vision/vision_input.js', () => ({
     syntheticStarted = false
     stopped = false
     settings: Record<string, number | null> | null = null
+    forceReadyArg: Record<string, unknown> | null | undefined
+    session: { profile: Record<string, unknown> | null; forceReady(p?: Record<string, unknown>): void }
     constructor(opts: any) {
       this.opts = opts
+      this.session = {
+        profile: visionState.seedProfile,
+        forceReady: (p?: Record<string, unknown>) => {
+          this.forceReadyArg = p ?? null
+          if (p) this.session.profile = p
+        },
+      }
       visionState.instances.push(this as unknown as FakeVisionInput)
     }
     async init() {
@@ -62,6 +78,7 @@ vi.mock('../../../src/renderer/src/vision/vision_input.js', () => ({
 beforeEach(() => {
   visionState.instances.length = 0
   visionState.failInit = false
+  visionState.seedProfile = null
   cleanup()
 })
 
@@ -88,7 +105,7 @@ describe('renderer/hooks/useVisionInput (R131)', () => {
     await act(() => result.current.disable())
   })
 
-  it('enable() runs the R132 perf budget: faceless, one hand, 30fps inference cap, 640×480 camera', async () => {
+  it('enable() runs the R132/R133 perf budget: faceless, one hand, 30fps cap, 640×480@60 camera', async () => {
     const { result } = renderHook(() => useVisionInput())
     await act(() => result.current.enable())
     const cfg = visionState.instances[0].opts.config
@@ -96,7 +113,7 @@ describe('renderer/hooks/useVisionInput (R131)', () => {
     expect(cfg.numHands).toBe(1)
     expect(cfg.maxFps).toBe(30)
     expect((cfg.camera.width as { ideal: number }).ideal).toBe(640)
-    expect((cfg.camera.frameRate as { ideal: number }).ideal).toBe(30)
+    expect((cfg.camera.frameRate as { ideal: number }).ideal).toBe(60)
     expect(cfg.session.requireFace).toBe(false)
     await act(() => result.current.disable())
   })
@@ -185,6 +202,22 @@ describe('renderer/hooks/useVisionInput (R131)', () => {
     await act(() => result.current.enable())
     act(() => result.current.applySettings({ dirs: 4 }))
     expect(visionState.instances[0].settings).toEqual({ dirs: 4 })
+    await act(() => result.current.disable())
+  })
+
+  it('a stored calibration profile skips the wizard (R133 returning-user path)', async () => {
+    const profile = { center: { x: 0.5, y: 0.55 }, pinchOn: 0.4, pinchOff: 0.7 }
+    visionState.seedProfile = profile
+    const { result } = renderHook(() => useVisionInput())
+    await act(() => result.current.enable())
+    expect(visionState.instances[0].forceReadyArg).toEqual(profile)
+    await act(() => result.current.disable())
+  })
+
+  it('no stored profile → no forceReady (first-time user gets the wizard)', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(() => result.current.enable())
+    expect(visionState.instances[0].forceReadyArg).toBeUndefined()
     await act(() => result.current.disable())
   })
 

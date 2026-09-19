@@ -22,6 +22,7 @@ vi.mock('../../../src/renderer/src/vision/vision_input.js', () => ({
     cameraStarted = false
     stopped = false
     settings: Record<string, number | null> | null = null
+    session = { profile: null, forceReady() { /* noop */ } }
     constructor() {
       visionInstances.list.push(this as unknown as (typeof visionInstances.list)[number])
     }

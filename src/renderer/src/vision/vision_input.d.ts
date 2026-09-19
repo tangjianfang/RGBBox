@@ -24,7 +24,10 @@ export interface VisionLatencyStats {
 
 export interface VisionStats {
   infer: VisionLatencyStats
+  /** camera delivery rate (ticks, includes capped/skipped frames) */
   fps: number
+  /** rate of actually-processed frames (R133 diagnostic) */
+  inferFps: number
   delegate: string
   lowFps: boolean
 }
@@ -52,11 +55,15 @@ export interface VisionSession {
   state: string
   paused: boolean
   faceEveryN: number
+  /** current (calibrated) profile, null before the first calibration */
+  profile: Record<string, unknown> | null
   label(): string
   recalibrate(): void
   setPaused(p: boolean): unknown
   stop(): unknown
   applySettings(patch: Record<string, number | null>): void
+  /** Test/recovery hook: enter active state applying the given profile. */
+  forceReady(profile?: Record<string, unknown>): void
 }
 
 export interface VisionInputConfig {

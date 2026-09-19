@@ -121,6 +121,41 @@ try {
   const infer = played.snapshot?.stats?.infer ?? { n: 0 }
   console.log(`  vision stats: ${Math.round(played.snapshot?.stats?.fps ?? 0)}fps · infer p50 ${Math.round(infer.p50 ?? NaN)}ms · p95 ${Math.round(infer.p95 ?? NaN)}ms · ${played.snapshot?.stats?.delegate ?? '-'}`)
   ok('inference stats flowing (n > 30 samples)', infer.n > 30)
+
+  // ── R133: Survival (Nova Swarm) — vision must actually move the player ────
+  await page.locator('button', { hasText: '返回游戏库' }).first().click()
+  await sleep(600)
+  await page.locator('.game-tile:not(.ghost)').nth(1).click() // Nova Swarm
+  await sleep(600)
+  await page.evaluate(() => window.__rgbboxVision.enableSynthetic())
+  // R133 profile short-circuit: returning session skips the wizard → active
+  let swarmActive = false
+  for (let i = 0; i < 30 && !swarmActive; i++) {
+    await sleep(700)
+    swarmActive = await page.evaluate(() => {
+      const probe = window.__rgbboxVision.probe()
+      return probe.phase === 'running' || document.querySelector('.games-canvas-status')?.textContent.includes('已激活') || document.querySelector('.games-canvas-status')?.textContent.includes('捏合手势开局')
+    })
+  }
+  ok('swarm: vision session resumed active without re-running the wizard', swarmActive)
+  // pinch-to-start, then sample the player position over 3s of figure-eight
+  let swarmRunning = false
+  for (let i = 0; i < 16 && !swarmRunning; i++) {
+    await sleep(700)
+    swarmRunning = await page.evaluate(() => window.__rgbboxVision.probe().phase === 'running')
+  }
+  ok('swarm: pinch gesture started the run', swarmRunning)
+  const p1 = await page.evaluate(() => window.__rgbboxVision.probe().player)
+  await sleep(3000)
+  const p2 = await page.evaluate(() => {
+    const probe = window.__rgbboxVision.probe()
+    return { player: probe.player, axis: probe.axis, phase: probe.phase }
+  })
+  const moved = Math.hypot(p2.player.x - p1.x, p2.player.y - p1.y)
+  console.log(`  swarm player moved ${moved.toFixed(1)} units in 3s (axis ${p2.axis.x.toFixed(2)},${p2.axis.y.toFixed(2)} phase ${p2.phase})`)
+  ok('swarm: vision gestures MOVED the player (vision→movement closed loop)', moved > 5 && p2.phase === 'running')
+  await page.screenshot({ path: `${OUT}/r133-swarm-playing.png` })
+
   // R132.3: exit notice — disable via the header toggle, expect the chip text
   await page.locator('button[aria-label="关闭视觉体感输入"]').first().click()
   await sleep(400)

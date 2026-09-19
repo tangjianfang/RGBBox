@@ -43,6 +43,9 @@ export class VisionInput {
     this.session = new SessionController({ ...this.cfg.session, pinch: this.cfg.pinch, direction: this.cfg.direction, faceBindings: this.cfg.faceBindings });
     this.inferMeter = new LatencyMeter();
     this.fps = new FpsCounter();
+    // R133: rate of PROCESSED frames (this.fps counts camera ticks including
+    // capped/skipped ones) — surfaced in stats so the pad shows real inference Hz.
+    this.inferFpsCounter = new FpsCounter();
     this.delegate = '-';
     this.lastTs = 0;
     this.lastProcessMs = 0;
@@ -150,11 +153,14 @@ export class VisionInput {
       this._scheduleNext();
       return;
     }
-    // R132: inference-rate cap — skip camera frames that arrive sooner than
-    // 1000/maxFps after the last processed one (detection shares the main
-    // thread with the game loop; 30Hz is well inside the confirm/hysteresis
-    // envelope of the engines, which are all time-based, not frame-based).
-    if (this.cfg.maxFps > 0 && now - this.lastProcessMs < 1000 / this.cfg.maxFps) {
+    // R132/R133: inference-rate cap — skip camera frames that arrive sooner
+    // than 1000/maxFps after the last processed one. R133 adds a 4ms margin:
+    // rVFC delivers at camera-frame cadence (33.3ms @30fps), so a strict
+    // threshold turned every jittery-but-on-time frame into a skip and halved
+    // the effective rate — the "high latency" user report. With the margin a
+    // 30fps camera under a 30 cap processes EVERY frame; a 60fps camera
+    // processes exactly every other frame.
+    if (this.cfg.maxFps > 0 && now - this.lastProcessMs < 1000 / this.cfg.maxFps - 4) {
       this._scheduleNext();
       return;
     }
@@ -168,6 +174,7 @@ export class VisionInput {
   }
 
   _processFrame(nowMs) {
+    this.inferFpsCounter.tick(nowMs);
     const t0 = performance.now();
     let hands = [];
     let faceMap = null;
@@ -238,6 +245,7 @@ export class VisionInput {
     return {
       infer: s,
       fps: this.fps.fps,
+      inferFps: this.inferFpsCounter.fps,
       delegate: this.delegate,
       lowFps: this.fps.fps > 0 && this.fps.fps < 18,
     };

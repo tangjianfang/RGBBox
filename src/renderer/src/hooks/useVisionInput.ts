@@ -28,6 +28,8 @@ export interface VisionInputHandle {
   disable(): void
   recalibrate(): void
   setPaused(paused: boolean): void
+  /** Unpause without re-running the calibration wizard (TD round-trip). */
+  resumeActive(): void
   /** Live direction-ring tuning — Tetris runs 4-way (diagonals snap), Survival 8-way. */
   applySettings(patch: Record<string, number | null>): void
   enabled: boolean
@@ -109,7 +111,10 @@ export function useVisionInput(): VisionInputHandle {
           faceModel: null,
           numHands: 1,
           maxFps: 30,
-          camera: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } },
+          // R133: 60fps capture headroom — the 30fps inference cap slices this
+          // to exactly every other frame (fresher frames = lower latency) while
+          // a 30fps camera still processes every frame (margin in vision_input).
+          camera: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60, min: 15 } },
           // calibration profile survives enable/disable cycles
           session: { storage: localStorage, requireFace: false },
           pinch: { key: 'Space' },
@@ -122,6 +127,13 @@ export function useVisionInput(): VisionInputHandle {
       await vi.init()
       if (mode === 'synthetic') vi.startSynthetic()
       else await vi.startCamera()
+      // R133: session.start() restores the persisted profile but still drops
+      // to searching → the full 3-step wizard reruns on EVERY enable. With a
+      // stored profile (returning user) re-enter active directly — the
+      // hand-loss grace + recalibrate button cover drift; first-time users
+      // still get the wizard.
+      const stored = vi.session.profile
+      if (stored && Object.keys(stored).length > 0) vi.session.forceReady(stored)
       setEnabled(true)
     } catch (err) {
       // camera denied / model load failure — tear down fully so the user can retry
@@ -161,6 +173,19 @@ export function useVisionInput(): VisionInputHandle {
 
   const setPaused = useCallback((paused: boolean) => viRef.current?.setPaused(paused), [])
 
+  /**
+   * R133: unpause AND skip the re-calibration wizard — unparking from the TD
+   * screen would otherwise drop the session to searching and demand the full
+   * 3-step wizard again. The persisted calibration profile is still valid, so
+   * re-enter active directly; the hand-loss grace handles the tracking gap.
+   */
+  const resumeActive = useCallback(() => {
+    const vi = viRef.current
+    if (!vi) return
+    vi.setPaused(false)
+    vi.session.forceReady(vi.session.profile ?? undefined)
+  }, [])
+
   const applySettings = useCallback((patch: Record<string, number | null>) => {
     viRef.current?.applySettings(patch)
   }, [])
@@ -168,5 +193,5 @@ export function useVisionInput(): VisionInputHandle {
   // leaving the games view unmounts the hook → stop the camera, release keys
   useEffect(() => disable, [disable])
 
-  return { enable, enableSynthetic, disable, recalibrate, setPaused, applySettings, enabled, label, state, stepId, handSeen, frameRef, heldRef, queueRef }
+  return { enable, enableSynthetic, disable, recalibrate, setPaused, resumeActive, applySettings, enabled, label, state, stepId, handSeen, frameRef, heldRef, queueRef }
 }

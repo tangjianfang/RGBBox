@@ -66,10 +66,14 @@ export function VisionPad({ vision }: { vision: VisionInputHandle }): JSX.Elemen
     canvas.width = PAD_W * dpr
     canvas.height = PAD_H * dpr
     ctx.scale(dpr, dpr)
+    // R133: the palm target only advances at inference rate (~30Hz); this
+    // smoothing state lets the DOT track it at display rate (60fps) so the
+    // pad reads as fluid even though the signal is not.
+    const smooth = { x: 0, y: 0, seen: false }
     let frame = 0
     const loop = () => {
       try {
-        draw(ctx, visionRef.current, tRef.current)
+        draw(ctx, visionRef.current, tRef.current, smooth)
       } catch {
         // drawing is best-effort — never take the game down with it
       }
@@ -100,7 +104,7 @@ function statusText(pad: PadFrame, t: TFn): { text: string; color: string } {
   return { text: pad.label, color }
 }
 
-function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn): void {
+function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn, smooth: { x: number; y: number; seen: boolean }): void {
   const now = performance.now()
   const frame = vision.frameRef.current
   const pad: PadFrame = { state: vision.state, handSeen: vision.handSeen, stepId: vision.stepId, label: vision.label }
@@ -117,7 +121,7 @@ function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn):
   ctx.fillStyle = 'rgba(148,170,184,0.85)'
   const infer = frame?.stats?.infer
   const statsText = infer && infer.n > 0
-    ? `${Math.round(frame?.stats?.fps ?? 0)}fps · p95 ${Math.round(infer.p95)}ms · ${frame?.stats?.delegate ?? '-'}`
+    ? `${Math.round(frame?.stats?.inferFps ?? 0)}fps · p95 ${Math.round(infer.p95)}ms · ${frame?.stats?.delegate ?? '-'}`
     : '…'
   ctx.fillText(statsText, PAD_W / 2, 24)
 
@@ -176,25 +180,37 @@ function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn):
   line(ctx, cx - 4, cy, cx + 4, cy)
   line(ctx, cx, cy - 4, cx, cy + 4)
 
-  // live palm dot (same transform as DirectionRing: gain + y-flip)
+  // live palm dot (same transform as DirectionRing: gain + y-flip), drawn at
+  // DISPLAY rate: the target from the latest processed frame is chased with
+  // exponential smoothing so ~30Hz inference still reads as fluid motion
   const geom = frame?.geom
   if (geom) {
     const dx = (geom.palm.x - center.x) * GAIN_X
     const dy = -(geom.palm.y - center.y) * GAIN_Y
-    let px = cx + dx * k
-    let py = cy + dy * k
-    const rr = Math.hypot(px - cx, py - cy)
+    let tx = cx + dx * k
+    let ty = cy + dy * k
+    const rr = Math.hypot(tx - cx, ty - cy)
     if (rr > R - 6) {
-      px = cx + ((px - cx) / rr) * (R - 6)
-      py = cy + ((py - cy) / rr) * (R - 6)
+      tx = cx + ((tx - cx) / rr) * (R - 6)
+      ty = cy + ((ty - cy) / rr) * (R - 6)
+    }
+    if (!smooth.seen) {
+      smooth.x = tx
+      smooth.y = ty
+      smooth.seen = true
+    } else {
+      smooth.x += (tx - smooth.x) * 0.35
+      smooth.y += (ty - smooth.y) * 0.35
     }
     ctx.strokeStyle = withAlpha(stateColor, 0.4)
-    line(ctx, cx, cy, px, py)
+    line(ctx, cx, cy, smooth.x, smooth.y)
     ctx.fillStyle = geom.pinch != null && geom.pinch < 0.55 ? '#67e8f9' : '#e2e8f0'
     ctx.shadowColor = '#67e8f9'
     ctx.shadowBlur = 8
-    circle(ctx, px, py, 5, true)
+    circle(ctx, smooth.x, smooth.y, 5, true)
     ctx.shadowBlur = 0
+  } else {
+    smooth.seen = false
   }
 
   // pinch badge (bottom of the pad — thumb-index pinch = Space/hard drop)

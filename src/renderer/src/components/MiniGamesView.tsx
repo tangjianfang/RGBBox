@@ -165,6 +165,13 @@ export function MiniGamesView(): JSX.Element {
       disable: () => vision.disable(),
       held: () => [...heldRef.current],
       snapshot: () => frameRef.current,
+      // R133: live survival probe — proves vision→movement end to end in E2E
+      probe: () => ({
+        phase: survivalRef.current.phase,
+        player: { x: survivalRef.current.player.x, y: survivalRef.current.player.y },
+        axis: { ...survivalRef.current.axis },
+        keys: [...survivalRef.current.keys],
+      }),
     }
     ;(window as unknown as { __rgbboxVision?: typeof seam }).__rgbboxVision = seam
     return () => {
@@ -216,16 +223,30 @@ export function MiniGamesView(): JSX.Element {
     }
   }, [])
 
-  // R131: poll the vision gesture source each frame — same model as R103
+  // R131/R133: poll the vision gesture source each frame — same model as R103
   // gamepad. Events arrive pre-normalized ('arrowleft'…'space'); Survival
   // consumes the held-key set, Tetris the discrete command queue (with
-  // arrowdown as the only held key — soft drop).
+  // arrowdown as the only held key — soft drop). R133: in Survival the vision
+  // direction is ALSO added onto the gamepad axis (clamped to the unit
+  // circle) — survival.ts lets |axis| > 0.18 override keys entirely, so a
+  // connected gamepad with resting drift beyond its dead zone used to swallow
+  // every vision keypress. Must run AFTER pollGamepad() (which rewrites the
+  // raw axis each frame) — see the loop below.
   const pollVision = useCallback(() => {
     if (!vision.enabled) return
     if (screen === 'survival') {
+      const held = vision.heldRef.current
       for (const key of MOVEMENT_KEYS) {
-        if (vision.heldRef.current.has(key)) survivalRef.current.keys.add(key)
+        if (held.has(key)) survivalRef.current.keys.add(key)
         else survivalRef.current.keys.delete(key)
+      }
+      const vx = (held.has('arrowright') ? 1 : 0) - (held.has('arrowleft') ? 1 : 0)
+      const vy = (held.has('arrowdown') ? 1 : 0) - (held.has('arrowup') ? 1 : 0)
+      if (vx !== 0 || vy !== 0) {
+        const ax = survivalRef.current.axis.x + vx
+        const ay = survivalRef.current.axis.y + vy
+        const len = Math.hypot(ax, ay)
+        survivalRef.current.axis = { x: ax / Math.max(1, len), y: ay / Math.max(1, len) }
       }
       // pinch to (re)start, mirroring the gamepad Start button (R103)
       if (vision.queueRef.current.includes('space') && (survivalRef.current.phase === 'ready' || survivalRef.current.phase === 'lost')) {
@@ -263,13 +284,25 @@ export function MiniGamesView(): JSX.Element {
     vision.applySettings({ dirs: screen === 'tetris' ? 4 : 8 })
   }, [screen, vision.applySettings, vision.enabled])
 
-  // R132: TD is the mouse game — it consumes no gestures, so park the vision
-  // session in paused state there (the tick loop skips inference entirely and
-  // held keys are released) and resume on the gesture-driven screens.
+  // R132/R133: TD is the mouse game — it consumes no gestures, so park the
+  // vision session in paused state there (the tick loop skips inference
+  // entirely and held keys are released). R133: leaving TD resumes ACTIVE via
+  // the persisted profile instead of dropping to searching and demanding the
+  // full 3-step wizard again. Only on the TD exit edge — an unconditional
+  // resumeActive would forceReady a FIRST-time user past the wizard.
+  const visionPrevScreenRef = useRef<Screen>(screen)
   useEffect(() => {
-    if (!vision.enabled) return
-    vision.setPaused(screen === 'td')
-  }, [screen, vision.enabled, vision.setPaused])
+    if (!vision.enabled) {
+      visionPrevScreenRef.current = screen
+      return
+    }
+    if (screen === 'td') {
+      vision.setPaused(true)
+    } else if (visionPrevScreenRef.current === 'td') {
+      vision.resumeActive()
+    }
+    visionPrevScreenRef.current = screen
+  }, [screen, vision.enabled, vision.resumeActive, vision.setPaused])
 
   // R132.3: enabled→false shows a short "已退出体感" notice
   useEffect(() => {
@@ -316,7 +349,6 @@ export function MiniGamesView(): JSX.Element {
     const loop = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
-      pollVision()
       if (screen === 'td') {
         tickGame(tdStateRef.current, dt * tdSpeed)
         const phase = tdStateRef.current.phase
@@ -335,7 +367,10 @@ export function MiniGamesView(): JSX.Element {
           replaySuffix: t('games.replay'),
         })
       } else if (screen === 'survival') {
+        // R133: gamepad first (it rewrites the raw axis), vision second (adds
+        // its direction vector on top) — see pollVision.
         pollGamepad()
+        pollVision()
         tickSurvival(survivalRef.current, dt)
         const phase = survivalRef.current.phase
         if (phase === 'lost' && lastPhase !== phase) {
@@ -371,6 +406,7 @@ export function MiniGamesView(): JSX.Element {
         lastPhase = phase
         drawSurvival(ctx, survivalRef.current)
       } else {
+        pollVision()
         tickTetris(tetrisRef.current, dt)
         const phase = tetrisRef.current.phase
         if (phase === 'lost' && lastPhase !== phase) {
