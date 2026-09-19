@@ -50,6 +50,10 @@ export interface VisionFrame {
   score: number
   stats: VisionStats
   faceEveryN: number
+  /** R142-L2: palm predicted one-two frames ahead (velocity x 50ms) for continuous consumers */
+  geomPredicted?: { palm: { x: number; y: number }; pinch: number; scale: number } | null
+  /** host-side performance.now() when this snapshot was produced */
+  hostNowMs?: number
   /** null when no hand passed the score floor this frame */
   geom?: { palm: { x: number; y: number }; pinch: number; scale: number } | null
   /** 21 landmarks of the tracked (primary) hand, selfie-space — skeleton layer */

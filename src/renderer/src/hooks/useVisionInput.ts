@@ -181,6 +181,11 @@ export function useVisionInput(): VisionInputHandle {
             handModel: new URL('models/hand_landmarker.task', base).href,
             faceModel: new URL('models/face_landmarker.task', base).href,
             numHands: 2,
+            // R142-L1: 60fps full-frame capture — MJPG at 640×480 is standard
+            // webcam fare; the host pipeline (its own renderer process)
+            // processes EVERY frame, cutting the end-to-end chain by a frame+.
+            camera: { width: 640, height: 480, frameRate: 60 },
+            maxFps: 60,
             mirror,
             sensitivity,
             storedProfile,

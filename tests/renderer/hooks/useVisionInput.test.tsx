@@ -65,6 +65,9 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     expect((init.cfg.sessionCfg as { requireFace: boolean }).requireFace).toBe(false)
     expect((init.cfg.sessionCfg as { faceEveryN: number }).faceEveryN).toBe(3)
     expect(init.cfg.mirror).toBe(true)
+    expect(init.cfg.maxFps).toBe(60) // R142-L1: 60fps full-frame
+    expect((init.cfg.camera as { width: number }).width).toBe(640)
+    expect((init.cfg.camera as { height: number }).height).toBe(480)
     await act(() => result.current.disable())
     expect(host.received.some((m) => m.type === 'stop')).toBe(true)
     expect(rgbbox.visionHostClose).toHaveBeenCalled()

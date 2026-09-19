@@ -226,7 +226,10 @@ function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn, 
   // live palm dot (same transform as DirectionRing: gain + y-flip), drawn at
   // DISPLAY rate: the target from the latest processed frame is chased with
   // exponential smoothing so ~30Hz inference still reads as fluid motion
-  const geom = frame?.geom
+  // R142-L2: the dot chases the PREDICTED palm (50ms lookahead) — at 60Hz
+  // capture the extrapolation crosses into the next frame's territory and
+  // the pad reads as immediate
+  const geom = frame?.geomPredicted ?? frame?.geom
   if (geom) {
     const dx = (geom.palm.x - center.x) * GAIN_X
     const dy = -(geom.palm.y - center.y) * GAIN_Y

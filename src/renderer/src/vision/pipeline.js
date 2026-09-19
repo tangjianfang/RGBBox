@@ -38,6 +38,12 @@ export class VisionPipeline {
     this.frameCount = 0;
     this.lastTs = 0;
     this.running = false;
+    // R142-L2: display-rate prediction — an EMA of palm velocity lets
+    // continuous consumers (analog axis, pad dot, cursor) render ~1-2 frames
+    // AHEAD of the ~30-60Hz detection cadence. Discrete events stay
+    // confirm-gated (research anti-pattern warning respected).
+    this.predVel = { x: 0, y: 0 };
+    this.predLast = null;
     this.paused = false;
     this.mirror = true; // selfie convention; toggleable (R136.2)
     this.synthetic = null;
@@ -145,6 +151,32 @@ export class VisionPipeline {
 
     const { events, snapshot } = this.session.onFrame({ nowMs, hands, face: faceMap });
     this.frameCount++;
+    // R142-L2: attach the predicted palm (velocity × 50ms lookahead)
+    if (snapshot && snapshot.geom) {
+      const g = snapshot.geom;
+      if (this.predLast && nowMs > this.predLast.t) {
+        const dt = (nowMs - this.predLast.t) / 1000;
+        if (dt > 0.001 && dt < 0.2) {
+          const vx = (g.palm.x - this.predLast.x) / dt;
+          const vy = (g.palm.y - this.predLast.y) / dt;
+          this.predVel.x += (vx - this.predVel.x) * 0.35;
+          this.predVel.y += (vy - this.predVel.y) * 0.35;
+        }
+      }
+      this.predLast = { x: g.palm.x, y: g.palm.y, t: nowMs };
+      const ahead = 0.05;
+      const px = g.palm.x + this.predVel.x * ahead;
+      const py = g.palm.y + this.predVel.y * ahead;
+      snapshot.geomPredicted = {
+        palm: { x: Math.min(1, Math.max(0, px)), y: Math.min(1, Math.max(0, py)) },
+        pinch: g.pinch, scale: g.scale,
+      };
+    } else if (snapshot) {
+      snapshot.geomPredicted = null;
+      this.predLast = null;
+      this.predVel = { x: 0, y: 0 };
+    }
+    if (snapshot) snapshot.hostNowMs = nowMs;
     // profile persistence is proxied to the main thread (workers lack localStorage)
     if (this.deps.onProfileSave && events.some((e) => e.name === 'calibrated')) {
       this.deps.onProfileSave(this.session.profile);

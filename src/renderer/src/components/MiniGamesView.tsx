@@ -316,7 +316,9 @@ export function MiniGamesView(): JSX.Element {
       }
       // analog displacement → additive axis vector (joystick semantics)
       const frame = vision.frameRef.current
-      const geom = frame?.geom
+      // R142-L2: predicted palm (50ms ahead) — the analog axis leads the
+      // detection instead of lagging it
+      const geom = frame?.geomPredicted ?? frame?.geom
       const ringCenter = frame?.ringCenter
       let targetX = 0
       let targetY = 0

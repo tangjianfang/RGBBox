@@ -172,6 +172,18 @@ try {
   console.log(`  game rAF fps with vision running: ${fpsSample.toFixed(0)}`)
   ok('rAF fps ≥ 55 while the vision worker pipeline runs', fpsSample >= 55)
   ok('R136: vision banner mounted', !!(await page.evaluate(() => document.querySelector('.vision-banner'))))
+  // NOTE: host and page live in different renderer processes — their
+  // performance.now() origins differ, so absolute latency is not measurable
+  // cross-window. Cadence check instead: the host stamp must advance in lock
+  // step with wall time, proving snapshots keep flowing at the expected rate.
+  const cadence = await page.evaluate(async () => {
+    const s1 = window.__rgbboxVision.snapshot()?.hostNowMs ?? 0
+    await new Promise((r) => setTimeout(r, 400))
+    const s2 = window.__rgbboxVision.snapshot()?.hostNowMs ?? 0
+    return Math.round(s2 - s1)
+  })
+  console.log(`  snapshot cadence: host stamp advanced ${cadence}ms over 400ms`)
+  ok('R142-L2: snapshot cadence within 400±200ms (flowing, not stale)', cadence >= 200 && cadence <= 600)
   ok('R136: skeleton source flows (pickedLandmarks in snapshot)', !!(await page.evaluate(() => window.__rgbboxVision.snapshot()?.pickedLandmarks)))
 
   // R132.3: exit notice — disable via the header toggle, expect the chip text
