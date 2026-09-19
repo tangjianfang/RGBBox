@@ -89,6 +89,16 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     expect(result.current.heldRef.current.has('space')).toBe(true)
     expect(result.current.queueRef.current).toEqual(['arrowleft', 'space'])
     expect(bus).toHaveBeenCalledTimes(3)
+    // R142-L4: chord events become discrete pseudo-keys (never held keys)
+    act(() => {
+      host.send({ type: 'events', events: [
+        { kind: 'chord', key: null, name: 'confirm', down: true } as unknown as VisionEvent,
+        { kind: 'chord', key: null, name: 'select', down: true } as unknown as VisionEvent,
+      ] })
+    })
+    expect(result.current.queueRef.current).toEqual(['arrowleft', 'space', 'chord:confirm', 'chord:select'])
+    expect(result.current.heldRef.current.has('chord:confirm')).toBe(false)
+    expect(bus).toHaveBeenCalledTimes(5)
     await act(() => result.current.disable())
     window.removeEventListener('vision-input', bus)
   })

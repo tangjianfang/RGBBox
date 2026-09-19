@@ -112,6 +112,11 @@ export function useVisionInput(): VisionInputHandle {
   const onEvent = useCallback((event: VisionEvent) => {
     // diagnostics/E2E bus carries EVERY event (offhand pause, hands apart/together…)
     window.dispatchEvent(new CustomEvent<VisionEvent>('vision-input', { detail: event }))
+    // R142-L4: finger chords are discrete commands (no held-key semantics)
+    if (event.kind === 'chord' && event.name) {
+      queueRef.current.push(`chord:${event.name}`)
+      return
+    }
     if (!event.key) return
     const norm = event.key === 'Space' ? 'space' : event.key.toLowerCase()
     if (event.down) {

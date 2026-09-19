@@ -12,6 +12,7 @@
 import { SessionController, adaptFaceRate } from './session.js';
 import { blendshapeMap } from './face_engine.js';
 import { LatencyMeter, FpsCounter } from './latency.js';
+import { ChordEngine } from './fingerChords.js';
 
 export const PIPELINE_SENSITIVITY = {
   standard: { confirmMs: 90, label: '标准' },
@@ -44,6 +45,9 @@ export class VisionPipeline {
     // confirm-gated (research anti-pattern warning respected).
     this.predVel = { x: 0, y: 0 };
     this.predLast = null;
+    // R142-L4: finger-chord command layer — hand resting on the desk,
+    // per-frame finger extension patterns → discrete chord events
+    this.chords = new ChordEngine();
     this.paused = false;
     this.mirror = true; // selfie convention; toggleable (R136.2)
     this.synthetic = null;
@@ -151,6 +155,11 @@ export class VisionPipeline {
 
     const { events, snapshot } = this.session.onFrame({ nowMs, hands, face: faceMap });
     this.frameCount++;
+    // R142-L4: chord events ride the same stream (active tracking only —
+    // during calibration/searching the fingers are part of the wizard)
+    if (this.session.state === 'active' && snapshot.pickedLandmarks) {
+      events.push(...this.chords.update(snapshot.pickedLandmarks));
+    }
     // R142-L2: attach the predicted palm (velocity × 50ms lookahead)
     if (snapshot && snapshot.geom) {
       const g = snapshot.geom;

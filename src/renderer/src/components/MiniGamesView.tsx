@@ -294,6 +294,35 @@ export function MiniGamesView(): JSX.Element {
   // raw axis each frame) — see the loop below.
   const pollVision = useCallback(() => {
     if (!vision.enabled) return
+    // R142-L4: finger-chord commands are screen-agnostic — handle them first
+    // and pull them out of the queue (branch handlers below drain the rest).
+    const queue = vision.queueRef.current
+    for (let i = queue.length - 1; i >= 0; i--) {
+      const cmd = queue[i]
+      if (cmd === 'chord:confirm') {
+        // confirm ≙ the double-pinch semantics: focused roulette action, or
+        // start the run from the ready/lost screens
+        playSfx('confirm')
+        if (survivalRef.current.phase === 'roulette') rouletteActionsRef.current[rouletteFocusRef.current]?.()
+        else if (screen === 'survival' && (survivalRef.current.phase === 'ready' || survivalRef.current.phase === 'lost')) startRunRef.current()
+        else if (screen === 'tetris' && (tetrisRef.current.phase === 'ready' || tetrisRef.current.phase === 'lost')) startTetrisRef.current()
+        queue.splice(i, 1)
+      } else if (cmd === 'chord:back') {
+        playSfx('confirm')
+        backToHubRef.current()
+        queue.splice(i, 1)
+      } else if (cmd === 'chord:select') {
+        // click whatever the relative cursor is hovering, if anything
+        const hovered = document.querySelector('.vision-hover')
+        if (hovered instanceof HTMLElement) {
+          playSfx('confirm')
+          hovered.click()
+        }
+        queue.splice(i, 1)
+      } else if (cmd.startsWith('chord:')) {
+        queue.splice(i, 1) // pause/menu/cancel/next ride the bus only (E4 binds them)
+      }
+    }
     if (screen === 'survival') {
       // R139: option selection — the roulette overlay takes gesture priority:
       // any direction flips focus between the two options, double pinch (<900ms
@@ -621,6 +650,11 @@ export function MiniGamesView(): JSX.Element {
     if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
     setScreen('hub')
   }, [])
+
+  // R142-L4: chord 'back' fires this via a late-binding ref (pollVision is
+  // declared above backToHub — same pattern as startTetrisRef)
+  const backToHubRef = useRef<() => void>(() => undefined)
+  backToHubRef.current = backToHub
 
   const toggleSfx = useCallback(() => {
     setSfxEnabled(!sfxOn)
