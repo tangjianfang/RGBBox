@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useVisionInput } from '../hooks/useVisionInput'
 import { useI18n } from '../i18n'
 import { VisionBanner } from './vision/VisionBanner'
+import { VisionCursor } from './vision/VisionCursor'
+import { createCursorState } from '../vision/cursor'
 import { VisionPad } from './vision/VisionPad'
 import {
   HEIGHT,
@@ -138,6 +140,8 @@ export function MiniGamesView(): JSX.Element {
   const metaRef = useRef<SwarmMeta>(meta)
   metaRef.current = meta
   const screenRootRef = useRef<HTMLDivElement | null>(null)
+  // R142-L3: relative-cursor overlay host (the games-canvas-wrap element)
+  const canvasWrapRef = useRef<HTMLDivElement | null>(null)
   const gamepadNameRef = useRef<string | null>(null)
   const prevStartRef = useRef(false)
   const startRunRef = useRef<() => void>(() => undefined)
@@ -191,6 +195,8 @@ export function MiniGamesView(): JSX.Element {
       enableSynthetic: () => vision.enableSynthetic(),
       disable: () => vision.disable(),
       held: () => [...heldRef.current],
+      // R142-L3: live cursor probe (normalized 0..1) for tests/E2E
+      cursor: () => ({ ...visionCursorRef.current }),
       snapshot: () => frameRef.current,
       // R133: live survival probe — proves vision→movement end to end in E2E
       probe: () => ({
@@ -265,6 +271,9 @@ export function MiniGamesView(): JSX.Element {
     window.addEventListener('vision-input', onVisionEvent)
     return () => window.removeEventListener('vision-input', onVisionEvent)
   }, [vision.enabled])
+
+  // R142-L3: the overlay mutates this state in its rAF; exposed via the seam
+  const visionCursorRef = useRef(createCursorState())
 
   // R135: analog movement — the smoothed palm displacement relative to the
   // ring's LIVE center, normalized by the calibrated activeZone. Replaces the
@@ -993,7 +1002,7 @@ export function MiniGamesView(): JSX.Element {
 
       <div className="games-layout">
         <section className="games-canvas-panel panel">
-          <div className="games-canvas-wrap">
+          <div className="games-canvas-wrap" ref={canvasWrapRef}>
             <canvas
               ref={canvasRef}
               className="games-canvas"
@@ -1115,6 +1124,8 @@ export function MiniGamesView(): JSX.Element {
             {vision.enabled ? <VisionBanner vision={vision} /> : null}
             {/* R132.2: joystick + skeleton overlay — own rAF, reads frameRef directly */}
             {vision.enabled ? <VisionPad vision={vision} /> : null}
+            {/* R142-L3: relative cursor overlay — hover highlight + pinch click */}
+            {vision.enabled && vision.state === 'active' ? <VisionCursor vision={vision} wrapRef={canvasWrapRef} stateRef={visionCursorRef} /> : null}
           </div>
           <div className="games-canvas-status">
             <span>

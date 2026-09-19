@@ -1774,6 +1774,18 @@ input:not([type]):focus {
 
 /* R136.2: immediate status banner across the top of the game canvas — the
    state color hits the eye before the text does. */
+.vision-cursor {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 7;
+}
+
+.vision-hover {
+  border-color: #67e8f9 !important;
+  box-shadow: 0 0 0 2px rgba(103, 232, 249, 0.45) !important;
+}
+
 .vision-banner {
   align-items: center;
   background: rgba(8, 13, 18, 0.86);

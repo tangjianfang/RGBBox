@@ -405,5 +405,45 @@ describe('renderer/components/MiniGamesView', () => {
     expect(container.querySelector('.vision-banner-advice')?.textContent).toContain('games.vision.env.dim-light')
     vi.useRealTimers()
   })
+
+  // R142-L3: the relative-cursor overlay mounts when the session is active
+  // and the cursor follows palm movement (via the seam probe).
+  it('relative cursor overlay mounts and follows palm movement (R142-L3)', async () => {
+    const noopCtx = new Proxy({}, {
+      get: (_t, prop) => {
+        if (prop === 'canvas') return undefined
+        if (prop === 'measureText') return () => ({ width: 10 })
+        return () => undefined
+      },
+      set: () => true,
+    }) as unknown as CanvasRenderingContext2D
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm
+    await act(async () => {
+      await (window as unknown as { __rgbboxVision: { enableSynthetic(): Promise<void> } }).__rgbboxVision.enableSynthetic()
+    })
+    const sendPalm = async (x: number) => {
+      await act(async () => {
+        fakeHost.send({ type: 'snapshot', snapshot: {
+          state: 'active', label: 'x', ringCenter: { x: 0.5, y: 0.5 },
+          geom: { palm: { x, y: 0.5 }, pinch: 1.1, scale: 0.18 },
+          profile: { activeZone: 0.17, deadZone: 0.09, pinchOff: 0.85 },
+          stats: { infer: { n: 9, p50: 8, p95: 12, mean: 9 }, fps: 60, inferFps: 30, delegate: 'GPU', lowFps: false },
+        } })
+      })
+      await new Promise((r) => setTimeout(r, 60))
+    }
+    await sendPalm(0.5)
+    await waitFor(() => {
+      expect(container.querySelector('.vision-cursor')).toBeTruthy()
+    })
+    const before = (window as unknown as { __rgbboxVision: { cursor(): { x: number } } }).__rgbboxVision.cursor().x
+    // a decisive right sweep moves the cursor right
+    for (let i = 1; i <= 8; i++) await sendPalm(0.5 + i * 0.02)
+    const after = (window as unknown as { __rgbboxVision: { cursor(): { x: number } } }).__rgbboxVision.cursor().x
+    expect(after).toBeGreaterThan(before)
+    ctxSpy.mockRestore()
+  })
 })
 
