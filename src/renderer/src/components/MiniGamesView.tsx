@@ -67,6 +67,15 @@ import {
 } from '../games/swarmMeta'
 import { isBgmEnabled, isSfxEnabled, playSfx, setBgmEnabled, setSfxEnabled, startBgm, stopBgm } from '../games/sfx'
 import {
+  bomb as slashBomb,
+  drawSlash,
+  initialSlashState,
+  slash as slashCut,
+  startSlash,
+  tickSlash,
+  type SlashState,
+} from '../games/slash'
+import {
   drawTetris,
   initialTetrisState,
   startTetris,
@@ -74,13 +83,14 @@ import {
   type TetrisState,
 } from '../games/tetris'
 
-type Screen = 'hub' | 'td' | 'survival' | 'tetris'
-type GameKey = 'td' | 'survival' | 'tetris'
+type Screen = 'hub' | 'td' | 'survival' | 'tetris' | 'slash'
+type GameKey = 'td' | 'survival' | 'tetris' | 'slash'
 
 const BEST_KEYS: Record<GameKey, string> = {
   td: 'rgbbox:gamesBest:balloon',
   survival: 'rgbbox:gamesBest:survival',
   tetris: 'rgbbox:gamesBest:tetris',
+  slash: 'rgbbox:gamesBest:slash',
 }
 
 function readBest(game: GameKey): number {
@@ -119,7 +129,8 @@ export function MiniGamesView(): JSX.Element {
   const tdStateRef = useRef<GameState>(initialState())
   const survivalRef = useRef<SurvivalState>(initialSurvivalState())
   const tetrisRef = useRef<TetrisState>(initialTetrisState())
-  const bestRef = useRef<Record<GameKey, number>>({ td: readBest('td'), survival: readBest('survival'), tetris: readBest('tetris') })
+  const slashRef = useRef<SlashState>(initialSlashState())
+  const bestRef = useRef<Record<GameKey, number>>({ td: readBest('td'), survival: readBest('survival'), tetris: readBest('tetris'), slash: readBest('slash') })
   const [screen, setScreen] = useState<Screen>('hub')
   const [fullscreen, setFullscreen] = useState(false)
   const [sfxOn, setSfxOn] = useState(() => isSfxEnabled())
@@ -130,6 +141,7 @@ export function MiniGamesView(): JSX.Element {
   const [tdSnapshot, setTdSnapshot] = useState<GameState>(() => ({ ...tdStateRef.current }))
   const [survivalSnapshot, setSurvivalSnapshot] = useState<SurvivalState>(() => ({ ...survivalRef.current, keys: new Set() }))
   const [tetrisSnapshot, setTetrisSnapshot] = useState<TetrisState>(() => ({ ...tetrisRef.current, keys: new Set() }))
+  const [slashSnapshot, setSlashSnapshot] = useState<SlashState>(() => initialSlashState())
   const [swarmCharacter, setSwarmCharacter] = useState<CharacterId>(() => readCharacter())
   const [meta, setMeta] = useState<SwarmMeta>(() => readMeta())
   const [roulette, setRoulette] = useState<{ stage: 'pick' | 'spin' | 'result'; result?: RouletteResult }>({ stage: 'pick' })
@@ -150,6 +162,7 @@ export function MiniGamesView(): JSX.Element {
   // a Tetris run on pinch without a TDZ-prone dependency.
   const vision = useVisionInput()
   const startTetrisRef = useRef<() => void>(() => undefined)
+  const slashStartRef = useRef<() => void>(() => undefined)
   // R139: gesture-driven roulette selection — focus index within the active
   // 2-option group (pick: item/stat wheel, result: claim/dissolve), plus the
   // double-pinch confirm detector (two 'space' commands within 900ms).
@@ -161,6 +174,10 @@ export function MiniGamesView(): JSX.Element {
   // disables the input source — otherwise the camera just silently goes away.
   const [visionExitNotice, setVisionExitNotice] = useState(false)
   const visionWasEnabledRef = useRef(false)
+
+  const publishSlash = useCallback(() => {
+    setSlashSnapshot({ ...slashRef.current, blocks: [...slashRef.current.blocks], streaks: [...slashRef.current.streaks] })
+  }, [])
 
   const publishTd = useCallback(() => {
     setTdSnapshot({ ...tdStateRef.current, towers: [...tdStateRef.current.towers], balloons: [...tdStateRef.current.balloons], projectiles: [...tdStateRef.current.projectiles] })
@@ -407,6 +424,34 @@ export function MiniGamesView(): JSX.Element {
       } else {
         visionOpenPalmSinceRef.current = null
       }
+    } else if (screen === 'slash') {
+      const SLASH_DIR: Record<string, number> = { arrowright: 0, arrowup: 2, arrowleft: 4, arrowdown: 6 }
+      for (const cmd of vision.queueRef.current) {
+        if (cmd === 'space') {
+          if (slashRef.current.phase === 'ready' || slashRef.current.phase === 'lost') { playSfx('confirm'); startRunRef.current() }
+          else if (slashBomb(slashRef.current)) playSfx('wave')
+        } else if (SLASH_DIR[cmd] != null) {
+          const res = slashCut(slashRef.current, SLASH_DIR[cmd])
+          if (res === 'hit') playSfx('pop')
+          else if (res === 'wrong') playSfx('hurt')
+        }
+      }
+      vision.queueRef.current.length = 0
+      // open-palm hold starts a run (same gesture as the other games)
+      const frameS = vision.frameRef.current
+      const geomS = frameS?.geom
+      const palmOpenS = geomS != null && geomS.pinch > ((frameS?.profile?.pinchOff as number | undefined) ?? 0.85)
+      if (palmOpenS && (slashRef.current.phase === 'ready' || slashRef.current.phase === 'lost')) {
+        const nowMsS = performance.now()
+        if (visionOpenPalmSinceRef.current == null) visionOpenPalmSinceRef.current = nowMsS
+        else if (nowMsS - visionOpenPalmSinceRef.current >= 700) {
+          visionOpenPalmSinceRef.current = null
+          playSfx('confirm')
+          startRunRef.current()
+        }
+      } else {
+        visionOpenPalmSinceRef.current = null
+      }
     } else if (screen === 'tetris') {
       for (const cmd of vision.queueRef.current) {
         if (cmd === 'space') {
@@ -505,7 +550,7 @@ export function MiniGamesView(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (screen !== 'td' && screen !== 'survival' && screen !== 'tetris') return
+    if (screen !== 'td' && screen !== 'survival' && screen !== 'tetris' && screen !== 'slash') return
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
@@ -575,6 +620,13 @@ export function MiniGamesView(): JSX.Element {
         }
         lastPhase = phase
         drawSurvival(ctx, survivalRef.current)
+      } else if (screen === 'slash') {
+        pollVision()
+        tickSlash(slashRef.current, dt)
+        const canvasEl = canvasRef.current
+        const ctx2 = canvasEl?.getContext('2d')
+        if (canvasEl && ctx2) drawSlash(ctx2, slashRef.current, now)
+        if (slashRef.current.phase === 'lost' && slashSnapshot.phase !== 'lost') settleBest('slash', slashRef.current.score)
       } else {
         pollVision()
         tickTetris(tetrisRef.current, dt)
@@ -593,6 +645,7 @@ export function MiniGamesView(): JSX.Element {
       if (snapshotTimer > 0.18) {
         if (screen === 'td') publishTd()
         else if (screen === 'survival') publishSurvival()
+        else if (screen === 'slash') publishSlash()
         else publishTetris()
         snapshotTimer = 0
       }
@@ -606,7 +659,7 @@ export function MiniGamesView(): JSX.Element {
   }, [fullscreen, pollGamepad, pollVision, publishTd, publishSurvival, publishTetris, screen, selectedTowerId, settleBest, tdSpeed])
 
   useEffect(() => {
-    if (screen !== 'survival' && screen !== 'tetris' && !fullscreen) return
+    if (screen !== 'survival' && screen !== 'tetris' && screen !== 'slash' && !fullscreen) return
     const normalizeKey = (event: KeyboardEvent) => event.code === 'Space' ? 'space' : event.key.toLowerCase()
     const down = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -618,6 +671,10 @@ export function MiniGamesView(): JSX.Element {
       if (MOVEMENT_KEYS.has(normalized) && !event.ctrlKey && !event.metaKey && !event.altKey) event.preventDefault()
       if (screen === 'survival') {
         survivalRef.current.keys.add(normalized)
+      } else if (screen === 'slash') {
+        const dir = normalized === 'arrowright' ? 0 : normalized === 'arrowup' ? 2 : normalized === 'arrowleft' ? 4 : normalized === 'arrowdown' ? 6 : -1
+        if (dir >= 0) { slashCut(slashRef.current, dir); playSfx('pop') }
+        else if (normalized === 'space') { if (slashBomb(slashRef.current)) playSfx('wave') }
       } else if (screen === 'tetris') {
         if (normalized === 'arrowleft') tetrisRef.current.commands.push('left')
         else if (normalized === 'arrowright') tetrisRef.current.commands.push('right')
@@ -762,6 +819,12 @@ export function MiniGamesView(): JSX.Element {
   }, [enabledArtifacts, meta, publishSurvival, swarmCharacter])
 
   startRunRef.current = startSurvivalRun
+  // R142-E4: slash uses the same unified start entry (pinch/open-palm/chord)
+  const startSlashRunCb = useCallback(() => {
+    startSlash(slashRef.current)
+    publishSlash()
+  }, [publishSlash])
+  slashStartRef.current = startSlashRunCb
 
   const restartSurvivalRun = useCallback(() => {
     survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts)
@@ -897,6 +960,15 @@ export function MiniGamesView(): JSX.Element {
             </span>
             <Play aria-hidden="true" size={16} />
           </button>
+          <button className="game-tile" type="button" style={{ '--game-accent': '#fbbf24' } as CSSProperties} onClick={() => enterGame('slash')}>
+            <span className="tower-orb" style={{ background: '#fbbf24' }}><Crosshair aria-hidden="true" size={18} /></span>
+            <span className="game-tile-copy">
+              <strong>{t('games.tileSlashTitle')}</strong>
+              <small>{t('games.tileSlashSummary')}</small>
+              <em><Trophy aria-hidden="true" size={12} />{bests.slash}</em>
+            </span>
+            <Play aria-hidden="true" size={16} />
+          </button>
           <div className="game-tile ghost" aria-hidden="true">
             <span className="tower-orb"><Crosshair aria-hidden="true" size={18} /></span>
             <span className="game-tile-copy">
@@ -909,13 +981,15 @@ export function MiniGamesView(): JSX.Element {
     )
   }
 
+  const isSlash = screen === 'slash'
+  const isTetris = screen === 'tetris'
   const isTd = screen === 'td'
   const isSurvival = screen === 'survival'
-  const gameTitle = isTd ? t('games.tileTdTitle') : isSurvival ? t('games.tileSwarmTitle') : t('games.tileTetrisTitle')
-  const rawPhase = isTd ? tdSnapshot.phase : isSurvival ? (survivalSnapshot.phase === 'levelup' ? 'ready' : survivalSnapshot.phase) : tetrisSnapshot.phase
+  const gameTitle = isTd ? t('games.tileTdTitle') : isSurvival ? t('games.tileSwarmTitle') : isSlash ? t('games.tileSlashTitle') : t('games.tileTetrisTitle')
+  const rawPhase = isTd ? tdSnapshot.phase : isSurvival ? (survivalSnapshot.phase === 'levelup' ? 'ready' : survivalSnapshot.phase) : isSlash ? slashSnapshot.phase : tetrisSnapshot.phase
   const phase = rawPhase as 'ready' | 'running' | 'won' | 'lost'
   const phaseLabel = phase === 'won' ? t('games.statusWon') : phase === 'lost' ? t('games.statusLost') : phase === 'ready' ? t('games.statusReady') : t('games.statusRunning')
-  const best = isTd ? bests.td : isSurvival ? bests.survival : bests.tetris
+  const best = isTd ? bests.td : isSurvival ? bests.survival : isSlash ? bests.slash : bests.tetris
   // R131/R132: vision status chip — localized wizard hint while calibrating
   // (retry reasons from the engine stay verbatim — they are the actionable
   // text); R132: an active session with no hand in frame flips to the
@@ -932,7 +1006,7 @@ export function MiniGamesView(): JSX.Element {
               ? t('games.vision.state.searching')
               : vision.label || t(`games.vision.state.${vision.state}`)}`
       : vision.label ? ` · 👁 ${t('games.vision.error')}: ${vision.label}` : ''
-  const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : startTetrisRun
+  const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : isTetris ? startTetrisRun : startSlashRunCb
   const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
 
   return (
@@ -1029,8 +1103,8 @@ export function MiniGamesView(): JSX.Element {
         {isTd || isSurvival ? (
           <span role="listitem" aria-label={t('games.ariaLives').replace('{value}', String(isTd ? tdSnapshot.lives : survivalSnapshot.player.hp))} title={t('games.ariaLives').replace('{value}', String(isTd ? tdSnapshot.lives : survivalSnapshot.player.hp))}><Heart aria-hidden="true" size={15} />{isTd ? tdSnapshot.lives : survivalSnapshot.player.hp}</span>
         ) : null}
-        <span role="listitem" aria-label={t('games.ariaCoins').replace('{value}', String(isTd ? tdSnapshot.coins : isSurvival ? survivalSnapshot.kills : tetrisSnapshot.lines))} title={t('games.ariaCoins').replace('{value}', String(isTd ? tdSnapshot.coins : isSurvival ? survivalSnapshot.kills : tetrisSnapshot.lines))}><span aria-hidden="true">{isTd ? '◎' : isSurvival ? '✕' : '≡'}</span> {isTd ? tdSnapshot.coins : isSurvival ? survivalSnapshot.kills : tetrisSnapshot.lines}</span>
-        <span role="listitem" aria-label={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score))} title={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score))}><span aria-hidden="true">★</span> {isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score}</span>
+        <span role="listitem" aria-label={t('games.ariaCoins').replace('{value}', String(isTd ? tdSnapshot.coins : isSurvival ? survivalSnapshot.kills : tetrisSnapshot.lines))} title={t('games.ariaCoins').replace('{value}', String(isTd ? tdSnapshot.coins : isSurvival ? survivalSnapshot.kills : tetrisSnapshot.lines))}><span aria-hidden="true">{isTd ? '◎' : isSurvival ? '✕' : '≡'}</span> {isTd ? tdSnapshot.coins : isSurvival ? survivalSnapshot.kills : isSlash ? slashSnapshot.combo : tetrisSnapshot.lines}</span>
+        <span role="listitem" aria-label={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score))} title={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score))}><span aria-hidden="true">★</span> {isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : isSlash ? slashSnapshot.score : tetrisSnapshot.score}</span>
         <span role="listitem" aria-label={t('games.ariaBest').replace('{value}', String(best))} title={t('games.ariaBest').replace('{value}', String(best))}><Trophy aria-hidden="true" size={15} />{best}</span>
       </div>
 
@@ -1165,7 +1239,7 @@ export function MiniGamesView(): JSX.Element {
             <span>
               {isTd
                 ? `${t('games.wave')} ${tdSnapshot.wave}/${MAX_WAVE}${tdSnapshot.phase === 'running' && tdSnapshot.waveQueue + tdSnapshot.balloons.length > 0 ? ` · ${t('games.balloonsLeft').replace('{value}', String(tdSnapshot.waveQueue + tdSnapshot.balloons.length))}` : ''}`
-                : isSurvival ? `${t('games.swarmHint')} · ${t('games.island').replace('{n}', String(survivalSnapshot.island))}${gamepadName ? ` · 🎮 ${gamepadName}` : ''}${visionSuffix}` : `${t('games.tetrisHint')}${visionSuffix}`}
+                : isSurvival ? `${t('games.swarmHint')} · ${t('games.island').replace('{n}', String(survivalSnapshot.island))}${gamepadName ? ` · 🎮 ${gamepadName}` : ''}${visionSuffix}` : isSlash ? `${t('games.slashHint')}${visionSuffix}` : `${t('games.tetrisHint')}${visionSuffix}`}
             </span>
             <span>
               {isTd && tdSnapshot.phase === 'running' && tdSnapshot.waveQueue === 0 && tdSnapshot.balloons.length === 0 && tdSnapshot.wave < MAX_WAVE
@@ -1306,14 +1380,23 @@ export function MiniGamesView(): JSX.Element {
           ) : (
             <div className="games-rules">
               <strong>{t('games.controlsTitle')}</strong>
-              <p>{t('games.tetrisControls')}</p>
+              <p>{isSlash ? t('games.slashControls') : t('games.tetrisControls')}</p>
               <strong>{t('games.rulesTitle')}</strong>
-              <ul>
-                <li>{t('games.tetrisRule1')}</li>
-                <li>{t('games.tetrisRule2')}</li>
-                <li>{t('games.tetrisRule3')}</li>
-              </ul>
-              <p className="games-help">{t('games.tetrisRule4')}</p>
+              {isSlash ? (
+                <ul>
+                  <li>{t('games.slashRule1')}</li>
+                  <li>{t('games.slashRule2')}</li>
+                </ul>
+              ) : (
+                <>
+                  <ul>
+                    <li>{t('games.tetrisRule1')}</li>
+                    <li>{t('games.tetrisRule2')}</li>
+                    <li>{t('games.tetrisRule3')}</li>
+                  </ul>
+                  <p className="games-help">{t('games.tetrisRule4')}</p>
+                </>
+              )}
             </div>
           )}
         </aside>

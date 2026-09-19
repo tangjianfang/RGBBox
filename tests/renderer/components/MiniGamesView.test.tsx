@@ -63,7 +63,7 @@ function makeTower(overrides: Partial<Tower> = {}): Tower {
 describe('renderer/components/MiniGamesView', () => {
   it('renders the games hub (R99/R100 platform shell)', () => {
     const { container } = render(<MiniGamesView />)
-    expect(container.querySelectorAll('.game-tile:not(.ghost)').length).toBe(3)
+    expect(container.querySelectorAll('.game-tile:not(.ghost)').length).toBe(4)
     expect(container.querySelectorAll('.game-tile.ghost').length).toBe(1)
     expect(container.querySelectorAll('canvas').length).toBe(0)
   })
