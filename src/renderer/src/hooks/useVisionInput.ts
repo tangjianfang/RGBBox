@@ -52,6 +52,8 @@ export interface VisionInputHandle {
   /** R136: runtime x-flip toggle — fixes reversed left/right for any camera setup. */
   setMirror(mirror: boolean): void
   mirror: boolean
+  /** R141-B: capture precision — fast 640×360 (games) vs precise 960×540 (cursor/assistant). */
+  setCapturePrecision(precise: boolean): void
   /** R136: latency-vs-accuracy preset (confirmMs 90/45/0). */
   setSensitivity(level: VisionSensitivity): void
   sensitivity: VisionSensitivity
@@ -275,6 +277,10 @@ export function useVisionInput(): VisionInputHandle {
     channelRef.current?.postMessage({ type: 'mirror', m })
   }, [])
 
+  const setCapturePrecision = useCallback((precise: boolean) => {
+    channelRef.current?.postMessage({ type: 'capture', camera: precise ? { width: 960, height: 540, frameRate: 60 } : { width: 640, height: 360, frameRate: 60 } })
+  }, [])
+
   const setSensitivity = useCallback((level: VisionSensitivity) => {
     setSensitivityState(level)
     try { localStorage.setItem(SENSITIVITY_KEY, level) } catch { /* non-fatal */ }
@@ -286,7 +292,7 @@ export function useVisionInput(): VisionInputHandle {
 
   return {
     enable, enableSynthetic, disable, recalibrate, setPaused, resumeActive, skipCalibration, applySettings,
-    setMirror, mirror, setSensitivity, sensitivity,
+    setMirror, mirror, setCapturePrecision, setSensitivity, sensitivity,
     enabled, label, state, stepId, handSeen, frameRef, heldRef, queueRef,
   }
 }

@@ -1821,6 +1821,18 @@ input:not([type]):focus {
   pointer-events: auto;
 }
 
+.vision-banner-posture {
+  color: #fbbf24;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.vision-banner-advice {
+  color: #fb923c;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .vision-banner-progress {
   background: rgba(148, 170, 184, 0.18);
   border-radius: 3px;

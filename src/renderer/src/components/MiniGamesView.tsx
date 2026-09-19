@@ -250,6 +250,22 @@ export function MiniGamesView(): JSX.Element {
     }
   }, [])
 
+  // R141-A: instant gesture feedback — a barely-there tick the moment any
+  // discrete gesture is recognized (perceived-latency cut, <50ms by
+  // construction: same event dispatch), and a confirm chime when a gesture
+  // COMPLETES an action (starts a run, confirms a roulette option).
+  useEffect(() => {
+    if (!vision.enabled) return
+    const onVisionEvent = (ev: Event): void => {
+      const detail = (ev as CustomEvent<{ kind: string; key: string | null; down: boolean }>).detail
+      if (detail?.down && (detail.kind === 'direction' || detail.kind === 'pinch' || detail.kind === 'chord')) {
+        playSfx('tick')
+      }
+    }
+    window.addEventListener('vision-input', onVisionEvent)
+    return () => window.removeEventListener('vision-input', onVisionEvent)
+  }, [vision.enabled])
+
   // R135: analog movement — the smoothed palm displacement relative to the
   // ring's LIVE center, normalized by the calibrated activeZone. Replaces the
   // R133 binary unit vector: displacement magnitude now scales speed
@@ -279,6 +295,7 @@ export function MiniGamesView(): JSX.Element {
             const nowMs = performance.now()
             if (nowMs - visionDoublePinchRef.current < 900) {
               visionDoublePinchRef.current = 0
+              playSfx('confirm')
               rouletteActionsRef.current[rouletteFocusRef.current]?.()
             } else {
               visionDoublePinchRef.current = nowMs
@@ -334,6 +351,7 @@ export function MiniGamesView(): JSX.Element {
       }
       // pinch to (re)start, mirroring the gamepad Start button (R103)
       if (vision.queueRef.current.includes('space') && (survivalRef.current.phase === 'ready' || survivalRef.current.phase === 'lost')) {
+        playSfx('confirm')
         startRunRef.current()
       }
       // R138: open-palm hold to (re)start — more forgiving than the pinch
@@ -343,6 +361,7 @@ export function MiniGamesView(): JSX.Element {
         if (visionOpenPalmSinceRef.current == null) visionOpenPalmSinceRef.current = nowMs
         else if (nowMs - visionOpenPalmSinceRef.current >= 700) {
           visionOpenPalmSinceRef.current = null
+          playSfx('confirm')
           startRunRef.current()
         }
       } else {
@@ -367,6 +386,7 @@ export function MiniGamesView(): JSX.Element {
         if (visionOpenPalmSinceRef.current == null) visionOpenPalmSinceRef.current = nowMsT
         else if (nowMsT - visionOpenPalmSinceRef.current >= 700) {
           visionOpenPalmSinceRef.current = null
+          playSfx('confirm')
           startTetrisRef.current()
         }
       } else {

@@ -2,10 +2,10 @@
 // Fire-and-forget blips shared by every mini game; shoot-grade sounds are
 // throttled so rapid fire does not stack into a buzz.
 
-export type SfxKind = 'shoot' | 'hit' | 'pop' | 'xp' | 'levelup' | 'hurt' | 'wave' | 'build' | 'coin' | 'gameover'
+export type SfxKind = 'shoot' | 'hit' | 'pop' | 'xp' | 'levelup' | 'hurt' | 'wave' | 'build' | 'coin' | 'gameover' | 'tick' | 'confirm'
 
 const SFX_ENABLED_KEY = 'rgbbox:gamesSfx'
-const THROTTLE_MS: Partial<Record<SfxKind, number>> = { shoot: 90, hit: 70, xp: 60, pop: 60 }
+const THROTTLE_MS: Partial<Record<SfxKind, number>> = { shoot: 90, hit: 70, xp: 60, pop: 60, tick: 60 }
 const lastPlayed: Partial<Record<SfxKind, number>> = {}
 
 let audioCtx: AudioContext | null = null
@@ -59,6 +59,14 @@ const VOICES: Record<SfxKind, Voice[]> = {
   gameover: [
     { type: 'sawtooth', from: 330, to: 220, duration: 0.16, volume: 0.06 },
     { type: 'sawtooth', from: 220, to: 110, duration: 0.3, volume: 0.06 },
+  ],
+  // R141-A: vision feedback — a barely-there blip the moment a gesture is
+  // recognized (perceived-latency cut), and a two-tone confirm for completed
+  // actions. Deliberately quieter than the game sounds.
+  tick: [{ type: 'sine', from: 1500, to: 1500, duration: 0.03, volume: 0.018 }],
+  confirm: [
+    { type: 'sine', from: 880, to: 880, duration: 0.05, volume: 0.03 },
+    { type: 'sine', from: 1320, to: 1320, duration: 0.08, volume: 0.03 },
   ],
 }
 

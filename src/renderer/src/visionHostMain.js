@@ -23,6 +23,8 @@ let video = null
 let stream = null
 let vfcId = null
 let syntheticTimer = null
+// R141-B: current capture mode (cfg.camera or the {type:'capture'} switch)
+let currentCamera = { width: 640, height: 360, frameRate: 60 }
 
 function post(msg) {
   channel.postMessage(msg)
@@ -70,13 +72,22 @@ function emit(events, snapshot) {
   }
 }
 
-async function startCamera() {
+async function startCamera(camera) {
+  // R141-B: capture mode is cfg-driven — games stay at the fast 640×360,
+  // precision mode (960×540) serves cursor/assistant scenes where the
+  // latency budget is loose but detection robustness matters.
+  const mode = camera ?? currentCamera
+  currentCamera = mode
   video = document.createElement('video')
   video.style.display = 'none'
   document.body.appendChild(video)
   stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 60, min: 15 } },
+    video: {
+      width: { ideal: mode.width },
+      height: { ideal: mode.height },
+      frameRate: { ideal: mode.frameRate ?? 60, min: 15 },
+    },
   })
   video.srcObject = stream
   await new Promise((r) => { video.onloadedmetadata = r })
@@ -85,8 +96,9 @@ async function startCamera() {
   let lastSend = 0
   const acquire = []
   const tick = (now, meta) => {
-    // 30Hz inference cap (R133 margin fix): skip early camera frames
-    if (now - lastSend >= 1000 / 30 - 4) {
+    // inference-rate cap (R133 margin fix), mode-driven (60 continuous / 30 default)
+    const cap = pipeline?.maxFps && pipeline.maxFps > 0 ? pipeline.maxFps : 30
+    if (now - lastSend >= 1000 / cap - 4) {
       lastSend = now
       if (meta?.presentationTime && now - meta.presentationTime >= 0 && now - meta.presentationTime < 5000) {
         acquire.push(now - meta.presentationTime)
@@ -126,6 +138,7 @@ channel.onmessage = async (ev) => {
         onProfileSave: (profile) => post({ type: 'profile-save', profile }),
       })
       await pipeline.init(msg.cfg)
+      pipeline.maxFps = msg.cfg.maxFps ?? 0
       if (msg.cfg.mode === 'synthetic') {
         await pipeline.startSynthetic()
         syntheticTimer = setInterval(() => {
@@ -133,7 +146,7 @@ channel.onmessage = async (ev) => {
           emit(r.events, r.snapshot)
         }, 33)
       } else {
-        await startCamera()
+        await startCamera(msg.cfg.camera)
       }
       post({ type: 'ready', delegate: pipeline.delegate })
     } catch (err) {
@@ -149,6 +162,13 @@ channel.onmessage = async (ev) => {
     case 'recalibrate': pipeline.recalibrate(); break
     case 'forceReady': pipeline.forceReady(msg.profile); break
     case 'mirror': pipeline.setMirror(msg.m); break
+    case 'capture':
+      // R141-B: precision mode switch — restart the stream with new constraints
+      if (!msg.synthetic && stream) {
+        teardown()
+        await startCamera(msg.camera)
+      }
+      break
     case 'stop': teardown(); pipeline.stop(); break
     default: break
   }

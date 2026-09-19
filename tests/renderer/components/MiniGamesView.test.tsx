@@ -12,6 +12,14 @@ import {
 } from '../../../src/renderer/src/games/td'
 import { setupRendererMocks } from '../_helpers'
 
+// R141-A: capture gesture-feedback sounds without an AudioContext. NOTE:
+// must stay a plain vi.mock call — an aliased 'viSfx.mock' is NOT hoisted and
+// the component would bind the real module before the mock runs.
+vi.mock('../../../src/renderer/src/games/sfx', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/renderer/src/games/sfx')>()
+  return { ...actual, playSfx: vi.fn() }
+})
+
 // R136: the vision pipeline lives in the hidden host window; the component
 // talks to it over the (mocked) BroadcastChannel. FakeHost answers init with
 // 'ready' so the real hook completes enable; drives happen via the seam.
@@ -349,6 +357,53 @@ describe('renderer/components/MiniGamesView', () => {
       expect(container.querySelector('.roulette-disc.spinning')).toBeTruthy()
     })
     ctxSpy.mockRestore()
+  })
+
+  // R141-A: instant gesture feedback — a tick fires the moment a discrete
+  // gesture is recognized; confirm actions get the two-tone chime.
+  it('vision tick sfx fires on gesture events, confirm sfx on roulette confirm (R141-A)', async () => {
+    const sfx = await import('../../../src/renderer/src/games/sfx')
+    const noopCtx = new Proxy({}, {
+      get: (_t, prop) => {
+        if (prop === 'canvas') return undefined
+        if (prop === 'measureText') return () => ({ width: 10 })
+        return () => undefined
+      },
+      set: () => true,
+    }) as unknown as CanvasRenderingContext2D
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm
+    await act(async () => {
+      await (window as unknown as { __rgbboxVision: { enableSynthetic(): Promise<void> } }).__rgbboxVision.enableSynthetic()
+    })
+    ;(sfx.playSfx as unknown as { mockClear(): void }).mockClear()
+
+    await act(async () => {
+      fakeHost.send({ type: 'events', events: [{ kind: 'direction', key: 'ArrowRight', down: true }] })
+    })
+    expect(sfx.playSfx).toHaveBeenCalledWith('tick')
+    ctxSpy.mockRestore()
+  })
+
+  // R141-B: the banner surfaces the environment coach advice from telemetry
+  it('vision banner shows dim-light advice when capture age is long (R141-B)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    await act(async () => {
+      await (window as unknown as { __rgbboxVision: { enableSynthetic(): Promise<void> } }).__rgbboxVision.enableSynthetic()
+    })
+    await act(async () => {
+      fakeHost.send({ type: 'snapshot', snapshot: {
+        state: 'active', label: 'x', geom: { palm: { x: 0.5, y: 0.5 }, pinch: 1.1, scale: 0.18 },
+        stats: { infer: { n: 100, p50: 8, p95: 12, mean: 9 }, fps: 60, inferFps: 30, delegate: 'GPU', lowFps: false,
+          acquire: { n: 100, p50: 40, p95: 55, mean: 42 }, cam: { w: 640, h: 360, fps: 60 } },
+      } })
+    })
+    await act(async () => { vi.advanceTimersByTime(1300) })
+    expect(container.querySelector('.vision-banner-advice')?.textContent).toContain('games.vision.env.dim-light')
+    vi.useRealTimers()
   })
 })
 

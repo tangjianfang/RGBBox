@@ -191,4 +191,17 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     const frame: Partial<VisionFrame> = { state: 'active', stepProgress: 0.5 }
     expect(frame.state).toBe('active')
   })
+
+  it('setCapturePrecision posts the capture-mode switch (R141-B)', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(() => result.current.enableSynthetic())
+    act(() => result.current.setCapturePrecision(true))
+    const msg = host.received.find((m) => m.type === 'capture') as { camera: { width: number; height: number } }
+    expect(msg.camera).toEqual({ width: 960, height: 540, frameRate: 60 })
+    act(() => result.current.setCapturePrecision(false))
+    const msgs = host.received.filter((m) => m.type === 'capture')
+    expect((msgs[1] as { camera: { width: number } }).camera.width).toBe(640)
+    await act(() => result.current.disable())
+  })
 })
+
