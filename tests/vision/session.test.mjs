@@ -158,3 +158,31 @@ test('heldKeys invariant after force-release', () => {
   d.session.stop();
   expect(heldKeys(d.session)).toEqual([]);
 });
+
+// R132: the games integration runs faceless (faceModel:null) — requireFace:false
+// must unlock both face gates: calibration entry and the center-step faceN check.
+test('requireFace:false calibrates and plays fully faceless (R132 games path)', () => {
+  const d = new SessionDriver({ cfg: { calSteps: QUICK_CFG.calSteps, requireFace: false } });
+  const faceless = (spec) => ({ ...spec, face: null });
+  // searching → calibrating without any face frame
+  d.collect(18, faceless(atPalm(CENTER.x, CENTER.y)));
+  expect(d.session.state).toBe('calibrating');
+  // center step passes the (skipped) face gate
+  for (let k = 0; k < 8; k++) {
+    const deg = (k * 45 * Math.PI) / 180;
+    d.collect(3, faceless(atPalm(CENTER.x + Math.cos(deg) * 0.2, CENTER.y - Math.sin(deg) * 0.2)));
+  }
+  for (let i = 0; i < 15; i++) d.collect(3, faceless({ ...atPalm(CENTER.x, CENTER.y), pinch: i % 2 ? 1.25 : 0.22 }));
+  expect(d.session.state, `status: ${d.session.status}`).toBe('active');
+  // gestures still fire with zero face input
+  const ev = d.collect(6, faceless(atPalm(0.72, CENTER.y)));
+  expect(ev.some((e) => e.down && e.key === 'ArrowRight')).toBe(true);
+});
+
+test('requireFace default still enforces the center-step face gate', () => {
+  const d = new SessionDriver({ cfg: QUICK_CFG });
+  d.collect(5, atPalm(CENTER.x, CENTER.y));                     // enters calibration
+  d.collect(16, { ...atPalm(CENTER.x, CENTER.y), face: null }); // step ends faceless
+  expect(d.session.state).toBe('calibrating');
+  expect(d.session.status.includes('面部'), d.session.status).toBeTruthy();
+});

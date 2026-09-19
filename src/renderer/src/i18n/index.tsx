@@ -445,6 +445,10 @@ const EN = {
   'games.vision.hint.center': 'Hold your open hand still at the center of the frame',
   'games.vision.hint.reach': 'Slowly reach out in all 8 directions',
   'games.vision.hint.pinch': 'Pinch and release about 5 times',
+  // R132: pad + exit notice
+  'games.vision.exited': 'Vision off',
+  'games.vision.padPinch': 'PINCH ON',
+  'games.vision.padIdle': 'PINCH',
   'games.swarmHint': 'WASD / arrows to move — auto-fire handles the rest',
   'games.swarmControls': 'WASD or arrows to move. Your ship auto-fires at the nearest enemy.',
   'games.swarmRule1': 'Collect green XP shards to level up.',
@@ -1631,6 +1635,10 @@ const ZH: TranslationTable = {
   'games.vision.hint.center': '手自然张开，停在画面中央，保持不动',
   'games.vision.hint.reach': '以中心为原点，轮流向 8 个方向缓慢伸展',
   'games.vision.hint.pinch': '拇指食指反复捏合-松开约 5 次',
+  // R132: pad + exit notice
+  'games.vision.exited': '已退出体感',
+  'games.vision.padPinch': '捏合中',
+  'games.vision.padIdle': '捏合',
   'games.swarmHint': 'WASD / 方向键移动——开火全自动',
   'games.swarmControls': 'WASD 或方向键移动，飞船自动索敌开火。',
   'games.swarmRule1': '拾取绿色经验碎片升级。',

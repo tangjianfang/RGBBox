@@ -79,6 +79,10 @@ try {
   })
   ok('enableSynthetic() resolved (models + wasm loaded via file:// media route)', started)
 
+  // ── R132: the joystick pad overlay mounts with the vision session ────────
+  await sleep(600)
+  ok('VisionPad overlay mounted (.vision-pad canvas)', !!(await page.evaluate(() => document.querySelector('.vision-pad canvas'))))
+
   // wizard: center 1.5s + reach 2.6s + pinch 3.6s (+ margin). While Tetris sits
   // in its ready phase, an active session shows the localized pinch-to-start
   // hint instead of the engine's 已激活 label — either proves "active".
@@ -92,6 +96,8 @@ try {
   }
   ok('calibration wizard completed → active (synthetic hand)', active)
   await page.screenshot({ path: `${OUT}/r131-tetris-active.png` })
+  // close-up of the pad itself (its text/compass is ~10px at full-page scale)
+  await page.locator('.vision-pad').screenshot({ path: `${OUT}/r132-vision-pad.png` }).catch(() => {})
 
   // pinch-to-start: synthetic pinches every ~4s; wait for the run to start
   let running = false
@@ -107,8 +113,19 @@ try {
   const played = await page.evaluate(() => ({
     held: window.__rgbboxVision.held(),
     status: document.querySelector('.games-canvas-status')?.textContent ?? '',
+    snapshot: window.__rgbboxVision.snapshot(),
   }))
   ok('direction/pinch gestures reached the game (status chip live)', played.status.includes('👁'))
+  // R132.2/.1: pad presence + inference stats flowing (fps/p95/delegate)
+  ok('VisionPad still mounted mid-game', !!(await page.evaluate(() => document.querySelector('.vision-pad'))))
+  const infer = played.snapshot?.stats?.infer ?? { n: 0 }
+  console.log(`  vision stats: ${Math.round(played.snapshot?.stats?.fps ?? 0)}fps · infer p50 ${Math.round(infer.p50 ?? NaN)}ms · p95 ${Math.round(infer.p95 ?? NaN)}ms · ${played.snapshot?.stats?.delegate ?? '-'}`)
+  ok('inference stats flowing (n > 30 samples)', infer.n > 30)
+  // R132.3: exit notice — disable via the header toggle, expect the chip text
+  await page.locator('button[aria-label="关闭视觉体感输入"]').first().click()
+  await sleep(400)
+  const exitNotice = await page.evaluate(() => document.querySelector('.games-canvas-status')?.textContent ?? '')
+  ok('exit notice shows after disabling (已退出体感)', exitNotice.includes('已退出体感'))
 
   // ── 5. hub stops the engine, releases keys ───────────────────────────────
   await page.locator('button', { hasText: '返回游戏库' }).first().click()

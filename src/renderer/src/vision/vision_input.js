@@ -20,7 +20,15 @@ export const DEFAULT_CONFIG = {
   wasmBase: './vendor',
   handModel: './models/hand_landmarker.task',
   faceModel: './models/face_landmarker.task',
+  // R132: null → run faceless (no FaceLandmarker at all) — the games
+  // integration doesn't consume expression keys and halves the per-frame
+  // inference budget on the main thread.
   camera: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60, min: 30 } },
+  numHands: 2,
+  // R132: cap the inference rate — detection runs on the renderer main thread
+  // next to the game loop, so a 60fps camera must not mean 60 inferences/s.
+  // 0 = every frame (upstream behavior).
+  maxFps: 0,
   session: {}, // SessionController cfg overrides (storage etc.)
 };
 
@@ -37,6 +45,7 @@ export class VisionInput {
     this.fps = new FpsCounter();
     this.delegate = '-';
     this.lastTs = 0;
+    this.lastProcessMs = 0;
     this.frameCount = 0;
     this._raf = null;
     this._running = false;
@@ -51,7 +60,7 @@ export class VisionInput {
     const make = (delegate) => ({
       baseOptions: { modelAssetPath: this.cfg.handModel, delegate },
       runningMode: 'VIDEO',
-      numHands: 2,
+      numHands: this.cfg.numHands ?? 2,
     });
     const makeFace = (delegate) => ({
       baseOptions: { modelAssetPath: this.cfg.faceModel, delegate },
@@ -63,12 +72,13 @@ export class VisionInput {
     this.onStatus('loading models (GPU)…');
     try {
       this.hand = await HandLandmarker.createFromOptions(fileset, make('GPU'));
-      this.face = await FaceLandmarker.createFromOptions(fileset, makeFace('GPU'));
+      // R132: face is optional — null faceModel skips the model entirely
+      this.face = this.cfg.faceModel ? await FaceLandmarker.createFromOptions(fileset, makeFace('GPU')) : null;
       this.delegate = 'GPU';
     } catch (e) {
       this.onStatus(`GPU delegate unavailable (${e.message?.slice(0, 60)}), falling back to CPU`);
       this.hand = await HandLandmarker.createFromOptions(fileset, make('CPU'));
-      this.face = await FaceLandmarker.createFromOptions(fileset, makeFace('CPU'));
+      this.face = this.cfg.faceModel ? await FaceLandmarker.createFromOptions(fileset, makeFace('CPU')) : null;
       this.delegate = 'CPU';
     }
     this.onStatus(`ready (${this.delegate} delegate) — ${this.session.label()}`);
@@ -140,6 +150,15 @@ export class VisionInput {
       this._scheduleNext();
       return;
     }
+    // R132: inference-rate cap — skip camera frames that arrive sooner than
+    // 1000/maxFps after the last processed one (detection shares the main
+    // thread with the game loop; 30Hz is well inside the confirm/hysteresis
+    // envelope of the engines, which are all time-based, not frame-based).
+    if (this.cfg.maxFps > 0 && now - this.lastProcessMs < 1000 / this.cfg.maxFps) {
+      this._scheduleNext();
+      return;
+    }
+    this.lastProcessMs = now;
     try {
       this._processFrame(now);
     } catch (e) {
@@ -160,7 +179,7 @@ export class VisionInput {
       const s = this.synthetic.sample(nowMs, phase);
       // selfie-space convention (flip once at entry), same as camera path
       hands = [{ landmarks: s.hand.map((p) => ({ ...p, x: 1 - p.x })), score: 0.9 }];
-      faceMap = s.faceBlend;
+      faceMap = this.face ? s.faceBlend : null;
     } else {
       let ts = Math.round(nowMs);
       if (ts <= this.lastTs) ts = this.lastTs + 1;
@@ -174,7 +193,7 @@ export class VisionInput {
         score: hs[i]?.[0]?.score ?? 0,
       }));
 
-      if (this.frameCount % this.session.faceEveryN === 0) {
+      if (this.face && this.frameCount % this.session.faceEveryN === 0) {
         const fres = this.face.detectForVideo(this.video, ts);
         if (fres.faceBlendshapes?.length) faceMap = blendshapeMap(fres.faceBlendshapes[0].categories);
       }

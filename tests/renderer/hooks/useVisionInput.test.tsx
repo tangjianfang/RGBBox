@@ -9,7 +9,15 @@ import type { VisionEvent, VisionFrame } from '../../../src/renderer/src/vision/
 
 interface FakeVisionInput {
   opts: {
-    config: { wasmBase: string; handModel: string; faceModel: string }
+    config: {
+      wasmBase: string
+      handModel: string
+      faceModel: string | null
+      numHands: number
+      maxFps: number
+      session: Record<string, unknown>
+      camera: Record<string, unknown>
+    }
     onEvent: (event: VisionEvent) => void
     onFrame: (frame: Partial<VisionFrame>) => void
   }
@@ -74,10 +82,22 @@ describe('renderer/hooks/useVisionInput (R131)', () => {
     expect(fake.cameraStarted).toBe(true)
     expect(fake.opts.config.wasmBase).toContain('vendor/mediapipe')
     expect(fake.opts.config.handModel).toContain('models/hand_landmarker.task')
-    expect(fake.opts.config.faceModel).toContain('models/face_landmarker.task')
     const video = document.querySelector('body > video')
     expect(video).toBeTruthy()
     expect((video as HTMLElement).style.display).toBe('none')
+    await act(() => result.current.disable())
+  })
+
+  it('enable() runs the R132 perf budget: faceless, one hand, 30fps inference cap, 640×480 camera', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(() => result.current.enable())
+    const cfg = visionState.instances[0].opts.config
+    expect(cfg.faceModel).toBeNull()
+    expect(cfg.numHands).toBe(1)
+    expect(cfg.maxFps).toBe(30)
+    expect((cfg.camera.width as { ideal: number }).ideal).toBe(640)
+    expect((cfg.camera.frameRate as { ideal: number }).ideal).toBe(30)
+    expect(cfg.session.requireFace).toBe(false)
     await act(() => result.current.disable())
   })
 
@@ -113,6 +133,25 @@ describe('renderer/hooks/useVisionInput (R131)', () => {
     act(() => fake.opts.onFrame({ state: 'calibrating', label: '校准 1/3', stepId: 'center' }))
     expect(result.current.state).toBe('searching') // throttled (<250ms later)
     await act(() => result.current.disable())
+  })
+
+  it('frameRef updates EVERY frame (pad overlay path) and handSeen follows geom presence (R132)', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(() => result.current.enable())
+    const fake = visionState.instances[0]
+    const geom = { palm: { x: 0.51, y: 0.54 }, pinch: 1.1, scale: 0.18 }
+    // first onFrame publishes immediately — carries the hand geometry
+    act(() => fake.opts.onFrame({ state: 'active', label: 'a', geom }))
+    expect(result.current.handSeen).toBe(true)
+    expect(result.current.frameRef.current?.geom).toEqual(geom)
+    // a handless frame lands in the ref instantly, while the throttled React
+    // state keeps the last published value — exactly the split the pad needs
+    act(() => fake.opts.onFrame({ state: 'active', label: 'b', geom: null, stepProgress: 0.5 }))
+    expect(result.current.frameRef.current?.geom).toBeNull()
+    expect(result.current.frameRef.current?.stepProgress).toBe(0.5)
+    expect(result.current.handSeen).toBe(true) // still the throttled value
+    await act(() => result.current.disable())
+    expect(result.current.frameRef.current).toBeNull()
   })
 
   it('disable() stops the engine, clears every held key and removes the video element', async () => {

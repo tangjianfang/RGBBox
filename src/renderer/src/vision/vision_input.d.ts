@@ -39,6 +39,13 @@ export interface VisionFrame {
   score: number
   stats: VisionStats
   faceEveryN: number
+  /** null when no hand passed the score floor this frame */
+  geom?: { palm: { x: number; y: number }; pinch: number; scale: number } | null
+  /** normalized pinch distance (geom.pinch alias, always present for the pad) */
+  pinch?: number | null
+  /** live calibrated profile (center/activeZone/deadZone/pinchOn/pinchOff…) */
+  profile?: Record<string, unknown> | null
+  provisionalCenter?: { x: number; y: number } | null
 }
 
 export interface VisionSession {
@@ -56,12 +63,17 @@ export interface VisionInputConfig {
   /** Base URL holding vision_bundle.js + wasm siblings. */
   wasmBase: string
   handModel: string
-  faceModel: string
+  /** R132: null → faceless pipeline (no FaceLandmarker created/inferred). */
+  faceModel: string | null
   camera?: {
     width?: { ideal: number }
     height?: { ideal: number }
-    frameRate?: { ideal: number; min?: number }
+    frameRate?: { ideal: number; min?: number; max?: number }
   }
+  /** max hands tracked (R132: games pass 1 — halves hand-inference cost). */
+  numHands?: number
+  /** inference-rate cap in fps, 0 = every camera frame. */
+  maxFps?: number
   /** SessionController overrides (storage etc.). */
   session?: Record<string, unknown>
   pinch?: { key?: string; on?: number; off?: number }

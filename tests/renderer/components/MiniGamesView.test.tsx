@@ -150,6 +150,26 @@ describe('renderer/components/MiniGamesView', () => {
     })
   })
 
+  it('vision pad overlay mounts with vision enabled and shows the exit notice when disabled (R132)', async () => {
+    const { container } = render(<MiniGamesView />)
+    expect(container.querySelector('.vision-pad')).toBeNull() // off by default
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[2]) // Tetris
+    const eye = [...container.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === 'games.vision.enable')
+    await act(async () => {
+      fireEvent.click(eye as HTMLButtonElement)
+    })
+    await waitFor(() => {
+      expect(container.querySelector('.vision-pad canvas')).toBeTruthy()
+    })
+    // disabling shows the transient "vision off" notice in the status chip
+    const eyeOff = [...container.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === 'games.vision.disable')
+    await act(async () => {
+      fireEvent.click(eyeOff as HTMLButtonElement)
+    })
+    expect(container.querySelector('.vision-pad')).toBeNull()
+    expect(container.querySelector('.games-canvas-status span')?.textContent).toContain('games.vision.exited')
+  })
+
   it('vision input: back to the hub stops the camera (R131)', async () => {
     const { container } = render(<MiniGamesView />)
     fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm

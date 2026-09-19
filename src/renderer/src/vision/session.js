@@ -19,6 +19,11 @@ export const DEFAULT_SESSION_CFG = {
   handLostRecalFrames: 45,
   faceLostReleaseFrames: 10,
   faceEveryN: 1,
+  // R132: the games integration runs the faceless pipeline (faceModel:null —
+  // expressions are reserved, not consumed). false skips the two face gates:
+  // calibration entry (searching needs hand+face) and the center-step faceN
+  // check. Default true keeps the upstream camera+face behavior.
+  requireFace: true,
   // quality gates (industrial rule: reject bad calibration, never ship it)
   maxCenterJitter: 0.03,     // normalized std of palm at rest
   minReach: 0.14,            // p90 radius required from center step
@@ -156,7 +161,7 @@ export class SessionController {
       if (acc.palmN < 15) return this._retryStep('手未稳定停留在中心');
       const jitter = Math.max(std(acc.xs), std(acc.ys));
       if (jitter > this.cfg.maxCenterJitter) return this._retryStep(`手抖动过大(σ=${jitter.toFixed(3)}),请支撑手肘重试`);
-      if (acc.faceN < 8) return this._retryStep('未检测到面部,请正对摄像头');
+      if (this.cfg.requireFace !== false && acc.faceN < 8) return this._retryStep('未检测到面部,请正对摄像头');
       const neutral = {};
       for (const [k, v] of Object.entries(acc.faceSums)) neutral[k] = v / acc.faceN;
       this.profile = {
@@ -273,7 +278,8 @@ export class SessionController {
     const faceMap = obs.face ?? null;
 
     if (this.state === 'searching') {
-      if (picked && (faceMap != null)) {
+      // R132: requireFace:false enters calibration on hand alone (faceless games path)
+      if (picked && (faceMap != null || this.cfg.requireFace === false)) {
         this._startCalibration(nowMs);
       } else {
         this._geom = null;

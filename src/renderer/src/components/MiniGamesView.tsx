@@ -2,6 +2,7 @@ import { ArrowLeft, Crosshair, Eye, EyeOff, Grid, Heart, Maximize2, Minimize2, M
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
 import { useVisionInput } from '../hooks/useVisionInput'
 import { useI18n } from '../i18n'
+import { VisionPad } from './vision/VisionPad'
 import {
   HEIGHT,
   MAX_WAVE,
@@ -134,6 +135,10 @@ export function MiniGamesView(): JSX.Element {
   // a Tetris run on pinch without a TDZ-prone dependency.
   const vision = useVisionInput()
   const startTetrisRef = useRef<() => void>(() => undefined)
+  // R132.3: transient "vision off" notice when the user (or a lifecycle rule)
+  // disables the input source — otherwise the camera just silently goes away.
+  const [visionExitNotice, setVisionExitNotice] = useState(false)
+  const visionWasEnabledRef = useRef(false)
 
   const publishTd = useCallback(() => {
     setTdSnapshot({ ...tdStateRef.current, towers: [...tdStateRef.current.towers], balloons: [...tdStateRef.current.balloons], projectiles: [...tdStateRef.current.projectiles] })
@@ -154,16 +159,18 @@ export function MiniGamesView(): JSX.Element {
   // held-key view reads the live ref, so the closure never goes stale.
   useEffect(() => {
     const heldRef = vision.heldRef
+    const frameRef = vision.frameRef
     const seam = {
       enableSynthetic: () => vision.enableSynthetic(),
       disable: () => vision.disable(),
       held: () => [...heldRef.current],
+      snapshot: () => frameRef.current,
     }
     ;(window as unknown as { __rgbboxVision?: typeof seam }).__rgbboxVision = seam
     return () => {
       delete (window as unknown as { __rgbboxVision?: typeof seam }).__rgbboxVision
     }
-  }, [vision.enableSynthetic, vision.disable, vision.heldRef])
+  }, [vision.enableSynthetic, vision.disable, vision.heldRef, vision.frameRef])
 
   const publishSurvival = useCallback(() => {
     setSurvivalSnapshot({ ...survivalRef.current, keys: new Set(survivalRef.current.keys), enemies: [...survivalRef.current.enemies], bullets: [...survivalRef.current.bullets], orbs: [...survivalRef.current.orbs] })
@@ -255,6 +262,24 @@ export function MiniGamesView(): JSX.Element {
     if (!vision.enabled) return
     vision.applySettings({ dirs: screen === 'tetris' ? 4 : 8 })
   }, [screen, vision.applySettings, vision.enabled])
+
+  // R132: TD is the mouse game — it consumes no gestures, so park the vision
+  // session in paused state there (the tick loop skips inference entirely and
+  // held keys are released) and resume on the gesture-driven screens.
+  useEffect(() => {
+    if (!vision.enabled) return
+    vision.setPaused(screen === 'td')
+  }, [screen, vision.enabled, vision.setPaused])
+
+  // R132.3: enabled→false shows a short "已退出体感" notice
+  useEffect(() => {
+    const was = visionWasEnabledRef.current
+    visionWasEnabledRef.current = vision.enabled
+    if (!was || vision.enabled) return
+    setVisionExitNotice(true)
+    const timer = window.setTimeout(() => setVisionExitNotice(false), 2500)
+    return () => window.clearTimeout(timer)
+  }, [vision.enabled])
 
   // R131: back to the hub or a hidden/minimized window stops the camera and
   // releases every held key (leaving the games view unmounts the hook itself).
@@ -667,16 +692,22 @@ export function MiniGamesView(): JSX.Element {
   const phase = rawPhase as 'ready' | 'running' | 'won' | 'lost'
   const phaseLabel = phase === 'won' ? t('games.statusWon') : phase === 'lost' ? t('games.statusLost') : phase === 'ready' ? t('games.statusReady') : t('games.statusRunning')
   const best = isTd ? bests.td : isSurvival ? bests.survival : bests.tetris
-  // R131: vision status chip — localized wizard hint while calibrating (retry
-  // reasons from the engine stay verbatim — they are the actionable text),
-  // engine label otherwise; pinch-to-start hint on the ready/lost screens.
-  const visionSuffix = vision.enabled
-    ? ` · 👁 ${vision.state === 'active' && (phase === 'ready' || phase === 'lost')
-        ? t('games.vision.startHint')
-        : vision.state === 'calibrating' && vision.stepId && !vision.label.startsWith('重试')
-          ? t(`games.vision.hint.${vision.stepId}`)
-          : vision.label || t(`games.vision.state.${vision.state}`)}`
-    : vision.label ? ` · 👁 ${t('games.vision.error')}: ${vision.label}` : ''
+  // R131/R132: vision status chip — localized wizard hint while calibrating
+  // (retry reasons from the engine stay verbatim — they are the actionable
+  // text); R132: an active session with no hand in frame flips to the
+  // "not detected" text immediately (the session itself stays active through
+  // the 45-frame grace), and a just-disabled session shows a short notice.
+  const visionSuffix = visionExitNotice
+    ? ` · 👁 ${t('games.vision.exited')}`
+    : vision.enabled
+      ? ` · 👁 ${vision.state === 'active' && (phase === 'ready' || phase === 'lost')
+          ? t('games.vision.startHint')
+          : vision.state === 'calibrating' && vision.stepId && !vision.label.startsWith('重试')
+            ? t(`games.vision.hint.${vision.stepId}`)
+            : vision.state === 'active' && !vision.handSeen
+              ? t('games.vision.state.searching')
+              : vision.label || t(`games.vision.state.${vision.state}`)}`
+      : vision.label ? ` · 👁 ${t('games.vision.error')}: ${vision.label}` : ''
   const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : startTetrisRun
   const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
 
@@ -875,6 +906,8 @@ export function MiniGamesView(): JSX.Element {
             {isSurvival && newAchievements.length > 0 ? (
               <div className="ach-toast">🏆 {newAchievements.map((id) => t(`games.ach.${id as AchievementId}`)).join(' · ')}</div>
             ) : null}
+            {/* R132.2: joystick-style overlay — own rAF, reads frameRef directly */}
+            {vision.enabled ? <VisionPad vision={vision} /> : null}
           </div>
           <div className="games-canvas-status">
             <span>

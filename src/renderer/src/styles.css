@@ -1757,6 +1757,21 @@ input:not([type]):focus {
   position: relative;
 }
 
+/* R132.2: vision joystick overlay — canvas compositor layer pinned to the
+   bottom-right of the game canvas. Purely informational (pointer-events
+   none), drawn by its own rAF loop so it never re-renders React. */
+.vision-pad {
+  background: rgba(8, 13, 18, 0.78);
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 10px;
+  bottom: 10px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  position: absolute;
+  right: 10px;
+  z-index: 6;
+}
+
 .levelup-overlay {
   align-items: center;
   background: rgba(4, 8, 12, 0.78);

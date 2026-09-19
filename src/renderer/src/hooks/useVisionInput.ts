@@ -35,6 +35,13 @@ export interface VisionInputHandle {
   state: VisionState
   /** active calibration step while calibrating, else null */
   stepId: 'center' | 'reach' | 'pinch' | null
+  /** live hand detection (geom present) — synced at the same ~4Hz as state/label */
+  handSeen: boolean
+  /**
+   * Latest per-frame snapshot, updated EVERY frame (not throttled) — the
+   * VisionPad overlay reads this from its own rAF loop with zero re-renders.
+   */
+  frameRef: { readonly current: Partial<VisionFrame> | null }
   /** normalized held keys ('arrowleft' … 'space'), same names as MiniGamesView.normalizeKey */
   heldRef: { readonly current: Set<string> }
   /** discrete commands ('arrowleft'|'arrowright'|'arrowup'|'space') drained per frame by pollVision */
@@ -48,9 +55,12 @@ export function useVisionInput(): VisionInputHandle {
   const [label, setLabel] = useState('')
   const [state, setState] = useState<VisionState>('idle')
   const [stepId, setStepId] = useState<'center' | 'reach' | 'pinch' | null>(null)
+  const [handSeen, setHandSeen] = useState(false)
   // game-facing state (normalized key names)
   const heldRef = useRef<Set<string>>(new Set())
   const queueRef = useRef<string[]>([])
+  // per-frame snapshot for the pad overlay (never throttled)
+  const frameRef = useRef<Partial<VisionFrame> | null>(null)
   // ≥4Hz throttle for React state sync — onFrame fires at camera fps
   const lastPublishRef = useRef(0)
 
@@ -68,12 +78,14 @@ export function useVisionInput(): VisionInputHandle {
   }, [])
 
   const onFrame = useCallback((frame: Partial<VisionFrame>) => {
+    frameRef.current = frame
     const now = performance.now()
     if (now - lastPublishRef.current < 250) return
     lastPublishRef.current = now
     setState(frame.state as VisionState)
     setLabel(frame.label ?? '')
     setStepId(frame.state === 'calibrating' ? frame.stepId ?? null : null)
+    setHandSeen(frame.geom != null)
   }, [])
 
   const start = useCallback(async (mode: 'camera' | 'synthetic') => {
@@ -90,9 +102,16 @@ export function useVisionInput(): VisionInputHandle {
         config: {
           wasmBase: new URL('vendor/mediapipe', base).href,
           handModel: new URL('models/hand_landmarker.task', base).href,
-          faceModel: new URL('models/face_landmarker.task', base).href,
+          // R132 perf budget: faceless pipeline (expression keys are reserved,
+          // not consumed by the games) + single hand + capped inference rate +
+          // modest camera request — detection shares the main thread with the
+          // game loop, so this roughly halves the per-frame cost.
+          faceModel: null,
+          numHands: 1,
+          maxFps: 30,
+          camera: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } },
           // calibration profile survives enable/disable cycles
-          session: { storage: localStorage },
+          session: { storage: localStorage, requireFace: false },
           pinch: { key: 'Space' },
         },
         onEvent,
@@ -112,6 +131,7 @@ export function useVisionInput(): VisionInputHandle {
       setEnabled(false)
       setState('idle')
       setStepId(null)
+      setHandSeen(false)
       setLabel(err instanceof Error ? err.message : String(err))
       throw err
     }
@@ -132,6 +152,8 @@ export function useVisionInput(): VisionInputHandle {
     setEnabled(false)
     setState('idle')
     setStepId(null)
+    setHandSeen(false)
+    frameRef.current = null
     setLabel('')
   }, [])
 
@@ -146,5 +168,5 @@ export function useVisionInput(): VisionInputHandle {
   // leaving the games view unmounts the hook → stop the camera, release keys
   useEffect(() => disable, [disable])
 
-  return { enable, enableSynthetic, disable, recalibrate, setPaused, applySettings, enabled, label, state, stepId, heldRef, queueRef }
+  return { enable, enableSynthetic, disable, recalibrate, setPaused, applySettings, enabled, label, state, stepId, handSeen, frameRef, heldRef, queueRef }
 }
