@@ -7611,6 +7611,10 @@ input[type='range'].video-player-volume {
   padding: 14px;
 }
 .vision-explore h4 { color: var(--accent); font-size: 12px; letter-spacing: 0.06em; margin: 0; text-transform: uppercase; }
+/* R144 review fix: the pad's absolute right/bottom positioning is the games
+   canvas-overlay semantic — inside the explore panel it escaped the flow and
+   covered the params. Scope it back to a normal centered block here. */
+.vision-explore .vision-pad { bottom: auto; margin: 0 auto; position: static; right: auto; }
 .vision-explore label { color: var(--text-muted); display: block; font-size: 11.5px; }
 .vision-gauge { background: rgba(255, 255, 255, 0.07); border-radius: 4px; height: 8px; margin: 5px 0 3px; position: relative; }
 .vision-gauge-fill { background: linear-gradient(90deg, #42e8a9, #3db7ff); border-radius: 4px; display: block; height: 100%; }

@@ -348,6 +348,21 @@ export function AiLabVisionTab(): JSX.Element {
     try { await vision.enable() } catch { /* camera denied — the state chip tells the story */ } finally { setBusy(false) }
   }
 
+  // R144.7 E2E seam (games __rgbboxVision precedent): packaged-app
+  // verification starts the camera-free synthetic pipeline and asserts the
+  // bench from outside. No user-visible behavior; unregisters on unmount.
+  const visionRef = useRef(vision)
+  visionRef.current = vision
+  useEffect(() => {
+    const w = window as unknown as { __rgbboxVisionLab?: unknown }
+    w.__rgbboxVisionLab = {
+      async startSynthetic(): Promise<boolean> {
+        try { await visionRef.current.enableSynthetic(); return true } catch { return false }
+      },
+    }
+    return () => { w.__rgbboxVisionLab = undefined }
+  }, [])
+
   const toggleTextMode = (on: boolean): void => {
     setTextMode(on)
     vision.setChordTextMode(on)

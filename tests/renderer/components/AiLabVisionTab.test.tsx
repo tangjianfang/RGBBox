@@ -243,4 +243,17 @@ describe('AiLabVisionTab (R144)', () => {
     fireEvent.click(container.querySelector('[data-param="mirror"]') as HTMLInputElement)
     expect(h.vision.setMirror).toHaveBeenCalledWith(false)
   })
+
+  it('E2E seam: startSynthetic routes to the hook and unregisters on unmount', async () => {
+    const { unmount } = render(<AiLabVisionTab />)
+    const seam = (window as unknown as { __rgbboxVisionLab?: { startSynthetic(): Promise<boolean> } }).__rgbboxVisionLab
+    expect(seam).toBeTruthy()
+    await expect(seam!.startSynthetic()).resolves.toBe(true)
+    expect(h.vision.enableSynthetic).toHaveBeenCalled()
+    // a failed pipeline reports false instead of throwing
+    h.vision.enableSynthetic.mockRejectedValueOnce(new Error('no camera'))
+    await expect(seam!.startSynthetic()).resolves.toBe(false)
+    unmount()
+    expect((window as unknown as { __rgbboxVisionLab?: unknown }).__rgbboxVisionLab).toBeUndefined()
+  })
 })
