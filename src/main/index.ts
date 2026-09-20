@@ -20,7 +20,7 @@ import { runPerfSelfTest } from './perfSelfTest'
 import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOverlay, getAudioVizWindowIds, getOverlayDisplayIds, openAudioVizWindow, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
 import { armShutdown, cancelShutdown, getShutdownStatus } from './shutdownScheduler'
 import { closeAllScreensaverWindows, disposeScreensaver, getScreensaverSettings, initScreensaver, setScreensaverSettings } from './screensaverManager'
-import { cancelSnip, disposeSnipManager, finishSnip, getSnipFrame, getSnipHotkeyPref, initSnipHotkeyPref, initSnipManager, isPresetSnipHotkey, registerSnipHotkey, setSnipHotkeyPref, startSnip } from './snipManager'
+import { acknowledgeSnipPainted, cancelSnip, disposeSnipManager, finishSnip, getSnipHotkeyPref, initSnipHotkeyPref, initSnipManager, isPresetSnipHotkey, registerSnipHotkey, setSnipHotkeyPref, startSnip, warmSnipStack } from './snipManager'
 import { disposeSelectionAiManager, disposeSelectionAiWindow, initSelectionAiManager, registerSelectionAiHotkey, runSelectionAi, takeSelectionText, triggerSelectionAi } from './selectionAiManager'
 import { asUiLocale, trayMenuLabels, type UiLocale } from './trayMenu'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
@@ -303,6 +303,8 @@ function registerIpc(): void {
 
   // R80: standalone global snip tool
   initSnipManager({ addPng: (url, kind) => captureStore.addPng(url, kind) }, isDevelopment, process.env.ELECTRON_RENDERER_URL)
+  // R130.2/R130.4: 空闲 3s 预热图形捕获栈 + 每屏隐藏预载窗口池（热键→画面 <500ms 的关键）
+  warmSnipStack(3000)
   // R119: global selection AI — runs through the ACTIVE profile's pipeline
   // (chatCompletion dispatch: AI8 pseudo-protocol included)
   initSelectionAiManager({
@@ -331,8 +333,8 @@ function registerIpc(): void {
   }).catch((err) => {
     log.warn('RapidOcr', `dynamic import failed, WinRT only: ${err instanceof Error ? err.message : String(err)}`)
   })
-  ipcMain.handle(ipcChannels.snipGetFrame, (_event, displayId: unknown) =>
-    getSnipFrame(typeof displayId === 'number' ? displayId : -1))
+  // R130.3: 渲染端冻结帧绘制完成回执 —— 唤醒对应窗口的 show 等待（按 sender 关联）
+  ipcMain.on(ipcChannels.snipFramePainted, (event) => acknowledgeSnipPainted(event.sender))
   ipcMain.handle(ipcChannels.snipFinish, (_event, p: unknown) => {
     const q = p as { dataUrl?: unknown; action?: unknown } | null
     return finishSnip(

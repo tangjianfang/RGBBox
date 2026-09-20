@@ -49,3 +49,18 @@ export function cropToDataUrl(
     return fallback
   }
 }
+
+/**
+ * R130.3: BGRA 字节序列 → RGBA（nativeImage.getBitmap() 是 little-endian BGRA，
+ * ImageData 要 RGBA）。就地交换 R/B，供 putImageData 直绘（4K ≈33MB ~20-40ms）。
+ */
+export function swapBgraToRgba(data: Uint8Array): Uint8ClampedArray<ArrayBuffer> {
+  const out = new Uint8ClampedArray(data.length)
+  out.set(data)
+  for (let i = 0; i < out.length; i += 4) {
+    const b = out[i]
+    out[i] = out[i + 2]
+    out[i + 2] = b
+  }
+  return out
+}

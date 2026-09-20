@@ -1,6 +1,8 @@
 /**
  * SnipView — R80 独立全局截图窗口内容（?snip=1&displayId=X 路由进入）。
  * 冻结帧全屏 → 暗幕挖洞拖选（≥8px 有效）→ 裁剪 → AnnotateOverlay 就地标注。
+ * R130.3: 冻结帧改主进程推送（BGRA 位图直传），绘制完成回 ack；
+ * R130.5: 首帧上屏时快门白闪 ×2。
  * ESC/右键 = 退出会话（标注态 ESC 由 AnnotateOverlay 分层处理，× 回拖选态）。
  * 无水印铁律（R75.2）：裁剪/导出只搬运像素。
  */
@@ -8,7 +10,7 @@ import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { X } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { AnnotateOverlay } from './video/AnnotateOverlay'
-import { cropToDataUrl } from './video/frameCapture'
+import { cropToDataUrl, swapBgraToRgba } from './video/frameCapture'
 
 /** happy-dom 无 canvas 时的兜底（生产路径永远走真 canvas）。 */
 const FALLBACK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
@@ -22,9 +24,11 @@ export function SnipView({ displayId }: { displayId: number }): JSX.Element {
   const { t } = useI18n()
   const [phase, setPhase] = useState<Phase>('loading')
   const [frame, setFrame] = useState<HTMLCanvasElement | null>(null)  // 物理像素冻结帧
-  const [frameUrl, setFrameUrl] = useState<string>(FALLBACK_PNG)      // dataURL（AnnotateOverlay 源）
+  const [frameUrl, setFrameUrl] = useState<string>(FALLBACK_PNG)      // dataURL（AnnotateOverlay 源；标注前必被裁剪结果覆盖）
   const [draft, setDraft] = useState<{ a: Pt; b: Pt } | null>(null)
   const [vp, setVp] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
+  const [flashOn, setFlashOn] = useState(false)                        // R130.5: 快门白闪（仅会话首次）
+  const flashedRef = useRef(false)
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
@@ -36,25 +40,30 @@ export function SnipView({ displayId }: { displayId: number }): JSX.Element {
     return () => window.removeEventListener('resize', measure)
   }, [])
 
-  // 拉冻结帧 → 解码到物理像素 canvas
+  // R130.3: 冻结帧改主进程推送（BGRA 原始位图直传）——订阅一次；交换 R/B →
+  // ImageData → putImageData 到物理像素 canvas；绘制完成回 ack（主进程等
+  // 画面真正上屏才 show 窗口）。displayId 仅作路由参数，推送本身按窗口定向。
   useEffect(() => {
-    let alive = true
-    window.rgbbox.snipGetFrame(displayId).then((r) => {
-      if (!alive || !r?.dataUrl) return
-      const img = new Image()
-      img.onload = () => {
-        if (!alive) return
-        const cv = document.createElement('canvas')
-        cv.width = img.naturalWidth
-        cv.height = img.naturalHeight
-        cv.getContext('2d')?.drawImage(img, 0, 0)
-        setFrame(cv)
-        setFrameUrl(r.dataUrl)
-        setPhase('select')
+    const unsubscribe = window.rgbbox.snipOnFrame((f) => {
+      const cv = document.createElement('canvas')
+      cv.width = f.width
+      cv.height = f.height
+      const ctx = cv.getContext('2d')
+      if (ctx) {
+        try {
+          ctx.putImageData(new ImageData(swapBgraToRgba(f.data), f.width, f.height), 0, 0)
+        } catch { /* 生产路径不可达（真 Chromium 必有 ImageData 构造器） */ }
       }
-      img.src = r.dataUrl
-    }).catch(() => { /* 主进程失败不开窗；防御性停留 loading */ })
-    return () => { alive = false }
+      setFrame(cv)
+      setPhase('select')
+      if (!flashedRef.current) {
+        flashedRef.current = true
+        setFlashOn(true)
+      }
+      window.rgbbox.snipAckPainted()
+    })
+    return unsubscribe
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayId])
 
   // 冻结帧绘到全屏 canvas（CSS 拉伸 100vw/100vh，物理像素 1:1）
@@ -136,6 +145,9 @@ export function SnipView({ displayId }: { displayId: number }): JSX.Element {
   return (
     <div ref={wrapRef} className="snip-root">
       <canvas ref={canvasRef} className="snip-canvas" />
+      {/* R130.5: 快门白闪 ×2 —— 首帧上屏时刻两下 90ms 脉冲；pointer-events:none
+          不阻挡拖选；发生在捕获之后，不可能污染冻结帧内容 */}
+      {flashOn && <div className="snip-flash" onAnimationEnd={() => setFlashOn(false)} />}
       {phase === 'select' && (
         <svg
           className="snip-mask"

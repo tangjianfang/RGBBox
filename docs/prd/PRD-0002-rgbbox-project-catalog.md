@@ -1310,7 +1310,8 @@
 - **R130.5 白闪 ×2**：SnipView 首次进 select 相位挂 `.snip-flash`（CSS keyframes 两脉冲 400ms，`onAnimationEnd` 自移除，`pointer-events:none`，标注器返回不重播，`prefers-reduced-motion` 降级不闪）；闪烁在捕获之后不可能污染冻结帧。
 - **R130.6 分段耗时日志**：startSnip 记 hotkey→captured→frames-pushed→shown 全链路时间戳，供验收取证与后续诊断。
 - **受影响文件**：`electron.vite.config.ts`、`src/renderer/snip.html`（新）、`src/renderer/src/snipMain.tsx`（新）、`src/main/snipManager.ts`、`src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts`、`src/renderer/src/components/SnipView.tsx`、`src/renderer/src/styles.css`、`tests/renderer/_helpers.tsx`、`tests/renderer/components/SnipView.test.tsx`、`tests/main/snipManager.test.ts`。
-- **验收点**：①打包构建实机：热键→冻结画面出现 ≤500ms（日志取证，连续 5 次取最大值）；②白闪两下真机截图视觉复核（脉冲可见、不阻挡拖选）；③二次会话同样达标、无窗口泄漏；④池窗口内存实测（>100MB/窗 加开关回退 A）；⑤typecheck + 全量回归 0 失败；⑥Esc/右键/X 取消、标注/OCR/保存复制链路零回归。**状态：⏳**
+- **验收点**：①打包构建实机：热键→冻结画面出现 ≤500ms（日志取证，连续 5 次取最大值）；②白闪两下真机截图视觉复核（脉冲可见、不阻挡拖选）；③二次会话同样达标、无窗口泄漏；④池窗口内存实测（>100MB/窗 加开关回退 A）；⑤typecheck + 全量回归 0 失败；⑥Esc/右键/X 取消、标注/OCR/保存复制链路零回归。**状态：🔄**
+- **实施证据（2026-09-20）**：⑤`yarn typecheck` 0 error；全量 `yarn test` **108 files / 993 passed / 0 失败**（一次 SnipView 时序用例在并发负载下单现失败——单文件重跑 12/12 全绿、全量重跑全绿，与 R129 记录的同类 flaky）；新增用例 6 项（SnipView 10→12 + snipManager 6→7 + 新文件 `tests/renderer/components/video/frameCapture.test.ts` 3，覆盖 BGRA R/B 交换、池窗口取用/重建、绘制 ack 唤醒 show 路径）；`scripts/verify-r130-snip-fast.mjs` 实机验收脚本就绪（SendKeys 真实全局 Alt+A → CDP 断言 `.snip-flash` + 解析应用日志 `shown +Xms`，5 轮取 max ≤500ms 判定）。**①②③④⑥ 实机口径待用户跑 `yarn dist:dir && node scripts/verify-r130-snip-fast.mjs` 取证；未过回滚 ⏳。**
 
 
 ### R131. Mini Games 视觉体感输入（可选输入源：8 向手势 → 方向键、捏合 → Space/硬降、表情预留）（2026-09-19 用户需求「通过手势去控制游戏」，集成指南 `vision-game-input/INTEGRATION_RGBBOX.md`）

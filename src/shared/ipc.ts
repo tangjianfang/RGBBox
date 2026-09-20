@@ -147,7 +147,10 @@ export const ipcChannels = {
   clipboardReadText: 'rgbbox:clipboard:read-text',
   ocrRecognize: 'rgbbox:ocr:recognize',
   // R80: standalone global snip tool (frozen-frame windows + annotator)
-  snipGetFrame: 'rgbbox:snip:get-frame',
+  // R130.3: 帧投递改主进程→渲染端推送（BGRA 原始位图，二进制 IPC）+
+  // 绘制完成 ack —— 主进程等到画面真正上屏才 show 窗口
+  snipPushFrame: 'rgbbox:snip:push-frame',
+  snipFramePainted: 'rgbbox:snip:frame-painted',
   snipFinish: 'rgbbox:snip:finish',
   snipCancel: 'rgbbox:snip:cancel',
   // R80.12: renderer i18n → main (tray menu follows UI language)

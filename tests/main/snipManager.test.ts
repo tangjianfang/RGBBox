@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isPresetSnipHotkey, matchDisplayToSource, physicalThumbSize, resolveFinishAction, PRESET_SNIP_HOTKEYS, SNIP_CANCEL_ACCEL } from '../../src/main/snipManager'
+import { isPresetSnipHotkey, matchDisplayToSource, physicalThumbSize, planPoolRebuild, resolveFinishAction, PRESET_SNIP_HOTKEYS, SNIP_CANCEL_ACCEL } from '../../src/main/snipManager'
 import { ipcChannels } from '../../src/shared/ipc'
 
 describe('snipManager pure (R80.2)', () => {
@@ -31,10 +31,20 @@ describe('snipManager pure (R80.2)', () => {
     expect(resolveFinishAction('save')).toEqual({ clipboard: false, addCapture: true, download: true })
   })
 
-  it('IPC channel constants exist (R80.4)', () => {
-    expect(ipcChannels.snipGetFrame).toBe('rgbbox:snip:get-frame')
+  it('IPC channel constants exist (R80.4/R130.3)', () => {
+    expect(ipcChannels.snipPushFrame).toBe('rgbbox:snip:push-frame')
+    expect(ipcChannels.snipFramePainted).toBe('rgbbox:snip:frame-painted')
     expect(ipcChannels.snipFinish).toBe('rgbbox:snip:finish')
     expect(ipcChannels.snipCancel).toBe('rgbbox:snip:cancel')
+    // R130.3: 拉取式旧通道已删除（帧投递改主进程推送 + 绘制 ack）
+    expect((ipcChannels as Record<string, unknown>).snipGetFrame).toBeUndefined()
+  })
+
+  it('R130.4: planPoolRebuild maps display add/remove onto pool destroy/create', () => {
+    expect(planPoolRebuild([1, 2], [2, 3])).toEqual({ destroy: [1], create: [3] })
+    expect(planPoolRebuild([1], [1])).toEqual({ destroy: [], create: [] })
+    expect(planPoolRebuild([], [1, 2])).toEqual({ destroy: [], create: [1, 2] })
+    expect(planPoolRebuild([1, 2], [])).toEqual({ destroy: [1, 2], create: [] })
   })
 
   it('R81: snip hotkey preset whitelist', () => {

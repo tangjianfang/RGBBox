@@ -499,3 +499,10 @@ export interface AudioAiStreamTick {
    *  generic 'pipeline lost', so the root cause is visible. */
   message?: string
 }
+/** R130.3: snip 冻结帧推送载荷 —— BGRA 原始位图直传（无 PNG 编码/解码/base64 膨胀）。 */
+export interface SnipPushFrame {
+  width: number
+  height: number
+  /** BGRA 字节序列（nativeImage.toBitmap()）；渲染端 swapBgraToRgba 后 putImageData。 */
+  data: Uint8Array
+}
