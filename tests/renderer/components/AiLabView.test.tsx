@@ -19,20 +19,26 @@ async function openTab(container: HTMLElement, tab: 'config' | 'chat' | 'ocr') {
 }
 
 describe('AiLabView (R89)', () => {
-  it('renders five tabs (config/chat/ocr/audio/ai8) and switches between them', { timeout: 15000 }, async () => {
+  it('renders six tabs (config/chat/ocr/audio/vision/ai8) and switches between them', { timeout: 15000 }, async () => {
     const { container } = mount()
     const tabs = container.querySelectorAll('.ai-tab')
-    expect(tabs.length).toBe(5)
+    expect(tabs.length).toBe(6)
     const audioTab = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === 'audio') as HTMLElement
     fireEvent.click(audioTab)
     await waitFor(() => expect(audioTab.classList.contains('active')).toBe(true))
     expect(container.querySelector('.ai-audio')).not.toBeNull()
+    // R144: the vision capability bench mounts its own tab content
+    const visionTab = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === 'vision') as HTMLElement
+    fireEvent.click(visionTab)
+    await waitFor(() => expect(visionTab.classList.contains('active')).toBe(true))
+    expect(container.querySelector('.ai-vision-lab')).not.toBeNull()
+    expect(container.querySelectorAll('tr[data-cap]').length).toBe(24)
   })
 
   it('renders the legacy three core tabs and switches between them', async () => {
     const { container } = mount()
     const tabs = container.querySelectorAll('.ai-tab')
-    expect(tabs.length).toBe(5)
+    expect(tabs.length).toBe(6)
     expect(tabs[0].classList.contains('active')).toBe(true) // config default
     await openTab(container, 'chat')
     expect(container.querySelector('textarea[data-field="chat-input"]')).not.toBeNull()
