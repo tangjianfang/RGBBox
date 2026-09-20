@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
 import { validateChatMessages } from '../shared/aiChatValidation'
-import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, CaptureEntry, CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming } from '../shared/types'
+import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, CaptureEntry, CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -74,6 +74,11 @@ const api = {
     ipcRenderer.invoke(ipcChannels.closeAudioVizWindow, displayId),
   getAudioVizWindowIds: (): Promise<number[]> =>
     ipcRenderer.invoke(ipcChannels.getAudioVizWindowIds),
+  // R136: hidden vision pipeline host window (data flows via BroadcastChannel)
+  visionHostOpen: (): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.visionHostOpen),
+  visionHostClose: (): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.visionHostClose),
   getDesktopAudioSourceId: (): Promise<string | null> =>
     ipcRenderer.invoke(ipcChannels.getDesktopAudioSourceId),
   getDesktopAudioSources: (): Promise<DesktopAudioSource[]> =>
