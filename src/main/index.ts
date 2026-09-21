@@ -30,7 +30,8 @@ import { loadSystemSettings, saveSystemSettings, type SystemSettings } from './s
 import { ai8AutoLoginWith, clearAi8Credentials, loadAi8Credentials, saveAi8Credentials } from './ai8Credentials'
 import { setRapidOcrRunner } from './ocrService'
 import { cleanupOcrText, translateOcrText, chatCompletion, testConnection, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
-import { encodeApiKey, decodeApiKey, type SafeStorageCodec } from './aiSecretCodec'
+import { type SafeStorageCodec } from './aiSecretCodec'
+import { decodeProfileSecrets, encodeProfileSecrets, sanitizeAws } from './aiProfileStore'
 import { autoProfileName, mergePreservedKeys, mirrorLegacy, normalizeAiStore, type AiStoreShape } from './aiProfileStore'
 
 /** R89 review fix: random suffix — same-millisecond creates must not collide. */
@@ -404,9 +405,10 @@ function registerIpc(): void {
     const { profiles: raw, activeId } = normalizeAiStore(s.ai as AiStoreShape)
     const unreadableIds: string[] = []
     const decoded = raw.map((p) => {
-      const plain = decodeApiKey(p.apiKey, safeStorageCodec)
-      if (p.apiKey.startsWith('enc:v1:') && plain === '') unreadableIds.push(p.id)
-      return { ...p, apiKey: plain }
+      // R145: one helper decodes BOTH secret kinds (Bearer key + AWS SK/STS)
+      const { profile, unreadable } = decodeProfileSecrets(p, safeStorageCodec)
+      if (unreadable) unreadableIds.push(p.id)
+      return profile
     })
     return { profiles: decoded, raw, activeId, unreadableIds }
   }
@@ -417,7 +419,7 @@ function registerIpc(): void {
     raw: AiProfile[] = []
   ): Promise<void> => {
     const preserved = mergePreservedKeys(profiles, raw, unreadableIds)
-    const encrypted = preserved.map((p) => ({ ...p, apiKey: encodeApiKey(p.apiKey, safeStorageCodec) }))
+    const encrypted = preserved.map((p) => encodeProfileSecrets(p, safeStorageCodec))
     // R89 review fix: reuse the encrypted entry for the legacy mirror instead of
     // a second DPAPI encrypt (which would produce a different blob of the same key).
     const encryptedActive = encrypted.find((p) => p.id === activeId) ?? null
@@ -432,7 +434,7 @@ function registerIpc(): void {
   const activeSettings = (profiles: AiProfile[], activeId: string): AiCleanupSettings => {
     const active = profiles.find((p) => p.id === activeId)
     return active
-      ? { baseUrl: active.baseUrl, apiKey: active.apiKey, model: active.model }
+      ? { baseUrl: active.baseUrl, apiKey: active.apiKey, model: active.model, ...(active.aws ? { aws: active.aws } : {}) }
       : { ...DEFAULT_AI_SETTINGS }
   }
   /** Legacy alias kept for the OCR pipeline handlers: settings of the ACTIVE profile.
@@ -442,7 +444,9 @@ function registerIpc(): void {
     const { profiles, activeId } = normalizeAiStore(ai as AiStoreShape)
     const active = profiles.find((p) => p.id === activeId)
     if (!active) return { ...DEFAULT_AI_SETTINGS }
-    return { baseUrl: active.baseUrl, apiKey: decodeApiKey(active.apiKey, safeStorageCodec), model: active.model }
+    // R145: decode apiKey AND the AWS secrets of the active profile in one go
+    const { profile } = decodeProfileSecrets(active, safeStorageCodec)
+    return { baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, ...(profile.aws ? { aws: profile.aws } : {}) }
   }
   ipcMain.handle(ipcChannels.aiGetSettings, async () => {
     const { profiles, activeId, unreadableIds } = await loadAiStore()
@@ -485,12 +489,16 @@ function registerIpc(): void {
       const q = p as Partial<AiProfile> | null
       const baseUrl = typeof q?.baseUrl === 'string' && q.baseUrl.trim() !== '' ? q.baseUrl.trim() : DEFAULT_AI_SETTINGS.baseUrl
       const model = typeof q?.model === 'string' && q.model.trim() !== '' ? q.model.trim() : DEFAULT_AI_SETTINGS.model
+      // R145: AWS credentials ride along sanitized (string members only);
+      // persistAiStore encrypts SK/STS exactly like the Bearer key.
+      const aws = sanitizeAws((q as { aws?: unknown } | null)?.aws)
       const profile: AiProfile = {
         id: typeof q?.id === 'string' && q.id !== '' ? q.id : mintProfileId(),
         name: typeof q?.name === 'string' && q.name.trim() !== '' ? q.name.trim() : autoProfileName(baseUrl, model),
         baseUrl,
         apiKey: typeof q?.apiKey === 'string' ? q.apiKey.trim() : '',
         model,
+        ...(aws !== undefined ? { aws } : {}),
       }
       const { profiles, raw, activeId, unreadableIds } = await loadAiStore()
       const idx = profiles.findIndex((pr) => pr.id === profile.id)
@@ -537,8 +545,10 @@ function registerIpc(): void {
     const q = profile as Partial<AiCleanupSettings> | null | undefined
     if (q && typeof q === 'object' && typeof q.baseUrl === 'string' && q.baseUrl.trim() !== ''
       && typeof q.apiKey === 'string' && typeof q.model === 'string') {
+      const aws = sanitizeAws((q as { aws?: unknown }).aws)
       return testConnection({
         baseUrl: q.baseUrl, apiKey: q.apiKey, model: q.model,
+        ...(aws !== undefined ? { aws } : {}),
       })
     }
     const s = await loadSystemSettings()

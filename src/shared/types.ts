@@ -452,6 +452,16 @@ export interface AiChatOutcome {
 }
 
 // ── R89: AI Lab named profiles ────────────────────────────────────────────
+// ── R145: AWS Bedrock credentials (SigV4 — not a Bearer key) ──────────────
+export interface AwsProfileCreds {
+  region: string
+  accessKeyId: string
+  /** safeStorage-encrypted at rest exactly like apiKey (enc:v1:). */
+  secretAccessKey: string
+  /** Optional temporary STS credentials. Encrypted at rest too. */
+  sessionToken?: string
+}
+
 export interface AiProfile {
   id: string
   /** Auto-generated "Provider · model" when left empty; user-editable. */
@@ -459,6 +469,9 @@ export interface AiProfile {
   baseUrl: string
   apiKey: string
   model: string
+  /** R145: present on AWS Bedrock profiles (baseUrl carries the
+   *  `bedrock://openai` pseudo-protocol); undefined for everyone else. */
+  aws?: AwsProfileCreds
 }
 
 // ── R90 P1: audio AI test lab ─────────────────────────────────────────────

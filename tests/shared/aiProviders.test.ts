@@ -10,7 +10,7 @@ describe('AI_PROVIDER_PRESETS (R88.5)', () => {
       if (p.id === 'custom') continue
       // R118: the ai8 preset uses the `ai8://chat` pseudo-protocol marker that
       // chatCompletion dispatches on — URL-ish is all we assert
-      expect(p.baseUrl).toMatch(/^(https?:\/\/|ai8:\/\/)/)
+      expect(p.baseUrl).toMatch(/^(https?:\/\/|ai8:\/\/|bedrock:\/\/)/)
       expect(p.models.length).toBeGreaterThan(0)
     }
   })
@@ -41,5 +41,17 @@ describe('isKeylessLocal (R88 review fix)', () => {
     expect(isKeylessLocal('https://open.bigmodel.cn/api/paas/v4')).toBe(false)
     expect(isKeylessLocal('not a url')).toBe(false)
     expect(isKeylessLocal('')).toBe(false)
+  })
+})
+
+describe('bedrock preset (R145)', () => {
+  it('exposes the pseudo-protocol baseUrl and inference-profile models', () => {
+    const p = AI_PROVIDER_PRESETS.find((x) => x.id === 'bedrock')!
+    expect(p.label).toBe('AWS Bedrock')
+    expect(p.baseUrl).toBe('bedrock://openai')
+    expect(p.models).toContain('us.anthropic.claude-sonnet-4-5')
+    expect(p.models).toContain('amazon.nova-pro-v1')
+    // round-trips through the reverse lookup (form recognition)
+    expect(matchProviderPreset('bedrock://openai').id).toBe('bedrock')
   })
 })

@@ -78,3 +78,76 @@ describe('mergePreservedKeys (R89 review fix)', () => {
     expect(mergePreservedKeys(decoded, raw, [])).toBe(decoded)
   })
 })
+
+// ── R145: AWS credentials in the profile store ─────────────────────────────
+import { sanitizeAws, decodeProfileSecrets, encodeProfileSecrets } from '../../src/main/aiProfileStore'
+
+describe('sanitizeAws (R145)', () => {
+  it('keeps a valid block, drops an empty sessionToken', () => {
+    expect(sanitizeAws({ region: 'us-west-2', accessKeyId: 'AKID', secretAccessKey: 'SK', sessionToken: '' }))
+      .toEqual({ region: 'us-west-2', accessKeyId: 'AKID', secretAccessKey: 'SK' })
+    expect(sanitizeAws({ region: 'us-west-2', accessKeyId: 'AKID', secretAccessKey: 'SK', sessionToken: 'STS' })?.sessionToken).toBe('STS')
+  })
+  it('rejects non-string members and non-objects', () => {
+    expect(sanitizeAws({ region: 1, accessKeyId: 'a', secretAccessKey: 's' })).toBeUndefined()
+    expect(sanitizeAws(null)).toBeUndefined()
+    expect(sanitizeAws('x')).toBeUndefined()
+  })
+})
+
+describe('normalizeAiStore with aws (R145)', () => {
+  it('carries sanitized aws blocks; malformed aws is stripped', () => {
+    const out = normalizeAiStore({
+      profiles: [
+        { id: 'p1', name: 'A', baseUrl: 'bedrock://openai', apiKey: '', model: 'm', aws: { region: 'us-east-1', accessKeyId: 'AK', secretAccessKey: 'enc:v1:x' } },
+        { id: 'p2', name: 'B', baseUrl: 'bedrock://openai', apiKey: '', model: 'm', aws: { region: 'us-east-1' } },
+      ],
+      activeProfileId: 'p1',
+    } as never)
+    expect(out.profiles[0].aws).toEqual({ region: 'us-east-1', accessKeyId: 'AK', secretAccessKey: 'enc:v1:x' })
+    expect(out.profiles[1].aws).toBeUndefined()
+  })
+  it('autoProfileName labels bedrock', () => {
+    expect(autoProfileName('bedrock://openai', 'us.anthropic.claude-sonnet-4-5')).toBe('AWS Bedrock · us.anthropic.claude-sonnet-4-5')
+  })
+})
+
+describe('profile secret round-trips (R145)', () => {
+  const codec = {
+    encrypt: (s: string) => new TextEncoder().encode('E:' + s),
+    decrypt: (d: Uint8Array) => { const s = new TextDecoder().decode(d); return s.startsWith('E:') ? s.slice(2) : null },
+  }
+  const brokenCodec = { encrypt: () => null, decrypt: () => null as string | null }
+
+  it('encodes and decodes apiKey + AWS SK/STS symmetrically', () => {
+    const p = { id: 'p1', name: 'A', baseUrl: 'bedrock://openai', apiKey: '', model: 'm',
+      aws: { region: 'us-east-1', accessKeyId: 'AK', secretAccessKey: 'SECRET', sessionToken: 'STS' } }
+    const enc = encodeProfileSecrets(p, codec)
+    expect(enc.aws!.secretAccessKey.startsWith('enc:v1:')).toBe(true)
+    expect(enc.aws!.sessionToken!.startsWith('enc:v1:')).toBe(true)
+    expect(enc.aws!.accessKeyId).toBe('AK') // NOT a secret — stays plain
+    const { profile, unreadable } = decodeProfileSecrets(enc, codec)
+    expect(profile.aws).toEqual(p.aws)
+    expect(unreadable).toBe(false)
+  })
+  it('flags unreadable ciphertext (entered under another account)', () => {
+    const p = { id: 'p1', name: 'A', baseUrl: 'bedrock://openai', apiKey: '', model: 'm',
+      aws: { region: 'us-east-1', accessKeyId: 'AK', secretAccessKey: 'enc:v1:Z2FyYmFnZQ==' } }
+    const { profile, unreadable } = decodeProfileSecrets(p, brokenCodec)
+    expect(unreadable).toBe(true)
+    expect(profile.aws!.secretAccessKey).toBe('')
+  })
+})
+
+describe('mergePreservedKeys with aws (R145)', () => {
+  const base = { id: 'p1', name: 'A', baseUrl: 'bedrock://openai', apiKey: '', model: 'm' }
+  const raw = [{ ...base, aws: { region: 'us-east-1', accessKeyId: 'AK', secretAccessKey: 'enc:v1:OLD' } }]
+  it('restores the original aws ciphertext when the secret was not re-entered', () => {
+    const merged = mergePreservedKeys([{ ...base, aws: { region: 'us-east-1', accessKeyId: 'AK', secretAccessKey: '' } }], raw, ['p1'])
+    expect(merged[0].aws!.secretAccessKey).toBe('enc:v1:OLD')
+  })
+  it('keeps a freshly entered secret', () => {
+    const merged = mergePreservedKeys([{ ...base, aws: { region: 'us-east-1', accessKeyId: 'AK', secretAccessKey: 'NEW' } }], raw, ['p1'])
+    expect(merged[0].aws!.secretAccessKey).toBe('NEW')
+  })
+})

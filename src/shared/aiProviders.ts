@@ -56,6 +56,14 @@ export const AI_PROVIDER_PRESETS: AiProviderPreset[] = [
     baseUrl: 'ai8://chat',
     models: ['openai_chat::gpt-5.4', 'moonshot_chat::kimi-k3', 'qwen3-max-preview', 'ouyi_chat::ouyi-chat'],
   },
+  {
+    // R145: AWS Bedrock via its OpenAI-compatible endpoint — auth is SigV4
+    // (AK/SK in profile.aws), NOT the Bearer apiKey field.
+    id: 'bedrock',
+    label: 'AWS Bedrock',
+    baseUrl: 'bedrock://openai',
+    models: ['us.anthropic.claude-sonnet-4-5', 'us.anthropic.claude-haiku-4-5', 'amazon.nova-pro-v1', 'amazon.nova-lite-v1', 'us.deepseek.deepseek-r1'],
+  },
   { id: 'custom', label: '', baseUrl: '', models: [] },
 ]
 

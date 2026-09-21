@@ -7,12 +7,21 @@
 
 import { isKeylessLocal } from '../shared/aiProviders'
 import { ai8ChatCompletion, isAi8Settings } from './ai8Provider'
-import type { AiChatMessage, AiChatOutcome, AiErrorHint } from '../shared/types'
+import { bedrockChatUrl, signBedrockChat } from './awsSigv4'
+import type { AiChatMessage, AiChatOutcome, AiErrorHint, AwsProfileCreds } from '../shared/types'
 
 export interface AiCleanupSettings {
   baseUrl: string
   apiKey: string
   model: string
+  /** R145: AWS Bedrock credentials — set → SigV4 auth instead of Bearer. */
+  aws?: AwsProfileCreds
+}
+
+/** R145: complete AWS credentials make this profile a Bedrock one. */
+export function isBedrockSettings(s: AiCleanupSettings): boolean {
+  const a = s.aws
+  return a !== undefined && a.accessKeyId.trim() !== '' && a.secretAccessKey.trim() !== '' && a.region.trim() !== ''
 }
 
 export const DEFAULT_AI_SETTINGS: AiCleanupSettings = {
@@ -78,31 +87,21 @@ export async function translateOcrText(text: string, s: AiCleanupSettings): Prom
  *  (content may be empty) — connection testing only cares about reachability
  *  and auth, and thinking models (glm-5.3) burn small max_tokens budgets on
  *  reasoning, returning an empty content string. */
-export async function chatCompletion(
-  messages: AiChatMessage[],
-  s: AiCleanupSettings,
+/** Shared POST → outcome tail: fetch, latency, error taxonomy, response
+ *  parsing. R145: extracted verbatim from chatCompletion so the Bedrock
+ *  SigV4 branch reuses the exact same wire handling. */
+async function postChatCompletion(
+  url: string,
+  headers: Record<string, string>,
+  payload: unknown,
   opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean },
 ): Promise<AiChatOutcome> {
-  // R118: ai8://chat profiles (OCR cleanup / translate / AI Lab chat) route
-  // through the site's own protocol instead of the OpenAI-compatible one.
-  if (isAi8Settings(s)) return ai8ChatCompletion(messages, s, opts)
-  const hasKey = s.apiKey.trim() !== ''
-  if (!hasKey && !isKeylessLocal(s.baseUrl)) return { ok: false, text: '', hint: 'nokey', latencyMs: 0 }
-  if (messages.length === 0) return { ok: false, text: '', hint: 'parse', latencyMs: 0 }
-  const base = s.baseUrl.trim().replace(/\/+$/, '')
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (hasKey) headers.Authorization = `Bearer ${s.apiKey.trim()}`
   const startedAt = Date.now()
   try {
-    const res = await fetch(`${base}/chat/completions`, {
+    const res = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        model: s.model.trim() || DEFAULT_AI_SETTINGS.model,
-        messages,
-        temperature: opts?.temperature ?? 0.1,
-        ...(opts?.maxTokens !== undefined ? { max_tokens: opts.maxTokens } : {}),
-      }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(opts?.timeoutMs ?? 30_000),
     })
     const latencyMs = Date.now() - startedAt
@@ -128,6 +127,49 @@ export async function chatCompletion(
   } catch {
     return { ok: false, text: '', hint: 'network', latencyMs: Date.now() - startedAt }
   }
+}
+
+export async function chatCompletion(
+  messages: AiChatMessage[],
+  s: AiCleanupSettings,
+  opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean },
+): Promise<AiChatOutcome> {
+  // R118: ai8://chat profiles (OCR cleanup / translate / AI Lab chat) route
+  // through the site's own protocol instead of the OpenAI-compatible one.
+  if (isAi8Settings(s)) return ai8ChatCompletion(messages, s, opts)
+
+  const body = {
+    model: s.model.trim() || DEFAULT_AI_SETTINGS.model,
+    messages,
+    temperature: opts?.temperature ?? 0.1,
+    ...(opts?.maxTokens !== undefined ? { max_tokens: opts.maxTokens } : {}),
+  }
+
+  // R145.3: Bedrock OpenAI-compatible endpoint — identical request/response
+  // shape, SigV4 signature headers replace the Bearer token.
+  if (isBedrockSettings(s)) {
+    if (messages.length === 0) return { ok: false, text: '', hint: 'parse', latencyMs: 0 }
+    const a = s.aws!
+    const headers = {
+      'Content-Type': 'application/json',
+      ...signBedrockChat({
+        region: a.region.trim(),
+        accessKeyId: a.accessKeyId.trim(),
+        secretAccessKey: a.secretAccessKey.trim(),
+        ...(a.sessionToken !== undefined && a.sessionToken.trim() !== '' ? { sessionToken: a.sessionToken.trim() } : {}),
+        body: JSON.stringify(body),
+      }),
+    }
+    return postChatCompletion(bedrockChatUrl(a.region.trim()), headers, body, opts)
+  }
+
+  const hasKey = s.apiKey.trim() !== ''
+  if (!hasKey && !isKeylessLocal(s.baseUrl)) return { ok: false, text: '', hint: 'nokey', latencyMs: 0 }
+  if (messages.length === 0) return { ok: false, text: '', hint: 'parse', latencyMs: 0 }
+  const base = s.baseUrl.trim().replace(/\/+$/, '')
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (hasKey) headers.Authorization = `Bearer ${s.apiKey.trim()}`
+  return postChatCompletion(`${base}/chat/completions`, headers, body, opts)
 }
 
 export function buildTestMessages(): AiChatMessage[] {

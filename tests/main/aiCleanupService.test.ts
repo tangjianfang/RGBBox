@@ -151,3 +151,48 @@ describe('DEFAULT_AI_SETTINGS (R88.5)', () => {
     expect(DEFAULT_AI_SETTINGS.baseUrl).toBe('https://open.bigmodel.cn/api/paas/v4')
   })
 })
+
+// ── R145: Bedrock branch (SigV4 → OpenAI-compatible endpoint) ──────────────
+describe('chatCompletion bedrock branch (R145)', () => {
+  it('posts to the regional endpoint with SigV4 headers and no Bearer', async () => {
+    const calls = stubFetchCapture()
+    const out = await chatCompletion([{ role: 'user', content: 'hi' }], {
+      baseUrl: 'bedrock://openai', apiKey: '', model: 'us.anthropic.claude-sonnet-4-5',
+      aws: { region: 'us-west-2', accessKeyId: 'AKIDEXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY' },
+    })
+    expect(out.ok).toBe(true)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe('https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1/chat/completions')
+    const headers = calls[0].init.headers as Record<string, string>
+    expect(headers.Authorization).toBeUndefined() // never a Bearer key
+    expect(headers.authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/\d{8}\/us-west-2\/bedrock\/aws4_request, /)
+    expect(headers['x-amz-date']).toMatch(/^\d{8}T\d{6}Z$/)
+    expect(headers.host).toBe('bedrock-runtime.us-west-2.amazonaws.com')
+    expect(JSON.parse(String(calls[0].init.body)).model).toBe('us.anthropic.claude-sonnet-4-5')
+  })
+  it('signs the session token for STS credentials', async () => {
+    const calls = stubFetchCapture()
+    await chatCompletion([{ role: 'user', content: 'hi' }], {
+      baseUrl: 'bedrock://openai', apiKey: '', model: 'amazon.nova-pro-v1',
+      aws: { region: 'us-east-1', accessKeyId: 'AK', secretAccessKey: 'SK', sessionToken: 'STS123' },
+    })
+    const headers = calls[0].init.headers as Record<string, string>
+    expect(headers['x-amz-security-token']).toBe('STS123')
+    expect(headers.authorization).toContain('x-amz-security-token')
+  })
+  it('403 → auth hint (bad credentials / IAM)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('denied', { status: 403 })))
+    const out = await chatCompletion([{ role: 'user', content: 'hi' }], {
+      baseUrl: 'bedrock://openai', apiKey: '', model: 'm',
+      aws: { region: 'us-east-1', accessKeyId: 'AK', secretAccessKey: 'SK' },
+    })
+    expect(out).toMatchObject({ ok: false, hint: 'auth' })
+  })
+  it('incomplete credentials fall through to the Bearer path → nokey', async () => {
+    const out = await chatCompletion([{ role: 'user', content: 'hi' }], {
+      baseUrl: 'bedrock://openai', apiKey: '', model: 'm',
+      aws: { region: 'us-east-1', accessKeyId: 'AK', secretAccessKey: '' },
+    })
+    expect(out).toMatchObject({ ok: false, hint: 'nokey' })
+  })
+})

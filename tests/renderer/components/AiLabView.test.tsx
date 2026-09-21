@@ -215,3 +215,65 @@ describe('AiLabView (R89)', () => {
     expect((container.querySelector('[data-action="test"]') as HTMLButtonElement).disabled).toBe(true)
   })
 })
+
+// ── R145: AWS Bedrock provider form ────────────────────────────────────────
+describe('AiLabView AWS Bedrock form (R145)', () => {
+  async function toBedrock(container: HTMLElement): Promise<void> {
+    await waitFor(() => expect((container.querySelector('select[data-field="provider"]') as HTMLSelectElement).value).toBe('zhipu'))
+    fireEvent.change(container.querySelector('select[data-field="provider"]') as HTMLSelectElement, { target: { value: 'bedrock' } })
+  }
+
+  it('swaps the Bearer key row for region/AK/SK/STS and locks the pseudo-protocol baseUrl', async () => {
+    const { container } = mount()
+    await toBedrock(container)
+    expect((container.querySelector('[data-field="baseUrl"]') as HTMLInputElement).value).toBe('bedrock://openai')
+    expect((container.querySelector('[data-field="baseUrl"]') as HTMLInputElement).readOnly).toBe(true)
+    expect(container.querySelector('[data-field="apiKey"]')).toBeNull()
+    expect(container.querySelector('select[data-field="aws-region"]')).not.toBeNull()
+    expect((container.querySelector('[data-field="aws-ak"]') as HTMLInputElement).value).toBe('')
+    const sk = container.querySelector('[data-field="aws-sk"]') as HTMLInputElement
+    expect(sk.type).toBe('password')
+    expect(container.querySelector('[data-field="aws-sts"]')).not.toBeNull()
+    // eye toggle flips SK visibility
+    fireEvent.click(container.querySelector('[data-action="toggle-key"]') as HTMLElement)
+    expect((container.querySelector('[data-field="aws-sk"]') as HTMLInputElement).type).toBe('text')
+  })
+
+  it('saves with the trimmed aws payload (empty session token dropped)', async () => {
+    const { rgbbox, container } = mount()
+    await toBedrock(container)
+    fireEvent.change(container.querySelector('[data-field="aws-ak"]') as HTMLInputElement, { target: { value: 'AKID123' } })
+    fireEvent.change(container.querySelector('[data-field="aws-sk"]') as HTMLInputElement, { target: { value: 'SECRET ' } })
+    fireEvent.change(container.querySelector('[data-field="aws-sts"]') as HTMLInputElement, { target: { value: '  ' } })
+    fireEvent.click(container.querySelector('[data-action="save"]') as HTMLElement)
+    await waitFor(() => expect(rgbbox.aiSaveProfile).toHaveBeenCalled())
+    const arg = rgbbox.aiSaveProfile.mock.calls[0][0] as { aws?: { region: string; accessKeyId: string; secretAccessKey: string; sessionToken?: string } }
+    expect(arg.aws).toEqual({ region: 'us-east-1', accessKeyId: 'AKID123', secretAccessKey: 'SECRET' })
+    expect(arg.baseUrl).toBe('bedrock://openai')
+  })
+
+  it('test button gates on the secret being filled; explicit test carries aws', async () => {
+    const { rgbbox, container } = mount()
+    await toBedrock(container)
+    const testBtn = () => container.querySelector('[data-action="test"]') as HTMLButtonElement
+    expect(testBtn().disabled).toBe(true)
+    fireEvent.change(container.querySelector('[data-field="aws-sk"]') as HTMLInputElement, { target: { value: 'SECRET' } })
+    expect(testBtn().disabled).toBe(false)
+    fireEvent.click(testBtn())
+    await waitFor(() => expect(rgbbox.aiTestConnection).toHaveBeenCalled())
+    const arg = rgbbox.aiTestConnection.mock.calls[0][0] as { aws?: { secretAccessKey: string } }
+    expect(arg.aws?.secretAccessKey).toBe('SECRET')
+  })
+
+  it('switching away from bedrock drops the aws payload from saves', async () => {
+    const { rgbbox, container } = mount()
+    await toBedrock(container)
+    fireEvent.change(container.querySelector('[data-field="aws-sk"]') as HTMLInputElement, { target: { value: 'SECRET' } })
+    fireEvent.change(container.querySelector('select[data-field="provider"]') as HTMLSelectElement, { target: { value: 'openai' } })
+    expect(container.querySelector('[data-field="apiKey"]')).not.toBeNull()
+    fireEvent.click(container.querySelector('[data-action="save"]') as HTMLElement)
+    await waitFor(() => expect(rgbbox.aiSaveProfile).toHaveBeenCalled())
+    const arg = rgbbox.aiSaveProfile.mock.calls[0][0] as { aws?: unknown }
+    expect(arg.aws).toBeUndefined()
+  })
+})

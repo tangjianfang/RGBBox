@@ -20,11 +20,21 @@ type ConnState =
 
 type AiLabTab = 'config' | 'chat' | 'ocr' | 'audio' | 'vision' | 'ai8'
 
+/** R145: Bedrock form mirror — sessionToken is a plain string here (always
+ *  controlled); it is dropped from the saved profile when empty. */
+interface AwsMirror {
+  region: string
+  accessKeyId: string
+  secretAccessKey: string
+  sessionToken: string
+}
+
 interface EditMirror {
   name: string
   baseUrl: string
   apiKey: string
   model: string
+  aws?: AwsMirror
 }
 
 /** Max turns sent to aiChat (preload caps at 40) with headroom for the new message. */
@@ -34,8 +44,18 @@ const REPLAY_CHAR_CAP = 30_000
 
 const EMPTY_MIRROR: EditMirror = { name: '', baseUrl: '', apiKey: '', model: '' }
 
+/** R145: common Bedrock regions (editable models list stays in aiProviders). */
+const AWS_REGIONS = ['us-east-1', 'us-west-2', 'eu-west-1', 'eu-central-1', 'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1']
+
 function mirrorOf(p: AiProfile | null): EditMirror {
-  return p ? { name: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model } : { ...EMPTY_MIRROR }
+  return p
+    ? {
+        name: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model,
+        ...(p.aws !== undefined
+          ? { aws: { region: p.aws.region, accessKeyId: p.aws.accessKeyId, secretAccessKey: p.aws.secretAccessKey, sessionToken: p.aws.sessionToken ?? '' } }
+          : {}),
+      }
+    : { ...EMPTY_MIRROR }
 }
 
 /** R88/R89: AI Lab — tabbed (config / chat / ocr) with named model profiles.
@@ -76,8 +96,20 @@ export function AiLabView(): JSX.Element {
 
   const activeProfile = profiles.find((p) => p.id === activeId) ?? null
   const provider = matchProviderPreset(cfg.baseUrl)
+  const isBedrockForm = provider.id === 'bedrock'
   const hintLine = (hint?: AiErrorHint): string => `${t('ai.lab.status.failed')} (${hint ?? 'unknown'})`
-  const activeKeyless = activeProfile !== null && activeProfile.apiKey === '' && !isKeylessLocal(activeProfile.baseUrl)
+  const activeKeyless = activeProfile !== null && activeProfile.aws === undefined
+    && activeProfile.apiKey === '' && !isKeylessLocal(activeProfile.baseUrl)
+  /** R145: trimmed AWS payload for save/test — Bedrock forms only, empty
+   *  sessionToken dropped, stale aws from a provider switch never leaks. */
+  const awsPayload = isBedrockForm && cfg.aws !== undefined
+    ? {
+        region: cfg.aws.region,
+        accessKeyId: cfg.aws.accessKeyId.trim(),
+        secretAccessKey: cfg.aws.secretAccessKey.trim(),
+        ...(cfg.aws.sessionToken.trim() !== '' ? { sessionToken: cfg.aws.sessionToken.trim() } : {}),
+      }
+    : undefined
 
   const upsertLocal = (saved: AiProfile) => {
     setProfiles((list) => {
@@ -93,7 +125,7 @@ export function AiLabView(): JSX.Element {
   const commitEdits = async (): Promise<AiProfile | null> => {
     if (!loaded) return null
     if (cfg.baseUrl.trim() === '') return null
-    const saved = await window.rgbbox.aiSaveProfile({ id: editId, ...cfg })
+    const saved = await window.rgbbox.aiSaveProfile({ id: editId, name: cfg.name, baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model, ...(awsPayload !== undefined ? { aws: awsPayload } : {}) })
     upsertLocal(saved)
     if (saved.id !== editId) setEditId(saved.id)
     // R89 review fix: sync the auto-generated name back into the form so the
@@ -157,11 +189,14 @@ export function AiLabView(): JSX.Element {
     // R89 review fix: a draft without a baseUrl has nothing to test — main would
     // silently fall back to the ACTIVE profile and we would mislabel the result.
     if (cfg.baseUrl.trim() === '') return
+    // R145: a Bedrock draft without a secret has nothing to sign with.
+    if (isBedrockForm && (awsPayload === undefined || awsPayload.secretAccessKey === '')) return
     setConn({ kind: 'testing' })
     try {
       // R89: test the EDITED profile directly — no save, no active switch needed.
       const out = await window.rgbbox.aiTestConnection({
         baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model,
+        ...(awsPayload !== undefined ? { aws: awsPayload } : {}),
       })
       setConn(out.ok
         ? { kind: 'ok', latencyMs: out.latencyMs, model: cfg.model.trim() || FALLBACK_MODEL }
@@ -285,7 +320,8 @@ export function AiLabView(): JSX.Element {
               {conn.kind === 'fail' && hintLine(conn.hint)}
             </span>
             <button type="button" className="icon-button" data-action="test" onClick={runTest}
-              disabled={conn.kind === 'testing' || !loaded || cfg.baseUrl.trim() === ''}
+              disabled={conn.kind === 'testing' || !loaded || cfg.baseUrl.trim() === ''
+                || (isBedrockForm && (awsPayload === undefined || awsPayload.secretAccessKey === ''))}
               aria-label={t('ai.lab.test')} title={t('ai.lab.test')}>
               <RefreshCw size={16} />
             </button>
@@ -303,7 +339,13 @@ export function AiLabView(): JSX.Element {
                   const preset = AI_PROVIDER_PRESETS.find((p) => p.id === e.target.value)
                   if (!preset) return
                   if (preset.id === 'custom') { setCfg({ ...cfg, baseUrl: '' }); return }
-                  setCfg({ ...cfg, baseUrl: preset.baseUrl, model: preset.models[0] })
+                  if (preset.id === 'bedrock') {
+                    // R145: seed the AWS credential block (keeps previously
+                    // entered values when re-selecting the provider)
+                    setCfg({ ...cfg, baseUrl: preset.baseUrl, model: preset.models[0], aws: cfg.aws ?? { region: 'us-east-1', accessKeyId: '', secretAccessKey: '', sessionToken: '' } })
+                    return
+                  }
+                  setCfg({ ...cfg, baseUrl: preset.baseUrl, model: preset.models[0], aws: undefined })
                 }}>
                 {AI_PROVIDER_PRESETS.map((p) => (
                   <option key={p.id} value={p.id}>{p.label || t('ai.lab.providerCustom')}</option>
@@ -312,7 +354,7 @@ export function AiLabView(): JSX.Element {
             </label>
             <label>
               <span>{t('ai.baseUrl')}</span>
-              <input data-field="baseUrl" value={cfg.baseUrl} placeholder="https://…" onChange={(e) => setCfg({ ...cfg, baseUrl: e.target.value })} />
+              <input data-field="baseUrl" value={cfg.baseUrl} placeholder="https://…" readOnly={isBedrockForm} onChange={(e) => setCfg({ ...cfg, baseUrl: e.target.value })} />
             </label>
             <label>
               <span>{t('ai.model')}</span>
@@ -321,25 +363,68 @@ export function AiLabView(): JSX.Element {
                 {provider.models.map((m) => <option key={m} value={m} />)}
               </datalist>
             </label>
-            <label>
-              <span>{t('ai.apiKey')}</span>
-              <span className="ai-key-row">
-                <input
-                  data-field="apiKey"
-                  type={showKey ? 'text' : 'password'}
-                  value={cfg.apiKey}
-                  autoComplete="new-password"
-                  spellCheck={false}
-                  placeholder={provider.id === 'ai8' ? t('ai.lab.ai8KeyHint') : undefined}
-                  onChange={(e) => { setCfg({ ...cfg, apiKey: e.target.value }); setUnreadableIds((ids) => ids.filter((i) => i !== editId)) }}
-                />
-                <button type="button" className="icon-button" data-action="toggle-key" onClick={() => setShowKey((v) => !v)}
-                  aria-label={showKey ? t('ai.lab.hideKey') : t('ai.lab.showKey')}
-                  title={showKey ? t('ai.lab.hideKey') : t('ai.lab.showKey')}>
-                  {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </span>
-            </label>
+            {isBedrockForm ? (
+              // R145: SigV4 credentials replace the Bearer key on Bedrock
+              <>
+                <label>
+                  <span>{t('ai.lab.aws.region')}</span>
+                  <select data-field="aws-region" value={cfg.aws?.region ?? 'us-east-1'}
+                    onChange={(e) => setCfg({ ...cfg, aws: { ...(cfg.aws ?? { accessKeyId: '', secretAccessKey: '', sessionToken: '' }), region: e.target.value } })}>
+                    {AWS_REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>{t('ai.lab.aws.accessKeyId')}</span>
+                  <input data-field="aws-ak" value={cfg.aws?.accessKeyId ?? ''} autoComplete="off" spellCheck={false}
+                    onChange={(e) => setCfg({ ...cfg, aws: { ...(cfg.aws ?? { region: 'us-east-1', secretAccessKey: '', sessionToken: '' }), accessKeyId: e.target.value } })} />
+                </label>
+                <label>
+                  <span>{t('ai.lab.aws.secretAccessKey')}</span>
+                  <span className="ai-key-row">
+                    <input
+                      data-field="aws-sk"
+                      type={showKey ? 'text' : 'password'}
+                      value={cfg.aws?.secretAccessKey ?? ''}
+                      autoComplete="new-password"
+                      spellCheck={false}
+                      onChange={(e) => { setCfg({ ...cfg, aws: { ...(cfg.aws ?? { region: 'us-east-1', accessKeyId: '', sessionToken: '' }), secretAccessKey: e.target.value } }); setUnreadableIds((ids) => ids.filter((i) => i !== editId)) }}
+                    />
+                    <button type="button" className="icon-button" data-action="toggle-key" onClick={() => setShowKey((v) => !v)}
+                      aria-label={showKey ? t('ai.lab.hideKey') : t('ai.lab.showKey')}
+                      title={showKey ? t('ai.lab.hideKey') : t('ai.lab.showKey')}>
+                      {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </span>
+                </label>
+                <label>
+                  <span>{t('ai.lab.aws.sessionToken')}</span>
+                  <input data-field="aws-sts" type={showKey ? 'text' : 'password'} value={cfg.aws?.sessionToken ?? ''}
+                    autoComplete="new-password" spellCheck={false} placeholder={t('ai.lab.aws.sessionTokenHint')}
+                    onChange={(e) => setCfg({ ...cfg, aws: { ...(cfg.aws ?? { region: 'us-east-1', accessKeyId: '', secretAccessKey: '' }), sessionToken: e.target.value } })} />
+                </label>
+                <p className="ai-hint-line">{t('ai.lab.aws.hint')}</p>
+              </>
+            ) : (
+              <label>
+                <span>{t('ai.apiKey')}</span>
+                <span className="ai-key-row">
+                  <input
+                    data-field="apiKey"
+                    type={showKey ? 'text' : 'password'}
+                    value={cfg.apiKey}
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    placeholder={provider.id === 'ai8' ? t('ai.lab.ai8KeyHint') : undefined}
+                    onChange={(e) => { setCfg({ ...cfg, apiKey: e.target.value }); setUnreadableIds((ids) => ids.filter((i) => i !== editId)) }}
+                  />
+                  <button type="button" className="icon-button" data-action="toggle-key" onClick={() => setShowKey((v) => !v)}
+                    aria-label={showKey ? t('ai.lab.hideKey') : t('ai.lab.showKey')}
+                    title={showKey ? t('ai.lab.hideKey') : t('ai.lab.showKey')}>
+                    {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </span>
+              </label>
+            )}
             <p className="ai-privacy-note">{t(encryptionAvailable ? 'ai.privacyNote' : 'ai.privacyNotePlain')}</p>
             {unreadableIds.includes(editId) && <p className="ai-hint-line">{t('ai.lab.keyUnreadable')}</p>}
             <div className="ai-config-actions">
