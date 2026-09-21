@@ -44,6 +44,7 @@ import { useSamplingDomain } from './hooks/domains/useSamplingDomain'
 import { useLayerActions } from './hooks/domains/useLayerActions'
 import { useSettingsMirror } from './hooks/domains/useSettingsMirror'
 import { useEngineLoop } from './hooks/useEngineLoop'
+import { usePersistedFlag, usePersistedState } from './hooks/usePersistedState'
 
 // R85: View union + tab navigation moved to hooks/tabNavigation (dashboard + settings added).
 const MODEL3D_VIEW_ENABLED = false
@@ -84,10 +85,7 @@ export function App(): JSX.Element {
   const [version, setVersion] = useState('0.1.0')
 
   // ── UI state persisted to localStorage ──────────────────────────────────
-  const [selectedLayerId, setSelectedLayerId] = useState(() =>
-    localStorage.getItem('rgbbox:selectedLayerId') ?? 'layer-rainbow'
-  )
-  useEffect(() => { localStorage.setItem('rgbbox:selectedLayerId', selectedLayerId) }, [selectedLayerId])
+  const [selectedLayerId, setSelectedLayerId] = usePersistedState('rgbbox:selectedLayerId', 'layer-rainbow', { raw: true })
   // R86: single-view navigation — left rail direct switching, last view persisted
   // R142-E4b: app root for the vision assistant's full-window cursor overlay
   const appRootRef = useRef<HTMLElement | null>(null)
@@ -105,22 +103,10 @@ export function App(): JSX.Element {
   // keeps it alive afterwards, exactly like the video studio.
   const [audioVisited, setAudioVisited] = useState<boolean>(() => activeView === 'audio')
   useEffect(() => { if (activeView === 'audio') setAudioVisited(true) }, [activeView])
-  const [allEffectsOpen, setAllEffectsOpen] = useState(() =>
-    localStorage.getItem('rgbbox:allEffectsOpen') === '1'
-  )
-  useEffect(() => { localStorage.setItem('rgbbox:allEffectsOpen', allEffectsOpen ? '1' : '0') }, [allEffectsOpen])
-  const [advancedControlsOpen, setAdvancedControlsOpen] = useState(() =>
-    localStorage.getItem('rgbbox:advancedControlsOpen') === '1'
-  )
-  useEffect(() => { localStorage.setItem('rgbbox:advancedControlsOpen', advancedControlsOpen ? '1' : '0') }, [advancedControlsOpen])
-  const [audioEnabled, setAudioEnabled] = useState(() =>
-    localStorage.getItem('rgbbox:audio') === '1'
-  )
-  useEffect(() => { localStorage.setItem('rgbbox:audio', audioEnabled ? '1' : '0') }, [audioEnabled])
-  const [audioDeviceId, setAudioDeviceId] = useState(() =>
-    localStorage.getItem('rgbbox:audioDevice') ?? ''
-  )
-  useEffect(() => { localStorage.setItem('rgbbox:audioDevice', audioDeviceId) }, [audioDeviceId])
+  const [allEffectsOpen, setAllEffectsOpen] = usePersistedFlag('rgbbox:allEffectsOpen', false)
+  const [advancedControlsOpen, setAdvancedControlsOpen] = usePersistedFlag('rgbbox:advancedControlsOpen', false)
+  const [audioEnabled, setAudioEnabled] = usePersistedFlag('rgbbox:audio', false)
+  const [audioDeviceId, setAudioDeviceId] = usePersistedState('rgbbox:audioDevice', '', { raw: true })
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
   const [speakerDevices, setSpeakerDevices] = useState<MediaDeviceInfo[]>([])
   // R45: reactive counterpart of windowVisibleRef (declared below) — a plain

@@ -79,12 +79,18 @@ src/engine        纯 TS 特效引擎（Node 不可用也无 DOM 依赖）：
                   videoWall.ts（矩阵布局+bezel+旋转+fit 数学）、videoWallFrame.ts
                   （从虚拟画布采样到面板帧）；可独立编译到 Web/WASM
 src/renderer/src  React UI 与 3D 渲染：
-  ├ App.tsx       God Component（路径分 9 个 view，含 worker 引擎循环接线）
-  ├ components/   各 view 实现 + 共享 UI（EffectsView / DisplayMap / VideoWallEditor 等）
+  ├ App.tsx       编排层（~700 行：boot、view 路由、引擎循环接线、
+  │               shell 装配；R147 从 2976 行 God Component 拆出）
+  ├ components/   各 view 实现 + 共享 UI（EffectsView / WorkspaceView /
+  │               DisplayMap / VideoWallEditor 等；重 view 已 lazy）
+  ├ domain/       纯函数域逻辑（paramMeta/randomizer/automation/schedule/
+  │               profileUtils/overlayDistribution 等，全单测）
   ├ gl/           WebGL 预览 + 6 个 GPU 3D 效果的 shader 渲染
   ├ workers/      previewEngineWorker.ts（zero-copy buffer + previousFrame 复用）
   ├ engine/       metricsCollector.ts（180-frame 滚动窗口 fps/p95）
-  ├ hooks/        useAudioAnalyzer / useModelStore 等
+  ├ hooks/        useAudioAnalyzer（双通道：status state + ref/subscribe 60Hz）/
+  │               useEngineLoop（tick 全 ref 化）/ domains/（9 个域 hook）/
+  │               usePersistedState 等
   ├ 3d/           Three.js + @mkkellogg/gaussian-splats-3d + LEDMapper
   └ i18n/         zh + en
 tests/            vitest（默认 environment: node；components/3d 走 happy-dom；
@@ -98,7 +104,7 @@ docs/index.html   GitHub Pages 部署的产品展示页（双语；CSS-only 效�
 - **Engine 是纯 TS**：不在 engine 层引入 DOM / WebGL / Electron 依赖，方便跨平台复用与单测。
 - **IPC 通道名统一在 `src/shared/ipc.ts`**：用 `as const` + `IpcChannel` 联合类型，避免字符串散落；新通道必须 PR-1 加 R-N。
 - **主进程入口单文件**（`src/main/index.ts`）承载了 IPC、捕获、浮窗、profile、protocol 等多个职责，是历史 P0/P1 集中点——不要"顺手"重构。
-- **Renderer 是单 God Component**（`App.tsx`）：当前架构是历史约定，新 view 仍以 `type View` 联合的成员追加，不要引入额外路由层。
+- **Renderer 是编排层 + 域模块**（R147 起）：`App.tsx` 只做 boot/view 路由/引擎接线/shell 装配；功能状态在 `hooks/domains/` 域 hook，纯逻辑在 `domain/`，view 在 `components/`（重 view lazy）。新 view 仍以 `type View` 联合的成员追加，**不引入路由库/store 库**；帧数据一律走 ref 不走 state（`useEngineLoop` 模式）。
 
 ## 提交流程（落地版）
 
