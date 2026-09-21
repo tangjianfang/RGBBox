@@ -2969,3 +2969,17 @@
 - **R146.6 验收点**：①`yarn typecheck` 0 error；②全量 `yarn test` 0 失败（含新 `getPollPlan` 用例）；③`yarn build` 通过；④手动（用户复测）：空闲触发屏保后按 ESC/任意键/晃鼠标 ≤2s 全部退出、Win 键菜单不再"看不见"、多显示器同退。
 - **R146.7 状态**：✅
 - **实施证据（2026-09-21）**：`yarn typecheck` 0 error（node + web）；TDD 红→绿——`tests/main/screensaverManager.test.ts` 新增 `getPollPlan` 2 用例（未开窗 `{20_000, idleMinutes*60}` 参数化 1/5min；开窗 `{1_000, 1}` 参数化 5/30min，先红 `getPollPlan is not a function` 后绿）；全量 `yarn test` **110 files / 1034 passed / 0 失败**（R145 基线 110/1032，+2 用例）；`yarn build` ✓。改动仅 `src/main/screensaverManager.ts`（`getPollPlan` 纯函数 + 常量 / `evaluate` 按 plan 取 idle 阈值并末尾 `schedulePolling` 切档 / `schedulePolling` 仅档位变化重建 timer / `ensurePowerEventListeners` 幂等绑定 / `ready-to-show` 增 `app.focus({steal:true})`）+ 测试文件。**用户真机复测为最终验收**（R146.6 ④）。
+
+### R147. 渲染层架构现代化——App.tsx God Component 渐进式域拆分 + 性能专项（2026-09-21 用户选定方向「渲染层架构现代化，方便快速扩展，性能最佳」，痛点全选：UI 卡顿/启动内存/扩展保障/可维护性；AskUserQuestion 确认方案 A 渐进式域拆分）
+
+> **现状诊断**（子代理深度分析，2026-09-21）：`App.tsx` 2976 行 = 模块级 620 行（纯函数/常量，**~190 行域逻辑零单测**）+ 组件单体 2350 行（24 useState / 23 useRef / 42 useEffect / 43 useCallback / 9 setInterval）；**workspace 视图 840 行内联 JSX 闭包引用全部 state/callback，任何子块无法 memo**；`useAudioAnalyzer` 16ms `setAudioData` 挂 App → 音频开启时**全 App 最高 60Hz 重渲染**（最大性能税）；引擎 tick effect 依赖 `profile` → 拖 slider 每 tick teardown/rebuild interval；全部 view + three.js 饿加载进主 chunk；14 处散装 localStorage effect；~130 行 model3d 死代码。**核心资产（必须保持）**：帧通道全 ref 化（每帧执行路径零 setState、worker transferable 零拷贝、PreviewGrid 自持 rAF）；已验证 view 模式两种（AiLabView 0-props 自管理 / AudioStudioView keep-alive）；AppShell/ModuleRail/shellModules/tabNavigation 骨架已就位。
+> **风险等级：L2**（renderer 全面重构，分五阶段每阶段独立验收独立提交可回滚；不改 IPC/preload/main/engine 行为）。**设计文档**：[`docs/superpowers/specs/2026-09-21-r147-renderer-architecture-design.md`](../superpowers/specs/2026-09-21-r147-renderer-architecture-design.md)。
+- **R147.0 三条铁律**：①帧数据走 ref 不走 state（worker→frameRef→rAF 管线零变化）；②`View` union 不变、不引入路由库/store 库（统一到已验证 view 模式）；③每阶段全量 `yarn test` + `typecheck` + `build` 绿 + CDP E2E 26/26 零回归后独立提交。
+- **R147.1 P0 基线**：App 最小 mount 冒烟测试（App.tsx 此前零直接测试）；基线入档（App.tsx 行数 / 主 chunk 体积 / 音频 setState 路径证据）。
+- **R147.2 P1 纯函数外迁**：模块级 620 行 → `src/renderer/src/domain/` 8 模块（paramMeta / randomizer / automation / schedule / profileUtils / overlayDistribution / quickDimensions / ambientPresets），域逻辑首次配单测（目标 ~30 用例），App.tsx 纯 import 消费。
+- **R147.3 P2 性能核心**：`useAudioAnalyzer` 分析数据 ref 通道化（App 层 60Hz setState→0）+ 顶栏电平条自订阅 rAF 拉取渲染；引擎 tick interval 配置 ref 桥化（interval 只建一次，拖 slider 零 teardown，复用既有 view/visibility ref 桥模式）；渲染计数断言测试。
+- **R147.4 P3 workspace 拆分 + 域 hooks**：840 行内联 JSX → `WorkspaceView` + 6-8 面板组件（props 窄化 + memo 生效）；App 24 state 按域归位自定义 hooks（useEngineLoop / useProfileManager / useOverlayTopology / useAudioDomain / useSchedule / useAutomation / useRandomizer / useShutdown…）；**App.tsx < 600 行纯编排**。
+- **R147.5 P4 启动优化**：重 view（MiniGames / AiLab / VideoStudio / AudioStudio / Architecture / Preview3D 含 three.js）React.lazy + Suspense，兼容 keep-alive 语义；build 产物体积前后对比入档。
+- **R147.6 P5 收尾**：`usePersistedState` 收敛 14 处 localStorage effect；model3d 死代码处置；9 个定时器归属各域 hook；**CLAUDE.md「Renderer 单 God Component」历史约定条款修订**（App 降级编排层，View union 与无路由原则不变）；PRD 状态 ✅ 附证据。
+- **R147.7 验收点**：①每阶段 typecheck + 全量 `yarn test` 0 失败；②P1 后域逻辑单测 ~30 用例；③P2 后音频开启时 App 渲染计数归零断言 + interval 零重建断言；④P3 后 App.tsx <600 行 + E2E 26/26 零回归；⑤P4 后主 chunk 体积下降入档；⑥P5 后 CLAUDE.md/文档同步；⑦真机（用户）：拖参顺滑、切 view 流畅、启动可感变快。
+- **R147.8 状态**：🔄（分支 `refactor/r147-renderer-arch`）
