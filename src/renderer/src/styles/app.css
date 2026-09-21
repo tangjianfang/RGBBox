@@ -7129,7 +7129,14 @@ input[type='range'].video-player-volume {
 }
 .ai-status {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-body-size);
+}
+/* R148 S3 batch-1: the bench's running state lives in a vessel, not as bare text */
+.ai-vision-head .ai-status.on {
+  background: var(--accent-dim);
+  border-radius: 999px;
+  color: var(--accent);
+  padding: 3px 10px;
 }
 .ai-config {
   display: grid;
@@ -7452,7 +7459,12 @@ input[type='range'].video-player-volume {
 .ai-vision-head { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; grid-column: 1 / -1; }
 .ai-vision-head strong { font-size: 14px; }
 .ai-vision-hint { color: var(--text-muted); font-size: 12.5px; grid-column: 1 / -1; margin: 0; }
-.vision-cap-table { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+.vision-cap-table { border-collapse: collapse; font-size: var(--text-body-size); table-layout: fixed; width: 100%; }
+/* R148 S3 batch-1: balanced columns — cap 16% / how 34% / live 13% / where 37% */
+.vision-cap-table th:nth-child(1), .vision-cap-table td:nth-child(1) { width: 16%; }
+.vision-cap-table th:nth-child(2), .vision-cap-table td:nth-child(2) { width: 34%; }
+.vision-cap-table th:nth-child(3), .vision-cap-table td:nth-child(3) { width: 13%; }
+.vision-cap-table th:nth-child(4), .vision-cap-table td:nth-child(4) { width: 37%; }
 .vision-cap-table th {
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-muted);
@@ -7461,12 +7473,19 @@ input[type='range'].video-player-volume {
   padding: 6px 8px;
   text-align: left;
 }
-.vision-cap-table td { border-bottom: 1px solid var(--border-subtle); padding: 6px 8px; vertical-align: top; }
+.vision-cap-table td { border-bottom: 1px solid var(--border-subtle); line-height: var(--text-body-lh); padding: 7px 10px; vertical-align: top; }
+.cap-how { hanging-indent: 0; padding-left: 10px; text-indent: -10px; }
 .vision-cap-table tr.cap-group td {
-  background: rgba(66, 232, 169, 0.05);
-  color: var(--accent);
-  font-weight: 600;
-  padding-top: 10px;
+  /* R148 S3 batch-1: section headers de-accented — accent now means
+     INTERACTION only (selection/active/running), not taxonomy. */
+  background: transparent;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-size: var(--text-caption-size);
+  font-weight: var(--text-title-weight);
+  letter-spacing: 0.05em;
+  padding-top: 14px;
+  text-transform: uppercase;
 }
 .vision-cap-table tr.cap-row td:first-child { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
 .cap-how, .cap-where { color: var(--text-secondary); }
@@ -7496,7 +7515,9 @@ input[type='range'].video-player-volume {
   gap: 12px;
   padding: 14px;
 }
-.vision-explore h4 { color: var(--accent); font-size: 12px; letter-spacing: 0.06em; margin: 0; text-transform: uppercase; }
+.vision-explore h4 { color: var(--text-secondary); font-size: var(--text-caption-size); font-weight: var(--text-title-weight); letter-spacing: 0.06em; margin: 0; text-transform: uppercase; }
+/* R148 S3 batch-1: telemetry rides the mono track (instrument look) */
+.vision-stats-line, .vision-gauge-val { font-family: var(--font-mono); }
 /* R144 review fix: the pad's absolute right/bottom positioning is the games
    canvas-overlay semantic — inside the explore panel it escaped the flow and
    covered the params. Scope it back to a normal centered block here. */
