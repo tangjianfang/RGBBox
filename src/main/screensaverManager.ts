@@ -35,6 +35,34 @@ const DEFAULT_SETTINGS: ScreensaverSettings = { enabled: false, idleMinutes: 5 }
 
 /** Idle poll cadence — well below human perception of "a few minutes late". */
 const POLL_INTERVAL_MS = 20_000
+/**
+ * R146: while screensaver windows are showing, poll for ANY user input this
+ * often. The screensaver opens from a background (idle) process — Windows'
+ * foreground lock silently rejects `win.focus()`, leaving the window without
+ * keyboard focus, so ESC via before-input-event never fires and the old 20s
+ * fallback made the screensaver feel impossible to exit.
+ */
+const ACTIVE_POLL_INTERVAL_MS = 1_000
+/** Input within the last N seconds counts as "the user is back". */
+const ACTIVITY_GRACE_SECONDS = 1
+
+export interface PollPlan {
+  intervalMs: number
+  idleThresholdSeconds: number
+}
+
+/**
+ * R146 poll cadence: nothing open → the original slow idle threshold; any
+ * window open → 1s cadence with a 1s threshold, so ANY real keyboard/mouse
+ * input closes all windows within ~a second — independent of focus and
+ * z-order (the fullscreen topmost window also hides the Start menu and
+ * taskbar context menus, so "any input exits" is the only reliable path).
+ */
+export function getPollPlan(isScreensaverOpen: boolean, idleMinutes: number): PollPlan {
+  return isScreensaverOpen
+    ? { intervalMs: ACTIVE_POLL_INTERVAL_MS, idleThresholdSeconds: ACTIVITY_GRACE_SECONDS }
+    : { intervalMs: POLL_INTERVAL_MS, idleThresholdSeconds: idleMinutes * 60 }
+}
 
 export type IdleState = 'active' | 'idle' | 'locked' | 'unknown'
 export type ScreensaverAction = 'open' | 'close' | 'none'
@@ -59,6 +87,8 @@ export function decideScreensaverAction(
 const screensaverWindows = new Map<number, BrowserWindow>()
 
 let pollTimer: NodeJS.Timeout | null = null
+/** Cadence of the current pollTimer — see schedulePolling (R146). */
+let pollIntervalMs: number | null = null
 let settings: ScreensaverSettings = { ...DEFAULT_SETTINGS }
 /** Set when a window is closed by the user; cleared once the system is active again. */
 let suppressedUntilActive = false
@@ -118,6 +148,12 @@ function openScreensaverWindow(displayId: number, isDevelopment: boolean, devUrl
     if (process.platform === 'win32') win.setFullScreen(true)
     win.setAlwaysOnTop(true, 'screen-saver')
     win.moveTop()
+    // R146: the screensaver opens while this app is in the background (idle
+    // machine) — the Windows foreground lock silently rejects a plain
+    // `win.focus()`, which left the window focusless and ESC dead. Steal
+    // app-level focus first; if the OS still refuses, the 1s any-input poll
+    // (getPollPlan) closes everything regardless.
+    app.focus({ steal: true })
     win.focus()
   })
 
@@ -172,8 +208,10 @@ export function closeAllScreensaverWindows(): void {
 }
 
 function evaluate(isDevelopment: boolean, devUrl?: string): void {
-  const idleState = powerMonitor.getSystemIdleState(settings.idleMinutes * 60) as IdleState
-  const action = decideScreensaverAction(idleState, screensaverWindows.size > 0, suppressedUntilActive)
+  const isOpen = screensaverWindows.size > 0
+  const plan = getPollPlan(isOpen, settings.idleMinutes)
+  const idleState = powerMonitor.getSystemIdleState(plan.idleThresholdSeconds) as IdleState
+  const action = decideScreensaverAction(idleState, isOpen, suppressedUntilActive)
   if (idleState === 'active') suppressedUntilActive = false
   if (action === 'open') {
     log().info('Screensaver', `idle ≥ ${settings.idleMinutes}min — opening effect screensaver`)
@@ -181,6 +219,9 @@ function evaluate(isDevelopment: boolean, devUrl?: string): void {
   } else if (action === 'close') {
     closeAllScreensaverWindows()
   }
+  // R146: match the poll cadence to the (possibly changed) state — just
+  // opened → fast any-input poll; all closed → back to the slow idle poll.
+  schedulePolling(isDevelopment, devUrl)
 }
 
 export async function getScreensaverSettings(): Promise<ScreensaverSettings> {
@@ -211,14 +252,41 @@ function stopPolling(): void {
     clearInterval(pollTimer)
     pollTimer = null
   }
+  pollIntervalMs = null
+}
+
+/**
+ * (Re)create the poll timer only when the required cadence changed. evaluate()
+ * calls this after every tick, so opening/closing windows switches between the
+ * slow idle poll and the R146 fast any-input poll exactly once, not per tick.
+ */
+function schedulePolling(isDevelopment: boolean, devUrl?: string): void {
+  const { intervalMs } = getPollPlan(screensaverWindows.size > 0, settings.idleMinutes)
+  if (pollTimer && pollIntervalMs === intervalMs) return
+  stopPolling()
+  pollTimer = setInterval(() => evaluate(isDevelopment, devUrl), intervalMs)
+  pollIntervalMs = intervalMs
+}
+
+let powerListenersBound = false
+
+/**
+ * Bind once per process — Node's EventEmitter does NOT dedupe re-adding the
+ * same listener reference, and polling can now be rescheduled mid-flight, so
+ * a per-restart `powerMonitor.on(...)` would stack duplicate handlers.
+ */
+function ensurePowerEventListeners(): void {
+  if (powerListenersBound) return
+  powerListenersBound = true
+  powerMonitor.on('lock-screen', onLockScreen)
+  powerMonitor.on('unlock-screen', onUnlockScreen)
 }
 
 function restartPolling(isDevelopment: boolean, devUrl?: string): void {
   stopPolling()
   if (!settings.enabled) return
-  powerMonitor.on('lock-screen', onLockScreen)
-  powerMonitor.on('unlock-screen', onUnlockScreen)
-  pollTimer = setInterval(() => evaluate(isDevelopment, devUrl), POLL_INTERVAL_MS)
+  ensurePowerEventListeners()
+  schedulePolling(isDevelopment, devUrl)
   log().info('Screensaver', `polling started (threshold ${settings.idleMinutes}min)`)
 }
 

@@ -13,7 +13,7 @@ vi.mock('electron', () => ({
   powerSaveBlocker: { start: () => 1, stop: () => {} },
 }))
 
-const { decideScreensaverAction } = await import('../../src/main/screensaverManager')
+const { decideScreensaverAction, getPollPlan } = await import('../../src/main/screensaverManager')
 
 describe('main/screensaverManager decideScreensaverAction (R74)', () => {
   it('opens when the system goes idle and nothing is open', () => {
@@ -44,5 +44,20 @@ describe('main/screensaverManager decideScreensaverAction (R74)', () => {
   it('never acts on unknown idle states', () => {
     expect(decideScreensaverAction('unknown', false, false)).toBe('none')
     expect(decideScreensaverAction('unknown', true, false)).toBe('none')
+  })
+})
+
+describe('main/screensaverManager getPollPlan (R146)', () => {
+  it('polls slowly against the configured idle threshold while no window is open', () => {
+    expect(getPollPlan(false, 5)).toEqual({ intervalMs: 20_000, idleThresholdSeconds: 300 })
+    expect(getPollPlan(false, 1)).toEqual({ intervalMs: 20_000, idleThresholdSeconds: 60 })
+  })
+
+  it('switches to a 1s any-input poll while the screensaver is showing', () => {
+    // 1s cadence + 1s threshold: ANY keyboard/mouse input in the last second
+    // reads as 'active' → all windows close. Independent of window focus,
+    // which the Windows foreground lock denies to a background-opened window.
+    expect(getPollPlan(true, 5)).toEqual({ intervalMs: 1_000, idleThresholdSeconds: 1 })
+    expect(getPollPlan(true, 30)).toEqual({ intervalMs: 1_000, idleThresholdSeconds: 1 })
   })
 })
