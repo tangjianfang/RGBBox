@@ -1600,7 +1600,7 @@ input:not([type]):focus {
 
 .game-tile.ghost .tower-orb {
   background: var(--surface-raised);
-  color: var(--text-faint);
+  color: var(--text-muted); /* R148 audit: faint was 2.7:1 on raised — a11y floor */
 }
 
 .games-screen.fs,
@@ -7988,7 +7988,7 @@ input[type='range'].video-player-volume {
 
 .ai8-mode-btn:hover { color: var(--white); }
 
-.ai8-mode-btn.active { background: var(--accent-deep-text); color: var(--white); }
+.ai8-mode-btn.active { background: var(--accent-deep-text); color: var(--surface-deep); /* R148 audit: white-on-mid-green was 3:1 — deep text matches the btn system */ }
 
 .ai8-video-notice {
   background: rgba(248, 168, 113, 0.08); border: 1px solid rgba(248, 168, 113, 0.25);
