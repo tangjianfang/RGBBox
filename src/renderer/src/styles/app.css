@@ -120,8 +120,10 @@
 }
 
 .workspace-header h2 {
-  font-size: 26px;
-  font-weight: 600;
+  /* R148 S2 type ramp: display step (was an ad-hoc 26px outlier). */
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-lh);
+  font-weight: var(--text-display-weight);
   letter-spacing: -0.02em;
 }
 
@@ -8219,3 +8221,21 @@ input[type='range'].video-player-volume {
   z-index: 62;
 }
 
+
+/* ── R148 S2: type-ramp anchors ──────────────────────────────────────────
+   Panel/section headers ride the title step; small supporting labels ride
+   caption. Per-view exhaustive pass happens in S3. */
+.panel-header h3,
+.fx-section-title,
+.topbar-title {
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-lh);
+  font-weight: var(--text-title-weight);
+}
+.eyebrow,
+.panel-header .eyebrow {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-lh);
+  letter-spacing: var(--text-caption-tracking);
+  text-transform: uppercase;
+}

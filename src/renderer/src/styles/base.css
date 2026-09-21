@@ -87,3 +87,22 @@ button {
   z-index: 9999;
 }
 
+
+/* ── R148 S2: numeric track ──────────────────────────────────────────────
+   Telemetry values (fps/ms/%/distances/coordinates/R-N refs) render in
+   tabular figures on the mono track — the "instrument" look. Applied via
+   the .tnum utility and directly on the known metric carriers. */
+.tnum,
+.metric strong,
+.status-panel strong,
+.grid-fps-hint,
+.diag-metric-value {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+.tnum-mono,
+.code-chip {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
