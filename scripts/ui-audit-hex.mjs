@@ -22,8 +22,15 @@ const TOKEN_FILES = new Set([
 
 const args = process.argv.slice(2)
 const files = []
-for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--css') { i++; while (args[i] && !args[i].startsWith('--')) files.push(args[i]) }
+{
+  let i = 0
+  while (i < args.length) {
+    if (args[i] === '--css') {
+      i++
+      while (i < args.length && !args[i].startsWith('--')) files.push(args[i++])
+    }
+    i++
+  }
 }
 const json = args.includes('--json')
 const targets = files.length ? files : DEFAULT_FILES
@@ -36,9 +43,20 @@ for (const file of targets) {
   const abs = resolve(file)
   const isTokenFile = TOKEN_FILES.has(file.replaceAll('\\', '/'))
   const css = readFileSync(abs, 'utf8')
+  // The FIRST :root block is the token definition layer — hexes there are the
+  // single source of truth (after the S1 split this whole block lives in
+  // styles/tokens.css, which TOKEN_FILES also whitelists).
+  const firstRootEnd = isTokenFile ? -1 : css.indexOf('}', css.indexOf(':root'))
   const lines = css.split(/\r?\n/)
   let inBlockComment = false
+  let consumed = 0 // running byte offset to locate the first :root block per line
+  const rootStart = css.indexOf(':root')
   lines.forEach((line, idx) => {
+    const lineStart = consumed
+    const lineEnd = consumed + line.length
+    consumed = lineEnd + 1
+    // Skip lines inside the first :root block (token definitions).
+    if (!isTokenFile && firstRootEnd !== -1 && lineStart <= firstRootEnd && lineEnd >= rootStart) return
     // crude comment stripping — good enough for an audit (false negatives on
     // `color: /* x */ #fff` are acceptable; there are none today)
     let work = line
