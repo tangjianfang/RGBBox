@@ -397,8 +397,14 @@ export class SessionController {
    * Assign detections to primary/off hands.
    * - dualHand disabled → best hand is primary (old behaviour)
    * - dualHand enabled  → primary = best hand on cfg.dualHand.primaryHand side;
-   *   off = best hand on the other side. A single visible hand is treated
-   *   according to its side (off hand alone still drives off-hand actions).
+   *   off = best hand on the other side.
+   * - R149: with exactly ONE hand visible, that hand is promoted to primary
+   *   regardless of its side. The pre-R149 reading ("a lone off-side hand
+   *   only drives off-hand actions") left a lone LEFT hand completely inert
+   *   for every primary capability (direction/pinch/chords/clutch/geom) when
+   *   primaryHand='Right' — the vision bench reported "only the right hand
+   *   can be tested". Off-hand modifiers (R134) genuinely require TWO hands;
+   *   a single hand serving as both roles would double-fire pinch.
    * @returns {{primary:object|null, secondary:object|null}}
    */
   _pickHands(hands) {
@@ -411,7 +417,7 @@ export class SessionController {
       return h.score - jump * 0.5; // continuity: prefer the tracked hand
     };
     const dual = this.cfg.dualHand.enabled;
-    if (!dual) {
+    if (!dual || valid.length === 1) {
       const best = [...valid].sort((a, b) => rank(b) - rank(a))[0];
       return { primary: best, secondary: null };
     }

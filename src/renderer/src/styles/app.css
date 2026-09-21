@@ -8337,3 +8337,45 @@ input:disabled {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── R149: bare-system-button debt — AI lab OCR + vision-bench actions ───
+   These buttons never had styles (R83/R144 shipped them on the user-agent
+   default look). They now ride the R148 S3 button archetype system via
+   descendant selectors — no JSX changes. */
+.ai-ocr-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.ai-ocr-actions button,
+.ai-vision-head button {
+  background: var(--btn-secondary-bg);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-m);
+  color: var(--btn-secondary-fg);
+  cursor: pointer;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-lh);
+  padding: var(--space-2) var(--space-3);
+  transition: background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+.ai-ocr-actions button:hover:not(:disabled),
+.ai-vision-head button:hover:not(:disabled) {
+  background: var(--btn-secondary-bg-hover);
+  border-color: var(--border-hover);
+}
+/* The one primary action per surface: start the bench. */
+.ai-vision-head button[data-action='vision-start'] {
+  background: var(--btn-primary-bg);
+  border-color: transparent;
+  color: var(--btn-primary-fg);
+  font-weight: var(--text-title-weight);
+}
+.ai-vision-head button[data-action='vision-start']:hover:not(:disabled) {
+  background: var(--btn-primary-bg-hover);
+}
+.ai-vision-head button[data-action='vision-stop'] {
+  background: var(--btn-danger-bg);
+  border-color: var(--btn-danger-border);
+  color: var(--btn-danger-fg);
+}

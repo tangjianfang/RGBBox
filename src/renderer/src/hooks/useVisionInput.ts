@@ -15,6 +15,7 @@ export type VisionSensitivity = 'standard' | 'fast' | 'sport'
 
 const PROFILE_KEY = 'vgi-profile-v2'
 const MIRROR_KEY = 'rgbbox:visionMirror'
+const PRIMARY_HAND_KEY = 'rgbbox:visionPrimaryHand'
 const SENSITIVITY_KEY = 'rgbbox:visionSensitivity'
 
 function readBool(key: string, fallback: boolean): boolean {
@@ -52,6 +53,9 @@ export interface VisionInputHandle {
   /** R136: runtime x-flip toggle — fixes reversed left/right for any camera setup. */
   setMirror(mirror: boolean): void
   mirror: boolean
+  /** R149: runtime primary-hand role switch ('Left' | 'Right'), persisted. */
+  setPrimaryHand(side: 'Left' | 'Right'): void
+  primaryHand: 'Left' | 'Right'
   /** R141-B: capture precision — fast 640×360 (games) vs precise 960×540 (cursor/assistant). */
   /** R142-E5: chord text mode — chords emit characters into chordBuffer() */
   setChordTextMode(on: boolean): void
@@ -201,7 +205,7 @@ export function useVisionInput(): VisionInputHandle {
             sessionCfg: {
               requireFace: false,
               faceEveryN: 3,
-              dualHand: { enabled: true, primaryHand: 'Right', offPinchKey: 'KeyF' },
+              dualHand: { enabled: true, primaryHand, offPinchKey: 'KeyF' }, // R149: persisted primary-hand role
             },
           },
         })
@@ -291,6 +295,17 @@ export function useVisionInput(): VisionInputHandle {
     channelRef.current?.postMessage({ type: 'mirror', m })
   }, [])
 
+  // R149: runtime primary-hand switch — left-handed users no longer need the
+  // single-hand promotion heuristic; the role assignment follows their hand.
+  const [primaryHand, setPrimaryHandState] = useState<'Left' | 'Right'>(() =>
+    (localStorage.getItem(PRIMARY_HAND_KEY) as 'Left' | 'Right' | null) ?? 'Right'
+  )
+  const setPrimaryHand = useCallback((side: 'Left' | 'Right') => {
+    setPrimaryHandState(side)
+    try { localStorage.setItem(PRIMARY_HAND_KEY, side) } catch { /* non-fatal */ }
+    channelRef.current?.postMessage({ type: 'primaryHand', side })
+  }, [])
+
   const setChordTextMode = useCallback((on: boolean) => {
     channelRef.current?.postMessage({ type: 'textmode', on })
   }, [])
@@ -312,7 +327,7 @@ export function useVisionInput(): VisionInputHandle {
 
   return {
     enable, enableSynthetic, disable, recalibrate, setPaused, resumeActive, skipCalibration, applySettings,
-    setMirror, mirror, setChordTextMode, chordBackspace, chordBuffer, setCapturePrecision, setSensitivity, sensitivity,
+    setMirror, mirror, setPrimaryHand, primaryHand, setChordTextMode, chordBackspace, chordBuffer, setCapturePrecision, setSensitivity, sensitivity,
     enabled, label, state, stepId, handSeen, frameRef, heldRef, queueRef,
   }
 }

@@ -4,7 +4,7 @@
 // useVisionInput consumes; the runtime module is the source of truth.
 
 export interface VisionEvent {
-  kind: 'direction' | 'pinch' | 'face' | 'chord'
+  kind: 'direction' | 'pinch' | 'face' | 'chord' | 'offhand' | 'hands'
   /** KeyboardEvent.key-style name ('ArrowLeft' | 'Space' | 'KeyE' …), null for bookkeeping events */
   key: string | null
   down: boolean

@@ -37,14 +37,17 @@ test('dual enabled: right hand drives direction, left pinch fires KeyF', () => {
   assert.equal(kf?.key, 'KeyF');
 });
 
-test('dual enabled: off hand alone drives only off-hand actions', () => {
+test('dual enabled: a lone off-side hand is PROMOTED to primary (R149)', () => {
   const d = new SessionDriver({ cfg: DUAL_CFG });
   d.session.forceReady({});
   d.collect(3, { ...atPalm(CENTER.x, CENTER.y), hand2: { cx: 0.3, cy: 0.5 } });
-  // primary gone; left hand alone pinches
+  // primary gone; left hand alone — pre-R149 it only drove off-hand actions,
+  // which left a lone left hand completely inert (vision-bench report). Now
+  // it IS the primary: primary capabilities work; off-hand modifiers require
+  // two real hands by design.
   const ev = d.collect(12, { handedness: 'Left', cx: 0.3, cy: 0.5, pinch: 0.2 });
-  assert.ok(!ev.some((e) => e.kind === 'direction'), 'no direction without primary hand');
-  assert.ok(ev.some((e) => e.kind === 'offhand' && e.name === 'pinch' && e.down), JSON.stringify(ev));
+  assert.ok(ev.some((e) => e.kind === 'pinch' && e.down && e.key === 'Space'), `primary pinch after promotion: ${JSON.stringify(ev)}`);
+  assert.ok(!ev.some((e) => e.kind === 'offhand'), 'no off-hand events for a single hand');
 });
 
 test('handedness swap flag mirrors primary/off assignment', () => {

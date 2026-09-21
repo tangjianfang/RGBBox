@@ -3009,3 +3009,14 @@
   - **S3+S4 体系层 ✅**（本 commit）：形状与空间 token（--radius-s/m/l + --space-1..8 4px 网格）+ **按钮四原型四态矩阵**（primary 填充/secondary/ghost/danger × hover/pressed/focus-visible/disabled，token 化）+ **全局 focus-visible 焦点环**（accent 2px+offset，仅键盘触发）+ 统一 disabled 处理 + **状态容器化**（.status-pill 六语义变体含 busy spinner——「校准中」类裸文本状态的载体）+ **动效系统**（--motion-fast/slow + --ease-standard + fade-in/slide-up 语义原语 + **prefers-reduced-motion 全局降级**）；门禁：build + 全量 118/1080 + E2E 26/26 + 9 快照。
   - **S3 逐 view 批次 / S5（亮色主题+原生质感）：待续**——1293 类的逐 view 精修与 pixelmatch 硬门禁接线、亮色主题双指向按方案后续批次执行（每批次独立验收）。
 - **R148.8 状态**：🔄（S0/S1/S2/S3+S4 体系层 ✅；S3 逐 view 批次 + S5 待续；真机视觉验收 pending 用户）
+
+### R149. 两项实测修复——AI 实验室裸按钮样式 + 体感体检左手瘫痪（2026-09-21 用户实测「AI 整理/中英互译/开始体检/停止/重新校准/跳过校准/计数清零等按钮没有样式；体感测试只有右手能测、组合行只有张掌能检测到，很多细节测不到」）
+
+> **根因**：①按钮无样式**不是 R148 回归**——`.ai-vision-head button` / `.ai-ocr-actions button` 的样式**从未存在**（R83/R144 存量缺失，一直渲染为浏览器默认灰按钮；`git log -S` 与 R144 历史快照双重确认）。②左手瘫痪：`session.js#_pickHands` 在双手模式下把主手**钉死为 primaryHand='Right' 侧**——单只左手出现时被分配为副手（原 R134 语义"单副手只驱动副手动作"），方向环/主捏合/和弦/握拳 clutch/张掌 geom（快照 `pickedLandmarks`/`geom` 只来自主手）**全部无数据** → 用户感知"只有右手能测、组合只有张掌亮"（张掌是 ticker 读 geom 的唯一幸存路径，右手测的）。
+- **R149.1 裸按钮样式补齐**：`.ai-ocr-actions`（原无任何样式，补 flex 布局）+ 两组按钮经后代选择器接入 R148 S3 按钮原型体系——secondary 默认、`vision-start` 唯一 primary 填充、`vision-stop` danger 变体、统一 disabled/hover/focus-visible；零 JSX 改动。
+- **R149.2 单手提升语义**：`_pickHands` 在 dualHand 启用且**恰好一只手**可见时，无论侧别提升为 primary（secondary=null——副手修饰键按设计需要真双手，单手兼任双角会双发 pinch）。有意废弃 R134 的"单副手驱动副手动作"边缘语义（KeyF 修饰键为预留态，实测痛感优先）。
+- **R149.3 主手运行时切换**：`pipeline.setPrimaryHand(side)` + 宿主消息 `case 'primaryHand'` + hook `setPrimaryHand/primaryHand`（localStorage `rgbbox:visionPrimaryHand` 持久化 + init cfg 携带）+ 体感体检快调区新增「主手 右手/左手」下拉——左撇子显式配置角色而非依赖单手启发。
+- **R149.4 类型诚实**：`vision_input.d.ts` 的 `VisionEvent.kind` 补 `'offhand' | 'hands'`（JS 引擎实际派发 6 种，声明落后）。
+- **R149.5 测试**：新增 `tests/vision/pickHands.test.mjs` 3 用例（单左手提升/单右手不变+双手分工/primaryHand='Left' 配置）；`dualhand.test.mjs` 的"单副手只驱动副手动作"用例**改写为新语义**（单手提升后主捏合 Space 工作、无 offhand 事件）。
+- **R149.6 验收点**：①typecheck + 全量 `yarn test` **119 files / 1083 passed / 0 失败**；②build + CDP E2E **26/26**（rebuild 后）+ 9 view 快照；③hex lint 0；④真机（用户）：按钮有主题样式；左手单独可测方向/捏合/和弦/clutch；主手切换下拉生效。
+- **R149.7 状态**：✅（代码+自动化闭环；用户真机为最终验收）

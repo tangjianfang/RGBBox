@@ -108,6 +108,8 @@ export class VisionPipeline {
   forceReady(profile) { this.session.forceReady(profile); }
   applySettings(patch) { this.session.applySettings(patch); }
   setMirror(m) { this.mirror = m; }
+  /** R149: runtime primary-hand switch — 'Left' | 'Right' (dual-hand role assignment). */
+  setPrimaryHand(side) { if (side === 'Left' || side === 'Right') this.session.cfg.dualHand.primaryHand = side; }
   setTextMode(on) { this.chords.setTextMode(on); }
   chordBackspace() { this.chords.backspace(); }
   chordBuffer() { return this.chords.buffer; }

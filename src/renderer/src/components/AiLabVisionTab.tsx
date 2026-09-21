@@ -486,6 +486,17 @@ export function AiLabVisionTab(): JSX.Element {
             {t('ai.lab.vision.mirror')}
           </label>
           <label className="vision-param-row">
+            {/* R149: left-handed users switch the primary-hand role instead of
+                relying on the lone-hand promotion heuristic. Plain text (zh/en
+                inline, the tab's established pattern for param rows). */}
+            {L === 'zh' ? '主手' : 'Primary hand'}
+            <select data-param="primary-hand" value={vision.primaryHand}
+              onChange={(e) => vision.setPrimaryHand(e.target.value as 'Left' | 'Right')}>
+              <option value="Right">{L === 'zh' ? '右手' : 'Right'}</option>
+              <option value="Left">{L === 'zh' ? '左手' : 'Left'}</option>
+            </select>
+          </label>
+          <label className="vision-param-row">
             {t('ai.lab.vision.sens')}
             <select data-param="sensitivity" value={vision.sensitivity}
               onChange={(e) => vision.setSensitivity(e.target.value as VisionSensitivity)}>
