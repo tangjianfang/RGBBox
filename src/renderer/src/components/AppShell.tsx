@@ -1,14 +1,17 @@
 import { Languages, Mic, MicOff, Settings, Timer, User } from 'lucide-react'
-import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { useI18n } from '../i18n'
+import { AudioMeters } from './AudioMeters'
 
 export interface AppShellProps {
   title: string // current module name, uppercase handled by CSS
   version: string
-  // audio quick block (unchanged from R85)
+  // audio quick block (R147 P2: audioLevels state prop replaced by the
+  // analyser's per-tick subscribe channel — meters update via DOM writes,
+  // zero re-renders)
   audioEnabled: boolean
   onToggleAudio: () => void
-  audioLevels?: { bass: number; mid: number; high: number }
+  audioSubscribe?: (cb: (d: { bass: number; mid: number; high: number }) => void) => () => void
   audioErrorLabel?: string
   lang: 'zh' | 'en'
   onToggleLang: () => void
@@ -63,12 +66,8 @@ export function AppShell(props: AppShellProps) {
           >
             {props.audioEnabled ? <Mic size={15} /> : <MicOff size={15} />}
           </button>
-          {props.audioEnabled && props.audioLevels && (
-            <div className="audio-meter-row topbar-meters">
-              <div className="audio-meter" style={{ '--level': props.audioLevels.bass } as CSSProperties} title="Bass" />
-              <div className="audio-meter" style={{ '--level': props.audioLevels.mid } as CSSProperties} title="Mid" />
-              <div className="audio-meter" style={{ '--level': props.audioLevels.high } as CSSProperties} title="High" />
-            </div>
+          {props.audioEnabled && props.audioSubscribe && (
+            <AudioMeters subscribe={props.audioSubscribe} />
           )}
           <button
             type="button"

@@ -14,6 +14,24 @@ export interface AudioData {
   error?: AudioCaptureError
 }
 
+/**
+ * R147 P2 dual-channel handle:
+ *  - `status` — React state, updated ONLY on semantic transitions
+ *    (active on/off, error changes). Rare by construction, so it no longer
+ *    re-renders the whole App tree ~20x/sec like the old single-state
+ *    AudioData return did.
+ *  - `ref` — the latest AudioData frame, written EVERY analysis tick
+ *    (~60Hz) without any React involvement. The engine tick loop reads it
+ *    directly (fresher than the old 20Hz state mirror).
+ *  - `subscribe(cb)` — fine-grained per-tick stream for leaf UI (topbar VU
+ *    meters write CSS variables straight to the DOM; no re-renders at all).
+ */
+export interface AudioAnalyzerHandle {
+  status: { active: boolean; error?: AudioCaptureError }
+  ref: { readonly current: AudioData }
+  subscribe(cb: (data: AudioData) => void): () => void
+}
+
 const NUM_BANDS = 32
 const MIN_FREQ = 20
 const MAX_FREQ = 20000
@@ -48,8 +66,12 @@ function classifyAudioError(error: unknown): AudioCaptureError {
   return 'capture-failed'
 }
 
-export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze = true): AudioData {
-  const [audioData, setAudioData] = useState<AudioData>(INACTIVE)
+export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze = true): AudioAnalyzerHandle {
+  // Semantic status only — the one piece that legitimately belongs to React.
+  const [status, setStatus] = useState<{ active: boolean; error?: AudioCaptureError }>({ active: false })
+  // Per-tick data channel: no React, written from the analysis interval.
+  const dataRef = useRef<AudioData>(INACTIVE)
+  const listenersRef = useRef(new Set<(data: AudioData) => void>())
   const prevBassRef = useRef(0)
   const intervalRef = useRef<number | null>(null)
   // R45: mirrors `shouldAnalyze` into a ref so the tick loop (a setInterval
@@ -64,9 +86,16 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze 
   // Prevents the harsh instant-drop that makes equalizer bars jittery.
   const smoothedBandsRef = useRef<number[]>(new Array(NUM_BANDS).fill(0))
 
+  const subscribe = useRef((cb: (data: AudioData) => void): (() => void) => {
+    const listeners = listenersRef.current
+    listeners.add(cb)
+    return () => { listeners.delete(cb) }
+  }).current
+
   useEffect(() => {
     if (!enabled) {
-      setAudioData(INACTIVE)
+      dataRef.current = INACTIVE
+      setStatus({ active: false })
       return
     }
 
@@ -112,19 +141,12 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze 
         const BASS_END = Math.round(250 / binHz)   // 0 – ~250 Hz
         const MID_END  = Math.round(4000 / binHz)  // ~250 – 4000 Hz
 
-        // Use setInterval instead of requestAnimationFrame so it continues when window is minimized
-        // R43: analysis runs every tick (needed for correct EMA smoothing /
-        // beat-decay behaviour), but the React state update (setAudioData) —
-        // which re-renders the whole App tree just to move 3 small VU-meter
-        // bars — is throttled to ~1-in-3 ticks (~20 Hz) instead of every tick
-        // (~60 Hz). This was a measurable chunk of "CPU goes up ~4.5% when
-        // audio capture is on". `beat` is transient (a sharp percussive
-        // spike), so the max seen across the skipped ticks is kept and
-        // emitted instead of whatever the last-sampled tick happened to see,
-        // so short beats between emits aren't dropped.
-        const EMIT_EVERY_N_TICKS = 3
-        let ticksSinceEmit = 0
-        let maxBeatSinceEmit = 0
+        // Use setInterval instead of requestAnimationFrame so it continues when window is minimized.
+        // R147 P2: analysis runs every 16ms tick and writes the ref/subscriber
+        // channel EVERY tick (~60Hz — fresher than the old throttled state);
+        // the React status state only changes on active/error transitions,
+        // so a running analyser costs ZERO re-renders instead of ~20/sec
+        // re-rendering the entire App tree.
         const tick = () => {
           if (cancelled) return
           // R45: nobody needs this data right now (no overlay projecting an
@@ -156,7 +178,6 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze 
           // Transient beat: sharp positive rise in bass
           const beat = Math.max(0, (bass - prevBassRef.current) * 5)
           prevBassRef.current = bass * 0.85 + prevBassRef.current * 0.15
-          maxBeatSinceEmit = Math.max(maxBeatSinceEmit, beat)
 
           // Per-band FFT: take the max bin value within each log-spaced band,
           // then apply asymmetric EMA (fast attack / slow decay) so bars rise
@@ -172,18 +193,19 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze 
             return next
           })
 
-          ticksSinceEmit += 1
-          if (ticksSinceEmit >= EMIT_EVERY_N_TICKS) {
-            ticksSinceEmit = 0
-            setAudioData({ active: true, bass, mid, high, level, beat: maxBeatSinceEmit, freqBands })
-            maxBeatSinceEmit = 0
-          }
+          dataRef.current = { active: true, bass, mid, high, level, beat, freqBands }
+          for (const cb of listenersRef.current) cb(dataRef.current)
         }
 
+        // Semantic transition: inactive → active (single state flip).
+        setStatus((prev) => (prev.active ? prev : { active: true }))
         intervalRef.current = window.setInterval(tick, 16) // ~60fps analysis, survives minimize
       })
       .catch((err: unknown) => {
-        if (!cancelled) setAudioData({ ...INACTIVE, error: classifyAudioError(err) })
+        if (cancelled) return
+        const error = classifyAudioError(err)
+        dataRef.current = { ...INACTIVE, error }
+        setStatus({ active: false, error })
       })
 
     return () => {
@@ -194,5 +216,14 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze 
     }
   }, [enabled, deviceId])
 
-  return audioData
+  // Keep the subscriber channel coherent when the hook disables: last frame
+  // flips back to INACTIVE so meters/visualizers fall to zero.
+  useEffect(() => {
+    if (!enabled) {
+      dataRef.current = INACTIVE
+      for (const cb of listenersRef.current) cb(INACTIVE)
+    }
+  }, [enabled])
+
+  return { status, ref: dataRef, subscribe }
 }

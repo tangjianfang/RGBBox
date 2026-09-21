@@ -42,11 +42,14 @@ describe('AppShell (R86)', () => {
     expect(onToggleAudio).toHaveBeenCalledOnce()
   })
 
-  it('audio meters render only when levels provided', () => {
+  it('audio meters mount only when the subscribe channel is provided (R147 P2)', () => {
     const { container, rerender } = render(<AppShell {...makeProps({ audioEnabled: true })} />)
     expect(container.querySelector('.topbar-meters')).toBeNull()
-    rerender(<AppShell {...makeProps({ audioEnabled: true, audioLevels: { bass: 0.5, mid: 0.2, high: 0.1 } })} />)
+    const audioSubscribe = vi.fn().mockReturnValue(() => undefined)
+    rerender(<AppShell {...makeProps({ audioEnabled: true, audioSubscribe })} />)
     expect(container.querySelectorAll('.topbar-meters .audio-meter').length).toBe(3)
+    // The meters subscribe once on mount for their per-tick DOM-write stream.
+    expect(audioSubscribe).toHaveBeenCalledOnce()
   })
 
   it('shutdown chip is always visible (R73 stays armable) — "off" hint when idle, opens HUD on click', () => {
