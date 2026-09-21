@@ -12,7 +12,7 @@ import { vi } from 'vitest'
 export function setupRendererMocks() {
   const rgbbox = {
     getAppVersion: vi.fn().mockResolvedValue('0.0.0-test'),
-    getDisplayTopology: vi.fn().mockResolvedValue([]),
+    getDisplayTopology: vi.fn().mockResolvedValue({ displays: [] }),
     getDefaultProfile: vi.fn().mockResolvedValue({}),
     getEngineStatus: vi.fn().mockResolvedValue({ running: false }),
     setEngineRunning: vi.fn().mockResolvedValue({ running: true }),
@@ -136,6 +136,9 @@ export function setupRendererMocks() {
     visionHostOpen: vi.fn().mockResolvedValue(true),
     visionHostClose: vi.fn().mockResolvedValue(true),
     onPerfSelfTestCollectTiming: vi.fn().mockReturnValue(() => undefined),
+    // R147 P0: App smoke — perf-selftest overlay toggle subscription + CPU samples
+    onPerfSelfTestToggleOverlay: vi.fn().mockReturnValue(() => undefined),
+    getProcessCpuSamples: vi.fn().mockResolvedValue([]),
     reportPerfSelfTestTiming: vi.fn().mockResolvedValue(undefined)
   }
   ;(globalThis as any).window.rgbbox = rgbbox

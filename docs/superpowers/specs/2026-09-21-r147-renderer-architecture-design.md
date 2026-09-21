@@ -149,8 +149,13 @@ App.tsx（<600 行，纯编排层：shell 装配 + view 路由分发 + 域 hook 
 
 ---
 
-## 附录 A：基线（P0 时填写）
+## 附录 A：基线（P0 实测，2026-09-21，分支 refactor/r147-renderer-arch）
 
-- App.tsx：2976 行 / 24 useState / 23 useRef / 42 useEffect / 43 useCallback / 9 setInterval（2026-09-21 测量）
-- 主 chunk 体积：P0 填写（`yarn build` 后 out/renderer/assets/index-*.js）
+- App.tsx：2976 行 / 24 useState / 23 useRef / 42 useEffect / 43 useCallback / 9 setInterval
+- build 产物（`yarn build` 后 out/renderer/assets/）：
+  - **主 chunk `index-*.js`：2,081,469 B（~2.0MB）** ← 全部 view + App 饿加载
+  - `vendor-three-*.js`：1,163,569 B（静态依赖，首屏即载）
+  - `styles-*.js`：751,260 B；`vendor-splat-*.js`：517,989 B（已 lazy ✓ 按需）
+  - `previewEngineWorker`：96,177 B；`visionHost`：37,665 B（独立入口）
 - 音频路径证据：`useAudioAnalyzer.ts:183`（16ms setInterval → setAudioData → App 全树重渲染）
+- App 测试基线：此前 **0 直接测试**；P0 新增 `tests/renderer/App.smoke.test.tsx`（mount → boot IPC fan-out → rail + dashboard 磁贴 + 版本 title 断言；顺带修正 helper 两处 mock：`getDisplayTopology` 返回 `{displays:[]}`、补 `onPerfSelfTestToggleOverlay`/`getProcessCpuSamples`）
