@@ -1,15 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { effectPresets } from '../../shared/defaultProfile'
 import type { CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, Profile, ProcessCpuSample, RgbFrame } from '../../shared/types'
 import { resolveFrameRenderStyle } from '../../shared/types'
 import { isGpuDirectEffect } from './gl/effectGl'
 import { useI18n } from './i18n'
 import { EffectsView } from './components/EffectsView'
-import { MiniGamesView } from './components/MiniGamesView'
-import { AudioStudioView } from './components/AudioStudioView'
-import { VideoStudioView } from './components/VideoStudioView'
-import { ArchitectureView } from './components/ArchitectureView'
 import { ShutdownTimerPanel } from './components/ShutdownTimerPanel'
+// R147 P4: heavy views load on demand — three.js (via MiniGames/3D previews),
+// the AI lab, the media studios and their dependency trees no longer sit in
+// the main chunk; keep-alive semantics are unaffected (the wrappers below
+// keep instances mounted after first load, `visible` just toggles display).
+const MiniGamesView    = lazy(() => import('./components/MiniGamesView').then((m) => ({ default: m.MiniGamesView })))
+const AudioStudioView  = lazy(() => import('./components/AudioStudioView').then((m) => ({ default: m.AudioStudioView })))
+const VideoStudioView  = lazy(() => import('./components/VideoStudioView').then((m) => ({ default: m.VideoStudioView })))
+const ArchitectureView = lazy(() => import('./components/ArchitectureView').then((m) => ({ default: m.ArchitectureView })))
+const AiLabView        = lazy(() => import('./components/AiLabView').then((m) => ({ default: m.AiLabView })))
+const WorkspaceView    = lazy(() => import('./components/WorkspaceView').then((m) => ({ default: m.WorkspaceView })))
 import { formatMediaTime } from '../../shared/timeFormat'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
 import { MetricsCollector } from './engine/metricsCollector'
@@ -19,10 +25,8 @@ import { VisionAssistant } from './components/vision/VisionAssistant'
 import { ModuleRail } from './components/ModuleRail'
 import { DashboardView } from './components/DashboardView'
 import { SettingsView } from './components/SettingsView'
-import { AiLabView } from './components/AiLabView'
 import { AiListenOverlay } from './components/AiListenOverlay'
 import { getTabMeta } from './components/shellModules'
-import { WorkspaceView } from './components/WorkspaceView'
 import { DiagnosticsView } from './components/DiagnosticsView'
 import { Model3DView } from './components/Model3DView'
 import type { AmbientPreset } from './domain/ambientPresets'
@@ -95,6 +99,12 @@ export function App(): JSX.Element {
   // mounted (hidden) afterwards so playback survives view switches.
   const [videoVisited, setVideoVisited] = useState<boolean>(() => activeView === 'video')
   useEffect(() => { if (activeView === 'video') setVideoVisited(true) }, [activeView])
+  // R147 P4: audio wrapper follows the same visited-gate as video — with the
+  // view now lazy-loaded, an always-mounted wrapper would fetch the chunk at
+  // boot; the gate defers first mount (and the chunk) to the first visit and
+  // keeps it alive afterwards, exactly like the video studio.
+  const [audioVisited, setAudioVisited] = useState<boolean>(() => activeView === 'audio')
+  useEffect(() => { if (activeView === 'audio') setAudioVisited(true) }, [activeView])
   const [allEffectsOpen, setAllEffectsOpen] = useState(() =>
     localStorage.getItem('rgbbox:allEffectsOpen') === '1'
   )
@@ -531,8 +541,11 @@ export function App(): JSX.Element {
             onSnipHotkey={settingsMirror.applySnipHotkey}
           />
         )}
-        {activeView === 'ai' && <AiLabView />}
+        {activeView === 'ai' && (
+          <Suspense fallback={null}><AiLabView /></Suspense>
+        )}
         {activeView === 'workspace' && (
+          <Suspense fallback={null}>
           <WorkspaceView
             profile={profile}
             scene={scene}
@@ -621,6 +634,7 @@ export function App(): JSX.Element {
             matchDisplayRatio={sampling.matchDisplayRatio}
             setSamplingValue={sampling.setSamplingValue}
           />
+          </Suspense>
         )}
 
         {activeView === 'effects' && (
@@ -636,7 +650,7 @@ export function App(): JSX.Element {
         )}
 
         {activeView === 'games' && (
-          <MiniGamesView />
+          <Suspense fallback={null}><MiniGamesView /></Suspense>
         )}
 
         {/* R60: this wrapper stays mounted (display:none instead of unmounting)
@@ -651,10 +665,12 @@ export function App(): JSX.Element {
             `overflow:hidden` and get clipped (the "频谱图表只显示了一半" bug after
             un-maximizing) instead of properly triggering the intended inner
             `overflow:auto` scrollbars (the "播放列表没有滚动条" bug). */}
+        {audioVisited && (
         <div className="audio-view-wrapper" style={{ display: activeView === 'audio' ? undefined : 'none' }}>
-          <AudioStudioView visible={activeView === 'audio'} />
+          <Suspense fallback={null}><AudioStudioView visible={activeView === 'audio'} /></Suspense>
           {activeView === 'audio' && <AiListenOverlay />}
         </div>
+        )}
 
         {/* R91.2: the video studio stays mounted after first visit (keep-alive,
             same pattern as the audio view above) — switching views only hides
@@ -662,7 +678,7 @@ export function App(): JSX.Element {
             take over. Heavy views (3D/games) keep the old unmount behavior. */}
         {videoVisited && (
           <div className="video-view-anchor" style={{ display: activeView === 'video' ? undefined : 'none' }}>
-            <VideoStudioView visible={activeView === 'video'} onReturnToVideo={() => setActiveView('video')} />
+            <Suspense fallback={null}><VideoStudioView visible={activeView === 'video'} onReturnToVideo={() => setActiveView('video')} /></Suspense>
             {activeView === 'video' && <AiListenOverlay />}
           </div>
         )}
@@ -672,7 +688,7 @@ export function App(): JSX.Element {
         )}
 
         {activeView === 'architecture' && (
-          <ArchitectureView />
+          <Suspense fallback={null}><ArchitectureView /></Suspense>
         )}
 
         {activeView === 'diagnostics' && (
