@@ -22,6 +22,30 @@
   --text-title-size: 15px;    --text-title-lh: 22px;   --text-title-weight: 500;
   --text-body-size: 13px;     --text-body-lh: 20px;
   --text-caption-size: 11px;  --text-caption-lh: 16px; --text-caption-tracking: 0.02em;
+  /* ── R148 S3: shape & spacing scales (4px grid) ───────────────────────── */
+  --radius-s: 4px;   /* inputs, small buttons, chips        */
+  --radius-m: 6px;   /* buttons, cards, panels              */
+  --radius-l: 10px;  /* modals, overlays, fullscreen frames */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  /* ── R148 S3: button-state matrix (4 types × 4 states) ────────────────── */
+  --btn-primary-bg: var(--accent);
+  --btn-primary-fg: var(--accent-contrast);
+  --btn-primary-bg-hover: #5aefb6;
+  --btn-primary-bg-pressed: #35d196;
+  --btn-secondary-bg: var(--bg-control);
+  --btn-secondary-bg-hover: var(--border-strong);
+  --btn-secondary-fg: var(--text-primary);
+  --btn-ghost-fg: var(--text-secondary);
+  --btn-ghost-fg-hover: var(--text-primary);
+  --btn-danger-bg: rgba(248, 113, 113, 0.14);
+  --btn-danger-fg: var(--status-error);
+  --btn-danger-border: rgba(248, 113, 113, 0.4);
+  --btn-disabled-opacity: 0.45;
+  /* ── R148 S4: motion scale ────────────────────────────────────────────── */
+  --motion-fast: 120ms;  /* hover / press / toggle        */
+  --motion-slow: 240ms;  /* panels, view fades, expanding */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   /* ── R86 P1 design tokens（Synapse 三层明度 → RGBBox 冷蓝灰） ────────── */
   --bg-rail: #0d1318;
   --bg-toolbar: #11191f;

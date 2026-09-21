@@ -8239,3 +8239,101 @@ input[type='range'].video-player-volume {
   letter-spacing: var(--text-caption-tracking);
   text-transform: uppercase;
 }
+
+/* ══ R148 S3: interaction-state system ═══════════════════════════════════
+   One focus ring, one disabled treatment, four button archetypes. The
+   per-view exhaustive pass (1293 classes) continues in batches; these
+   system rules already lift every interactive element app-wide. */
+
+/* Focus ring — keyboard-visible interaction only (pointer clicks stay clean) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s);
+}
+
+/* Disabled — one treatment, everywhere */
+button:disabled,
+select:disabled,
+input:disabled {
+  cursor: not-allowed;
+  opacity: var(--btn-disabled-opacity);
+}
+
+/* Primary archetype — the ONE filled accent action per surface */
+.btn-primary,
+.rail-item.active {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.btn-primary:hover,
+.rail-item.active:hover { background: var(--btn-primary-bg-hover); }
+.btn-primary:active { background: var(--btn-primary-bg-pressed); }
+
+/* Secondary archetype — default surface button */
+.btn-secondary {
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-fg);
+  border: 1px solid var(--border-control);
+  transition: background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+.btn-secondary:hover { background: var(--btn-secondary-bg-hover); border-color: var(--border-hover); }
+
+/* Ghost archetype — text-only action */
+.btn-ghost {
+  background: transparent;
+  color: var(--btn-ghost-fg);
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.btn-ghost:hover { color: var(--btn-ghost-fg-hover); }
+
+/* Danger archetype — destructive confirm */
+.btn-danger {
+  background: var(--btn-danger-bg);
+  color: var(--btn-danger-fg);
+  border: 1px solid var(--btn-danger-border);
+}
+
+/* Status containers — state lives in a vessel, never as bare text */
+.status-pill {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: var(--text-caption-size);
+  gap: var(--space-1);
+  padding: 3px 10px;
+}
+.status-pill[data-variant='info']    { background: rgba(79, 195, 247, 0.12);  color: var(--status-info); }
+.status-pill[data-variant='warn']    { background: rgba(253, 230, 138, 0.12); color: var(--status-warn); }
+.status-pill[data-variant='error']   { background: rgba(248, 113, 113, 0.12); color: var(--status-error); }
+.status-pill[data-variant='success'] { background: rgba(134, 239, 172, 0.12); color: var(--status-success); }
+.status-pill[data-variant='busy']    { background: var(--accent-dim);         color: var(--accent); }
+.status-pill[data-variant='busy']::before {
+  animation: status-pill-spin 0.9s linear infinite;
+  border: 2px solid var(--accent-dim);
+  border-radius: 50%;
+  border-top-color: var(--accent);
+  content: '';
+  height: 9px;
+  width: 9px;
+}
+@keyframes status-pill-spin { to { transform: rotate(360deg); } }
+
+/* ══ R148 S4: motion system ═════════════════════════════════════════════
+   Two durations, one curve. Ad-hoc keyframes (16 legacy) map onto the six
+   semantic primitives below during the per-view pass; new motion must use
+   these tokens. Respect the OS reduced-motion preference globally. */
+@keyframes fade-in   { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide-up  { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
