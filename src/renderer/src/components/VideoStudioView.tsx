@@ -1448,7 +1448,9 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                   <span className="video-resume-text">
                     {t('video.resume.lastseen')} {formatMediaTime(resumePrompt.at)}
                   </span>
-                  <button type="button" className="video-btn video-btn-primary" onClick={resumeContinue}>{t('video.resume.continue')}</button>
+                  {/* R150 (review V2): the footer 打开文件 stays the view's single
+                      accent primary — the transient resume CTA reads as secondary. */}
+                  <button type="button" className="video-btn" onClick={resumeContinue}>{t('video.resume.continue')}</button>
                   <button type="button" className="video-btn" onClick={resumeRestart}>{t('video.resume.restart')}</button>
                 </div>
               )}

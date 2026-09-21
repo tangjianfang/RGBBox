@@ -3020,3 +3020,19 @@
 - **R149.5 测试**：新增 `tests/vision/pickHands.test.mjs` 3 用例（单左手提升/单右手不变+双手分工/primaryHand='Left' 配置）；`dualhand.test.mjs` 的"单副手只驱动副手动作"用例**改写为新语义**（单手提升后主捏合 Space 工作、无 offhand 事件）。
 - **R149.6 验收点**：①typecheck + 全量 `yarn test` **119 files / 1083 passed / 0 失败**；②build + CDP E2E **26/26**（rebuild 后）+ 9 view 快照；③hex lint 0；④真机（用户）：按钮有主题样式；左手单独可测方向/捏合/和弦/clutch；主手切换下拉生效。
 - **R149.7 状态**：✅（代码+自动化闭环；用户真机为最终验收）
+
+### R150. 视觉 review 修复批——9 view + 音视频/其余模块功能态三轮内部截图 review 的落地修复（2026-09-22 用户指令「根据视觉review结果，进行修复」；review 报告：[`docs/reviews/2026-09-22-ui-visual-review.md`](../reviews/2026-09-22-ui-visual-review.md)）
+
+> 输入：R148 S3 batch-2 前置全量视觉 review（27 张 CDP 内部截图 + DOM 几何探针）。本条只修 review 判定项；i18n 内容翻译（效果卡描述/3D 面板/游戏命名）超 R148.5 边界，合并另立 R-N（见 R150.5）。
+
+- **R150.1 P1×2（workspace 布局硬伤，DOM 几何级验证）**：
+  - **W1 视频墙截断**：`.map-panel` 的 VideoWallEditor 内容溢出盒外 ~22px，被全宽采样面板盖住只剩半条残线（探针实测：hint 647-662 vs sampling top 656）。根因：`display-map` 运行时量得 300px 高，auto 网格行按左列 preview-panel 拉伸低估了右列。修复：`.content-grid { grid-template-rows: max-content auto }` + `section.panel.map-panel { min-height: max-content }`（0,2,1 特异性防 `.panel{min-height:0}` 覆盖——第一版 0,1,0 被 source order 压掉，已修正）。验证：sampling top 656→**695**，hint 完整在盒内，16px gap。
+  - **W2 网格密度值换行**：`.control-line` 值列固定 38px，「320 × 180」(~73px) 竖排三行。修复：`grid-template-columns: 96px 1fr auto` + `strong { white-space: nowrap }`（顺带 WQ1：标签列 72→96px，「灯效渲染风格」不再词中折行）。验证：lineBoxes **1**、width 73.1。
+- **R150.2 状态容器化/组件语义（S3 体系收尾）**：W3 `grid-fps-hint--warn` 裸琥珀文本→pill 容器（fit-content 右置）；I1 AI 配置「未测试」连接状态→`.ai-conn .ai-status` pill（idle 中性/ok success/fail error 三变体，JSX 补 `err` class hook）；I3 保存按钮→唯一 primary（`.ai-config-actions button[data-action='save']` 后代选择器接入原型体系，同 R149 模式）；ST2-min 原生 checkbox/radio 补全局 `accent-color: var(--accent)`（AI8 蓝色 radio / 设置白方块一并收敛；完整 toggle switch 组件留 S3 后续批次）。
+- **R150.3 文案/语义修正**：E1 `effects.eyebrow` 45→**55**（双语，与 EffectKind 总数对齐）；V1 `video.eyebrow` 与标题重复→「采样 · 剪辑 · 标注」/「Sampling · Trim · Annotate」；V2 视频 resume「继续播放」降级 secondary（页脚「打开文件」保持唯一 accent primary）；A1 可视化 tab `Circular`/`Wave Ring` 硬编码→`t(audio.viz.*)`（zh 译文「圆形频谱」「波形环」本就存在，`AudioStudioView.tsx:2298` 三元删除）。
+- **R150.4 色彩纪律**：A2 音频滑杆 `accent-color: var(--status-info)`→`var(--accent)` ×2 处（`.audio-progress-bar` / `input[type='range'].audio-slider`，R72 遗留；生成器音量同 class 一并收敛）——状态色不上控件。
+- **R150.5 网格孤儿卡**：G2 `.dash-tiles` auto-fill(150px)→`repeat(4, 1fr)`（8 模块卡=4×2 两整行；<900px 媒体查询回落 2 列）；E2 `.effects-card-grid` minmax 190→230px（经典 tab 7 卡从 6 列孤行→5+2）。
+- **R150.6 显式不做（留后续）**：FX1 无输入效果黑缩略图（需静态样本生成）、G1 PiP/手势助手 pill 遮挡（需默认锚点设计）、I2 AI 表单布局、AI5 音频 tab 英文状态串本地化、AI6 对话空态、ST2 完整 toggle、ST3 设置页布局、T1/T2 工具链（snapshot 脚本可移植 + 陈旧 out/ 校验）——各属 S3 后续批次或独立 R-N；**i18n 内容翻译**（E3/AR1/G4/GM2）合并为一条待立项 R-N。
+- **R150.7 review 更正**：ST1「开机启动启动」叠词为**误报**——OCR 逐字复核实为「开机自动启动」（i18n:1565 本就正确）；已在 review 文档标注。
+- **R150.8 验收点**：①`yarn typecheck` 绿；②全量 `yarn test` **119 files / 1083 passed / 0 失败**；③`yarn build` 绿（renderer 资产 mtime 已更新）；④W1/W2 DOM 探针复测通过（见 R150.1 数字）；⑤视觉复核**留给后续 haiku 会话**（用户指令：修复模型不做视觉 review）。
+- **R150.9 状态**：🔄（自动化门禁全过；haiku 视觉复核 + 用户真机验收后转 ✅）

@@ -313,7 +313,7 @@ export function AiLabView(): JSX.Element {
           </div>
 
           <div className="ai-conn">
-            <span className={`ai-status dash-dot${conn.kind === 'ok' ? ' on' : ''}`}>
+            <span className={`ai-status dash-dot${conn.kind === 'ok' ? ' on' : ''}${conn.kind === 'fail' ? ' err' : ''}`}>
               {conn.kind === 'idle' && t('ai.lab.status.disconnected')}
               {conn.kind === 'testing' && '…'}
               {conn.kind === 'ok' && `${t('ai.lab.status.connected')} · ${conn.model} · ${conn.latencyMs} ms`}
@@ -428,7 +428,8 @@ export function AiLabView(): JSX.Element {
             <p className="ai-privacy-note">{t(encryptionAvailable ? 'ai.privacyNote' : 'ai.privacyNotePlain')}</p>
             {unreadableIds.includes(editId) && <p className="ai-hint-line">{t('ai.lab.keyUnreadable')}</p>}
             <div className="ai-config-actions">
-              <button type="button" data-action="save" onClick={() => void commitEdits()} disabled={!loaded}>{t('ai.lab.save')}</button>
+              {/* R150 (review I3): 保存 is the surface's single filled primary. */}
+              <button type="button" className="btn-primary" data-action="save" onClick={() => void commitEdits()} disabled={!loaded}>{t('ai.lab.save')}</button>
               <button type="button" data-action="set-active" onClick={() => void setActive()} disabled={!loaded || editId === ''}>{t('ai.lab.setActive')}</button>
             </div>
           </div>

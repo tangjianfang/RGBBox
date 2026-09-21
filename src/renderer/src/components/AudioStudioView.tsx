@@ -2295,7 +2295,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                   className={`audio-viz-mode-btn ${vizMode === mode ? 'active' : ''}`}
                   onClick={() => { setVizMode(mode); spectrogramBufferRef.current = [] }}
                 >
-                  {mode === 'circular' ? 'Circular' : mode === 'waveRing' ? 'Wave Ring' : t(`audio.viz.${mode}` as any)}
+                  {t(`audio.viz.${mode}` as any)}
                 </button>
               ))}
               <button

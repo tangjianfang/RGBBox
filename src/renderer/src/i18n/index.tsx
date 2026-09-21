@@ -373,7 +373,7 @@ const EN = {
   'sampling.expand': 'Expand',
   // Effects view
   'effects.library': 'Effect Library',
-  'effects.eyebrow': '45 built-in effects — click to apply to selected layer',
+  'effects.eyebrow': '55 built-in effects — click to apply to selected layer',
   'effects.classic': 'Classic',
   'effects.advanced': 'Advanced',
   'effects.science': 'Science',
@@ -1088,7 +1088,7 @@ const EN = {
   'model3d.ground': 'Ground',
   // Video Studio
   'nav.video': 'Video Studio',
-  'video.eyebrow': 'Video Workstation',
+  'video.eyebrow': 'Sampling · Trim · Annotate',
   'video.title': 'Video Studio',
   'video.mode.camera': 'Camera',
   'video.mode.screen': 'Screen / Window',
@@ -1638,7 +1638,7 @@ const ZH: TranslationTable = {
   'sampling.collapse': '收起',
   'sampling.expand': '展开',
   'effects.library': '效果库',
-  'effects.eyebrow': '45 种内置效果 — 点击应用到选中图层',
+  'effects.eyebrow': '55 种内置效果 — 点击应用到选中图层',
   'effects.classic': '经典',
   'effects.advanced': '进阶',
   'effects.science': '科学可视化',
@@ -2347,7 +2347,7 @@ const ZH: TranslationTable = {
   'model3d.ground': '地面',
   // 视频工作站
   'nav.video': '视频工作站',
-  'video.eyebrow': '视频工作站',
+  'video.eyebrow': '采样 · 剪辑 · 标注',
   'video.title': '视频工作站',
   'video.mode.camera': '摄像头',
   'video.mode.screen': '屏幕 / 窗口',

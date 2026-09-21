@@ -149,6 +149,11 @@
   display: grid;
   gap: 16px;
   grid-template-columns: 1.618fr 1fr;
+  /* R150 (review W1): auto rows sized row 1 off the left preview panel while
+     the right map panel's runtime-measured content (DisplayMap + wall
+     editor) ended up ~22px taller, spilling under the sampling panel.
+     max-content keeps the row tall enough for either column's content. */
+  grid-template-rows: max-content auto;
 }
 
 .content-grid > * {
@@ -158,6 +163,14 @@
 section.sampling-panel {
   grid-column: 1 / -1;
   min-height: 0;
+}
+
+/* R150 (review W1): the map panel's VideoWallEditor content spilled ~22px
+   below its box and was painted under the full-width sampling panel —
+   only a half-cut hint line remained visible. Size the box to its content.
+   (0,2,1) specificity so the later `.panel { min-height: 0 }` cannot win. */
+section.panel.map-panel {
+  min-height: max-content;
 }
 
 .panel {
@@ -588,7 +601,9 @@ section.sampling-panel {
   align-items: center;
   display: grid;
   gap: 12px;
-  grid-template-columns: 72px 1fr 38px;
+  /* R150 (review W2/WQ1): value column was a fixed 38px — "320 × 180" wrapped
+     onto three lines; label column 72px broke 灯效渲染风格 mid-word. */
+  grid-template-columns: 96px 1fr auto;
   margin: 14px 0;
 }
 
@@ -626,6 +641,7 @@ section.sampling-panel {
 .control-line strong {
   color: var(--info-text);
   text-align: right;
+  white-space: nowrap;
 }
 
 input[type='range'] {
@@ -640,6 +656,13 @@ input[type='color'] {
   height: 30px;
   padding: 2px;
   width: 100%;
+}
+
+/* R150 (review ST2-min / AI8): native checkboxes & radios rode the OS-default
+   blue/white — pin them to the accent so every control speaks one color. */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--accent);
 }
 
 select {
@@ -977,8 +1000,14 @@ input:not([type]):focus {
   text-align: right;
 }
 
+/* R150 (review W3): warn state lives in a vessel, not as bare amber text */
 .grid-fps-hint--warn {
-  color: var(--status-warn-strong);
+  background: rgba(253, 230, 138, 0.12);
+  border-radius: 999px;
+  color: var(--status-warn);
+  margin-left: auto;
+  padding: 3px 10px;
+  width: fit-content;
 }
 
 .aspect-lock-row {
@@ -1320,7 +1349,9 @@ input:not([type]):focus {
 .effects-card-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  /* R150 (review E2): 190px min gave 6 columns — the 7-card 经典 tab ended
+     with a lone orphan card; 230px lands on 5 columns (5+2 tail). */
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
 }
 
 .effect-card {
@@ -4143,7 +4174,8 @@ input:not([type]):focus {
 .audio-progress-bar {
   flex: 1;
   height: 4px;
-  accent-color: var(--status-info);
+  /* R150 (review A2): status colors never ride controls — accent-only. */
+  accent-color: var(--accent);
   border-radius: 2px;
 }
 
@@ -4151,7 +4183,7 @@ input:not([type]):focus {
 input[type='range'].audio-slider {
   width: 100px;
   height: 4px;
-  accent-color: var(--status-info);
+  accent-color: var(--accent);
 }
 
 .audio-label {
@@ -7070,7 +7102,15 @@ input[type='range'].video-player-volume {
 .dash-tiles {
   display: grid;
   gap: var(--gap-grid);
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* R150 (review G2): auto-fill landed 8 tiles on 7 columns — the last card
+     rode alone. Fixed 4 columns = two clean rows for the 8 reachable views. */
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 900px) {
+  .dash-tiles {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 .dash-tile {
   align-items: center;
@@ -7130,6 +7170,23 @@ input[type='range'].video-player-volume {
 .ai-status {
   color: var(--text-secondary);
   font-size: var(--text-body-size);
+}
+
+/* R150 (review I1): config-tab connection state gets a vessel like the
+   vision bench (S3 batch-1) instead of bare "未测试" text. */
+.ai-conn .ai-status {
+  background: rgba(138, 162, 173, 0.12);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.ai-conn .ai-status.on {
+  background: rgba(134, 239, 172, 0.12);
+  color: var(--status-success);
+}
+
+.ai-conn .ai-status.err {
+  background: rgba(248, 113, 113, 0.12);
 }
 /* R148 S3 batch-1: the bench's running state lives in a vessel, not as bare text */
 .ai-vision-head .ai-status.on {
@@ -7201,6 +7258,18 @@ input[type='range'].video-player-volume {
   color: var(--accent);
 }
 .ai-config-actions button:disabled { color: var(--text-faint); cursor: not-allowed; }
+/* R150 (review I3): 保存 is the single filled primary on this surface —
+   descendant selector wins over the generic secondary above. */
+.ai-config-actions button[data-action='save'] {
+  background: var(--btn-primary-bg);
+  border-color: transparent;
+  color: var(--btn-primary-fg);
+}
+.ai-config-actions button[data-action='save']:hover:not(:disabled) {
+  background: var(--btn-primary-bg-hover);
+  border-color: transparent;
+  color: var(--btn-primary-fg);
+}
 .ai-chat-log {
   display: flex;
   flex-direction: column;
