@@ -1,10 +1,8 @@
-import { Activity, Monitor } from 'lucide-react'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { defaultProfile, effectPresets } from '../../shared/defaultProfile'
-import type { BlendMode, CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, VideoWallLayout } from '../../shared/types'
-import { is3DEffect, resolveFrameRenderStyle } from '../../shared/types'
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { effectPresets } from '../../shared/defaultProfile'
+import type { CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, Profile, ProcessCpuSample, RgbFrame } from '../../shared/types'
+import { resolveFrameRenderStyle } from '../../shared/types'
 import { isGpuDirectEffect } from './gl/effectGl'
-import { resolveTargetDisplayAspect } from '../../engine/targetDisplayAspect'
 import { useI18n } from './i18n'
 import { EffectsView } from './components/EffectsView'
 import { MiniGamesView } from './components/MiniGamesView'
@@ -14,10 +12,7 @@ import { ArchitectureView } from './components/ArchitectureView'
 import { ShutdownTimerPanel } from './components/ShutdownTimerPanel'
 import { formatMediaTime } from '../../shared/timeFormat'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
-import type { WorkerInput, WorkerOutput } from './workers/previewEngineWorker'
-import { useModelStore } from './3d/useModelStore'
 import { MetricsCollector } from './engine/metricsCollector'
-import { frameAgeState } from './engine/frameAge'
 import { loadStoredView, persistView, resolveInitialView, type View } from './hooks/tabNavigation'
 import { AppShell } from './components/AppShell'
 import { VisionAssistant } from './components/vision/VisionAssistant'
@@ -28,22 +23,23 @@ import { AiLabView } from './components/AiLabView'
 import { AiListenOverlay } from './components/AiListenOverlay'
 import { getTabMeta } from './components/shellModules'
 import { WorkspaceView } from './components/WorkspaceView'
-// R147 P1: module-scope constants/pure functions extracted to domain/ (unit-tested there).
+import { DiagnosticsView } from './components/DiagnosticsView'
+import { Model3DView } from './components/Model3DView'
 import type { AmbientPreset } from './domain/ambientPresets'
-import type { RandomizerMode } from './domain/randomizer'
-import { RANDOMIZER_MODES, parseStoredEffectKinds, parseStoredParameterLocks, randomizeLayerParameters } from './domain/randomizer'
-import type { AutomationMode } from './domain/automation'
-import { AUTOMATION_MODES, AUTOMATION_TARGET_PARAMS, applyParameterAutomation, parseStoredAutomationParams } from './domain/automation'
-import type { ScheduleBlockId } from './domain/schedule'
-import { parseStoredSchedule, scheduleBlockForHour } from './domain/schedule'
-import type { QuickDimensionId } from './domain/quickDimensions'
-import { applyQuickDimensionParameters, opacityForQuickEnergy } from './domain/quickDimensions'
-import { activeLayer, activeScene, updateLayer, formatMs } from './domain/profileUtils'
+import { AUTOMATION_TARGET_PARAMS } from './domain/automation'
+import { activeLayer, activeScene, updateLayer } from './domain/profileUtils'
 import { distributeFrameToOverlays } from './domain/overlayDistribution'
-
-// Lazily loaded — vendor-splat (1.6MB) is only fetched when the 3D view is first opened
-const SplatViewer = lazy(() => import('./3d/SplatViewer').then((m) => ({ default: m.SplatViewer })))
-const LEDMapper   = lazy(() => import('./3d/LEDMapper').then((m) => ({ default: m.LEDMapper })))
+// R147 P3b: domain hooks — each owns one slice of former App state verbatim.
+import { useProfileManager } from './hooks/domains/useProfileManager'
+import { useOverlayTopology } from './hooks/domains/useOverlayTopology'
+import { useScheduleDomain } from './hooks/domains/useScheduleDomain'
+import { useAutomationDomain } from './hooks/domains/useAutomationDomain'
+import { useRandomizerDomain } from './hooks/domains/useRandomizerDomain'
+import { useShutdownTimer } from './hooks/domains/useShutdownTimer'
+import { useSamplingDomain } from './hooks/domains/useSamplingDomain'
+import { useLayerActions } from './hooks/domains/useLayerActions'
+import { useSettingsMirror } from './hooks/domains/useSettingsMirror'
+import { useEngineLoop } from './hooks/useEngineLoop'
 
 // R85: View union + tab navigation moved to hooks/tabNavigation (dashboard + settings added).
 const MODEL3D_VIEW_ENABLED = false
@@ -59,9 +55,11 @@ const EMPTY_ENGINE_METRICS: EngineMetrics = {
   droppedTicks: 0
 }
 
-
-let _layerCounter = 100
-
+/**
+ * R147 P3: App is now an orchestration layer — boot, view routing, the engine
+ * loop wiring (refs only) and shell assembly. Feature state lives in domain/
+ * pure functions (P1), domain hooks (P3b) and view components (P3a).
+ */
 export function App(): JSX.Element {
   const { t, lang, setLang } = useI18n()
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -80,39 +78,12 @@ export function App(): JSX.Element {
   // on a single aggregate Task Manager number.
   const [processCpuSamples, setProcessCpuSamples] = useState<ProcessCpuSample[]>([])
   const [version, setVersion] = useState('0.1.0')
-  const [savedProfiles, setSavedProfiles] = useState<ProfileMeta[]>([])
-  // Ref lets the auto-save effect read savedProfiles without listing it as a dep
-  const savedProfilesRef = useRef<ProfileMeta[]>([])
-  savedProfilesRef.current = savedProfiles
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
-  const [profileEditMode, setProfileEditMode] = useState<'duplicate' | 'rename' | null>(null)
-  const [profileEditName, setProfileEditName] = useState('')
-  const profileMenuRef = useRef<HTMLDivElement | null>(null)
-  const editInputRef = useRef<HTMLInputElement | null>(null)
-
-  const refreshProfiles = useCallback(() => {
-    window.rgbbox.listProfiles().then(setSavedProfiles)
-  }, [])
-
-  // Note: initial load is done inside the main Promise.all below to allow
-  // ensuring the working profile is always registered as a named slot.
-
-  // Close profile menu on outside click
-  useEffect(() => {
-    if (!profileMenuOpen) return undefined
-    const handler = (e: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
-        setProfileMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [profileMenuOpen])
 
   // ── UI state persisted to localStorage ──────────────────────────────────
   const [selectedLayerId, setSelectedLayerId] = useState(() =>
     localStorage.getItem('rgbbox:selectedLayerId') ?? 'layer-rainbow'
   )
+  useEffect(() => { localStorage.setItem('rgbbox:selectedLayerId', selectedLayerId) }, [selectedLayerId])
   // R86: single-view navigation — left rail direct switching, last view persisted
   // R142-E4b: app root for the vision assistant's full-window cursor overlay
   const appRootRef = useRef<HTMLElement | null>(null)
@@ -124,149 +95,35 @@ export function App(): JSX.Element {
   // mounted (hidden) afterwards so playback survives view switches.
   const [videoVisited, setVideoVisited] = useState<boolean>(() => activeView === 'video')
   useEffect(() => { if (activeView === 'video') setVideoVisited(true) }, [activeView])
-  const [favoriteEffectKinds, setFavoriteEffectKinds] = useState<EffectKind[]>(() =>
-    parseStoredEffectKinds(localStorage.getItem('rgbbox:favoriteEffects'))
-  )
   const [allEffectsOpen, setAllEffectsOpen] = useState(() =>
     localStorage.getItem('rgbbox:allEffectsOpen') === '1'
   )
+  useEffect(() => { localStorage.setItem('rgbbox:allEffectsOpen', allEffectsOpen ? '1' : '0') }, [allEffectsOpen])
   const [advancedControlsOpen, setAdvancedControlsOpen] = useState(() =>
     localStorage.getItem('rgbbox:advancedControlsOpen') === '1'
   )
-  const [randomizerMode, setRandomizerMode] = useState<RandomizerMode>(() => {
-    const saved = localStorage.getItem('rgbbox:randomizerMode') as RandomizerMode | null
-    return saved && RANDOMIZER_MODES.includes(saved) ? saved : 'bold'
-  })
-  const [randomizerLockedParams, setRandomizerLockedParams] = useState<string[]>(() =>
-    parseStoredParameterLocks(localStorage.getItem('rgbbox:randomizerLockedParams'))
-  )
-  const [scheduleEnabled, setScheduleEnabled] = useState(() =>
-    localStorage.getItem('rgbbox:scheduleEnabled') === '1'
-  )
-  const [scheduleEffects, setScheduleEffects] = useState<Record<ScheduleBlockId, EffectKind>>(() =>
-    parseStoredSchedule(localStorage.getItem('rgbbox:scheduleEffects'))
-  )
-  const [scheduleNow, setScheduleNow] = useState(() => new Date())
-  const [automationEnabled, setAutomationEnabled] = useState(() =>
-    localStorage.getItem('rgbbox:automationEnabled') === '1'
-  )
-  const [automationMode, setAutomationMode] = useState<AutomationMode>(() => {
-    const saved = localStorage.getItem('rgbbox:automationMode') as AutomationMode | null
-    return saved && AUTOMATION_MODES.includes(saved) ? saved : 'sine'
-  })
-  const [automatedParams, setAutomatedParams] = useState<string[]>(() =>
-    parseStoredAutomationParams(localStorage.getItem('rgbbox:automatedParams'))
-  )
+  useEffect(() => { localStorage.setItem('rgbbox:advancedControlsOpen', advancedControlsOpen ? '1' : '0') }, [advancedControlsOpen])
   const [audioEnabled, setAudioEnabled] = useState(() =>
     localStorage.getItem('rgbbox:audio') === '1'
   )
+  useEffect(() => { localStorage.setItem('rgbbox:audio', audioEnabled ? '1' : '0') }, [audioEnabled])
   const [audioDeviceId, setAudioDeviceId] = useState(() =>
     localStorage.getItem('rgbbox:audioDevice') ?? ''
   )
+  useEffect(() => { localStorage.setItem('rgbbox:audioDevice', audioDeviceId) }, [audioDeviceId])
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
   const [speakerDevices, setSpeakerDevices] = useState<MediaDeviceInfo[]>([])
-  const [overlayDisplayIds, setOverlayDisplayIds] = useState<number[]>([])
-  const [overlayConfigs, setOverlayConfigs] = useState<Record<number, OverlayConfig>>(() => {
-    try { return JSON.parse(localStorage.getItem('rgbbox:overlayConfigs') ?? '{}') }
-    catch { return {} }
-  })
-  const [powerSaveBlock, setPowerSaveBlock] = useState(false)
-  const [autoLaunch, setAutoLaunch] = useState(false)
-  // R73: scheduled-shutdown countdown (drives both the sidebar chip and the HUD panel)
-  const [shutdownInfo, setShutdownInfo] = useState<{ deadlineMs: number; totalMs: number; remainingMs: number } | null>(null)
-  const [shutdownPanelOpen, setShutdownPanelOpen] = useState(false)
-  // R74: light-effect screensaver settings mirror (main owns the idle watcher)
-  const [screensaverEnabled, setScreensaverEnabled] = useState(false)
-  const [screensaverMinutes, setScreensaverMinutes] = useState(5)
-  // R81: global snip hotkey mirror (main owns globalShortcut + persistence)
-  const [snipHotkey, setSnipHotkeyState] = useState<string>('Alt+A')
-  useEffect(() => {
-    void window.rgbbox.snipGetHotkey().then((k) => setSnipHotkeyState(k)).catch(() => { /* default */ })
-  }, [])
-  const applySnipHotkey = useCallback((accel: string) => {
-    setSnipHotkeyState(accel)   // 乐观更新；冲突时主进程回滚并返回当前键
-    void window.rgbbox.snipSetHotkey(accel).then((r) => setSnipHotkeyState(r.hotkey)).catch(() => { /* keep */ })
-  }, [])
-  // R88: AI config state moved into AiLabView (self-managed via aiGetSettings/aiSetSettings)
   // R45: reactive counterpart of windowVisibleRef (declared below) — a plain
   // ref wouldn't cause `audioShouldAnalyze` to recompute when visibility
   // changes, since nothing else re-renders App at that moment. Minimize/
   // restore/hide/show are rare, low-frequency events, so the extra re-render
   // here is negligible.
   const [windowVisible, setWindowVisible] = useState(true)
-  // R45: pause the (getUserMedia + AnalyserNode) audio pipeline's actual FFT
-  // analysis/state-update work when nothing needs the data — mirrors the
-  // R42/R43 "is anyone consuming a frame" gate used for the effect tick loop.
-  // Audio-reactive effects (audio-beat/audio-equalizer) still need live data
-  // while an overlay is projecting them, regardless of main-window visibility.
-  const audioShouldAnalyze = overlayDisplayIds.length > 0 || (windowVisible && activeView === 'workspace')
-
-  // ── R73: scheduled shutdown ────────────────────────────────────────────────
-  // Restore any pending OS shutdown countdown (survives app restarts — the OS
-  // timer is authoritative), then tick the remaining time down once a second.
-  useEffect(() => {
-    let alive = true
-    void window.rgbbox.shutdownStatus().then((s) => {
-      if (alive && s.armed && s.deadlineMs != null) {
-        setShutdownInfo({ deadlineMs: s.deadlineMs, totalMs: 0, remainingMs: Math.max(0, s.deadlineMs - Date.now()) })
-      }
-    }).catch(() => {})
-    return () => { alive = false }
-  }, [])
-
-  useEffect(() => {
-    if (!shutdownInfo || shutdownInfo.remainingMs <= 0) return
-    const timer = window.setInterval(() => {
-      setShutdownInfo((prev) => {
-        if (!prev) return prev
-        const remainingMs = prev.deadlineMs - Date.now()
-        return remainingMs <= 0 ? null : { ...prev, remainingMs }
-      })
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [shutdownInfo?.deadlineMs])
-
-  const armShutdownTimer = useCallback(async (seconds: number): Promise<boolean> => {
-    const res = await window.rgbbox.shutdownArm(seconds)
-    if (res.ok && res.deadlineMs != null) {
-      setShutdownInfo({ deadlineMs: res.deadlineMs, totalMs: seconds * 1000, remainingMs: seconds * 1000 })
-      return true
-    }
-    return false
-  }, [])
-
-  const cancelShutdownTimer = useCallback(async (): Promise<void> => {
-    await window.rgbbox.shutdownCancel().catch(() => {})
-    setShutdownInfo(null)
-  }, [])
-
-  // ── R74: light-effect screensaver ──────────────────────────────────────────
-  useEffect(() => {
-    void window.rgbbox.screensaverGetSettings().then((s) => {
-      setScreensaverEnabled(s.enabled)
-      setScreensaverMinutes(s.idleMinutes)
-    }).catch(() => {})
-  }, [])
-
-  const applyScreensaverSettings = useCallback((patch: { enabled?: boolean; idleMinutes?: number }) => {
-    void window.rgbbox.screensaverSetSettings(patch).then((s) => {
-      setScreensaverEnabled(s.enabled)
-      setScreensaverMinutes(s.idleMinutes)
-    }).catch(() => {})
-  }, [])
 
   // ── Engine Worker ─────────────────────────────────────────────────────────
   // Created once; the render loop sends work to it and receives frames via
   // postMessage/onmessage instead of going through IPC.
   const workerRef = useRef<Worker | null>(null)
-  const overlayIdsRef = useRef<number[]>(overlayDisplayIds)
-  overlayIdsRef.current = overlayDisplayIds
-  const topologyRef = useRef<DisplayTopology | null>(topology)
-  topologyRef.current = topology
-  // R63: lets distributeFrameToOverlays() apply each overlay's own region
-  // crop without needing overlayConfigs listed as a tick-loop effect dep.
-  const overlayConfigsRef = useRef<Record<number, OverlayConfig>>(overlayConfigs)
-  overlayConfigsRef.current = overlayConfigs
   // R42: lets the tick loop below know the latest view/visibility without
   // being a useEffect dependency (adding activeView there would tear down
   // and recreate the worker on every tab switch).
@@ -283,6 +140,79 @@ export function App(): JSX.Element {
       setWindowVisible(visible)
     })
   }, [])
+
+  const scene = useMemo(() => (profile ? activeScene(profile) : null), [profile])
+
+  const selectedLayer = useMemo(() => {
+    if (!profile || !scene) return null
+    return scene.layers.find((l) => l.id === selectedLayerId) ?? activeLayer(profile)
+  }, [profile, scene, selectedLayerId])
+
+  const updateSelectedLayer = useCallback((patch: Partial<EffectLayer>) => {
+    setProfile((cur) => cur ? updateLayer(cur, selectedLayerId, patch) : cur)
+  }, [selectedLayerId])
+
+  // selectEffect/applyAmbientPreset stay here (not in useLayerActions): four
+  // domain hooks consume selectEffect, and it depends only on
+  // updateSelectedLayer/selectedLayerId — moving it into the layer hook would
+  // create a circular dependency.
+  const selectEffect = useCallback((kind: EffectKind) => {
+    const preset = effectPresets.find((p) => p.kind === kind)
+    if (!preset) return
+    updateSelectedLayer({ name: preset.label, kind: preset.kind, parameters: { ...preset.defaults } })
+  }, [updateSelectedLayer, selectedLayerId])
+
+  const applyAmbientPreset = useCallback((preset: AmbientPreset) => {
+    const effectPreset = effectPresets.find((p) => p.kind === preset.effectKind)
+    updateSelectedLayer({
+      kind: preset.effectKind,
+      name: effectPreset?.label ?? preset.effectKind,
+      parameters: { ...preset.parameters, _quickProfile: preset.id },
+      opacity: preset.opacity,
+      blendMode: preset.blendMode,
+    })
+  }, [updateSelectedLayer])
+
+  // ── Domain hooks (R147 P3b) ───────────────────────────────────────────────
+  const profileManager = useProfileManager({ profile, setProfile, selectedLayer, setSelectedLayerId, t })
+  const overlayTopology = useOverlayTopology({ setTopology, selectEffect })
+  const scheduleDomain = useScheduleDomain({ selectedLayer, selectEffect })
+  const {
+    automationEnabled, setAutomationEnabled,
+    automationMode, setAutomationMode,
+    automatedParams, toggleAutomatedParam,
+  } = useAutomationDomain()
+  const {
+    favoriteEffectKinds, toggleFavoriteEffect,
+    randomizerMode, setRandomizerMode,
+    randomizerLockedParams, toggleRandomizerParamLock,
+  } = useRandomizerDomain({ selectedLayer, selectEffect })
+  const layerActions = useLayerActions({
+    setProfile, setSelectedLayerId, selectedLayer, updateSelectedLayer,
+    randomizerMode, randomizerLockedParams,
+  })
+  const {
+    shutdownInfo, shutdownPanelOpen, setShutdownPanelOpen,
+    armShutdownTimer, cancelShutdownTimer,
+  } = useShutdownTimer()
+  const settingsMirror = useSettingsMirror()
+  const sampling = useSamplingDomain({
+    profile, setProfile, topology,
+    overlayDisplayIds: overlayTopology.overlayDisplayIds,
+    overlayIdsRef: overlayTopology.overlayIdsRef,
+    sceneLinked: scene?.linkedDisplays,
+  })
+
+  const topologyRef = useRef<DisplayTopology | null>(topology)
+  topologyRef.current = topology
+
+  // R45: pause the (getUserMedia + AnalyserNode) audio pipeline's actual FFT
+  // analysis/state-update work when nothing needs the data — mirrors the
+  // R42/R43 "is anyone consuming a frame" gate used for the effect tick loop.
+  // Audio-reactive effects (audio-beat/audio-equalizer) still need live data
+  // while an overlay is projecting them, regardless of main-window visibility.
+  const audioShouldAnalyze = overlayTopology.overlayDisplayIds.length > 0 || (windowVisible && activeView === 'workspace')
+
   // R147 P2: the analyzer handle carries its own always-fresh data ref
   // (updated every analysis tick, ~60Hz) — the engine tick loop reads
   // `audio.ref.current` directly. The old per-render state mirror re-rendered
@@ -322,25 +252,6 @@ export function App(): JSX.Element {
    * Mutated in-place on every worker response; never triggers a re-render.
    */
   const ledColorsRef = useRef<Uint8Array>(new Uint8Array(0))
-
-  const { models: splatModels, loading: splatLoading, importFile: importSplatFile, downloadModel: downloadSplatModel } = useModelStore(MODEL3D_VIEW_ENABLED)
-  const [selectedModelIndex, setSelectedModelIndex] = useState(0)
-  const [ledMapperOpen, setLedMapperOpen] = useState(false)
-  const selectedModel = splatModels[selectedModelIndex] ?? null
-  const splatFileInputRef = useRef<HTMLInputElement | null>(null)
-
-  const handleSplatImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const model = importSplatFile(file)
-    // Auto-select the newly imported model
-    const newIndex = splatModels.length  // will be appended at the end
-    setSelectedModelIndex(newIndex)
-    setLedMapperOpen(false)
-    // Reset the input so the same file can be re-imported if needed
-    e.target.value = ''
-    void model
-  }, [importSplatFile, splatModels.length])
 
   const handleRippleClick = useCallback((nx: number, ny: number) => {
     if (rippleBurstTimerRef.current !== null) window.clearTimeout(rippleBurstTimerRef.current)
@@ -387,67 +298,22 @@ export function App(): JSX.Element {
       setTopology(loadedTopology)
       setStatus(loadedStatus)
       setVersion(loadedVersion)
-      setOverlayDisplayIds(loadedOverlays)
-      setPowerSaveBlock(loadedPSB)
+      overlayTopology.setOverlayDisplayIds(loadedOverlays)
+      settingsMirror.setPowerSaveBlock(loadedPSB)
       setCaptureProvider(loadedCaptureProvider)
-      setAutoLaunch(loadedAutoLaunch)
+      settingsMirror.setAutoLaunch(loadedAutoLaunch)
       // Ensure the current working profile is always present in the named slots.
       // On first launch (profiles/ directory empty) or after a reset, this seeds
       // the list so the dropdown is never empty.
       if (!loadedProfiles.find((p) => p.id === migratedProfile.id)) {
         const meta = await window.rgbbox.saveProfileAs(migratedProfile)
-        setSavedProfiles([...loadedProfiles, meta])
+        profileManager.setSavedProfiles([...loadedProfiles, meta])
       } else {
-        setSavedProfiles(loadedProfiles)
+        profileManager.setSavedProfiles(loadedProfiles)
       }
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- boot-once fan-out; hook setters are stable
   }, [])
-
-  const handleToggleOverlay = useCallback(async (displayId: number) => {
-    if (overlayDisplayIds.includes(displayId)) {
-      await window.rgbbox.closeOverlay(displayId)
-      setOverlayDisplayIds((prev) => prev.filter((id) => id !== displayId))
-    } else {
-      const config = overlayConfigs[displayId]
-      await window.rgbbox.openOverlay(displayId, config)
-      setOverlayDisplayIds((prev) => [...prev, displayId])
-    }
-  }, [overlayDisplayIds, overlayConfigs])
-
-  // R46: only ever fires during the `--perf-selftest` harness — routes the
-  // request through the exact same handleToggleOverlay() a real user click
-  // uses, so overlayDisplayIds (and thus the R42/R43 tick-loop gate) stays
-  // correctly in sync, unlike calling openOverlay() directly from main.
-  const handleToggleOverlayRef = useRef(handleToggleOverlay)
-  handleToggleOverlayRef.current = handleToggleOverlay
-  useEffect(() => {
-    return window.rgbbox.onPerfSelfTestToggleOverlay((displayId) => {
-      void handleToggleOverlayRef.current(displayId)
-    })
-  }, [])
-
-  const handleOverlayConfigChange = useCallback((displayId: number, config: OverlayConfig) => {
-    setOverlayConfigs((prev) => ({ ...prev, [displayId]: config }))
-    if (overlayDisplayIds.includes(displayId)) {
-      void window.rgbbox.setOverlayConfig(displayId, config)
-    }
-  }, [overlayDisplayIds])
-
-  // ── Persist UI state to localStorage ────────────────────────────────────
-  useEffect(() => { localStorage.setItem('rgbbox:favoriteEffects', JSON.stringify(favoriteEffectKinds)) }, [favoriteEffectKinds])
-  useEffect(() => { localStorage.setItem('rgbbox:allEffectsOpen', allEffectsOpen ? '1' : '0') }, [allEffectsOpen])
-  useEffect(() => { localStorage.setItem('rgbbox:advancedControlsOpen', advancedControlsOpen ? '1' : '0') }, [advancedControlsOpen])
-  useEffect(() => { localStorage.setItem('rgbbox:randomizerMode', randomizerMode) }, [randomizerMode])
-  useEffect(() => { localStorage.setItem('rgbbox:randomizerLockedParams', JSON.stringify(randomizerLockedParams)) }, [randomizerLockedParams])
-  useEffect(() => { localStorage.setItem('rgbbox:scheduleEnabled', scheduleEnabled ? '1' : '0') }, [scheduleEnabled])
-  useEffect(() => { localStorage.setItem('rgbbox:scheduleEffects', JSON.stringify(scheduleEffects)) }, [scheduleEffects])
-  useEffect(() => { localStorage.setItem('rgbbox:automationEnabled', automationEnabled ? '1' : '0') }, [automationEnabled])
-  useEffect(() => { localStorage.setItem('rgbbox:automationMode', automationMode) }, [automationMode])
-  useEffect(() => { localStorage.setItem('rgbbox:automatedParams', JSON.stringify(automatedParams)) }, [automatedParams])
-  useEffect(() => { localStorage.setItem('rgbbox:audio', audioEnabled ? '1' : '0') }, [audioEnabled])
-  useEffect(() => { localStorage.setItem('rgbbox:audioDevice', audioDeviceId) }, [audioDeviceId])
-  useEffect(() => { localStorage.setItem('rgbbox:selectedLayerId', selectedLayerId) }, [selectedLayerId])
-  useEffect(() => { localStorage.setItem('rgbbox:overlayConfigs', JSON.stringify(overlayConfigs)) }, [overlayConfigs])
 
   // R45: engineMetrics/captureProvider are only ever displayed in the
   // Diagnostics view (see the `diag.*` rows below), but this interval used to
@@ -487,218 +353,19 @@ export function App(): JSX.Element {
     }
   }, [audioEnabled])
 
-  useEffect(() => {
-    if (!profile) return undefined
-    const timer = window.setTimeout(() => {
-      // Always persist working state to the quick-save slot
-      window.rgbbox.saveProfile(profile)
-      // Also update the named profile slot so that switching away and back
-      // preserves the latest changes.
-      if (savedProfilesRef.current.find((p) => p.id === profile.id)) {
-        window.rgbbox.saveProfileAs(profile).then((meta) => {
-          setSavedProfiles((prev) => prev.map((p) => p.id === meta.id ? meta : p))
-        })
-      }
-    }, 400)
-    return () => window.clearTimeout(timer)
-  }, [profile])
-
-  // ── Display hotplug — refresh topology when monitors are added/removed ──
-  useEffect(() => {
-    return window.rgbbox.onDisplayTopologyChanged(async () => {
-      const newTopology = await window.rgbbox.getDisplayTopology()
-      setTopology(newTopology)
-    })
-  }, [])
-
-  useEffect(() => {
-    if (!profile || !status.running || !workerRef.current) return undefined
-
-    let cancelled    = false
-    const worker     = workerRef.current
-
-    // ── Worker tick (async: may do screen capture) ────────────────────────
-    // tickPending is cleared by onWorkerMessage (when the worker RESPONDS),
-    // not by tick().finally() (which fires right after postMessage returns).
-    // This ensures at most one message is in the worker's queue at any time.
-    // Without this, slow workers (large grids) accumulate a deep backlog;
-    // switching effects sends new profile to the back of that queue.
-    let tickPending  = false
-    let droppedTicksSinceLastPost = 0
-    let lastPostAt = 0
-    // R43: tracks whether the LAST tick had at least one enabled layer, so
-    // that disabling every layer still gets exactly one more tick through
-    // (to compute/display the resulting blank frame) before ticks pause —
-    // otherwise the preview would be left showing a stale, still-lit frame
-    // forever instead of going blank.
-    let hadEnabledLayersLastTick = true
-
-    const tick = async (): Promise<boolean> => {
-      if (cancelled) return false
-
-      // R147 P2: config read through the ref bridge — the latest profile/
-      // layer/automation state without tearing the effect down.
-      const cfg = engineConfigRef.current
-      const cfgProfile = cfg.profile
-      if (!cfgProfile) return false
-      const cfgScene = cfgProfile.scenes.find((s) => s.id === cfgProfile.activeSceneId) ?? cfgProfile.scenes[0]
-
-      const audioInput = audio.ref.current.active
-        ? { bass: audio.ref.current.bass, mid: audio.ref.current.mid, high: audio.ref.current.high, beat: audio.ref.current.beat, freqBands: audio.ref.current.freqBands }
-        : undefined
-
-      // Screen capture is only needed for screen-ambient effect and when no overlays are active
-      const needsCapture =
-        overlayIdsRef.current.length === 0 &&
-        cfgScene.layers.some((l) => l.enabled && l.kind === 'screen-ambient')
-
-      let screenSample: RgbFrame | undefined
-      let captureMs = 0
-      if (needsCapture) {
-        const captureStartedAt = performance.now()
-        const captured = await window.rgbbox.captureScreenSample({
-          columns: cfgProfile.sampling.columns,
-          rows: cfgProfile.sampling.rows,
-          hasOverlays: false,
-          linkedDisplays: Boolean(cfgScene.linkedDisplays),
-        })
-        captureMs = performance.now() - captureStartedAt
-        screenSample = captured ?? undefined
-      }
-
-      if (cancelled) return false
-
-      // Send to worker; transfer screen sample buffer (zero-copy) if present
-      const burst = rippleBurstRef.current
-      const rippleBurst = burst
-        ? { cx: burst.cx, cy: burst.cy, burstAge: (performance.now() - burst.clickedAt) / 1000 }
-        : undefined
-      const droppedTicks = droppedTicksSinceLastPost
-      droppedTicksSinceLastPost = 0
-      lastPostAt = performance.now()
-      const profileForWorker = applyParameterAutomation(
-        cfgProfile,
-        cfg.selectedLayerId,
-        cfg.automationEnabled,
-        cfg.automatedParams,
-        cfg.automationMode,
-        performance.now() / 1000
-      )
-      const msg: WorkerInput = { profile: profileForWorker, audioInput, screenSample, rippleBurst, captureMs, droppedTicks, postedAt: lastPostAt }
-      if (screenSample) {
-        worker.postMessage(msg, [screenSample.pixels.buffer])
-      } else {
-        worker.postMessage(msg)
-      }
-      // Return true = message was posted; tickPending cleared by onWorkerMessage response
-      return true
-    }
-
-    // ── Worker response handler ──────────────────────────────────────────
-    // Store the frame in a ref — no React setState, no reconciliation.
-    const onWorkerMessage = (e: MessageEvent<WorkerOutput>): void => {
-      tickPending = false
-      if (cancelled) return
-      const cfgProfile = engineConfigRef.current.profile
-      if (!cfgProfile) return
-      const cfgScene = cfgProfile.scenes.find((s) => s.id === cfgProfile.activeSceneId) ?? cfgProfile.scenes[0]
-      const { frame, metrics } = e.data
-      frame.showGap = cfgProfile.sampling.showGap ?? false
-      frame.renderStyle = resolveFrameRenderStyle(cfgProfile.sampling.renderStyle, activeLayer(cfgProfile)?.kind)
-      frameRef.current = frame
-      // Copy pixel data for the 3D splat viewer LED lights
-      if (ledColorsRef.current.length !== frame.pixels.length) {
-        ledColorsRef.current = new Uint8Array(frame.pixels.length)
-      }
-      ledColorsRef.current.set(frame.pixels)
-      // Push to any open overlay windows (fire-and-forget, not awaited)
-      distributeFrameToOverlays(frame, cfgScene, topologyRef.current, overlayIdsRef.current, overlayConfigsRef.current)
-      metrics.outputMs = 0
-      metrics.roundTripMs = lastPostAt > 0 ? performance.now() - lastPostAt : metrics.workerProcessMs
-      metricsCollectorRef.current.add(metrics)
-    }
-
-    // ── setInterval tick loop ─────────────────────────────────────────────
-    // Drives worker ticks at the configured FPS using setInterval so that
-    // ticks continue even when the main window is minimised.
-    // (requestAnimationFrame stops when the window is minimised; setInterval
-    // is not paused as long as backgroundThrottling is false in webPreferences.)
-    let timerId = 0
-    const onTick = (): void => {
-      if (cancelled) return
-      const cfg = engineConfigRef.current
-      if (!cfg.profile) return
-      // 3D effects are rendered directly by Preview3D on the GPU — bypass the
-      // worker (R147 P2: moved here from the effect gate so switching to a 3D
-      // effect no longer needs the effect itself to rebuild).
-      if (is3DEffect(activeLayer(cfg.profile).kind)) return
-      const tickProfile = cfg.profile
-      const scene = tickProfile.scenes.find((s) => s.id === tickProfile.activeSceneId) ?? tickProfile.scenes[0]
-      // R42/R43: nobody is consuming a frame right now — skip the
-      // (potentially expensive, e.g. fire/aurora/lightning on a large grid)
-      // worker tick entirely instead of computing frames nobody sees. Frames
-      // are needed when either (a) an overlay window is projecting onto a
-      // real display (regardless of main-window visibility — this is the one
-      // case that must keep running even minimised, per R38), or (b) the
-      // in-app workspace preview is actually the visible tab AND the window
-      // itself is visible (not minimised/hidden to tray — windowVisibleRef is
-      // fed by an explicit main-process IPC signal, see R43; document.hidden
-      // stopped being a reliable signal for "minimised" once R38 disabled
-      // Chromium's occluded-window backgrounding tracking). Re-evaluated on
-      // every tick (cheap ref/property reads only), so it reacts immediately
-      // to tab switches, minimise/restore and overlay open/close without
-      // tearing down/recreating the worker.
-      const overlayActive = overlayIdsRef.current.length > 0
-      const previewVisible = windowVisibleRef.current && activeViewRef.current === 'workspace'
-      if (!overlayActive && !previewVisible) return
-
-      // R43: also pause once every layer is disabled — there's nothing to
-      // render — but let exactly one more tick through first so the preview
-      // actually goes blank instead of freezing on the last lit frame.
-      const hasEnabledLayers = scene.layers.some((l) => l.enabled)
-      if (!hasEnabledLayers && !hadEnabledLayersLastTick) return
-      hadEnabledLayersLastTick = hasEnabledLayers
-
-      if (!tickPending) {
-        tickPending = true
-        // tick() may cancel mid-way (cancelled flag); if it does WITHOUT posting
-        // a message the worker will never reply, so we must unblock the gate here.
-        void tick().catch(() => { tickPending = false }).then((posted) => {
-          if (posted === false) tickPending = false
-        })
-      } else {
-        droppedTicksSinceLastPost += 1
-      }
-    }
-
-    worker.addEventListener('message', onWorkerMessage)
-    worker.addEventListener('error', (err) => { console.warn('[RGBBox] Worker error', err.message, err.filename, err.lineno) })
-
-    // R147 P2: self-scheduling timeout chain instead of setInterval — the
-    // interval is created ONCE for the whole run; the fps is re-read from the
-    // config ref on every hop, so changing sampling.fps takes effect on the
-    // next tick without rebuilding the timer or the worker listeners.
-    const scheduleNext = (): void => {
-      const fps = engineConfigRef.current.profile?.sampling.fps ?? 30
-      timerId = window.setTimeout(() => {
-        onTick()
-        if (!cancelled) scheduleNext()
-      }, Math.max(16, Math.floor(1000 / fps)))
-    }
-    scheduleNext()
-
-    return () => {
-      cancelled = true
-      window.clearTimeout(timerId)
-      worker.removeEventListener('message', onWorkerMessage)
-    }
-  }, [status.running])
-
-  const scene = useMemo(() => (profile ? activeScene(profile) : null), [profile])
+  // ── Engine tick loop (R147 P2 stabilized; P3b extracted to a hook) ────────
+  useEngineLoop({
+    profile, running: status.running, workerRef, engineConfigRef,
+    audioRef: audio.ref,
+    overlayIdsRef: overlayTopology.overlayIdsRef,
+    overlayConfigsRef: overlayTopology.overlayConfigsRef,
+    topologyRef, activeViewRef, windowVisibleRef,
+    frameRef, ledColorsRef, metricsCollectorRef, rippleBurstRef,
+  })
 
   // R87: same consumer condition as the tick-loop gate (R42/R43) — used by the
   // Diagnostics frame-age row to explain a growing age as "idle", not "unhealthy".
-  const frameConsumerActive = overlayDisplayIds.length > 0 || (windowVisible && activeView === 'workspace')
+  const frameConsumerActive = overlayTopology.overlayDisplayIds.length > 0 || (windowVisible && activeView === 'workspace')
 
   /** Frame handler for GPU 3D effects — Preview3D calls this instead of the worker. */
   const handleFrame3D = useCallback((frame: RgbFrame) => {
@@ -711,7 +378,7 @@ export function App(): JSX.Element {
       ledColorsRef.current = new Uint8Array(frame.pixels.length)
     }
     ledColorsRef.current.set(frame.pixels)
-    distributeFrameToOverlays(frame, scene, topologyRef.current, overlayIdsRef.current, overlayConfigsRef.current)
+    distributeFrameToOverlays(frame, scene, topologyRef.current, overlayTopology.overlayIdsRef.current, overlayTopology.overlayConfigsRef.current)
     const outputMs = 0
     metricsCollectorRef.current.add({
       timestamp: Date.now(),
@@ -723,12 +390,8 @@ export function App(): JSX.Element {
       outputMs,
       droppedTicks: 0
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs + profile/scene via closure; overlay refs are stable
   }, [profile, scene])
-
-  const selectedLayer = useMemo(() => {
-    if (!profile || !scene) return null
-    return scene.layers.find((l) => l.id === selectedLayerId) ?? activeLayer(profile)
-  }, [profile, scene, selectedLayerId])
 
   // R35 follow-up: the GPU-direct preview path only produces a *correct*
   // picture when exactly one layer is enabled — it renders that single
@@ -752,496 +415,14 @@ export function App(): JSX.Element {
       .filter((preset): preset is (typeof effectPresets)[number] => Boolean(preset))
   }, [favoriteEffectKinds])
 
-  const activeScheduleBlock = useMemo(() => scheduleBlockForHour(scheduleNow.getHours()), [scheduleNow])
-  const scheduledEffectKind = scheduleEffects[activeScheduleBlock.id]
   const automatableParams = useMemo(() => {
     if (!selectedLayer) return []
     return AUTOMATION_TARGET_PARAMS.filter((name) => typeof selectedLayer.parameters[name] === 'number')
   }, [selectedLayer])
 
-  const updateSelectedLayer = useCallback((patch: Partial<EffectLayer>) => {
-    setProfile((cur) => cur ? updateLayer(cur, selectedLayerId, patch) : cur)
-  }, [selectedLayerId])
-
-  const setSamplingValue = useCallback((key: keyof Profile['sampling'], value: number | boolean | string) => {
-    setProfile((cur) => cur ? { ...cur, sampling: { ...cur.sampling, [key]: value } } : cur)
-  }, [])
-
-  // ── Grid density mode ─────────────────────────────────────────────────
-  // Single "long-edge LED count" drives both columns and rows from display aspect ratio.
-  // Advanced mode falls back to the old independent sliders.
-  const [gridAdvanced, setGridAdvanced] = useState(() => localStorage.getItem('rgbbox:gridAdvanced') === '1')
-  useEffect(() => { localStorage.setItem('rgbbox:gridAdvanced', gridAdvanced ? '1' : '0') }, [gridAdvanced])
-
-  // R40: the sampling panel used to stack every control (resolution, aspect,
-  // smoothing, saturation, brightness, fps, toggles, render style) in one
-  // long full-width block below the preview/map row, pushing the display
-  // topology map far down the page. Split into collapsible tabs so only one
-  // small group of controls is visible at a time (persisted like the other
-  // panel-shape preferences above).
-  const [samplingCollapsed, setSamplingCollapsed] = useState(() => localStorage.getItem('rgbbox:samplingCollapsed') === '1')
-  useEffect(() => { localStorage.setItem('rgbbox:samplingCollapsed', samplingCollapsed ? '1' : '0') }, [samplingCollapsed])
-  const [samplingTab, setSamplingTab] = useState<'resolution' | 'appearance' | 'performance'>(
-    () => (localStorage.getItem('rgbbox:samplingTab') as 'resolution' | 'appearance' | 'performance') || 'resolution'
-  )
-  useEffect(() => { localStorage.setItem('rgbbox:samplingTab', samplingTab) }, [samplingTab])
-
-  // Display aspect ratio: virtual-desktop ratio in linked mode, otherwise the
-  // REAL target overlay display's aspect ratio when exactly one overlay is
-  // active (R66 — see targetDisplayAspect.ts for why this must NOT just
-  // always be the primary display), falling back to primary when there's no
-  // single unambiguous target.
-  const displayAspectRatioRef = useRef<number>(16 / 9)
-  useEffect(() => {
-    if (!topology) return
-    const s = profile ? activeScene(profile) : null
-    displayAspectRatioRef.current = resolveTargetDisplayAspect(topology, overlayIdsRef.current, Boolean(s?.linkedDisplays))
-  })
-
-  // R61: the in-app "RGB 画布预览" panel used a CSS-hardcoded `aspect-ratio:
-  // 16/9` regardless of the actual target display's real aspect ratio. The
-  // overlay window, in contrast, always renders at the exact physical display
-  // resolution (whatever that is — 16:10, 21:9 ultrawide, 4:3, portrait, or a
-  // multi-display virtual span). Since both PreviewGl instances stretch the
-  // same RgbFrame to fill their own canvas edge-to-edge (R30.1), a preview box
-  // locked to 16:9 stretches the frame differently than the real output
-  // whenever the display isn't 16:9 — the two only "coincidentally" matched
-  // for 16:9 monitors. Computed the same way as `displayAspectRatioRef` above
-  // but as reactive state (not a ref) so it can actually drive a re-render /
-  // CSS value on the preview panel.
-  //
-  // R66: MUST also react to `overlayDisplayIds` — see `displayAspectRatioRef`
-  // above and `targetDisplayAspect.ts` for why "always use the primary
-  // display" was itself the remaining root cause of preview/overlay mismatch
-  // even after R62/R63/R65 unified the rest of the rendering pipeline.
-  const previewAspectRatio = useMemo(() => {
-    return resolveTargetDisplayAspect(topology, overlayDisplayIds, Boolean(scene?.linkedDisplays))
-  }, [topology, scene?.linkedDisplays, overlayDisplayIds])
-
-  // R64: diagnostic "预览全屏" mode — lets the user A/B compare the in-app
-  // preview (same PreviewGl/overlay=false pipeline, same opaque main window,
-  // no separate transparent BrowserWindow) blown up to the REAL physical
-  // screen resolution, against the actual overlay-window projection. If the
-  // fullscreen preview looks smooth/undistorted, the shared rendering/aspect
-  // pipeline is fine and the remaining discrepancy is specific to the overlay
-  // window's own presentation path (separate transparent/frameless
-  // BrowserWindow, alpha blending, Windows exclusive-fullscreen); if the
-  // fullscreen preview ALSO looks wrong, the shared pipeline itself still has
-  // a bug. Mirrors the existing `toggleFullscreen`/`fullscreenchange` pattern
-  // already used by VideoStudioView.tsx / AudioStudioView.tsx.
-  const previewFullscreenWrapRef = useRef<HTMLDivElement | null>(null)
-  const [previewFullscreen, setPreviewFullscreen] = useState(false)
-
-  const togglePreviewFullscreen = useCallback(() => {
-    const el = previewFullscreenWrapRef.current
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => { /* noop */ })
-      return
-    }
-    if (el?.requestFullscreen) {
-      el.requestFullscreen().catch(() => setPreviewFullscreen((v) => !v))
-    } else {
-      // No native Fullscreen API support — fall back to the CSS-driven overlay.
-      setPreviewFullscreen((v) => !v)
-    }
-  }, [])
-
-  // Keep local state in sync with the actual fullscreen element (handles ESC,
-  // which the native Fullscreen API intercepts itself before any keydown
-  // listener sees it).
-  useEffect(() => {
-    const onFsChange = (): void => {
-      setPreviewFullscreen(document.fullscreenElement === previewFullscreenWrapRef.current)
-    }
-    document.addEventListener('fullscreenchange', onFsChange)
-    return () => document.removeEventListener('fullscreenchange', onFsChange)
-  }, [])
-
-  // ESC exits the CSS-overlay fullscreen fallback (native fullscreen handles ESC itself).
-  useEffect(() => {
-    if (!previewFullscreen || document.fullscreenElement) return undefined
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setPreviewFullscreen(false) }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [previewFullscreen])
-
-  /** Snap columns/rows to display aspect ratio while keeping the long-edge count. */
-  const matchDisplayRatio = useCallback(() => {
-    setProfile((cur) => {
-      if (!cur) return cur
-      const ar = displayAspectRatioRef.current
-      const longEdge = Math.max(cur.sampling.columns, cur.sampling.rows)
-      const cols = ar >= 1 ? longEdge : Math.max(1, Math.round(longEdge * ar))
-      const rows = ar >= 1 ? Math.max(1, Math.round(longEdge / ar)) : longEdge
-      return { ...cur, sampling: { ...cur.sampling, columns: cols, rows: rows } }
-    })
-  }, [])
-
-  /** Drive both dimensions from a single long-edge count using display aspect ratio. */
-  const setGridDensity = useCallback((longEdge: number) => {
-    setProfile((cur) => {
-      if (!cur) return cur
-      const ar = displayAspectRatioRef.current
-      const clamped = Math.max(8, Math.min(320, longEdge))
-      const cols = ar >= 1 ? clamped : Math.max(1, Math.round(clamped * ar))
-      const rows = ar >= 1 ? Math.max(1, Math.round(clamped / ar)) : clamped
-      return { ...cur, sampling: { ...cur.sampling, columns: cols, rows: rows } }
-    })
-  }, [])
-
-  const [aspectLocked, setAspectLocked] = useState(() => localStorage.getItem('rgbbox:aspectLock') === '1')
-  const aspectRatioRef = useRef<number>(16 / 9)
-
-  const toggleAspectLock = useCallback(() => {
-    setAspectLocked((locked) => {
-      const next = !locked
-      if (next) {
-        // capture current ratio at the moment of locking
-        setProfile((cur) => {
-          if (cur) aspectRatioRef.current = cur.sampling.columns / cur.sampling.rows
-          return cur
-        })
-      }
-      localStorage.setItem('rgbbox:aspectLock', next ? '1' : '0')
-      return next
-    })
-  }, [])
-
-  const setColumns = useCallback((cols: number) => {
-    setProfile((cur) => {
-      if (!cur) return cur
-      const newCols = Math.max(1, Math.min(960, cols))
-      const newRows = aspectLocked ? Math.max(1, Math.min(540, Math.round(newCols / aspectRatioRef.current))) : cur.sampling.rows
-      return { ...cur, sampling: { ...cur.sampling, columns: newCols, rows: newRows } }
-    })
-  }, [aspectLocked])
-
-  const setRows = useCallback((rows: number) => {
-    setProfile((cur) => {
-      if (!cur) return cur
-      const newRows = Math.max(1, Math.min(540, rows))
-      const newCols = aspectLocked ? Math.max(1, Math.min(960, Math.round(newRows * aspectRatioRef.current))) : cur.sampling.columns
-      return { ...cur, sampling: { ...cur.sampling, columns: newCols, rows: newRows } }
-    })
-  }, [aspectLocked])
-
-  const selectEffect = useCallback((kind: EffectKind) => {
-    const preset = effectPresets.find((p) => p.kind === kind)
-    if (!preset) return
-    updateSelectedLayer({ name: preset.label, kind: preset.kind, parameters: { ...preset.defaults } })
-  }, [updateSelectedLayer, selectedLayerId])
-
-  const applyAmbientPreset = useCallback((preset: AmbientPreset) => {
-    const effectPreset = effectPresets.find((p) => p.kind === preset.effectKind)
-    updateSelectedLayer({
-      kind: preset.effectKind,
-      name: effectPreset?.label ?? preset.effectKind,
-      parameters: { ...preset.parameters, _quickProfile: preset.id },
-      opacity: preset.opacity,
-      blendMode: preset.blendMode,
-    })
-  }, [updateSelectedLayer])
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => setScheduleNow(new Date()), 60_000)
-    return () => window.clearInterval(intervalId)
-  }, [])
-
-  useEffect(() => {
-    if (!scheduleEnabled || !selectedLayer) return
-    if (selectedLayer.kind === scheduledEffectKind) return
-    selectEffect(scheduledEffectKind)
-  }, [scheduleEnabled, selectedLayer, scheduledEffectKind, selectEffect])
-
-  const setScheduleEffect = useCallback((blockId: ScheduleBlockId, kind: EffectKind) => {
-    setScheduleEffects((prev) => ({ ...prev, [blockId]: kind }))
-  }, [])
-
-  const toggleAutomatedParam = useCallback((name: string) => {
-    setAutomatedParams((prev) => {
-      if (prev.includes(name)) return prev.filter((entry) => entry !== name)
-      return [...prev, name]
-    })
-  }, [])
-
-  const toggleFavoriteEffect = useCallback((kind: EffectKind) => {
-    setFavoriteEffectKinds((prev) => {
-      if (prev.includes(kind)) return prev.filter((entry) => entry !== kind)
-      return [...prev, kind].slice(-12)
-    })
-  }, [])
-
-  const selectFavoriteByOffset = useCallback((offset: number) => {
-    if (favoriteEffectKinds.length === 0) return
-    const currentIndex = selectedLayer ? favoriteEffectKinds.indexOf(selectedLayer.kind) : -1
-    const baseIndex = currentIndex >= 0 ? currentIndex : 0
-    const nextIndex = (baseIndex + offset + favoriteEffectKinds.length) % favoriteEffectKinds.length
-    selectEffect(favoriteEffectKinds[nextIndex])
-  }, [favoriteEffectKinds, selectedLayer, selectEffect])
-
-  const randomizeSelectedLayer = useCallback(() => {
-    if (!selectedLayer) return
-    updateSelectedLayer({ parameters: randomizeLayerParameters(selectedLayer, randomizerMode, new Set(randomizerLockedParams)) })
-  }, [selectedLayer, randomizerMode, randomizerLockedParams, updateSelectedLayer])
-
-  const toggleRandomizerParamLock = useCallback((name: string) => {
-    setRandomizerLockedParams((prev) => {
-      if (prev.includes(name)) return prev.filter((entry) => entry !== name)
-      return [...prev, name]
-    })
-  }, [])
-
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null
-      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
-      if (!event.altKey) return
-
-      if (event.key === 'ArrowRight') {
-        event.preventDefault()
-        selectFavoriteByOffset(1)
-      } else if (event.key === 'ArrowLeft') {
-        event.preventDefault()
-        selectFavoriteByOffset(-1)
-      } else if (/^[1-9]$/.test(event.key)) {
-        const preset = favoriteEffectKinds[Number(event.key) - 1]
-        if (preset) {
-          event.preventDefault()
-          selectEffect(preset)
-        }
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [favoriteEffectKinds, selectEffect, selectFavoriteByOffset])
-
-  const setSelectedLayerValue = useCallback(<K extends keyof EffectLayer>(key: K, value: EffectLayer[K]) => {
-    updateSelectedLayer({ [key]: value } as Partial<EffectLayer>)
-  }, [updateSelectedLayer])
-
-  const setLayerParameter = useCallback((name: string, value: number | string | boolean) => {
-    if (!selectedLayer) return
-    updateSelectedLayer({ parameters: { ...selectedLayer.parameters, [name]: value } })
-  }, [selectedLayer, updateSelectedLayer])
-
-  const applyQuickDimension = useCallback((dimension: QuickDimensionId, option: string) => {
-    if (!selectedLayer) return
-    const patch: Partial<EffectLayer> = {
-      parameters: applyQuickDimensionParameters(selectedLayer.parameters, dimension, option)
-    }
-    if (dimension === 'energy') patch.opacity = opacityForQuickEnergy(option)
-    updateSelectedLayer(patch)
-  }, [selectedLayer, updateSelectedLayer])
-
-  const toggleLayerEnabled = useCallback((layerId: string) => {
-    setProfile((cur) => cur ? updateLayer(cur, layerId, {
-      enabled: !activeScene(cur).layers.find((l) => l.id === layerId)?.enabled
-    }) : cur)
-  }, [])
-
-  const toggleLinkedDisplays = useCallback(() => {
-    setProfile((cur) => {
-      if (!cur) return cur
-      const sceneId = (cur.scenes.find((s) => s.id === cur.activeSceneId) ?? cur.scenes[0]).id
-      return {
-        ...cur,
-        scenes: cur.scenes.map((s) =>
-          s.id !== sceneId ? s : { ...s, linkedDisplays: !s.linkedDisplays }
-        )
-      }
-    })
-  }, [])
-
-  const updateVideoWall = useCallback((layout: VideoWallLayout | undefined) => {
-    setProfile((cur) => {
-      if (!cur) return cur
-      const sceneId = (cur.scenes.find((s) => s.id === cur.activeSceneId) ?? cur.scenes[0]).id
-      return {
-        ...cur,
-        scenes: cur.scenes.map((s) =>
-          s.id !== sceneId ? s : { ...s, videoWall: layout }
-        )
-      }
-    })
-  }, [])
-
-  const addLayer = useCallback((kind: EffectKind) => {
-    const preset = effectPresets.find((p) => p.kind === kind) ?? effectPresets[0]
-    _layerCounter += 1
-    const newLayer: EffectLayer = {
-      id: `layer-${_layerCounter}`,
-      name: preset.label,
-      kind: preset.kind,
-      enabled: true,
-      opacity: 0.75,
-      blendMode: 'screen',
-      parameters: { ...preset.defaults }
-    }
-    setProfile((cur) => {
-      if (!cur) return cur
-      const sceneId = (cur.scenes.find((s) => s.id === cur.activeSceneId) ?? cur.scenes[0]).id
-      return {
-        ...cur,
-        scenes: cur.scenes.map((s) => s.id !== sceneId ? s : { ...s, layers: [...s.layers, newLayer] })
-      }
-    })
-    setSelectedLayerId(newLayer.id)
-  }, [])
-
-  const exportLayerPack = useCallback(() => {
-    if (!selectedLayer) return
-    const pack = {
-      rgbboxEffectPack: '1.0',
-      layer: {
-        name: selectedLayer.name,
-        kind: selectedLayer.kind,
-        enabled: selectedLayer.enabled,
-        opacity: selectedLayer.opacity,
-        blendMode: selectedLayer.blendMode,
-        parameters: selectedLayer.parameters,
-      },
-    }
-    const json = JSON.stringify(pack, null, 2)
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${selectedLayer.name.replace(/\s+/g, '_')}.rgbbox.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [selectedLayer])
-
-  const importLayerPackRef = useRef<HTMLInputElement>(null)
-
-  const handleImportLayerPack = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const pack = JSON.parse(ev.target?.result as string)
-        if (!pack?.rgbboxEffectPack || !pack?.layer) throw new Error('Invalid pack')
-        const src = pack.layer as Partial<EffectLayer>
-        _layerCounter += 1
-        const imported: EffectLayer = {
-          id: `layer-${_layerCounter}`,
-          name: typeof src.name === 'string' ? src.name : 'Imported',
-          kind: (src.kind as EffectKind) ?? 'rainbow',
-          enabled: true,
-          opacity: typeof src.opacity === 'number' ? src.opacity : 0.75,
-          blendMode: (src.blendMode as BlendMode) ?? 'screen',
-          parameters: src.parameters && typeof src.parameters === 'object' ? src.parameters : {},
-        }
-        setProfile((cur) => {
-          if (!cur) return cur
-          const sceneId = (cur.scenes.find((s) => s.id === cur.activeSceneId) ?? cur.scenes[0]).id
-          return {
-            ...cur,
-            scenes: cur.scenes.map((s) =>
-              s.id !== sceneId ? s : { ...s, layers: [...s.layers, imported] }
-            ),
-          }
-        })
-        setSelectedLayerId(imported.id)
-      } catch {
-        alert(t('pack.importError'))
-      }
-    }
-    reader.readAsText(file)
-    e.target.value = ''
-  }, [t])
-
-  const deleteLayer = useCallback((layerId: string) => {
-    setProfile((cur) => {
-      if (!cur) return cur
-      const sceneId = (cur.scenes.find((s) => s.id === cur.activeSceneId) ?? cur.scenes[0]).id
-      return {
-        ...cur,
-        scenes: cur.scenes.map((s) => s.id !== sceneId ? s : { ...s, layers: s.layers.filter((l) => l.id !== layerId) })
-      }
-    })
-  }, [])
-
   const toggleEngine = useCallback(() => {
     window.rgbbox.setEngineRunning(!status.running).then(setStatus)
   }, [status.running])
-
-  // Listen for effect-switch requests coming from the overlay context menu
-  useEffect(() => {
-    return window.rgbbox.onOverlayEffectChanged((kind) => {
-      if (kind !== null) selectEffect(kind as EffectKind)
-    })
-  }, [selectEffect])
-
-  // Sync overlay state when user closes an overlay window directly
-  useEffect(() => {
-    return window.rgbbox.onOverlayClosed((displayId) => {
-      setOverlayDisplayIds((prev) => prev.filter((id) => id !== displayId))
-    })
-  }, [])
-
-  // ── Profile menu actions ─────────────────────────────────────────────────
-  const handleProfileDuplicate = useCallback(() => {
-    if (!profile) return
-    setProfileMenuOpen(false)
-    setProfileEditName(`${profile.name} Copy`)
-    setProfileEditMode('duplicate')
-    window.setTimeout(() => editInputRef.current?.focus(), 30)
-  }, [profile])
-
-  const handleProfileRename = useCallback(() => {
-    if (!profile) return
-    setProfileMenuOpen(false)
-    setProfileEditName(profile.name)
-    setProfileEditMode('rename')
-    window.setTimeout(() => editInputRef.current?.focus(), 30)
-  }, [profile])
-
-  const handleProfileEditConfirm = useCallback(async () => {
-    const name = profileEditName.trim()
-    if (!name || !profile) { setProfileEditMode(null); return }
-    if (profileEditMode === 'duplicate') {
-      const newId = `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
-      const newProfile: Profile = { ...profile, id: newId, name }
-      await window.rgbbox.saveProfileAs(newProfile)
-      setProfile(newProfile)
-      refreshProfiles()
-    } else if (profileEditMode === 'rename' && profile) {
-      const renamed: Profile = { ...profile, name }
-      if (savedProfiles.find((p) => p.id === profile.id)) {
-        await window.rgbbox.saveProfileAs(renamed)
-        refreshProfiles()
-      }
-      setProfile(renamed)
-    }
-    setProfileEditMode(null)
-  }, [profileEditMode, profileEditName, profile, savedProfiles, refreshProfiles])
-
-  const handleProfileDelete = useCallback(async () => {
-    if (!profile) return
-    setProfileMenuOpen(false)
-    if (!savedProfiles.find((p) => p.id === profile.id)) return
-    await window.rgbbox.deleteProfile(profile.id)
-    const remaining = savedProfiles.filter((p) => p.id !== profile.id)
-    setSavedProfiles(remaining)
-    if (remaining.length > 0) {
-      const first = await window.rgbbox.loadProfileById(remaining[0].id)
-      if (first) { setProfile(first); return }
-    }
-    setProfile({ ...defaultProfile })
-  }, [profile, savedProfiles])
-
-  const handleProfileImport = useCallback(async () => {
-    setProfileMenuOpen(false)
-    const loaded = await window.rgbbox.importProfileDialog()
-    if (loaded) { setProfile(loaded); refreshProfiles() }
-  }, [refreshProfiles])
-
-  const handleProfileExport = useCallback(async () => {
-    if (!profile) return
-    setProfileMenuOpen(false)
-    await window.rgbbox.exportProfileDialog(profile)
-  }, [profile])
 
   const performanceLabels: Record<Profile['performanceMode'], string> = {
     battery: t('perf.battery'),
@@ -1330,7 +511,7 @@ export function App(): JSX.Element {
               audioDevices,
               speakerDevices,
               onSelectAudioDevice: setAudioDeviceId,
-              overlayCount: overlayDisplayIds.length,
+              overlayCount: overlayTopology.overlayDisplayIds.length,
               version
             }}
           />
@@ -1339,15 +520,15 @@ export function App(): JSX.Element {
           <SettingsView
             running={status.running}
             onToggleEngine={toggleEngine}
-            powerSaveBlock={powerSaveBlock}
-            onPowerSaveBlock={(v) => { window.rgbbox.setPowerSaveBlock(v).then(setPowerSaveBlock) }}
-            autoLaunch={autoLaunch}
-            onAutoLaunch={(v) => { window.rgbbox.setAutoLaunch(v).then(setAutoLaunch) }}
-            screensaverEnabled={screensaverEnabled}
-            screensaverMinutes={screensaverMinutes}
-            onScreensaver={applyScreensaverSettings}
-            snipHotkey={snipHotkey}
-            onSnipHotkey={applySnipHotkey}
+            powerSaveBlock={settingsMirror.powerSaveBlock}
+            onPowerSaveBlock={(v) => { window.rgbbox.setPowerSaveBlock(v).then(settingsMirror.setPowerSaveBlock) }}
+            autoLaunch={settingsMirror.autoLaunch}
+            onAutoLaunch={(v) => { window.rgbbox.setAutoLaunch(v).then(settingsMirror.setAutoLaunch) }}
+            screensaverEnabled={settingsMirror.screensaverEnabled}
+            screensaverMinutes={settingsMirror.screensaverMinutes}
+            onScreensaver={settingsMirror.applyScreensaverSettings}
+            snipHotkey={settingsMirror.snipHotkey}
+            onSnipHotkey={settingsMirror.applySnipHotkey}
           />
         )}
         {activeView === 'ai' && <AiLabView />}
@@ -1356,52 +537,52 @@ export function App(): JSX.Element {
             profile={profile}
             scene={scene}
             selectedLayer={selectedLayer}
-            savedProfiles={savedProfiles}
+            savedProfiles={profileManager.savedProfiles}
             setProfile={setProfile}
             setSelectedLayerId={setSelectedLayerId}
-            profileMenuOpen={profileMenuOpen}
-            setProfileMenuOpen={setProfileMenuOpen}
-            profileEditMode={profileEditMode}
-            setProfileEditMode={setProfileEditMode}
-            profileEditName={profileEditName}
-            setProfileEditName={setProfileEditName}
-            editInputRef={editInputRef}
-            profileMenuRef={profileMenuRef}
-            handleProfileEditConfirm={handleProfileEditConfirm}
-            handleProfileDuplicate={handleProfileDuplicate}
-            handleProfileRename={handleProfileRename}
-            handleProfileDelete={handleProfileDelete}
-            handleProfileImport={handleProfileImport}
-            handleProfileExport={handleProfileExport}
-            refreshProfiles={refreshProfiles}
-            addLayer={addLayer}
-            toggleLayerEnabled={toggleLayerEnabled}
-            deleteLayer={deleteLayer}
+            profileMenuOpen={profileManager.profileMenuOpen}
+            setProfileMenuOpen={profileManager.setProfileMenuOpen}
+            profileEditMode={profileManager.profileEditMode}
+            setProfileEditMode={profileManager.setProfileEditMode}
+            profileEditName={profileManager.profileEditName}
+            setProfileEditName={profileManager.setProfileEditName}
+            editInputRef={profileManager.editInputRef}
+            profileMenuRef={profileManager.profileMenuRef}
+            handleProfileEditConfirm={profileManager.handleProfileEditConfirm}
+            handleProfileDuplicate={profileManager.handleProfileDuplicate}
+            handleProfileRename={profileManager.handleProfileRename}
+            handleProfileDelete={profileManager.handleProfileDelete}
+            handleProfileImport={profileManager.handleProfileImport}
+            handleProfileExport={profileManager.handleProfileExport}
+            refreshProfiles={profileManager.refreshProfiles}
+            addLayer={layerActions.addLayer}
+            toggleLayerEnabled={layerActions.toggleLayerEnabled}
+            deleteLayer={layerActions.deleteLayer}
             selectEffect={selectEffect}
             updateSelectedLayer={updateSelectedLayer}
-            setLayerParameter={setLayerParameter}
-            setSelectedLayerValue={setSelectedLayerValue}
+            setLayerParameter={layerActions.setLayerParameter}
+            setSelectedLayerValue={layerActions.setSelectedLayerValue}
             favoriteEffectPresets={favoriteEffectPresets}
             applyAmbientPreset={applyAmbientPreset}
-            applyQuickDimension={applyQuickDimension}
-            randomizeSelectedLayer={randomizeSelectedLayer}
+            applyQuickDimension={layerActions.applyQuickDimension}
+            randomizeSelectedLayer={layerActions.randomizeSelectedLayer}
             allEffectsOpen={allEffectsOpen}
             setAllEffectsOpen={setAllEffectsOpen}
             advancedControlsOpen={advancedControlsOpen}
             setAdvancedControlsOpen={setAdvancedControlsOpen}
-            importLayerPackRef={importLayerPackRef}
-            handleImportLayerPack={handleImportLayerPack}
-            exportLayerPack={exportLayerPack}
+            importLayerPackRef={profileManager.importLayerPackRef}
+            handleImportLayerPack={profileManager.handleImportLayerPack}
+            exportLayerPack={profileManager.exportLayerPack}
             randomizerMode={randomizerMode}
             setRandomizerMode={setRandomizerMode}
             randomizerLockedParams={randomizerLockedParams}
             toggleRandomizerParamLock={toggleRandomizerParamLock}
-            scheduleEnabled={scheduleEnabled}
-            setScheduleEnabled={setScheduleEnabled}
-            scheduleEffects={scheduleEffects}
-            setScheduleEffect={setScheduleEffect}
-            activeScheduleBlock={activeScheduleBlock}
-            scheduledEffectKind={scheduledEffectKind}
+            scheduleEnabled={scheduleDomain.scheduleEnabled}
+            setScheduleEnabled={scheduleDomain.setScheduleEnabled}
+            scheduleEffects={scheduleDomain.scheduleEffects}
+            setScheduleEffect={scheduleDomain.setScheduleEffect}
+            activeScheduleBlock={scheduleDomain.activeScheduleBlock}
+            scheduledEffectKind={scheduleDomain.scheduledEffectKind}
             automationEnabled={automationEnabled}
             setAutomationEnabled={setAutomationEnabled}
             automationMode={automationMode}
@@ -1410,35 +591,35 @@ export function App(): JSX.Element {
             toggleAutomatedParam={toggleAutomatedParam}
             automatableParams={automatableParams}
             topology={topology}
-            overlayDisplayIds={overlayDisplayIds}
-            overlayConfigs={overlayConfigs}
-            handleToggleOverlay={handleToggleOverlay}
-            handleOverlayConfigChange={handleOverlayConfigChange}
-            toggleLinkedDisplays={toggleLinkedDisplays}
-            updateVideoWall={updateVideoWall}
-            previewFullscreen={previewFullscreen}
-            togglePreviewFullscreen={togglePreviewFullscreen}
-            previewFullscreenWrapRef={previewFullscreenWrapRef}
-            previewAspectRatio={previewAspectRatio}
+            overlayDisplayIds={overlayTopology.overlayDisplayIds}
+            overlayConfigs={overlayTopology.overlayConfigs}
+            handleToggleOverlay={overlayTopology.handleToggleOverlay}
+            handleOverlayConfigChange={overlayTopology.handleOverlayConfigChange}
+            toggleLinkedDisplays={layerActions.toggleLinkedDisplays}
+            updateVideoWall={layerActions.updateVideoWall}
+            previewFullscreen={sampling.previewFullscreen}
+            togglePreviewFullscreen={sampling.togglePreviewFullscreen}
+            previewFullscreenWrapRef={sampling.previewFullscreenWrapRef}
+            previewAspectRatio={sampling.previewAspectRatio}
             frameRef={frameRef}
             gpuDirectLayer={gpuDirectLayer}
             handleFrame3D={handleFrame3D}
             handleRippleClick={handleRippleClick}
             statusOutput={status.output}
             performanceLabels={performanceLabels}
-            samplingCollapsed={samplingCollapsed}
-            setSamplingCollapsed={setSamplingCollapsed}
-            samplingTab={samplingTab}
-            setSamplingTab={setSamplingTab}
-            gridAdvanced={gridAdvanced}
-            setGridAdvanced={setGridAdvanced}
-            aspectLocked={aspectLocked}
-            toggleAspectLock={toggleAspectLock}
-            setGridDensity={setGridDensity}
-            setColumns={setColumns}
-            setRows={setRows}
-            matchDisplayRatio={matchDisplayRatio}
-            setSamplingValue={setSamplingValue}
+            samplingCollapsed={sampling.samplingCollapsed}
+            setSamplingCollapsed={sampling.setSamplingCollapsed}
+            samplingTab={sampling.samplingTab}
+            setSamplingTab={sampling.setSamplingTab}
+            gridAdvanced={sampling.gridAdvanced}
+            setGridAdvanced={sampling.setGridAdvanced}
+            aspectLocked={sampling.aspectLocked}
+            toggleAspectLock={sampling.toggleAspectLock}
+            setGridDensity={sampling.setGridDensity}
+            setColumns={sampling.setColumns}
+            setRows={sampling.setRows}
+            matchDisplayRatio={sampling.matchDisplayRatio}
+            setSamplingValue={sampling.setSamplingValue}
           />
         )}
 
@@ -1487,112 +668,7 @@ export function App(): JSX.Element {
         )}
 
         {MODEL3D_VIEW_ENABLED && activeView === 'model3d' && (
-          <div className="model3d-view">
-            <header className="workspace-header">
-              <div>
-                <p className="eyebrow">{t('model3d.eyebrow')}</p>
-                <h2>{t('model3d.title')}</h2>
-              </div>
-              <div className="metric-row">
-                <button
-                  className="aspect-lock-btn model3d-back-btn"
-                  type="button"
-                  onClick={() => setActiveView('workspace')}
-                >
-                  <Monitor size={13} />
-                  {t('nav.workspace')}
-                </button>
-                {splatLoading ? (
-                  <span className="chip">{t('model3d.loading')}</span>
-                ) : (
-                  <span className="chip">{splatModels.length === 1 ? t('model3d.models').replace('{count}', String(splatModels.length)) : t('model3d.modelsPlural').replace('{count}', String(splatModels.length))}</span>
-                )}
-              </div>
-            </header>
-
-            <div className="model3d-toolbar">
-              <select
-                className="profile-select"
-                value={selectedModelIndex}
-                disabled={splatModels.length === 0}
-                onChange={(e) => { setSelectedModelIndex(Number(e.target.value)); setLedMapperOpen(false) }}
-              >
-                {splatModels.length === 0 && <option value={0}>{t('model3d.noModels')}</option>}
-                {splatModels.map((m, i) => (
-                  <option key={m.name} value={i}>{m.name}</option>
-                ))}
-              </select>
-              <button
-                className="aspect-lock-btn"
-                type="button"
-                title={t('model3d.importHint')}
-                onClick={() => splatFileInputRef.current?.click()}
-              >
-                📂 {t('model3d.importModel')}
-              </button>
-              <input
-                ref={splatFileInputRef}
-                type="file"
-                accept=".splat,.ply,.ksplat,.spz"
-                style={{ display: 'none' }}
-                onChange={handleSplatImport}
-              />
-              {selectedModel && (
-                <button
-                  className={`aspect-lock-btn${ledMapperOpen ? ' locked' : ''}`}
-                  type="button"
-                  onClick={() => setLedMapperOpen((v) => !v)}
-                >
-                  🎯 {ledMapperOpen ? t('model3d.closeLedMapper') : t('model3d.openLedMapper')}
-                </button>
-              )}
-            </div>
-
-            {selectedModel && ledMapperOpen ? (
-              <Suspense fallback={<div className="model3d-splat-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>{t('model3d.loadingLedMapper')}</div>}>
-                <LEDMapper
-                  model={selectedModel}
-                  initialLedMap={selectedModel.ledMap}
-                />
-              </Suspense>
-            ) : selectedModel && selectedModel.downloadStatus !== 'cached' ? (
-              <div className="model3d-splat-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
-                {selectedModel.downloadStatus === 'error' ? (
-                  <>
-                    <p style={{ color: 'var(--color-error, #f87171)', margin: 0 }}>⚠ {selectedModel.downloadError ?? t('model3d.downloadError')}</p>
-                    <button className="aspect-lock-btn" type="button" onClick={() => void downloadSplatModel(selectedModel.name)}>
-                      {t('model3d.retry')}
-                    </button>
-                  </>
-                ) : selectedModel.downloadStatus === 'downloading' ? (
-                  <>
-                    <p style={{ margin: 0, opacity: 0.8 }}>{t('model3d.downloading').replace('{name}', selectedModel.name)}</p>
-                    <div style={{ width: 260, height: 6, background: 'rgba(255,255,255,0.12)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${selectedModel.downloadProgress}%`, height: '100%', background: 'var(--color-accent, #38bdf8)', transition: 'width 0.3s' }} />
-                    </div>
-                    <span style={{ fontSize: 12, opacity: 0.6 }}>{selectedModel.downloadProgress}%</span>
-                  </>
-                ) : (
-                  <>
-                    <p style={{ margin: 0, opacity: 0.7 }}>{t('model3d.notDownloaded')}</p>
-                    <button className="aspect-lock-btn" type="button" onClick={() => void downloadSplatModel(selectedModel.name)}>
-                      {t('model3d.download').replace('{name}', selectedModel.name)}
-                    </button>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="model3d-splat-wrapper">
-                <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.5 }}>{t('model3d.loadingViewer')}</div>}>
-                  <SplatViewer
-                    model={selectedModel}
-                    ledColors={ledColorsRef.current}
-                    paused={!status.running}
-                  />
-                </Suspense>
-              </div>
-            )}
-          </div>
+          <Model3DView ledColorsRef={ledColorsRef} engineRunning={status.running} onBack={() => setActiveView('workspace')} />
         )}
 
         {activeView === 'architecture' && (
@@ -1600,93 +676,19 @@ export function App(): JSX.Element {
         )}
 
         {activeView === 'diagnostics' && (
-          <div className="diagnostics-view">
-            <header className="workspace-header">
-              <div>
-                <p className="eyebrow">{t('diag.eyebrow')}</p>
-                <h2>{t('diag.title')}</h2>
-              </div>
-              <Activity size={24} />
-            </header>
-            <div className="diagnostics-grid">
-              <div className="panel">
-                <dl className="diagnostics-list">
-                  <div><dt>{t('diag.virtualBounds')}</dt><dd>{topology.virtualBounds.width}×{topology.virtualBounds.height}</dd></div>
-                  <div>
-                    <dt>{t('diag.frameAge')}</dt>
-                    <dd>{(() => {
-                      // R87: a growing age on this page usually means the tick loop is
-                      // gated (R42/R43), not that the engine is unhealthy — say so.
-                      const state = frameAgeState(
-                        frameRef.current?.generatedAt ?? null,
-                        Date.now(),
-                        frameConsumerActive,
-                        status.running
-                      )
-                      if (state.kind === 'waiting') return t('diag.waiting')
-                      if (state.kind === 'idle') return t(state.reason === 'paused' ? 'diag.frameIdlePaused' : 'diag.frameIdleNoConsumer')
-                      return `${state.ms} ms`
-                    })()}</dd>
-                  </div>
-                  <div><dt>{t('diag.avgFrameMs')}</dt><dd>{formatMs(engineMetrics.avgFrameMs)}</dd></div>
-                  <div><dt>{t('diag.p95FrameMs')}</dt><dd>{formatMs(engineMetrics.p95FrameMs)}</dd></div>
-                  <div><dt>{t('diag.workerMs')}</dt><dd>{formatMs(engineMetrics.workerProcessMs)}</dd></div>
-                  <div><dt>{t('diag.captureMs')}</dt><dd>{formatMs(engineMetrics.captureMs || captureProvider?.lastCaptureMs)}</dd></div>
-                  <div><dt>{t('diag.outputMs')}</dt><dd>{formatMs(engineMetrics.outputMs)}</dd></div>
-                  <div><dt>{t('diag.droppedTicks')}</dt><dd>{engineMetrics.droppedTicks}</dd></div>
-                  <div><dt>{t('diag.brightGain')}</dt><dd>{Math.round(profile.sampling.brightnessLimit * 100)}%</dd></div>
-                  <div><dt>{t('diag.gridSize')}</dt><dd>{profile.sampling.columns}×{profile.sampling.rows} ({profile.sampling.columns * profile.sampling.rows} pixels)</dd></div>
-                  <div><dt>{t('diag.activeLayers')}</dt><dd>{scene?.layers.filter((l) => l.enabled).length ?? 0}</dd></div>
-                  <div><dt>{t('diag.targetFps')}</dt><dd>{profile.sampling.fps}</dd></div>
-                  <div><dt>{t('diag.platform')}</dt><dd>{topology.platform}</dd></div>
-                  <div><dt>{t('diag.audio')}</dt><dd>{audio.ref.current.active ? t('diag.audioBass').replace('{bass}', (audio.ref.current.bass * 100).toFixed(0)) : audioErrorLabel || t('diag.off')}</dd></div>
-                  {topology.displays.map((d) => (
-                    <div key={d.id}>
-                      <dt>{d.label}{d.primary ? ` ${t('diag.displayPrimary')}` : ''}</dt>
-                      <dd>{d.bounds.width}×{d.bounds.height} @{d.scaleFactor}×</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-              {/* R46: objective per-process CPU% breakdown — see PRD-0002 R46.
-                  Lets CPU investigations point at a specific OS process
-                  (main/renderer/gpu-process/utility) instead of one aggregate
-                  Task Manager number, which on Windows groups every
-                  Electron-owned process under one collapsible tree. */}
-              <div className="panel">
-                <div className="panel-header">
-                  <div>
-                    <p className="eyebrow">{t('diag.processCpu.eyebrow')}</p>
-                    <h3>{t('diag.processCpu.title')}</h3>
-                  </div>
-                </div>
-                <table className="process-cpu-table">
-                  <thead>
-                    <tr>
-                      <th>{t('diag.processCpu.type')}</th>
-                      <th>PID</th>
-                      <th>{t('diag.processCpu.cpu')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {processCpuSamples.length === 0 ? (
-                      <tr><td colSpan={3}>{t('diag.waiting')}</td></tr>
-                    ) : (
-                      [...processCpuSamples]
-                        .sort((a, b) => b.cpuPercent - a.cpuPercent)
-                        .map((p) => (
-                          <tr key={p.pid}>
-                            <td className="process-cpu-type" title={`${p.type}${p.name ? ` (${p.name})` : ''}`}>{p.type}{p.name ? ` (${p.name})` : ''}</td>
-                            <td>{p.pid}</td>
-                            <td className={p.cpuPercent > 20 ? 'process-cpu-high' : ''}>{p.cpuPercent.toFixed(1)}%</td>
-                          </tr>
-                        ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+          <DiagnosticsView
+            topology={topology}
+            profile={profile}
+            scene={scene}
+            engineMetrics={engineMetrics}
+            captureProvider={captureProvider}
+            processCpuSamples={processCpuSamples}
+            frameRef={frameRef}
+            frameConsumerActive={frameConsumerActive}
+            engineRunning={status.running}
+            audioRef={audio.ref}
+            audioErrorLabel={audioErrorLabel}
+          />
         )}
 
       </section>
