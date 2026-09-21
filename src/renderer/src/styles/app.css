@@ -773,6 +773,30 @@ input:not([type]):focus {
   padding: 10px 0;
 }
 
+/* R151.4 (review §12.3): frame-time rows get an 8px gauge against the frame
+   budget — value keeps its mono track, the bar carries the at-a-glance state. */
+.diag-dd-bar {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 10px;
+}
+.diag-dd-bar .diag-val { min-width: 52px; text-align: right; }
+.diag-bar {
+  background: var(--surface-raised);
+  border-radius: 4px;
+  display: inline-block;
+  height: 8px;
+  overflow: hidden;
+  width: 88px;
+}
+.diag-bar-fill {
+  background: var(--accent);
+  display: block;
+  height: 100%;
+}
+.diag-bar-fill.warn { background: var(--status-warn); }
+
 .diagnostics-list dt {
   color: var(--text-muted);
   flex-shrink: 0;
@@ -3784,10 +3808,42 @@ input:not([type]):focus {
   flex-shrink: 0;
   margin: 0 2px;
 }
+
+/* R151.2 (review §12.4): progress cluster — capped width, centered, times
+   hugging the bar ends; volume cluster pinned to the row's right edge. */
+.audio-progress-cluster {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 8px;
+  margin: 0 auto;
+  max-width: 520px;
+  min-width: 0;
+}
+
+.audio-progress-cluster .audio-progress-bar { flex: 1 1 auto; min-width: 120px; }
+.audio-progress-cluster .audio-time--start { text-align: right; }
+.audio-progress-cluster .audio-time--end { text-align: left; }
+
+.audio-volume-cluster {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.audio-transport-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
 .audio-transport-row-nowplaying {
   gap: 8px;
   height: 26px;
   overflow-x: auto;
+  /* R151.2: now-playing centers under the progress cluster; lyrics toggle
+     stays pinned right via the trailing spacer. */
+  justify-content: center;
   overflow-y: hidden;
   scrollbar-width: thin;
   scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
@@ -7138,6 +7194,25 @@ input[type='range'].video-player-volume {
   width: 56px;
 }
 .dash-tile:hover .dash-tile-icon { filter: brightness(1.08); }
+
+/* R151.1 (review §12.1): one hue per module — the tile is findable by color
+   before the label is read. Shape stays uniform (elegance), hue carries
+   identity; tinted at 14% over the dark surface so content stays the star.
+   --tile-tint holds the RGB triplet; one hover rule raises every variant. */
+.dash-tile-icon[data-tint] {
+  background: rgba(var(--tile-tint), 0.14);
+  color: rgb(var(--tile-tint));
+}
+.dash-tile-icon[data-tint='mint']     { --tile-tint: 66, 232, 169; }
+.dash-tile-icon[data-tint='violet']   { --tile-tint: 167, 139, 250; }
+.dash-tile-icon[data-tint='sky']      { --tile-tint: 56, 189, 248; }
+.dash-tile-icon[data-tint='amber']    { --tile-tint: 251, 191, 36; }
+.dash-tile-icon[data-tint='rose']     { --tile-tint: 251, 113, 133; }
+.dash-tile-icon[data-tint='lime']     { --tile-tint: 163, 230, 53; }
+.dash-tile-icon[data-tint='orange']   { --tile-tint: 251, 146, 60; }
+.dash-tile-icon[data-tint='fuchsia']  { --tile-tint: 232, 121, 249; }
+.dash-tile-icon[data-tint='cyan']     { --tile-tint: 34, 211, 238; }
+.dash-tile:hover .dash-tile-icon[data-tint] { background: rgba(var(--tile-tint), 0.22); }
 .dash-tile-label {
   color: var(--text-primary);
   font-size: 11px;
@@ -7529,11 +7604,19 @@ input[type='range'].video-player-volume {
 .ai-vision-head strong { font-size: 14px; }
 .ai-vision-hint { color: var(--text-muted); font-size: 12.5px; grid-column: 1 / -1; margin: 0; }
 .vision-cap-table { border-collapse: collapse; font-size: var(--text-body-size); table-layout: fixed; width: 100%; }
-/* R148 S3 batch-1: balanced columns — cap 16% / how 34% / live 13% / where 37% */
-.vision-cap-table th:nth-child(1), .vision-cap-table td:nth-child(1) { width: 16%; }
-.vision-cap-table th:nth-child(2), .vision-cap-table td:nth-child(2) { width: 34%; }
-.vision-cap-table th:nth-child(3), .vision-cap-table td:nth-child(3) { width: 13%; }
-.vision-cap-table th:nth-child(4), .vision-cap-table td:nth-child(4) { width: 37%; }
+/* R151.3: the live column left the table (badges live in the cap cell now) —
+   cap 30% / how 42% / where 28%. */
+.vision-cap-table th:nth-child(1), .vision-cap-table td:nth-child(1) { width: 30%; }
+.vision-cap-table th:nth-child(2), .vision-cap-table td:nth-child(2) { width: 42%; }
+.vision-cap-table th:nth-child(3), .vision-cap-table td:nth-child(3) { width: 28%; }
+/* collapsed groups hide their rows visually; the rows stay in the DOM for
+   the test/E2E selectors */
+.vision-cap-table tr[hidden] { display: none; }
+.vision-cap-table td .cap-name { font-weight: var(--text-title-weight); }
+.vision-cap-table td .cap-count,
+.vision-cap-table td .cap-held,
+.vision-cap-table td .cap-note,
+.vision-cap-table td .cap-active { margin-left: 8px; }
 .vision-cap-table th {
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-muted);
@@ -7556,6 +7639,27 @@ input[type='range'].video-player-volume {
   padding-top: 14px;
   text-transform: uppercase;
 }
+
+/* R151.3: the group row is the accordion toggle (rows hide via [hidden]) */
+.vision-cap-table tr.cap-group { cursor: pointer; user-select: none; }
+.vision-cap-table tr.cap-group:hover td { color: var(--text-primary); }
+.cap-group-chevron {
+  color: var(--text-faint);
+  display: inline-block;
+  margin-right: 6px;
+  width: 12px;
+}
+.cap-group-count {
+  color: var(--text-faint);
+  font-weight: var(--text-body-weight);
+  margin-left: 10px;
+}
+
+/* R151.3: progressive disclosure — the run-only actions (stop/skip/reset)
+   stay in the DOM but are invisible while the bench is off. */
+.ai-vision-lab[data-running='0'] [data-action='vision-stop'],
+.ai-vision-lab[data-running='0'] [data-action='vision-skip'],
+.ai-vision-lab[data-running='0'] [data-action='vision-reset'] { display: none; }
 .vision-cap-table tr.cap-row td:first-child { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
 .cap-how, .cap-where { color: var(--text-secondary); }
 .cap-live { min-width: 110px; white-space: nowrap; }

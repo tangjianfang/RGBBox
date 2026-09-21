@@ -25,6 +25,24 @@ export function DiagnosticsView(props: {
 }): JSX.Element {
   const { t } = useI18n()
   const { topology, profile, scene, engineMetrics, captureProvider, processCpuSamples, frameRef, frameConsumerActive, engineRunning, audioRef, audioErrorLabel } = props
+
+  // R151.4: mini-bars for the frame-time metrics are scaled against the
+  // configured frame budget; anything over budget rides the warn hue.
+  const frameBudgetMs = 1000 / Math.max(1, profile.sampling.fps)
+  const barPct = (ms: number): number => Math.max(2, Math.min(100, (ms / frameBudgetMs) * 100))
+  const overBudget = (ms: number): boolean => ms > frameBudgetMs
+  const latencyBar = (label: string, ms: number): JSX.Element => (
+    <div>
+      <dt>{label}</dt>
+      <dd className="diag-dd-bar">
+        <span className="diag-val">{formatMs(ms)}</span>
+        <span className="diag-bar" aria-hidden="true">
+          <span className={overBudget(ms) ? 'diag-bar-fill warn' : 'diag-bar-fill'} style={{ width: `${barPct(ms)}%` }} />
+        </span>
+      </dd>
+    </div>
+  )
+
   return (
     <div className="diagnostics-view">
       <header className="workspace-header">
@@ -34,10 +52,18 @@ export function DiagnosticsView(props: {
         </div>
         <Activity size={24} />
       </header>
+      {/* R151.4 (review §12.3): the 13-row single list becomes a 2×2 card
+          grid — latency / pipeline / environment / per-process CPU — so both
+          columns carry weight instead of a long table beside an empty one. */}
       <div className="diagnostics-grid">
         <div className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">{t('diag.eyebrow')}</p>
+              <h3>{t('diag.group.latency')}</h3>
+            </div>
+          </div>
           <dl className="diagnostics-list">
-            <div><dt>{t('diag.virtualBounds')}</dt><dd>{topology.virtualBounds.width}×{topology.virtualBounds.height}</dd></div>
             <div>
               <dt>{t('diag.frameAge')}</dt>
               <dd>{(() => {
@@ -54,18 +80,45 @@ export function DiagnosticsView(props: {
                 return `${state.ms} ms`
               })()}</dd>
             </div>
-            <div><dt>{t('diag.avgFrameMs')}</dt><dd>{formatMs(engineMetrics.avgFrameMs)}</dd></div>
-            <div><dt>{t('diag.p95FrameMs')}</dt><dd>{formatMs(engineMetrics.p95FrameMs)}</dd></div>
+            {latencyBar(t('diag.avgFrameMs'), engineMetrics.avgFrameMs)}
+            {latencyBar(t('diag.p95FrameMs'), engineMetrics.p95FrameMs)}
             <div><dt>{t('diag.workerMs')}</dt><dd>{formatMs(engineMetrics.workerProcessMs)}</dd></div>
             <div><dt>{t('diag.captureMs')}</dt><dd>{formatMs(engineMetrics.captureMs || captureProvider?.lastCaptureMs)}</dd></div>
             <div><dt>{t('diag.outputMs')}</dt><dd>{formatMs(engineMetrics.outputMs)}</dd></div>
             <div><dt>{t('diag.droppedTicks')}</dt><dd>{engineMetrics.droppedTicks}</dd></div>
-            <div><dt>{t('diag.brightGain')}</dt><dd>{Math.round(profile.sampling.brightnessLimit * 100)}%</dd></div>
+          </dl>
+        </div>
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">{t('diag.eyebrow')}</p>
+              <h3>{t('diag.group.pipeline')}</h3>
+            </div>
+          </div>
+          <dl className="diagnostics-list">
+            <div><dt>{t('diag.virtualBounds')}</dt><dd>{topology.virtualBounds.width}×{topology.virtualBounds.height}</dd></div>
             <div><dt>{t('diag.gridSize')}</dt><dd>{profile.sampling.columns}×{profile.sampling.rows} ({profile.sampling.columns * profile.sampling.rows} pixels)</dd></div>
             <div><dt>{t('diag.activeLayers')}</dt><dd>{scene?.layers.filter((l) => l.enabled).length ?? 0}</dd></div>
             <div><dt>{t('diag.targetFps')}</dt><dd>{profile.sampling.fps}</dd></div>
-            <div><dt>{t('diag.platform')}</dt><dd>{topology.platform}</dd></div>
+            <div><dt>{t('diag.brightGain')}</dt><dd>{Math.round(profile.sampling.brightnessLimit * 100)}%</dd></div>
             <div><dt>{t('diag.audio')}</dt><dd>{audioRef.current.active ? t('diag.audioBass').replace('{bass}', (audioRef.current.bass * 100).toFixed(0)) : audioErrorLabel || t('diag.off')}</dd></div>
+          </dl>
+        </div>
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">{t('diag.eyebrow')}</p>
+              <h3>{t('diag.group.env')}</h3>
+            </div>
+          </div>
+          <dl className="diagnostics-list">
+            <div><dt>{t('diag.platform')}</dt><dd>{topology.platform}</dd></div>
+            <div>
+              <dt>{t('diag.captureProvider')}</dt>
+              <dd title={captureProvider?.fallbackReason ?? undefined}>
+                {captureProvider ? captureProvider.active : '—'}
+              </dd>
+            </div>
             {topology.displays.map((d) => (
               <div key={d.id}>
                 <dt>{d.label}{d.primary ? ` ${t('diag.displayPrimary')}` : ''}</dt>

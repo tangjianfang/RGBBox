@@ -3035,4 +3035,17 @@
 - **R150.6 显式不做（留后续）**：FX1 无输入效果黑缩略图（需静态样本生成）、G1 PiP/手势助手 pill 遮挡（需默认锚点设计）、I2 AI 表单布局、AI5 音频 tab 英文状态串本地化、AI6 对话空态、ST2 完整 toggle、ST3 设置页布局、T1/T2 工具链（snapshot 脚本可移植 + 陈旧 out/ 校验）——各属 S3 后续批次或独立 R-N；**i18n 内容翻译**（E3/AR1/G4/GM2）合并为一条待立项 R-N。
 - **R150.7 review 更正**：ST1「开机启动启动」叠词为**误报**——OCR 逐字复核实为「开机自动启动」（i18n:1565 本就正确）；已在 review 文档标注。
 - **R150.8 验收点**：①`yarn typecheck` 绿；②全量 `yarn test` **119 files / 1083 passed / 0 失败**；③`yarn build` 绿（renderer 资产 mtime 已更新）；④W1/W2 DOM 探针复测通过（见 R150.1 数字）；⑤视觉复核**留给后续 haiku 会话**（用户指令：修复模型不做视觉 review）。
-- **R150.9 状态**：🔄（自动化门禁全过；haiku 视觉复核 + 用户真机验收后转 ✅）
+- **R150.9 状态**：✅（2026-09-22 haiku 会话视觉复核 §11：十四项全部落位无回归；W1/W2 探针数字见 R150.1。用户真机为最终验收）
+
+### R151. review §12 四项设计实施——仪表盘图标色相 / 音频 transport 三簇 / 体感分组折叠 / 诊断分组卡（2026-09-22 用户指令「开始根据review结果实时修复」+「首页模块圆形背景太统一…重新设计识别度高优雅的图标」；设计规格：review 文档 §12）
+
+- **R151.1 仪表盘模块图标色相**（§12.1，用户点名）：`ShellModuleMeta` 加 `tint` 字段，9 模块各配专属色相（workspace mint / effects violet / video sky / audio amber / games rose / diagnostics lime / architecture orange / ai fuchsia / model3d cyan）；`DashboardView` 圆底渲染 `data-tint`；CSS 以 `--tile-tint` RGB 三元组变量实现「淡底 14% alpha + 同色 icon」，hover 统一升 22%（一条规则）。几何（56px 圆）保持统一=优雅，色彩承载识别；**rail 不动**（导航保持 accent 交互语义，符合 R148.2「一色一义」——模块色属内容层）。
+- **R151.2 音频 transport 三簇**（§12.4）：保持既有固定两行高度契约（历史用户要求防动态拉伸）——行 1 改「播放控制簇｜进度簇（当前时间—进度条—总时长，max-width 520px 居中）｜音量簇（mute+音量+平衡）」；行 2 改 now-playing 居中 + 歌词按钮右置（弹性 spacer）。进度条 ~1010px→≤520px，时间贴条两端。零逻辑改动（纯 JSX 重排 + CSS）。
+- **R151.3 体感清单分组折叠**（§12.2，测试兼容约束下的实现）：24 行 + 7 组行**全部留在 DOM**（单测 `tr[data-cap]`×24 / `tr.cap-group`×7 与 CDP E2E `verify-r144-vision-lab.mjs` 的行选择器不破坏）——组头 `cap-group` 可点击折叠/展开（`hidden` 属性控制组内行），默认折叠；**触发即自动展开所在组**；「实时」列撤表并入能力名格（badge 语义不变，`.cap-active/.cap-held/.cap-count/.cap-note` 全保留）；「消费处」`（R134）` 类编号移入 title；头部按钮渐进披露走 CSS（`data-running='0'` 时视觉隐藏 stop/skip/reset，DOM 保留——单测在 enabled 态点击不受影响）。
+- **R151.4 诊断页三组卡**（§12.3）：13 行单列长表 → 2×2 网格四张卡：「帧与时延」（frameAge/avg/p95/worker/capture/output/droppedTicks，avg+p95 加 8px mini-bar，阈值=帧预算 1000/fps，超出入 warn 色）、「渲染管线」（virtualBounds/gridSize/activeLayers/targetFps/brightGain/audio）、「环境」（platform + **captureProvider.active/fallbackReason 首次上屏**（数据本就在 props，纯渲染）+ 显示器清单）、「各进程 CPU」（既有）。i18n 新 key：`diag.group.latency/pipeline/env`、`diag.captureProvider`。
+- **R151.5 边界**：不改任何功能行为/事件语义/IPC；体感 E2E seam `__rgbboxVisionLab` 不动；诊断「overlay 帧到达卡」仍留后续（需新数据接线）；i18n 内容翻译（E3/AR1/G4）不在本条。
+- **R151.6 验收点**：①typecheck + 全量 `yarn test`（重点 `AiLabVisionTab.test.tsx` 13 用例、`DashboardView.test.tsx`、`AiLabView.test.tsx` 零修改通过）②build 绿 ③CDP E2E vision-lab 场景通过 ④仪表盘 8 色相一眼可辨 ⑤进度条 ≤560px 居中 ⑥体感首屏=7 组头。
+- **R151.7 实施证据（2026-09-22，glm-5.3 会话）**：
+  - 门禁：typecheck ✅；全量 `yarn test` **119 files / 1083 passed / 0 失败**（AiLabVisionTab 13 用例 / DashboardView / AiLabView **零修改通过**——折叠行留 DOM 的设计兑现）；`yarn build` ✅。CDP E2E `verify-r144-vision-lab.mjs` 因 T2 存量路径问题本机不可跑（review §3 已记录，非本次回归）；以运行时探针替代验证。
+  - 运行时探针（temp CDP，1440×900）：仪表盘 **8 tile / 8 tint / computed backgroundColor 8 种互不相同**（rgba(66,232,169,.14)/rgba(167,139,250,.14)/…）；音频进度条 **1010→428px**（cluster 520 顶格），时间贴条两端对称（484/484），行高 30 契约保持；体感 **24 行全在 DOM / 7 组头 / 首屏可见 0 行（全折叠）/ 点击组头展开 3 行 / stop 按钮 display:none（渐进披露）**；诊断 **4 卡**（帧与时延/渲染管线/环境/各进程 CPU）+ 2 mini-bar；「环境」卡 1Hz 轮询后 provider 行实测显示 `desktop-capturer`。
+- **R151.8 状态**：✅（自动化 + 探针闭环；haiku 视觉复核 + 用户真机为最终验收）

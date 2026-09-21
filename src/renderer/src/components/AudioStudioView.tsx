@@ -2137,48 +2137,59 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             onClick={() => setPlayMode(playMode === 'shuffle' ? 'sequential' : 'shuffle')}
             title={t('audio.shuffle')}
           ><Shuffle size={13} /></button>
-          <input
-            type="range"
-            className="audio-progress-bar"
-            min={0}
-            max={isFinite(duration) && duration > 0 ? duration : 1}
-            step={0.1}
-            value={progress}
-            onPointerDown={() => { progressDraggingRef.current = true }}
-            onPointerUp={() => { progressDraggingRef.current = false }}
-            onPointerCancel={() => { progressDraggingRef.current = false }}
-            onLostPointerCapture={() => { progressDraggingRef.current = false }}
-            onChange={(e) => seek(Number(e.target.value))}
-          />
-          <span className="audio-time">{formatMediaTime(progress)} / {isFinite(duration) && duration > 0 ? formatMediaTime(duration) : '--:--'}</span>
+          {/* R151.2 (review §12.4): centered ≤520px progress cluster with the
+              times hugging the bar (was a ~1010px full-width slider with the
+              time stranded at the far right), volume cluster moved up from
+              row 2. Row heights / no-wrap contract unchanged. */}
+          <div className="audio-progress-cluster">
+            <span className="audio-time audio-time--start">{formatMediaTime(progress)}</span>
+            <input
+              type="range"
+              className="audio-progress-bar"
+              min={0}
+              max={isFinite(duration) && duration > 0 ? duration : 1}
+              step={0.1}
+              value={progress}
+              onPointerDown={() => { progressDraggingRef.current = true }}
+              onPointerUp={() => { progressDraggingRef.current = false }}
+              onPointerCancel={() => { progressDraggingRef.current = false }}
+              onLostPointerCapture={() => { progressDraggingRef.current = false }}
+              onChange={(e) => seek(Number(e.target.value))}
+            />
+            <span className="audio-time audio-time--end">{isFinite(duration) && duration > 0 ? formatMediaTime(duration) : '--:--'}</span>
+          </div>
+          <div className="audio-volume-cluster">
+            <button type="button" className="audio-btn-icon" onClick={() => setMuted(!muted)} title={t('audio.volume')}>
+              {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            </button>
+            <input
+              type="range"
+              className="audio-slider"
+              min={0} max={1} step={0.01}
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              title={t('audio.volume')}
+            />
+            <span className="audio-value">{Math.round(volume * 100)}%</span>
+            <span className="audio-transport-divider" />
+            <span className="audio-label">{t('audio.balance')}</span>
+            <input
+              type="range"
+              className="audio-slider"
+              min={-1} max={1} step={0.01}
+              value={balance}
+              onChange={(e) => setBalance(Number(e.target.value))}
+            />
+            <span className="audio-value">{balance < 0 ? `L${Math.round(-balance * 50)}` : balance > 0 ? `R${Math.round(balance * 50)}` : 'C'}</span>
+          </div>
         </div>
         <div className="audio-transport-row audio-transport-row-nowplaying">
+          <span className="audio-transport-spacer" />
           <Music size={13} className="audio-now-playing-icon" />
           <span className="audio-now-playing-label">
             {currentTrackIndex >= 0 && playlist[currentTrackIndex] ? playlist[currentTrackIndex].name : t('audio.nowPlaying.none')}
           </span>
-          <span className="audio-transport-divider" />
-          <button type="button" className="audio-btn-icon" onClick={() => setMuted(!muted)} title={t('audio.volume')}>
-            {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-          </button>
-          <input
-            type="range"
-            className="audio-slider"
-            min={0} max={1} step={0.01}
-            value={volume}
-            onChange={(e) => setVolume(Number(e.target.value))}
-            title={t('audio.volume')}
-          />
-          <span className="audio-value">{Math.round(volume * 100)}%</span>
-          <span className="audio-label">{t('audio.balance')}</span>
-          <input
-            type="range"
-            className="audio-slider"
-            min={-1} max={1} step={0.01}
-            value={balance}
-            onChange={(e) => setBalance(Number(e.target.value))}
-          />
-          <span className="audio-value">{balance < 0 ? `L${Math.round(-balance * 50)}` : balance > 0 ? `R${Math.round(balance * 50)}` : 'C'}</span>
+          <span className="audio-transport-spacer" />
           <button
             type="button"
             className={`audio-btn-icon${showLyrics ? ' active' : ''}`}

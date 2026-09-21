@@ -217,6 +217,13 @@ const CAPS: CapRow[] = [
 
 interface RowLive { count: number; lastMs: number; held: boolean; note: string }
 
+/** id → group lookup for the auto-expand-on-trigger behavior (R151.3). */
+const CAP_GROUP: Record<string, CapGroupId> = Object.fromEntries(CAPS.map((c) => [c.id, c.group]))
+
+/** R151.3: strip the R-N references out of the「消费处」cell body — the full
+ *  text stays available in the cell's title tooltip. */
+const stripR = (s: string): string => s.replace(/\s*[（(]R\d[^)）]*[)）]/g, '')
+
 interface LiveSignals {
   geomSeen: boolean
   predicted: boolean
@@ -247,17 +254,40 @@ export function AiLabVisionTab(): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [precise, setPrecise] = useState(false)
   const [textMode, setTextMode] = useState(false)
+  // R151.3: groups start collapsed (24 rows → 7 headers on first paint) and
+  // auto-expand the moment one of their capabilities fires.
+  const [openGroups, setOpenGroups] = useState<Set<CapGroupId>>(new Set())
   const lastPinchRef = useRef(0)
   const palmSinceRef = useRef<number | null>(null)
   const fistSinceRef = useRef<number | null>(null)
   const fistFiredRef = useRef(false)
 
+  const expandGroup = useCallback((g: CapGroupId) => {
+    setOpenGroups((prev) => {
+      if (prev.has(g)) return prev
+      const next = new Set(prev)
+      next.add(g)
+      return next
+    })
+  }, [])
+
+  const toggleGroup = useCallback((g: CapGroupId) => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(g)) next.delete(g)
+      else next.add(g)
+      return next
+    })
+  }, [])
+
   const trigger = useCallback((id: string, note?: string, held?: boolean) => {
+    const g = CAP_GROUP[id]
+    if (g) expandGroup(g)
     setRows((prev) => {
       const cur = prev[id] ?? { count: 0, lastMs: 0, held: false, note: '' }
       return { ...prev, [id]: { count: cur.count + 1, lastMs: performance.now(), held: held ?? cur.held, note: note ?? cur.note } }
     })
-  }, [])
+  }, [expandGroup])
 
   const setHeld = useCallback((id: string, held: boolean, note?: string) => {
     setRows((prev) => {
@@ -410,37 +440,56 @@ export function AiLabVisionTab(): JSX.Element {
           <tr>
             <th>{t('ai.lab.vision.col.cap')}</th>
             <th>{t('ai.lab.vision.col.how')}</th>
-            <th>{t('ai.lab.vision.col.live')}</th>
             <th>{t('ai.lab.vision.col.where')}</th>
           </tr>
         </thead>
         <tbody>
-          {GROUPS.map((g) => (
-            <Fragment key={g}>
-              <tr className="cap-group"><td colSpan={4}>{t(`ai.lab.vision.g.${g}`)}</td></tr>
-              {CAPS.filter((c) => c.group === g).map((cap) => {
-                const r = rows[cap.id]
-                const flash = r != null && performance.now() - r.lastMs < FLASH_MS
-                const active = cap.live === 'geom' ? live.geomSeen : cap.live === 'predicted' ? live.predicted : false
-                return (
-                  <tr key={cap.id} data-cap={cap.id} className={flash ? 'cap-row flash' : 'cap-row'}>
-                    <td>{cap.name[L]}</td>
-                    <td className="cap-how">{cap.how[L]}</td>
-                    <td className="cap-live">
-                      {r != null && r.count > 0 && <span className="cap-count">×{r.count}</span>}
-                      {r?.held === true && <span className="cap-held">{t('ai.lab.vision.live.held')}</span>}
-                      {r?.note !== undefined && r.note !== '' && <span className="cap-note">{r.note}</span>}
-                      {cap.live !== undefined && (
-                        <span className={active ? 'cap-active on' : 'cap-active'}>{t('ai.lab.vision.live.active')}</span>
-                      )}
-                      {r == null && cap.live === undefined && <span className="cap-idle">—</span>}
-                    </td>
-                    <td className="cap-where">{cap.where[L]}</td>
-                  </tr>
-                )
-              })}
-            </Fragment>
-          ))}
+          {GROUPS.map((g) => {
+            const groupCaps = CAPS.filter((c) => c.group === g)
+            const open = openGroups.has(g)
+            const hitCount = groupCaps.filter((c) => (rows[c.id]?.count ?? 0) > 0).length
+            return (
+              <Fragment key={g}>
+                {/* R151.3: collapsible group header — rows stay in the DOM
+                    (hidden) so tests/E2E selectors keep working. */}
+                <tr
+                  className="cap-group"
+                  data-group={g}
+                  onClick={() => toggleGroup(g)}
+                  aria-expanded={open}
+                >
+                  <td colSpan={3}>
+                    <span className="cap-group-chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
+                    {t(`ai.lab.vision.g.${g}`)}
+                    <span className="cap-group-count">
+                      {groupCaps.length} {L === 'zh' ? '项' : 'caps'}
+                      {hitCount > 0 ? ` · ${hitCount} ${L === 'zh' ? '已触发' : 'hit'}` : ''}
+                    </span>
+                  </td>
+                </tr>
+                {groupCaps.map((cap) => {
+                  const r = rows[cap.id]
+                  const flash = r != null && performance.now() - r.lastMs < FLASH_MS
+                  const active = cap.live === 'geom' ? live.geomSeen : cap.live === 'predicted' ? live.predicted : false
+                  return (
+                    <tr key={cap.id} data-cap={cap.id} hidden={!open} className={flash ? 'cap-row flash' : 'cap-row'}>
+                      <td>
+                        <span className="cap-name">{cap.name[L]}</span>
+                        {r != null && r.count > 0 && <span className="cap-count">×{r.count}</span>}
+                        {r?.held === true && <span className="cap-held">{t('ai.lab.vision.live.held')}</span>}
+                        {r?.note !== undefined && r.note !== '' && <span className="cap-note">{r.note}</span>}
+                        {cap.live !== undefined && (
+                          <span className={active ? 'cap-active on' : 'cap-active'}>{t('ai.lab.vision.live.active')}</span>
+                        )}
+                      </td>
+                      <td className="cap-how">{cap.how[L]}</td>
+                      <td className="cap-where" title={cap.where[L]}>{stripR(cap.where[L])}</td>
+                    </tr>
+                  )
+                })}
+              </Fragment>
+            )
+          })}
         </tbody>
       </table>
 

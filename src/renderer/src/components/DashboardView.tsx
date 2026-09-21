@@ -96,7 +96,7 @@ export function DashboardView({ onOpen, model3dEnabled, status }: DashboardViewP
             const Icon = meta.icon
             return (
               <button key={view} type="button" className="dash-tile" onClick={() => onOpen(view)}>
-                <span className="dash-tile-icon"><Icon size={24} /></span>
+                <span className="dash-tile-icon" data-tint={meta.tint}><Icon size={24} /></span>
                 <span className="dash-tile-label">{t(meta.labelKey)}</span>
               </button>
             )
