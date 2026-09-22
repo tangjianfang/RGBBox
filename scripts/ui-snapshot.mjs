@@ -69,8 +69,18 @@ const { page } = await connectRenderer({ port: PORT })
 // Stable-ish viewport for comparable shots.
 await page.setViewportSize({ width: 1440, height: 900 }).catch(() => {})
 
-// localStorage view persistence → reset to a clean dashboard boot.
-await page.evaluate(() => localStorage.removeItem('rgbbox:view')).catch(() => {})
+// Persisted UI state → clean boot. E2E runs leave rgbbox:* keys behind
+// (visionSensitivity, samplingTab, collapsed panels…) and they shift layouts
+// across runs — a workspace diff of 1.14% was traced to exactly this.
+// Every rgbbox:/rgbbox- key goes so each capture starts identically.
+await page.evaluate(() => {
+  const doomed = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i)
+    if (k && (k.startsWith('rgbbox:') || k.startsWith('rgbbox-'))) doomed.push(k)
+  }
+  for (const k of doomed) localStorage.removeItem(k)
+}).catch(() => {})
 await page.reload()
 await page.waitForSelector('.module-rail', { timeout: 15000 })
 await sleep(700) // boot fan-out + dashboard settle

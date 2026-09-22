@@ -217,6 +217,18 @@ const CAPS: CapRow[] = [
 
 interface RowLive { count: number; lastMs: number; held: boolean; note: string }
 
+/** R153.1: the core board — the nine highest-value commands rendered as
+ * always-visible cards ABOVE the collapsible groups. User-picked scope
+ * (AskUserQuestion 2026-09-22): one glance / one try per card, jawOpen+smile
+ * onboarded deliberately — the face group lived folded and users concluded
+ * "face detection is missing" (it wasn't; discoverability was). */
+const BOARD_IDS = new Set(['dir8', 'pinch', 'palmHold', 'doublePinch', 'chord-select', 'chordText', 'cursor', 'jawOpen', 'smile'])
+
+/** Reserved caps (no consumer wired yet) get a corner tag in the collapsed
+ * rows so scanning distinguishes "works, try it" from "engine-ready, unwired".
+ * Board cards never carry it — the board promises try-it-now. */
+const isReserved = (cap: CapRow): boolean => cap.where.zh.includes('预留')
+
 /** id → group lookup for the auto-expand-on-trigger behavior (R151.3). */
 const CAP_GROUP: Record<string, CapGroupId> = Object.fromEntries(CAPS.map((c) => [c.id, c.group]))
 
@@ -281,8 +293,12 @@ export function AiLabVisionTab(): JSX.Element {
   }, [])
 
   const trigger = useCallback((id: string, note?: string, held?: boolean) => {
-    const g = CAP_GROUP[id]
-    if (g) expandGroup(g)
+    // R153: board cards live outside the groups — only collapsed rows still
+    // auto-expand their group on first hit (R151.3 behavior, retained).
+    if (!BOARD_IDS.has(id)) {
+      const g = CAP_GROUP[id]
+      if (g) expandGroup(g)
+    }
     setRows((prev) => {
       const cur = prev[id] ?? { count: 0, lastMs: 0, held: false, note: '' }
       return { ...prev, [id]: { count: cur.count + 1, lastMs: performance.now(), held: held ?? cur.held, note: note ?? cur.note } }
@@ -435,6 +451,34 @@ export function AiLabVisionTab(): JSX.Element {
       </div>
       <p className="ai-vision-hint">{t('ai.lab.vision.hint')}</p>
 
+      {/* R153.1: core board — the nine user-picked highest-value commands,
+          always visible; face cards onboarded to fix discoverability. */}
+      <div className="vision-board">
+        {CAPS.filter((c) => BOARD_IDS.has(c.id)).map((cap) => {
+          const r = rows[cap.id]
+          const flash = r != null && performance.now() - r.lastMs < FLASH_MS
+          const active = cap.live === 'geom' ? live.geomSeen : cap.live === 'predicted' ? live.predicted : false
+          return (
+            <div key={cap.id} data-cap={cap.id} className={flash ? 'vision-card flash' : 'vision-card'}>
+              <div className="vision-card-head">
+                <span className="cap-name">{cap.name[L]}</span>
+                {r != null && r.count > 0 && <span className="cap-count">×{r.count}</span>}
+                {r?.held === true && <span className="cap-held">{t('ai.lab.vision.live.held')}</span>}
+                {r?.note !== undefined && r.note !== '' && <span className="cap-note">{r.note}</span>}
+                {cap.live !== undefined && (
+                  <span className={active ? 'cap-active on' : 'cap-active'}>{t('ai.lab.vision.live.active')}</span>
+                )}
+              </div>
+              <div className="vision-card-how">{cap.how[L]}</div>
+            </div>
+          )
+        })}
+      </div>
+
+      <p className="vision-more-head">
+        {L === 'zh' ? `更多能力（${CAPS.length - BOARD_IDS.size}）` : `More capabilities (${CAPS.length - BOARD_IDS.size})`}
+      </p>
+
       <table className="vision-cap-table">
         <thead>
           <tr>
@@ -445,7 +489,10 @@ export function AiLabVisionTab(): JSX.Element {
         </thead>
         <tbody>
           {GROUPS.map((g) => {
-            const groupCaps = CAPS.filter((c) => c.group === g)
+            // R153: board members left their groups; a group with everyone
+            // onboarded (discrete / chordText) disappears from the table.
+            const groupCaps = CAPS.filter((c) => c.group === g && !BOARD_IDS.has(c.id))
+            if (groupCaps.length === 0) return null
             const open = openGroups.has(g)
             const hitCount = groupCaps.filter((c) => (rows[c.id]?.count ?? 0) > 0).length
             return (
@@ -475,6 +522,7 @@ export function AiLabVisionTab(): JSX.Element {
                     <tr key={cap.id} data-cap={cap.id} hidden={!open} className={flash ? 'cap-row flash' : 'cap-row'}>
                       <td>
                         <span className="cap-name">{cap.name[L]}</span>
+                        {isReserved(cap) && <span className="cap-reserved">{L === 'zh' ? '预留' : 'reserved'}</span>}
                         {r != null && r.count > 0 && <span className="cap-count">×{r.count}</span>}
                         {r?.held === true && <span className="cap-held">{t('ai.lab.vision.live.held')}</span>}
                         {r?.note !== undefined && r.note !== '' && <span className="cap-note">{r.note}</span>}

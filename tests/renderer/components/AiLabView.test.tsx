@@ -32,7 +32,8 @@ describe('AiLabView (R89)', () => {
     fireEvent.click(visionTab)
     await waitFor(() => expect(visionTab.classList.contains('active')).toBe(true))
     expect(container.querySelector('.ai-vision-lab')).not.toBeNull()
-    expect(container.querySelectorAll('tr[data-cap]').length).toBe(24)
+    // R153: board cards (div) + collapsed rows (tr) both carry data-cap
+    expect(container.querySelectorAll('[data-cap]').length).toBe(24)
   })
 
   it('renders the legacy three core tabs and switches between them', async () => {

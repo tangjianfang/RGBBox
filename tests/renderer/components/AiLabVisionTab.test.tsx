@@ -45,11 +45,12 @@ function bus(detail: Record<string, unknown>): void {
   act(() => { window.dispatchEvent(new CustomEvent('vision-input', { detail })) })
 }
 
-function row(container: HTMLElement, id: string): HTMLTableRowElement {
-  return container.querySelector(`tr[data-cap="${id}"]`) as HTMLTableRowElement
+/** R153: board cards are divs, collapsed rows are trs — one selector for both. */
+function row(container: HTMLElement, id: string): HTMLElement {
+  return container.querySelector(`[data-cap="${id}"]`) as HTMLElement
 }
 
-function countOf(r: HTMLTableRowElement | null): string {
+function countOf(r: HTMLElement | null): string {
   return r?.querySelector('.cap-count')?.textContent ?? ''
 }
 
@@ -79,12 +80,17 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); cleanup() })
 
 describe('AiLabVisionTab (R144)', () => {
-  it('renders the 24-capability catalog across 7 groups', () => {
+  it('renders the 24-capability catalog: 9 board cards + 5 collapsed groups', () => {
     const { container } = render(<AiLabVisionTab />)
-    expect(container.querySelectorAll('tr[data-cap]').length).toBe(24)
-    expect(container.querySelectorAll('tr.cap-group').length).toBe(7)
-    // every group has at least one row; chords alone carry 8
-    expect(container.querySelectorAll('tr[data-cap^="chord-"]').length).toBe(7)
+    // R153: board cards (div) + collapsed rows (tr) both carry data-cap
+    expect(container.querySelectorAll('[data-cap]').length).toBe(24)
+    expect(container.querySelectorAll('.vision-card').length).toBe(9)
+    // face discoverability: jawOpen + smile are always-visible board cards
+    expect(container.querySelector('.vision-card[data-cap="jawOpen"]')).toBeTruthy()
+    expect(container.querySelector('.vision-card[data-cap="smile"]')).toBeTruthy()
+    // discrete & chordText fully onboarded → their group headers vanish
+    expect(container.querySelectorAll('tr.cap-group').length).toBe(5)
+    expect(container.querySelectorAll('[data-cap^="chord-"]').length).toBe(7)
     expect(row(container, 'dir8')).toBeTruthy()
     expect(row(container, 'chordText')).toBeTruthy()
     expect(row(container, 'faceNeutral')).toBeTruthy()

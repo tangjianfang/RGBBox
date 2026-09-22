@@ -3071,3 +3071,20 @@
   - 全量 `yarn test` **119 files / 1083 passed / 41 skipped / 0 失败**；hex lint **0 violations**；基线 9 view 以 HEAD 重拍入档（games.png 字节级未变——纯静态页编码确定性）+ 9 `*.boxes.json` 入库。
 - **R152.9 S3 续批入口**：门禁恢复后 R148 S3 逐 view 精修 batch-2 起按 review §6 顺序继续，每批证据追加至 R148.7（批次内容不在本条展开，R148.8 状态随之推进）。
 - **R152.10 状态**：✅（自动化 + 红绿双向门禁闭环；无视觉 review 约束下完成，基线图供后续 haiku 会话/用户查阅）
+
+### R153. 体感能力清单信息架构重做——核心看板 9 卡常驻 + 罕用折叠重排 + 人脸可发现性修复（2026-09-22 用户需求「命令太多，折叠起来不方便查看，需要精简：最有价值的命令在一个看板上，不常用的折叠起来；人脸检测功能好像没有」；AskUserQuestion 拍板 9 卡方案）
+
+> 痛点根因：R151.3 把 24 行全部默认折叠后首屏只剩 7 个组头，无任何可看/可试命令；人脸功能**存在且工作**（face 组 4 项，R152 复跑 E2E `face jawOpen ×1` PASS）但默认折叠 + 未触发表情事件时无自动展开痕迹 → 用户感知「没有」= 可发现性问题。目录构成：24 能力/7 组，其中 5 个「预留」未接消费方（和弦 pause/cancel/next、副手 KeyF、双手 gap×2）。
+
+- **R153.1 核心看板（9 卡，3×3 网格，常驻不折叠）**：dir8 方向环 / pinch 捏合 / palmHold 张掌保持 / doublePinch 双捏确认 / chord-select 和弦 select / chordText 和弦文本 / cursor 相对光标 / **jawOpen 张嘴 / smile 微笑**（人脸入板 = 可发现性修复）。卡片 = 名称 + how 触发方式一行 + live 区（held 徽章 / 计数 / geom note），live 高亮沿用 `.cap-active/.cap-held/.cap-count` 语义；DOM 载体 `div[data-cap]`（不再是 tr）。
+- **R153.2 折叠区重排**：剩余 15 能力按原组折叠——5 组头（direction 剩 axis/predict、chordCmd 剩 6、dualHand 4、face 剩 browRaise/faceNeutral、cursor 剩 clutch；discrete/chordText 全上板后组消解）；沿用 R151.3 组头交互（点击折叠/展开、**触发自动展开**、组头计数徽章）；预留态 cap 视觉角标「预留」（where 文案已是预留，强化扫读）。
+- **R153.3 测试/E2E 适配**：`[data-cap]` 计 24 不变（看板 9 卡 tr→div + 折叠 15 行保持 tr 或统一 div——以实现时最短 diff 为准）；组头 7→5；`AiLabVisionTab.test.tsx`（13 用例）与 `verify-r144-vision-lab.mjs` 行/组选择器同步更新；`__rgbboxVisionLab` seam 不动。
+- **R153.4 边界**：不改 vision 引擎/事件语义/IPC/快调区（主手切换 R149.3、校准、stop/skip/reset 渐进披露）/探索面板；i18n 双语沿用 CAPS 内联字面量模式。
+- **R153.5 验收点**：①typecheck + 全量 `yarn test`（适配后全绿）；②CDP E2E `verify-r144-vision-lab.mjs` 26/26；③`yarn ui:snapshot` 门禁通过（ai view 基线 `--update-baseline` 重拍后全绿）；④运行时探针：看板 9 卡常驻、`[data-cap]`×24 全 DOM、5 组头、看板卡触发即高亮+计数。
+- **R153.6 实施证据（2026-09-22，glm-5.3 会话，无视觉 review）**：
+  - 实现：`BOARD_IDS` 9 卡（dir8/pinch/palmHold/doublePinch/chord-select/chordText/cursor/**jawOpen/smile**）常驻 `div[data-cap].vision-card`（3×auto-fill 网格，`--surface-raised`+`--radius-m`，flash 复用 capFlash）；`trigger()` 看板卡不再展开组（组展开仅折叠行保留 R151.3 语义）；折叠表 `GROUPS` 过滤看板成员 + 空组消解（discrete/chordText）→ 5 组头 15 行；`isReserved()`（where 含「预留」）7 行角标（和弦 pause/cancel/next、offPinch、gap×2、browRaise）；「更多能力（15）」小节头（内联双语，tab 惯例）。
+  - 适配：`AiLabVisionTab.test.tsx` helper `[data-cap]`（div+tr 通吃）+ 首用例改「9 卡+5 组」断言（含 jawOpen/smile 在板）；`AiLabView.test.tsx:35` 同步；`verify-r144` 选择器去 tr 前缀 + `7 group headers`→`5 collapsed group headers` + 新增 `9 always-visible board cards` 断言；`__rgbboxVisionLab` seam 未动。
+  - **门禁副产物修复（快照卫生）**：验收③首跑发现 workspace **假阳性 1.14%**（本次未改该 view）——根因实锤：localStorage 残留 **27 个 rgbbox 前缀 key**（`visionSensitivity:"sport"` 正是 E2E L122 写入、`samplingTab`/`samplingCollapsed` 等直接位移面板），ui-snapshot 旧逻辑只清 `rgbbox:view`；修复为 boot 前**全清 rgbbox:/rgbbox- 前缀**，干净态重拍 9 view 基线后两轮 GATE PASS——E2E ↔ snapshot 交叉污染自此根绝。
+  - 门禁：typecheck ✅；组件测试 32/32（AiLabVisionTab 13 + AiLabView）；全量 `yarn test` **119 files / 1083 passed / 0 失败**；CDP E2E `verify-r144-vision-lab.mjs` **27/27 PASS**；`yarn build` ✅。
+  - 运行时探针（temp CDP）：pre `cards:9 / caps:24 / groups:5 / jaw+smile 在板 / more:"更多能力（15）" / reserved:7 / collapsedRows:15`；pipeline 启用后触发 `jawOpen → className "vision-card flash" + ×1`（**人脸卡触发即高亮——「人脸检测没有」的直接反证**）、pinch held ✓。
+- **R153.7 状态**：✅（自动化 + 探针闭环；视觉复核留给后续 haiku 会话 + 用户真机）

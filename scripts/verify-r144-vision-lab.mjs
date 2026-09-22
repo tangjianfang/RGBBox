@@ -53,15 +53,17 @@ await sleep(400)
 
 const bench = await page.evaluate(() => ({
   lab: !!document.querySelector('.ai-vision-lab'),
-  caps: document.querySelectorAll('tr[data-cap]').length,
+  caps: document.querySelectorAll('[data-cap]').length,
+  board: document.querySelectorAll('.vision-card').length,
   groups: document.querySelectorAll('tr.cap-group').length,
   explore: !!document.querySelector('.vision-explore'),
   pad: !!document.querySelector('.vision-pad'),
   startBtn: !!document.querySelector('[data-action="vision-start"]'),
 }))
 check('bench mounted (.ai-vision-lab)', bench.lab)
-check('24 capability rows', bench.caps === 24, `got ${bench.caps}`)
-check('7 group headers', bench.groups === 7, `got ${bench.groups}`)
+check('24 capability entries (board cards + collapsed rows)', bench.caps === 24, `got ${bench.caps}`)
+check('9 always-visible board cards (R153)', bench.board === 9, `got ${bench.board}`)
+check('5 collapsed group headers (R153)', bench.groups === 5, `got ${bench.groups}`)
 check('explore panel present', bench.explore)
 check('start button present while off', bench.startBtn)
 check('VisionPad not mounted while off', !bench.pad)
@@ -82,22 +84,22 @@ check('VisionPad mounted with the session', !!(await page.evaluate(() => documen
 const fire = (detail) => page.evaluate((d) => {
   window.dispatchEvent(new CustomEvent('vision-input', { detail: d }))
 }, detail)
-const count = async (id) => page.locator(`tr[data-cap="${id}"] .cap-count`).textContent().catch(() => null)
+const count = async (id) => page.locator(`[data-cap="${id}"] .cap-count`).textContent().catch(() => null)
 
 await fire({ kind: 'pinch', key: 'Space', down: true })
-check('pinch down → held badge', !!(await page.locator('tr[data-cap="pinch"] .cap-held').count()))
+check('pinch down → held badge', !!(await page.locator('[data-cap="pinch"] .cap-held').count()))
 await fire({ kind: 'pinch', key: 'Space', down: false })
 await fire({ kind: 'pinch', key: 'Space', down: true })
 await fire({ kind: 'pinch', key: 'Space', down: false })
 check('pinch counted ×2', (await count('pinch')) === '×2')
 check('double-pinch combo ×1', (await count('doublePinch')) === '×1')
-check('pinch released → held badge gone', !(await page.locator('tr[data-cap="pinch"] .cap-held').count()))
+check('pinch released → held badge gone', !(await page.locator('[data-cap="pinch"] .cap-held').count()))
 
 await fire({ kind: 'chord', name: 'select', down: true })
 check('chord select ×1', (await count('chord-select')) === '×1')
 await fire({ kind: 'chord', name: 'char:e', down: true })
 check('chord char lands on text row ×1', (await count('chordText')) === '×1')
-check('chord char note shows the character', (await page.locator('tr[data-cap="chordText"] .cap-note').textContent()) === 'e')
+check('chord char note shows the character', (await page.locator('[data-cap="chordText"] .cap-note').textContent()) === 'e')
 
 await fire({ kind: 'face', name: 'jawOpen', key: 'KeyE', down: true })
 await fire({ kind: 'face', name: 'calibrated', key: null, down: true })
@@ -110,14 +112,14 @@ check('off-hand pinch ×1', (await count('offPinch')) === '×1')
 check('hands apart ×1', (await count('gapApart')) === '×1')
 
 await fire({ kind: 'direction', key: 'ArrowUp', dir: 'up-right', down: true })
-check('direction row records the sector note', (await page.locator('tr[data-cap="dir8"] .cap-note').textContent()) === 'up-right')
+check('direction row records the sector note', (await page.locator('[data-cap="dir8"] .cap-note').textContent()) === 'up-right')
 
 // ── 4. reset + quick params + tab-switch unmount ───────────────────────────
 // NOTE: the synthetic hand keeps producing REAL events (~4s pinch period),
 // so the reset assertion must read the DOM right after the click, before the
 // next synthetic event can legitimately re-light a row.
 await page.locator('[data-action="vision-reset"]').click()
-const badgesAfterReset = await page.evaluate(() => document.querySelectorAll('tr[data-cap] .cap-count').length)
+const badgesAfterReset = await page.evaluate(() => document.querySelectorAll('[data-cap] .cap-count').length)
 check('reset clears counters', badgesAfterReset === 0, `${badgesAfterReset} badges remain`)
 await page.locator('select[data-param="sensitivity"]').selectOption('sport').catch(() => {})
 check('quick params interactive (no crash)', errors.length === 0)
