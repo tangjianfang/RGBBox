@@ -2,7 +2,7 @@
  * R104 real-machine smoke: artifact unlock by seeded run stats, toggle
  * persistence, Glass Heart run injection (HP=1), persistence across remounts.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const results = []

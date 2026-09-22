@@ -2,7 +2,7 @@
  * R108 real-machine smoke: music toggle persists, BGM code path runs inside a
  * game screen with zero errors (actual audible output is for human ears).
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const results = []

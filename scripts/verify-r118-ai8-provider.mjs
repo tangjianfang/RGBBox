@@ -5,7 +5,7 @@
  * with contextCount:0 + SSE chat with systemPrompt/text, NO OpenAI-style
  * model/messages body). ALL ai8.rcouyi.com traffic mocked via page.route.
  */
-import { chromium } from 'file:///C:/Users/admin/AppData/Local/Temp/pw-cdp/node_modules/playwright-core/index.mjs'
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { setTimeout as sleep } from 'node:timers/promises'

@@ -8,7 +8,7 @@
  * ⑥ the manual「查询最新绘画结果」button adopts the latest task (R122.4).
  * ALL ai8.rcouyi.com traffic is mocked via page.route — zero credits.
  */
-import { chromium } from 'file:///C:/Users/admin/AppData/Local/Temp/pw-cdp/node_modules/playwright-core/index.mjs'
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 

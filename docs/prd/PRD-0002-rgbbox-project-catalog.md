@@ -3008,7 +3008,7 @@
   - **S2 ✅**（commit `eb71707`）：排印 token 四级阶梯（display 20/title 15/body 13/caption 11 + lh/weight/tracking）+ `--font-ui`（Inter→**Segoe UI Variable Text 原生优先链**，零打包字节——Inter woff2 打包留待用户明确要求）+ `--font-mono`（Cascadia Mono→Consolas）；**数值轨**（.tnum/.tnum-mono + 直接应用于 .metric strong/.status-panel strong/.grid-fps-hint 遥测载体，tabular figures）；字阶锚点应用（workspace 标题 26px 离群值→display、panel/topbar 标题→title、eyebrow→caption+大写）；**顺带修复 S1 潜伏断裂**（`//` 行内注释非合法 CSS，曾在旧 out/ 的 E2E 门禁下漏网——教训：CSS 改动后必须 rebuild 再跑 E2E）；门禁：rebuild 后 build + 全量 118/1080 + **E2E 26/26（新 out/）** + 9 快照。
   - **S3+S4 体系层 ✅**（本 commit）：形状与空间 token（--radius-s/m/l + --space-1..8 4px 网格）+ **按钮四原型四态矩阵**（primary 填充/secondary/ghost/danger × hover/pressed/focus-visible/disabled，token 化）+ **全局 focus-visible 焦点环**（accent 2px+offset，仅键盘触发）+ 统一 disabled 处理 + **状态容器化**（.status-pill 六语义变体含 busy spinner——「校准中」类裸文本状态的载体）+ **动效系统**（--motion-fast/slow + --ease-standard + fade-in/slide-up 语义原语 + **prefers-reduced-motion 全局降级**）；门禁：build + 全量 118/1080 + E2E 26/26 + 9 快照。
   - **S3 逐 view 批次 / S5（亮色主题+原生质感）：待续**——1293 类的逐 view 精修与 pixelmatch 硬门禁接线、亮色主题双指向按方案后续批次执行（每批次独立验收）。
-- **R148.8 状态**：🔄（S0/S1/S2/S3+S4 体系层 ✅；S3 逐 view 批次 + S5 待续；真机视觉验收 pending 用户）
+- **R148.8 状态**：🔄（S0/S1/S2/S3+S4 体系层 ✅；**pixelmatch 硬门禁已由 R152 接线**——S3 批次起每批必跑 `yarn ui:snapshot`；S3 逐 view 批次 + S5 待续；真机视觉验收 pending 用户）
 
 ### R149. 两项实测修复——AI 实验室裸按钮样式 + 体感体检左手瘫痪（2026-09-21 用户实测「AI 整理/中英互译/开始体检/停止/重新校准/跳过校准/计数清零等按钮没有样式；体感测试只有右手能测、组合行只有张掌能检测到，很多细节测不到」）
 
@@ -3049,3 +3049,25 @@
   - 门禁：typecheck ✅；全量 `yarn test` **119 files / 1083 passed / 0 失败**（AiLabVisionTab 13 用例 / DashboardView / AiLabView **零修改通过**——折叠行留 DOM 的设计兑现）；`yarn build` ✅。CDP E2E `verify-r144-vision-lab.mjs` 因 T2 存量路径问题本机不可跑（review §3 已记录，非本次回归）；以运行时探针替代验证。
   - 运行时探针（temp CDP，1440×900）：仪表盘 **8 tile / 8 tint / computed backgroundColor 8 种互不相同**（rgba(66,232,169,.14)/rgba(167,139,250,.14)/…）；音频进度条 **1010→428px**（cluster 520 顶格），时间贴条两端对称（484/484），行高 30 契约保持；体感 **24 行全在 DOM / 7 组头 / 首屏可见 0 行（全折叠）/ 点击组头展开 3 行 / stop 按钮 display:none（渐进披露）**；诊断 **4 卡**（帧与时延/渲染管线/环境/各进程 CPU）+ 2 mini-bar；「环境」卡 1Hz 轮询后 provider 行实测显示 `desktop-capturer`。
 - **R151.8 状态**：✅（自动化 + 探针闭环；haiku 视觉复核 + 用户真机为最终验收）
+
+### R152. 门禁工具链三雷修复——playwright 仓库化(T2) + 陈旧产物 fail-fast(T1) + 基线保护(T3) + pixelmatch 硬门禁接线（2026-09-22 用户选定下一步方向「修 T1/T2 门禁 + R148 S3 续批」；问题实锤：review [`§3`](../reviews/2026-09-22-ui-visual-review.md) + R151.7 的 E2E 不可跑记录）
+
+> 背景：R148 S3 逐 view 批次的「9 快照 + pixelmatch 硬门禁」在工具链修复前无法执行；R151 验收时 CDP E2E 被迫以运行时探针替代。全仓实测 **38 个 CDP 脚本 import 写死他人机器路径**（`C:/Users/tjf/...` npm 全局 playwright ×24 / `%TEMP%\pw-cdp` 临时 playwright-core ×8+ / LOCALAPPDATA 探测链 ×3），且发生过 **out/ 半新产物事故**（main 新 renderer 旧两天，首轮 9 张截图全部作废）。本条为 R148 S3 batch-2+ 的前置门禁修复。
+
+- **R152.1 T2 playwright 仓库化**：`playwright-core` 加入 devDependencies（`connectOverCDP` 纯库、无浏览器下载 postinstall）；新增 `scripts/lib/cdp.mjs` 共享模块（统一导出 `chromium` + electron spawn/CDP connect 骨架，可选复用）；38 个脚本 import 行机械替换为仓库依赖（含活跃的 `ui-snapshot.mjs` / `verify-r144-vision-lab.mjs`），他人机器路径在 import 层面全部消灭（3 个历史脚本的功能性媒体文件路径 `C:\Users\tjf\Downloads\...` 允许保留——改后脚本可启动、按需报文件缺失而非 import 崩溃）。
+- **R152.2 T1 陈旧产物 fail-fast**：快照/E2E 脚本启动前校验 out/ 新鲜度——`out/main/index.js` 与 `out/renderer/assets/*.css` 的 mtime 均不得早于 `git log -1 --format=%ci -- src/ electron.vite.config.* package.json`；不一致即 exit 1 并提示先 `yarn build`（防 main/renderer mtime 不一致的半新产物复发）。校验逻辑入 `scripts/lib/cdp.mjs` 供复用。
+- **R152.3 T3 基线保护**：快照输出目录分离——受信基线 `docs/ui-baseline/`（git 跟踪，现 9 张）不被重跑覆盖；常规重跑产物入 `docs/ui-baseline/current/`、diff 图入 `docs/ui-baseline/diff/`（二者 gitignore）；`--update-baseline` 显式覆盖基线。
+- **R152.4 pixelmatch 硬门禁**：`pixelmatch` + `pngjs` 入 devDependencies；`ui-snapshot.mjs --compare` 模式 9 view 逐张像素比对（尺寸不一致即 fail；diff 率阈值默认 0.1%/张、按 view 可配置——含动态 canvas 预览/遥测数字的 view 实测校准噪声水平并记录，必要时注入冻结手段）；超阈 exit 1 + diff 图落盘 + 汇总表。R148 方案要求的硬门禁自此接线完成，S3 逐 view 批次起每批必跑。
+- **R152.5 package.json scripts 段**（本条专门新增 scripts，CLAUDE.md「不擅改 scripts」例外的显式援引）：`ui:snapshot` = 拍 current + compare 门禁；`ui:snapshot:update` = 重拍受信基线。
+- **R152.6 基线重置 + E2E 恢复**：以 HEAD（R151 后）重拍 9 view 入受信基线；`verify-r144-vision-lab.mjs` 在仓库依赖下复跑恢复绿色（R151.7 遗留的 T2 阻塞就此闭环）。
+- **R152.7 验收点**：①`node scripts/ui-snapshot.mjs` 本机零临时目录依赖直跑 9/9；②陈旧 out/ 模拟（回拨 assets mtime）→ fail-fast exit 1 生效；③无改动重跑 `--compare` 9/9 通过（阈值口径内）；人为改一处 CSS + rebuild → compare 命中该 view 且 exit 1，revert 后复绿；④`yarn test` 全量 0 失败 + hex lint 保持 0；⑤`scripts/` grep import 路径 `C:/Users|pw-cdp` 0 命中。
+- **R152.8 实施证据（2026-09-22，glm-5.3 会话，全程无视觉 review）**：
+  - 依赖：`playwright-core@1.63.0` + `pixelmatch@7.2.0` + `pngjs@7.0.0` 入 devDependencies（npmmirror 镜像，151s）；`package.json` scripts 段新增 `ui:snapshot` / `ui:snapshot:update`。
+  - **T2**：`scripts/lib/cdp.mjs`（chromium/assertFreshOut/launchElectron/connectRenderer 四导出）+ 38 脚本 import 替换（32 个机械替换 + r117/r121 探测链手工收敛 + ui-snapshot 重写）；grep `C:/Users|pw-cdp` **0 命中**（反斜杠残留 = 3 个历史脚本的 `C:\Users\tjf\Downloads\*.mp4` 功能性媒体路径，按 R152.1 约定保留——改后可启动、按需报文件缺失）。
+  - **T1**：`assertFreshOut()` 以 max(src 递归 mtime, 构建配置 mtime, `git log -1 -- src/`) 为基准校验 `out/main/index.js` 与 `out/renderer/assets/*.css`（取最旧）；模拟回拨 assets mtime 3h → `STALE BUILD … CSS stale (2026-09-21T22:22 < sources 2026-09-22T01:10)` + **exit 1**；`verify-r144` 同步接线。
+  - **T3 + 硬门禁**：基线（git 跟踪）与重跑产物 `current/`、`diff/` 分离（后二者 gitignore）；`--compare` pixelmatch 门禁 + **canvas 全遮罩**（拍时记 `*.boxes.json`，比对前双图 canvas 区域置零——architecture rAF 场景实测 0.43% 且 demo 切镜无上界、effects 7 canvas 随机相位 0~0.79%，canvas=「舞台」内容层不入 chrome 门禁；canvas 位移时非重叠矩形仍会 diff → 门禁不漏）；阈值校准：默认 0.1%，workspace/video 0.2%（**跨启动 1px 布局线抖动**实测 0.05~0.12%，判别实验：同进程双拍 0.0000% 证明非内容动画；真回归量级远超——单按钮变色 ≈1 万+ px vs 0.2%≈2592px）。
+  - 门禁红绿双向：注入 `.dash-tile` 红描边 + rebuild → **dashboard 1.6457% OVER LIMIT、其余 8 view 0.0000%、exit 1**；revert + rebuild → **GATE PASS exit 0**；无改动连跑三轮独立启动 compare 全绿。
+  - **E2E 恢复（R151.7 遗留闭环）**：`verify-r144-vision-lab.mjs` 仓库依赖下复跑 **26/26 PASS**（R151 折叠改动在真 E2E 零回归）。
+  - 全量 `yarn test` **119 files / 1083 passed / 41 skipped / 0 失败**；hex lint **0 violations**；基线 9 view 以 HEAD 重拍入档（games.png 字节级未变——纯静态页编码确定性）+ 9 `*.boxes.json` 入库。
+- **R152.9 S3 续批入口**：门禁恢复后 R148 S3 逐 view 精修 batch-2 起按 review §6 顺序继续，每批证据追加至 R148.7（批次内容不在本条展开，R148.8 状态随之推进）。
+- **R152.10 状态**：✅（自动化 + 红绿双向门禁闭环；无视觉 review 约束下完成，基线图供后续 haiku 会话/用户查阅）

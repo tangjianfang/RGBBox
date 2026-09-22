@@ -7,15 +7,9 @@
  * Video polling is 5s/tick in the app; the mock answers after the FIRST tick so
  * the whole flow completes in seconds.
  */
-let chromium
-for (const candidate of [
-  `file:///${process.env.LOCALAPPDATA ?? 'C:/Users/tjf/AppData/Local'}/Temp/pw-cdp/node_modules/playwright-core/index.mjs`,
-  'file:///C:/Users/tjf/node_modules/playwright-core/index.mjs',
-  'file:///C:/Users/admin/AppData/Local/Temp/pw-cdp/node_modules/playwright-core/index.mjs',
-]) {
-  try { ({ chromium } = await import(candidate)); break } catch {}
-}
-if (!chromium) { console.error('FAIL playwright-core not found (see script header)'); process.exit(1) }
+// R152: playwright-core is a repo devDependency now (the candidate list above
+// used to probe other machines' %TEMP%/profile installs and died elsewhere).
+import { chromium } from 'playwright-core'
 
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'

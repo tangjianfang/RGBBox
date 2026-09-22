@@ -3,7 +3,7 @@
  * Play a movie → switch to the AI view → assert audio keeps playing, the mini
  * card renders non-black mirrored frames, drag/resize state, return + close.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 

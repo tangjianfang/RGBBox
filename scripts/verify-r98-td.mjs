@@ -3,7 +3,7 @@
  * panel → sell refund → auto wave, status bar, speed toggle, best chip.
  * Zero page errors expected throughout.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const results = []

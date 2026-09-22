@@ -3,7 +3,7 @@
  * CDP, run the DTLN denoise round-trip — proves the PRUNED onnxruntime-node
  * native binding loads and infers inside the packaged app. Plus a UI smoke.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 

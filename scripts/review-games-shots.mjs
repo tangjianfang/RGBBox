@@ -2,7 +2,7 @@
  * R96 review: per-game screenshots (ready + mid-play) + runtime probes
  * (console errors, FPS sample, canvas activity). Closes the browser handle.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const OUT = 'docs/screenshots'

@@ -3,7 +3,7 @@
  * automatically, boss killed, roulette claimed (build grows), player wiggles
  * into the portal, island advances. Also captures the zh TD ready overlay.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const results = []

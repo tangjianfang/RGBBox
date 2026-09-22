@@ -5,7 +5,7 @@
  *   Phase B — restart the app: fresh boot must land in the player with the
  *             last movie auto-loaded (paused) + resume prompt, zero clicks.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 

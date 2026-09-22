@@ -3,7 +3,7 @@
  * settle path persists achievements after a real run death (Glass Heart makes
  * the run short), toast + localStorage verified.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const results = []

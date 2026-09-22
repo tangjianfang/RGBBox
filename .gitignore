@@ -14,3 +14,7 @@ release-v*/
 *.ksplat
 *.spz
 *.ply
+
+# R152 T3: snapshot re-runs & pixelmatch diffs never touch the trusted baseline
+docs/ui-baseline/current/
+docs/ui-baseline/diff/

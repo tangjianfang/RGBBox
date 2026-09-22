@@ -2,7 +2,7 @@
  * R102 real fullscreen (HTML5 Fullscreen API fills the display) +
  * R103 gamepad support (injected getGamepads stub, presence chip + Start).
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const results = []

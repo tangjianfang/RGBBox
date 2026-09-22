@@ -14,7 +14,8 @@
  * Usage: node scripts/verify-r144-vision-lab.mjs
  * (build first: yarn build — this drives out/ with the dev electron binary)
  */
-import { chromium } from 'file:///C:/Users/admin/AppData/Local/Temp/pw-cdp/node_modules/playwright-core/index.mjs'
+import { chromium } from 'playwright-core'
+import { assertFreshOut } from './lib/cdp.mjs'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 
@@ -26,6 +27,7 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`)
 }
 
+assertFreshOut() // R152.2: refuse a stale/partial out/ build
 const electron = spawn('node_modules/electron/dist/electron.exe', [`--remote-debugging-port=${PORT}`, 'out/main/index.js'], { stdio: 'ignore' })
 process.on('exit', () => { try { electron.kill() } catch {} })
 

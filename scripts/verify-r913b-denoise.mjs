@@ -5,7 +5,7 @@
  * (wet path active), playback survives, strength slider works, disable works,
  * zero page errors. Audio quality itself is a human-ear acceptance item.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 

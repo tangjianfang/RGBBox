@@ -5,17 +5,9 @@
  * import, code-block save-to-file. ALL ai8.rcouyi.com traffic is mocked via
  * page.route — zero credits, zero token needed.
  */
-// R120: portable playwright-core resolution (the original hardcoded an admin
-// profile temp path; machines differ — first hit wins)
-let chromium
-for (const candidate of [
-  `file:///${process.env.LOCALAPPDATA ?? 'C:/Users/tjf/AppData/Local'}/Temp/pw-cdp/node_modules/playwright-core/index.mjs`,
-  'file:///C:/Users/tjf/node_modules/playwright-core/index.mjs',
-  'file:///C:/Users/admin/AppData/Local/Temp/pw-cdp/node_modules/playwright-core/index.mjs',
-]) {
-  try { ({ chromium } = await import(candidate)); break } catch {}
-}
-if (!chromium) { console.error('FAIL playwright-core not found'); process.exit(1) }
+// R152: playwright-core is a repo devDependency now (the candidate list above
+// used to probe other machines' %TEMP%/profile installs and died elsewhere).
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 

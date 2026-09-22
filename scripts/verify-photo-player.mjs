@@ -2,7 +2,7 @@
  * R92 Phase-1 live repro: drive the REAL 拍照 / 局部截图 buttons while a movie
  * plays in player mode; collect page errors + resulting capture cache.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { mkdirSync, writeFileSync } from 'node:fs'

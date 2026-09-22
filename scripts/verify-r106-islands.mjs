@@ -3,7 +3,7 @@
  * clean. The boss→portal→island chain needs a 90s+ run and is covered by unit
  * tests plus the R109 long-run finale.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const results = []

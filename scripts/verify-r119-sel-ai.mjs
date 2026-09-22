@@ -4,7 +4,7 @@
  * The hotkey→SendKeys→window flow is OS-level (CDP cannot inject it — same
  * R112 lesson) and is left for manual verification.
  */
-import { chromium } from 'file:///C:/Users/admin/AppData/Local/Temp/pw-cdp/node_modules/playwright-core/index.mjs'
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 

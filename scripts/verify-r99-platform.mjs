@@ -3,7 +3,7 @@
  * Nova Swarm run (move + auto-fire kills + score), fullscreen toggle,
  * sfx toggle persistence. Zero page errors expected throughout.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const results = []

@@ -3,7 +3,7 @@
  * loads from ai8.rcouyi.com (no token needed), no-token send is guarded, a
  * fake token persists, and a send with it surfaces a graceful business error.
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const results = []

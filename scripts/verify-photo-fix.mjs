@@ -2,7 +2,7 @@
  * R92 Phase-3 minimal hypothesis test: PLAYING video (real frames) ± crossOrigin.
  * Expect: plain → SecurityError (taint); anonymous → PNG export OK (ACAO:* on media://).
  */
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 

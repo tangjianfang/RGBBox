@@ -9,7 +9,7 @@
  * ⑤ a bad password surfaces the failure hint (credentials stay saved);
  * ⑥ clear removes the file.
  */
-import { chromium } from 'file:///C:/Users/admin/AppData/Local/Temp/pw-cdp/node_modules/playwright-core/index.mjs'
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { createServer } from 'node:http'

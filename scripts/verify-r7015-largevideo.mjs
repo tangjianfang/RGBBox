@@ -10,7 +10,7 @@
  * Fails if the electron process dies at any point.
  */
 // playwright is installed globally (not a repo dependency)
-import { chromium } from 'file:///C:/Users/tjf/AppData/Roaming/npm/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 
