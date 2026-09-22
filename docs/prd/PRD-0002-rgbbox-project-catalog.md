@@ -3136,3 +3136,20 @@
   - 产出：[`docs/reviews/2026-09-23-test-scoring-deep-review.md`](../reviews/2026-09-23-test-scoring-deep-review.md)——含 S1-S6 冲刺 99+ 批次路线图（门禁恢复→E2E 矩阵→体积预算→探针资产化→UI 打磨→审计激活+还债），并收编 R155 建议书 B1-B11/P-1~P-3 与 R148 S3/R13 的衔接关系。
   - 边界兑现：`src/` / tests/ / scripts/ / package.json 0 diff；commit 仅含 PRD + 评分文档。
 - **R156.5 状态**：✅（规划条款闭环；S1-S6 全部待用户批准后另行立项）
+
+### R157. 规划：苹果软件开发标准重评分——R148 内部标准 vs Apple HIG/性能预算双标尺对照（2026-09-23 用户指令「顶级商业软件评分标准是什么？可以按照苹果软件开发的标准来执行重新评分吗」；本条为规划条款，只读研究，产出对照文档，实施轮另行开工）
+
+> 性质：只读研究轮（L0），`src/` 0 diff。产出：[`docs/reviews/2026-09-23-apple-standard-rescoring.md`](../reviews/2026-09-23-apple-standard-rescoring.md)。
+
+- **R157.1 标准澄清**：§1 先回答「现有标准是什么」——R148.1 九维加权体系（色彩15/排印15/组件态15/间距布局12/交互反馈10/可访问性10/动效8/平台原生感8/治理一致性7，基线 5.5/10，目标 98/100 诚实分 95）；再将其与 Apple 公开标准（HIG + App Review Guidelines + WWDC 性能预算）做映射。
+- **R157.2 苹果锚点核实**：首帧 ≤400ms（WWDC 2019 launch 指引）；主线程无响应 >250ms 记 hang（MetricKit `MXHangDiagnostic` 口径）；动画 60fps（ProMotion 120）；对比度 4.5:1（HIG Accessibility）；Dynamic Type 文字缩放为必达（非加分项）。
+- **R157.3 十维苹果标尺重评分**（含补采证据）：0 处 `prefers-color-scheme`（暗色单主题）、0 处 rem/308 处 px 字号（文字缩放不支持）、reduced-motion ✅/focus-visible ✅（R148 S3+S4 已落）、i18n 键位 728/728 满对齐但 `defaultProfile.ts` 效果描述等英文数据字面量直出（R150.6 遗留定位）、完整冷启动/hang/崩溃遥测缺失。
+- **R157.4 产出对照与修订路线**：苹果标尺综合分 vs 内部 91 分的差值归因（可及性/运行时遥测/主题/内容翻译四大缺口）；R156 S1-S6 路线的苹果标准修订版（新增 A1-A6 补强批，含 rem 化大工程与内容翻译独立 R-N 建议）。
+- **R157.5 边界**：不改任何代码；A1-A6 与 S1-S6 全部待用户批准后另行立项。
+- **R157.7 实施证据（2026-09-23，glm-5.3 会话，只读研究轮）**：
+  - 重评分：苹果十维标尺综合 **80.85 ≈ 81/100**（内部 91 对照）——启动与流畅 80 / 内存能效 85 / 设计 HIG 78 / **可访问性 62（最大缺口）** / 本地化 82 / 稳定性 85 / 隐私安全 90 / 错误空态 86 / 平台集成 82 / 工程卓越 84。
+  - 补采证据（含一次自纠错）：`prefers-color-scheme` 全站 0 处（暗色单主题）；`rem` 0 处 vs `font-size: *px` 308 处（Dynamic Type 等价缺失实锤）；reduced-motion 3 处 ✅ / focus-visible ✅（R148 S3+S4 已落）；aria-label 60 + role 27（密 UI 偏薄）；**i18n 键位 728/728 满对齐 0 缺失**（首轮统计 213 缺失为脚本切片错误，已按 `const EN/ZH` 边界重测纠正）；英文直出实锚定 `src/shared/defaultProfile.ts` 效果描述数据字面量（R150.6 预留债定位）。
+  - 苹果锚点核实：首帧 ≤400ms（WWDC2019）/ hang >250ms（MetricKit `MXHangDiagnostic`）/ 60fps / 对比度 4.5:1（来源见文档 §1 链接）。
+  - 产出：文档 §4 修订路线 A1-A6（性能遥测/rem 化/阅读器面/对比度/内容翻译/亮色主题），与 R156 S1-S6 合并推演：轻量三件 ~1 周 → 苹果口径 86-88；重型三件 3-4 周 → 93-95；98 需 R148-S5 全兑现（与 R148 诚实分口径一致）。
+  - 边界兑现：`src/` / tests/ / scripts/ 0 diff；commit 仅含 PRD + 对照文档。
+- **R157.6 状态**：✅（规划条款闭环；A1-A6 待用户批准后另行立项）
