@@ -3121,3 +3121,18 @@
   - 交付物：[`docs/reviews/2026-09-22-full-test-report.md`](../reviews/2026-09-22-full-test-report.md)（按模块/功能：门禁八项 + coverage 逐模块 + bundle + 探针 + 逐 view 纪要）+ [`docs/reviews/2026-09-22-issues-recommendations.md`](../reviews/2026-09-22-issues-recommendations.md)（B1-B11 + P-1~P-3 建议与落地排序）。
   - 边界兑现：`src/` / tests/ / scripts/ / package.json **0 diff**；coverage 输出与探针脚本均在仓库外；commit 仅含 PRD + 两份报告。
 - **R155.7 状态**：✅（只读测试轮闭环；B1 coverage 债与 P3/P4 打磨项待用户批准后另行立项）
+
+### R156. 规划：R155 全量测试结果百分制评分 + 低分维度深度 review 与头脑风暴——冲 99+ 优化方案（2026-09-23 用户指令「所有测试结果按 100 分满分打分，低于 99 分的重新深度 review 和头脑风暴，提供优化方案」；本条为规划条款，产出方案文档，实施轮另行开工）
+
+> 输入：R155 八项门禁跑批结果 + 补采证据（对比度审计、skip 分布、styles chunk 成分、ts 豁免扫描、E2E 脚本清点）。性质：只读研究轮，`src/` 0 diff。产出：[`docs/reviews/2026-09-23-test-scoring-deep-review.md`](../reviews/2026-09-23-test-scoring-deep-review.md)。
+
+- **R156.1 评分**：9 维度百分制（公开扣分公式 + 证据锚点），加权综合分；≥99 视为满分通过，<99 逐项进入深度 review。
+- **R156.2 深度 review**：每个低分维度做根因链拆解（不止于 R155 的现象记录）——coverage 结构性失守的成因分层、E2E「一次性 verify 脚本 vs 可复归套件」的模式债、bundle 构成失控点（styles 750KB=lucide 全量嫌疑实锤）、像素门禁噪声源定位、审计器空转（contrast pairs=0）、运行时探针的深度缺口。
+- **R156.3 头脑风暴 + 终案**：每维度给方案矩阵（保守/标准/激进 ≥2 选项）+ 推荐终案（含验收点、风险级、预估工作量、依赖关系），并给出批次化路线图（门禁恢复 → E2E 矩阵 → 体积预算 → 探针深化 → UI 打磨 → 审计激活）。
+- **R156.4 边界**：本条不实施任何修复/测试代码；方案落地需用户批准后另立 R-N（衔接 R155 建议书 B1-B11 与 R148 S3 遗留）。
+- **R156.6 实施证据（2026-09-23，glm-5.3 会话，只读研究轮）**：
+  - 评分：9 维度加权综合 **90.75 ≈ 91/100**（typecheck 100 / 单测通过率 99 / coverage 80 / 构建体积 88 / 像素门禁 96 / E2E 广度 85 / 色彩可及性审计 90 / 运行时健康 95 / UI 视觉 90）；8 个 <99 维度全部完成根因链拆解 + 方案矩阵 + 终案。
+  - 补采证据实锤：对比度审计 `pairs checked: 0`（审计器空转，可及性未测）；41 skip 全为**无条件 `it.skip`**（9 文件 GPU 路径，本机 `gl` 在库可条件化激活）；`styles-*.js` 750KB 内含 lucide 全量图标（36 处标记）+ data:image（全量 import 嫌疑实锤）；`src/` `@ts-*` 豁免 0 命中；verify 类一次性脚本 34 个清点。
+  - 产出：[`docs/reviews/2026-09-23-test-scoring-deep-review.md`](../reviews/2026-09-23-test-scoring-deep-review.md)——含 S1-S6 冲刺 99+ 批次路线图（门禁恢复→E2E 矩阵→体积预算→探针资产化→UI 打磨→审计激活+还债），并收编 R155 建议书 B1-B11/P-1~P-3 与 R148 S3/R13 的衔接关系。
+  - 边界兑现：`src/` / tests/ / scripts/ / package.json 0 diff；commit 仅含 PRD + 评分文档。
+- **R156.5 状态**：✅（规划条款闭环；S1-S6 全部待用户批准后另行立项）
