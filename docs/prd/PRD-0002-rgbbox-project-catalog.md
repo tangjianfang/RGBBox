@@ -3103,3 +3103,21 @@
   - **门禁立功实录**：首次 CSS 按行号删段时，段边界正则（匹配 `───` 装饰线头）漏掉紧邻的 **R142-E4b 段**（`vision-assistant-pill/radial/chord-trainer` 等注释头无装饰线），106 行手势助手样式被整段误删 → `yarn ui:snapshot` 当场抓获（8 view 一致 ~2.9% 底部条带 diff，games 例外）→ 探针定位 pill 全宽变形 → 从 HEAD 恢复该段 → GATE PASS。**R152 门禁建成后的首次实战拦截**；另有一处 i18n 行号切片差一误删 `'ai.lab.provider'`（zh 表），由 TS2741 捕获恢复。
   - 验收五项：①typecheck 0 error；②全量 `yarn test` **118 files / 1081 passed / 0 失败**（= 119-1 文件 / 1083-2 用例，对账精确）；③`yarn build` 绿；④`src/` grep `selectionAi|sel-ai|sel\.ai` **0 命中**；⑤`yarn ui:snapshot` **GATE PASS**（划词为独立浮窗，9 view 零 diff 符合预期）。
 - **R154.7 状态**：✅（自动化闭环；托盘菜单/热键/浮窗全链路移除，无死代码）
+
+### R155. 全量自动化测试执行 + 测试报告 + 问题建议书——只读测试轮（2026-09-22 用户指令「清理本地视觉 review 数据 → 规划全量自动化测试 → 按模块生成详细测试报告 → bug/UI 布局/性能优化建议书；只测试，不修复代码」）
+
+> 性质：**只读测试轮**（L0）。产品代码 `src/` 0 diff；产出 = 本地产物清理 + 全量门禁执行 + 两份报告文档（[`docs/reviews/2026-09-22-full-test-report.md`](../reviews/2026-09-22-full-test-report.md) + [`docs/reviews/2026-09-22-issues-recommendations.md`](../reviews/2026-09-22-issues-recommendations.md)）。发现的缺陷只记录成建议，不落地修复。
+
+- **R155.1 本地视觉 review 数据清理**：删除 gitignored 的 `docs/ui-baseline/current/`（重跑截图）与 `docs/ui-baseline/diff/`（pixelmatch diff 图）；git 跟踪的受信基线 `docs/ui-baseline/*.png|*.boxes.json` 不动（R152.3/T3 保护对象）。
+- **R155.2 全量自动化门禁执行**：①`yarn typecheck`（node+web）；②全量 `yarn test`（vitest）；③coverage 跑批（`--coverage.reportsDirectory` 指向仓库外临时目录，避免弄脏 git 跟踪的 `coverage/` HTML 报告）；④`yarn build` 新鲜产物；⑤`yarn ui:snapshot`（compare 模式 pixelmatch 硬门禁，9 view）。
+- **R155.3 只读视觉复核 + 运行时探针**：9 view 截图逐张目检（沿用 R150 P1-P4 分级）；临时 CDP 探针（仓库外 temp 脚本）收集各 view console error/warning + JS heap + 帧率遥测。不新增仓库脚本文件。
+- **R155.4 交付物一《测试报告》**：按模块/功能组织（engine / main / preload+shared / renderer 组件 / 集成 / 视觉门禁 / 运行时健康），含通过率、coverage 数字、门禁逐 view diff 率表。
+- **R155.5 交付物二《建议书》**：本轮新发现 bug + UI 布局 + 性能优化建议，P1-P4 分级，每条附证据与建议修法（不实施）；与 R150 已修复项交叉核对防误报复发。
+- **R155.6 边界**：不改 `src/`、不改测试文件、不改 scripts/、不改 package.json；临时脚本与 coverage 输出全部落在仓库外。
+- **R155.8 实施证据（2026-09-22，glm-5.3 会话，只读测试轮）**：
+  - 清理：`docs/ui-baseline/current/` + `diff/` 已删（~1.4MB gitignored 本地产物）；受信基线 18 文件未动，清理前后 `git status` 均 clean。
+  - 门禁八项：typecheck 0 error（7.1s）；全量 `yarn test` **118 files / 1081 passed / 41 skipped / 0 失败**（69.4s）；coverage **❌ exit 1**（lines 61.91%<75 / branches 48.66%<60 / functions 51.24%<60 / statements 59.40%<75，→ 建议书 B1，为日常 `yarn test` 绿、`test:coverage` 路径红的门禁配置债）；`yarn build` ✅（23.2s）；`yarn ui:snapshot` **GATE PASS exit 0**（9/9，最大 video 0.0574%<0.2%，diff 图定位=摄像头设备名文字时序噪声）；CDP E2E `verify-r144-vision-lab.mjs` **27/27 PASS**；hex 审计 **0 violations**；运行时探针（%TEMP% 临时脚本，仓库外）：启动 365ms、9 view console error/warning/pageerror/请求失败全 0、JS heap 15MB、view 挂载 29~280ms。
+  - 视觉复核：9 view 实拍逐张目检——R150/R151/R153 十三项历史修复**零回归**（W1/W2/E1/E2/I1/I3/V1/A1/A2/R151.1/R151.2/R151.4/R153 全在位）；新观察 8 项均 P3/P4（其中 G1 pill 挤压 / I2 表单失衡为 R150.6 显式遗留，实拍确认仍在），无 P1/P2 硬伤。
+  - 交付物：[`docs/reviews/2026-09-22-full-test-report.md`](../reviews/2026-09-22-full-test-report.md)（按模块/功能：门禁八项 + coverage 逐模块 + bundle + 探针 + 逐 view 纪要）+ [`docs/reviews/2026-09-22-issues-recommendations.md`](../reviews/2026-09-22-issues-recommendations.md)（B1-B11 + P-1~P-3 建议与落地排序）。
+  - 边界兑现：`src/` / tests/ / scripts/ / package.json **0 diff**；coverage 输出与探针脚本均在仓库外；commit 仅含 PRD + 两份报告。
+- **R155.7 状态**：✅（只读测试轮闭环；B1 coverage 债与 P3/P4 打磨项待用户批准后另行立项）
