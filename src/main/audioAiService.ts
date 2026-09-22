@@ -57,7 +57,9 @@ export function resetAudioAi(): void {
 }
 
 function requireState(): ServiceState {
-  if (!state) throw new Error('audioAiService not initialized — call initAudioAi() first')
+  // R159.4 (AI5): stable machine code prefix — the renderer maps known codes
+  // to localized text instead of putting this English sentence on screen.
+  if (!state) throw new Error('AUDIOAI_INIT: service not initialized')
   return state
 }
 
@@ -71,7 +73,7 @@ async function getSession(file: string, cacheKey: 'vadSession' | 'astSession'): 
   const cached = s[cacheKey]
   if (cached) return cached
   const url = await s.opts.findCached(file)
-  if (!url) throw Object.assign(new Error(`model not downloaded: ${file}`), { hint: 'not-downloaded' })
+  if (!url) throw Object.assign(new Error(`AUDIOAI_MODEL_MISSING: ${file}`), { hint: 'not-downloaded' })
   // R90 review fix: an unsettled promise must not be cached — a rejected
   // create (corrupt file) would otherwise fail every call until app restart.
   return ort.InferenceSession.create(url, { executionProviders: ['cpu'] })
@@ -221,7 +223,7 @@ export function feedStream(pcm: Float32Array): Promise<StreamFeedResult> {
 }
 
 async function feedStreamInner(pcm: Float32Array): Promise<StreamFeedResult> {
-  if (!stream) throw new Error('no active audio stream — call startStream() first')
+  if (!stream) throw new Error('AUDIOAI_STREAM: no active audio stream')
   requireState()
 
   // ── VAD: prepend any carry, then consume complete 1536 chunks ──

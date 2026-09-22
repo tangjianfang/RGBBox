@@ -858,6 +858,70 @@ input:not([type]):focus {
   font-weight: 600;
 }
 
+/* ── R158.3: crash record card (local-only visibility) ──────────────────── */
+
+.diag-crash-empty {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  margin: 0;
+  padding: 4px 16px 14px;
+}
+
+.diag-crash-list {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 4px 16px 14px;
+}
+
+.diag-crash-list li {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.diag-crash-time {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  white-space: nowrap;
+}
+
+.diag-crash-kind {
+  border-radius: var(--radius-s);
+  font-size: var(--text-caption-size);
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.diag-crash-kind.err {
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--status-error);
+}
+
+.diag-crash-kind.warn {
+  background: rgba(251, 191, 36, 0.14);
+  color: var(--status-warn-strong);
+}
+
+.diag-crash-msg {
+  color: var(--text-primary);
+  flex: 1;
+  font-size: var(--text-caption-size);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diag-crash-export {
+  flex-shrink: 0;
+  font-size: var(--text-caption-size);
+  padding: 2px 10px;
+}
+
 /* ── Layer row (new design with enable dot + delete) ────────────────────── */
 
 .layer-row {
@@ -6801,8 +6865,11 @@ input[type='range'].video-player-volume {
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 10px;
-  color: rgba(138, 162, 173, 0.4);
+  /* R158.2: rgba(...,0.4) slate sat at ~2.3:1 on the content bg — the one
+     contrast violation the visual reviews kept flagging. Solid text-muted
+     keeps the subdued tier while clearing 4.5:1; 10px → caption step. */
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
   pointer-events: none;
   letter-spacing: 0.3px;
   white-space: nowrap;

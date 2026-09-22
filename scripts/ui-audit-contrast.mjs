@@ -1,35 +1,49 @@
 /**
- * R148 S0: contrast auditor — statically pairs `color` with the nearest
- * `background`(-*) declaration in the same CSS rule and computes the WCAG
- * 2.1 contrast ratio. var() references resolve against :root tokens.
+ * R148 S0 / R158.2: contrast auditor.
  *
- * Static analysis caveats (documented, accepted): only same-rule pairs are
- * checked (inherited/cascaded backgrounds are invisible here), so this is a
- * LOWER bound on violations — good for tracking the S1 cleanup, not a full
- * a11y certificate.
+ * Two passes:
+ *  1. PAIR REGISTRY (R158.2 — the fix for the "pairs checked: 0" era):
+ *     tokens.css declares the semantic fg/bg combos that actually occur in
+ *     the UI as --pair-<name>-fg / --pair-<name>-bg; every declared pair is
+ *     checked. Same-rule scanning can never see these (fg and bg usually
+ *     live in different rules — text on card, status on panel…).
+ *  2. SAME-RULE scan (R148 S0 original): `color` paired with the nearest
+ *     `background`(-*) declaration in the same rule. Inherited/cascaded
+ *     backgrounds are invisible here — a lower bound, kept for tracking.
+ *
+ * R158.2 root-cause note: styles.css became a 3-line @import facade in R148
+ * S1 and this auditor kept reading just that file — zero rules matched, so
+ * "pairs checked: 0 / 0 violations" was hollow-true. @imports are now
+ * inlined before scanning.
  *
  * Usage: node scripts/ui-audit-contrast.mjs [--threshold 4.5]
  */
 import { readFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 
 const args = process.argv.slice(2)
 const thresholdIdx = args.indexOf('--threshold')
 const THRESHOLD = thresholdIdx !== -1 ? Number(args[thresholdIdx + 1]) : 4.5
-const css = readFileSync('src/renderer/src/styles.css', 'utf8')
 
-// ── token map (var → hex) ─────────────────────────────────────────────────
+/** Read a CSS file and inline its @import facade (relative hrefs). */
+const readCss = (p) => readFileSync(p, 'utf8')
+const entryPath = 'src/renderer/src/styles.css'
+const css = readCss(entryPath).replace(/@import\s+'([^']+)'\s*;/g, (_, href) => readCss(join(dirname(entryPath), href)))
+
+// ── token map (var → raw value; values may chain through var() refs) ────────
 const tokens = new Map()
-for (const m of css.matchAll(/(--[a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{3,8})\s*[;}]/g)) {
-  tokens.set(m[1], m[2])
+for (const m of css.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;}]+)/g)) {
+  tokens.set(m[1], m[2].trim())
 }
-const resolveColor = (value) => {
+const resolveColor = (value, depth = 0) => {
+  if (depth > 5) return null
   const v = value.trim()
-  if (v.startsWith('#')) return v
+  if (/^#[0-9a-fA-F]{3,8}$/.test(v)) return v
   if (v.startsWith('var(')) {
     const name = v.slice(4, v.indexOf(')')).split(',')[0].trim()
-    return tokens.get(name) ?? null
+    return tokens.has(name) ? resolveColor(tokens.get(name), depth + 1) : null
   }
-  return null // rgba()/named → skipped (lower bound tool)
+  return null // rgba()/named → skipped (documented limitation)
 }
 
 const srgbToLinear = (c) => {
@@ -50,9 +64,33 @@ const contrast = (a, b) => {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
 }
 
-// ── walk rules (one nesting level; nested selectors flattened by greedy scan) ──
 const violations = []
 let checked = 0
+let skipped = 0
+const check = (label, fgRaw, bgRaw) => {
+  const fgHex = resolveColor(fgRaw)
+  const bgHex = resolveColor(bgRaw)
+  if (!fgHex || !bgHex) { skipped++; return }
+  checked++
+  const ratio = contrast(fgHex, bgHex)
+  if (ratio < THRESHOLD) {
+    violations.push({ selector: label, fg: fgHex, bg: bgHex, ratio: Number(ratio.toFixed(2)) })
+  }
+}
+
+// ── pass 1: the --pair-* registry in tokens.css (R158.2) ────────────────────
+const pairFg = new Map()
+const pairBg = new Map()
+for (const m of css.matchAll(/--pair-([a-z0-9-]+)-(fg|bg)\s*:\s*([^;}]+)/g)) {
+  ;(m[2] === 'fg' ? pairFg : pairBg).set(m[1], m[3].trim())
+}
+for (const [name, fgRaw] of pairFg) {
+  const bgRaw = pairBg.get(name)
+  if (!bgRaw) continue // half-declared pair → not a pair
+  check(`pair:${name}`, fgRaw, bgRaw)
+}
+
+// ── pass 2: same-rule scan (R148 S0 original, lower bound) ──────────────────
 for (const ruleMatch of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
   const body = ruleMatch[2]
   const selector = ruleMatch[1].trim().replace(/\s+/g, ' ').slice(-90)
@@ -67,19 +105,13 @@ for (const ruleMatch of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
   const fg = decls['color']
   const bg = decls['background'] ?? decls['background-color']
   if (!fg || !bg) continue
-  const fgHex = resolveColor(fg)
-  const bgHex = resolveColor(bg)
-  if (!fgHex || !bgHex) continue
-  checked++
-  const ratio = contrast(fgHex, bgHex)
-  if (ratio < THRESHOLD) {
-    violations.push({ selector, fg: fgHex, bg: bgHex, ratio: Number(ratio.toFixed(2)) })
-  }
+  check(selector, fg, bg)
 }
 
 violations.sort((a, b) => a.ratio - b.ratio)
-console.log(`pairs checked: ${checked}   below ${THRESHOLD}:1 → ${violations.length}`)
-for (const v of violations.slice(0, 30)) {
+console.log(`pairs checked: ${checked}   (registry ${pairFg.size} declared, ${skipped} skipped: unresolved color)   below ${THRESHOLD}:1 → ${violations.length}`)
+for (const v of violations.slice(0, 40)) {
   console.log(`  ${String(v.ratio).padStart(5)}:1  ${v.fg} on ${v.bg}  ← ${v.selector}`)
 }
-if (violations.length > 30) console.log(`  … +${violations.length - 30} more`)
+if (violations.length > 40) console.log(`  … +${violations.length - 40} more`)
+process.exit(violations.length === 0 ? 0 : 1)

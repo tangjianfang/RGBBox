@@ -3032,7 +3032,7 @@
 - **R150.3 文案/语义修正**：E1 `effects.eyebrow` 45→**55**（双语，与 EffectKind 总数对齐）；V1 `video.eyebrow` 与标题重复→「采样 · 剪辑 · 标注」/「Sampling · Trim · Annotate」；V2 视频 resume「继续播放」降级 secondary（页脚「打开文件」保持唯一 accent primary）；A1 可视化 tab `Circular`/`Wave Ring` 硬编码→`t(audio.viz.*)`（zh 译文「圆形频谱」「波形环」本就存在，`AudioStudioView.tsx:2298` 三元删除）。
 - **R150.4 色彩纪律**：A2 音频滑杆 `accent-color: var(--status-info)`→`var(--accent)` ×2 处（`.audio-progress-bar` / `input[type='range'].audio-slider`，R72 遗留；生成器音量同 class 一并收敛）——状态色不上控件。
 - **R150.5 网格孤儿卡**：G2 `.dash-tiles` auto-fill(150px)→`repeat(4, 1fr)`（8 模块卡=4×2 两整行；<900px 媒体查询回落 2 列）；E2 `.effects-card-grid` minmax 190→230px（经典 tab 7 卡从 6 列孤行→5+2）。
-- **R150.6 显式不做（留后续）**：FX1 无输入效果黑缩略图（需静态样本生成）、G1 PiP/手势助手 pill 遮挡（需默认锚点设计）、I2 AI 表单布局、AI5 音频 tab 英文状态串本地化、AI6 对话空态、ST2 完整 toggle、ST3 设置页布局、T1/T2 工具链（snapshot 脚本可移植 + 陈旧 out/ 校验）——各属 S3 后续批次或独立 R-N；**i18n 内容翻译**（E3/AR1/G4/GM2）合并为一条待立项 R-N。
+- **R150.6 显式不做（留后续）**：FX1 无输入效果黑缩略图（需静态样本生成）、G1 PiP/手势助手 pill 遮挡（需默认锚点设计）、I2 AI 表单布局、AI5 音频 tab 英文状态串本地化、AI6 对话空态、ST2 完整 toggle、ST3 设置页布局、T1/T2 工具链（snapshot 脚本可移植 + 陈旧 out/ 校验）——各属 S3 后续批次或独立 R-N；**i18n 内容翻译**（E3/AR1/G4/GM2）合并为一条待立项 R-N（2026-09-23 更新：→ **已由 R159 承载实施**，含 AI5）。
 - **R150.7 review 更正**：ST1「开机启动启动」叠词为**误报**——OCR 逐字复核实为「开机自动启动」（i18n:1565 本就正确）；已在 review 文档标注。
 - **R150.8 验收点**：①`yarn typecheck` 绿；②全量 `yarn test` **119 files / 1083 passed / 0 失败**；③`yarn build` 绿（renderer 资产 mtime 已更新）；④W1/W2 DOM 探针复测通过（见 R150.1 数字）；⑤视觉复核**留给后续 haiku 会话**（用户指令：修复模型不做视觉 review）。
 - **R150.9 状态**：✅（2026-09-22 haiku 会话视觉复核 §11：十四项全部落位无回归；W1/W2 探针数字见 R150.1。用户真机为最终验收）
@@ -3135,7 +3135,7 @@
   - 补采证据实锤：对比度审计 `pairs checked: 0`（审计器空转，可及性未测）；41 skip 全为**无条件 `it.skip`**（9 文件 GPU 路径，本机 `gl` 在库可条件化激活）；`styles-*.js` 750KB 内含 lucide 全量图标（36 处标记）+ data:image（全量 import 嫌疑实锤）；`src/` `@ts-*` 豁免 0 命中；verify 类一次性脚本 34 个清点。
   - 产出：[`docs/reviews/2026-09-23-test-scoring-deep-review.md`](../reviews/2026-09-23-test-scoring-deep-review.md)——含 S1-S6 冲刺 99+ 批次路线图（门禁恢复→E2E 矩阵→体积预算→探针资产化→UI 打磨→审计激活+还债），并收编 R155 建议书 B1-B11/P-1~P-3 与 R148 S3/R13 的衔接关系。
   - 边界兑现：`src/` / tests/ / scripts/ / package.json 0 diff；commit 仅含 PRD + 评分文档。
-- **R156.5 状态**：✅（规划条款闭环；S1-S6 全部待用户批准后另行立项）
+- **R156.5 状态**：✅（规划条款闭环；S1-S6 全部待用户批准后另行立项。2026-09-23 更新：**S4 与 S6 前半（contrast）已并入 R158 承载实施**，其余批次仍待立项）
 
 ### R157. 规划：苹果软件开发标准重评分——R148 内部标准 vs Apple HIG/性能预算双标尺对照（2026-09-23 用户指令「顶级商业软件评分标准是什么？可以按照苹果软件开发的标准来执行重新评分吗」；本条为规划条款，只读研究，产出对照文档，实施轮另行开工）
 
@@ -3156,4 +3156,48 @@
   - **v2 综合 = 72.0/100**（v1 81 → 降 9 分）：启动流畅 80→60（冷启动/hang/60fps 三锚点 0 实测）、内存能效 85→70（单点快照）、设计 HIG 78→72（主题剔除+S3 未完）、可访问性 62→60、稳定性 85→75（crash-free 无遥测）、隐私 90→85、其余微调。
   - 三段结构：已验证 **72**（今天）→ 自动化可达 **~80-82**（A1 冷启动+hang+fps / A4 对比度 / S4 泄漏采样，AI 可执行，1-2 周）→ 自动化边界外 **93-95**（A2 rem 化 / A3 阅读器走查 / S5 原生质感，需人工重投入）。
   - 产出：评分文档 §6（v1 表保留作历史）。状态回写：R157.6 ✅ 维持。
-- **R157.6 状态**：✅（规划条款闭环；A1-A6 待用户批准后另行立项）
+- **R157.6 状态**：✅（规划条款闭环；A1-A6 待用户批准后另行立项。2026-09-23 用户批准「自动化可达批次」→ **A1/A4 由 R158 承载、A5 由 R159 承载**，A2/A3/A6 维持边界外）
+
+### R158. 实施：苹果标尺·自动化可达批次 A——性能遥测（A1+S4）/ 对比度审计激活（A4）/ 本地崩溃日志（2026-09-23 用户指令「按批次全部实现」；实施条款，承载 R157.4-A1 + R156-S4 + R157.4-A4（=R156-S6 前半）+ 稳定性缺口 local-first 解）
+
+> 性质：实施轮（L1 为主，触 src/main 的仅 R158.3 最小挂点）。锚点：R157.8 v2 三段结构之中段「自动化可达 ~80-82」——把「可自动化但未做」的测量债补齐：完整冷启动 / hang 计数 / fps 采样（维度1）、长时 heap 曲线（维度2）、对比度实测（维度4）、crash-free 本地可见（维度6）。崩溃可见性采**本地崩溃日志**方案（用户拍板）：落盘 + 诊断页展示 + 手动导出，不做任何联网上报——保住维度7 隐私 85 的 local-first 定位。
+
+- **R158.1 探针资产化 + A1 性能遥测**：新建 `scripts/probe-runtime.mjs`（复用 `scripts/lib/cdp.mjs` 的 `launchElectron`/`connectRenderer`/`assertFreshOut`，R155.3「不入库」约束就此解除）：
+  - ①**冷启动三段计时**：spawn 前打点 → CDP 首页出现 → `.module-rail` 可交互；×5 次出 p50/max 基线。苹果 400ms 锚点（iOS 原生口径）作参考线入档，**不硬设为 Electron 门禁**（Electron 含 Chromium spawn 天然吃亏，先出基线再定阈值）。
+  - ②**hang 计数**：注入 `PerformanceObserver('longtask')`，>250ms（MetricKit 口径）计 hang。
+  - ③**fps 采样**：rAF evaluate（`verify-r131-vision.mjs` 已验证模式复制），9 view 各采样。
+  - ④**S4 三采样**：开效果负载 30s → p95 帧时（诊断页 EngineMetrics 数据源直读）；30min 挂机 heap 曲线（`performance.memory` 定点）；交互脉冲（每 2s 切 tab + 拖滑杆）全程 console/pageerror 监控。
+  - `--quick` 档（冷启动+hang+fps，分钟级，供常态跑批）与全量档（含 30min heap）分离。
+- **R158.2 对比度审计激活 + 违例修复（A4 = R156-S6 前半）**：修 `scripts/ui-audit-contrast.mjs` 读 `styles/{tokens,base,app}.css` 三文件拼接（R148 S1 拆分后旧入口 `styles.css` 只剩 `@import` 导致 `pairs checked: 0` 空转——根因即在此，其余逻辑不动）；`tokens.css` 增 `--pair-*` fg/bg 语义配对组（text/surface 组合全枚举，40-60 对，R148 三层 token 的配对补全）；按配对计算 WCAG 4.5:1 断言；修复 `.arch-hint`（`app.css` 10px + 40% 透明石板灰低对比实锚，ArchitectureView 快捷键提示）及审计新发现违例；改 CSS 后 `yarn ui:snapshot` 基准按流程更新。
+- **R158.3 本地崩溃日志**：main 进程 `crashReporter.start({ submit: false })` 本地模式 + `process.on('uncaughtException'/'unhandledRejection')` → `userData/logs/` 落盘（轮转保留 N 份）；挂点 `app.whenReady`，不触碰 `src/main/index.ts` 既有 P0/P1 区域逻辑；DiagnosticsView 增崩溃日志卡（最近条数 + 导出，复用既有文件保存 IPC）。
+- **R158.4 边界**：A2 rem 化（R157.3 记 308 处 px，2026-09-23 复测实为 **~353**，口径以此为准）、A3 屏幕阅读器走查、A6/S5 亮色主题（用户指令排除）不在本条；R156-S1/S2/S3/S5 及 S6 后半（coverage 还债）走内部标尺轨道不混入；i18n 内容翻译由 **R159** 独立承载（兑现 R150.6+R157.4 预留语义）。
+- **R158.5 例外声明**：`package.json` scripts 段新增 `probe` 入口——本条 R-N 专门改 scripts（CLAUDE.md 禁改规则的本条援引例外）。
+- **R158.6 验收点**：①`yarn typecheck` / `yarn test` / `yarn build` 全绿；②`yarn probe --quick` 可重复执行且输出冷启动×5 / hang / 9 view fps 数字；③`ui-audit-contrast` `pairs checked ≥ 40` 且 0 violations；④崩溃→落盘→诊断页可见链路通（触发一次渲染进程异常验证）；⑤`yarn ui:snapshot` 门禁绿（基准按流程更新）；⑥基线数字入 `docs/reviews/` 报告（R155 式对照表）。
+- **R158.7 实施证据（2026-09-23，glm-5.3 会话，实施轮）**：
+  - 探针资产：`scripts/probe-runtime.mjs`（`yarn probe` / `yarn probe:full`，R155.3「不入库」约束解除）；基线报告 [`2026-09-23-probe-runtime-baseline.md`](../reviews/2026-09-23-probe-runtime-baseline.md) + 原始 JSON `docs/reviews/probe-runtime-latest.json`。冷启动探针修两处时序坑：CDP 轮询 60s 兜底 + kill 后等真退出（`requestSingleInstanceLock` 释放——第 5 轮静默死根因）。
+  - **首批实测数字**：完整冷启动（spawn 起算）空闲环境 p50 首帧 ~1084ms / rail 可交互 ~1204ms（系统并发编译时 3× 慢，2.2-4.2s——冷启动门禁须受控环境）；hang >250ms 全程 **0**；fps 7/9 view 64-65（effects 20 / architecture 27 为内容层 canvas 动画，非 UI chrome，入档为优化线索）；负载 p95 **23.6ms**（≤33ms 线 ✓，avg 8.2ms）；30min heap **20.7MB→20.7MB（0% 增长**，<10% 线 ✓）；交互脉冲 45 切 tab + 8 滑杆 **0 console / 0 pageerror**。
+  - 对比度：审计器修 `@import` 内联（空转根因）+ `tokens.css` 增 `--pair-*` 注册表 68 对 + 递归 var 解析 → **pairs checked 163、0 violations**（exit 1 门禁化）；违例修复：`.arch-hint` rgba(...,0.4)→`--text-muted` + caption 字阶、`--text-faint` #5c707a（3.3:1）→#74919c（≥4.5:1）。
+  - 崩溃日志：`src/main/crashLog.ts`（crashReporter `uploadToServer:false` + uncaughtException/unhandledRejection 落盘 `userData/logs/` 轮转 20 份）+ IPC `crashLogList`/`crashLogExport` + DiagnosticsView 崩溃卡（kind pill 中/错误色 + 导出）；单测 `tests/main/crashLog.test.ts` **7/7**（写盘字段/轮转/newest-first/坏记录跳过/取消导出）；Electron 41 已删 `{submit:false}` 短形式（typecheck 抓获，改 `uploadToServer:false`）。
+  - 门禁：typecheck 双工程绿；`yarn test` **119 files / 1088 passed / 0 失败**（41 skip 为既有 GL 债，R156-S1 轨道）；`yarn build` 绿；`yarn ui:snapshot` 基准更新（text-faint 提亮 + arch-hint + 诊断新卡所致 diff 全部可归因）后复验 **9/9 view 0.0000%**；验收 E2E `scripts/verify-r158-r159.mjs` **10/10**（含崩溃 fixture 上屏 + zh 四处抽查）。
+- **R158.8 状态**：✅（R158.6 验收点 ①-⑥ 全过；A1/A4/S4 与崩溃可见性闭环——R157.8「自动化可达段」的测量债全部清偿）
+
+### R159. 实施：i18n 内容补全——E3 效果描述 / AR1 3D 面板 / G4·GM2 游戏命名 / AI5 音频错误串（2026-09-23 用户指令「按批次全部实现」；R150.6「合并为一条待立项 R-N」+ R157.4-A5 预留兑现）
+
+> 性质：实施轮（L1，renderer + shared + i18n）。锚点：R157.8 v2 本地化维度 80 分——键位满对齐但内容级英文直出（zh UI 实拍可见英文描述卡）。口径更正：i18n 键位实测 **1207/1207**（EN/ZH 对称 0 缺失；R157.3/R157.7 记「728/728」为旧值/误计，对齐结论不变、键数以 1207 为准）。
+
+- **R159.1 E3 `defaultProfile.ts` 效果描述**：55 preset × (label + description) 增可选 `labelKey`/`descKey`，原英文值保留作 fallback——**不动持久化数据结构语义**（旧 profile 兼容）；渲染层 `t(key) ?? 原值`。
+- **R159.2 AR1 `ArchitectureView.tsx`**：整文件接入 `useI18n`（MODULES 静态数据 42 条 + overlay 硬编码 ~10 条：demo banner / Close info panel / Connected modules / Module {i} / Architecture Legend / Connection types / Cube faces / 快捷键提示）。
+- **R159.3 G4/GM2 游戏命名**：i18n zh 表 3 个英文 tile 标题（`Balloon TD Arena`/`Nova Swarm`/`Neon Blocks`）与 zh 画布标题（「气球塔防竞技场」等既有中文口径）对齐，消除 tile/画布混排；`games/td.ts`、`games/tetris.ts` 引擎兜底英文标签改从调用侧传 `t()` 值（engine 纯 TS 不 import i18n，沿 MiniGamesView 既有传参模式）。
+- **R159.4 AI5 音频错误串**：`src/main/audioAiService.ts` 错误消息**错误码化**（主进程不吐英文句子上屏），`AiLabAudioTab.tsx` 三个渲染位（`{error}`/`{astError}`/`{err}`）映射 `t()`；同步修受影响测试断言。
+- **R159.5 i18n 键位**：`i18n/index.tsx` EN/ZH 对称新增（基线 1207/1207）；键位对齐测试绿。
+- **R159.6 边界**：不改 `Lang` 类型与 localStorage 持久化格式；游戏品牌名中文化以 zh 画布标题既有口径为准；文案变化导致的 snapshot 基准差异按流程更新（pixelmatch 门禁照跑）。
+- **R159.7 验收点**：①`yarn typecheck` / `yarn test` / `yarn build` 绿；②i18n 键位对齐测试绿；③zh 语言下四处抽查无英文直出（defaultProfile 描述 / Architecture 面板 / 游戏 tile / AI 音频错误串）；④`yarn ui:snapshot` 基准更新后门禁绿。
+- **R159.8 实施证据（2026-09-23，glm-5.3 会话，实施轮）**：
+  - E3：`PresetDefinition` 增 `labelKey`/`descKey`（模板字面量类型 `` `effects.preset.${EffectKind}.label` ``），`defaultProfile.ts` 底部按 kind 统一注入（55×2 键，非手写重复）；展示点 t() 化——EffectsView 3 个卡片组件、WorkspaceView 收藏条 tooltip + 快速/全部效果网格 title、App.tsx 仪表盘 effectName、OverlayCanvas 右键菜单；**`layer.name = preset.label` 写入处（App/useLayerActions/EffectsView）保持英文原值——持久化数据语言中立**（`domain/presetI18n.ts` helper：t 缺键回退英文）。
+  - AR1：ArchitectureView 接入 `useI18n`，i18n 增 `arch.*` 62 键（7 模块 × label/heading/4 items + demo banner/图例/连接类型/立方体面/控件 title）；`arch.moduleIndex` 用 `{i}/{n}` 占位 replace（diag.audioBass 先例模式）；快捷键提示串（'Space · 1–7 · L · R · Esc'）为纯键位符号，zh/en 通用不译。
+  - G4/GM2：zh 表 3 个英文 tile 标题中文化（气球塔防竞技场/新星蜂群/霓虹方块——与既有中文 summary 及画布标题对齐）；引擎兜底标签核实：td.ts `TD_LABELS`/tetris.ts `TETRIS_LABELS` 仅为 drawGame 默认参数，生产路径 MiniGamesView:575-583/638-642 已全量传 `t()` 值（R133 既有资产），zh 用户不可见兜底英文——无需改引擎。
+  - AI5：主进程错误改稳定码前缀——`AUDIOAI_INIT` / `AUDIOAI_MODEL_MISSING:{file}` / `AUDIOAI_STREAM` / `AUDIOAI_RATE` / `MODEL_UNKNOWN:{name}` / `DL_HTTP:{code}` / `DL_REDIRECTS`（audioAiService ×3 + melSpectrogram + index.ts 下载器 ×3）；渲染层 `AiLabAudioTab` `localizeAiAudioError` 映射 7 键（未知串原样透传，防新错误路径静默泛化），4 个渲染位（error/astError/err/p.error 拼接）接入；tests grep 旧消息断言 0 命中，零破坏。
+  - i18n 键位：EN/ZH 对称新增 **187 键/表**（preset 110 + arch 62 + ai 音频错误 7 + diag.crash 8）；键位对齐（既有 i18n 测试 + tsc `keyof typeof EN` 静态约束）绿。
+  - 验证：typecheck 双绿；`yarn test` 119 files / 1088 passed / 0 失败；E2E zh 抽查（verify-r158-r159.mjs）——effects 首卡中文 ✓ / architecture 标签「Electron 主进程」✓ / games tile 中文且无英文残留 ✓；`ui:snapshot` 基准更新后 9/9 全零。
+- **R159.9 状态**：✅（R159.7 验收点 ①-④ 全过；R150.6 预留债 E3/AR1/G4/GM2/AI5 五处全部清偿）
+

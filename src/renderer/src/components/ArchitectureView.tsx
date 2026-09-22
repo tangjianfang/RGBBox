@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
 import * as THREE from 'three'
+import { useI18n } from '../i18n'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -172,6 +173,7 @@ function makeGlowTexture(css: string): THREE.CanvasTexture {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export function ArchitectureView(): JSX.Element {
+  const { t } = useI18n()
   const mountRef = useRef<HTMLDivElement>(null)
 
   // Three.js refs (never trigger re-renders)
@@ -574,7 +576,7 @@ export function ArchitectureView(): JSX.Element {
             ref={el => { labelRefs.current.set(mod.id, el) }}
             style={{ color: mod.color, borderColor: mod.color + '66' }}
           >
-            {mod.label}
+            {t(`arch.module.${mod.id}` as Parameters<typeof t>[0])}
           </div>
         ))}
       </div>
@@ -582,9 +584,7 @@ export function ArchitectureView(): JSX.Element {
       {/* Demo phase banner */}
       {demoPhaseUI !== 'idle' && (
         <div className="arch-demo-banner">
-          {demoPhaseUI === 'compile'
-            ? '⚡ Compile Flow: TypeScript → Vite → Build Output'
-            : '🔄 Runtime Flow: React ↔ IPC ↔ Electron → Node.js'}
+          {demoPhaseUI === 'compile' ? t('arch.demo.compile') : t('arch.demo.runtime')}
         </div>
       )}
 
@@ -598,19 +598,21 @@ export function ArchitectureView(): JSX.Element {
             <button
               className="arch-info-close"
               type="button"
-              aria-label="Close info panel"
+              aria-label={t('arch.closePanel')}
               onClick={() => setSelectedId(null)}
             >✕</button>
             <div className="arch-info-accent" style={{ background: selectedMod.color }} />
             <h3 className="arch-info-title" style={{ color: selectedMod.color }}>
-              {selectedMod.heading}
+              {t(`arch.module.${selectedMod.id}.heading` as Parameters<typeof t>[0])}
             </h3>
             <ul className="arch-info-list">
-              {selectedMod.items.map(item => <li key={item}>{item}</li>)}
+              {selectedMod.items.map((item, idx) => (
+                <li key={item}>{t(`arch.module.${selectedMod.id}.item${idx + 1}` as Parameters<typeof t>[0])}</li>
+              ))}
             </ul>
             {selectedMod.deps.length > 0 && (
               <div className="arch-info-deps">
-                <p className="arch-info-deps-label">Connected modules</p>
+                <p className="arch-info-deps-label">{t('arch.connected')}</p>
                 <div className="arch-info-dep-row">
                   {selectedMod.deps.map(depId => {
                     const dep = MODULES.find(m => m.id === depId)
@@ -623,7 +625,7 @@ export function ArchitectureView(): JSX.Element {
                         style={{ '--chip-color': dep.color } as CSSProperties}
                         onClick={() => setSelectedId(depId)}
                       >
-                        {dep.label}
+                        {t(`arch.module.${depId}` as Parameters<typeof t>[0])}
                       </button>
                     )
                   })}
@@ -631,7 +633,7 @@ export function ArchitectureView(): JSX.Element {
               </div>
             )}
             <div className="arch-info-index">
-              Module {MODULES.findIndex(m => m.id === selectedMod.id) + 1} / {MODULES.length}
+              {t('arch.moduleIndex').replace('{i}', String(MODULES.findIndex(m => m.id === selectedMod.id) + 1)).replace('{n}', String(MODULES.length))}
             </div>
           </>
         )}
@@ -641,26 +643,26 @@ export function ArchitectureView(): JSX.Element {
       {showLegend && (
         <div className="arch-legend" onClick={e => e.stopPropagation()}>
           <div className="arch-legend-header">
-            <strong>Architecture Legend</strong>
+            <strong>{t('arch.legend.title')}</strong>
             <button type="button" className="arch-info-close" onClick={() => setShowLegend(false)}>✕</button>
           </div>
-          <p className="arch-legend-sub">Modules</p>
+          <p className="arch-legend-sub">{t('arch.legend.modules')}</p>
           {MODULES.map(m => (
             <div key={m.id} className="arch-legend-row">
               <span className="arch-legend-dot" style={{ background: m.color }} />
-              <span>{m.label}</span>
+              <span>{t(`arch.module.${m.id}` as Parameters<typeof t>[0])}</span>
             </div>
           ))}
-          <p className="arch-legend-sub" style={{ marginTop: 10 }}>Connection types</p>
-          <div className="arch-legend-row"><span className="arch-legend-line" style={{ background: '#4B5563' }} /><span>Dependency</span></div>
-          <div className="arch-legend-row"><span className="arch-legend-line" style={{ background: '#06B6D4' }} /><span>IPC Bidirectional</span></div>
-          <div className="arch-legend-row"><span className="arch-legend-line" style={{ background: '#10B981', opacity: 0.7 }} /><span>Compile Flow</span></div>
-          <div className="arch-legend-row"><span className="arch-legend-line" style={{ background: '#FBBF24', opacity: 0.7 }} /><span>Runtime Data</span></div>
-          <p className="arch-legend-sub" style={{ marginTop: 10 }}>Cube faces</p>
-          {(['Electron (front)', 'React (right)', 'Vite (top)', 'TypeScript (left)', 'Node.js (bottom)'] as const).map((face, i) => (
+          <p className="arch-legend-sub" style={{ marginTop: 10 }}>{t('arch.legend.connections')}</p>
+          <div className="arch-legend-row"><span className="arch-legend-line" style={{ background: '#4B5563' }} /><span>{t('arch.conn.dependency')}</span></div>
+          <div className="arch-legend-row"><span className="arch-legend-line" style={{ background: '#06B6D4' }} /><span>{t('arch.conn.bidirectional')}</span></div>
+          <div className="arch-legend-row"><span className="arch-legend-line" style={{ background: '#10B981', opacity: 0.7 }} /><span>{t('arch.conn.compile')}</span></div>
+          <div className="arch-legend-row"><span className="arch-legend-line" style={{ background: '#FBBF24', opacity: 0.7 }} /><span>{t('arch.conn.runtime')}</span></div>
+          <p className="arch-legend-sub" style={{ marginTop: 10 }}>{t('arch.legend.faces')}</p>
+          {(['electron', 'react', 'vite', 'typescript', 'nodejs'] as const).map((face, i) => (
             <div key={face} className="arch-legend-row">
               <span className="arch-legend-dot" style={{ background: ['#1E3A8A', '#8B5CF6', '#10B981', '#FBBF24', '#6B7280'][i] }} />
-              <span>{face}</span>
+              <span>{t(`arch.face.${face}` as Parameters<typeof t>[0])}</span>
             </div>
           ))}
         </div>
@@ -671,7 +673,7 @@ export function ArchitectureView(): JSX.Element {
         <button
           className={`arch-btn${isPaused ? ' arch-btn--active' : ''}`}
           type="button"
-          title={isPaused ? 'Resume (Space)' : 'Pause (Space)'}
+          title={isPaused ? t('arch.controls.resume') : t('arch.controls.pause')}
           onClick={togglePause}
         >
           {isPaused ? '▶' : '⏸'}
@@ -679,13 +681,13 @@ export function ArchitectureView(): JSX.Element {
         <button
           className="arch-btn"
           type="button"
-          title="Reset (R)"
+          title={t('arch.controls.reset')}
           onClick={doReset}
         >↺</button>
         <button
           className={`arch-btn${showLegend ? ' arch-btn--active' : ''}`}
           type="button"
-          title="Toggle legend (L)"
+          title={t('arch.controls.legend')}
           onClick={() => setShowLegend(v => !v)}
         >≡</button>
       </div>

@@ -10,6 +10,7 @@ import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, OverlayConfig
 import { is3DEffect, resolveFrameRenderStyle } from '../../../shared/types'
 import { AMBIENT_PRESETS } from '../domain/ambientPresets'
 import type { AmbientPreset } from '../domain/ambientPresets'
+import { presetDescription, presetLabel } from '../domain/presetI18n'
 import type { AutomationMode } from '../domain/automation'
 import type { RandomizerMode } from '../domain/randomizer'
 import type { QuickDimensionId } from '../domain/quickDimensions'
@@ -65,7 +66,7 @@ export interface WorkspaceViewProps {
   setLayerParameter: (name: string, value: number | string | boolean) => void
   setSelectedLayerValue: <K extends 'opacity' | 'blendMode'>(key: K, value: EffectLayer[K]) => void
   // quick customize / effects picker
-  favoriteEffectPresets: Array<{ kind: EffectKind; label: string }>
+  favoriteEffectPresets: Array<{ kind: EffectKind; label: string; labelKey?: `effects.preset.${EffectKind}.label` }>
   applyAmbientPreset: (preset: AmbientPreset) => void
   applyQuickDimension: (dimension: QuickDimensionId, option: string) => void
   randomizeSelectedLayer: () => void
@@ -335,7 +336,7 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                       key={preset.kind}
                       type="button"
                       onClick={() => selectEffect(preset.kind)}
-                      title={`Alt+${index + 1} · ${preset.label}`}
+                      title={`Alt+${index + 1} · ${presetLabel(preset, t)}`}
                     >
                       <Star size={11} fill="currentColor" />
                       <span>{t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}</span>
@@ -418,7 +419,7 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                         key={preset.kind}
                         type="button"
                         onClick={() => selectEffect(preset.kind)}
-                        title={preset.description}
+                        title={presetDescription(preset, t)}
                       >
                         {t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}
                       </button>

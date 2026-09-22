@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
 import { validateChatMessages } from '../shared/aiChatValidation'
-import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, CaptureEntry, CaptureProviderStatus, CaptureSource, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
+import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -30,6 +30,12 @@ const api = {
   // R46: per-process CPU% breakdown (main/renderer/gpu-process/utility)
   getProcessCpuSamples: (): Promise<ProcessCpuSample[]> =>
     ipcRenderer.invoke(ipcChannels.getProcessCpuSamples),
+  // R158.3: local-only crash records (list for the Diagnostics card; export
+  // resolves to the saved path, or null when the dialog was cancelled).
+  getCrashLogs: (): Promise<CrashRecord[]> =>
+    ipcRenderer.invoke(ipcChannels.crashLogList),
+  exportCrashLog: (fileName: string): Promise<string | null> =>
+    ipcRenderer.invoke(ipcChannels.crashLogExport, fileName),
   // R46: ONLY sent by the --perf-selftest harness — asks the renderer to
   // toggle the overlay for a display through its own normal open/close path.
   onPerfSelfTestToggleOverlay: (callback: (displayId: number) => void): (() => void) => {

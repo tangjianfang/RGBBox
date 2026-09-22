@@ -56,7 +56,10 @@
   --text-primary: #e6edf0;
   --text-secondary: #b7cbd3;
   --text-muted: #8aa2ad;
-  --text-faint: #5c707a;
+  /* R158.2: was #5c707a (3.3:1 on card) — the faint tier carries real info
+     (timestamps, hints), so it clears 4.5:1 now; the tier below muted is
+     still readable as fainter by hue+size, just no longer sub-standard. */
+  --text-faint: #74919c;
   --accent: #42e8a9;
   --accent-dim: rgba(66, 232, 169, 0.12);
   --accent-contrast: #081014;
@@ -98,4 +101,86 @@
   --fx-danger-border-dim: #7a3040;
   --fx-danger-bg-dim: #311c1c;
   --fx-warn-bg: #2c2308;
+
+  /* ── R158.2: contrast pair registry — declared fg/bg combos for the auditor.
+     The same-rule scan could never see these (fg and bg usually live in
+     different rules); the registry enumerates the semantic combinations the
+     UI actually renders. ui-audit-contrast.mjs walks every --pair-*-fg/-bg
+     duo and checks WCAG against it. Adding a new combo = one line here. */
+  /* chrome: text hierarchy on every surface it appears on */
+  --pair-primary-on-content-fg: var(--text-primary); --pair-primary-on-content-bg: var(--bg-content);
+  --pair-primary-on-card-fg: var(--text-primary); --pair-primary-on-card-bg: var(--bg-card);
+  --pair-primary-on-card-hover-fg: var(--text-primary); --pair-primary-on-card-hover-bg: var(--bg-card-hover);
+  --pair-primary-on-rail-fg: var(--text-primary); --pair-primary-on-rail-bg: var(--bg-rail);
+  --pair-primary-on-toolbar-fg: var(--text-primary); --pair-primary-on-toolbar-bg: var(--bg-toolbar);
+  --pair-primary-on-control-fg: var(--text-primary); --pair-primary-on-control-bg: var(--bg-control);
+  --pair-primary-on-raised-fg: var(--text-primary); --pair-primary-on-raised-bg: var(--surface-raised);
+  --pair-secondary-on-content-fg: var(--text-secondary); --pair-secondary-on-content-bg: var(--bg-content);
+  --pair-secondary-on-card-fg: var(--text-secondary); --pair-secondary-on-card-bg: var(--bg-card);
+  --pair-secondary-on-card-hover-fg: var(--text-secondary); --pair-secondary-on-card-hover-bg: var(--bg-card-hover);
+  --pair-secondary-on-rail-fg: var(--text-secondary); --pair-secondary-on-rail-bg: var(--bg-rail);
+  --pair-secondary-on-toolbar-fg: var(--text-secondary); --pair-secondary-on-toolbar-bg: var(--bg-toolbar);
+  --pair-secondary-on-control-fg: var(--text-secondary); --pair-secondary-on-control-bg: var(--bg-control);
+  --pair-secondary-on-raised-fg: var(--text-secondary); --pair-secondary-on-raised-bg: var(--surface-raised);
+  --pair-muted-on-content-fg: var(--text-muted); --pair-muted-on-content-bg: var(--bg-content);
+  --pair-muted-on-card-fg: var(--text-muted); --pair-muted-on-card-bg: var(--bg-card);
+  --pair-muted-on-rail-fg: var(--text-muted); --pair-muted-on-rail-bg: var(--bg-rail);
+  --pair-muted-on-toolbar-fg: var(--text-muted); --pair-muted-on-toolbar-bg: var(--bg-toolbar);
+  --pair-muted-on-control-fg: var(--text-muted); --pair-muted-on-control-bg: var(--bg-control);
+  --pair-faint-on-content-fg: var(--text-faint); --pair-faint-on-content-bg: var(--bg-content);
+  --pair-faint-on-card-fg: var(--text-faint); --pair-faint-on-card-bg: var(--bg-card);
+  /* accent & its button role */
+  --pair-accent-on-content-fg: var(--accent); --pair-accent-on-content-bg: var(--bg-content);
+  --pair-accent-on-card-fg: var(--accent); --pair-accent-on-card-bg: var(--bg-card);
+  --pair-accent-on-rail-fg: var(--accent); --pair-accent-on-rail-bg: var(--bg-rail);
+  --pair-accent-on-toolbar-fg: var(--accent); --pair-accent-on-toolbar-bg: var(--bg-toolbar);
+  --pair-accent-on-control-fg: var(--accent); --pair-accent-on-control-bg: var(--bg-control);
+  --pair-accent-on-raised-fg: var(--accent); --pair-accent-on-raised-bg: var(--surface-raised);
+  --pair-btn-primary-fg: var(--accent-contrast); --pair-btn-primary-bg: var(--accent);
+  --pair-white-on-control-fg: var(--white); --pair-white-on-control-bg: var(--bg-control);
+  --pair-white-on-raised-fg: var(--white); --pair-white-on-raised-bg: var(--surface-raised);
+  /* (no white-on-accent pair: that combo must not exist — accent-contrast is
+     the on-accent text color; registering it would only bless a defect) */
+  /* status pills / banners on the surfaces they ride */
+  --pair-info-on-content-fg: var(--status-info); --pair-info-on-content-bg: var(--bg-content);
+  --pair-info-on-card-fg: var(--status-info); --pair-info-on-card-bg: var(--bg-card);
+  --pair-info-on-control-fg: var(--status-info); --pair-info-on-control-bg: var(--bg-control);
+  --pair-warn-on-content-fg: var(--status-warn); --pair-warn-on-content-bg: var(--bg-content);
+  --pair-warn-on-card-fg: var(--status-warn); --pair-warn-on-card-bg: var(--bg-card);
+  --pair-warn-on-control-fg: var(--status-warn); --pair-warn-on-control-bg: var(--bg-control);
+  --pair-warn-strong-on-content-fg: var(--status-warn-strong); --pair-warn-strong-on-content-bg: var(--bg-content);
+  --pair-warn-strong-on-card-fg: var(--status-warn-strong); --pair-warn-strong-on-card-bg: var(--bg-card);
+  --pair-error-on-content-fg: var(--status-error); --pair-error-on-content-bg: var(--bg-content);
+  --pair-error-on-card-fg: var(--status-error); --pair-error-on-card-bg: var(--bg-card);
+  --pair-error-on-control-fg: var(--status-error); --pair-error-on-control-bg: var(--bg-control);
+  --pair-error-on-danger-bg-fg: var(--status-error); --pair-error-on-danger-bg-bg: var(--fx-danger-bg);
+  --pair-success-on-content-fg: var(--status-success); --pair-success-on-content-bg: var(--bg-content);
+  --pair-success-on-card-fg: var(--status-success); --pair-success-on-card-bg: var(--bg-card);
+  --pair-success-on-control-fg: var(--status-success); --pair-success-on-control-bg: var(--bg-control);
+  /* info text family */
+  --pair-info-text-on-content-fg: var(--info-text); --pair-info-text-on-content-bg: var(--bg-content);
+  --pair-info-text-on-card-fg: var(--info-text); --pair-info-text-on-card-bg: var(--bg-card);
+  --pair-info-soft-on-content-fg: var(--info-soft-text); --pair-info-soft-on-content-bg: var(--bg-content);
+  --pair-info-soft-on-card-fg: var(--info-soft-text); --pair-info-soft-on-card-bg: var(--bg-card);
+  --pair-info-vivid-on-content-fg: var(--info-vivid-text); --pair-info-vivid-on-content-bg: var(--bg-content);
+  --pair-info-vivid-on-card-fg: var(--info-vivid-text); --pair-info-vivid-on-card-bg: var(--bg-card);
+  --pair-info-vivid-on-control-fg: var(--info-vivid-text); --pair-info-vivid-on-control-bg: var(--bg-control);
+  /* accent text family */
+  --pair-accent-bright-on-content-fg: var(--accent-bright-text); --pair-accent-bright-on-content-bg: var(--bg-content);
+  --pair-accent-bright-on-card-fg: var(--accent-bright-text); --pair-accent-bright-on-card-bg: var(--bg-card);
+  --pair-accent-soft-on-content-fg: var(--accent-soft-text); --pair-accent-soft-on-content-bg: var(--bg-content);
+  --pair-accent-soft-on-card-fg: var(--accent-soft-text); --pair-accent-soft-on-card-bg: var(--bg-card);
+  --pair-accent-deep-on-content-fg: var(--accent-deep-text); --pair-accent-deep-on-content-bg: var(--bg-content);
+  --pair-accent-deep-on-card-fg: var(--accent-deep-text); --pair-accent-deep-on-card-bg: var(--bg-card);
+  /* content-layer colors on the scene backgrounds they paint into */
+  --pair-fx-pink-on-content-fg: var(--fx-pink); --pair-fx-pink-on-content-bg: var(--bg-content);
+  --pair-fx-blue-on-content-fg: var(--fx-blue); --pair-fx-blue-on-content-bg: var(--bg-content);
+  --pair-fx-magenta-on-content-fg: var(--fx-magenta); --pair-fx-magenta-on-content-bg: var(--bg-content);
+  --pair-fx-cyan-on-content-fg: var(--fx-cyan); --pair-fx-cyan-on-content-bg: var(--bg-content);
+  --pair-fx-gold-on-content-fg: var(--fx-gold); --pair-fx-gold-on-content-bg: var(--bg-content);
+  --pair-fx-orange-on-content-fg: var(--fx-orange); --pair-fx-orange-on-content-bg: var(--bg-content);
+  --pair-fx-pink-on-warn-bg-fg: var(--fx-pink); --pair-fx-pink-on-warn-bg-bg: var(--fx-warn-bg);
+  --pair-fx-gold-on-warn-bg-fg: var(--fx-gold); --pair-fx-gold-on-warn-bg-bg: var(--fx-warn-bg);
+  --pair-fx-gold-on-danger-bg-fg: var(--fx-gold); --pair-fx-gold-on-danger-bg-bg: var(--fx-danger-bg);
+  --pair-fx-orange-on-danger-bg-fg: var(--fx-orange); --pair-fx-orange-on-danger-bg-bg: var(--fx-danger-bg);
 }

@@ -7,6 +7,7 @@ import type { Effect3DKind, EffectKind, EffectLayer } from '../../../shared/type
 import { Effect3DGl } from '../gl/effect3dGl'
 import { EffectGl, isGpuDirectEffect } from '../gl/effectGl'
 import { useI18n } from '../i18n'
+import { presetDescription, presetLabel } from '../domain/presetI18n'
 
 /**
  * R41: each card owns its own canvas/WebGL context and `requestAnimationFrame`
@@ -122,8 +123,9 @@ function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite }: 
       <button className="effect-card-main" type="button" onClick={() => onSelect(preset.kind)}>
         <canvas ref={canvasRef} aria-hidden="true" />
         <div className="effect-card-info">
-          <strong>{preset.label}</strong>
-          <p>{preset.description}</p>
+          {/* R159.1 (E3): localized display; layer.name keeps preset.label (language-neutral persisted data). */}
+          <strong>{presetLabel(preset, t)}</strong>
+          <p>{presetDescription(preset, t)}</p>
         </div>
       </button>
       <button
@@ -189,8 +191,9 @@ function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite }
       <button className="effect-card-main" type="button" onClick={() => onSelect(preset.kind)}>
         <canvas ref={canvasRef} aria-hidden="true" />
         <div className="effect-card-info">
-          <strong>{preset.label}</strong>
-          <p>{preset.description}</p>
+          {/* R159.1 (E3): localized display; layer.name keeps preset.label (language-neutral persisted data). */}
+          <strong>{presetLabel(preset, t)}</strong>
+          <p>{presetDescription(preset, t)}</p>
         </div>
       </button>
       <button
@@ -261,8 +264,9 @@ function EffectCardGpu({ preset, selected, favorite, onSelect, onToggleFavorite 
       <button className="effect-card-main" type="button" onClick={() => onSelect(preset.kind)}>
         <canvas ref={canvasRef} aria-hidden="true" />
         <div className="effect-card-info">
-          <strong>{preset.label}</strong>
-          <p>{preset.description}</p>
+          {/* R159.1 (E3): localized display; layer.name keeps preset.label (language-neutral persisted data). */}
+          <strong>{presetLabel(preset, t)}</strong>
+          <p>{presetDescription(preset, t)}</p>
         </div>
       </button>
       <button

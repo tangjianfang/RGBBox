@@ -25,6 +25,7 @@ import { asUiLocale, trayMenuLabels, type UiLocale } from './trayMenu'
 import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
+import { initCrashLogging, listCrashLogs, exportCrashLog } from './crashLog'
 import { loadSystemSettings, saveSystemSettings, type SystemSettings } from './systemSettingsStore'
 import { ai8AutoLoginWith, clearAi8Credentials, loadAi8Credentials, saveAi8Credentials } from './ai8Credentials'
 import { setRapidOcrRunner } from './ocrService'
@@ -94,6 +95,12 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 // windows' presentation rate, not just the occluded/minimized one. Disabling
 // it removes that whole code path.
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+
+// R158.3: local-only crash visibility — must run before app ready (crashReporter
+// requirement). submit:false keeps every dump on disk under userData/logs; the
+// uncaughtException/unhandledRejection records land next to them, rotated.
+// No network egress anywhere — the local-first stance is the point (R157).
+initCrashLogging()
 
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL)
 
@@ -843,6 +850,10 @@ function registerIpc(): void {
     }))
   })
 
+  // R158.3: local crash records for the Diagnostics card + save-dialog export.
+  ipcMain.handle(ipcChannels.crashLogList, () => listCrashLogs())
+  ipcMain.handle(ipcChannels.crashLogExport, (_event, fileName: string) => exportCrashLog(fileName))
+
   // Renderer → main: push a rendered frame to open overlay windows (fire-and-forget)
   ipcMain.on(ipcChannels.overlayPushFrame, (_event, frame: RgbFrame) => {
     pushFrameToOverlays(frame)
@@ -1106,7 +1117,7 @@ function registerIpc(): void {
     return new Promise((resolve, reject) => {
       let attempts = 0
       const attempt = (currentUrl: string, redirects = 0, resumeFrom = 0): void => {
-        if (redirects > 10) { reject(new Error('Too many redirects')); return }
+        if (redirects > 10) { reject(new Error('DL_REDIRECTS: too many redirects')); return }
         const getter = currentUrl.startsWith('https://') ? httpsGet : httpGet
         const headers: Record<string, string> = {}
         if (resumeFrom > 0) headers.Range = `bytes=${resumeFrom}-`
@@ -1119,7 +1130,7 @@ function registerIpc(): void {
           const resumed = res.statusCode === 206 && resumeFrom > 0
           if (res.statusCode !== 200 && res.statusCode !== 206) {
             res.resume()
-            reject(new Error(`HTTP ${res.statusCode}`))
+            reject(new Error(`DL_HTTP: ${res.statusCode}`))
             return
           }
           const already = resumed ? resumeFrom : 0
@@ -1279,7 +1290,7 @@ function registerIpc(): void {
   // Download a model by name; push progress events; return file:// URL when done
   ipcMain.handle(ipcChannels.modelDownload, async (_event, name: string) => {
     const entry = MODELS_MANIFEST.find((m) => m.name === name)
-    if (!entry) throw new Error(`Unknown model: ${name}`)
+    if (!entry) throw new Error(`MODEL_UNKNOWN: ${name}`)
 
     await mkdir(modelsDir, { recursive: true })
     const destPath = join(modelsDir, entry.file)

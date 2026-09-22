@@ -4,6 +4,7 @@ import type { CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, E
 import { resolveFrameRenderStyle } from '../../shared/types'
 import { isGpuDirectEffect } from './gl/effectGl'
 import { useI18n } from './i18n'
+import { presetLabel } from './domain/presetI18n'
 import { EffectsView } from './components/EffectsView'
 import { ShutdownTimerPanel } from './components/ShutdownTimerPanel'
 // R147 P4: heavy views load on demand — three.js (via MiniGames/3D previews),
@@ -499,8 +500,11 @@ export function App(): JSX.Element {
               running: status.running,
               onToggleEngine: toggleEngine,
               effectName:
-                effectPresets.find((p) => p.kind === (selectedLayer?.kind ?? 'static'))?.label
-                ?? selectedLayer?.kind ?? 'static',
+                (() => {
+                  // R159.1 (E3): dashboard status shows the localized preset name.
+                  const preset = effectPresets.find((p) => p.kind === (selectedLayer?.kind ?? 'static'))
+                  return (preset && presetLabel(preset, t)) ?? selectedLayer?.kind ?? 'static'
+                })(),
               fps: dashFps,
               audioEnabled,
               audioDeviceId,

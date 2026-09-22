@@ -118,6 +118,23 @@ export interface ProcessCpuSample {
 }
 
 /**
+ * R158.3: one local crash record (uncaughtException / unhandledRejection from
+ * the main process), persisted as JSON under userData/logs and rotated. The
+ * native minidumps from crashReporter (submit:false) live next to them —
+ * nothing ever leaves the machine.
+ */
+export interface CrashRecord {
+  file: string
+  at: string
+  kind: 'uncaughtException' | 'unhandledRejection'
+  message: string
+  stack: string | null
+  version: string
+  platform: string
+  electron: string
+}
+
+/**
  * R48.1: frame-arrival timing snapshot reported by an overlay window back to
  * the --perf-selftest harness. Captures the overlay's *presentation-layer*
  * cadence — the only signal that can detect compositor/GPU frame throttling
@@ -329,6 +346,14 @@ export interface PresetDefinition {
   label: string
   description: string
   defaults: EffectLayer['parameters']
+  /**
+   * R159.1: i18n keys for UI display, derived from `kind` (see
+   * defaultProfile.ts). The English `label`/`description` above stay as the
+   * persisted, language-neutral values — `layer.name` written from
+   * `preset.label` must never localize with the UI language.
+   */
+  labelKey?: `effects.preset.${EffectKind}.label`
+  descKey?: `effects.preset.${EffectKind}.desc`
 }
 
 /** Preset region for the overlay window relative to the display bounds. */

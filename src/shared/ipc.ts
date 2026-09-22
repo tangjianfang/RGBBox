@@ -13,6 +13,11 @@ export const ipcChannels = {
   // Electron's app.getAppMetrics() — lets CPU investigations be based on
   // which process is actually consuming CPU instead of one aggregate number.
   getProcessCpuSamples: 'rgbbox:system:get-process-cpu-samples',
+  // R158.3: local-only crash visibility (uploadToServer:false crashReporter +
+  // rotated uncaught-exception records under userData/logs) — list for the
+  // Diagnostics card, export through a native save dialog. No network anywhere.
+  crashLogList: 'rgbbox:system:crash-log-list',
+  crashLogExport: 'rgbbox:system:crash-log-export',
   // R46: main → renderer push, ONLY sent by the --perf-selftest harness. Asks
   // the renderer to toggle the overlay for a display through its OWN normal
   // openOverlay()/closeOverlay() invoke + setOverlayDisplayIds() state update

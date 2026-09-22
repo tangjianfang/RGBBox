@@ -351,6 +351,14 @@ export const effectPresets: PresetDefinition[] = [
   }
 ]
 
+// R159.1: derive the display i18n keys from kind — one convention instead of
+// 55 hand-written pairs. English label/description remain the persisted
+// fallback (layer.name stays language-neutral; only display sites localize).
+for (const preset of effectPresets) {
+  preset.labelKey = `effects.preset.${preset.kind}.label`
+  preset.descKey = `effects.preset.${preset.kind}.desc`
+}
+
 export const defaultProfile: Profile = {
   id: 'default-profile',
   name: 'RGBBox Default',

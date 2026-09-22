@@ -5,6 +5,7 @@ import { EFFECT3D_CHANNEL, Effect3DGl, type Effect3DMessage } from '../gl/effect
 import { EFFECT2D_CHANNEL, EffectGl, type Effect2DMessage } from '../gl/effectGl'
 import { PreviewGl } from '../gl/previewGl'
 import { useI18n } from '../i18n'
+import { presetLabel } from '../domain/presetI18n'
 
 interface Props {
   displayId: number
@@ -19,8 +20,8 @@ interface Props {
   opaque?: boolean
 }
 
-// Effect list passed to the native context menu
-const OVERLAY_EFFECTS = effectPresets.map((p) => ({ kind: p.kind, label: p.label }))
+// R159.1 (E3): the context-menu effect list localizes at call time — no
+// module-level label snapshot (the persisted English lives on the presets).
 
 // R36: how long after the last 3D-effect broadcast we keep suppressing the
 // LED-grid frame draw. Generous relative to the ~16ms broadcast cadence, so a
@@ -75,8 +76,10 @@ export function OverlayCanvas({ displayId, opaque = false }: Props): JSX.Element
   // Right-click: show native context menu with effects + exit
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    window.rgbbox.showOverlayContextMenu(displayId, OVERLAY_EFFECTS)
-  }, [displayId])
+    // R159.1 (E3): localize the menu entries through the preset i18n keys.
+    const localized = effectPresets.map((p) => ({ kind: p.kind, label: presetLabel(p, t) }))
+    window.rgbbox.showOverlayContextMenu(displayId, localized)
+  }, [displayId, t])
 
   useEffect(() => {
     const canvas = canvasRef.current

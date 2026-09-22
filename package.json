@@ -25,6 +25,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "probe": "node scripts/probe-runtime.mjs",
+    "probe:full": "node scripts/probe-runtime.mjs --full",
     "ui:snapshot": "node scripts/ui-snapshot.mjs --compare",
     "ui:snapshot:update": "node scripts/ui-snapshot.mjs --update-baseline"
   },

@@ -1,11 +1,39 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
-import { useI18n } from '../i18n'
+import { useI18n, type TranslationKey } from '../i18n'
 import { useAiAudioStream } from '../hooks/useAiAudioStream'
 import { resampleTo16k, rmsLevel, synthTestTone } from '../tools/pcm'
 import type { SourceId } from '../tools/pcmSource'
 import { audiosetLabel } from '../tools/audiosetLabel'
 
 const VAD_THRESHOLD = 0.5
+
+/**
+ * R159.4 (AI5): the main process no longer puts English sentences on screen —
+ * audio-AI errors travel as stable code-prefixed strings and this table maps
+ * the known codes to localized text (placeholders like {file} filled from the
+ * captured detail). Unknown strings pass through untouched, so new error
+ * paths stay visible instead of silently generic.
+ */
+const AI_AUDIO_ERROR_MAP: Array<{ re: RegExp; key: TranslationKey; fill: (m: RegExpMatchArray) => Record<string, string> }> = [
+  { re: /^AUDIOAI_INIT: (.+)$/, key: 'ai.lab.audio.errInit', fill: () => ({}) },
+  { re: /^AUDIOAI_MODEL_MISSING: (.+)$/, key: 'ai.lab.audio.errModelMissing', fill: (m) => ({ file: m[1] }) },
+  { re: /^AUDIOAI_STREAM: (.+)$/, key: 'ai.lab.audio.errStream', fill: () => ({}) },
+  { re: /^AUDIOAI_RATE: (.+)$/, key: 'ai.lab.audio.errRate', fill: (m) => ({ detail: m[1] }) },
+  { re: /^MODEL_UNKNOWN: (.+)$/, key: 'ai.lab.audio.errModelUnknown', fill: (m) => ({ name: m[1] }) },
+  { re: /^DL_HTTP: (.+)$/, key: 'ai.lab.audio.errDlHttp', fill: (m) => ({ code: m[1] }) },
+  { re: /^DL_REDIRECTS: (.+)$/, key: 'ai.lab.audio.errDlRedirects', fill: () => ({}) },
+]
+
+function localizeAiAudioError(raw: string, t: (key: TranslationKey) => string): string {
+  for (const entry of AI_AUDIO_ERROR_MAP) {
+    const m = raw.match(entry.re)
+    if (!m) continue
+    let out = t(entry.key)
+    for (const [k, v] of Object.entries(entry.fill(m))) out = out.replace(`{${k}}`, v)
+    return out
+  }
+  return raw
+}
 
 type ModelDlState = 'checking' | 'ready' | 'idle' | 'downloading' | 'error'
 type SelfTestResult = Array<{ item: string; pass: boolean | null; detail?: string }> | null
@@ -47,7 +75,7 @@ function useModelDownloads(): {
         if (p.error) { setter('error'); setErr(p.error) } else { setter('ready'); setErr(null) }
         void refresh()
       } else if (p.error) {
-        setErr(`${t('ai.lab.audio.progress')} — ${p.error}`)
+        setErr(`${t('ai.lab.audio.progress')} — ${localizeAiAudioError(p.error, t)}`)
       } else {
         setErr(null)
         if (!isSilero) setAstPercent(Math.round(p.percent))
@@ -176,7 +204,7 @@ export function AiLabAudioTab(): JSX.Element {
           <strong>{t('ai.lab.audio.pipeline')}</strong>
           <span className="ai-lab-status">
             {stageStatus}
-            {stage === 'error' && <span className="ai-hint-line">{error}</span>}
+            {stage === 'error' && error !== null && <span className="ai-hint-line">{localizeAiAudioError(error, t)}</span>}
           </span>
         </div>
 
@@ -215,7 +243,7 @@ export function AiLabAudioTab(): JSX.Element {
             label={t('ai.lab.audio.stage4')}
             ok={astTop !== null ? true : astError !== null ? false : null}
             detail={
-              astError !== null ? astError
+              astError !== null ? localizeAiAudioError(astError, t)
               : astTop === null
                 ? (astState === 'waiting-audio' ? t('ai.lab.audio.ast.waiting') : t('ai.lab.audio.ast.cadence'))
                 : audiosetLabel(astTop[0].index, lang)
@@ -250,7 +278,7 @@ export function AiLabAudioTab(): JSX.Element {
         </div>
         <ModelBadge state={silero} name="silero_vad" onDownload={download} />
         <ModelBadge state={ast} name="ast_audioset" percent={astPercent} onDownload={download} />
-        {err !== null && <div className="ai-hint-line">{err}</div>}
+        {err !== null && <div className="ai-hint-line">{localizeAiAudioError(err, t)}</div>}
 
         <div className="ai-selftest">
           <button type="button" data-action="self-test" onClick={() => void runSelfTest()} disabled={!modelsReady}>

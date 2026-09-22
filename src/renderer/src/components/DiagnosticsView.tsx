@@ -1,7 +1,7 @@
 import { Activity } from 'lucide-react'
-import type { RefObject } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import type { JSX } from 'react'
-import type { CaptureProviderStatus, DisplayTopology, EngineMetrics, ProcessCpuSample, Profile, RgbFrame, Scene } from '../../../shared/types'
+import type { CaptureProviderStatus, CrashRecord, DisplayTopology, EngineMetrics, ProcessCpuSample, Profile, RgbFrame, Scene } from '../../../shared/types'
 import { frameAgeState } from '../engine/frameAge'
 import { formatMs } from '../domain/profileUtils'
 import { useI18n } from '../i18n'
@@ -25,6 +25,18 @@ export function DiagnosticsView(props: {
 }): JSX.Element {
   const { t } = useI18n()
   const { topology, profile, scene, engineMetrics, captureProvider, processCpuSamples, frameRef, frameConsumerActive, engineRunning, audioRef, audioErrorLabel } = props
+
+  // R158.3: local-only crash records — pulled once on mount (rotated files
+  // under userData/logs, not a live stream). Null = still loading.
+  const [crashRecords, setCrashRecords] = useState<CrashRecord[] | null>(null)
+  const [exportedFile, setExportedFile] = useState<string | null>(null)
+  useEffect(() => {
+    void window.rgbbox.getCrashLogs().then(setCrashRecords).catch(() => setCrashRecords([]))
+  }, [])
+  const handleExport = async (file: string): Promise<void> => {
+    const saved = await window.rgbbox.exportCrashLog(file).catch(() => null)
+    if (saved) setExportedFile(file)
+  }
 
   // R151.4: mini-bars for the frame-time metrics are scaled against the
   // configured frame budget; anything over budget rides the warn hue.
@@ -163,6 +175,37 @@ export function DiagnosticsView(props: {
               )}
             </tbody>
           </table>
+        </div>
+        {/* R158.3: local-only crash records — the crash-free visibility the
+            Apple-scale rescoring called out, closed without any network
+            egress (crashReporter submit:false + rotated JSON records). */}
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">{t('diag.crash.eyebrow')}</p>
+              <h3>{t('diag.crash.title')}</h3>
+            </div>
+          </div>
+          {crashRecords === null ? (
+            <p className="diag-crash-empty">{t('diag.waiting')}</p>
+          ) : crashRecords.length === 0 ? (
+            <p className="diag-crash-empty">{t('diag.crash.empty')}</p>
+          ) : (
+            <ul className="diag-crash-list">
+              {crashRecords.slice(0, 5).map((r) => (
+                <li key={r.file}>
+                  <span className="diag-crash-time">{new Date(r.at).toLocaleString()}</span>
+                  <span className={`diag-crash-kind ${r.kind === 'uncaughtException' ? 'err' : 'warn'}`}>
+                    {t(r.kind === 'uncaughtException' ? 'diag.crash.uncaught' : 'diag.crash.rejection')}
+                  </span>
+                  <span className="diag-crash-msg" title={`${r.message}\n${r.stack ?? ''}`}>{r.message}</span>
+                  <button type="button" className="diag-crash-export" disabled={exportedFile === r.file} onClick={() => { void handleExport(r.file) }}>
+                    {exportedFile === r.file ? t('diag.crash.exported') : t('diag.crash.export')}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
     </div>

@@ -121,7 +121,7 @@ function frameCount(len: number): number {
  * out[frame * 128 + bin], 1024 frames (truncated / zero-filled post-log).
  */
 export function astMelSpectrogram(pcm: Float32Array, sampleRate: number = 16000): Float32Array {
-  if (sampleRate !== 16000) throw new Error(`astMelSpectrogram expects 16000Hz input, got ${sampleRate}`)
+  if (sampleRate !== 16000) throw new Error(`AUDIOAI_RATE: expected 16000Hz, got ${sampleRate}`)
   ensureTables()
   const { fb, win, re, im } = tablesCache!
 
