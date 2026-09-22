@@ -140,10 +140,6 @@ export const ipcChannels = {
   // R117: AI8 artifact cache — save generated docs/images locally + reveal
   ai8SaveArtifact: 'rgbbox:ai8:save-artifact',
   ai8ShowItemInFolder: 'rgbbox:ai8:show-item-in-folder',
-  // R119: global selection AI (hotkey → floating window → active profile)
-  selectionAiGetText: 'rgbbox:selection-ai:get-text',
-  selectionAiRun: 'rgbbox:selection-ai:run',
-  selectionAiClose: 'rgbbox:selection-ai:close',
   clipboardReadText: 'rgbbox:clipboard:read-text',
   ocrRecognize: 'rgbbox:ocr:recognize',
   // R80: standalone global snip tool (frozen-frame windows + annotator)

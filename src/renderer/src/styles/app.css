@@ -8285,56 +8285,6 @@ input[type='range'].video-player-volume {
 .ai-chat textarea,
 .ai-chat-input-row textarea { flex: 1; min-height: 64px; width: 100%; }
 
-/* ── R119: 全局划词 AI 浮窗 ───────────────────────────────────────────────── */
-
-.sel-ai { background: var(--surface-deep); color: rgba(255, 255, 255, 0.88); display: flex; flex-direction: column; gap: 10px; height: 100vh; padding: 12px 14px; }
-
-.sel-ai-head { align-items: center; color: var(--accent-bright-text); display: flex; font-size: 13px; font-weight: 700; justify-content: space-between; letter-spacing: 0.04em; }
-
-.sel-ai-close { background: none; border: none; color: var(--text-faint); cursor: pointer; padding: 2px; }
-
-.sel-ai-close:hover { color: var(--status-error); }
-
-.sel-ai-source {
-  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 8px; color: rgba(255, 255, 255, 0.72); flex-shrink: 0; font-size: 12px;
-  line-height: 1.5; max-height: 84px; overflow-y: auto; padding: 8px 10px;
-  white-space: pre-wrap; word-break: break-word;
-}
-
-.sel-ai-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-
-.sel-btn {
-  align-items: center; background: rgba(13, 21, 25, 0.9); border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px; color: rgba(255, 255, 255, 0.85); cursor: pointer; display: inline-flex;
-  font-size: 12px; gap: 5px; padding: 6px 11px;
-}
-
-.sel-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-bright-text); }
-
-.sel-btn:disabled { color: var(--text-faint); cursor: default; }
-
-.sel-btn.busy { border-color: rgba(70, 198, 168, 0.5); color: var(--accent-bright-text); }
-
-.sel-ai-custom { display: flex; gap: 6px; }
-
-.sel-ai-custom input {
-  background: rgba(13, 21, 25, 0.9); border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px; color: var(--white); flex: 1; font-size: 12px; min-width: 0; padding: 6px 9px;
-}
-
-.sel-ai-custom input:focus { border-color: var(--accent); outline: none; }
-
-.sel-ai-hint { color: var(--status-error); font-size: 11.5px; margin: 0; }
-
-.sel-ai-result {
-  background: rgba(70, 198, 168, 0.06); border: 1px solid rgba(70, 198, 168, 0.22);
-  border-radius: 8px; flex: 1; font-size: 12.5px; line-height: 1.6; overflow-y: auto;
-  padding: 9px 11px; white-space: pre-wrap; word-break: break-word;
-}
-
-.sel-ai-foot { display: flex; justify-content: flex-end; }
-
 /* R142-E4b: app-wide vision assistant — floating toggle, mode badge, radial menu */
 .vision-assistant-pill {
   background: rgba(8, 13, 18, 0.85);

@@ -3088,3 +3088,18 @@
   - 门禁：typecheck ✅；组件测试 32/32（AiLabVisionTab 13 + AiLabView）；全量 `yarn test` **119 files / 1083 passed / 0 失败**；CDP E2E `verify-r144-vision-lab.mjs` **27/27 PASS**；`yarn build` ✅。
   - 运行时探针（temp CDP）：pre `cards:9 / caps:24 / groups:5 / jaw+smile 在板 / more:"更多能力（15）" / reserved:7 / collapsedRows:15`；pipeline 启用后触发 `jawOpen → className "vision-card flash" + ×1`（**人脸卡触发即高亮——「人脸检测没有」的直接反证**）、pinch held ✓。
 - **R153.7 状态**：✅（自动化 + 探针闭环；视觉复核留给后续 haiku 会话 + 用户真机）
+
+### R154. 移除 R119 全局划词 AI 浮窗——功能整体下线（2026-09-22 用户指令「删除 AI 划词功能」）
+
+> 范围：R119 引入的划词 AI（Alt+Q 热键 → 读取选中文本 → 翻译/润色/解释/自定义指令浮窗）。整链路移除，不留死代码；R119 历史条款保留作记录（其状态改注 superseded-by-R154）。触及 CLAUDE.md 点名的 `src/main/index.ts` / `src/preload/index.ts`——本条即合规 R-N 授权。
+
+- **R154.1 主进程**：删 `src/main/selectionAiManager.ts`（139 行：窗口生命周期 + Alt+Q globalShortcut + 选中文本抓取 + AI 调用）；`src/main/index.ts` 删 import/init/hotkey/3 个 IPC handler/托盘菜单项/退出 dispose（~10 处）；`src/main/trayMenu.ts` 删「划词 AI (Alt+Q)」label。
+- **R154.2 契约层**：`src/shared/ipc.ts` 删 `selectionAiGetText/Run/Close` 3 通道；`src/preload/index.ts` 删 3 个白名单 API + 类型声明（`window.rgbbox.selectionAi*` 消失）。
+- **R154.3 渲染层**：删 `src/renderer/src/components/SelectionAiView.tsx`（96 行）；`main.tsx` 删 `?selectionAi=1` 入口分支；i18n 删 `sel.ai.*` 12 key × 双语；`app.css` 删 R119 段（净 51 行）。
+- **R154.4 测试/工具/文档**：删 `tests/main/selectionAiManager.test.ts` + `scripts/verify-r119-sel-ai.mjs`；`docs/architecture.md` 4 处提及（窗口表/IPC 表/子窗枚举/退出清理）同步移除。
+- **R154.5 验收点**：①typecheck 0 error；②全量 `yarn test` 0 失败（用例数减 selectionAiManager 的 30 行文件对应数）；③`yarn build` 绿；④grep `selectionAi|sel-ai|sel\.ai` 在 src/ 0 命中；⑤`yarn ui:snapshot` 门禁绿（划词为独立浮窗，不在 9 view 基线内，预期零 diff）。
+- **R154.6 实施证据（2026-09-22，glm-5.3 会话，无视觉 review）**：
+  - 删除面：4 文件整删（manager 139 行 / View 96 行 / 单测 30 行 / E2E 2.5KB）+ index.ts 4 段（import/init+hotkey+3 IPC/托盘项/dispose）+ trayMenu label×2+接口字段 + ipc 3 通道 + preload 3 API + main.tsx 3 处 + i18n 24 key + CSS 51 行 + architecture.md 4 处。
+  - **门禁立功实录**：首次 CSS 按行号删段时，段边界正则（匹配 `───` 装饰线头）漏掉紧邻的 **R142-E4b 段**（`vision-assistant-pill/radial/chord-trainer` 等注释头无装饰线），106 行手势助手样式被整段误删 → `yarn ui:snapshot` 当场抓获（8 view 一致 ~2.9% 底部条带 diff，games 例外）→ 探针定位 pill 全宽变形 → 从 HEAD 恢复该段 → GATE PASS。**R152 门禁建成后的首次实战拦截**；另有一处 i18n 行号切片差一误删 `'ai.lab.provider'`（zh 表），由 TS2741 捕获恢复。
+  - 验收五项：①typecheck 0 error；②全量 `yarn test` **118 files / 1081 passed / 0 失败**（= 119-1 文件 / 1083-2 用例，对账精确）；③`yarn build` 绿；④`src/` grep `selectionAi|sel-ai|sel\.ai` **0 命中**；⑤`yarn ui:snapshot` **GATE PASS**（划词为独立浮窗，9 view 零 diff 符合预期）。
+- **R154.7 状态**：✅（自动化闭环；托盘菜单/热键/浮窗全链路移除，无死代码）

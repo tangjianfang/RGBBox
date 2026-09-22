@@ -184,7 +184,7 @@ flowchart TB
     subgraph rsnip["Renderer 进程:snip 窗口池(snip.html)"]
         snip["SnipView(冻结帧 + 标注)"]
     end
-    roth["audioviz / screensaver / selectionAi / AI8 登录子窗"]
+    roth["audioviz / screensaver / AI8 登录子窗"]
     appR -- "invoke / on(preload 白名单)" --> idx
     appR -- "postMessage(transferable)" --> pw
     appR -- "pushFrameToOverlays / ForDisplay" --> om
@@ -266,7 +266,6 @@ GPU 直通的意义:overlay 收到的是 shader uniforms 而非降采样网格�
 | 音频 AI 实验室 | `audioAiStatus`, `audioAiRunVad`, `audioAiRunAst`, `audioAiStreamStart`, `audioAiStreamFeed`, `audioAiStreamStop` | invoke |
 | AI 文本 / OCR | `aiGetSettings`, `aiSetSettings`, `aiGetProfiles`, `aiSaveProfile`, `aiDeleteProfile`, `aiSetActiveProfile`, `aiCleanupText`, `aiTranslateText`, `aiTestConnection`, `aiChat`, `ocrRecognize` | invoke |
 | AI8 | `ai8OpenLogin`, `ai8SaveCredentials`, `ai8ClearCredentials`, `ai8AutoLogin`, `ai8SaveArtifact`, `ai8ShowItemInFolder`, `ai8PickMdFolder`, `ai8SaveImageToFolder` | invoke |
-| 选中 AI | `selectionAiGetText`, `selectionAiRun`, `selectionAiClose` | invoke |
 | 剪贴板 / 截屏画廊 | `clipboardWriteImage`, `clipboardWriteText`, `clipboardWriteRich`, `clipboardReadText`, `capturesList`, `capturesAdd`, `capturesDelete`, `capturesRead`, `capturesImport` | invoke |
 | Snip | `snipPushFrame`(推送), `snipFramePainted`, `snipFinish`, `snipCancel`, `snipGetHotkey`, `snipSetHotkey` | 混合 |
 | UI / 诊断 / 自测 | `uiSetLocale`, `getProcessCpuSamples`, `perfSelfTestToggleOverlay`(推送), `perfSelfTestCollectOverlayTiming`(推送), `perfSelfTestOverlayTimingReport` | 混合(自测通道日常不发) |
@@ -288,7 +287,6 @@ GPU 直通的意义:overlay 收到的是 shader uniforms 而非降采样网格�
 | `index.html` | `overlay=true&displayId&opaque` | `OverlayCanvas` | 无边框 / 透明或全屏不透明,`screen-saver` 级置顶,ESC 退出 |
 | `index.html` | `audioviz` | `AudioVizProjector` | 全屏无边框不透明 |
 | `index.html` | `screensaver` | `ScreensaverView` | 全屏,`app.focus({steal:true})` |
-| `index.html` | `selectionAi` | `SelectionAiView` | 560×430 有框,光标附近 |
 | `snip.html` | `snip` | `SnipView` | 轻入口 ~250KB(主入口 ~4.6MB),先画后 show |
 | `visionHost.html` | — | visionHostMain | 永不显示,`backgroundThrottling:false` |
 | 外部站点 | — | AI8 登录页 | `partition:'persist:ai8'`,轮询 localStorage 取 token |
@@ -361,7 +359,7 @@ stateDiagram-v2
 | 引擎循环 | effect 依赖仅 `[running, profileReady]`;全层禁用时「多跑一 tick 再停」 |
 | keep-alive view | video / audio 首访后常驻(`display:none`),播放跨 view 存活 |
 | 视图持久化 | `localStorage['rgbbox:view']`,boot 时 `resolveInitialView` 回落 dashboard;`MODEL3D_VIEW_ENABLED=false` 硬关 model3d |
-| 主进程退出 | `before-quit`:flush 日志、dispose 屏保 / snip / selectionAi / audioAi;`window-all-closed` 关闭全部浮窗群 |
+| 主进程退出 | `before-quit`:flush 日志、dispose 屏保 / snip / audioAi;`window-all-closed` 关闭全部浮窗群 |
 | 显示热插拔 | `screen` 事件 → 推送 `displayTopologyChanged`;snipManager 自行取消重建;overlay 的 renderer 侧重开路径未追踪(§14) |
 
 ## 10. Data Model

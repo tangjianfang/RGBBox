@@ -4,7 +4,6 @@ import { App } from './App'
 import { AudioVizProjector } from './components/AudioVizProjector'
 import { OverlayCanvas } from './components/OverlayCanvas'
 import { ScreensaverView } from './components/ScreensaverView'
-import { SelectionAiView } from './components/SelectionAiView'
 import { SnipView } from './components/SnipView'
 import { I18nProvider } from './i18n'
 import './styles.css'
@@ -14,7 +13,6 @@ const isOverlay = params.get('overlay') === 'true'
 const isAudioViz = params.get('audioviz') === 'true'
 const isScreensaver = params.get('screensaver') === '1'
 const isSnip = params.get('snip') === '1'
-const isSelectionAi = params.get('selectionAi') === '1'
 const overlayDisplayId = Number(params.get('displayId') ?? 0)
 // R65: whether this overlay window was created opaque (fullscreen region —
 // see overlayManager.ts#openOverlay) rather than transparent (non-fullscreen
@@ -55,13 +53,6 @@ if (isAudioViz) {
   root.render(
     <I18nProvider>
       <SnipView displayId={overlayDisplayId} />
-    </I18nProvider>
-  )
-} else if (isSelectionAi) {
-  // R119: global selection AI floating window — captured text + prompts
-  root.render(
-    <I18nProvider>
-      <SelectionAiView />
     </I18nProvider>
   )
 } else if (isOverlay) {

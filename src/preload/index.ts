@@ -171,11 +171,6 @@ const api = {
     ipcRenderer.invoke(ipcChannels.ai8SaveArtifact, name, content),
   ai8ShowItemInFolder: (path: string): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.ai8ShowItemInFolder, path),
-  // R119: global selection AI floating window
-  selectionAiGetText: (): Promise<string> => ipcRenderer.invoke(ipcChannels.selectionAiGetText),
-  selectionAiRun: (action: 'translate' | 'polish' | 'explain' | 'custom', custom?: string): Promise<{ ok: boolean; text: string; hint?: string; latencyMs?: number }> =>
-    ipcRenderer.invoke(ipcChannels.selectionAiRun, action, custom),
-  selectionAiClose: (): Promise<boolean> => ipcRenderer.invoke(ipcChannels.selectionAiClose),
   clipboardReadText: (): Promise<string> => ipcRenderer.invoke(ipcChannels.clipboardReadText),
   ocrRecognize: (dataUrl: string): Promise<{ ok: boolean; text: string; hint?: string; engine?: 'rapid' | 'winrt' }> =>
     ipcRenderer.invoke(ipcChannels.ocrRecognize, dataUrl),
