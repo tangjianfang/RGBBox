@@ -1,44 +1,44 @@
 {
-  "date": "2026-09-22T17:15:59.341Z",
-  "mode": "full",
+  "date": "2026-09-23T12:51:46.038Z",
+  "mode": "quick",
   "coldStart": {
     "cdpUp": {
-      "p50": 2293,
-      "max": 4622
+      "p50": 934,
+      "max": 1047
     },
     "firstPaint": {
-      "p50": 3333,
-      "max": 4246
+      "p50": 1523,
+      "max": 1651
     },
     "railInteractive": {
-      "p50": 3624,
-      "max": 5168
+      "p50": 1698,
+      "max": 1848
     },
     "rounds": [
       {
-        "cdpUpMs": 2618,
-        "firstPaintMs": 3946,
-        "railInteractiveMs": 4270
+        "cdpUpMs": 934,
+        "firstPaintMs": 1520,
+        "railInteractiveMs": 1671
       },
       {
-        "cdpUpMs": 2108,
-        "firstPaintMs": 3333,
-        "railInteractiveMs": 3553
+        "cdpUpMs": 823,
+        "firstPaintMs": 1607,
+        "railInteractiveMs": 1782
       },
       {
-        "cdpUpMs": 4622,
-        "firstPaintMs": 4246,
-        "railInteractiveMs": 5168
+        "cdpUpMs": 1047,
+        "firstPaintMs": 1651,
+        "railInteractiveMs": 1848
       },
       {
-        "cdpUpMs": 1303,
-        "firstPaintMs": 2228,
-        "railInteractiveMs": 2494
+        "cdpUpMs": 1043,
+        "firstPaintMs": 1523,
+        "railInteractiveMs": 1698
       },
       {
-        "cdpUpMs": 2293,
-        "firstPaintMs": 3283,
-        "railInteractiveMs": 3624
+        "cdpUpMs": 722,
+        "firstPaintMs": 1090,
+        "railInteractiveMs": 1214
       }
     ]
   },
@@ -54,7 +54,7 @@
     },
     {
       "view": "effects",
-      "fps": 20
+      "fps": 22
     },
     {
       "view": "video",
@@ -66,7 +66,7 @@
     },
     {
       "view": "games",
-      "fps": 64
+      "fps": 65
     },
     {
       "view": "diagnostics",
@@ -74,7 +74,7 @@
     },
     {
       "view": "architecture",
-      "fps": 27
+      "fps": 25
     },
     {
       "view": "ai",
@@ -82,266 +82,8 @@
     }
   ],
   "consoleIssues": [
+    "[warning] %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes",
     "[warning] %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
   ],
-  "pageErrors": [],
-  "engineLoad": {
-    "p95FrameMs": "23.6 ms",
-    "avgFrameMs": "8.2 ms",
-    "frameAge": "空闲——无消费方（不在工作台且无浮窗）",
-    "sampledAfterMs": 30000
-  },
-  "heapCurve": {
-    "samples": [
-      {
-        "atMin": "0.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "0.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "1.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "1.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "2.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "2.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "3.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "3.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "4.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "4.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "5.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "5.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "6.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "6.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "7.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "7.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "8.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "8.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "9.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "9.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "10.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "10.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "11.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "11.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "12.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "12.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "13.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "13.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "14.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "14.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "15.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "15.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "16.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "16.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "17.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "17.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "18.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "18.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "19.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "19.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "20.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "20.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "21.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "21.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "22.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "22.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "23.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "23.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "24.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "24.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "25.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "25.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "26.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "26.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "27.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "27.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "28.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "28.5",
-        "mb": 20.7
-      },
-      {
-        "atMin": "29.0",
-        "mb": 20.7
-      },
-      {
-        "atMin": "29.5",
-        "mb": 20.7
-      }
-    ],
-    "first": 20.7,
-    "last": 20.7,
-    "growthPct": 0
-  },
-  "interactionPulse": {
-    "tabSwitches": 45,
-    "sliderNudges": 8,
-    "newConsoleIssues": 0,
-    "newPageErrors": 0
-  }
+  "pageErrors": []
 }
