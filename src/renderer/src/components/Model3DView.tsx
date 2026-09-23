@@ -123,7 +123,7 @@ export function Model3DView(props: {
               <div style={{ width: 260, height: 6, background: 'rgba(255,255,255,0.12)', borderRadius: 3, overflow: 'hidden' }}>
                 <div style={{ width: `${selectedModel.downloadProgress}%`, height: '100%', background: 'var(--color-accent, #38bdf8)', transition: 'width 0.3s' }} />
               </div>
-              <span style={{ fontSize: 12, opacity: 0.6 }}>{selectedModel.downloadProgress}%</span>
+              <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>{selectedModel.downloadProgress}%</span>
             </>
           ) : (
             <>

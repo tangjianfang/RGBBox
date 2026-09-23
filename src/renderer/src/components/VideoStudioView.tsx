@@ -1395,6 +1395,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                     <input
                       type="range" min={-12} max={12} step={0.5}
                       value={audioFx.gainDb}
+                      aria-label={t('video.audio.gain')}
+                      aria-valuetext={`${audioFx.gainDb > 0 ? '+' : ''}${audioFx.gainDb.toFixed(1)}dB`}
                       onChange={(e) => audioFx.setGain(Number(e.target.value))}
                     />
                     <span className="video-audio-gain-val">{audioFx.gainDb > 0 ? '+' : ''}{audioFx.gainDb.toFixed(1)}dB</span>
@@ -1421,6 +1423,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                         <input
                           type="range" min={0} max={1} step={0.05}
                           value={audioFx.denoiseStrength}
+                          aria-label={t('video.denoise.strength')}
+                          aria-valuetext={`${Math.round(audioFx.denoiseStrength * 100)}%`}
                           onChange={(e) => audioFx.setDenoiseStrength(Number(e.target.value))}
                         />
                         <span className="video-audio-gain-val">{Math.round(audioFx.denoiseStrength * 100)}%</span>
@@ -1512,6 +1516,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                         step={0.1}
                         value={playerCurrentTime}
                         disabled={playerLive}
+                        aria-label={t('video.player.progress')}
+                        aria-valuetext={formatMediaTime(playerCurrentTime)}
                         onPointerDown={() => { seekDraggingRef.current = true }}
                         onPointerUp={() => { seekDraggingRef.current = false }}
                         onPointerCancel={() => { seekDraggingRef.current = false }}
@@ -1537,13 +1543,16 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
 
                   {/* Buttons row */}
                   <div className="video-player-btn-row" onClick={(e) => e.stopPropagation()}>
-                    <button type="button" className="video-player-btn" onClick={() => playerSeek(Math.max(0, playerCurrentTime - 10))} title="-10s">
+                    {/* R161.2: aria-label on every icon-only control; loop also
+                        exposes aria-pressed; the ±10s titles were hardcoded
+                        English — localized with the same keys. */}
+                    <button type="button" className="video-player-btn" onClick={() => playerSeek(Math.max(0, playerCurrentTime - 10))} title={t('video.player.back10')} aria-label={t('video.player.back10')}>
                       <SkipBack size={14} />
                     </button>
-                    <button type="button" className="video-player-btn" onClick={togglePlayerPlay} title={playerPlaying ? t('video.player.pause') : t('video.player.play')}>
+                    <button type="button" className="video-player-btn" onClick={togglePlayerPlay} title={playerPlaying ? t('video.player.pause') : t('video.player.play')} aria-label={playerPlaying ? t('video.player.pause') : t('video.player.play')}>
                       {playerPlaying ? <Pause size={16} /> : <Play size={16} />}
                     </button>
-                    <button type="button" className="video-player-btn" onClick={() => playerSeek(Math.min(playerDuration, playerCurrentTime + 10))} title="+10s">
+                    <button type="button" className="video-player-btn" onClick={() => playerSeek(Math.min(playerDuration, playerCurrentTime + 10))} title={t('video.player.fwd10')} aria-label={t('video.player.fwd10')}>
                       <SkipForward size={14} />
                     </button>
                     <button
@@ -1551,10 +1560,12 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                       className={`video-player-btn${playerLoop ? ' active' : ''}`}
                       onClick={() => setPlayerLoop((v) => !v)}
                       title={t('video.player.loop')}
+                      aria-label={t('video.player.loop')}
+                      aria-pressed={playerLoop}
                     >
                       <RefreshCw size={14} />
                     </button>
-                    <button type="button" className="video-player-btn" onClick={() => setPlayerMuted(v => !v)} title={playerMuted ? t('video.player.unmute') : t('video.player.mute')}>
+                    <button type="button" className="video-player-btn" onClick={() => setPlayerMuted(v => !v)} title={playerMuted ? t('video.player.unmute') : t('video.player.mute')} aria-label={playerMuted ? t('video.player.unmute') : t('video.player.mute')}>
                       {playerMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
                     </button>
                     <input
@@ -1565,6 +1576,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                       step={0.01}
                       value={playerMuted ? 0 : playerVolume}
                       title={t('video.player.volume')}
+                      aria-label={t('video.player.volume')}
+                      aria-valuetext={`${Math.round((playerMuted ? 0 : playerVolume) * 100)}%`}
                       onChange={(e) => { setPlayerVolume(Number(e.target.value)); setPlayerMuted(false) }}
                     />
                     <select
@@ -1704,7 +1717,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                 ) : (
                   <button type="button" className="video-btn video-btn-primary" onClick={() => void startCamera()}><Camera size={15} /> {t('video.start')}</button>
                 )}
-                <button type="button" className={`video-btn ${mirror ? 'active' : ''}`} onClick={() => setMirror((v) => !v)} title={t('video.mirror')}><FlipHorizontal size={15} /></button>
+                <button type="button" className={`video-btn ${mirror ? 'active' : ''}`} onClick={() => setMirror((v) => !v)} title={t('video.mirror')} aria-label={t('video.mirror')}><FlipHorizontal size={15} /></button>
               </>
             )}
             {mode === 'screen' && streaming && (
@@ -1734,7 +1747,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
               <>
                 <span className="video-transport-sep" />
                 <button type="button" className="video-btn" onClick={capturePhoto}><ImageIcon size={15} /> {t('video.photo')}</button>
-                <button type="button" className="video-btn" onClick={startSnip} disabled={snipActive} title={t('video.snip.hint')}><Frame size={15} /> {t('video.snip.button')}</button>
+                <button type="button" className="video-btn" onClick={startSnip} disabled={snipActive} title={t('video.snip.hint')} aria-label={t('video.snip.hint')}><Frame size={15} /> {t('video.snip.button')}</button>
                 {mode !== 'player' && (
                   recording
                     ? <button type="button" className="video-btn video-btn-rec" onClick={stopRecording}><Square size={15} /> {t('video.recStop')}</button>
@@ -1776,7 +1789,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                   {devices.length === 0 && <option value="">{t('video.noCamera')}</option>}
                   {devices.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label}</option>)}
                 </select>
-                <button type="button" className="video-btn video-btn-icon" onClick={() => void refreshDevices()} title={t('video.refresh')}><RefreshCw size={14} /></button>
+                <button type="button" className="video-btn video-btn-icon" onClick={() => void refreshDevices()} title={t('video.refresh')} aria-label={t('video.refresh')}><RefreshCw size={14} /></button>
               </div>
 
               <label className="video-field-label">{t('video.resolution')}</label>
@@ -1800,6 +1813,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                         <input
                           type="range" min={cap.min} max={cap.max} step={cap.step || 1}
                           value={trackVals[key] ?? cap.min}
+                          aria-label={t(`video.hw.${key}` as never)}
                           onChange={(e) => applyTrackControl(key, Number(e.target.value))}
                         />
                       </div>
@@ -1817,7 +1831,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
             <section className="video-panel">
               <div className="video-row">
                 <h3 className="video-panel-title" style={{ flex: 1 }}>{t('video.sources')}</h3>
-                <button type="button" className="video-btn video-btn-icon" onClick={() => void refreshSources()} title={t('video.refresh')}><RefreshCw size={14} /></button>
+                <button type="button" className="video-btn video-btn-icon" onClick={() => void refreshSources()} title={t('video.refresh')} aria-label={t('video.refresh')}><RefreshCw size={14} /></button>
               </div>
               <div className="video-source-filter">
                 {(['all', 'screen', 'window'] as const).map((f) => (
@@ -1865,10 +1879,10 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                   >
                     {playlistVisible ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                     <span className="video-panel-title" style={{ flex: 1 }}>{t('video.playlist.title')}</span>
-                    <span style={{ fontSize: 10, opacity: 0.5 }}>{videoPlaylist.length}</span>
+                    <span style={{ fontSize: '0.625rem', opacity: 0.5 }}>{videoPlaylist.length}</span>
                   </button>
-                  <button type="button" className="video-btn video-btn-icon" onClick={handleAddVideoFiles} title={t('video.playlist.addFiles')}><Plus size={13} /></button>
-                  <button type="button" className="video-btn video-btn-icon" onClick={handleAddVideoFolder} title={t('video.playlist.addFolder')}><FolderOpen size={13} /></button>
+                  <button type="button" className="video-btn video-btn-icon" onClick={handleAddVideoFiles} title={t('video.playlist.addFiles')} aria-label={t('video.playlist.addFiles')}><Plus size={13} /></button>
+                  <button type="button" className="video-btn video-btn-icon" onClick={handleAddVideoFolder} title={t('video.playlist.addFolder')} aria-label={t('video.playlist.addFolder')}><FolderOpen size={13} /></button>
                 </div>
                 {playlistVisible && (
                   <div className="video-playlist-scroll" style={{ maxHeight: 220, overflowY: 'auto' }}>
@@ -1936,11 +1950,11 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                 <label className="video-field-label" style={{ marginTop: 10 }}>{t('video.player.subtitle')}</label>
                 <div className="video-row">
                   <span className="video-hint" style={{ flex: 1 }}>{subFilename || t('video.player.noSub')}</span>
-                  <button type="button" className="video-btn video-btn-icon" onClick={() => subFileInputRef.current?.click()} title={t('video.player.loadSub')}>
+                  <button type="button" className="video-btn video-btn-icon" onClick={() => subFileInputRef.current?.click()} title={t('video.player.loadSub')} aria-label={t('video.player.loadSub')}>
                     <FileText size={14} />
                   </button>
                   {subCues.length > 0 && (
-                    <button type="button" className="video-btn video-btn-icon" onClick={() => { setSubCues([]); setSubFilename('') }} title={t('video.player.subOff')}>
+                    <button type="button" className="video-btn video-btn-icon" onClick={() => { setSubCues([]); setSubFilename('') }} title={t('video.player.subOff')} aria-label={t('video.player.subOff')}>
                       ×
                     </button>
                   )}
@@ -1971,7 +1985,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                           {t('video.trim.setOut')} [{formatMediaTime(trimEnd)}]
                         </button>
                       </div>
-                      <div className="video-row" style={{ gap: 4, marginBottom: 6, fontSize: 11, opacity: 0.75 }}>
+                      <div className="video-row" style={{ gap: 4, marginBottom: 6, fontSize: '0.6875rem', opacity: 0.75 }}>
                         <span>{t('video.trim.duration')}: {formatMediaTime(Math.max(0, trimEnd - trimStart))}</span>
                       </div>
                       <label className="video-field-label">{t('video.trim.quality')}</label>
@@ -2013,7 +2027,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                 <span className="video-panel-title" style={{ flex: 1, textAlign: 'left' }}>{t('video.filters')}</span>
               </button>
               {filtersOpen && (
-                <button type="button" className="video-btn video-btn-icon" onClick={() => setFilters(DEFAULT_FILTERS)} title={t('video.reset')}><RefreshCw size={14} /></button>
+                <button type="button" className="video-btn video-btn-icon" onClick={() => setFilters(DEFAULT_FILTERS)} title={t('video.reset')} aria-label={t('video.reset')}><RefreshCw size={14} /></button>
               )}
             </div>
             {filtersOpen && ([
@@ -2025,6 +2039,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                 <input
                   type="range" min={min} max={max}
                   value={filters[key]}
+                  aria-label={t(`video.filter.${key}` as never)}
                   onChange={(e) => setFilters((f) => ({ ...f, [key]: Number(e.target.value) }))}
                 />
               </div>

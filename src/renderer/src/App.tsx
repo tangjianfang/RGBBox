@@ -5,6 +5,7 @@ import { resolveFrameRenderStyle } from '../../shared/types'
 import { isGpuDirectEffect } from './gl/effectGl'
 import { useI18n } from './i18n'
 import { presetLabel } from './domain/presetI18n'
+import { UI_FONT_SCALE_DEFAULT, uiFontScalePx } from './domain/uiFontScale'
 import { EffectsView } from './components/EffectsView'
 import { ShutdownTimerPanel } from './components/ShutdownTimerPanel'
 // R147 P4: heavy views load on demand — three.js (via MiniGames/3D previews),
@@ -87,6 +88,12 @@ export function App(): JSX.Element {
 
   // ── UI state persisted to localStorage ──────────────────────────────────
   const [selectedLayerId, setSelectedLayerId] = usePersistedState('rgbbox:selectedLayerId', 'layer-rainbow', { raw: true })
+  // R160.4: Dynamic-Type-equivalent font scale — the rem-rooted type ramp
+  // follows one html font-size rewrite (see base.css anchor note).
+  const [uiFontScale, setUiFontScale] = usePersistedState('rgbbox:uiFontScale', UI_FONT_SCALE_DEFAULT, { raw: true })
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${uiFontScalePx(uiFontScale)}px`
+  }, [uiFontScale])
   // R86: single-view navigation — left rail direct switching, last view persisted
   // R142-E4b: app root for the vision assistant's full-window cursor overlay
   const appRootRef = useRef<HTMLElement | null>(null)
@@ -529,6 +536,8 @@ export function App(): JSX.Element {
             onScreensaver={settingsMirror.applyScreensaverSettings}
             snipHotkey={settingsMirror.snipHotkey}
             onSnipHotkey={settingsMirror.applySnipHotkey}
+            uiFontScale={uiFontScale}
+            onUiFontScale={setUiFontScale}
           />
         )}
         {activeView === 'ai' && (

@@ -18,17 +18,19 @@ function makeProps(over: Partial<SettingsViewProps> = {}): SettingsViewProps {
     onScreensaver: vi.fn(),
     snipHotkey: 'Alt+A',
     onSnipHotkey: vi.fn(),
+    uiFontScale: 'md',
+    onUiFontScale: vi.fn(),
     ...over
   }
 }
 
 describe('SettingsView', () => {
-  it('renders the three config groups (AI group moved to AI Lab, R88)', () => {
+  it('renders the four config groups (appearance added by R160.4; AI group moved to AI Lab, R88)', () => {
     const { container } = render(<SettingsView {...makeProps()} />)
     const groups = container.querySelectorAll('.settings-group h3')
     const titles = [...groups].map((g) => g.textContent)
     expect(titles).toEqual([
-      'settings.group.run', 'settings.group.screensaver', 'settings.group.hotkey'
+      'settings.group.run', 'settings.group.screensaver', 'settings.group.hotkey', 'settings.group.appearance'
     ])
   })
 
@@ -66,5 +68,14 @@ describe('SettingsView', () => {
   it('ai group is gone (moved to AI Lab, R88)', () => {
     const { container } = render(<SettingsView {...makeProps()} />)
     expect(container.querySelector('.settings-group[data-group="ai"]')).toBeNull()
+  })
+
+  it('R160.4: font-scale select offers the five tiers and fires onUiFontScale', () => {
+    const props = makeProps()
+    const { container } = render(<SettingsView {...props} />)
+    const select = container.querySelector('select[data-setting="ui-font-scale"]') as HTMLSelectElement
+    expect([...select.querySelectorAll('option')].map((o) => o.value)).toEqual(['xs', 'sm', 'md', 'lg', 'xl'])
+    fireEvent.change(select, { target: { value: 'lg' } })
+    expect(props.onUiFontScale).toHaveBeenCalledWith('lg')
   })
 })

@@ -445,6 +445,7 @@ export function SplatViewer({ model, ledColors, paused = false }: SplatViewerPro
             <input
               type="range" min={0.4} max={2.5} step={0.05}
               value={settings.exposure}
+              aria-label={t('model3d.exposure')}
               onChange={(e) => setSettings((p) => ({ ...p, exposure: Number(e.target.value) }))}
             />
           </div>
@@ -453,6 +454,7 @@ export function SplatViewer({ model, ledColors, paused = false }: SplatViewerPro
             <input
               type="range" min={0} max={2.5} step={0.05}
               value={settings.glow}
+              aria-label={t('model3d.glow')}
               onChange={(e) => setSettings((p) => ({ ...p, glow: Number(e.target.value) }))}
             />
           </div>

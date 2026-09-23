@@ -18,10 +18,12 @@
      Telemetry values ride the mono track with tabular figures. */
   --font-ui: Inter, "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Cascadia Mono", ui-monospace, "SF Mono", Consolas, monospace;
-  --text-display-size: 20px;  --text-display-lh: 28px; --text-display-weight: 600;
-  --text-title-size: 15px;    --text-title-lh: 22px;   --text-title-weight: 500;
-  --text-body-size: 13px;     --text-body-lh: 20px;
-  --text-caption-size: 11px;  --text-caption-lh: 16px; --text-caption-tracking: 0.02em;
+  /* R160.1: type ramp in rem (N/16 of the former px — pixel-identical at the
+     100% scale) so the appearance font-scale tier resizes the whole ramp. */
+  --text-display-size: 1.25rem;   --text-display-lh: 1.75rem; --text-display-weight: 600;
+  --text-title-size: 0.9375rem;   --text-title-lh: 1.375rem;   --text-title-weight: 500;
+  --text-body-size: 0.8125rem;    --text-body-lh: 1.25rem;
+  --text-caption-size: 0.6875rem; --text-caption-lh: 1rem; --text-caption-tracking: 0.02em;
   /* ── R148 S3: shape & spacing scales (4px grid) ───────────────────────── */
   --radius-s: 4px;   /* inputs, small buttons, chips        */
   --radius-m: 6px;   /* buttons, cards, panels              */

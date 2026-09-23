@@ -1,6 +1,7 @@
 import { Pause, Play } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { PRESET_SNIP_HOTKEYS } from '../../../shared/snipHotkeys'
+import { UI_FONT_SCALE_TIERS } from '../domain/uiFontScale'
 
 export interface SettingsViewProps {
   // Runtime
@@ -17,6 +18,9 @@ export interface SettingsViewProps {
   // Hotkeys (R81)
   snipHotkey: string
   onSnipHotkey: (k: string) => void
+  // Appearance (R160.4): Dynamic-Type-equivalent font scale
+  uiFontScale: string
+  onUiFontScale: (id: string) => void
   // AI (R83→R88): moved to the AI Lab view
 }
 
@@ -97,6 +101,23 @@ export function SettingsView(props: SettingsViewProps) {
             >
               {PRESET_SNIP_HOTKEYS.map((k) => (
                 <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+          </div>
+        </section>
+
+        {/* R160.4: appearance — font scale tiers ride the rem-rooted type ramp. */}
+        <section className="panel settings-group" data-group="appearance">
+          <h3>{t('settings.group.appearance')}</h3>
+          <div className="status-panel" title={t('uiFontScale.hint')}>
+            <span>{t('uiFontScale.label')}</span>
+            <select
+              data-setting="ui-font-scale"
+              value={props.uiFontScale}
+              onChange={(e) => props.onUiFontScale(e.target.value)}
+            >
+              {UI_FONT_SCALE_TIERS.map((tier) => (
+                <option key={tier.id} value={tier.id}>{t(`uiFontScale.tier.${tier.id}` as Parameters<typeof t>[0])}</option>
               ))}
             </select>
           </div>

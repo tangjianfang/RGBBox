@@ -12,6 +12,7 @@
  * Portability: playwright-core is a repo devDependency via scripts/lib/cdp.mjs (T2).
  */
 import { chromium, assertFreshOut, launchElectron, connectRenderer } from './lib/cdp.mjs'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 import pixelmatch from 'pixelmatch'
@@ -113,7 +114,16 @@ for (let i = 0; i < VIEWS.length; i++) {
 }
 console.log(`${ok}/${VIEWS.length} views captured into ${shotDir}/`)
 if (ok !== VIEWS.length) process.exit(1)
-if (mode !== 'compare') process.exit(0)
+if (mode !== 'compare') {
+  // R160.5 (§7.2 stale-baseline lesson): stamp the commit this baseline was
+  // shot against. T1's freshness check is relative and only fires on the NEXT
+  // run — editing sources after this point silently invalidates the baseline.
+  try {
+    const head = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    console.log(`\nBASELINE UPDATED at HEAD ${head} — touch src/ after this and you MUST rebuild + re-run --update-baseline.`)
+  } catch { /* git unavailable — the guard line is best-effort */ }
+  process.exit(0)
+}
 
 // ── pixelmatch hard gate (R148 S3 batches run this every batch) ─────────────
 let gateOk = true

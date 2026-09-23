@@ -2120,22 +2120,28 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
           + volume/balance/lyrics-toggle together, per user request. */}
       <div className="audio-transport-bar">
         <div className="audio-transport-row audio-transport-row-controls">
-          <button type="button" className="audio-btn-icon" title={t('audio.prev')} onClick={skipPrev}><SkipBack size={15} /></button>
-          <button type="button" className="audio-btn-icon" title={isPlaying ? t('audio.pause') : t('audio.play')} onClick={togglePlay}>
+          {/* R161.1: icon-only buttons carry aria-label (title alone is not
+              exposed to screen readers); mode toggles also expose aria-pressed. */}
+          <button type="button" className="audio-btn-icon" title={t('audio.prev')} aria-label={t('audio.prev')} onClick={skipPrev}><SkipBack size={15} /></button>
+          <button type="button" className="audio-btn-icon" title={isPlaying ? t('audio.pause') : t('audio.play')} aria-label={isPlaying ? t('audio.pause') : t('audio.play')} onClick={togglePlay}>
             {isPlaying ? <Pause size={15} /> : <Play size={15} />}
           </button>
-          <button type="button" className="audio-btn-icon" title={t('audio.next')} onClick={skipNext}><SkipForward size={15} /></button>
+          <button type="button" className="audio-btn-icon" title={t('audio.next')} aria-label={t('audio.next')} onClick={skipNext}><SkipForward size={15} /></button>
           <button
             type="button"
             className={`audio-btn-sm ${playMode === 'loop' ? 'active' : ''}`}
             onClick={() => setPlayMode(playMode === 'loop' ? 'sequential' : 'loop')}
             title={t('audio.loop')}
+            aria-label={t('audio.loop')}
+            aria-pressed={playMode === 'loop'}
           ><RefreshCw size={13} /></button>
           <button
             type="button"
             className={`audio-btn-sm ${playMode === 'shuffle' ? 'active' : ''}`}
             onClick={() => setPlayMode(playMode === 'shuffle' ? 'sequential' : 'shuffle')}
             title={t('audio.shuffle')}
+            aria-label={t('audio.shuffle')}
+            aria-pressed={playMode === 'shuffle'}
           ><Shuffle size={13} /></button>
           {/* R151.2 (review §12.4): centered ≤520px progress cluster with the
               times hugging the bar (was a ~1010px full-width slider with the
@@ -2150,6 +2156,8 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
               max={isFinite(duration) && duration > 0 ? duration : 1}
               step={0.1}
               value={progress}
+              aria-label={t('audio.progress')}
+              aria-valuetext={formatMediaTime(progress)}
               onPointerDown={() => { progressDraggingRef.current = true }}
               onPointerUp={() => { progressDraggingRef.current = false }}
               onPointerCancel={() => { progressDraggingRef.current = false }}
@@ -2159,7 +2167,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             <span className="audio-time audio-time--end">{isFinite(duration) && duration > 0 ? formatMediaTime(duration) : '--:--'}</span>
           </div>
           <div className="audio-volume-cluster">
-            <button type="button" className="audio-btn-icon" onClick={() => setMuted(!muted)} title={t('audio.volume')}>
+            <button type="button" className="audio-btn-icon" onClick={() => setMuted(!muted)} title={t('audio.volume')} aria-label={muted ? t('audio.unmute') : t('audio.mute')}>
               {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
             </button>
             <input
@@ -2169,6 +2177,8 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
               value={volume}
               onChange={(e) => setVolume(Number(e.target.value))}
               title={t('audio.volume')}
+              aria-label={t('audio.volume')}
+              aria-valuetext={`${Math.round(volume * 100)}%`}
             />
             <span className="audio-value">{Math.round(volume * 100)}%</span>
             <span className="audio-transport-divider" />
@@ -2179,6 +2189,8 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
               min={-1} max={1} step={0.01}
               value={balance}
               onChange={(e) => setBalance(Number(e.target.value))}
+              aria-label={t('audio.balance')}
+              aria-valuetext={balance < 0 ? `L${Math.round(-balance * 50)}` : balance > 0 ? `R${Math.round(balance * 50)}` : 'C'}
             />
             <span className="audio-value">{balance < 0 ? `L${Math.round(-balance * 50)}` : balance > 0 ? `R${Math.round(balance * 50)}` : 'C'}</span>
           </div>
@@ -2194,6 +2206,8 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             type="button"
             className={`audio-btn-icon${showLyrics ? ' active' : ''}`}
             title={t('audio.lyrics.title')}
+            aria-label={t('audio.lyrics.title')}
+            aria-pressed={showLyrics}
             onClick={() => setShowLyrics(v => !v)}
           ><FileText size={14} /></button>
         </div>
@@ -2347,14 +2361,14 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                   border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: 8, zIndex: 100,
                   minWidth: 200
                 }}>
-                  <p style={{ fontSize: 11, marginBottom: 6, opacity: 0.7 }}>{t('audio.viz.region')}</p>
+                  <p style={{ fontSize: '0.6875rem', marginBottom: 6, opacity: 0.7 }}>{t('audio.viz.region')}</p>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, marginBottom: 8 }}>
                     {(['fullscreen','top-third','middle-third','bottom-third','left-third','center-third','right-third','custom'] as RegionPreset[]).map(preset => (
                       <button
                         key={preset}
                         type="button"
                         className={`audio-btn-sm ${projectRegion === preset ? 'active' : ''}`}
-                        style={{ fontSize: 10, padding: '4px 6px' }}
+                        style={{ fontSize: '0.625rem', padding: '4px 6px' }}
                         onClick={() => { setProjectRegion(preset); setPickingCustom(preset === 'custom') }}
                         title={t(`overlay.region.${preset === 'top-third' ? 'top' : preset === 'middle-third' ? 'middle' : preset === 'bottom-third' ? 'bottom' : preset === 'left-third' ? 'left' : preset === 'center-third' ? 'center' : preset === 'right-third' ? 'right' : preset === 'custom' ? 'custom' : 'fullscreen'}` as any)}
                       >
@@ -2362,7 +2376,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                       </button>
                     ))}
                   </div>
-                  <p style={{ fontSize: 11, marginBottom: 6, opacity: 0.7 }}>{t('audio.viz.selectDisplay')}</p>
+                  <p style={{ fontSize: '0.6875rem', marginBottom: 6, opacity: 0.7 }}>{t('audio.viz.selectDisplay')}</p>
                   {displays.map(d => {
                     const active = projectDisplayIds.includes(d.id)
                     return (
@@ -2460,6 +2474,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                     type="button"
                     className="audio-btn-sm"
                     title={t('audio.eq.savePreset')}
+                    aria-label={t('audio.eq.savePreset')}
                     onClick={saveCustomPreset}
                   >
                     <Plus size={12} />
@@ -2469,6 +2484,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                       type="button"
                       className="audio-btn-icon"
                       title={t('audio.eq.deletePreset')}
+                      aria-label={t('audio.eq.deletePreset')}
                       onClick={() => deleteCustomPreset(eqPresetId)}
                     >
                       <Trash2 size={12} />
@@ -2558,6 +2574,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                             type="button"
                             className="audio-btn-icon"
                             title={t('audio.eq.deleteBand')}
+                            aria-label={t('audio.eq.deleteBand')}
                             disabled={eqParams.length <= 1}
                             onClick={() => setEqParams(prev => prev.length > 1 ? prev.filter((_, j) => j !== i) : prev)}
                           >
@@ -2771,6 +2788,8 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                       max={1}
                       step={0.01}
                       value={genConfig.gain}
+                      aria-label={t('audio.gen.gain')}
+                      aria-valuetext={`${Math.round(genConfig.gain * 100)}%`}
                       onChange={(e) => setGenConfig(c => ({ ...c, gain: Number(e.target.value) }))}
                     />
                     <span className="audio-value">{Math.round(genConfig.gain * 100)}%</span>

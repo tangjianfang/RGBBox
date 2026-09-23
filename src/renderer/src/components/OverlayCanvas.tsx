@@ -274,7 +274,7 @@ export function OverlayCanvas({ displayId, opaque = false }: Props): JSX.Element
         borderRadius: 6,
         background: 'rgba(0,0,0,0.55)',
         color: 'rgba(255,255,255,0.75)',
-        fontSize: 12,
+        fontSize: '0.75rem',
         pointerEvents: 'none',
         animation: 'overlayHintFade 3s ease 1.5s forwards',
         whiteSpace: 'nowrap'

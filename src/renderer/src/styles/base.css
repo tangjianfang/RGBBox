@@ -3,6 +3,14 @@
   box-sizing: border-box;
 }
 
+/* R160.1: explicit rem anchor — the Dynamic-Type-equivalent font scale
+   (settings → appearance) rewrites this one declaration; every rem size in
+   the app follows. 16px is the browser default the px→rem migration was
+   calibrated against (Npx = N/16 rem, pixel-identical at 100%). */
+html {
+  font-size: 16px;
+}
+
 /* ── Custom scrollbar — matches dark theme, eliminates browser-default gray ── */
 ::-webkit-scrollbar {
   width: 6px;

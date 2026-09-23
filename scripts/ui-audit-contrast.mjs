@@ -43,8 +43,39 @@ const resolveColor = (value, depth = 0) => {
     const name = v.slice(4, v.indexOf(')')).split(',')[0].trim()
     return tokens.has(name) ? resolveColor(tokens.get(name), depth + 1) : null
   }
-  return null // rgba()/named → skipped (documented limitation)
+  return null // named colors → skipped (documented limitation)
 }
+
+/**
+ * R160.5: rgba() support — an rgba fg composited over a KNOWN hex bg has a
+ * definite effective color, so alpha tiers (danger-wash buttons, dim accents)
+ * stop being invisible to the audit. Returns null when the chain resolves to
+ * something still unparseable.
+ */
+const parseRgba = (value, depth = 0) => {
+  if (depth > 5) return null
+  const v = value.trim()
+  const m = v.match(/^rgba\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)[,\s/]+([\d.]+)\s*\)$/)
+  if (m) return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a: Number(m[4]) }
+  if (v.startsWith('var(')) {
+    const name = v.slice(4, v.indexOf(')')).split(',')[0].trim()
+    return tokens.has(name) ? parseRgba(tokens.get(name), depth + 1) : null
+  }
+  return null
+}
+
+const hexToRgb = (hex) => {
+  const h = hex.replace('#', '')
+  const full = h.length === 3 ? [...h].map((c) => c + c).join('') : h
+  return { r: parseInt(full.slice(0, 2), 16), g: parseInt(full.slice(2, 4), 16), b: parseInt(full.slice(4, 6), 16) }
+}
+const rgbToHex = ({ r, g, b }) => '#' + [r, g, b].map((c) => Math.round(Math.max(0, Math.min(255, c))).toString(16).padStart(2, '0')).join('')
+/** Composite an rgba over an opaque base (standard source-over). */
+const composite = (fg, base) => ({
+  r: fg.r * fg.a + base.r * (1 - fg.a),
+  g: fg.g * fg.a + base.g * (1 - fg.a),
+  b: fg.b * fg.a + base.b * (1 - fg.a),
+})
 
 const srgbToLinear = (c) => {
   const s = c / 255
@@ -68,9 +99,15 @@ const violations = []
 let checked = 0
 let skipped = 0
 const check = (label, fgRaw, bgRaw) => {
-  const fgHex = resolveColor(fgRaw)
   const bgHex = resolveColor(bgRaw)
-  if (!fgHex || !bgHex) { skipped++; return }
+  if (!bgHex) { skipped++; return } // rgba/unknown bg: no known base to composite over
+  let fgHex = resolveColor(fgRaw)
+  if (!fgHex) {
+    // R160.5: rgba fg over the known pair bg → composite to its effective color.
+    const rgba = parseRgba(fgRaw)
+    if (rgba) fgHex = rgbToHex(composite(rgba, hexToRgb(bgHex)))
+  }
+  if (!fgHex) { skipped++; return }
   checked++
   const ratio = contrast(fgHex, bgHex)
   if (ratio < THRESHOLD) {

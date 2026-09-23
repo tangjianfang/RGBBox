@@ -264,6 +264,15 @@ const EN = {
   'settings.group.run': 'Runtime',
   'settings.group.screensaver': 'Screensaver',
   'settings.group.hotkey': 'Hotkeys',
+  // R160.4: appearance — Dynamic-Type-equivalent font scale tiers.
+  'settings.group.appearance': 'Appearance',
+  'uiFontScale.label': 'Interface font size',
+  'uiFontScale.hint': 'Resizes text across the whole app (85%–130%)',
+  'uiFontScale.tier.xs': 'Small (85%)',
+  'uiFontScale.tier.sm': 'Medium-small (92%)',
+  'uiFontScale.tier.md': 'Default (100%)',
+  'uiFontScale.tier.lg': 'Large (115%)',
+  'uiFontScale.tier.xl': 'Extra large (130%)',
   // Audio
   'audio.on': 'Audio On',
   'audio.off': 'Audio Off',
@@ -1099,6 +1108,10 @@ const EN = {
   'audio.nowPlaying.none': 'No track playing',
   'audio.volume': 'Volume',
   'audio.balance': 'Balance',
+  // R161: audio transport aria labels.
+  'audio.progress': 'Playback position',
+  'audio.mute': 'Mute',
+  'audio.unmute': 'Unmute',
   'audio.preview': 'Preview',
   'audio.stop': 'Stop',
   'audio.export': 'Export',
@@ -1214,6 +1227,10 @@ const EN = {
   'audio.pause': 'Pause',
   // Video player custom controls
   'video.player.play': 'Play',
+  // R161: player transport aria labels (also localize the former hardcoded ±10s titles).
+  'video.player.progress': 'Playback position',
+  'video.player.back10': 'Back 10 seconds',
+  'video.player.fwd10': 'Forward 10 seconds',
   'video.player.pause': 'Pause',
   'video.player.mute': 'Mute',
   'video.player.unmute': 'Unmute',
@@ -1729,6 +1746,15 @@ const ZH: TranslationTable = {
   'settings.group.run': '运行',
   'settings.group.screensaver': '屏保',
   'settings.group.hotkey': '快捷键',
+  // R160.4：外观——文字缩放档位（Dynamic Type 等价）。
+  'settings.group.appearance': '外观',
+  'uiFontScale.label': '界面字号',
+  'uiFontScale.hint': '调整整个应用的文字大小（85%–130%）',
+  'uiFontScale.tier.xs': '小（85%）',
+  'uiFontScale.tier.sm': '中小（92%）',
+  'uiFontScale.tier.md': '默认（100%）',
+  'uiFontScale.tier.lg': '大（115%）',
+  'uiFontScale.tier.xl': '特大（130%）',
   'audio.on': '音频已开',
   'audio.off': '音频已关',
   'audio.defaultDevice': '默认（麦克风）',
@@ -2545,6 +2571,10 @@ const ZH: TranslationTable = {
   'audio.nowPlaying.none': '暂无播放',
   'audio.volume': '音量',
   'audio.balance': '声道平衡',
+  // R161：音频 transport aria 标签。
+  'audio.progress': '播放进度',
+  'audio.mute': '静音',
+  'audio.unmute': '取消静音',
   'audio.preview': '试听',
   'audio.stop': '停止',
   'audio.export': '导出',
@@ -2660,6 +2690,10 @@ const ZH: TranslationTable = {
   'audio.pause': '暂停',
   // 视频播放器自定义控件
   'video.player.play': '播放',
+  // R161：播放器 transport aria 标签（顺带本地化原硬编码 ±10s title）。
+  'video.player.progress': '播放进度',
+  'video.player.back10': '快退 10 秒',
+  'video.player.fwd10': '快进 10 秒',
   'video.player.pause': '暂停',
   'video.player.mute': '静音',
   'video.player.unmute': '取消静音',

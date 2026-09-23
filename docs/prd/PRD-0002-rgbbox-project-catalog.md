@@ -3156,7 +3156,7 @@
   - **v2 综合 = 72.0/100**（v1 81 → 降 9 分）：启动流畅 80→60（冷启动/hang/60fps 三锚点 0 实测）、内存能效 85→70（单点快照）、设计 HIG 78→72（主题剔除+S3 未完）、可访问性 62→60、稳定性 85→75（crash-free 无遥测）、隐私 90→85、其余微调。
   - 三段结构：已验证 **72**（今天）→ 自动化可达 **~80-82**（A1 冷启动+hang+fps / A4 对比度 / S4 泄漏采样，AI 可执行，1-2 周）→ 自动化边界外 **93-95**（A2 rem 化 / A3 阅读器走查 / S5 原生质感，需人工重投入）。
   - 产出：评分文档 §6（v1 表保留作历史）。状态回写：R157.6 ✅ 维持。
-- **R157.6 状态**：✅（规划条款闭环；A1-A6 待用户批准后另行立项。2026-09-23 用户批准「自动化可达批次」→ **A1/A4 由 R158 承载、A5 由 R159 承载**，A2/A3/A6 维持边界外）
+- **R157.6 状态**：✅（规划条款闭环；A1-A6 待用户批准后另行立项。2026-09-23 用户批准「自动化可达批次」→ **A1/A4 由 R158 承载、A5 由 R159 承载**，A2/A3/A6 维持边界外。同日第二批：**A2 → R160、A3 → R161 承载**，A6 亮色主题仍按用户指令排除）
 - **R157.9 重评分 v3（2026-09-23 复核会话，R158+R159 视觉复核轮收尾）**：按纪律由复核会话独立复现全部声明并目检 9 view。
   - **复核抓获陈旧基线事故（T1 镜像变体）**：修复会话 17:53 构建 / 17:58 提交，基线拍自提交前构建 → 复核重建后 T1 fail-fast 拦下，compare 暴露 workspace 0.5869%（采样面板 ~25px 位移）+ diagnostics 0.0178% → 目检确认 HEAD 渲染正确（无 W1 回归）→ R152.6 流程 HEAD 重拍基线 → **GATE PASS 9/9**（video 0.0574% 已知噪声）。教训：基线更新必须在最终构建之后。
   - 独立复现全绿：typecheck 双绿 / **119 files 1088 passed 0 失败** / 对比度 **163 对 0 违例**（残余盲区：160 对 unresolved-color 跳过，入档）/ hex 0 / 冷启动 ×5 p50 首帧 ~0.94s（872-1047ms）/ hang 0 / fps 8/9 ≥60（effects 内容层 20↔61 逐轮方差在案）。
@@ -3205,4 +3205,44 @@
   - i18n 键位：EN/ZH 对称新增 **187 键/表**（preset 110 + arch 62 + ai 音频错误 7 + diag.crash 8）；键位对齐（既有 i18n 测试 + tsc `keyof typeof EN` 静态约束）绿。
   - 验证：typecheck 双绿；`yarn test` 119 files / 1088 passed / 0 失败；E2E zh 抽查（verify-r158-r159.mjs）——effects 首卡中文 ✓ / architecture 标签「Electron 主进程」✓ / games tile 中文且无英文残留 ✓；`ui:snapshot` 基准更新后 9/9 全零。
 - **R159.9 状态**：✅（R159.7 验收点 ①-④ 全过；R150.6 预留债 E3/AR1/G4/GM2/AI5 五处全部清偿）
+
+### R160. 实施：A2 文字缩放（Dynamic Type 等价）——rem 数学等价迁移 + 设置页字号档位 + rgba 审计增强（2026-09-23 用户指令「审核报告并制定修复方案→A2+A3 可及性双批」；R157.4-A2 承载，R157.8 v3 可及性 68 十维最低分的主残项）
+
+> 性质：实施轮（L2——新增用户可见行为「字号档位」，CSS 迁移为数学等价零视觉变化）。锚点：R157.2 Dynamic Type 必达；复核轮 §7.4 可及性 68 = 「rem 化 ~353 处 + aria 面」两缺口之一。
+> **技术路线**：root=16px 数学等价替换（`Npx → N/16 rem`，默认渲染逐像素不变）——把 A2 从「1-2 周大工程」拆成「等价迁移（零存量风险）+ 档位功能（新增验证）」两段；档位上限本轮封顶 **130%**（150% 布局破损风险高，按验证结果后续立项）。
+
+- **R160.1 基准与 token**：`base.css` 增 `html { font-size: 16px }` 显式锚定（现隐式继承）；`tokens.css` 四级字阶 px→rem（20→1.25 / 15→0.9375 / 13→0.8125 / 11→0.6875），app.css 现有 `var(--text-*)` 17 处自动跟随。
+- **R160.2 批量迁移**：app.css ~340 处 `font-size: Npx`→rem，一次性 Node 内联转换（规则入实施证据，不留常驻脚本）+ 人工抽查；9 处 React 内联 `fontSize` 数值 props → rem 字符串（VideoStudioView ×2 / Model3DView / AudioStudioView ×3 / ScreensaverView / OverlayCanvas / AudioVizProjector）。
+- **R160.3 豁免边界**：`ai8/markdown.tsx` 4 处（导出到 AI8 外部/浅色 HTML，不走应用 token）；`AnnotateOverlay` 动态画布坐标 fontSize；AudioStudioView SVG `fontSize="9"` ×4（频谱轴随图表几何）；canvas 绘制文本（非 CSS 域）。
+- **R160.4 设置档位**：`usePersistedState('rgbbox:uiFontScale', 'md', raw)` 五档 xs 85% / sm 92% / md 100% / lg 115% / xl 130%；应用点 App boot effect → `document.documentElement.style.fontSize`；SettingsView 新增 `data-group="appearance"` 组（select 控件沿 screensaver-minutes 范例）；i18n `settings.group.appearance` + `uiFontScale.*` EN/ZH 对称。
+- **R160.5 顺带三件**（复核轮发现）：①`ui-audit-contrast.mjs` resolveColor 支持 `rgba(r,g,b,a)`（配对 bg 已知按 alpha 混合成等效 hex，解锁 ~160 对跳过盲区，新违例当轮修）；②`ui-snapshot.mjs` update 模式完成后打印 git HEAD + 「源码再改动须重新构建+重拍」警示（§7.2 陈旧基线事故防护）；③重评分报告双 `## 7.` 编号修正（修复会话自查版降级 §6.5，复核版保留权威 §7）。
+- **R160.6 验收点**：①默认档 build 后 `yarn ui:snapshot` 9/9 零 diff（数学等价证明；亚像素 diff 则按流程**最终构建后**重拍）；②`verify-r160-scale.mjs`：5 档 × 9 view 布局探查（scrollWidth 无横向溢出 + rail/header/panel rect 不重叠——沿 verify-r116/r117 computed-overflow + rect 包含断言模式）；③E2E 断言切档 html fontSize 变化（13.6/20.8px）+ localStorage 持久化 + reload 保持；④对比度 pairs ≥163 维持 + rgba 解锁对 0 违例（或修复）；⑤typecheck/test 全绿。
+- **R160.7 实施证据（2026-09-23，glm-5.3 会话，实施轮）**：
+  - 迁移：`base.css` html 16px 锚定；`tokens.css` 字阶 4 组 + lh 4 组 px→rem；`app.css` **338 处** font-size `Npx→N/16rem`（16 为 2 的幂全部整除无舍入）；内联 fontSize **9 处**（VideoStudio ×2/Model3D/AudioStudio ×3/Screensaver/OverlayCanvas/AudioVizProjector）转 rem 字符串。转换规则入本条（一次性 Node 内联执行，无常驻脚本）。
+  - 档位：`domain/uiFontScale.ts`（xs 85/sm 92/md 100/lg 115/xl 130%——150% 明确不在本轮）+ App.tsx `rgbbox:uiFontScale`（raw）state + boot effect 写 `documentElement.style.fontSize` + SettingsView `data-group="appearance"` select（沿 screensaver-minutes 范例）；i18n `settings.group.appearance` + `uiFontScale.*` **9 键/表**。
+  - ①数学等价验收实录：**布局层等价成立**（verify-r160-scale rect 断言 141/141），但 Chromium 对 rem 字号的光栅化 hinting 与整数 px 存在微差——首跑 GATE FAIL 0.087-2.8%（与 view 文本密度正相关，architecture 最少 0.087% 过线）→ 触发验收点①后备条款：**最终构建后** `--update-baseline` 重拍（新防护打印 `BASELINE UPDATED at HEAD 6183c7c` 警示行）→ 复验 **9/9 全零**。
+  - ②③`verify-r160-scale.mjs` **141/141**：5 档 root font-size 精确（13.6/14.72/16/18.4/20.8px）× 9 view 无横向溢出 + rail 不出视口 + 可见 header 不压 rail（keep-alive 隐藏 view 零 rect 需过滤——脚本首版误报 15 项后修正）；xl 档 reload 持久化 ✓。
+  - ④审计 rgba 合成：`parseRgba` + source-over 混合（配对 bg 已知）→ **163 对 0 违例**；新抓获 `.video-source-thumb-empty`（30% 白 on 黑 = 2.48:1）→ 50% 白（≥4.5:1）修复后归零。
+  - ⑤typecheck 双绿；`yarn test` **119 files / 1089 passed / 0 失败**（SettingsView 组数断言 3→4 更新 + 新增档位 select 行为测试）；build 绿。
+  - 顺带：报告双 `## 7.` 编号归位（自查版降 §6.5、复核版留 §7 权威）；`ui-snapshot.mjs` update 模式 HEAD 戳防护落地（本轮即实战输出）。
+- **R160.8 状态**：✅（R160.6 ①-⑤ 全过；A2 从「一票重扣」清偿为「rem 全站 + 五档缩放 + 布局验证」，150% 档留待后续按需立项）
+
+### R161. 实施：A3 可及性语义面——transport/滑杆 aria 补齐 + Tab 走查 E2E + 55 卡中文穷举（2026-09-23 用户指令同上；R157.4-A3 承载）
+
+> 性质：实施轮（L1，纯语义属性 + 新验证脚本，零渲染变化）。锚点：R157.2 屏幕阅读器可用。**如实声明**：真人 NVDA/Narrator 走查属自动化边界外——本条交付代码语义面 + Tab 走查自动化。
+
+- **R161.1 AudioStudioView**：transport 5 个纯图标钮（prev/play/next/loop/shuffle，:2123-2138）补 `aria-label`（对齐 title）；loop/shuffle 补 `aria-pressed`；7 个滑杆（:2121-2184，进度/音量/均衡）补 `aria-label` + `aria-valuetext`（带单位值）。
+- **R161.2 VideoStudioView**：transport 同类 + 6 滑杆（现仅 2 处 aria-expanded）。
+- **R161.3 全站 range 补漏**：30 个 `type="range"` / 8 文件逐一过——隐式 `<label>` 包裹的（WorkspaceView 9 个）保持，无标签的补 `aria-label`。
+- **R161.4 i18n**：`a11y.audio.*` / `a11y.video.*` 键（沿 `a11y.moduleNav` 前缀惯例）EN/ZH 对称。
+- **R161.5 验收点**：①`verify-r161-a11y.mjs`：Tab 走查（`keyboard.press('Tab')` 序列断言 rail→内容焦点可达）+ transport 图标钮 aria-label 全存在 + 滑杆 aria-label/valuetext 全存在；②effects 55 卡 label/desc 全中文穷举断言（清 R157.8 §7.4 本地化 95 的抽查债）；③`yarn ui:snapshot` 零 diff（aria 不影响渲染）；④typecheck/test 全绿。
+- **R161.6 实施证据（2026-09-23，glm-5.3 会话，实施轮）**：
+  - Audio：transport 6 图标钮（prev/play/next/loop/shuffle/mute）aria-label 对齐 title + `audio.mute/unmute` 状态化；loop/shuffle/lyrics `aria-pressed`；进度/音量/平衡 3 滑杆 aria-label+valuetext（formatMediaTime/百分比/L-R-C 值）；EQ savePreset/deletePreset/deleteBand 三处 icon-only 补漏；gen gain 滑杆补（`audio.gen.gain`）；EQ freq/gain/Q 三滑杆为 label 包裹隐式关联（豁免维持）。
+  - Video：player transport 全套（seek/volume 滑杆 + valuetext；**±10s title 原为硬编码英文——顺带本地化** `video.player.back10/fwd10`）；`video-btn-icon`/`video-player-btn` 9 处批量 aria-label（title 同值）；hw 控件/滤镜 8 组/gain/denoise strength 滑杆 aria-label（`t()` 动态键）。SplatViewer 曝光/辉光 2 滑杆补；VideoWallEditor/WorkspaceView 为 label 包裹（豁免）。
+  - i18n：`audio.progress/mute/unmute` + `video.player.progress/back10/fwd10` **6 键/表**。
+  - ①`verify-r161-a11y.mjs` **8/8**：Tab 走查（14 press 命中 rail 9 次、6 个不同焦点目标、Shift+Tab 回退）；accessible name 判定 = aria-label **或文本内容**（带文本按钮不误报）；audio transport 7 钮全具名 + 3 toggle 具 pressed + 3 滑杆具 label；video 常驻 icon 钮全具名。
+  - ②effects 55 卡穷举：遍历 7 个分类 tab（`.effects-category-tab` role=tab）收集去重 **55 label 全中文**——R157.8 §7.4「本地化 95 非 100（穷举未做）」债清偿。
+  - ③④：`yarn ui:snapshot` 9/9 全零（aria 零渲染变化）；typecheck 双绿；`yarn test` 119 files / **1089 passed / 0 失败**。
+  - 边界兑现：真人 NVDA/Narrator 走查维持自动化边界外声明；全站 `tabIndex`/focus-trap 零债务确认（Tab 走原生序）。
+- **R161.7 状态**：✅（R161.5 ①-④ 全过；A3 的代码语义面闭环，R157.8 可及性 68 的 aria 缺口清偿——rem 缺口由 R160 同批清偿）
 
