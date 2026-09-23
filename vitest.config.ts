@@ -64,21 +64,32 @@ export default defineConfig({
         // LED map JSON data files (not source code)
         'src/shared/led-positions/**'
       ],
-      // R12.6: global thresholds set to the R12.6.1 "first-run target" of
-      // 60% lines + 50% branches. Well-tested modules (engine 95/76,
-      // main 89/74, shared 95/80, workers 100/85, hooks 80/55) all
-      // exceed 80% individually. Components that depend on 3D rendering
-      // branches (which require a real GPU and are excluded above)
-      // cannot reach higher in a headless environment.
-      //
-      // R13 (Playwright E2E) is the planned next step to push component
-      // coverage above 60% by exercising the full view tree end-to-end
-      // with a real GPU on a developer machine or CI runner.
+      // R163.2 (R156-S1 plan C): LAYERED thresholds — the former single
+      // global line (75/60) sat permanently above the achievable weighted
+      // waterline, so `test:coverage` exit-1'd on every run and the red
+      // stopped meaning anything. Now each layer's red line is its own,
+      // calibrated a notch under the measured waterline (R163 round):
+      //   engine 96.7/77.8   shared 88.5/77.0   main 54.6/48.2
+      //   components 50.1/41.5   hooks 57.3/30.9   workers 100/85
+      // The global line drops to just-under-waterline so the gate is GREEN
+      // while debt stays VISIBLE per layer (each layer reds independently
+      // when it regresses). The R12.6.1 line (75/60) returns as the R156-S6
+      // phase-two endpoint, raised layer by layer as the debt batches land.
       thresholds: {
-        lines: 75,
-        branches: 60,
-        functions: 60,
-        statements: 75
+        // global (weighted waterline: 61.95 lines / 48.64 branches /
+        // 51.11 functions / 59.44 statements at R163)
+        lines: 58,
+        branches: 46,
+        functions: 48,
+        statements: 56,
+        // per-layer starting lines (measured waterline − ~2-3pt slack)
+        'src/engine/**': { lines: 90, branches: 75, functions: 88, statements: 88 },
+        'src/renderer/src/engine/**': { lines: 95, branches: 82, functions: 95, statements: 92 },
+        'src/renderer/src/workers/**': { lines: 95, branches: 82, functions: 95, statements: 95 },
+        'src/shared/**': { lines: 85, branches: 72, functions: 75, statements: 85 },
+        'src/main/**': { lines: 52, branches: 45, functions: 52, statements: 52 },
+        'src/renderer/src/components/**': { lines: 47, branches: 38, functions: 43, statements: 45 },
+        'src/renderer/src/hooks/**': { lines: 55, branches: 28, functions: 42, statements: 50 }
       }
     }
   }

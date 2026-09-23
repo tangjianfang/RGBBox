@@ -1,8 +1,20 @@
 // @vitest-environment node
 // effect3dGl.ts uses WebGLRenderingContext. Per R12.5.5, the test gracefully
 // skips if no WebGL context is available in the current Node environment.
+//
+// R163.1: the shader/draw shells below were unconditional it.skip — they now
+// run for real through the headless-gl harness (itGl), with pixel-readback
+// assertions per Effect3DGl kind. The global setup's Effect3DGl stub never
+// applies here (unmock below — same lesson as previewGl.test.ts).
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+vi.unmock('../../../src/renderer/src/gl/effect3dGl')
+vi.unmock('../../../src/renderer/src/gl/previewGl')
+vi.unmock('../../../src/renderer/src/gl/effectGl')
+
+import { itGl, makeGlCanvas, readCenterPixel } from './glHarness'
+
+const KINDS = ['sphere-pulse', 'warp-portal', 'neon-galaxy', 'lava-sphere', 'laser-show', 'hologram'] as const
 
 describe('renderer/gl/effect3dGl', () => {
   it('module exports Effect3DGl class', async () => {
@@ -12,31 +24,51 @@ describe('renderer/gl/effect3dGl', () => {
 
   it('Effect3DGl has the expected public methods', async () => {
     const { Effect3DGl } = await import('../../../src/renderer/src/gl/effect3dGl')
-    // TS may compile class methods to prototype OR to instance fields.
-    // Check both surfaces.
-    const proto: any = Effect3DGl.prototype
-    const ownNames = Object.getOwnPropertyNames(proto)
-    const hasDraw = ownNames.includes('draw') || ownNames.includes('constructor')
-    // The test passes if EITHER the method is on the prototype or there
-    // is any non-constructor own property (i.e., the class compiled to a
-    // function). We confirm the class is a function.
     expect(typeof Effect3DGl).toBe('function')
-    // The draw method existence check is best-effort and tolerant:
-    if (!hasDraw) {
-      // Allow: TS may strip methods when no body is reachable; we still
-      // log the proto names so dev-time debugging is possible.
-      // eslint-disable-next-line no-console
-      console.log('Effect3DGl prototype own names:', ownNames)
-    }
+    const proto: any = Effect3DGl.prototype
+    expect(Object.getOwnPropertyNames(proto).length).toBeGreaterThan(0)
   })
 
-  it.skip('Effect3DGl compiles shaders for sphere-pulse', () => {})
-  it.skip('Effect3DGl compiles shaders for warp-portal', () => {})
-  it.skip('Effect3DGl compiles shaders for neon-galaxy', () => {})
-  it.skip('Effect3DGl compiles shaders for lava-sphere', () => {})
-  it.skip('Effect3DGl compiles shaders for laser-show', () => {})
-  it.skip('Effect3DGl compiles shaders for hologram', () => {})
-  it.skip('Effect3DGl.draw renders a frame for the active kind', () => {})
-  it.skip('Effect3DGl.dispose releases all GL resources', () => {})
-  it.skip('Effect3DGl throws when no WebGL context is available', () => {})
+  // One real compile+draw+readback per kind — the raymarchers differ enough
+  // (uniforms, detail/extra channels) that each deserves its own proof.
+  for (const kind of KINDS) {
+    itGl(`Effect3DGl compiles shaders and renders for ${kind}`, async () => {
+      const { Effect3DGl } = await import('../../../src/renderer/src/gl/effect3dGl')
+      const W = 64, H = 64
+      const { canvas, ctx } = makeGlCanvas(W, H)
+      const renderer = new Effect3DGl(canvas, kind)
+      renderer.draw(1.25, [0.5, 0.5, 0, 0])
+      const [r, g, b] = readCenterPixel(ctx, W, H)
+      // Non-black output at the frame center — the kind's raymarch actually
+      // lit a fragment (every kind's default framing centers on content).
+      expect(r + g + b).toBeGreaterThan(0)
+    })
+  }
+
+  itGl('Effect3DGl.draw advances frames without GL errors', async () => {
+    const { Effect3DGl } = await import('../../../src/renderer/src/gl/effect3dGl')
+    const W = 64, H = 64
+    const { canvas, ctx } = makeGlCanvas(W, H)
+    const renderer = new Effect3DGl(canvas, 'sphere-pulse')
+    for (let frame = 0; frame < 4; frame++) {
+      renderer.draw(frame * (1 / 30), [0.5, 0.5, 0, 0])
+    }
+    expect(ctx.getError()).toBe(0)
+    const [r, g, b] = readCenterPixel(ctx, W, H)
+    expect(r + g + b).toBeGreaterThan(0)
+  })
+
+  itGl('Effect3DGl.dispose releases all GL resources without throwing', async () => {
+    const { Effect3DGl } = await import('../../../src/renderer/src/gl/effect3dGl')
+    const { canvas } = makeGlCanvas(32, 32)
+    const renderer = new Effect3DGl(canvas, 'warp-portal')
+    renderer.draw(0, [0.5, 0.5, 0, 0])
+    expect(() => renderer.dispose()).not.toThrow()
+  })
+
+  it('Effect3DGl throws when no WebGL context is available', async () => {
+    const { Effect3DGl } = await import('../../../src/renderer/src/gl/effect3dGl')
+    const deadCanvas = { getContext: () => null }
+    expect(() => new Effect3DGl(deadCanvas, 'sphere-pulse')).toThrow('WebGL not available')
+  })
 })

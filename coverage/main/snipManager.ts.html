@@ -1,0 +1,1390 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for main/snipManager.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../prettify.css" />
+    <link rel="stylesheet" href="../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../index.html">All files</a> / <a href="index.html">main</a> snipManager.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">10.48% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>28/267</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">1.58% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>2/126</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">14% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>7/50</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">12.38% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>26/210</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a>
+<a name='L170'></a><a href='#L170'>170</a>
+<a name='L171'></a><a href='#L171'>171</a>
+<a name='L172'></a><a href='#L172'>172</a>
+<a name='L173'></a><a href='#L173'>173</a>
+<a name='L174'></a><a href='#L174'>174</a>
+<a name='L175'></a><a href='#L175'>175</a>
+<a name='L176'></a><a href='#L176'>176</a>
+<a name='L177'></a><a href='#L177'>177</a>
+<a name='L178'></a><a href='#L178'>178</a>
+<a name='L179'></a><a href='#L179'>179</a>
+<a name='L180'></a><a href='#L180'>180</a>
+<a name='L181'></a><a href='#L181'>181</a>
+<a name='L182'></a><a href='#L182'>182</a>
+<a name='L183'></a><a href='#L183'>183</a>
+<a name='L184'></a><a href='#L184'>184</a>
+<a name='L185'></a><a href='#L185'>185</a>
+<a name='L186'></a><a href='#L186'>186</a>
+<a name='L187'></a><a href='#L187'>187</a>
+<a name='L188'></a><a href='#L188'>188</a>
+<a name='L189'></a><a href='#L189'>189</a>
+<a name='L190'></a><a href='#L190'>190</a>
+<a name='L191'></a><a href='#L191'>191</a>
+<a name='L192'></a><a href='#L192'>192</a>
+<a name='L193'></a><a href='#L193'>193</a>
+<a name='L194'></a><a href='#L194'>194</a>
+<a name='L195'></a><a href='#L195'>195</a>
+<a name='L196'></a><a href='#L196'>196</a>
+<a name='L197'></a><a href='#L197'>197</a>
+<a name='L198'></a><a href='#L198'>198</a>
+<a name='L199'></a><a href='#L199'>199</a>
+<a name='L200'></a><a href='#L200'>200</a>
+<a name='L201'></a><a href='#L201'>201</a>
+<a name='L202'></a><a href='#L202'>202</a>
+<a name='L203'></a><a href='#L203'>203</a>
+<a name='L204'></a><a href='#L204'>204</a>
+<a name='L205'></a><a href='#L205'>205</a>
+<a name='L206'></a><a href='#L206'>206</a>
+<a name='L207'></a><a href='#L207'>207</a>
+<a name='L208'></a><a href='#L208'>208</a>
+<a name='L209'></a><a href='#L209'>209</a>
+<a name='L210'></a><a href='#L210'>210</a>
+<a name='L211'></a><a href='#L211'>211</a>
+<a name='L212'></a><a href='#L212'>212</a>
+<a name='L213'></a><a href='#L213'>213</a>
+<a name='L214'></a><a href='#L214'>214</a>
+<a name='L215'></a><a href='#L215'>215</a>
+<a name='L216'></a><a href='#L216'>216</a>
+<a name='L217'></a><a href='#L217'>217</a>
+<a name='L218'></a><a href='#L218'>218</a>
+<a name='L219'></a><a href='#L219'>219</a>
+<a name='L220'></a><a href='#L220'>220</a>
+<a name='L221'></a><a href='#L221'>221</a>
+<a name='L222'></a><a href='#L222'>222</a>
+<a name='L223'></a><a href='#L223'>223</a>
+<a name='L224'></a><a href='#L224'>224</a>
+<a name='L225'></a><a href='#L225'>225</a>
+<a name='L226'></a><a href='#L226'>226</a>
+<a name='L227'></a><a href='#L227'>227</a>
+<a name='L228'></a><a href='#L228'>228</a>
+<a name='L229'></a><a href='#L229'>229</a>
+<a name='L230'></a><a href='#L230'>230</a>
+<a name='L231'></a><a href='#L231'>231</a>
+<a name='L232'></a><a href='#L232'>232</a>
+<a name='L233'></a><a href='#L233'>233</a>
+<a name='L234'></a><a href='#L234'>234</a>
+<a name='L235'></a><a href='#L235'>235</a>
+<a name='L236'></a><a href='#L236'>236</a>
+<a name='L237'></a><a href='#L237'>237</a>
+<a name='L238'></a><a href='#L238'>238</a>
+<a name='L239'></a><a href='#L239'>239</a>
+<a name='L240'></a><a href='#L240'>240</a>
+<a name='L241'></a><a href='#L241'>241</a>
+<a name='L242'></a><a href='#L242'>242</a>
+<a name='L243'></a><a href='#L243'>243</a>
+<a name='L244'></a><a href='#L244'>244</a>
+<a name='L245'></a><a href='#L245'>245</a>
+<a name='L246'></a><a href='#L246'>246</a>
+<a name='L247'></a><a href='#L247'>247</a>
+<a name='L248'></a><a href='#L248'>248</a>
+<a name='L249'></a><a href='#L249'>249</a>
+<a name='L250'></a><a href='#L250'>250</a>
+<a name='L251'></a><a href='#L251'>251</a>
+<a name='L252'></a><a href='#L252'>252</a>
+<a name='L253'></a><a href='#L253'>253</a>
+<a name='L254'></a><a href='#L254'>254</a>
+<a name='L255'></a><a href='#L255'>255</a>
+<a name='L256'></a><a href='#L256'>256</a>
+<a name='L257'></a><a href='#L257'>257</a>
+<a name='L258'></a><a href='#L258'>258</a>
+<a name='L259'></a><a href='#L259'>259</a>
+<a name='L260'></a><a href='#L260'>260</a>
+<a name='L261'></a><a href='#L261'>261</a>
+<a name='L262'></a><a href='#L262'>262</a>
+<a name='L263'></a><a href='#L263'>263</a>
+<a name='L264'></a><a href='#L264'>264</a>
+<a name='L265'></a><a href='#L265'>265</a>
+<a name='L266'></a><a href='#L266'>266</a>
+<a name='L267'></a><a href='#L267'>267</a>
+<a name='L268'></a><a href='#L268'>268</a>
+<a name='L269'></a><a href='#L269'>269</a>
+<a name='L270'></a><a href='#L270'>270</a>
+<a name='L271'></a><a href='#L271'>271</a>
+<a name='L272'></a><a href='#L272'>272</a>
+<a name='L273'></a><a href='#L273'>273</a>
+<a name='L274'></a><a href='#L274'>274</a>
+<a name='L275'></a><a href='#L275'>275</a>
+<a name='L276'></a><a href='#L276'>276</a>
+<a name='L277'></a><a href='#L277'>277</a>
+<a name='L278'></a><a href='#L278'>278</a>
+<a name='L279'></a><a href='#L279'>279</a>
+<a name='L280'></a><a href='#L280'>280</a>
+<a name='L281'></a><a href='#L281'>281</a>
+<a name='L282'></a><a href='#L282'>282</a>
+<a name='L283'></a><a href='#L283'>283</a>
+<a name='L284'></a><a href='#L284'>284</a>
+<a name='L285'></a><a href='#L285'>285</a>
+<a name='L286'></a><a href='#L286'>286</a>
+<a name='L287'></a><a href='#L287'>287</a>
+<a name='L288'></a><a href='#L288'>288</a>
+<a name='L289'></a><a href='#L289'>289</a>
+<a name='L290'></a><a href='#L290'>290</a>
+<a name='L291'></a><a href='#L291'>291</a>
+<a name='L292'></a><a href='#L292'>292</a>
+<a name='L293'></a><a href='#L293'>293</a>
+<a name='L294'></a><a href='#L294'>294</a>
+<a name='L295'></a><a href='#L295'>295</a>
+<a name='L296'></a><a href='#L296'>296</a>
+<a name='L297'></a><a href='#L297'>297</a>
+<a name='L298'></a><a href='#L298'>298</a>
+<a name='L299'></a><a href='#L299'>299</a>
+<a name='L300'></a><a href='#L300'>300</a>
+<a name='L301'></a><a href='#L301'>301</a>
+<a name='L302'></a><a href='#L302'>302</a>
+<a name='L303'></a><a href='#L303'>303</a>
+<a name='L304'></a><a href='#L304'>304</a>
+<a name='L305'></a><a href='#L305'>305</a>
+<a name='L306'></a><a href='#L306'>306</a>
+<a name='L307'></a><a href='#L307'>307</a>
+<a name='L308'></a><a href='#L308'>308</a>
+<a name='L309'></a><a href='#L309'>309</a>
+<a name='L310'></a><a href='#L310'>310</a>
+<a name='L311'></a><a href='#L311'>311</a>
+<a name='L312'></a><a href='#L312'>312</a>
+<a name='L313'></a><a href='#L313'>313</a>
+<a name='L314'></a><a href='#L314'>314</a>
+<a name='L315'></a><a href='#L315'>315</a>
+<a name='L316'></a><a href='#L316'>316</a>
+<a name='L317'></a><a href='#L317'>317</a>
+<a name='L318'></a><a href='#L318'>318</a>
+<a name='L319'></a><a href='#L319'>319</a>
+<a name='L320'></a><a href='#L320'>320</a>
+<a name='L321'></a><a href='#L321'>321</a>
+<a name='L322'></a><a href='#L322'>322</a>
+<a name='L323'></a><a href='#L323'>323</a>
+<a name='L324'></a><a href='#L324'>324</a>
+<a name='L325'></a><a href='#L325'>325</a>
+<a name='L326'></a><a href='#L326'>326</a>
+<a name='L327'></a><a href='#L327'>327</a>
+<a name='L328'></a><a href='#L328'>328</a>
+<a name='L329'></a><a href='#L329'>329</a>
+<a name='L330'></a><a href='#L330'>330</a>
+<a name='L331'></a><a href='#L331'>331</a>
+<a name='L332'></a><a href='#L332'>332</a>
+<a name='L333'></a><a href='#L333'>333</a>
+<a name='L334'></a><a href='#L334'>334</a>
+<a name='L335'></a><a href='#L335'>335</a>
+<a name='L336'></a><a href='#L336'>336</a>
+<a name='L337'></a><a href='#L337'>337</a>
+<a name='L338'></a><a href='#L338'>338</a>
+<a name='L339'></a><a href='#L339'>339</a>
+<a name='L340'></a><a href='#L340'>340</a>
+<a name='L341'></a><a href='#L341'>341</a>
+<a name='L342'></a><a href='#L342'>342</a>
+<a name='L343'></a><a href='#L343'>343</a>
+<a name='L344'></a><a href='#L344'>344</a>
+<a name='L345'></a><a href='#L345'>345</a>
+<a name='L346'></a><a href='#L346'>346</a>
+<a name='L347'></a><a href='#L347'>347</a>
+<a name='L348'></a><a href='#L348'>348</a>
+<a name='L349'></a><a href='#L349'>349</a>
+<a name='L350'></a><a href='#L350'>350</a>
+<a name='L351'></a><a href='#L351'>351</a>
+<a name='L352'></a><a href='#L352'>352</a>
+<a name='L353'></a><a href='#L353'>353</a>
+<a name='L354'></a><a href='#L354'>354</a>
+<a name='L355'></a><a href='#L355'>355</a>
+<a name='L356'></a><a href='#L356'>356</a>
+<a name='L357'></a><a href='#L357'>357</a>
+<a name='L358'></a><a href='#L358'>358</a>
+<a name='L359'></a><a href='#L359'>359</a>
+<a name='L360'></a><a href='#L360'>360</a>
+<a name='L361'></a><a href='#L361'>361</a>
+<a name='L362'></a><a href='#L362'>362</a>
+<a name='L363'></a><a href='#L363'>363</a>
+<a name='L364'></a><a href='#L364'>364</a>
+<a name='L365'></a><a href='#L365'>365</a>
+<a name='L366'></a><a href='#L366'>366</a>
+<a name='L367'></a><a href='#L367'>367</a>
+<a name='L368'></a><a href='#L368'>368</a>
+<a name='L369'></a><a href='#L369'>369</a>
+<a name='L370'></a><a href='#L370'>370</a>
+<a name='L371'></a><a href='#L371'>371</a>
+<a name='L372'></a><a href='#L372'>372</a>
+<a name='L373'></a><a href='#L373'>373</a>
+<a name='L374'></a><a href='#L374'>374</a>
+<a name='L375'></a><a href='#L375'>375</a>
+<a name='L376'></a><a href='#L376'>376</a>
+<a name='L377'></a><a href='#L377'>377</a>
+<a name='L378'></a><a href='#L378'>378</a>
+<a name='L379'></a><a href='#L379'>379</a>
+<a name='L380'></a><a href='#L380'>380</a>
+<a name='L381'></a><a href='#L381'>381</a>
+<a name='L382'></a><a href='#L382'>382</a>
+<a name='L383'></a><a href='#L383'>383</a>
+<a name='L384'></a><a href='#L384'>384</a>
+<a name='L385'></a><a href='#L385'>385</a>
+<a name='L386'></a><a href='#L386'>386</a>
+<a name='L387'></a><a href='#L387'>387</a>
+<a name='L388'></a><a href='#L388'>388</a>
+<a name='L389'></a><a href='#L389'>389</a>
+<a name='L390'></a><a href='#L390'>390</a>
+<a name='L391'></a><a href='#L391'>391</a>
+<a name='L392'></a><a href='#L392'>392</a>
+<a name='L393'></a><a href='#L393'>393</a>
+<a name='L394'></a><a href='#L394'>394</a>
+<a name='L395'></a><a href='#L395'>395</a>
+<a name='L396'></a><a href='#L396'>396</a>
+<a name='L397'></a><a href='#L397'>397</a>
+<a name='L398'></a><a href='#L398'>398</a>
+<a name='L399'></a><a href='#L399'>399</a>
+<a name='L400'></a><a href='#L400'>400</a>
+<a name='L401'></a><a href='#L401'>401</a>
+<a name='L402'></a><a href='#L402'>402</a>
+<a name='L403'></a><a href='#L403'>403</a>
+<a name='L404'></a><a href='#L404'>404</a>
+<a name='L405'></a><a href='#L405'>405</a>
+<a name='L406'></a><a href='#L406'>406</a>
+<a name='L407'></a><a href='#L407'>407</a>
+<a name='L408'></a><a href='#L408'>408</a>
+<a name='L409'></a><a href='#L409'>409</a>
+<a name='L410'></a><a href='#L410'>410</a>
+<a name='L411'></a><a href='#L411'>411</a>
+<a name='L412'></a><a href='#L412'>412</a>
+<a name='L413'></a><a href='#L413'>413</a>
+<a name='L414'></a><a href='#L414'>414</a>
+<a name='L415'></a><a href='#L415'>415</a>
+<a name='L416'></a><a href='#L416'>416</a>
+<a name='L417'></a><a href='#L417'>417</a>
+<a name='L418'></a><a href='#L418'>418</a>
+<a name='L419'></a><a href='#L419'>419</a>
+<a name='L420'></a><a href='#L420'>420</a>
+<a name='L421'></a><a href='#L421'>421</a>
+<a name='L422'></a><a href='#L422'>422</a>
+<a name='L423'></a><a href='#L423'>423</a>
+<a name='L424'></a><a href='#L424'>424</a>
+<a name='L425'></a><a href='#L425'>425</a>
+<a name='L426'></a><a href='#L426'>426</a>
+<a name='L427'></a><a href='#L427'>427</a>
+<a name='L428'></a><a href='#L428'>428</a>
+<a name='L429'></a><a href='#L429'>429</a>
+<a name='L430'></a><a href='#L430'>430</a>
+<a name='L431'></a><a href='#L431'>431</a>
+<a name='L432'></a><a href='#L432'>432</a>
+<a name='L433'></a><a href='#L433'>433</a>
+<a name='L434'></a><a href='#L434'>434</a>
+<a name='L435'></a><a href='#L435'>435</a>
+<a name='L436'></a><a href='#L436'>436</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * snipManager — R80 独立全局截图工具（主进程侧）。
+ *
+ * 触发（托盘「截图」/ 全局热键 Alt+A）后：先 desktopCapturer 冻结所有屏
+ * （先截后开窗，窗口不遮屏），再每屏 frameless 全屏置顶窗口显示冻结帧，
+ * 渲染端 SnipView 负责拖选 + 就地标注。
+ * R130 提速三层：①轻量 snip.html 入口（~250KB，摆脱 4.4MB 主 bundle 解析）；
+ * ②启动空闲预热图形捕获栈 + 每屏隐藏预载窗口池（热键时 0 建窗成本）；
+ * ③冻结帧 BGRA 位图直传（无 PNG 编码/base64/解码），渲染端绘制完成回
+ * ack 才 show —— 「窗口出现 = 冻结画面就绪」。
+ * 已知边界：secure desktop（锁屏/UAC）截不到 → 黑帧，ESC 可退。
+ */
+import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, nativeImage, screen } from 'electron'
+import { join } from 'node:path'
+import { getLogger, type Logger } from '../shared/logger'
+import { ipcChannels } from '../shared/ipc'
+import type { SnipPushFrame } from '../shared/types'
+import { PRESET_SNIP_HOTKEYS as PRESET_SNIP_HOTKEYS_SHARED, isPresetSnipHotkey } from '../shared/snipHotkeys'
+import type { CaptureEntry } from './captureStore'
+&nbsp;
+export const SNIP_HOTKEY = 'Alt+A'
+&nbsp;
+/** R112: 会话期全局 Esc——热键触发的全屏窗在 Windows 前台锁下常拿不到键盘
+ *  焦点，渲染层 keydown 收不到 Esc；主进程全局注册不依赖任何窗口焦点。 */
+export const SNIP_CANCEL_ACCEL = 'Escape'
+&nbsp;
+export interface SnipSourceLike { id: string; display_id?: string }
+export interface DisplayLike { id: number; bounds: { width: number; height: number }; scaleFactor: number }
+&nbsp;
+/** R80.2: source↔display 配对（按 display_id 字符串匹配；未匹配的 display 跳过）。 */
+export function matchDisplayToSource&lt;T extends SnipSourceLike&gt;(
+  sources: T[],
+  displays: Array&lt;{ id: number }&gt;,
+): Map&lt;number, T&gt; {
+  const out = new Map&lt;number, T&gt;()
+  for (const d of displays) {
+    const src = sources.find((s) =&gt; s.display_id === String(d.id))
+    if (src) out.set(d.id, src)
+  }
+  return out
+}
+&nbsp;
+/** R80.2: 冻结帧物理像素尺寸（bounds DIP × scaleFactor）。 */
+export function physicalThumbSize(d: DisplayLike): { width: number; height: number } {
+  return {
+    width: Math.round(d.bounds.width * d.scaleFactor),
+    height: Math.round(d.bounds.height * d.scaleFactor),
+  }
+}
+&nbsp;
+/** R80.2: 完成动作路由（纯决策）：copy=剪贴板+落档，save=落档+下载（渲染端）。 */
+export function resolveFinishAction(action: 'copy' | 'save'): { clipboard: boolean; addCapture: boolean; download: boolean } {
+  return { clipboard: action === 'copy', addCapture: true, download: action === 'save' }
+}
+&nbsp;
+/** R130.4: 池重建决策（纯函数，供单测）——显示器增删映射到 destroy/create。 */
+export function planPoolRebuild(poolIds: number[], displayIds: number[]): { destroy: number[]; create: number[] } {
+  return {
+    destroy: poolIds.filter((id) =&gt; !displayIds.includes(id)),
+    create: displayIds.filter((id) =&gt; !poolIds.includes(id)),
+  }
+}
+&nbsp;
+// ── 会话层 ─────────────────────────────────────────────────────────────
+&nbsp;
+export type SnipDeps = { addPng: (dataUrl: string, kind: CaptureEntry['kind']) =&gt; CaptureEntry | null }
+&nbsp;
+// 惰性取 logger（index.ts initLogger 之前不可调用，同 screensaverManager）
+function <span class="fstat-no" title="function not covered" >log(): Logger {</span>
+<span class="cstat-no" title="statement not covered" >  return getLogger()</span>
+}
+&nbsp;
+const snipWindows = new Map&lt;number, BrowserWindow&gt;()
+// R112.3: 会话内创建过的每一个窗口（含竞态重开被覆盖的）都记录在案——
+// cancelSnip 必须能杀掉所有窗口，否则孤儿冻结帧会盖住整个屏幕且无法退出
+const allSnipWindows = new Set&lt;BrowserWindow&gt;()
+// R130.4: 常驻预热窗口池 —— app 就绪 +3s 为每屏预载 snip.html（隐藏），
+// 热键触发直接取用（0 建窗成本）；会话结束销毁并后台重建（不复用，杜绝标注态残留）
+const snipPool = new Map&lt;number, BrowserWindow&gt;()
+/** 已完成页面加载的窗口（did-finish-load 之后 webContents.send 才不会丢）。 */
+const loadedWindows = new WeakSet&lt;BrowserWindow&gt;()
+/** R130.4: 帧绘制 ack 等待者（按窗口关联；show 等它，300ms 超时兜底）。 */
+const framePaintedWaiters = new Map&lt;BrowserWindow, () =&gt; void&gt;()
+let sessionActive = false
+let snipStarting = false
+let deps: SnipDeps | null = null
+let isDev = false
+let devUrl: string | undefined
+let warmTimer: NodeJS.Timeout | null = null
+let poolTimer: NodeJS.Timeout | null = null
+let disposed = false
+&nbsp;
+/** 显示器热插拔/分辨率变化 → 会话作废（冻结帧与实际屏幕错位）+ 池推倒重建。 */
+function <span class="fstat-no" title="function not covered" >onDisplayChanged(): void {</span>
+<span class="cstat-no" title="statement not covered" >  if (sessionActive) {</span>
+<span class="cstat-no" title="statement not covered" >    log().info('Snip', 'display topology changed during session — cancelling')</span>
+<span class="cstat-no" title="statement not covered" >    cancelSnip()</span>
+  }
+  // R130.4: 池中窗口 bounds/帧尺寸随拓扑全部失效——推倒，随下一次预热重建
+<span class="cstat-no" title="statement not covered" >  for (const [, w] of snipPool) {</span>
+<span class="cstat-no" title="statement not covered" >    if (!w.isDestroyed()) <span class="cstat-no" title="statement not covered" >w.destroy()</span></span>
+  }
+<span class="cstat-no" title="statement not covered" >  snipPool.clear()</span>
+<span class="cstat-no" title="statement not covered" >  warmSnipStack(1500)</span>
+}
+&nbsp;
+export function <span class="fstat-no" title="function not covered" >initSnipManager(d</span>: SnipDeps, development: boolean, url?: string): void {
+<span class="cstat-no" title="statement not covered" >  deps = d</span>
+<span class="cstat-no" title="statement not covered" >  isDev = development</span>
+<span class="cstat-no" title="statement not covered" >  devUrl = url</span>
+<span class="cstat-no" title="statement not covered" >  screen.on('display-added', onDisplayChanged)</span>
+<span class="cstat-no" title="statement not covered" >  screen.on('display-removed', onDisplayChanged)</span>
+<span class="cstat-no" title="statement not covered" >  screen.on('display-metrics-changed', onDisplayChanged)</span>
+}
+&nbsp;
+export function <span class="fstat-no" title="function not covered" >disposeSnipManager(): void {</span>
+<span class="cstat-no" title="statement not covered" >  disposed = true</span>
+<span class="cstat-no" title="statement not covered" >  screen.removeListener('display-added', onDisplayChanged)</span>
+<span class="cstat-no" title="statement not covered" >  screen.removeListener('display-removed', onDisplayChanged)</span>
+<span class="cstat-no" title="statement not covered" >  screen.removeListener('display-metrics-changed', onDisplayChanged)</span>
+<span class="cstat-no" title="statement not covered" >  if (warmTimer) { <span class="cstat-no" title="statement not covered" >clearTimeout(warmTimer); <span class="cstat-no" title="statement not covered" >w</span>armTimer = null }</span></span>
+<span class="cstat-no" title="statement not covered" >  if (poolTimer) { <span class="cstat-no" title="statement not covered" >clearTimeout(poolTimer); <span class="cstat-no" title="statement not covered" >p</span>oolTimer = null }</span></span>
+<span class="cstat-no" title="statement not covered" >  unregisterSnipHotkey()</span>
+<span class="cstat-no" title="statement not covered" >  cancelSnip()</span>
+<span class="cstat-no" title="statement not covered" >  for (const [, w] of snipPool) {</span>
+<span class="cstat-no" title="statement not covered" >    if (!w.isDestroyed()) <span class="cstat-no" title="statement not covered" >w.destroy()</span></span>
+  }
+<span class="cstat-no" title="statement not covered" >  snipPool.clear()</span>
+}
+&nbsp;
+/** R130.1/R130.4: 统一窗口构造（池预载与会话即时创建共用）——不做登记，由调用方管理。 */
+function <span class="fstat-no" title="function not covered" >createSnipWindow(d</span>isplayId: number): BrowserWindow | null {
+  const display = <span class="cstat-no" title="statement not covered" >screen.getAllDisplays().<span class="fstat-no" title="function not covered" >find((x</span>) =&gt; <span class="cstat-no" title="statement not covered" >x.id === displayId)</span></span>
+<span class="cstat-no" title="statement not covered" >  if (!display) <span class="cstat-no" title="statement not covered" >return null</span></span>
+  const b = <span class="cstat-no" title="statement not covered" >display.bounds</span>
+  const win = <span class="cstat-no" title="statement not covered" >new BrowserWindow({</span>
+    x: b.x, y: b.y, width: b.width, height: b.height,
+    frame: false,
+    transparent: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    thickFrame: false,
+    roundedCorners: false,
+    backgroundColor: '#05080a',
+    focusable: true,
+    resizable: false,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.mjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  })
+<span class="cstat-no" title="statement not covered" >  win.webContents.on(<span class="fstat-no" title="function not covered" >'did-finish-load', () =&gt; {</span> <span class="cstat-no" title="statement not covered" >loadedWindows.add(win) }</span>)</span>
+  // R112.3: Electron 层按键拦截（先于渲染层 JS）——即使渲染层脚本异常、
+  // 或系统焦点异常导致 keydown 没进页面，Esc 也能在此处直接取消会话
+<span class="cstat-no" title="statement not covered" >  win.webContents.on(<span class="fstat-no" title="function not covered" >'before-input-event', (e</span>vent, input) =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >    if (input.type === 'keyDown' &amp;&amp; input.key === 'Escape' &amp;&amp; sessionActive) {</span>
+<span class="cstat-no" title="statement not covered" >      event.preventDefault()</span>
+<span class="cstat-no" title="statement not covered" >      log().info('Snip', 'cancel via before-input-event')</span>
+<span class="cstat-no" title="statement not covered" >      cancelSnip()</span>
+    }
+  })
+  // R130.4: 池窗口渲染进程崩溃 → 销毁剔除（下次会话走即时创建兜底）
+<span class="cstat-no" title="statement not covered" >  win.webContents.on(<span class="fstat-no" title="function not covered" >'render-process-gone', (_</span>event, details) =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >    log().warn('Snip', `snip window renderer gone (display ${displayId}): ${details.reason}`)</span>
+<span class="cstat-no" title="statement not covered" >    if (snipPool.get(displayId) === win) {</span>
+<span class="cstat-no" title="statement not covered" >      try { <span class="cstat-no" title="statement not covered" >win.destroy() }</span> catch { /* 已销毁 */ }</span>
+    }
+  })
+  // 关闭清理：池成员只出池；会话成员（Alt+F4/系统关闭）→ 整个会话收摊。
+  // 竞态重入时 destroy(prev) 也会走这里——只清理仍指向自己的登记项
+<span class="cstat-no" title="statement not covered" >  win.on(<span class="fstat-no" title="function not covered" >'closed', () =&gt; {</span></span>
+    const wasSession = <span class="cstat-no" title="statement not covered" >snipWindows.get(displayId) === win</span>
+<span class="cstat-no" title="statement not covered" >    if (wasSession) <span class="cstat-no" title="statement not covered" >snipWindows.delete(displayId)</span></span>
+<span class="cstat-no" title="statement not covered" >    if (snipPool.get(displayId) === win) <span class="cstat-no" title="statement not covered" >snipPool.delete(displayId)</span></span>
+<span class="cstat-no" title="statement not covered" >    allSnipWindows.delete(win)</span>
+<span class="cstat-no" title="statement not covered" >    framePaintedWaiters.delete(win)</span>
+<span class="cstat-no" title="statement not covered" >    if (wasSession &amp;&amp; sessionActive) {</span>
+<span class="cstat-no" title="statement not covered" >      log().info('Snip', 'cancel via window closed cascade')</span>
+<span class="cstat-no" title="statement not covered" >      cancelSnip()</span>
+    }
+  })
+  const query = <span class="cstat-no" title="statement not covered" >`snip=1&amp;displayId=${displayId}`</span>
+<span class="cstat-no" title="statement not covered" >  if (isDev &amp;&amp; devUrl) {</span>
+    const base = <span class="cstat-no" title="statement not covered" >devUrl.endsWith('/') ? devUrl.slice(0, -1) : devUrl</span>
+<span class="cstat-no" title="statement not covered" >    win.loadURL(`${base}/snip.html?${query}`)</span>
+  } else {
+<span class="cstat-no" title="statement not covered" >    win.loadFile(join(__dirname, '../renderer/snip.html'), { search: query })</span>
+  }
+<span class="cstat-no" title="statement not covered" >  return win</span>
+}
+&nbsp;
+export async function <span class="fstat-no" title="function not covered" >startSnip(): Promise&lt;boolean&gt; {</span>
+  // R112.3: 防重入闸门必须在 await 之前置位——sessionActive 要等
+  // desktopCapturer（~700ms）完成才写入，热键连触发会双开两套窗口
+<span class="cstat-no" title="statement not covered" >  if (sessionActive || snipStarting) <span class="cstat-no" title="statement not covered" >return false</span></span>
+<span class="cstat-no" title="statement not covered" >  snipStarting = true</span>
+<span class="cstat-no" title="statement not covered" >  try {</span>
+<span class="cstat-no" title="statement not covered" >    return await startSnipInner()</span>
+  } finally {
+    // 成功路径 sessionActive=true 已接管防重入；这里必须复位，
+    // 否则一次会话结束后闸门永久卡死，截图再也无法启动（R112 回归）
+<span class="cstat-no" title="statement not covered" >    snipStarting = false</span>
+  }
+}
+&nbsp;
+/** R112.3: desktopCapturer 在 Windows 上有已知卡死（销毁窗口后立刻再捕获，
+ *  实测单次 stall 51s）——3s 超时 + 最多 3 次尝试，失败快速返回让用户重按。 */
+async function <span class="fstat-no" title="function not covered" >getSourcesWithRetry(o</span>pts: Electron.SourcesOptions): Promise&lt;Electron.DesktopCapturerSource[]&gt; {
+<span class="cstat-no" title="statement not covered" >  for (let attempt = <span class="cstat-no" title="statement not covered" >1; a</span>ttempt &lt;= 3; attempt++) {</span>
+    const result = <span class="cstat-no" title="statement not covered" >await Promise.race([</span>
+      desktopCapturer.getSources(opts),
+      new <span class="fstat-no" title="function not covered" >Promise&lt;null&gt;((r</span>esolve) =&gt; <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >setTimeout(() =&gt; <span class="cstat-no" title="statement not covered" >r</span>esolve(null), 3</span>000))</span>,
+    ])
+<span class="cstat-no" title="statement not covered" >    if (result) <span class="cstat-no" title="statement not covered" >return result</span></span>
+<span class="cstat-no" title="statement not covered" >    log().warn('Snip', `desktopCapturer stalled (attempt ${attempt}/3)`)</span>
+<span class="cstat-no" title="statement not covered" >    await new <span class="fstat-no" title="function not covered" >Promise((r</span>esolve) =&gt; <span class="cstat-no" title="statement not covered" >setTimeout(resolve, 400))</span></span>
+  }
+<span class="cstat-no" title="statement not covered" >  return []</span>
+}
+&nbsp;
+async function <span class="fstat-no" title="function not covered" >startSnipInner(): Promise&lt;boolean&gt; {</span>
+  const t0 = <span class="cstat-no" title="statement not covered" >Date.now()</span>
+  const displays = <span class="cstat-no" title="statement not covered" >screen.getAllDisplays()</span>
+<span class="cstat-no" title="statement not covered" >  if (displays.length === 0) <span class="cstat-no" title="statement not covered" >return false</span></span>
+  // thumbnailSize 取所有屏物理像素的最大值：小屏返回原生分辨率（Chromium 不放大）
+  const sizes = <span class="cstat-no" title="statement not covered" >displays.map(physicalThumbSize)</span>
+  const maxW = <span class="cstat-no" title="statement not covered" >Math.max(...sizes.<span class="fstat-no" title="function not covered" >map((s</span>) =&gt; <span class="cstat-no" title="statement not covered" >s.width)</span>)</span>
+  const maxH = <span class="cstat-no" title="statement not covered" >Math.max(...sizes.<span class="fstat-no" title="function not covered" >map((s</span>) =&gt; <span class="cstat-no" title="statement not covered" >s.height)</span>)</span>
+  const sources = <span class="cstat-no" title="statement not covered" >await getSourcesWithRetry({ types: ['screen'], thumbnailSize: { width: maxW, height: maxH } })</span>
+  const tCapture = <span class="cstat-no" title="statement not covered" >Date.now() - t0</span>
+  const pairs = <span class="cstat-no" title="statement not covered" >matchDisplayToSource(sources, displays)</span>
+<span class="cstat-no" title="statement not covered" >  if (pairs.size === 0) {</span>
+<span class="cstat-no" title="statement not covered" >    log().error('Snip', `no display source matched — abort (capture took ${tCapture}ms)`)</span>
+<span class="cstat-no" title="statement not covered" >    return false</span>
+  }
+<span class="cstat-no" title="statement not covered" >  sessionActive = true</span>
+  // R112: 会话期接管全局 Esc（见 SNIP_CANCEL_ACCEL 注释）；注册失败仅告警——
+  // 渲染层自身的 Esc/右键/X 按钮仍是兜底
+<span class="cstat-no" title="statement not covered" >  try {</span>
+<span class="cstat-no" title="statement not covered" >    globalShortcut.register(<span class="fstat-no" title="function not covered" >SNIP_CANCEL_ACCEL, () =&gt; {</span> <span class="cstat-no" title="statement not covered" >log().info("Snip", "cancel via global Escape"); <span class="cstat-no" title="statement not covered" >c</span>ancelSnip() }</span>)</span>
+<span class="cstat-no" title="statement not covered" >    if (!globalShortcut.isRegistered(SNIP_CANCEL_ACCEL)) <span class="cstat-no" title="statement not covered" >log().warn('Snip', 'global Escape unavailable — falling back to in-window cancel only')</span></span>
+  } catch (err) {
+<span class="cstat-no" title="statement not covered" >    log().warn('Snip', `global Escape register failed: ${err instanceof Error ? err.message : String(err)}`)</span>
+  }
+  // R130: 每屏「池取窗/即时建窗 → 推 BGRA 位图 → 等绘制 ack → show」并行投递
+  const presentMs = <span class="cstat-no" title="statement not covered" >await Promise.all([...pairs].<span class="fstat-no" title="function not covered" >map(([</span>displayId, src]) =&gt; <span class="cstat-no" title="statement not covered" >presentSnipDisplay(displayId, src.thumbnail))</span>)</span>
+  const slowest = <span class="cstat-no" title="statement not covered" >Math.max(...presentMs)</span>
+<span class="cstat-no" title="statement not covered" >  log().info('Snip', `session start — ${pairs.size} display(s); capture ${tCapture}ms, shown +${Date.now() - t0}ms (slowest present ${slowest}ms)`)</span>
+<span class="cstat-no" title="statement not covered" >  return true</span>
+}
+&nbsp;
+/** R130: 单屏投递 —— 池取窗（未命中即时创建）→ 推 BGRA → 等绘制 ack/300ms 超时 → show。 */
+async function <span class="fstat-no" title="function not covered" >presentSnipDisplay(d</span>isplayId: number, img: Electron.NativeImage): Promise&lt;number&gt; {
+  const t0 = <span class="cstat-no" title="statement not covered" >Date.now()</span>
+  let win: BrowserWindow | null = <span class="cstat-no" title="statement not covered" >snipPool.get(displayId) ?? null</span>
+<span class="cstat-no" title="statement not covered" >  if (win) {</span>
+<span class="cstat-no" title="statement not covered" >    snipPool.delete(displayId)</span>
+<span class="cstat-no" title="statement not covered" >    if (win.isDestroyed()) <span class="cstat-no" title="statement not covered" >win = null</span></span>
+  }
+<span class="cstat-no" title="statement not covered" >  if (!win) <span class="cstat-no" title="statement not covered" >win = createSnipWindow(displayId)</span></span>
+<span class="cstat-no" title="statement not covered" >  if (!win) <span class="cstat-no" title="statement not covered" >return -1</span></span>
+  // R112.3: 竞态重入（startSnip 双开）会覆盖登记表——先杀掉同屏旧窗口
+  const prev = <span class="cstat-no" title="statement not covered" >snipWindows.get(displayId)</span>
+<span class="cstat-no" title="statement not covered" >  if (prev &amp;&amp; prev !== win &amp;&amp; !prev.isDestroyed()) <span class="cstat-no" title="statement not covered" >prev.destroy()</span></span>
+<span class="cstat-no" title="statement not covered" >  snipWindows.set(displayId, win)</span>
+<span class="cstat-no" title="statement not covered" >  allSnipWindows.add(win)</span>
+<span class="cstat-no" title="statement not covered" >  if (!img.isEmpty()) {</span>
+    const size = <span class="cstat-no" title="statement not covered" >img.getSize()</span>
+    const frame: SnipPushFrame = <span class="cstat-no" title="statement not covered" >{ width: size.width, height: size.height, data: img.toBitmap() }</span>
+    const target = <span class="cstat-no" title="statement not covered" >win</span>
+    const <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >send = (): void =&gt; {</span></span>
+<span class="cstat-no" title="statement not covered" >      try { <span class="cstat-no" title="statement not covered" >target.webContents.send(ipcChannels.snipPushFrame, frame) }</span> catch { /* 已销毁 */ }</span>
+    }
+<span class="cstat-no" title="statement not covered" >    if (loadedWindows.has(win)) <span class="cstat-no" title="statement not covered" >send()</span></span>
+    else <span class="cstat-no" title="statement not covered" >win.webContents.once('did-finish-load', send)</span>
+  }
+  // R130.4: 等渲染端「已上屏」回执再 show（窗口出现=画面就绪）；超时兜底不卡死
+<span class="cstat-no" title="statement not covered" >  await Promise.race([</span>
+    new <span class="fstat-no" title="function not covered" >Promise&lt;void&gt;((r</span>esolve) =&gt; <span class="cstat-no" title="statement not covered" >framePaintedWaiters.set(win, resolve))</span>,
+    new <span class="fstat-no" title="function not covered" >Promise&lt;void&gt;((r</span>esolve) =&gt; <span class="cstat-no" title="statement not covered" >setTimeout(resolve, 300))</span>,
+  ])
+<span class="cstat-no" title="statement not covered" >  framePaintedWaiters.delete(win)</span>
+<span class="cstat-no" title="statement not covered" >  presentWindow(win)</span>
+<span class="cstat-no" title="statement not covered" >  return Date.now() - t0</span>
+}
+&nbsp;
+function <span class="fstat-no" title="function not covered" >presentWindow(w</span>in: BrowserWindow): void {
+<span class="cstat-no" title="statement not covered" >  if (win.isDestroyed()) <span class="cstat-no" title="statement not covered" >return</span></span>
+<span class="cstat-no" title="statement not covered" >  win.show()</span>
+<span class="cstat-no" title="statement not covered" >  if (process.platform === 'win32') <span class="cstat-no" title="statement not covered" >win.setFullScreen(true)</span></span>
+<span class="cstat-no" title="statement not covered" >  win.setAlwaysOnTop(true, 'screen-saver')</span>
+<span class="cstat-no" title="statement not covered" >  win.moveTop()</span>
+<span class="cstat-no" title="statement not covered" >  win.focus()</span>
+  // R112.3: Windows 前台锁下 win.focus() 可能不生效（尤其全局热键触发时
+  // 没有任何前台窗口可移交焦点）——强制抢占，保证 Esc 键路径可用
+<span class="cstat-no" title="statement not covered" >  app.focus({ steal: true })</span>
+}
+&nbsp;
+/** R130.3: 渲染端冻结帧绘制完成的回执 —— 唤醒对应窗口的 show 等待。 */
+export function <span class="fstat-no" title="function not covered" >acknowledgeSnipPainted(s</span>ender: Electron.WebContents): void {
+<span class="cstat-no" title="statement not covered" >  for (const [win, resolve] of framePaintedWaiters) {</span>
+<span class="cstat-no" title="statement not covered" >    if (!win.isDestroyed() &amp;&amp; win.webContents === sender) <span class="cstat-no" title="statement not covered" >resolve()</span></span>
+  }
+}
+&nbsp;
+export function <span class="fstat-no" title="function not covered" >finishSnip(d</span>ataUrl: string, action: 'copy' | 'save'): boolean {
+<span class="cstat-no" title="statement not covered" >  if (!sessionActive || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) <span class="cstat-no" title="statement not covered" >return false</span></span>
+  const flags = <span class="cstat-no" title="statement not covered" >resolveFinishAction(action)</span>
+<span class="cstat-no" title="statement not covered" >  try {</span>
+<span class="cstat-no" title="statement not covered" >    if (flags.clipboard) <span class="cstat-no" title="statement not covered" >clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))</span></span>
+<span class="cstat-no" title="statement not covered" >    if (flags.addCapture) <span class="cstat-no" title="statement not covered" >deps?.addPng(dataUrl, 'annotated')</span></span>
+  } catch (err) {
+<span class="cstat-no" title="statement not covered" >    log().error('Snip', `finish failed: ${err instanceof Error ? err.message : String(err)}`)</span>
+<span class="cstat-no" title="statement not covered" >    return false</span>
+  }
+<span class="cstat-no" title="statement not covered" >  return true</span>
+}
+&nbsp;
+export function <span class="fstat-no" title="function not covered" >cancelSnip(): void {</span>
+<span class="cstat-no" title="statement not covered" >  try { <span class="cstat-no" title="statement not covered" >globalShortcut.unregister(SNIP_CANCEL_ACCEL) }</span> catch { /* 未注册 */ }</span>
+<span class="cstat-no" title="statement not covered" >  if (!sessionActive) <span class="cstat-no" title="statement not covered" >return</span></span>
+<span class="cstat-no" title="statement not covered" >  log().info('Snip', 'session cancelled')</span>
+<span class="cstat-no" title="statement not covered" >  sessionActive = false</span>
+  // R112.3: 清所有窗口（含竞态孤儿）——destroy 会同步触发 closed，
+  // closed 里读到的 sessionActive 已是 false，不会重入
+<span class="cstat-no" title="statement not covered" >  for (const win of allSnipWindows) {</span>
+<span class="cstat-no" title="statement not covered" >    if (!win.isDestroyed()) <span class="cstat-no" title="statement not covered" >win.destroy()</span></span>
+  }
+<span class="cstat-no" title="statement not covered" >  allSnipWindows.clear()</span>
+<span class="cstat-no" title="statement not covered" >  snipWindows.clear()</span>
+<span class="cstat-no" title="statement not covered" >  framePaintedWaiters.clear()</span>
+  // R130.4: 会话结束 → 后台重建预热池（不复用旧窗，杜绝标注态残留）
+<span class="cstat-no" title="statement not covered" >  schedulePoolRebuild()</span>
+}
+&nbsp;
+function <span class="fstat-no" title="function not covered" >schedulePoolRebuild(): void {</span>
+<span class="cstat-no" title="statement not covered" >  if (disposed) <span class="cstat-no" title="statement not covered" >return</span></span>
+<span class="cstat-no" title="statement not covered" >  if (poolTimer) <span class="cstat-no" title="statement not covered" >clearTimeout(poolTimer)</span></span>
+<span class="cstat-no" title="statement not covered" >  poolTimer = <span class="fstat-no" title="function not covered" >setTimeout(() =&gt; {</span></span>
+<span class="cstat-no" title="statement not covered" >    poolTimer = null</span>
+<span class="cstat-no" title="statement not covered" >    rebuildSnipPool()</span>
+  }, 200)
+}
+&nbsp;
+function <span class="fstat-no" title="function not covered" >rebuildSnipPool(): void {</span>
+<span class="cstat-no" title="statement not covered" >  if (disposed) <span class="cstat-no" title="statement not covered" >return</span></span>
+  const displayIds = <span class="cstat-no" title="statement not covered" >screen.getAllDisplays().<span class="fstat-no" title="function not covered" >map((d</span>) =&gt; <span class="cstat-no" title="statement not covered" >d.id)</span></span>
+  const plan = <span class="cstat-no" title="statement not covered" >planPoolRebuild([...snipPool.keys()], displayIds)</span>
+<span class="cstat-no" title="statement not covered" >  for (const id of plan.destroy) {</span>
+    const w = <span class="cstat-no" title="statement not covered" >snipPool.get(id)</span>
+<span class="cstat-no" title="statement not covered" >    snipPool.delete(id)</span>
+<span class="cstat-no" title="statement not covered" >    if (w &amp;&amp; !w.isDestroyed()) <span class="cstat-no" title="statement not covered" >w.destroy()</span></span>
+  }
+<span class="cstat-no" title="statement not covered" >  for (const id of plan.create) {</span>
+    const w = <span class="cstat-no" title="statement not covered" >createSnipWindow(id)</span>
+<span class="cstat-no" title="statement not covered" >    if (w) <span class="cstat-no" title="statement not covered" >snipPool.set(id, w)</span></span>
+  }
+<span class="cstat-no" title="statement not covered" >  if (plan.destroy.length &gt; 0 || plan.create.length &gt; 0) {</span>
+<span class="cstat-no" title="statement not covered" >    log().info('Snip', `pool rebuilt — ${snipPool.size} window(s) pooled`)</span>
+  }
+}
+&nbsp;
+/** R130.2/R130.4: 预热图形捕获栈（首次 getSources 要初始化 WGC/DXGI，~150-700ms）
+ *  + 重建窗口池。延迟调用避开启动 IO 高峰；与会话互斥；失败静默（热键路径含
+ *  R112.3 三重试保护，照旧可用）。 */
+export function <span class="fstat-no" title="function not covered" >warmSnipStack(d</span>elayMs = <span class="branch-0 cbranch-no" title="branch not covered" >3000): void {</span>
+<span class="cstat-no" title="statement not covered" >  if (disposed) <span class="cstat-no" title="statement not covered" >return</span></span>
+<span class="cstat-no" title="statement not covered" >  if (warmTimer) <span class="cstat-no" title="statement not covered" >clearTimeout(warmTimer)</span></span>
+<span class="cstat-no" title="statement not covered" >  warmTimer = <span class="fstat-no" title="function not covered" >setTimeout(() =&gt; {</span></span>
+<span class="cstat-no" title="statement not covered" >    warmTimer = null</span>
+<span class="cstat-no" title="statement not covered" >    void (<span class="fstat-no" title="function not covered" >async () =&gt; {</span></span>
+<span class="cstat-no" title="statement not covered" >      if (disposed) <span class="cstat-no" title="statement not covered" >return</span></span>
+<span class="cstat-no" title="statement not covered" >      if (sessionActive || snipStarting) {</span>
+<span class="cstat-no" title="statement not covered" >        warmSnipStack(2000)   // 会话进行中——稍后再试（单定时器，无泄漏）</span>
+<span class="cstat-no" title="statement not covered" >        return</span>
+      }
+<span class="cstat-no" title="statement not covered" >      try {</span>
+<span class="cstat-no" title="statement not covered" >        await getSourcesWithRetry({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })</span>
+<span class="cstat-no" title="statement not covered" >        log().info('Snip', 'capture stack warmed')</span>
+      } catch {
+        /* 静默：预热失败不影响热键路径 */
+      }
+<span class="cstat-no" title="statement not covered" >      rebuildSnipPool()</span>
+    })()
+  }, delayMs)
+}
+&nbsp;
+export function <span class="fstat-no" title="function not covered" >registerSnipHotkey(o</span>nConflict: (accel: string) =&gt; void): void {
+<span class="cstat-no" title="statement not covered" >  applyHotkey(hotkeyPref, onConflict)</span>
+}
+&nbsp;
+export function <span class="fstat-no" title="function not covered" >unregisterSnipHotkey(): void {</span>
+<span class="cstat-no" title="statement not covered" >  try { <span class="cstat-no" title="statement not covered" >globalShortcut.unregister(hotkeyPref) }</span> catch { /* 未注册 */ }</span>
+}
+&nbsp;
+// ── R81: 热键偏好（预设白名单 + 运行时切换 + 回滚） ─────────────────────
+&nbsp;
+export const PRESET_SNIP_HOTKEYS = PRESET_SNIP_HOTKEYS_SHARED
+export { isPresetSnipHotkey }
+&nbsp;
+let hotkeyPref: string = SNIP_HOTKEY
+&nbsp;
+export function <span class="fstat-no" title="function not covered" >getSnipHotkeyPref(): string {</span>
+<span class="cstat-no" title="statement not covered" >  return hotkeyPref</span>
+}
+&nbsp;
+/** 启动时从持久化设置注入（须在 registerSnipHotkey 之前调用）。 */
+export function <span class="fstat-no" title="function not covered" >initSnipHotkeyPref(a</span>ccel: string): void {
+<span class="cstat-no" title="statement not covered" >  if (isPresetSnipHotkey(accel)) <span class="cstat-no" title="statement not covered" >hotkeyPref = accel</span></span>
+}
+&nbsp;
+function <span class="fstat-no" title="function not covered" >applyHotkey(c</span>and: string, onConflict: (accel: string) =&gt; void): boolean {
+<span class="cstat-no" title="statement not covered" >  try { <span class="cstat-no" title="statement not covered" >globalShortcut.unregister(hotkeyPref) }</span> catch { /* 未注册 */ }</span>
+<span class="cstat-no" title="statement not covered" >  globalShortcut.register(<span class="fstat-no" title="function not covered" >cand, () =&gt; {</span> <span class="cstat-no" title="statement not covered" >void startSnip() }</span>)</span>
+  // register 对冲突不抛错而是静默失败——isRegistered 仅当本应用注册成功才为 true
+<span class="cstat-no" title="statement not covered" >  if (!globalShortcut.isRegistered(cand)) {</span>
+    // 回滚：新键被占用，恢复旧键，托盘标签不变
+<span class="cstat-no" title="statement not covered" >    globalShortcut.register(<span class="fstat-no" title="function not covered" >hotkeyPref, () =&gt; {</span> <span class="cstat-no" title="statement not covered" >void startSnip() }</span>)</span>
+<span class="cstat-no" title="statement not covered" >    onConflict(cand)</span>
+<span class="cstat-no" title="statement not covered" >    return false</span>
+  }
+<span class="cstat-no" title="statement not covered" >  hotkeyPref = cand</span>
+<span class="cstat-no" title="statement not covered" >  return true</span>
+}
+&nbsp;
+/** R81.2: 运行时切换（校验白名单 → 重注册 → 失败回滚并回调冲突）。 */
+export function <span class="fstat-no" title="function not covered" >setSnipHotkeyPref(a</span>ccel: string, onConflict: (accel: string) =&gt; void): boolean {
+<span class="cstat-no" title="statement not covered" >  if (!isPresetSnipHotkey(accel)) <span class="cstat-no" title="statement not covered" >return false</span></span>
+<span class="cstat-no" title="statement not covered" >  if (accel === hotkeyPref) <span class="cstat-no" title="statement not covered" >return true</span></span>
+<span class="cstat-no" title="statement not covered" >  return applyHotkey(accel, onConflict)</span>
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-09-23T13:52:19.921Z
+            </div>
+        <script src="../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../sorter.js"></script>
+        <script src="../block-navigation.js"></script>
+    </body>
+</html>
+    

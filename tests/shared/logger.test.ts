@@ -91,8 +91,9 @@ describe('shared/logger', () => {
       const logger = new Logger({ logDir: tmpDir })
       logger.initialize()
       logger.info('MyCat', 'hello world')
-      await waitForFlush()
-      const content = readFileSync(logger.getLogFilePath(), 'utf-8')
+      // R163: fixed 20ms waitForFlush flaked under full-suite load — poll
+      // for the content instead (same pattern as the other cases here).
+      const content = await waitForContent(logger.getLogFilePath(), 'hello world')
       expect(content).toMatch(/\[\d{4}-\d{2}-\d{2}T/)
       expect(content).toContain('[INFO ]')
       expect(content).toContain('[MyCat]')
@@ -105,8 +106,9 @@ describe('shared/logger', () => {
       for (let i = 0; i < 5; i++) {
         logger.info('Batch', `message ${i}`)
       }
-      await waitForFlush()
-      const content = readFileSync(logger.getLogFilePath(), 'utf-8')
+      // R163: wait for the LAST batched message — the whole batch flushes in
+      // one write, so seeing message 4 implies 0-3 landed in the same flush.
+      const content = await waitForContent(logger.getLogFilePath(), 'message 4')
       for (let i = 0; i < 5; i++) {
         expect(content).toContain(`message ${i}`)
       }

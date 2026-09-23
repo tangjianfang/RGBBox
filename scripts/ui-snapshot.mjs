@@ -25,15 +25,12 @@ const DIFFDIR = 'docs/ui-baseline/diff' // gitignored diff images
 const VIEWS = ['dashboard', 'workspace', 'effects', 'video', 'audio', 'games', 'diagnostics', 'architecture', 'ai']
 
 // Per-view diff-rate limits as a *fraction of pixels* allowed to differ.
-// Default 0.1%. Calibrated exceptions (record raises here AND in PRD R152):
-//  - workspace/video 0.2%: cross-launch 1px layout-line jitter (measured
-//    0.05–0.12%, e.g. display-map runtime measuring settles ±1px; same-process
-//    double-shots are 0.0000% — it is NOT content animation). A real chrome
-//    regression dwarfs this (one recolored button ≈ 10k+ px).
+// Default 0.1%. R163.3: the former workspace/video 0.2% exceptions are
+// RETIRED — the volatile-text mask (device-name async fill) plus the
+// display-map settle land both views back under the default 0.1% line.
+// (Record threshold changes here AND in the PRD.)
 const DIFF_LIMITS = {
   _default: 0.001,
-  workspace: 0.002,
-  video: 0.002,
 }
 
 // Canvas rects recorded at capture time (*.boxes.json) are zeroed in BOTH
@@ -42,6 +39,12 @@ const DIFF_LIMITS = {
 // unbounded during demo cuts, effects flips between 0% and 0.79%) — content
 // pixels must not gate, UI chrome around them still does (a moved canvas
 // leaves non-overlapping rects unmasked on one side → diff fires).
+//
+// R163.3 (R156-§5.2 A): volatile-TEXT rects join the mask too — the video
+// view's device/source names fill in asynchronously (enumerate timing), which
+// was the standing 0.0574% noise. Selectors are script-side on purpose
+// (zero product-code hooks); extend the list as new volatile regions appear.
+const VOLATILE_TEXT_SELECTORS = ['.video-source-name']
 const CANVAS_MASK_ALL = true
 
 /** Zero out canvas rects (±2px edge slack) in a PNG in place. */
@@ -99,12 +102,23 @@ for (let i = 0; i < VIEWS.length; i++) {
     await page.screenshot({ path: `${shotDir}/${view}.png` })
     // Canvas rects in viewport coords (DPR-independent: the shot is CSS-sized).
     // Recorded for every view; consumed only where CANVAS_MASK says so.
-    const boxes = await page.evaluate(() =>
-      [...document.querySelectorAll('canvas')]
-        .map((c) => c.getBoundingClientRect())
-        .filter((r) => r.width > 8 && r.height > 8)
-        .map((r) => ({ x: Math.floor(r.x), y: Math.floor(r.y), w: Math.ceil(r.width), h: Math.ceil(r.height) }))
-    )
+    // R163.3: volatile-text rects (async-filled device names) ride the same
+    // boxes.json — the masking consumer doesn't care which kind a rect is.
+    const boxes = await page.evaluate((selectors) => {
+      const rect = (el) => {
+        const r = el.getBoundingClientRect()
+        return { x: Math.floor(r.x), y: Math.floor(r.y), w: Math.ceil(r.width), h: Math.ceil(r.height) }
+      }
+      const canvases = [...document.querySelectorAll('canvas')]
+        .filter((c) => c.getBoundingClientRect().width > 8 && c.getBoundingClientRect().height > 8)
+        .map(rect)
+      const volatile = selectors.flatMap((sel) =>
+        [...document.querySelectorAll(sel)]
+          .filter((el) => el.getBoundingClientRect().width > 4)
+          .map(rect)
+      )
+      return [...canvases, ...volatile]
+    }, VOLATILE_TEXT_SELECTORS)
     writeFileSync(`${shotDir}/${view}.boxes.json`, JSON.stringify(boxes))
     ok++
     console.log(`SHOT  ${view} → ${shotDir}/ (${boxes.length} canvas)`)

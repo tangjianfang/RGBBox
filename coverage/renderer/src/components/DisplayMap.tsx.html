@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">35.48% </span>
+                <span class="strong">35.93% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>22/62</span>
+                <span class='fraction'>23/64</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">37.93% </span>
+                <span class="strong">38.33% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>22/58</span>
+                <span class='fraction'>23/60</span>
             </div>
         
             
@@ -277,12 +277,25 @@
 <a name='L212'></a><a href='#L212'>212</a>
 <a name='L213'></a><a href='#L213'>213</a>
 <a name='L214'></a><a href='#L214'>214</a>
-<a name='L215'></a><a href='#L215'>215</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L215'></a><a href='#L215'>215</a>
+<a name='L216'></a><a href='#L216'>216</a>
+<a name='L217'></a><a href='#L217'>217</a>
+<a name='L218'></a><a href='#L218'>218</a>
+<a name='L219'></a><a href='#L219'>219</a>
+<a name='L220'></a><a href='#L220'>220</a>
+<a name='L221'></a><a href='#L221'>221</a>
+<a name='L222'></a><a href='#L222'>222</a>
+<a name='L223'></a><a href='#L223'>223</a>
+<a name='L224'></a><a href='#L224'>224</a>
+<a name='L225'></a><a href='#L225'>225</a>
+<a name='L226'></a><a href='#L226'>226</a>
+<a name='L227'></a><a href='#L227'>227</a>
+<a name='L228'></a><a href='#L228'>228</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -293,8 +306,18 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -478,7 +501,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -509,6 +535,16 @@ const REGION_OPTION_KEYS: Array&lt;{ value: OverlayRegionPreset; labelKey: Trans
 &nbsp;
 const DEFAULT_CONFIG: OverlayConfig = { region: 'fullscreen' }
 const DEFAULT_CUSTOM: OverlayRegionCustom = { x: 0, y: 0, width: 1, height: 1 }
+&nbsp;
+// R30.3: explicit field-&gt;label mapping so the x/y/width/height inputs show
+// unambiguous, percentage-based labels instead of raw one-letter keys with
+// confusing 0–1 fractional values.
+const CUSTOM_FIELD_KEYS: Array&lt;{ field: keyof OverlayRegionCustom; labelKey: TranslationKey }&gt; = [
+  { field: 'x', labelKey: 'overlay.custom.x' },
+  { field: 'y', labelKey: 'overlay.custom.y' },
+  { field: 'width', labelKey: 'overlay.custom.width' },
+  { field: 'height', labelKey: 'overlay.custom.height' },
+]
 &nbsp;
 interface DragSelection {
   displayId: number
@@ -685,14 +721,17 @@ export function DisplayMap({ topology, overlayDisplayIds = [], onToggleOverlay, 
                 &lt;/div&gt;
 &nbsp;
                 &lt;div className="overlay-custom-bounds"&gt;
-                  {(['x', 'y', 'width', 'height'] as const).<span class="fstat-no" title="function not covered" >map((f</span>ield) =&gt; (
+                  {CUSTOM_FIELD_KEYS.<span class="fstat-no" title="function not covered" >map(({</span> field, labelKey }) =&gt; (
 <span class="cstat-no" title="statement not covered" >                    &lt;label key={field} className="overlay-custom-field"&gt;</span>
-                      &lt;span&gt;{field}&lt;/span&gt;
+                      &lt;span&gt;{t(labelKey)}&lt;/span&gt;
                       &lt;input
                         type="number"
-                        min={0} max={1} step={0.05}
-                        value={custom[field]}
-<span class="fstat-no" title="function not covered" >                        onChange={(e</span>) =&gt; <span class="cstat-no" title="statement not covered" >updateCustom({ [field]: Math.min(1, Math.max(0, Number(e.target.value))) })}</span>
+                        min={0} max={100} step={1}
+                        value={Math.round(custom[field] * 100)}
+<span class="fstat-no" title="function not covered" >                        onChange={(e</span>) =&gt; {
+                          const percent = <span class="cstat-no" title="statement not covered" >Math.min(100, Math.max(0, Number(e.target.value)))</span>
+<span class="cstat-no" title="statement not covered" >                          updateCustom({ [field]: percent / 100 })</span>
+                        }}
                       /&gt;
                     &lt;/label&gt;
                   ))}
@@ -712,7 +751,7 @@ export function DisplayMap({ topology, overlayDisplayIds = [], onToggleOverlay, 
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-06-12T16:38:07.995Z
+                at 2026-09-23T13:52:19.921Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>
