@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activeLayer, activeScene, formatMs, updateLayer } from '../../../src/renderer/src/domain/profileUtils'
+import { activeLayer, activeScene, formatMs, reconcileSelectedLayerId, updateLayer } from '../../../src/renderer/src/domain/profileUtils'
 import type { Profile } from '../../../src/shared/types'
 
 function profile(): Profile {
@@ -53,5 +53,28 @@ describe('domain/profileUtils formatMs (R147 P1)', () => {
   it('formats with one decimal and defaults missing values to 0', () => {
     expect(formatMs(1.234)).toBe('1.2 ms')
     expect(formatMs(undefined)).toBe('0.0 ms')
+  })
+})
+
+describe('domain/profileUtils reconcileSelectedLayerId (R166)', () => {
+  it('returns null for a valid id (no rewrite)', () => {
+    const s = activeScene(profile())
+    expect(reconcileSelectedLayerId(s, 'C')).toBeNull()
+  })
+
+  it('falls back to the first ENABLED layer when the id is stale', () => {
+    const s = activeScene(profile()) // layers: B(disabled), C(enabled)
+    expect(reconcileSelectedLayerId(s, 'layer-rainbow')).toBe('C')
+  })
+
+  it('falls back to the first layer when every layer is disabled', () => {
+    const s = { ...activeScene(profile()), layers: activeScene(profile()).layers.map((l) => ({ ...l, enabled: false })) }
+    expect(reconcileSelectedLayerId(s, 'layer-rainbow')).toBe('B')
+  })
+
+  it('returns null for an empty/missing scene (nothing to reconcile)', () => {
+    expect(reconcileSelectedLayerId(null, 'x')).toBeNull()
+    expect(reconcileSelectedLayerId(undefined, 'x')).toBeNull()
+    expect(reconcileSelectedLayerId({ ...activeScene(profile()), layers: [] }, 'x')).toBeNull()
   })
 })

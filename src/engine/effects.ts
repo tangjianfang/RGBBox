@@ -408,7 +408,9 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       // Multi-frequency twinkle: primary pulse + fast scintillation (realistic atmospheric shimmer)
       const primary = Math.sin(context.now * freq * speed * Math.PI * 2 + phase)
       const scintillation = Math.sin(context.now * freq * speed * 7.3 + h3 * Math.PI * 6) * 0.15
-      const twinkle = 0.5 + (primary + scintillation) * 0.5
+      // R166: clamp before pow — scintillation can push the sum negative and
+      // Math.pow(negative, 2.8) is NaN (NaN channels on some frames per star).
+      const twinkle = clampUnit(0.5 + (primary + scintillation) * 0.5)
       // Steeper gamma for more dramatic twinkle (stars snap bright then fade gracefully)
       const brightness = Math.pow(twinkle, 2.8)
       // Realistic star color temperature: warm (orange) to cool (blue-white) variation per star
@@ -513,7 +515,8 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const crossPos = dirT(context, (angle + 90) % 360)
       const crossDist = Math.abs(crossPos - 0.5) * 2
 
-      let brightness = 0
+      // R167: comet reads on coarse grids — wider beam/tail, stronger outer glow.
+      let brightness = 0.02
       let whiteBlend = 0
 
       // Two comets 180° apart keep the grid continuously lit
@@ -523,8 +526,8 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         if (behind >= tail) continue
 
         // Physically-inspired exponential tail falloff with gaussian cross-section
-        const tailFall  = Math.exp(-behind * 7 / tail)
-        const crossFade = Math.exp(-crossDist * crossDist * 12)  // gaussian beam profile
+        const tailFall  = Math.exp(-behind * 4.5 / tail)
+        const crossFade = Math.exp(-crossDist * crossDist * 6)  // gaussian beam profile
         const b = tailFall * crossFade
         if (b > brightness) {
           brightness = b
@@ -533,7 +536,7 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       }
 
       // HDR bloom: soft outer glow extends beyond the main body (like real light scatter)
-      const outerGlow = brightness * Math.exp(-crossDist * crossDist * 3) * 0.15
+      const outerGlow = brightness * Math.exp(-crossDist * crossDist * 2.2) * 0.3
       brightness = clampUnit(brightness + outerGlow)
 
       return {
@@ -548,12 +551,13 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const speed = Number(layer.parameters.speed ?? 0.2)
       const intensity = Number(layer.parameters.intensity ?? 0.9)
 
+      // R167: bolt body wide enough for a 1-2 cell line on a 24-wide grid.
       const cycle = (context.now * speed * 1.3) % 1
       // Two flash windows: main strike + secondary return stroke
-      const flashOn = cycle < 0.08 || (cycle > 0.52 && cycle < 0.57)
+      const flashOn = cycle < 0.1 || (cycle > 0.5 && cycle < 0.58)
       // Atmospheric afterglow: exponential decay after each flash (realistic persistence)
-      const afterglow1 = cycle >= 0.08 && cycle < 0.28 ? Math.exp(-(cycle - 0.08) * 18) * 0.25 : 0
-      const afterglow2 = cycle >= 0.57 && cycle < 0.72 ? Math.exp(-(cycle - 0.57) * 22) * 0.15 : 0
+      const afterglow1 = cycle >= 0.1 && cycle < 0.28 ? Math.exp(-(cycle - 0.1) * 18) * 0.35 : 0
+      const afterglow2 = cycle >= 0.58 && cycle < 0.72 ? Math.exp(-(cycle - 0.58) * 22) * 0.22 : 0
 
       const nx = context.x / context.columns
       const ny = context.y / context.rows
@@ -570,12 +574,12 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       if (!flashOn && afterglow1 <= 0.001 && afterglow2 <= 0.001) return { r: 0, g: 0, b: 0 }
 
       // Gaussian beam profile for premium soft edges (no hard cutoff)
-      const coreGlow = Math.exp(-dist * dist * context.columns * context.columns * 2.2) * intensity
-      const wideGlow = Math.exp(-dist * dist * context.columns * context.columns * 0.3) * intensity * 0.35
+      const coreGlow = Math.exp(-dist * dist * context.columns * context.columns * 1.0) * intensity
+      const wideGlow = Math.exp(-dist * dist * context.columns * context.columns * 0.14) * intensity * 0.4
       const glow = flashOn ? (coreGlow + wideGlow) : (coreGlow + wideGlow) * (afterglow1 + afterglow2)
 
       // Atmospheric scattering: surrounding area gets subtle blue-purple illumination during flash
-      const scatter = flashOn ? Math.exp(-dist * context.columns * 0.8) * 0.12 : 0
+      const scatter = flashOn ? Math.exp(-dist * context.columns * 0.8) * 0.2 : 0
 
       return {
         r: clampByte(color.r * glow + 255 * scatter * 0.3),
@@ -650,14 +654,17 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const cycle   = ((context.now * speed) + phase) % 1
         const expandR = cycle * 1.5          // ring expands from 0 to 1.5
         const ring    = Math.abs(dist - expandR)
-        const burst   = Math.max(0, 0.12 - ring) / 0.12
+        const burst   = Math.max(0, 0.2 - ring) / 0.2
         // Cosine angular mask: creates 8-ray spoke pattern that spins outward
-        const spoke   = 0.35 + 0.65 * Math.max(0, Math.cos(angle * 8 + expandR * Math.PI * 4 + i * 2.1))
+        const spoke   = 0.45 + 0.55 * Math.max(0, Math.cos(angle * 8 + expandR * Math.PI * 4 + i * 2.1))
         const contrib = burst * spoke
         if (contrib > totalBurst) { totalBurst = contrib; hotCycle = cycle }
       }
+      // R167: a hot core keeps the center alive between ring launches.
+      const coreGlow = Math.exp(-dist * dist * 7) * 0.45
+      totalBurst = Math.max(totalBurst, coreGlow)
 
-      const edgeFade = Math.max(0, 1 - dist * 0.65)
+      const edgeFade = Math.max(0, 1 - dist * 0.8)
       // Colour: deep user colour at ring front → orange → bright yellow at peak
       const hotness = hotCycle
       return {
@@ -674,17 +681,25 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const sensitivity = Number(layer.parameters.sensitivity ?? 1.2)
       const bass = Number(context._audioBass ?? 0)
       const beat = Number(context._audioBeat ?? 0)
+      // R167: with the audio pipeline OFF (not merely silent) the effect would
+      // render pure black — show a gentle idle pulse so the card/canvas reads
+      // as "waiting for audio" instead of "broken".
+      const noPipeline =
+        context._audioBass === undefined && context._audioMid === undefined &&
+        context._audioHigh === undefined && !context._audioFreqBands
 
       // Decay envelope: computed once per frame (keyed by context.now), so all pixels
       // in the same frame share the same smooth pulse value.
       // Fast attack (~2 frames) + slow decay (~0.80/frame ≈ 200ms at 30fps).
       let env = _beatEnvMap.get(layer.id)
       if (!env || env.lastNow !== context.now) {
-        const rawPulse = clampUnit((bass * 0.70 + beat * 0.30) * sensitivity)
+        const rawPulse = noPipeline
+          ? 0.2 + 0.14 * (0.5 + 0.5 * Math.sin(context.now * 1.9))
+          : clampUnit((bass * 0.70 + beat * 0.30) * sensitivity)
         const prev = env?.pulse ?? 0
         const newPulse = rawPulse > prev
           ? rawPulse                         // instant attack — no lag on the beat
-          : prev * 0.72                      // decay ~150ms at 30fps
+          : Math.max(prev * 0.72, rawPulse)  // decay ~150ms at 30fps; idle floor re-asserts
         env = { lastNow: context.now, pulse: newPulse }
         _beatEnvMap.set(layer.id, env)
       }
@@ -722,16 +737,22 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const hi = Math.min(freqBands.length - 1, lo + 1)
         bandLevel = freqBands[lo] * (1 - (bandIdxF - lo)) + freqBands[hi] * (bandIdxF - lo)
       } else {
-        // Fallback to 3-band averages when no FFT data available
-        const bass = Number(context._audioBass ?? 0)
-        const mid = Number(context._audioMid ?? 0)
-        const high = Number(context._audioHigh ?? 0)
+        const noPipeline =
+          context._audioBass === undefined && context._audioMid === undefined &&
+          context._audioHigh === undefined && !context._audioFreqBands
         const colFraction = context.x / Math.max(1, context.columns - 1)
-        if (colFraction < 0.33) {
+        if (noPipeline) {
+          // R167: pipeline OFF — a slow travelling wave keeps the bars alive.
+          bandLevel = 0.18 + 0.2 * (0.5 + 0.5 * Math.sin(context.now * 2.1 + colFraction * Math.PI * 2.5))
+        } else if (colFraction < 0.33) {
+          const bass = Number(context._audioBass ?? 0)
+          const mid = Number(context._audioMid ?? 0)
           bandLevel = bass + (mid - bass) * (colFraction / 0.33)
         } else if (colFraction < 0.67) {
-          bandLevel = mid
+          bandLevel = Number(context._audioMid ?? 0)
         } else {
+          const mid = Number(context._audioMid ?? 0)
+          const high = Number(context._audioHigh ?? 0)
           bandLevel = mid + (high - mid) * ((colFraction - 0.67) / 0.33)
         }
       }
@@ -979,14 +1000,14 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
 
       const digit = Math.floor(hash(glyphCol * 911.7 + glyphIndex * 47.3 + Math.floor(t * 0.8) * 19.1) * 10)
       if (!digitGlyphOn(digit, localX, localY)) {
-        const ghost = hash2(context.x + glyphIndex * 13, context.y + Math.floor(t * 3)) < 0.025 ? 0.12 : 0
+        const ghost = hash2(context.x + glyphIndex * 13, context.y + Math.floor(t * 3)) < 0.06 ? 0.2 : 0
         return { r: Math.round(color.r * ghost), g: Math.round(color.g * ghost), b: Math.round(color.b * ghost) }
       }
 
       const head = Math.max(0, 1 - streamY / Math.max(1, context.rows * 0.45))
       const tail = Math.max(0, 1 - streamY / Math.max(1, context.rows * (0.9 + density * 1.4)))
       const flicker = 0.78 + hash2(glyphCol * 17 + glyphIndex, Math.floor(t * 12)) * 0.22
-      const bright = clampUnit((tail * 0.72 + head * 0.55) * flicker)
+      const bright = clampUnit((tail * 0.95 + head * 0.75) * flicker)
 
       const br = clampUnit(bright)
       return { r: Math.round(color.r * br), g: Math.round(color.g * br), b: Math.round(color.b * br) }
@@ -1036,7 +1057,7 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const fineDetail = fbm2(warpX * 8.0 - t * 0.3, warpY * 8.0 + t * 0.2, 4) * 0.3
       // Brighter, rarer stars with gaussian point-spread
       const starSeed = hash2(context.x * 11 + Math.floor(t * 8), context.y * 17)
-      const stars = Math.pow(starSeed, 38) * 3.0
+      const stars = Math.pow(starSeed, 30) * 4.0
       // Volumetric core with emission-like bloom (energy radiating from center)
       const coreEmission = Math.exp(-radius * radius * (2.4 - density)) * (0.6 + Math.sin(t * 1.2) * 0.12)
       const veil = clampUnit((cloud + fineDetail - (0.52 - density * 0.22)) * 2.6)
@@ -1068,11 +1089,11 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const flowX = nx + Math.cos(angle) * 0.22 * spread
       const flowY = ny + Math.sin(angle) * 0.22 * spread
       const strand = Math.sin((flowX * 5.5 + flowY * 3.2 + fbm2(flowX * 7.0, flowY * 7.0, 3) * 2.8 - t * 2.4) * Math.PI)
-      const ribbon = Math.pow(Math.max(0, strand), 2.6)
+      const ribbon = Math.pow(Math.max(0, strand), 2.2)
       const foam = Math.pow(fbm2(flowX * 14.0 - t, flowY * 14.0 + t * 0.7, 3), 3.2)
-      const brightness = clampUnit((ribbon * 0.78 + foam * 0.24) * intensity)
+      const brightness = clampUnit((ribbon * 0.88 + foam * 0.28) * intensity)
       const hue = (hueShift + field * 90 + flowX * 60 + t * 26 + 720) % 360
-      return hslToRgb(hue, 0.92, brightness * 0.68)
+      return hslToRgb(hue, 0.92, brightness * 0.76)
     }
 
     case 'mirror-symmetry': {
@@ -1094,9 +1115,9 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const radial = Math.sqrt(ax * ax + ay * ay)
       const petals = Math.sin((Math.atan2(ay, ax) * frequency + radial * 9.0 - t * 3.0)) * 0.5 + 0.5
       const lattice = Math.sin((ax + ay) * frequency * Math.PI * 2 - t * 4.0) * 0.5 + 0.5
-      const glow = Math.pow(petals * 0.65 + lattice * 0.35, 3.0) * Math.exp(-radial * 0.7)
+      const glow = Math.pow(petals * 0.65 + lattice * 0.35, 2.4) * Math.exp(-radial * 0.5)
       const hue = (hueShift + radial * 180 + petals * 70 + t * 48 + 720) % 360
-      return hslToRgb(hue, 1.0, clampUnit(glow * intensity * 0.72))
+      return hslToRgb(hue, 1.0, clampUnit(glow * intensity * 0.82))
     }
 
     // ── Scientific 2D projections with 3D depth cues ───────────────────────
@@ -1117,16 +1138,16 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const strandB = 0.5 - Math.cos(phase) * radius
       const depthA = 0.55 + Math.sin(phase) * 0.35
       const depthB = 0.55 - Math.sin(phase) * 0.35
-      const width = 0.018 + density * 0.01
+      const width = 0.034 + density * 0.02
       const chainA = Math.exp(-Math.pow((normalizedX - strandA) / width, 2)) * depthA
       const chainB = Math.exp(-Math.pow((normalizedX - strandB) / width, 2)) * depthB
       const rungPhase = Math.abs(Math.sin(normalizedY * turns * Math.PI))
       const betweenChains = smoothstep(Math.min(strandA, strandB), Math.max(strandA, strandB), normalizedX) * smoothstep(Math.max(strandA, strandB), Math.min(strandA, strandB), normalizedX)
-      const basePair = Math.exp(-Math.pow(rungPhase / 0.18, 2)) * betweenChains * (0.45 + 0.35 * Math.sin(time * 7 + normalizedY * 37))
+      const basePair = Math.exp(-Math.pow(rungPhase / 0.3, 2)) * betweenChains * (0.45 + 0.35 * Math.sin(time * 7 + normalizedY * 37))
       let color: RgbColor = { r: 0, g: 0, b: 0 }
-      color = colorAdd(color, hslToRgb(178 + hueShift, 0.95, 0.50), chainA * intensity)
-      color = colorAdd(color, hslToRgb(214 + hueShift, 0.90, 0.46), chainB * intensity)
-      color = colorAdd(color, hslToRgb(36 + hueShift, 1.0, 0.62), basePair * intensity)
+      color = colorAdd(color, hslToRgb(178 + hueShift, 0.95, 0.60), chainA * intensity)
+      color = colorAdd(color, hslToRgb(214 + hueShift, 0.90, 0.56), chainB * intensity)
+      color = colorAdd(color, hslToRgb(36 + hueShift, 1.0, 0.7), basePair * intensity)
       return color
     }
 
@@ -1140,14 +1161,15 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const diskY = ny * 2.45
       const radius = Math.sqrt(nx * nx + diskY * diskY)
       const angle = Math.atan2(diskY, nx)
+      // R167: wider disk/lens-ring/jets so the accretion structure reads at 24×14.
       const eventHorizon = smoothstep(0.11, 0.06, radius)
-      const diskMask = smoothstep(0.72, 0.12, radius) * smoothstep(0.07, 0.18, radius)
+      const diskMask = smoothstep(0.85, 0.12, radius) * smoothstep(0.07, 0.18, radius)
       const keplerTwist = angle * 2.0 + 1.7 / Math.max(0.08, radius) - time * (1.2 + 2.2 / Math.max(0.2, radius))
-      const spiralBands = Math.pow(0.5 + 0.5 * Math.sin(keplerTwist * 3.0), 2.4)
+      const spiralBands = Math.pow(0.5 + 0.5 * Math.sin(keplerTwist * 3.0), 1.8)
       const turbulence = fbm2(nx * 5.2 + time * 0.7, diskY * 4.0 - time * 0.35, 4)
-      const temperature = diskMask * clampUnit((0.82 - radius) * (1.4 + density) + spiralBands * 0.42 + turbulence * 0.30)
-      const lensRing = Math.exp(-Math.pow((radius - 0.145) / 0.025, 2)) * 0.85
-      const jet = Math.exp(-Math.pow(nx / 0.045, 2)) * smoothstep(0.03, 0.46, Math.abs(ny)) * smoothstep(0.62, 0.16, Math.abs(ny)) * 0.55
+      const temperature = diskMask * clampUnit((0.88 - radius) * (1.6 + density) + spiralBands * 0.5 + turbulence * 0.35)
+      const lensRing = Math.exp(-Math.pow((radius - 0.145) / 0.042, 2)) * 1.1
+      const jet = Math.exp(-Math.pow(nx / 0.085, 2)) * smoothstep(0.03, 0.46, Math.abs(ny)) * smoothstep(0.62, 0.16, Math.abs(ny)) * 0.75
       let color = colorScale(thermalColor(temperature), intensity)
       color = colorAdd(color, hslToRgb(210 + hueShift, 0.85, 0.72), lensRing * intensity)
       color = colorAdd(color, hslToRgb(192 + hueShift, 1.0, 0.62), jet * intensity)
@@ -1160,8 +1182,10 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const density = Number(layer.parameters.density ?? 0.55)
       const { nx, ny } = normCoords(context)
       const time = context.now * speed
-      const sunGlow = Math.exp(-(nx * nx + ny * ny) / 0.012)
-      let color = colorScale(hslToRgb(42, 1.0, 0.58), sunGlow * intensity)
+      // R167: LED-grid delivery pass — bigger sun, readable orbit lines,
+      // planet dots ≥2 cells, soft halos. Concept untouched.
+      const sunGlow = Math.exp(-(nx * nx + ny * ny) / 0.028)
+      let color = colorScale(hslToRgb(42, 1.0, 0.66), sunGlow * intensity)
       const orbitRadii = [0.10, 0.15, 0.21, 0.28, 0.38, 0.48, 0.58, 0.68]
       const periods = [0.24, 0.62, 1.0, 1.88, 5.0, 7.2, 10.5, 13.0]
       const hues = [35, 48, 208, 10, 32, 44, 188, 226]
@@ -1169,15 +1193,17 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const orbitRadius = orbitRadii[orbitIndex] * (0.9 + density * 0.18)
         const eccentricity = 0.04 + orbitIndex * 0.012
         const ellipseRadius = Math.sqrt(Math.pow(nx / (orbitRadius * (1 + eccentricity)), 2) + Math.pow(ny / (orbitRadius * 0.72), 2))
-        const orbitLine = Math.exp(-Math.pow((ellipseRadius - 1) / 0.035, 2)) * 0.08
+        const orbitLine = Math.exp(-Math.pow((ellipseRadius - 1) / 0.05, 2)) * 0.22
         color = colorAdd(color, hslToRgb(214, 0.65, 0.42), orbitLine)
         const planetAngle = time / periods[orbitIndex] * Math.PI * 2 + orbitIndex * 0.72
         const planetX = Math.cos(planetAngle) * orbitRadius * (1 + eccentricity)
         const planetY = Math.sin(planetAngle) * orbitRadius * 0.72
         const planetDistance = Math.sqrt((nx - planetX) ** 2 + (ny - planetY) ** 2)
-        const planetSize = orbitIndex < 4 ? 0.018 : 0.026 + orbitIndex * 0.0015
+        const planetSize = orbitIndex < 4 ? 0.032 : 0.042 + orbitIndex * 0.002
         const planetGlow = Math.exp(-Math.pow(planetDistance / planetSize, 2))
-        color = colorAdd(color, hslToRgb(hues[orbitIndex], 0.82, orbitIndex === 2 ? 0.56 : 0.46), planetGlow * intensity)
+        color = colorAdd(color, hslToRgb(hues[orbitIndex], 0.82, orbitIndex === 2 ? 0.68 : 0.62), planetGlow * intensity)
+        const planetHalo = Math.exp(-Math.pow(planetDistance / (planetSize * 3.2), 2)) * 0.3
+        color = colorAdd(color, hslToRgb(hues[orbitIndex], 0.7, 0.5), planetHalo * intensity)
       }
       return color
     }
@@ -1192,14 +1218,14 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const radius = Math.sqrt(nx * nx + ny * ny)
       const angle = Math.atan2(ny, nx)
       const armPhase = angle * 4.0 - Math.log(radius + 0.04) * (3.4 + density * 2.2) + time * 1.5
-      const arm = Math.pow(0.5 + 0.5 * Math.cos(armPhase), 7.0)
-      const disk = Math.exp(-radius * (2.1 - density * 0.6))
-      const bulge = Math.exp(-radius * radius * 38.0)
+      const arm = Math.pow(0.5 + 0.5 * Math.cos(armPhase), 4.0)
+      const disk = Math.exp(-radius * (1.5 - density * 0.6))
+      const bulge = Math.exp(-radius * radius * 26.0)
       const dustLane = smoothstep(0.48, 0.20, fbm2(nx * 7.0 - time, ny * 7.0 + time * 0.5, 4))
       const stars = Math.pow(hash2(context.x * 13 + Math.floor(time * 9), context.y * 19), 30) * smoothstep(0.78, 0.12, radius)
-      const brightness = clampUnit((arm * disk * 0.72 + bulge * 0.58 + stars * 1.4) * intensity * (0.72 + dustLane * 0.45))
+      const brightness = clampUnit((arm * disk * 0.85 + bulge * 0.62 + stars * 1.8) * intensity * (0.72 + dustLane * 0.45))
       const hue = 218 + hueShift + arm * 58 - radius * 70
-      return hslToRgb(hue, 0.82, brightness * 0.72)
+      return hslToRgb(hue, 0.82, brightness * 0.85)
     }
 
     case 'orion-nebula': {
@@ -1212,13 +1238,13 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const cloud = fbm2(nx * 3.4 + time * 0.35, ny * 3.4 - time * 0.25, 5)
       const fineDust = fbm2(nx * 11.0 - time * 0.22, ny * 11.0 + time * 0.18, 4)
       const radius = Math.sqrt((nx + 0.05) ** 2 + (ny - 0.02) ** 2)
-      const molecularCloud = clampUnit((cloud - (0.42 - density * 0.14)) * 2.2)
+      const molecularCloud = clampUnit((cloud - (0.36 - density * 0.14)) * 2.6)
       const darkDust = smoothstep(0.58, 0.86, fineDust) * smoothstep(0.62, 0.16, radius)
       const starSeed = hash2(context.x * 31, context.y * 47)
       const stars = starSeed > 0.985 ? Math.pow(starSeed, 18) : 0
-      const emission = clampUnit((molecularCloud * 0.72 + Math.exp(-radius * radius * 5.5) * 0.34 - darkDust * 0.45) * intensity + stars)
+      const emission = clampUnit((molecularCloud * 0.78 + Math.exp(-radius * radius * 5.5) * 0.4 - darkDust * 0.4) * intensity + stars)
       const hue = hueShift + cloud * 72 + fineDust * 32
-      return hslToRgb(hue, 0.86, emission * 0.66)
+      return hslToRgb(hue, 0.86, emission * 0.78)
     }
 
     case 'pulsar-beacon': {
@@ -1233,12 +1259,13 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const beamAngle = time * Math.PI * 2
       const angleDistance = Math.abs(Math.atan2(Math.sin(angle - beamAngle), Math.cos(angle - beamAngle)))
       const oppositeDistance = Math.abs(Math.atan2(Math.sin(angle - beamAngle - Math.PI), Math.cos(angle - beamAngle - Math.PI)))
-      const beamWidth = 0.18 + density * 0.18
-      const beam = Math.exp(-Math.pow(Math.min(angleDistance, oppositeDistance) / beamWidth, 2)) * smoothstep(0.03, 0.62, radius) * smoothstep(0.90, 0.12, radius)
+      // R167: broader lighthouse beams, bigger core and halo.
+      const beamWidth = 0.3 + density * 0.18
+      const beam = Math.exp(-Math.pow(Math.min(angleDistance, oppositeDistance) / beamWidth, 2)) * smoothstep(0.02, 0.75, radius) * smoothstep(1.0, 0.16, radius)
       const pulse = Math.pow(0.5 + 0.5 * Math.cos(time * Math.PI * 2), 12)
-      const core = Math.exp(-radius * radius * 95) * (0.6 + pulse * 0.9)
-      const halo = Math.exp(-radius * 5.2) * 0.22
-      let color = colorScale(hslToRgb(214 + hueShift, 0.92, 0.62), (beam + halo) * intensity)
+      const core = Math.exp(-radius * radius * 60) * (0.6 + pulse * 0.9)
+      const halo = Math.exp(-radius * 3.5) * 0.3
+      let color = colorScale(hslToRgb(214 + hueShift, 0.92, 0.7), (beam + halo) * intensity)
       color = colorAdd(color, hslToRgb(0, 0, 1.0), core * intensity)
       return color
     }
@@ -1253,12 +1280,12 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const radius = Math.sqrt(nx * nx + ny * ny)
       const angle = Math.atan2(ny, nx)
       const spiral = angle + radius * (9.0 + density * 6.0) - time * 3.2
-      const bands = Math.pow(0.5 + 0.5 * Math.sin(spiral * 2.7 + fbm2(nx * 5, ny * 5, 3) * 2.0), 3.4)
+      const bands = Math.pow(0.5 + 0.5 * Math.sin(spiral * 2.7 + fbm2(nx * 5, ny * 5, 3) * 2.0), 2.4)
       const eye = smoothstep(0.13, 0.06, radius)
-      const eyeWall = Math.exp(-Math.pow((radius - 0.16) / 0.045, 2))
-      const cloudFalloff = smoothstep(0.72, 0.12, radius)
-      const cloud = clampUnit((bands * cloudFalloff * 0.72 + eyeWall * 0.92 - eye * 0.64) * intensity)
-      let color = colorScale(hslToRgb(205 + hueShift, 0.35, 0.58), cloud)
+      const eyeWall = Math.exp(-Math.pow((radius - 0.16) / 0.07, 2))
+      const cloudFalloff = smoothstep(0.9, 0.12, radius)
+      const cloud = clampUnit((bands * cloudFalloff + eyeWall * 0.92 - eye * 0.64) * intensity)
+      let color = colorScale(hslToRgb(205 + hueShift, 0.35, 0.62), cloud)
       color = colorAdd(color, hslToRgb(48, 0.95, 0.72), eye * 0.32)
       color = colorAdd(color, hslToRgb(0, 0, 1.0), eyeWall * intensity * 0.65)
       return color
@@ -1279,7 +1306,7 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const cloud = fbm2(normalizedX * 4.0 + strikeId, normalizedY * 7.0, 4) * smoothstep(0.28, 0.0, normalizedY) * 0.35
       const channelCenter = 0.5 + (fbm2(normalizedY * 2.8 + strikeId * 1.7, strikeId * 0.3, 4) - 0.5) * (0.32 + density * 0.18)
       const mainDistance = Math.abs(normalizedX - channelCenter)
-      const mainBolt = Math.exp(-Math.pow(mainDistance / 0.025, 2)) * smoothstep(normalizedY - 0.06, normalizedY + 0.06, reveal) * fade
+      const mainBolt = Math.exp(-Math.pow(mainDistance / 0.045, 2)) * smoothstep(normalizedY - 0.06, normalizedY + 0.06, reveal) * fade
       let branchGlow = 0
       for (let branchIndex = 0; branchIndex < 4; branchIndex++) {
         const branchStart = 0.18 + branchIndex * 0.16 + hash(branchIndex + strikeId) * 0.08
@@ -1287,10 +1314,10 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const branchProgress = clampUnit((normalizedY - branchStart) / 0.22)
         const branchX = channelCenter + branchSide * branchProgress * (0.14 + density * 0.12)
         const branchYMask = smoothstep(branchStart, branchStart + 0.05, normalizedY) * smoothstep(branchStart + 0.24, branchStart + 0.16, normalizedY)
-        branchGlow += Math.exp(-Math.pow((normalizedX - branchX) / 0.018, 2)) * branchYMask * fade * 0.55
+        branchGlow += Math.exp(-Math.pow((normalizedX - branchX) / 0.032, 2)) * branchYMask * fade * 0.7
       }
       const flash = Math.exp(-Math.pow((cycle - 0.40) / 0.055, 2)) * 0.24
-      let color = colorScale(hslToRgb(218 + hueShift, 0.38, 0.25), cloud)
+      let color = colorScale(hslToRgb(218 + hueShift, 0.38, 0.3), cloud * 1.3)
       color = colorAdd(color, hslToRgb(222 + hueShift, 1.0, 0.78), (mainBolt + branchGlow) * intensity)
       color = colorAdd(color, hslToRgb(0, 0, 1.0), flash * intensity)
       return color
@@ -1318,19 +1345,19 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const a = projected[aIndex]
         const b = projected[bIndex]
         const depth = clampUnit(0.55 + (a.z + b.z) * 0.20)
-        shell += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, a.x, a.y, b.x, b.y) / 0.025, 2)) * depth
+        shell += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, a.x, a.y, b.x, b.y) / 0.045, 2)) * depth
       }
       let capsid = 0
       for (let vertexIndex = 0; vertexIndex < projected.length; vertexIndex++) {
         const vertex = projected[vertexIndex]
         const distance = Math.sqrt((nx - vertex.x) ** 2 + (ny - vertex.y) ** 2)
         const spikePulse = 0.78 + Math.sin(time * 6 + vertexIndex * 1.7) * 0.22
-        capsid += Math.exp(-Math.pow(distance / (0.038 + density * 0.012), 2)) * clampUnit(0.55 + vertex.z * 0.28) * spikePulse
+        capsid += Math.exp(-Math.pow(distance / (0.058 + density * 0.018), 2)) * clampUnit(0.55 + vertex.z * 0.28) * spikePulse
       }
-      const envelope = Math.exp(-(nx * nx + ny * ny) / 0.18) * 0.18
-      let color = colorScale(hslToRgb(168 + hueShift, 0.84, 0.45), shell * intensity * 0.36)
-      color = colorAdd(color, hslToRgb(312 + hueShift, 0.92, 0.58), capsid * intensity * 0.58)
-      color = colorAdd(color, hslToRgb(202 + hueShift, 0.62, 0.42), envelope * intensity)
+      const envelope = Math.exp(-(nx * nx + ny * ny) / 0.24) * 0.3
+      let color = colorScale(hslToRgb(168 + hueShift, 0.84, 0.52), shell * intensity * 0.6)
+      color = colorAdd(color, hslToRgb(312 + hueShift, 0.92, 0.64), capsid * intensity * 0.85)
+      color = colorAdd(color, hslToRgb(202 + hueShift, 0.62, 0.48), envelope * intensity)
       return color
     }
 
@@ -1349,6 +1376,7 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const z = Math.cos(angle) * 0.5 + Math.sin(u * Math.PI * 7.0 - time) * 0.18
         return { x, y, z }
       }
+      // R167: wider backbone/residue sigmas so the chain reads on a 24×14 grid.
       let backbone = 0
       let residueGlow = 0
       let helixBand = 0
@@ -1357,18 +1385,18 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const u = sampleIndex / 46
         const current = proteinPoint(u)
         const depth = clampUnit(0.55 + current.z * 0.26)
-        backbone += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, previous.x, previous.y, current.x, current.y) / 0.025, 2)) * depth
+        backbone += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, previous.x, previous.y, current.x, current.y) / 0.042, 2)) * depth
         if (sampleIndex % 5 === 0) {
           const distance = Math.sqrt((nx - current.x) ** 2 + (ny - current.y) ** 2)
-          residueGlow += Math.exp(-Math.pow(distance / 0.045, 2)) * depth
+          residueGlow += Math.exp(-Math.pow(distance / 0.075, 2)) * depth
         }
         const alphaMask = Math.pow(0.5 + 0.5 * Math.sin(u * Math.PI * 18 + time * 7), 4)
-        helixBand += alphaMask * Math.exp(-Math.pow(pointSegmentDistance(nx, ny, previous.x, previous.y, current.x, current.y) / 0.055, 2)) * depth * 0.28
+        helixBand += alphaMask * Math.exp(-Math.pow(pointSegmentDistance(nx, ny, previous.x, previous.y, current.x, current.y) / 0.085, 2)) * depth * 0.28
         previous = current
       }
-      let color = colorScale(hslToRgb(204 + hueShift, 0.82, 0.48), backbone * intensity * 0.42)
-      color = colorAdd(color, hslToRgb(38 + hueShift, 0.90, 0.60), residueGlow * intensity * 0.56)
-      color = colorAdd(color, hslToRgb(294 + hueShift, 0.70, 0.56), helixBand * intensity)
+      let color = colorScale(hslToRgb(204 + hueShift, 0.82, 0.55), backbone * intensity * 0.85)
+      color = colorAdd(color, hslToRgb(38 + hueShift, 0.90, 0.68), residueGlow * intensity * 0.95)
+      color = colorAdd(color, hslToRgb(294 + hueShift, 0.70, 0.60), helixBand * intensity)
       return color
     }
 
@@ -1391,15 +1419,15 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const chromosomeX = (stage - 0.5) * 0.16 * Math.sign(row || 1) + wiggle
         const chromosomeY = row * (0.62 + density * 0.18)
         const chromosomeDistance = Math.sqrt((nx - chromosomeX) ** 2 + (ny - chromosomeY) ** 2)
-        chromosomes += Math.exp(-Math.pow(chromosomeDistance / 0.045, 2))
-        spindle += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, poleA.x, poleA.y, chromosomeX, chromosomeY) / 0.018, 2)) * 0.38
-        spindle += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, poleB.x, poleB.y, chromosomeX, chromosomeY) / 0.018, 2)) * 0.38
+        chromosomes += Math.exp(-Math.pow(chromosomeDistance / 0.075, 2))
+        spindle += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, poleA.x, poleA.y, chromosomeX, chromosomeY) / 0.035, 2)) * 0.5
+        spindle += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, poleB.x, poleB.y, chromosomeX, chromosomeY) / 0.035, 2)) * 0.5
       }
       const membraneRadius = Math.sqrt(nx * nx + (ny * 1.1) ** 2)
-      const membrane = Math.exp(-Math.pow((membraneRadius - 0.62) / 0.035, 2)) * 0.18
-      let color = colorScale(hslToRgb(186 + hueShift, 0.82, 0.42), spindle * intensity)
-      color = colorAdd(color, hslToRgb(316 + hueShift, 0.92, 0.58), chromosomes * intensity * 0.78)
-      color = colorAdd(color, hslToRgb(210 + hueShift, 0.52, 0.48), membrane * intensity)
+      const membrane = Math.exp(-Math.pow((membraneRadius - 0.62) / 0.05, 2)) * 0.3
+      let color = colorScale(hslToRgb(186 + hueShift, 0.82, 0.5), spindle * intensity)
+      color = colorAdd(color, hslToRgb(316 + hueShift, 0.92, 0.64), chromosomes * intensity)
+      color = colorAdd(color, hslToRgb(210 + hueShift, 0.52, 0.52), membrane * intensity)
       return color
     }
 
@@ -1410,10 +1438,11 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const hueShift = Number(layer.parameters.hueShift ?? 0)
       const { nx, ny } = normCoords(context)
       const time = context.now * speed
-      const axon = Math.exp(-Math.pow((nx + 0.38) / 0.11, 2)) * smoothstep(0.38, 0.04, Math.abs(ny))
-      const dendrite = Math.exp(-Math.pow((nx - 0.38) / 0.12, 2)) * smoothstep(0.40, 0.05, Math.abs(ny))
+      // R167: thicker axon/dendrite trunks, wider action wave and vesicle dots.
+      const axon = Math.exp(-Math.pow((nx + 0.38) / 0.19, 2)) * smoothstep(0.5, 0.02, Math.abs(ny))
+      const dendrite = Math.exp(-Math.pow((nx - 0.38) / 0.21, 2)) * smoothstep(0.52, 0.03, Math.abs(ny))
       const cleft = smoothstep(-0.18, 0.22, nx) * smoothstep(0.22, -0.18, nx) * smoothstep(0.42, 0.02, Math.abs(ny))
-      const actionWave = Math.exp(-Math.pow((nx + 0.55 - ((time * 0.9) % 1.2)) / 0.06, 2)) * smoothstep(0.22, 0.0, Math.abs(ny))
+      const actionWave = Math.exp(-Math.pow((nx + 0.55 - ((time * 0.9) % 1.2)) / 0.1, 2)) * smoothstep(0.22, 0.0, Math.abs(ny))
       let neurotransmitters = 0
       for (let particleIndex = 0; particleIndex < 20; particleIndex++) {
         const seed = hash(particleIndex * 31.7)
@@ -1421,12 +1450,12 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const px = -0.16 + progress * 0.36
         const py = (hash(particleIndex * 17.2) - 0.5) * (0.10 + density * 0.20) + Math.sin(progress * Math.PI * 2 + particleIndex) * 0.025
         const release = smoothstep(0.18, 0.34, actionWave + 0.2)
-        neurotransmitters += Math.exp(-Math.pow(Math.sqrt((nx - px) ** 2 + (ny - py) ** 2) / 0.026, 2)) * release
+        neurotransmitters += Math.exp(-Math.pow(Math.sqrt((nx - px) ** 2 + (ny - py) ** 2) / 0.045, 2)) * release
       }
-      let color = colorScale(hslToRgb(214 + hueShift, 0.80, 0.40), (axon + dendrite) * intensity * 0.30)
-      color = colorAdd(color, hslToRgb(42 + hueShift, 1.0, 0.62), actionWave * intensity)
-      color = colorAdd(color, hslToRgb(172 + hueShift, 0.95, 0.58), neurotransmitters * intensity * 0.74)
-      color = colorAdd(color, hslToRgb(288 + hueShift, 0.80, 0.48), cleft * intensity * 0.10)
+      let color = colorScale(hslToRgb(214 + hueShift, 0.80, 0.48), (axon + dendrite) * intensity * 0.55)
+      color = colorAdd(color, hslToRgb(42 + hueShift, 1.0, 0.66), actionWave * intensity)
+      color = colorAdd(color, hslToRgb(172 + hueShift, 0.95, 0.62), neurotransmitters * intensity)
+      color = colorAdd(color, hslToRgb(288 + hueShift, 0.80, 0.52), cleft * intensity * 0.10)
       return color
     }
 
@@ -1441,15 +1470,15 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const radiusA = Math.sqrt((nx + 0.24) ** 2 + ny * ny)
       const radiusB = Math.sqrt((nx - 0.24) ** 2 + ny * ny)
       const phase = (radiusA - radiusB) * (24 + density * 18) - time * 9
-      const interference = Math.pow(0.5 + 0.5 * Math.cos(phase), 5) * smoothstep(0.78, 0.06, Math.sqrt(nx * nx + ny * ny))
+      const interference = Math.pow(0.5 + 0.5 * Math.cos(phase), 3.5) * smoothstep(0.78, 0.06, Math.sqrt(nx * nx + ny * ny))
       const collapse = smoothstep(0.58, 0.86, cycle)
       const focusX = Math.sin(Math.floor(time) * 2.17) * 0.18
       const focusY = Math.cos(Math.floor(time) * 1.61) * 0.12
       const focus = Math.exp(-((nx - focusX) ** 2 + (ny - focusY) ** 2) / (0.008 + (1 - collapse) * 0.05))
       const probabilityCloud = fbm2(nx * 5 + time * 0.4, ny * 5 - time * 0.35, 4) * (1 - collapse)
-      const brightness = clampUnit((interference * (1 - collapse * 0.7) + focus * collapse * 1.35 + probabilityCloud * 0.22) * intensity)
+      const brightness = clampUnit((interference * (1 - collapse * 0.7) + focus * collapse * 1.5 + probabilityCloud * 0.35) * intensity)
       const hue = hueShift + interference * 90 + collapse * 48
-      return hslToRgb(hue, 0.92, brightness * 0.68)
+      return hslToRgb(hue, 0.92, brightness * 0.8)
     }
 
     case 'microvilli-field': {
@@ -1468,14 +1497,15 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const center = 0.5 + sway
       const height = 0.42 + seed * 0.32 + density * 0.12
       const top = 1 - height
+      // R167: thicker swaying shafts + brighter tips — a visible brush border.
       const shaftMask = smoothstep(top, 0.98, normalizedY)
-      const shaft = Math.exp(-Math.pow((localX - center) / 0.12, 2)) * shaftMask
-      const tip = Math.exp(-Math.pow((normalizedY - top) / 0.035, 2)) * Math.exp(-Math.pow((localX - center) / 0.18, 2))
+      const shaft = Math.exp(-Math.pow((localX - center) / 0.19, 2)) * shaftMask
+      const tip = Math.exp(-Math.pow((normalizedY - top) / 0.05, 2)) * Math.exp(-Math.pow((localX - center) / 0.28, 2))
       const depth = 0.62 + seed * 0.38
       const mucusFlow = Math.pow(fbm2(normalizedX * 9 + time * 2.2, normalizedY * 7 - time, 3), 3) * smoothstep(0.52, 0.08, normalizedY)
-      let color = colorScale(hslToRgb(152 + hueShift, 0.76, 0.46), shaft * intensity * depth * 0.48)
-      color = colorAdd(color, hslToRgb(52 + hueShift, 0.92, 0.62), tip * intensity * depth)
-      color = colorAdd(color, hslToRgb(188 + hueShift, 0.80, 0.50), mucusFlow * intensity * 0.34)
+      let color = colorScale(hslToRgb(152 + hueShift, 0.76, 0.52), shaft * intensity * depth * 0.85)
+      color = colorAdd(color, hslToRgb(52 + hueShift, 0.92, 0.66), tip * intensity * depth)
+      color = colorAdd(color, hslToRgb(188 + hueShift, 0.80, 0.56), mucusFlow * intensity * 0.5)
       return color
     }
 
@@ -1490,10 +1520,10 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const moonY = Math.sin(time * Math.PI * 4 + 0.7) * 0.045
       const sunR = Math.sqrt(nx * nx + ny * ny)
       const moonR = Math.sqrt((nx - moonX) ** 2 + (ny - moonY) ** 2)
-      const sunDisk = smoothstep(0.34, 0.31, sunR)
-      const moonDisk = smoothstep(0.32, 0.29, moonR)
-      const corona = Math.exp(-Math.pow((sunR - 0.34) / (0.085 + density * 0.04), 2)) * (0.55 + fbm2(nx * 9 - time, ny * 9 + time, 4) * 0.55)
-      const diamond = Math.exp(-Math.pow(moonR - 0.31, 2) / 0.0007) * Math.exp(-Math.pow(sunR - 0.34, 2) / 0.0009)
+      const sunDisk = smoothstep(0.4, 0.37, sunR)
+      const moonDisk = smoothstep(0.38, 0.35, moonR)
+      const corona = Math.exp(-Math.pow((sunR - 0.4) / (0.13 + density * 0.06), 2)) * (0.75 + fbm2(nx * 9 - time, ny * 9 + time, 4) * 0.75)
+      const diamond = Math.exp(-Math.pow(moonR - 0.37, 2) / 0.0018) * Math.exp(-Math.pow(sunR - 0.4, 2) / 0.0022)
       let color = colorScale(hslToRgb(42 + hueShift, 1.0, 0.58), sunDisk * (1 - moonDisk) * intensity)
       color = colorAdd(color, hslToRgb(210 + hueShift, 0.68, 0.72), corona * intensity * smoothstep(0.32, 0.05, Math.abs(moonX)))
       color = colorAdd(color, hslToRgb(0, 0, 1.0), diamond * intensity * 0.68)
@@ -1516,12 +1546,16 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const relY = ny - headY
       const tailAxis = relX * awayX + relY * awayY
       const cross = Math.abs(relX * awayY - relY * awayX)
-      const tail = Math.exp(-tailAxis * (3.0 - density)) * Math.exp(-Math.pow(cross / (0.055 + tailAxis * 0.12), 2)) * smoothstep(0.0, 0.08, tailAxis)
-      const ionTail = Math.exp(-tailAxis * 2.2) * Math.exp(-Math.pow(cross / 0.032, 2)) * smoothstep(0.02, 0.12, tailAxis)
-      const nucleus = Math.exp(-((relX * relX + relY * relY) / 0.003))
-      let color = colorScale(hslToRgb(38 + hueShift, 0.86, 0.62), tail * intensity * 0.56)
-      color = colorAdd(color, hslToRgb(196 + hueShift, 0.95, 0.58), ionTail * intensity * 0.78)
+      // R167 (2nd pass): the orbiting comet is the darkest design in the set —
+      // widen both tails further and give the nucleus a glow halo.
+      const tail = Math.exp(-tailAxis * (1.5 - density)) * Math.exp(-Math.pow(cross / (0.17 + tailAxis * 0.22), 2)) * smoothstep(0.0, 0.05, tailAxis)
+      const ionTail = Math.exp(-tailAxis * 1.3) * Math.exp(-Math.pow(cross / 0.095, 2)) * smoothstep(0.02, 0.08, tailAxis)
+      const nucleus = Math.exp(-((relX * relX + relY * relY) / 0.016))
+      const nucleusGlow = Math.exp(-((relX * relX + relY * relY) / 0.06)) * 0.35
+      let color = colorScale(hslToRgb(38 + hueShift, 0.86, 0.62), tail * intensity)
+      color = colorAdd(color, hslToRgb(196 + hueShift, 0.95, 0.58), ionTail * intensity)
       color = colorAdd(color, hslToRgb(0, 0, 1.0), nucleus * intensity)
+      color = colorAdd(color, hslToRgb(210 + hueShift, 0.6, 0.75), nucleusGlow * intensity)
       return color
     }
 
@@ -1536,13 +1570,13 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const earth = smoothstep(0.16, 0.13, radius)
       const theta = Math.atan2(ny, nx)
       const dipoleR = 0.20 / Math.max(0.08, Math.sin(theta) * Math.sin(theta) + 0.18)
-      const fieldLine = Math.exp(-Math.pow((radius - dipoleR) / (0.018 + density * 0.01), 2)) * smoothstep(0.72, 0.18, radius)
-      const bowShock = Math.exp(-Math.pow((Math.sqrt((nx + 0.34) ** 2 + (ny * 0.72) ** 2) - 0.52) / 0.035, 2)) * smoothstep(-0.18, -0.65, nx)
-      const auroraOval = Math.exp(-Math.pow((radius - 0.20) / 0.018, 2)) * Math.pow(Math.abs(Math.sin(theta)), 2.6)
-      const solarWind = Math.pow(0.5 + 0.5 * Math.sin((nx * 12 + time * 8 + fbm2(nx * 5, ny * 5, 3) * 2) * Math.PI), 3) * smoothstep(0.62, -0.48, nx) * 0.18
-      let color = colorScale(hslToRgb(210 + hueShift, 0.72, 0.42), fieldLine * intensity * 0.36)
+      const fieldLine = Math.exp(-Math.pow((radius - dipoleR) / (0.038 + density * 0.02), 2)) * smoothstep(0.85, 0.18, radius)
+      const bowShock = Math.exp(-Math.pow((Math.sqrt((nx + 0.34) ** 2 + (ny * 0.72) ** 2) - 0.52) / 0.06, 2)) * smoothstep(-0.18, -0.65, nx)
+      const auroraOval = Math.exp(-Math.pow((radius - 0.20) / 0.038, 2)) * Math.pow(Math.abs(Math.sin(theta)), 2.6)
+      const solarWind = Math.pow(0.5 + 0.5 * Math.sin((nx * 12 + time * 8 + fbm2(nx * 5, ny * 5, 3) * 2) * Math.PI), 3) * smoothstep(0.62, -0.48, nx) * 0.28
+      let color = colorScale(hslToRgb(210 + hueShift, 0.72, 0.5), fieldLine * intensity * 0.6)
       color = colorAdd(color, hslToRgb(128 + hueShift, 0.96, 0.58), auroraOval * intensity)
-      color = colorAdd(color, hslToRgb(194 + hueShift, 0.86, 0.56), bowShock * intensity * 0.52)
+      color = colorAdd(color, hslToRgb(194 + hueShift, 0.86, 0.56), bowShock * intensity * 0.7)
       color = colorAdd(color, hslToRgb(36 + hueShift, 0.80, 0.52), earth * intensity * 0.58 + solarWind * intensity)
       return color
     }
@@ -1555,18 +1589,19 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const { nx, ny } = normCoords(context)
       const time = context.now * speed
       const wavelength = 18 + density * 14
-      const barrier = Math.exp(-Math.pow((nx + 0.12) / 0.012, 2)) * (1 - Math.exp(-Math.pow((Math.abs(ny) - 0.16) / 0.045, 2)))
+      // R167: wider slits/barrier, softer interference exponent, brighter fringes.
+      const barrier = Math.exp(-Math.pow((nx + 0.12) / 0.02, 2)) * (1 - Math.exp(-Math.pow((Math.abs(ny) - 0.16) / 0.08, 2)))
       const slitA = { x: -0.12, y: -0.16 }
       const slitB = { x: -0.12, y: 0.16 }
-      const incident = Math.pow(0.5 + 0.5 * Math.sin((nx + time) * wavelength), 5) * smoothstep(-0.12, -0.68, nx)
+      const incident = Math.pow(0.5 + 0.5 * Math.sin((nx + time) * wavelength), 3) * smoothstep(-0.12, -0.68, nx)
       const distanceA = Math.sqrt((nx - slitA.x) ** 2 + (ny - slitA.y) ** 2)
       const distanceB = Math.sqrt((nx - slitB.x) ** 2 + (ny - slitB.y) ** 2)
       const waveA = Math.sin(distanceA * wavelength - time * 9)
       const waveB = Math.sin(distanceB * wavelength - time * 9)
-      const interference = Math.pow(Math.abs((waveA + waveB) * 0.5), 4) * smoothstep(-0.08, 0.55, nx)
-      const slitGlow = Math.exp(-Math.pow(distanceA / 0.05, 2)) + Math.exp(-Math.pow(distanceB / 0.05, 2))
-      let color = colorScale(hslToRgb(204 + hueShift, 0.86, 0.50), (incident + interference) * intensity * 0.62)
-      color = colorAdd(color, hslToRgb(46 + hueShift, 1.0, 0.58), slitGlow * intensity * 0.34)
+      const interference = Math.pow(Math.abs((waveA + waveB) * 0.5), 3) * smoothstep(-0.08, 0.55, nx)
+      const slitGlow = Math.exp(-Math.pow(distanceA / 0.085, 2)) + Math.exp(-Math.pow(distanceB / 0.085, 2))
+      let color = colorScale(hslToRgb(204 + hueShift, 0.86, 0.58), (incident + interference) * intensity)
+      color = colorAdd(color, hslToRgb(46 + hueShift, 1.0, 0.66), slitGlow * intensity * 0.5)
       color = colorAdd(color, hslToRgb(0, 0, 0.22), barrier * intensity)
       return color
     }
@@ -1579,15 +1614,15 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const { nx, ny } = normCoords(context)
       const time = context.now * speed
       const yNorm = ny + 0.5
-      const taper = 0.08 + yNorm * (0.35 + density * 0.16)
+      const taper = 0.1 + yNorm * (0.45 + density * 0.2)
       const swirlCenter = Math.sin(yNorm * 8 - time * 5) * (0.10 + yNorm * 0.10)
       const radius = Math.abs(nx - swirlCenter) / Math.max(0.03, taper)
       const angle = Math.atan2(yNorm * 1.6, nx - swirlCenter)
-      const helix = Math.pow(0.5 + 0.5 * Math.sin(angle * 5 + yNorm * 26 - time * 9 + fbm2(nx * 6, ny * 6, 3) * 2), 3)
-      const plume = smoothstep(1.25, 0.12, radius) * smoothstep(0.02, 0.95, yNorm)
-      const ember = Math.pow(hash2(context.x * 5 + Math.floor(time * 28), context.y * 7), 18) * smoothstep(0.8, 0.12, radius)
-      const temperature = clampUnit((plume * (0.45 + helix * 0.8) + ember * 0.8) * intensity)
-      return colorAdd(thermalColor(temperature), hslToRgb(210 + hueShift, 0.8, 0.45), plume * (1 - yNorm) * 0.16)
+      const helix = Math.pow(0.5 + 0.5 * Math.sin(angle * 5 + yNorm * 26 - time * 9 + fbm2(nx * 6, ny * 6, 3) * 2), 2.4)
+      const plume = smoothstep(1.35, 0.1, radius) * smoothstep(0.02, 0.95, yNorm)
+      const ember = Math.pow(hash2(context.x * 5 + Math.floor(time * 28), context.y * 7), 12) * smoothstep(0.8, 0.12, radius)
+      const temperature = clampUnit((plume * (0.5 + helix * 0.85) + ember * 0.85) * intensity)
+      return colorAdd(thermalColor(temperature), hslToRgb(210 + hueShift, 0.8, 0.5), plume * (1 - yNorm) * 0.22)
     }
 
     case 'tokamak-plasma': {
@@ -1598,15 +1633,15 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const { nx, ny } = normCoords(context)
       const time = context.now * speed
       const radius = Math.sqrt((nx / 0.78) ** 2 + (ny / 0.42) ** 2)
-      const torus = Math.exp(-Math.pow((radius - 0.55) / (0.09 + density * 0.025), 2))
+      const torus = Math.exp(-Math.pow((radius - 0.55) / (0.15 + density * 0.04), 2))
       const angle = Math.atan2(ny / 0.42, nx / 0.78)
-      const magneticLine = Math.pow(0.5 + 0.5 * Math.sin(angle * 9 + radius * 18 - time * 9), 5)
+      const magneticLine = Math.pow(0.5 + 0.5 * Math.sin(angle * 9 + radius * 18 - time * 9), 3.5)
       const plasmaNoise = fbm2(nx * 10 + time * 2, ny * 10 - time, 4)
-      const hotCore = Math.exp(-Math.pow(radius / 0.34, 2)) * 0.36
-      const limiter = Math.exp(-Math.pow((radius - 0.72) / 0.018, 2)) * 0.18
+      const hotCore = Math.exp(-Math.pow(radius / 0.34, 2)) * 0.5
+      const limiter = Math.exp(-Math.pow((radius - 0.72) / 0.03, 2)) * 0.28
       const brightness = clampUnit((torus * (0.46 + magneticLine * 0.72 + plasmaNoise * 0.28) + hotCore + limiter) * intensity)
       const hue = hueShift + magneticLine * 86 - radius * 45 + plasmaNoise * 32
-      return hslToRgb(hue, 0.96, brightness * 0.68)
+      return hslToRgb(hue, 0.96, brightness * 0.8)
     }
 
     // ── Custom Paint ──────────────────────────────────────────────────────────

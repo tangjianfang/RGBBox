@@ -39,7 +39,7 @@ import { DiagnosticsView } from './components/DiagnosticsView'
 import { Model3DView } from './components/Model3DView'
 import type { AmbientPreset } from './domain/ambientPresets'
 import { AUTOMATION_TARGET_PARAMS } from './domain/automation'
-import { activeLayer, activeScene, updateLayer } from './domain/profileUtils'
+import { activeLayer, activeScene, reconcileSelectedLayerId, updateLayer } from './domain/profileUtils'
 import { distributeFrameToOverlays } from './domain/overlayDistribution'
 // R147 P3b: domain hooks — each owns one slice of former App state verbatim.
 import { useProfileManager } from './hooks/domains/useProfileManager'
@@ -157,6 +157,19 @@ export function App(): JSX.Element {
     if (!profile || !scene) return null
     return scene.layers.find((l) => l.id === selectedLayerId) ?? activeLayer(profile)
   }, [profile, scene, selectedLayerId])
+
+  // R166: selectedLayerId must always point at a layer that exists in the
+  // ACTIVE profile. The persisted value can go stale — fresh-install default
+  // 'layer-rainbow' (no such layer in any shipped profile), deleting the
+  // selected layer (deleteLayer never reassigns), loading a profile whose
+  // layer ids differ. The read side silently falls back to activeLayer(), but
+  // every WRITE goes through updateLayer(profile, selectedLayerId) and matches
+  // nothing — all effect/parameter selections become silent no-ops. Reconcile
+  // the id itself instead of fallback-as-you-go so writes land on a real layer.
+  useEffect(() => {
+    const fixed = reconcileSelectedLayerId(scene, selectedLayerId)
+    if (fixed) setSelectedLayerId(fixed)
+  }, [scene, selectedLayerId, setSelectedLayerId])
 
   const updateSelectedLayer = useCallback((patch: Partial<EffectLayer>) => {
     setProfile((cur) => cur ? updateLayer(cur, selectedLayerId, patch) : cur)

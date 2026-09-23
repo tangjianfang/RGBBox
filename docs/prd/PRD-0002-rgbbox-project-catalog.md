@@ -3313,3 +3313,32 @@
 - **R160.5 边界**：不删任何效果（55 个是玩家受众资产）；不改 engine/参数语义与持久化结构（层 parameters 结构不变）；i18n 文案随批次新增；分类标签由现有数据推导不手维护。
 - **R160.7 评审证据（2026-09-23，glm-5.3 会话，只读研究轮）**：代码级量化——55 preset 的 defaults 合计 **49 个互不相同参数键**（speed×48/hueShift×35/intensity×28/density×26 + 40+ 长尾）；工作区 `QUICK_EFFECT_KINDS` 14 chips 全为科学/太空主题，默认 profile 5 图层效果仅 aurora/fire 可达（P-2 分类错位实锤）；WorkspaceView 效果参数滑杆区全部位于行 700+（首屏折叠之下）；`applyQuickDimensionParameters` 证实 4 语义维度 = 49 参数的语义打包（方向正确但被埋没）。方案与分期路线全文见评审文档 §3-§4；边界：不删效果、不动 engine/持久化。
 - **R160.6 状态**：🔄（规划条款待用户审阅拍板；S1-S4 实施轮另行立项，S2 hover 预览为 L2）
+
+### R165. 全量 review：灯效「点击无反应」根因 + 55 效果大众审美打分 + 精简方案（2026-09-24 用户报障「点击和选中一些灯效没有任何反应：屏幕采样/火焰/太阳系轨道等」+ 指令「全量 review 找根因、按大众审美 100 分打分、给精简/删除建议，review 后再修复」；本条为只读评审条款，`src/` 0 diff）
+
+- **R165.1 根因（四层，按优先级）**：①RC-1 P0 幽灵选中图层——`selectedLayerId`（localStorage 持久化）指向不存在图层时，读侧 `?? activeLayer(profile)` 静默兜底（UI 正常）而写侧 `updateLayer(profile, selectedLayerId)` 匹配不到即原样返回（**全部选择静默 no-op**）；三条入口：首次安装默认值 `'layer-rainbow'` 在默认 profile 中不存在、`deleteLayer` 不转移选中、加载/导入 layer ID 不同的 profile 不重设选中。②RC-2 P1 GPU 3D solo 架构双缺陷——首个启用层为 3D 时 worker 停转 + 画布被 Preview3D 独占（对其他图层的选择无反应）；3D 在非首层时 CPU switch 落 default 分支渲染 screen-ambient 兜底动画（选 A 出 B）。③RC-3 P1 内容依赖黑屏——audio-beat/equalizer 音频默认关 = 0% 亮；custom/image-paint 无内容 = 0% 黑；screen-ambient 有 overlay 时永不捕获只出兜底动画。④RC-4 P2 感知层——科学 19 效果实测（24×14 网格 vitest 客观测量）平均亮度 0.013-0.113 / 非黑覆盖 6-45%（solar-system 9.6%），叠加多层合成稀释 + EMA 0.35 削瞬态。
+- **R165.2 附带 bug**：B-1 starlight `twinkle` 可为负 → `Math.pow(负, 2.8)` = NaN（`effects.ts:409-413`）；B-2 `selectEffect` 整体替换 parameters 丢失 `_maskZone`/`_quickProfile` 等下划线键。
+- **R165.3 打分与精简方案**：55 效果大众审美 100 分制（S≥85 / A 70-84 / B 55-69 / C 45-54 / D<40，客观测量列入表）；建议**删 10**（D 档 7 款 + 同质 3 款）+ **并 3**（vortex-flame→fire、orion-nebula→nebula、tokamak-plasma→vortex 预设）+ 增亮保留 7 款科学幸存者 → **55→42**（激进备选 37）；实施须带「已删 kind→宿主预设」加载期迁移映射，禁用 default 兜底。
+- **R165.4 边界变更提请**：R160.5「不删任何效果」边界为信息架构轮所定；本轮为内容质量轮，近黑效果对玩家同样无价值，**删除档位待用户拍板**。
+- **R165.5 修复路线（待批准后另立 R-N）**：P0 selectedLayerId 三处对账 + updateLayer 告警回落；P1 3D 门禁/画布分支改选中层语义 + 非 solo 降级策略；P1 内容依赖效果零状态提示；P3 B-1/B-2 修复。
+- **R165.6 评审证据（2026-09-24，glm-5.3 会话，只读研究轮）**：全文见 [`2026-09-24-effects-no-reaction-root-cause-and-pruning-review.md`](../reviews/2026-09-24-effects-no-reaction-root-cause-and-pruning-review.md)；证据=effects.ts 1705 行全文通读 + App/WorkspaceView/useEngineLoop/useLayerActions/useProfileManager/EffectsView 选择链路通读 + vitest 临时测量（49 CPU 效果 × 24×14 × 16 采样点，跑毕已删）。
+- **R165.7 用户裁决（2026-09-24）**：**不做删除**——55 种灯效设计全部保留；低分归因修正为「交付层欠调」（公式/默认参数在 24×14 工作区网格上过暗过稀，设计语义本身成立），处置从「删/并」改为「视觉优化提分」；精简方案（R165.3 的删 10 并 3）作废不执行。
+- **R165.8 状态**：✅（评审产出 + 用户裁决落档；修复转入 R166 / 视觉优化转入 R167）
+
+### R166. 修复：幽灵选中图层（RC-1）+ starlight NaN（B-1）（2026-09-24；承载 R165.1① / R165.2 B-1，用户裁决后修复轮第一批）
+
+- **R166.1 selectedLayerId 对账（P0）**：App 新增单个 reconciliation effect——profile/scene 变化后若 `selectedLayerId` 不存在于当前 scene.layers，立即写回 `activeLayer(profile).id`（首个启用层）。单点覆盖三条入口（首装默认 `'layer-rainbow'` / `deleteLayer` 后悬空 / 加载不同 layer ID 的 profile），不改 read/write 两侧既有语义。
+- **R166.2 starlight NaN 修复（P3）**：`twinkle = clampUnit(0.5 + (primary + scintillation) * 0.5)` 后再 `Math.pow`，消除负数幂 NaN。
+- **R166.3 范围排除**：RC-2（GPU 3D solo 双缺陷）、RC-3（内容依赖黑屏提示）、B-2（`_maskZone` 保留策略，行为语义待产品决策）不在本批，另立条款。
+- **R166.4 验收点**：①typecheck + vitest 全绿；②新增回归测试：幽灵 selectedLayerId 场景下 selectEffect 后 layer.kind 实际变更；③starlight 全帧无 NaN。
+- **R166.5 状态**：✅（2026-09-24 实施于 main：`profileUtils.reconcileSelectedLayerId` 纯函数 + App 对账 effect + starlight clampUnit；回归测试 4 例入 profileUtils.test.ts；typecheck/test 全绿——120 文件 1103 用例过；NaN 全扫=0）
+
+### R167. 视觉优化轮：55 效果全保留，逐效果提亮/提覆盖/放大特征（2026-09-24 用户指令「不做删除，只做优化提高视觉效果；打分低是审核口径问题，提升视觉来提分」；承载 R165.8 裁决）
+
+- **R167.0 归因修正**：低分的正确归因是交付层欠调——科学系公式以 48×27 效果卡全屏单层为调参基准，落到 24×14 工作区/浮窗后特征尺度低于 1-2 格、终值乘子（0.4-0.7×）+ 高阶 pow 压碎亮度。优化=调交付，不动设计语义（色相板/概念/运动模式全保留）。
+- **R167.1 客观验收门（量化）**：24×14 网格、preset defaults、16 采样点/6.5s 虚拟时长——**全场景效果**（28 款非稀疏非工具）`avgLum ≥ 0.10 且 lit% ≥ 50`；**稀疏设计款**（starlight/matrix-rain/comet/lightning/explode）`lit%` 较基线 ≥ +40%；**音频款**无输入态不得全黑（idle 动画）；**工具款**（custom/image-paint）维持空态黑（合理语义）。
+- **R167.2 效果清单（触及 effects.ts 公式 + defaultProfile 部分默认参数）**：科学 19 款（solar-system/comet-tail/protein-folding/microvilli-field/synapse-pulse/icosahedral-virus/mitosis-spindle/wave-diffraction/lightning-leader/magnetosphere-aurora/quantum-collapse/pulsar-beacon/hurricane-eye/black-hole/spiral-galaxy/orion-nebula/eclipse-alignment/tokamak-plasma/dna-helix）+ vortex-flame/fluid-flow/mirror-symmetry + 稀疏款（matrix-rain/starlight/comet/lightning/explode）+ 音频 idle（audio-beat/audio-equalizer）。S/A 档（fire/aurora/nebula/rainbow/breathing/plasma 等）不动防回归。
+- **R167.3 常设门禁**：新增 `tests/engine/effects-visual-floor.test.ts`——把 R167.1 的量化下限固化为常驻测试，防未来回归。
+- **R167.4 验收点**：①测量脚本前后对照表进评审文档；②typecheck + vitest 全绿（含新门禁）；③`ui:snapshot` 效果卡基线按流程重拍；④不新增任何性能预算超标（科学款 tick 耗时复测不高于基线 +20%）。
+- **R167.6 实施证据（2026-09-24）**：27 款交付层调参 + 3 默认值微调（starlight density .25→.42 / matrix-rain .55→.72 / comet tail .35→.5）+ 音频 idle（audio-beat 0→.033/46%、audio-equalizer .026→.202）；前后对照表见评审文档 §6.2（最差五款：solar-system .023/.096→.103/.557、comet-tail .013/.06→.094/.259、audio-equalizer、starlight NaN→.115、protein .016→.070）；S/A 档 16 款零触碰防回归。常设门禁 `tests/engine/effects-visual-floor.test.ts`（四档地板 + NaN 扫 + 档位全覆盖）。验收：typecheck 绿、vitest 120/1103 全过、`ui:snapshot` 基线重拍后 9/9 GATE PASS（重拍前 stash 对照实验证实 6 view 超限为环境漂移，与本轮改动逐位无关）。
+- **R167.5 状态**：✅（R167.4 ①-④ 全过；GPU 3D 六款 shader 属 RC-2 范围本轮不动）

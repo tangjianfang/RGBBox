@@ -47,7 +47,8 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'starlight',
     label: 'Starlight',
     description: 'Random twinkling stars scattered across the field.',
-    defaults: { density: 0.25, speed: 0.5, color: '#ffffff' }
+    // R167: 0.25→0.42 — at 24×14 the old density left ~83% of the grid black.
+    defaults: { density: 0.42, speed: 0.5, color: '#ffffff' }
   },
   {
     kind: 'ripple',
@@ -65,7 +66,8 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'comet',
     label: 'Comet',
     description: 'Bright streak races across the grid with a glowing tail.',
-    defaults: { speed: 0.45, tail: 0.35, color: '#ffffff', angle: 0 }
+    // R167: 0.35→0.5 — longer tails cover more of the dark field.
+    defaults: { speed: 0.45, tail: 0.5, color: '#ffffff', angle: 0 }
   },
   {
     kind: 'lightning',
@@ -152,7 +154,8 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'matrix-rain',
     label: 'Matrix Rain',
     description: 'Columns of falling streaks (Matrix-style) with per-column speed variation and density control.',
-    defaults: { speed: 0.50, density: 0.55, color: '#00ff41' }
+    // R167: 0.55→0.72 — more active columns so the grid reads at 24×14.
+    defaults: { speed: 0.50, density: 0.72, color: '#00ff41' }
   },
   {
     kind: 'neon-pulse',
