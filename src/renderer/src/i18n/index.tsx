@@ -380,6 +380,22 @@ const EN = {
   // Effects view
   'effects.library': 'Effect Library',
   'effects.eyebrow': '55 built-in effects — click to apply to selected layer',
+  // R164.1 (S1): curated strip + search/tag filter replace the favorites row and tabs.
+  'effects.curated': 'Curated',
+  'effects.searchPlaceholder': 'Search effects…',
+  'effects.searchLabel': 'Search effects',
+  'effects.searchNone': 'No effect matches — try another word or clear the search.',
+  // R164.2 (S2): hover preview pill + applied toast.
+  'effects.previewing': 'Previewing {name}',
+  'effects.previewApply': 'Apply',
+  'effects.previewEsc': 'Esc to restore',
+  'effects.appliedToast': 'Applied {name}',
+  'effects.undo': 'Undo',
+  // R164.3 (S3): primary-parameter band + reset-to-defaults.
+  'fx.resetDefaults': 'Reset to defaults',
+  // R164.4 (S4): inspire button.
+  'effects.inspire': 'Inspire',
+  'effects.inspireHint': 'Random effect + random color shift',
   // R159.1 (E3): preset label/description content i18n — keys derived from
   // EffectKind in defaultProfile.ts; English stays the persisted fallback.
   'effects.preset.screen-ambient.label': 'Screen Ambient',
@@ -1849,6 +1865,22 @@ const ZH: TranslationTable = {
   'sampling.expand': '展开',
   'effects.library': '效果库',
   'effects.eyebrow': '55 种内置效果 — 点击应用到选中图层',
+  // R164.1（S1）：精选区 + 搜索/标签筛选取代收藏行与分类 tabs。
+  'effects.curated': '精选',
+  'effects.searchPlaceholder': '搜索效果…',
+  'effects.searchLabel': '搜索效果',
+  'effects.searchNone': '没有匹配的效果——换个词或清空搜索试试。',
+  // R164.2（S2）：hover 预览胶囊 + 应用 toast。
+  'effects.previewing': '预览中：{name}',
+  'effects.previewApply': '应用',
+  'effects.previewEsc': 'Esc 还原',
+  'effects.appliedToast': '已应用 {name}',
+  'effects.undo': '撤销',
+  // R164.3（S3）：主参数段 + 恢复默认。
+  'fx.resetDefaults': '恢复此效果默认',
+  // R164.4（S4）：灵感按钮。
+  'effects.inspire': '灵感',
+  'effects.inspireHint': '随机效果 + 随机色彩偏移',
   // R159.1（E3）：预设名称/描述内容级翻译——键名由 defaultProfile.ts 按
   // EffectKind 推导；英文原值保留为持久化 fallback（图层名不随语言变化）。
   'effects.preset.screen-ambient.label': '屏幕环境光',

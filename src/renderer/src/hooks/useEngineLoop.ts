@@ -5,6 +5,7 @@ import type { WorkerInput, WorkerOutput } from '../workers/previewEngineWorker'
 import { MetricsCollector } from '../engine/metricsCollector'
 import { activeLayer } from '../domain/profileUtils'
 import { applyParameterAutomation } from '../domain/automation'
+import { applyLayerOverride, type PreviewOverride } from '../domain/previewOverride'
 import { distributeFrameToOverlays } from '../domain/overlayDistribution'
 import type { View } from './tabNavigation'
 import type { AudioData } from './useAudioAnalyzer'
@@ -33,6 +34,8 @@ export function useEngineLoop(args: {
     automationEnabled: boolean
     automationMode: 'sine' | 'triangle' | 'pulse'
     automatedParams: string[]
+    /** R164.2 (S2): active hover preview (kind + preset defaults), null when idle. */
+    previewOverride: PreviewOverride | null
   }>
   audioRef: RefObject<AudioData>
   overlayIdsRef: RefObject<number[]>
@@ -113,14 +116,22 @@ export function useEngineLoop(args: {
       const droppedTicks = droppedTicksSinceLastPost
       droppedTicksSinceLastPost = 0
       lastPostAt = performance.now()
-      const profileForWorker = applyParameterAutomation(
-        cfgProfile,
-        cfg.selectedLayerId,
-        cfg.automationEnabled,
-        cfg.automatedParams,
-        cfg.automationMode,
-        performance.now() / 1000
-      )
+      // R164.2 (S2): hover preview — while an override is active the selected
+      // layer renders as the hovered effect (its preset defaults) and the
+      // automation transform is skipped: the preview shows the effect itself,
+      // not an automated variation of the real profile. React state and the
+      // persisted profile are never touched; clearing the override restores.
+      const previewOverride = cfg.previewOverride
+      const profileForWorker = previewOverride
+        ? applyLayerOverride(cfgProfile, cfg.selectedLayerId, previewOverride)
+        : applyParameterAutomation(
+            cfgProfile,
+            cfg.selectedLayerId,
+            cfg.automationEnabled,
+            cfg.automatedParams,
+            cfg.automationMode,
+            performance.now() / 1000
+          )
       const msg: WorkerInput = { profile: profileForWorker, audioInput, screenSample, rippleBurst, captureMs, droppedTicks, postedAt: lastPostAt }
       if (screenSample) {
         worker.postMessage(msg, [screenSample.pixels.buffer])
@@ -148,8 +159,13 @@ export function useEngineLoop(args: {
         ledColorsRef.current = new Uint8Array(frame.pixels.length)
       }
       ledColorsRef.current.set(frame.pixels)
-      // Push to any open overlay windows (fire-and-forget, not awaited)
-      distributeFrameToOverlays(frame, cfgScene, topologyRef.current, overlayIdsRef.current, overlayConfigsRef.current)
+      // Push to any open overlay windows (fire-and-forget, not awaited).
+      // R164.2 (S2): hover-preview frames stay in-app — pushing them to the
+      // real overlay projections would paint the user's physical screens with
+      // an effect they never chose.
+      if (!engineConfigRef.current.previewOverride) {
+        distributeFrameToOverlays(frame, cfgScene, topologyRef.current, overlayIdsRef.current, overlayConfigsRef.current)
+      }
       metrics.outputMs = 0
       metrics.roundTripMs = lastPostAt > 0 ? performance.now() - lastPostAt : metrics.workerProcessMs
       metricsCollectorRef.current.add(metrics)

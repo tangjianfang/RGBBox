@@ -1,16 +1,18 @@
 import {
   Activity, ChevronDown, ChevronUp, Clock, Download, FilePlus, Gauge, Link2, Link2Off,
-  Lock, Maximize2, Minimize2, Monitor, MoreVertical, Pencil, Plus, Sparkles, Star,
+  Lock, Maximize2, Minimize2, Monitor, MoreVertical, Pencil, Plus, RotateCcw, Sparkles, Star,
   Shuffle, Trash2, Unlock, Upload,
 } from 'lucide-react'
-import type { ChangeEvent, Dispatch, RefObject, SetStateAction } from 'react'
+import { useEffect, useRef, type ChangeEvent, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import type { JSX } from 'react'
-import { effectPresets } from '../../../shared/defaultProfile'
+import { effectPresets, defaultProfile } from '../../../shared/defaultProfile'
 import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, OverlayConfig, Profile, ProfileMeta, RgbFrame, Scene } from '../../../shared/types'
 import { is3DEffect, resolveFrameRenderStyle } from '../../../shared/types'
+import { renderPreviewFrame } from '../../../engine/previewEngine'
 import { AMBIENT_PRESETS } from '../domain/ambientPresets'
 import type { AmbientPreset } from '../domain/ambientPresets'
 import { presetDescription, presetLabel } from '../domain/presetI18n'
+import { primaryParamsFor } from '../domain/primaryParams'
 import type { AutomationMode } from '../domain/automation'
 import type { RandomizerMode } from '../domain/randomizer'
 import type { QuickDimensionId } from '../domain/quickDimensions'
@@ -33,7 +35,71 @@ import { VideoWallEditor } from './VideoWallEditor'
  * names so the JSX body moved unchanged; domain hooks carved out of App
  * narrow these groups in later steps.
  */
-export interface WorkspaceViewProps {
+export /**
+ * R164.4 (S4): scene card — one ambient preset rendered as a LIVE thumbnail
+ * (the scene-level previewEngine compositor, same engine as the real canvas)
+ * plus name and active highlight. One click applies the whole scene feel.
+ */
+function SceneCard(props: { preset: typeof AMBIENT_PRESETS[number]; active: boolean; label: string; onApply: () => void }): JSX.Element {
+  const { preset, active, label, onApply } = props
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const COLS = 16, ROWS = 9
+    canvas.width = COLS * 7
+    canvas.height = ROWS * 7
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const layer: EffectLayer = {
+      id: `thumb-${preset.id}`, name: preset.id, kind: preset.effectKind,
+      enabled: true, opacity: preset.opacity, blendMode: preset.blendMode,
+      parameters: { ...preset.parameters },
+    }
+    const miniProfile: Profile = {
+      ...defaultProfile,
+      sampling: { ...defaultProfile.sampling, columns: COLS, rows: ROWS, smoothing: 0 },
+      scenes: [{ id: 'thumb-scene', name: 'thumb', displayIds: [], layers: [layer] }],
+      activeSceneId: 'thumb-scene',
+    }
+    const start = performance.now()
+    let raf = 0
+    const cw = canvas.width / COLS
+    const ch = canvas.height / ROWS
+    const draw = (): void => {
+      const now = (performance.now() - start) / 1000
+      const frame = renderPreviewFrame(miniProfile, now)
+      ctx.fillStyle = '#080d11'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const i = (y * COLS + x) * 3
+          ctx.fillStyle = `rgb(${frame.pixels[i]},${frame.pixels[i + 1]},${frame.pixels[i + 2]})`
+          ctx.fillRect(x * cw + 0.5, y * ch + 0.5, cw - 1, ch - 1)
+        }
+      }
+      raf = requestAnimationFrame(draw)
+    }
+    raf = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(raf)
+  }, [preset])
+
+  return (
+    <button
+      type="button"
+      className={`scene-card ${active ? 'active' : ''}`}
+      title={label}
+      aria-pressed={active}
+      onClick={onApply}
+    >
+      <canvas ref={canvasRef} aria-hidden="true" />
+      <span className="scene-card-name">{label}</span>
+    </button>
+  )
+}
+
+interface WorkspaceViewProps {
   // profile domain
   profile: Profile
   scene: Scene | null
@@ -67,6 +133,8 @@ export interface WorkspaceViewProps {
   setSelectedLayerValue: <K extends 'opacity' | 'blendMode'>(key: K, value: EffectLayer[K]) => void
   // quick customize / effects picker
   favoriteEffectPresets: Array<{ kind: EffectKind; label: string; labelKey?: `effects.preset.${EffectKind}.label` }>
+  /** R164.2 (S2): hovered-effect synthetic layer — drives the preview canvas while hover-previewing, null when idle. */
+  previewLayer: EffectLayer | null
   applyAmbientPreset: (preset: AmbientPreset) => void
   applyQuickDimension: (dimension: QuickDimensionId, option: string) => void
   randomizeSelectedLayer: () => void
@@ -142,7 +210,7 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
     handleProfileDelete, handleProfileImport, handleProfileExport, refreshProfiles,
     addLayer, toggleLayerEnabled, deleteLayer, selectEffect, updateSelectedLayer,
     setLayerParameter, setSelectedLayerValue,
-    favoriteEffectPresets, applyAmbientPreset, applyQuickDimension, randomizeSelectedLayer,
+    favoriteEffectPresets, previewLayer, applyAmbientPreset, applyQuickDimension, randomizeSelectedLayer,
     allEffectsOpen, setAllEffectsOpen, advancedControlsOpen, setAdvancedControlsOpen,
     importLayerPackRef, handleImportLayerPack, exportLayerPack,
     randomizerMode, setRandomizerMode, randomizerLockedParams, toggleRandomizerParamLock,
@@ -161,6 +229,72 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
   } = p
   void refreshProfiles
   const { t } = useI18n()
+
+  // R164.3 (S3): one parameter row renderer shared by the primary band and the
+  // advanced drawer's long tail (extracted verbatim from the old inline map).
+  // Call sites guarantee selectedLayer is non-null.
+  const renderParamLine = (name: string, value: unknown): JSX.Element | null => {
+    if (!selectedLayer || name.startsWith('_')) return null
+    const meta = PARAM_META[name]
+    const labelKey = meta?.labelKey ?? name
+    const label = (labelKey.includes('.') ? t(labelKey as Parameters<typeof t>[0]) : labelKey)
+    const unit = meta?.unit ?? ''
+    const locked = randomizerLockedParams.includes(name)
+    const lockTitle = locked ? t('effects.unlockParam') : t('effects.lockParam')
+    const lockButton = (
+      <button
+        className={`parameter-lock-btn ${locked ? 'locked' : ''}`}
+        type="button"
+        aria-pressed={locked}
+        title={lockTitle}
+        onClick={() => toggleRandomizerParamLock(name)}
+      >
+        {locked ? <Lock size={12} /> : <Unlock size={12} />}
+      </button>
+    )
+    if (typeof value === 'string' && !value.startsWith('#')) {
+      return (
+        <div className="parameter-line text-param" key={name}>
+          <span>{name === 'text' ? t('param.text') : label}</span>
+          <input
+            className="text-param-input"
+            type="text"
+            value={value}
+            placeholder={name === 'text' ? t('param.textPlaceholder') : ''}
+            onChange={(e) => setLayerParameter(name, e.target.value)}
+          />
+          {lockButton}
+        </div>
+      )
+    }
+    return (
+      <div className="parameter-line" key={name}>
+        <span>{name === 'color' ? t('param.bgColor') : name === 'textColor' ? t('param.textColor') : label}</span>
+        {typeof value === 'string' && value.startsWith('#') ? (
+          <input type="color" value={value}
+            onChange={(e) => setLayerParameter(name, e.target.value)} />
+        ) : typeof value === 'number' ? (
+          <input
+            min={meta?.min ?? 0}
+            max={meta?.max ?? 2}
+            step={meta?.step ?? 0.05}
+            type="range"
+            value={value}
+            onChange={(e) => setLayerParameter(name, Number(e.target.value))}
+          />
+        ) : (
+          <input checked={Boolean(value)} type="checkbox"
+            onChange={(e) => setLayerParameter(name, e.target.checked)} />
+        )}
+        {lockButton}
+        <strong>
+          {typeof value === 'number'
+            ? `${meta?.step && meta.step >= 1 ? Math.round(value) : value.toFixed(2)}${unit}`
+            : String(value)}
+        </strong>
+      </div>
+    )
+  }
   return (
           <div className="workspace-inner">
 
@@ -353,17 +487,17 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                       <Shuffle size={13} />
                     </button>
                   </div>
-                  <div className="quick-profile-row" aria-label={t('quick.profile')}>
+                  {/* R164.4 (S4): the six ambient presets as LIVE scene cards —
+                      name + animated thumbnail + one-tap apply + active state. */}
+                  <div className="quick-profile-row scene-card-row" aria-label={t('quick.profile')}>
                     {AMBIENT_PRESETS.map((ap) => (
-                      <button
+                      <SceneCard
                         key={ap.id}
-                        className={`quick-profile-btn ${String(selectedLayer.parameters._quickProfile ?? '') === ap.id ? 'active' : ''}`}
-                        type="button"
-                        title={t(ap.labelKey as Parameters<typeof t>[0])}
-                        onClick={() => applyAmbientPreset(ap)}
-                      >
-                        <span>{t(ap.labelKey as Parameters<typeof t>[0])}</span>
-                      </button>
+                        preset={ap}
+                        active={String(selectedLayer.parameters._quickProfile ?? '') === ap.id}
+                        label={t(ap.labelKey as Parameters<typeof t>[0])}
+                        onApply={() => applyAmbientPreset(ap)}
+                      />
                     ))}
                   </div>
                   <div className="quick-tune-stack">
@@ -450,9 +584,20 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                 )}
               </div>
 
-              {/* Per-layer parameters */}
+              {/* Per-layer parameters — R164.3 (S3) three-band layout:
+                  ① primary ≤3 sliders above the fold, ② semantic fine-tune
+                  lives in the quick-customize rows above, ③ advanced drawer
+                  holds the long tail (nothing removed). */}
               {selectedLayer && (
                 <div className="layer-params-panel">
+                  {(() => {
+                    const primaries = primaryParamsFor(selectedLayer.kind, selectedLayer.parameters)
+                    return primaries.length > 0 ? (
+                      <div className="primary-params">
+                        {primaries.map((name) => renderParamLine(name, selectedLayer.parameters[name]))}
+                      </div>
+                    ) : null
+                  })()}
                   <button className="advanced-toggle-row" type="button" onClick={() => setAdvancedControlsOpen((open) => !open)}>
                     <Gauge size={13} />
                     <span>{t('quick.advanced')}</span>
@@ -460,6 +605,22 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                   </button>
                   {advancedControlsOpen && (
                     <>
+                      {/* R164.3: one-tap reset to this effect's preset defaults —
+                          kills the "tuned it into ugliness, no way back" trap. */}
+                      {(() => {
+                        const preset = effectPresets.find((p) => p.kind === selectedLayer.kind)
+                        if (!preset) return null
+                        return (
+                          <button
+                            className="layer-action-btn fx-reset-defaults"
+                            type="button"
+                            onClick={() => updateSelectedLayer({ parameters: { ...preset.defaults } })}
+                          >
+                            <RotateCcw size={12} />
+                            <span>{t('fx.resetDefaults')}</span>
+                          </button>
+                        )
+                      })()}
                       <div className="layer-tools-row">
                         <select
                           className="randomizer-select"
@@ -657,71 +818,15 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                       }}
                     />
                   )}
-                  {selectedLayer.kind !== 'custom-paint' && selectedLayer.kind !== 'image-paint' && Object.entries(selectedLayer.parameters)
-                    .filter(([name]) => !name.startsWith('_'))
-                    .map(([name, value]) => {
-                      const meta = PARAM_META[name]
-                      // label: use i18n key if available (e.g. 'param.textX'), otherwise meta.labelKey or param name
-                      const labelKey = meta?.labelKey ?? name
-                      const label = (labelKey.includes('.') ? t(labelKey as Parameters<typeof t>[0]) : labelKey)
-                      const unit = meta?.unit ?? ''
-                      const locked = randomizerLockedParams.includes(name)
-                      const lockTitle = locked ? t('effects.unlockParam') : t('effects.lockParam')
-                      const lockButton = (
-                        <button
-                          className={`parameter-lock-btn ${locked ? 'locked' : ''}`}
-                          type="button"
-                          aria-pressed={locked}
-                          title={lockTitle}
-                          onClick={() => toggleRandomizerParamLock(name)}
-                        >
-                          {locked ? <Lock size={12} /> : <Unlock size={12} />}
-                        </button>
-                      )
-                      // Special case: text string parameter (not a color hex)
-                      if (typeof value === 'string' && !value.startsWith('#')) {
-                        return (
-                          <div className="parameter-line text-param" key={name}>
-                            <span>{name === 'text' ? t('param.text') : label}</span>
-                            <input
-                              className="text-param-input"
-                              type="text"
-                              value={value}
-                              placeholder={name === 'text' ? t('param.textPlaceholder') : ''}
-                              onChange={(e) => setLayerParameter(name, e.target.value)}
-                            />
-                            {lockButton}
-                          </div>
-                        )
-                      }
-                      return (
-                        <div className="parameter-line" key={name}>
-                          <span>{name === 'color' ? t('param.bgColor') : name === 'textColor' ? t('param.textColor') : label}</span>
-                          {typeof value === 'string' && value.startsWith('#') ? (
-                            <input type="color" value={value}
-                              onChange={(e) => setLayerParameter(name, e.target.value)} />
-                          ) : typeof value === 'number' ? (
-                            <input
-                              min={meta?.min ?? 0}
-                              max={meta?.max ?? 2}
-                              step={meta?.step ?? 0.05}
-                              type="range"
-                              value={value}
-                              onChange={(e) => setLayerParameter(name, Number(e.target.value))}
-                            />
-                          ) : (
-                            <input checked={Boolean(value)} type="checkbox"
-                              onChange={(e) => setLayerParameter(name, e.target.checked)} />
-                          )}
-                          {lockButton}
-                          <strong>
-                            {typeof value === 'number'
-                              ? `${meta?.step && meta.step >= 1 ? Math.round(value) : value.toFixed(2)}${unit}`
-                              : String(value)}
-                          </strong>
-                        </div>
-                      )
-                    })}
+                  {/* R164.3 (S3): long tail — everything EXCEPT the ≤3 primary
+                      parameters promoted above the fold (renderParamLine is
+                      the shared row renderer). */}
+                  {selectedLayer.kind !== 'custom-paint' && selectedLayer.kind !== 'image-paint' && (() => {
+                    const primaries = new Set(primaryParamsFor(selectedLayer.kind, selectedLayer.parameters))
+                    return Object.entries(selectedLayer.parameters)
+                      .filter(([name]) => !name.startsWith('_') && !primaries.has(name))
+                      .map(([name, value]) => renderParamLine(name, value))
+                  })()}
                     </>
                   )}
                 </div>
@@ -780,9 +885,12 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                     ref={previewFullscreenWrapRef}
                     className={`preview-fullscreen-wrap${previewFullscreen ? ' is-fullscreen' : ''}`}
                   >
-                    {is3DEffect(activeLayer(profile).kind) ? (
+                    {/* R164.2 (S2): the hovered-effect synthetic layer takes over
+                        the canvas while hover-previewing (3D branch + render style
+                        included); cleared overlay/undo semantics live in App. */}
+                    {(() => { const eff = previewLayer ?? activeLayer(profile); return is3DEffect(eff.kind) ? (
                       <Preview3D
-                        layer={activeLayer(profile)}
+                        layer={eff}
                         columns={profile.sampling.columns}
                         rows={profile.sampling.rows}
                         onFrame={handleFrame3D}
@@ -792,13 +900,13 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                       <PreviewGrid
                         frameRef={frameRef}
                         showGap={profile.sampling.showGap ?? false}
-                        renderStyle={resolveFrameRenderStyle(profile.sampling.renderStyle, activeLayer(profile)?.kind)}
+                        renderStyle={resolveFrameRenderStyle(profile.sampling.renderStyle, eff.kind)}
                         gpuLayer={gpuDirectLayer}
                         onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
                         displayCount={scene?.linkedDisplays ? topology.displays.length : 1}
                         aspectRatio={previewAspectRatio}
                       />
-                    )}
+                    ) })()}
                   </div>
                 </section>
 

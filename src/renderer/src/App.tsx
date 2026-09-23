@@ -1,11 +1,17 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { effectPresets } from '../../shared/defaultProfile'
+import { effectPresets, defaultProfile } from '../../shared/defaultProfile'
 import type { CaptureProviderStatus, DisplayTopology, EffectKind, EffectLayer, EngineMetrics, EngineStatus, Profile, ProcessCpuSample, RgbFrame } from '../../shared/types'
 import { resolveFrameRenderStyle } from '../../shared/types'
 import { isGpuDirectEffect } from './gl/effectGl'
 import { useI18n } from './i18n'
 import { presetLabel } from './domain/presetI18n'
+import { curatedKinds as curatedKinds$ } from './domain/curatedEffects'
+import type { PreviewOverride } from './domain/previewOverride'
+import { useRecentEffects } from './hooks/useRecentEffects'
 import { UI_FONT_SCALE_DEFAULT, uiFontScalePx } from './domain/uiFontScale'
+
+/** R164.1: what a fresh install actually layers — the curated strip's first source. */
+const DEFAULT_PROFILE_LAYER_KINDS = defaultProfile.scenes.flatMap((s) => s.layers.map((l) => l.kind))
 import { EffectsView } from './components/EffectsView'
 import { ShutdownTimerPanel } from './components/ShutdownTimerPanel'
 // R147 P4: heavy views load on demand — three.js (via MiniGames/3D previews),
@@ -156,6 +162,11 @@ export function App(): JSX.Element {
     setProfile((cur) => cur ? updateLayer(cur, selectedLayerId, patch) : cur)
   }, [selectedLayerId])
 
+  // R164.1 (S1): recent-use tracking feeds the curated strip (data-driven
+  // twelve: default-profile layers + classics + favorites + recents). Sits
+  // before selectEffect — that callback records into it.
+  const { recentKinds, recordRecent } = useRecentEffects()
+
   // selectEffect/applyAmbientPreset stay here (not in useLayerActions): four
   // domain hooks consume selectEffect, and it depends only on
   // updateSelectedLayer/selectedLayerId — moving it into the layer hook would
@@ -164,7 +175,8 @@ export function App(): JSX.Element {
     const preset = effectPresets.find((p) => p.kind === kind)
     if (!preset) return
     updateSelectedLayer({ name: preset.label, kind: preset.kind, parameters: { ...preset.defaults } })
-  }, [updateSelectedLayer, selectedLayerId])
+    recordRecent(kind)
+  }, [updateSelectedLayer, selectedLayerId, recordRecent])
 
   const applyAmbientPreset = useCallback((preset: AmbientPreset) => {
     const effectPreset = effectPresets.find((p) => p.kind === preset.effectKind)
@@ -191,6 +203,10 @@ export function App(): JSX.Element {
     randomizerMode, setRandomizerMode,
     randomizerLockedParams, toggleRandomizerParamLock,
   } = useRandomizerDomain({ selectedLayer, selectEffect })
+  const curatedKinds = useMemo(
+    () => curatedKinds$({ defaultKinds: DEFAULT_PROFILE_LAYER_KINDS, favoriteKinds: favoriteEffectKinds, recentKinds }),
+    [favoriteEffectKinds, recentKinds]
+  )
   const layerActions = useLayerActions({
     setProfile, setSelectedLayerId, selectedLayer, updateSelectedLayer,
     randomizerMode, randomizerLockedParams,
@@ -228,8 +244,45 @@ export function App(): JSX.Element {
   // are created ONCE per run instead of being torn down and rebuilt on every
   // slider drag. fps is re-read on every self-scheduled timeout, so changing
   // the sampling fps still takes effect on the next tick.
-  const engineConfigRef = useRef({ profile, selectedLayerId, automationEnabled, automationMode, automatedParams })
-  engineConfigRef.current = { profile, selectedLayerId, automationEnabled, automationMode, automatedParams }
+  // R164.2 (S2): hover-preview override + applied-effect toast. The override
+  // rides the engineConfigRef bridge (hover enter/leave are rare events, so
+  // the App re-render cost is negligible vs. a per-frame channel).
+  const [previewOverride, setPreviewOverride] = useState<PreviewOverride | null>(null)
+  const [appliedToast, setAppliedToast] = useState<{ kind: EffectKind; prevKind: EffectKind } | null>(null)
+  const appliedToastTimer = useRef<number | null>(null)
+  const showAppliedToast = useCallback((kind: EffectKind, prevKind: EffectKind) => {
+    setAppliedToast({ kind, prevKind })
+    if (appliedToastTimer.current !== null) window.clearTimeout(appliedToastTimer.current)
+    appliedToastTimer.current = window.setTimeout(() => setAppliedToast(null), 5000)
+  }, [])
+  // R164.4 (S4): 🎲 inspire — a random effect with a random color shift; the
+  // 55-long tail turns from browsing burden into a slot machine.
+  const inspireEffect = useCallback(() => {
+    const pool = effectPresets.filter((p) => p.kind !== 'custom-paint' && p.kind !== 'image-paint')
+    const pick = pool[Math.floor(Math.random() * pool.length)]
+    if (!pick) return
+    const prevKind = selectedLayer?.kind
+    const parameters = 'hueShift' in pick.defaults
+      ? { ...pick.defaults, hueShift: Math.round(Math.random() * 360) } as EffectLayer['parameters']
+      : { ...pick.defaults }
+    updateSelectedLayer({ name: pick.label, kind: pick.kind, parameters })
+    recordRecent(pick.kind)
+    if (prevKind && prevKind !== pick.kind) showAppliedToast(pick.kind, prevKind)
+  }, [selectedLayer, updateSelectedLayer, recordRecent, showAppliedToast])
+
+  const undoApplied = useCallback(() => {
+    if (!appliedToast) return
+    selectEffect(appliedToast.prevKind)
+    setAppliedToast(null)
+  }, [appliedToast, selectEffect])
+
+  // R147 P2: engine-loop config bridge — profile / selectedLayerId / automation*
+  // flow into the tick closures through this ref so the effect and its timer
+  // are created ONCE per run instead of being torn down and rebuilt on every
+  // slider drag. fps is re-read on every self-scheduled timeout, so changing
+  // the sampling fps still takes effect on the next tick.
+  const engineConfigRef = useRef({ profile, selectedLayerId, automationEnabled, automationMode, automatedParams, previewOverride })
+  engineConfigRef.current = { profile, selectedLayerId, automationEnabled, automationMode, automatedParams, previewOverride }
   const metricsCollectorRef = useRef(new MetricsCollector())
 
   // R85: live fps for the dashboard status strip. status.fps (EngineStatus) is a
@@ -406,12 +459,20 @@ export function App(): JSX.Element {
   // check looked at the scene's first *enabled* layer instead, which is a
   // different layer whenever the user edits anything but that one, and was
   // why switching to 'rainbow' appeared to do nothing).
+  // R164.2 (S2): while hovering an effect card, the GPU-direct / 3D preview
+  // branches render the hovered effect's synthetic layer (preset defaults)
+  // instead of the real selected one — same override the worker path applies.
+  const previewLayer = useMemo(() => {
+    if (!previewOverride || !selectedLayer) return null
+    return { ...selectedLayer, kind: previewOverride.kind, parameters: { ...previewOverride.parameters } } as EffectLayer
+  }, [previewOverride, selectedLayer])
   const gpuDirectLayer = useMemo(() => {
     if (!scene || !selectedLayer) return null
     const enabledLayers = scene.layers.filter((l) => l.enabled)
     const isSoloEnabled = enabledLayers.length === 1 && enabledLayers[0].id === selectedLayer.id
+    if (previewLayer) return isSoloEnabled && isGpuDirectEffect(previewLayer.kind) ? previewLayer : null
     return isSoloEnabled && isGpuDirectEffect(selectedLayer.kind) ? selectedLayer : null
-  }, [scene, selectedLayer])
+  }, [scene, selectedLayer, previewLayer])
 
   const favoriteEffectPresets = useMemo(() => {
     return favoriteEffectKinds
@@ -460,6 +521,16 @@ export function App(): JSX.Element {
     <>
       <div className="titlebar-drag" aria-hidden="true" />
       <main className="app-shell" ref={appRootRef}>
+      {/* R164.2 (S2): applied-effect toast with a 5s undo window. */}
+      {appliedToast && (() => {
+        const preset = effectPresets.find((p) => p.kind === appliedToast.kind)
+        return (
+          <div className="fx-applied-toast" role="status">
+            <span>{t('effects.appliedToast').replace('{name}', preset ? presetLabel(preset, t) : appliedToast.kind)}</span>
+            <button type="button" onClick={undoApplied}>{t('effects.undo')}</button>
+          </div>
+        )
+      })()}
       <AppShell
         title={t(getTabMeta(activeView).labelKey)}
         onOpenSettings={() => setActiveView('settings')}
@@ -575,6 +646,7 @@ export function App(): JSX.Element {
             setLayerParameter={layerActions.setLayerParameter}
             setSelectedLayerValue={layerActions.setSelectedLayerValue}
             favoriteEffectPresets={favoriteEffectPresets}
+            previewLayer={previewLayer}
             applyAmbientPreset={applyAmbientPreset}
             applyQuickDimension={layerActions.applyQuickDimension}
             randomizeSelectedLayer={layerActions.randomizeSelectedLayer}
@@ -640,10 +712,18 @@ export function App(): JSX.Element {
           <EffectsView
             activeKind={selectedLayer?.kind ?? 'static'}
             favoriteKinds={favoriteEffectKinds}
+            curatedKinds={curatedKinds}
             onSelectEffect={(kind) => {
+              const prevKind = selectedLayer?.kind
               selectEffect(kind)
+              if (prevKind && prevKind !== kind) showAppliedToast(kind, prevKind)
               setActiveView('workspace')
             }}
+            onPreviewEffect={(kind) => {
+              const preset = kind ? effectPresets.find((p) => p.kind === kind) : undefined
+              setPreviewOverride(preset ? { kind: preset.kind, parameters: { ...preset.defaults } } : null)
+            }}
+            onInspire={inspireEffect}
             onToggleFavorite={toggleFavoriteEffect}
           />
         )}

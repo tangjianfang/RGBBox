@@ -1324,6 +1324,177 @@ input:not([type]):focus {
   padding: 14px;
 }
 
+/* ── R164.1 (S1): curated strip + search/tag filter bar ─────────────────── */
+/* ── R164.2 (S2): hover-preview pill + applied toast ────────────────────── */
+/* ── R164.3 (S3): primary-parameter band above the advanced drawer ──────── */
+
+.primary-params {
+  border-bottom: 1px solid var(--surface-raised);
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+}
+
+.fx-reset-defaults {
+  margin-bottom: 10px;
+}
+
+/* ── R164.4 (S4): live scene cards + inspire button ─────────────────────── */
+
+.scene-card-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+}
+
+.scene-card {
+  background: var(--surface-deep);
+  border: 1px solid var(--surface-raised);
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+  padding: 4px;
+  transition: border-color 150ms ease;
+}
+
+.scene-card:hover {
+  border-color: var(--border-hover);
+}
+
+.scene-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-ring-25);
+}
+
+.scene-card canvas {
+  border-radius: var(--radius-s);
+  height: auto;
+  width: 100%;
+}
+
+.scene-card-name {
+  color: var(--text-secondary);
+  font-size: var(--text-caption-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fx-inspire-btn {
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--text-caption-size);
+  margin-left: 10px;
+  padding: 2px 12px;
+}
+
+.fx-inspire-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-soft-text);
+}
+
+.fx-preview-pill {
+  align-items: center;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent-soft-text);
+  display: flex;
+  font-size: var(--text-caption-size);
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 5px 14px;
+}
+
+.fx-preview-pill button {
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-s);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  font-size: var(--text-caption-size);
+  padding: 2px 10px;
+}
+
+.fx-preview-pill-esc {
+  color: var(--text-muted);
+}
+
+.fx-applied-toast {
+  align-items: center;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  bottom: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  color: var(--text-primary);
+  display: flex;
+  font-size: var(--text-body-size);
+  gap: 12px;
+  left: 50%;
+  padding: 8px 16px;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 9000;
+}
+
+.fx-applied-toast button {
+  background: none;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-s);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: var(--text-caption-size);
+  padding: 2px 10px;
+}
+
+.effects-curated-section {
+  background: var(--surface-deep);
+  border: 1px solid var(--surface-raised);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+/* Same card grid as the library, just a touch tighter for the strip. */
+.effects-curated-grid {
+  gap: 10px;
+}
+
+.effects-filter-bar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.effects-search {
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-s);
+  color: var(--text-primary);
+  flex: 0 1 240px;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-lh);
+  padding: 6px 10px;
+}
+
+.effects-search:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.effects-search::placeholder {
+  color: var(--text-muted);
+}
+
 .effects-favorites-row,
 .favorite-effect-strip {
   display: flex;

@@ -1,5 +1,5 @@
 import { Star } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type JSX, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type RefObject } from 'react'
 import { effectPresets } from '../../../shared/defaultProfile'
 import { renderEffectPixel } from '../../../engine/effects'
 import { EFFECT_3D_KINDS } from '../../../shared/types'
@@ -48,9 +48,11 @@ interface EffectCardProps {
   favorite: boolean
   onSelect: (kind: EffectKind) => void
   onToggleFavorite: (kind: EffectKind) => void
+  /** R164.2 (S2): pointer enters/leaves the card — debounced into hover preview by the view. */
+  onHover: (kind: EffectKind | null) => void
 }
 
-function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite }: EffectCardProps): JSX.Element {
+function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite, onHover }: EffectCardProps): JSX.Element {
   const { t } = useI18n()
   const [containerRef, visible] = useCardVisible()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -119,6 +121,8 @@ function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite }: 
     <div
       ref={containerRef}
       className={`effect-card ${selected ? 'selected' : ''}`}
+      onPointerEnter={() => onHover(preset.kind)}
+      onPointerLeave={() => onHover(null)}
     >
       <button className="effect-card-main" type="button" onClick={() => onSelect(preset.kind)}>
         <canvas ref={canvasRef} aria-hidden="true" />
@@ -145,7 +149,7 @@ function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite }: 
  * Thumbnail card for GPU 3D effects — renders the GLSL shader directly in
  * the card canvas using a dedicated WebGL context.
  */
-function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite }: EffectCardProps): JSX.Element {
+function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite, onHover }: EffectCardProps): JSX.Element {
   const { t } = useI18n()
   const [containerRef, visible] = useCardVisible()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -187,6 +191,8 @@ function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite }
     <div
       ref={containerRef}
       className={`effect-card ${selected ? 'selected' : ''}`}
+      onPointerEnter={() => onHover(preset.kind)}
+      onPointerLeave={() => onHover(null)}
     >
       <button className="effect-card-main" type="button" onClick={() => onSelect(preset.kind)}>
         <canvas ref={canvasRef} aria-hidden="true" />
@@ -217,7 +223,7 @@ function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite }
  * main thread (the colour maths runs on the GPU instead of once per grid
  * cell in JS), which is what makes it safe to animate many cards at once.
  */
-function EffectCardGpu({ preset, selected, favorite, onSelect, onToggleFavorite }: EffectCardProps): JSX.Element {
+function EffectCardGpu({ preset, selected, favorite, onSelect, onToggleFavorite, onHover }: EffectCardProps): JSX.Element {
   const { t } = useI18n()
   const [containerRef, visible] = useCardVisible()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -260,7 +266,12 @@ function EffectCardGpu({ preset, selected, favorite, onSelect, onToggleFavorite 
   }, [preset, visible])
 
   return (
-    <div ref={containerRef} className={`effect-card ${selected ? 'selected' : ''}`}>
+    <div
+      ref={containerRef}
+      className={`effect-card ${selected ? 'selected' : ''}`}
+      onPointerEnter={() => onHover(preset.kind)}
+      onPointerLeave={() => onHover(null)}
+    >
       <button className="effect-card-main" type="button" onClick={() => onSelect(preset.kind)}>
         <canvas ref={canvasRef} aria-hidden="true" />
         <div className="effect-card-info">
@@ -285,6 +296,12 @@ function EffectCardGpu({ preset, selected, favorite, onSelect, onToggleFavorite 
 interface EffectsViewProps {
   activeKind: EffectKind
   favoriteKinds: EffectKind[]
+  /** R164.1: curated strip kinds (data-driven, see domain/curatedEffects.ts). */
+  curatedKinds: EffectKind[]
+  /** R164.2 (S2): null on pointer-leave/Esc/apply — App drives the preview override. */
+  onPreviewEffect: (kind: EffectKind | null) => void
+  /** R164.4 (S4): the 🎲 inspire button — random effect + random color shift. */
+  onInspire: () => void
   onSelectEffect: (kind: EffectKind) => void
   onToggleFavorite: (kind: EffectKind) => void
 }
@@ -299,21 +316,77 @@ const CATEGORIES = [
   { labelKey: 'effects.audio'    as const, kinds: ['audio-beat', 'audio-equalizer'] },
 ] as const
 
-export function EffectsView({ activeKind, favoriteKinds, onSelectEffect, onToggleFavorite }: EffectsViewProps): JSX.Element {
+export function EffectsView({ activeKind, favoriteKinds, curatedKinds, onPreviewEffect, onInspire, onSelectEffect, onToggleFavorite }: EffectsViewProps): JSX.Element {
   const { t } = useI18n()
   const favoriteSet = useMemo(() => new Set(favoriteKinds), [favoriteKinds])
-  const favoritePresets = useMemo(() => {
-    return favoriteKinds
+
+  // ── R164.2 (S2): hover preview — 300ms debounce so a pointer sweep across
+  //    the grid doesn't churn the canvas; Esc cancels; applying clears first.
+  const [previewingKind, setPreviewingKind] = useState<EffectKind | null>(null)
+  const hoverTimerRef = useRef<number | null>(null)
+  const hoverKind = useCallback((kind: EffectKind | null) => {
+    if (hoverTimerRef.current !== null) { window.clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null }
+    if (kind === null) {
+      setPreviewingKind(null)
+      onPreviewEffect(null)
+      return
+    }
+    hoverTimerRef.current = window.setTimeout(() => {
+      hoverTimerRef.current = null
+      setPreviewingKind(kind)
+      onPreviewEffect(kind)
+    }, 300)
+  }, [onPreviewEffect])
+  // Esc cancels the preview; unmount (view switch) clears the override so it
+  // can never leak into the workspace canvas.
+  useEffect(() => {
+    if (!previewingKind) return undefined
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') hoverKind(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [previewingKind, hoverKind])
+  useEffect(() => () => { onPreviewEffect(null) }, [onPreviewEffect])
+
+  const applyFromPreview = useCallback((kind: EffectKind) => {
+    hoverKind(null) // clear the override before committing
+    onSelectEffect(kind)
+  }, [hoverKind, onSelectEffect])
+
+  const renderCard = (p: (typeof effectPresets)[number]): JSX.Element => {
+    if (EFFECT_3D_KINDS.has(p.kind)) {
+      return <EffectCard3D key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} onSelect={applyFromPreview} onToggleFavorite={onToggleFavorite} onHover={hoverKind} />
+    }
+    if (isGpuDirectEffect(p.kind)) {
+      return <EffectCardGpu key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} onSelect={applyFromPreview} onToggleFavorite={onToggleFavorite} onHover={hoverKind} />
+    }
+    return <EffectCard key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} onSelect={applyFromPreview} onToggleFavorite={onToggleFavorite} onHover={hoverKind} />
+  }
+
+  // R164.1 (S1): the curated strip — up to 12 data-driven picks (default
+  // profile + classics + favorites + recents) so the everyday 80% is one
+  // glance away, replacing the old favorites-only row.
+  const curatedPresets = useMemo(() => {
+    return curatedKinds
       .map((kind) => effectPresets.find((preset) => preset.kind === kind))
       .filter((preset): preset is (typeof effectPresets)[number] => Boolean(preset))
-  }, [favoriteKinds])
+  }, [curatedKinds])
 
-  // R39: categories are now tabs — only the active tab's card grid is
-  // mounted at once (instead of all ~55 effect cards stacked and animating
-  // simultaneously), which is both far friendlier to browse and removes the
-  // main-thread/GPU-context load that made the library feel janky.
-  const [activeCategory, setActiveCategory] = useState<(typeof CATEGORIES)[number]['labelKey']>(CATEGORIES[0].labelKey)
-  const currentCategory = CATEGORIES.find((cat) => cat.labelKey === activeCategory) ?? CATEGORIES[0]
+  // R164.1 (S1): tabs → search + tag filter. A non-empty query searches the
+  // whole 55 (label/description/kind id); otherwise the active tag filters —
+  // keeping the R39 mount budget (one category's cards live at a time, ≤20).
+  const [query, setQuery] = useState('')
+  const [activeTag, setActiveTag] = useState<(typeof CATEGORIES)[number]['labelKey']>(CATEGORIES[0].labelKey)
+  const trimmed = query.trim().toLowerCase()
+  const searchedPresets = useMemo(() => {
+    if (!trimmed) return null
+    return effectPresets.filter((p) => {
+      const label = presetLabel(p, t).toLowerCase()
+      const desc = presetDescription(p, t).toLowerCase()
+      return label.includes(trimmed) || desc.includes(trimmed) || p.kind.includes(trimmed)
+    })
+  }, [trimmed, t])
+  const currentCategory = CATEGORIES.find((cat) => cat.labelKey === activeTag) ?? CATEGORIES[0]
+  const gridPresets = searchedPresets ?? effectPresets.filter((p) => (currentCategory.kinds as readonly string[]).includes(p.kind))
 
   return (
     <div className="effects-view">
@@ -321,58 +394,71 @@ export function EffectsView({ activeKind, favoriteKinds, onSelectEffect, onToggl
         <h2>{t('effects.library')}</h2>
         <p className="eyebrow">{t('effects.eyebrow')}</p>
       </header>
-      <section className="effects-category effects-favorites-section">
-        <h3 className="effects-category-label">{t('effects.favorites')}</h3>
-        {favoritePresets.length > 0 ? (
-          <div className="effects-favorites-row">
-            {favoritePresets.map((preset, index) => (
+
+      {/* R164.2 (S2): preview pill — hover shows the effect on the canvas,
+          click commits, Esc restores. */}
+      {previewingKind && (() => {
+        const preset = effectPresets.find((p) => p.kind === previewingKind)
+        return (
+          <div className="fx-preview-pill" role="status">
+            <span>{t('effects.previewing').replace('{name}', preset ? presetLabel(preset, t) : previewingKind)}</span>
+            <button type="button" onClick={() => applyFromPreview(previewingKind)}>{t('effects.previewApply')}</button>
+            <span className="fx-preview-pill-esc">{t('effects.previewEsc')}</span>
+          </div>
+        )
+      })()}
+
+      {/* R164.1: curated strip — favorites & recents are folded into its
+          sources; the star toggle on every card remains the favorite path. */}
+      {curatedPresets.length > 0 && (
+        <section className="effects-category effects-curated-section">
+          <h3 className="effects-category-label">
+            {t('effects.curated')}
+            <button type="button" className="fx-inspire-btn" onClick={onInspire} title={t('effects.inspireHint')}>
+              🎲 {t('effects.inspire')}
+            </button>
+          </h3>
+          <div className="effects-card-grid effects-curated-grid">
+            {curatedPresets.map(renderCard)}
+          </div>
+        </section>
+      )}
+
+      <div className="effects-filter-bar">
+        <input
+          type="search"
+          className="effects-search"
+          placeholder={t('effects.searchPlaceholder')}
+          value={query}
+          aria-label={t('effects.searchLabel')}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {!trimmed && (
+          <div className="effects-category-tabs" role="tablist">
+            {CATEGORIES.map((cat) => (
               <button
-                className={`favorite-effect-chip ${activeKind === preset.kind ? 'selected' : ''}`}
-                key={preset.kind}
+                key={cat.labelKey}
                 type="button"
-                title={`Alt+${index + 1} · ${preset.label}`}
-                onClick={() => onSelectEffect(preset.kind)}
+                role="tab"
+                aria-selected={activeTag === cat.labelKey}
+                className={`effects-category-tab ${activeTag === cat.labelKey ? 'active' : ''}`}
+                onClick={() => setActiveTag(cat.labelKey)}
               >
-                <Star size={12} fill="currentColor" />
-                <span>{t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}</span>
+                {t(cat.labelKey)}
+                <span className="effects-category-tab-count">{cat.kinds.length}</span>
               </button>
             ))}
           </div>
-        ) : (
-          <p className="effects-empty-hint">{t('effects.noFavorites')}</p>
         )}
-      </section>
-
-      <div className="effects-category-tabs" role="tablist">
-        {CATEGORIES.map((cat) => (
-          <button
-            key={cat.labelKey}
-            type="button"
-            role="tab"
-            aria-selected={activeCategory === cat.labelKey}
-            className={`effects-category-tab ${activeCategory === cat.labelKey ? 'active' : ''}`}
-            onClick={() => setActiveCategory(cat.labelKey)}
-          >
-            {t(cat.labelKey)}
-            <span className="effects-category-tab-count">{cat.kinds.length}</span>
-          </button>
-        ))}
       </div>
 
       <section className="effects-category">
         <div className="effects-card-grid">
-          {effectPresets
-            .filter((p) => (currentCategory.kinds as readonly string[]).includes(p.kind))
-            .map((p) => {
-              if (EFFECT_3D_KINDS.has(p.kind)) {
-                return <EffectCard3D key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} onSelect={onSelectEffect} onToggleFavorite={onToggleFavorite} />
-              }
-              if (isGpuDirectEffect(p.kind)) {
-                return <EffectCardGpu key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} onSelect={onSelectEffect} onToggleFavorite={onToggleFavorite} />
-              }
-              return <EffectCard key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} onSelect={onSelectEffect} onToggleFavorite={onToggleFavorite} />
-            })}
+          {gridPresets.map(renderCard)}
         </div>
+        {gridPresets.length === 0 && (
+          <p className="effects-empty-hint">{t('effects.searchNone')}</p>
+        )}
       </section>
     </div>
   )

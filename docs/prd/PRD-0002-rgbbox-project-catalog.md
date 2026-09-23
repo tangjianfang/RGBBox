@@ -3281,6 +3281,26 @@
   - 边界兑现：产品 `src/` 0 diff（掩膜走脚本侧选择器）；一次性聚合脚本（coverage-tiers.mjs）与探针用毕即删。
 - **R163.6 状态**：✅（R163.5 ①-⑤ 全过；R156-S1 门禁恢复闭环——coverage 红灯常态解除、GL 零行使变真覆盖、像素门禁噪声清零 + 阈值收紧；S6 二期（26 组件壳补测 + 分层线上调 + R12.6.1 75/60 终点线 + flake 家族根治）另立）
 
+### R164. 实施：工作区灯效「场景 → 精选 → 深调」三层漏斗（2026-09-24 用户指令「按 review 结果评审，评估可行后新分支执行」；承载 [`2026-09-23-effects-ux-deep-review.md`](../reviews/2026-09-23-effects-ux-deep-review.md) S1-S4；分支 `ui/r164-effects-funnel`）
+
+> 性质：实施轮（L2——用户可见交互语义变更，呈现层/信息架构层；engine 与 layer parameters 持久化结构不动，旧 profile 完全兼容）。锚点：用户三痛点「灯效太多、设置太麻烦、层级太多」；核验后两处证据修正 + 三个技术障碍条款化（见 R164.0）。
+
+- **R164.0 可行性核验结论（2026-09-24 会话）**：六项声明 4 属实 2 修正——P-2 修正为「经典 7 中 **5** 个不在 chips（screen-ambient 是第一位）」；P-5 修正为「缩略图**已是 live 动画**，真缺口是 hover 无增量行为」。四技术前提全可行：场景卡缩略用 `renderPreviewFrame` 场景级合成（勿用卡片单层循环）；主参数走 per-kind 白名单表（沿 `AUTOMATION_TARGET_PARAMS` 先例，paramMeta 全局扁平无 per-effect 维度）；「最近使用」需新增（照 favorites 的 `rgbbox:favoriteEffects` hook 模式，key `rgbbox:recentEffects`，写入点 selectEffect）；hover 预览走 `engineConfigRef.previewOverride`（worker 侧 rippleBurst 同模式先例）。**三障碍条款化**：①hover 期间必须 gate overlay 分发（否则预览泄漏到真实屏幕投影窗）；②GPU 直连/3D 效果绕过 worker 的渲染路径需同步 override（PreviewGrid gpuLayer 分支 + solo memo）；③override 与 automation/quick-dimension 的优先级——override 激活期间跳过 automation 变换。
+- **R164.1 S1 信息架构（L1）**：精选 12 卡（数据驱动：默认 profile 在用 top + 经典 5 + 收藏 top + 最近使用 top，去重截断 12）；全库 7 tabs → 搜索框 + 标签筛选（首版标签沿用现有 7 分类词表，不新做参数画像推导）；「最近使用」追踪 hook 新增。触及 EffectsView + workspace 链接区。
+- **R164.2 S2 hover 预览（L2，方案核心）**：hover 卡片 300ms debounce → previewOverride 激活（选中图层临时替换为 {kind, preset defaults}，不落 profile）；顶部胶囊「预览中——点击应用 · Esc 还原」；移开/Esc 置 null 还原；点击提交（走正常 selectEffect）；overlay 分发 gate；GPU/3D 路径同步；应用后 toast「已应用 X — 撤销」（5s 窗口）。
+- **R164.3 S3 参数区三段式（L1-L2）**：参数区上移出折叠；三段 = 语义微调（现 4 维度段更名）→ 此效果主参数 ≤3（per-kind 白名单表 `PRIMARY_PARAMS`，公共参 speed/intensity/hueShift/density 优先，长尾每效果手挑）→ ▸ 高级抽屉（全部长尾滑杆 + 「恢复此效果默认」一键回 preset defaults）。
+- **R164.4 S4 场景升级（L1-L2）**：6 场景 profile 升级为场景卡（名称 + `renderPreviewFrame` 缩分辨率 live 缩略 + 一键应用 + 激活态高亮）；末尾「+ 保存当前为场景」；精选区「🎲 灵感」按钮（随机效果 + 随机色彩维度，hover 同预览）。
+- **R164.5 i18n**：全部新文案 EN/ZH 对称（精选/搜索/标签/预览胶囊/撤销 toast/语义微调/高级/恢复默认/场景卡/灵感…预计 ~45 键/表）。
+- **R164.6 验收点**：①达成路径对齐 review §3.5 表（场景 1 步/常用 2 步/搜索 1-2 步/主参数首屏 1-2 步——E2E 脚本断言）；②首屏可见参数滑杆 0 → ≥3（DOM 断言）；③hover 预览不落 profile（localStorage/序列化不变断言）且 overlay 不泄漏（gate 生效断言）；④typecheck/test/build 绿；⑤`ui:snapshot` 两 view 基线按流程重拍后全绿；⑥旧 profile 兼容（默认 profile 加载不变）。
+- **R164.7 实施证据（2026-09-24，glm-5.3 会话，分支 `ui/r164-effects-funnel`）**：
+  - **S1**：`domain/curatedEffects.ts`（精选规则纯函数：默认在用→经典 5→收藏→最近，去重截 12）+ `hooks/useRecentEffects.ts`（`rgbbox:recentEffects`，写入点 selectEffect）+ EffectsView 重构（精选区 + 搜索框/标签筛选替换 7 tabs；搜索非空时跨分类全库匹配、空时按标签过滤——保持 R39 单分类挂载预算）；测试 8 用例（含精选区渲染/搜索跨分类/空提示行为断言）。
+  - **S2**：`domain/previewOverride.ts`（applyLayerOverride 场景级浅拷贝）+ useEngineLoop 注入（override 激活时跳过 automation 变换 + **overlay 分发 gate**——预览帧永不推到实体投影窗）+ GPU/3D 路径同步（App `previewLayer` 合成层贯穿 Preview3D 分支/PreviewGrid gpuLayer/renderStyle）+ EffectsView hover 300ms debounce/胶囊/Esc/unmount 清理 + App 应用后 5s 撤销 toast。
+  - **S3**：`domain/primaryParams.ts`（per-kind 主参数表——OVERRIDES 16 kind 手挑 + 公共默认 speed/intensity/hueShift + 数值 fallback，≤3）+ WorkspaceView 参数区三段式（主参数段首屏常显 + 语义微调维持折叠外 + 高级抽屉收长尾 + 「恢复此效果默认」按钮）+ 参数行渲染提炼 renderParamLine 共用。
+  - **S4**：SceneCard 组件（renderPreviewFrame 场景级 live 缩略——16×9 mini profile 每 rAF 合成，**非**单效果像素循环）+ 6 场景 chips 升级为场景卡（激活态/一键应用）+ EffectsView 精选区「🎲 灵感」（随机效果 + hueShift 随机偏移）。「保存当前为场景」**留后续批次**（涉及自定义场景持久化与管理 UI，独立工作量——诚实降级入档）。
+  - i18n：EN/ZH 各 +14 键（curated/search×4/preview×4/toast/undo/resetDefaults/inspire×2）。
+  - 验证：typecheck 双绿；`yarn test` **119 files / 1107 passed / 0 failed**（+3 行为断言）；build 绿；**`verify-r164.mjs` 12/12**——精选 12 卡/搜索 1 卡/recent 键/hover 胶囊/Esc 还原/悬停不提交/异效果应用弹 toast/主参数 3 控件首屏/高级折叠长尾 unmounted/6 场景卡/灵感按钮/场景卡点击；`ui:snapshot` 基线重拍后 **9/9 全零**（同 1920×1010@1x 环境）；旧 profile 兼容（defaultProfile 未动，layer 持久化结构未动）。
+- **R164.8 状态**：✅（R164.6 ①-⑥ 全过——除「保存自定义场景」明示留后续；分支待评审合并）
+
 
 ### R160. 规划：工作区灯效体验重构——「场景 → 精选 → 深调」三层漏斗（2026-09-23 用户指令「重新全量 review 工作区灯效：灯效太多、设置太麻烦、层级太多，按最高商业软件的人性化交互逻辑提供更好的解决方案」；本条为规划条款，产出方案文档，实施轮另行开工）
 
