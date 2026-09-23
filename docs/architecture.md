@@ -1,6 +1,6 @@
 # RGBBox 架构文档
 
-> **基线**:main @ `c01095c`(v0.3.82,2026-09-22)
+> **基线**:main @ `f82ef25`(v0.3.82,2026-09-24;R150–R164 增量刷新,首版 2026-09-22 @ `c01095c`)
 > **范围**:Electron 桌面 RGB 灯效客户端全系统(主进程 / preload / renderer / engine / 构建打包)
 > **方法**:三路代码事实采集(main / renderer / engine+shared+build),未经代码确认的推断一律标注 `(推断)` 并汇总到 §14
 > **配套**:流程与需求见 [AI_WORKFLOW](./AI_WORKFLOW.md) 与 [PRD-0002](./prd/PRD-0002-rgbbox-project-catalog.md);渲染层拆分设计见 [R147 设计文档](./superpowers/specs/2026-09-21-r147-renderer-architecture-design.md)
@@ -48,15 +48,16 @@ flowchart LR
 flowchart TB
     subgraph renderer["src/renderer/src(React 编排层)"]
         App["App.tsx(boot / view 路由 / 引擎接线 / shell)"]
-        hooks["hooks/domains/(9 个域 hook)"]
-        dom["domain/(纯函数域逻辑,8 模块)"]
+        hooks["hooks/(9 域 hook + useEngineLoop / useRecentEffects / tabNavigation)"]
+        dom["domain/(纯函数域逻辑,13 模块)"]
         comp["components/(view + shell,重 view lazy)"]
         worker["workers/previewEngineWorker.ts"]
         gl["gl/(PreviewGl / EffectGl / Effect3DGl)"]
         three["3d/(SplatViewer / LEDMapper)"]
+        i18n["i18n/index.tsx(EN/ZH 词典,I18nProvider)"]
     end
     subgraph engine["src/engine(纯 TS,无 DOM / WebGL / Electron)"]
-        fx["effects.ts(50 case 效果 switch)"]
+        fx["effects.ts(49 case 效果 switch)"]
         pe["previewEngine.ts(zone / slot mask,混合,EMA 平滑)"]
         vw["videoWall.ts / videoWallFrame.ts(矩阵 / bezel / 采样)"]
         em["color / textRenderer / eqResponse / audioMetrics"]
@@ -67,16 +68,18 @@ flowchart TB
         sdef["defaultProfile / modelsManifest / dtlnDsp / ai8Client"]
     end
     subgraph preload["src/preload"]
-        br["index.ts(白名单 RgbBoxApi,339 行)"]
+        br["index.ts(白名单 RgbBoxApi,340 行)"]
     end
     subgraph main["src/main"]
-        midx["index.ts(IPC / 窗口 / 协议装配,1597 行)"]
-        mgr["overlayManager / snipManager / screensaverManager / captureProviders / profileStore / denoiseService"]
+        midx["index.ts(IPC / 窗口 / 协议装配,1584 行)"]
+        mgr["overlayManager / snipManager / screensaverManager / captureProviders / profileStore / denoiseService / crashLog"]
     end
     App --> hooks
     hooks --> dom
     App --> worker
     App --> comp
+    App --> i18n
+    comp --> i18n
     worker --> fx
     worker --> pe
     pe --> vw
@@ -99,9 +102,11 @@ flowchart TB
 
 | Component | 负责 | 不负责 |
 |---|---|---|
-| `App.tsx`(702 行) | boot fan-out、`View` 路由、`useEngineLoop` 接线(全 ref)、shell 装配、keep-alive 门控 | 域状态(在域 hook)、帧计算(engine)、帧上屏(gl)、`selectEffect`/`applyAmbientPreset` 之外的效果编辑逻辑 |
+| `App.tsx`(795 行) | boot fan-out、`View` 路由、`useEngineLoop` 接线(全 ref)、shell 装配、keep-alive 门控 | 域状态(在域 hook)、帧计算(engine)、帧上屏(gl)、`selectEffect`/`applyAmbientPreset` 之外的效果编辑逻辑 |
 | `hooks/domains/*`(9 个) | 各域 state + 副作用 + 持久化(profile 槽位 / overlay 拓扑 / 计划 / 自动化 / 随机器 / 图层动作 / 关机 / 设置镜像 / 采样) | 跨域编排(归 App)、帧数据(走 ref 通道)、IPC 语义(仅调桥) |
-| `domain/*`(8 个纯函数模块) | 参数元数据 / 随机器 / 自动化波形 / 计划时段 / profile 工具 / overlay 帧分发路由 / Ambient 预设 / 快捷维度 | React 状态、IPC 调用、时序 |
+| `useRecentEffects`(R164.1) | 最近使用效果 kinds(localStorage,最新在前,cap 8),喂给精选条带 | 收藏域(独立持久化 shape) |
+| `domain/*`(13 个纯函数模块) | 参数元数据 / 随机器 / 自动化波形 / 计划时段 / profile 工具 / overlay 帧分发路由 / Ambient 预设 / 快捷维度;R164 漏斗三件套:`curatedEffects` 精选规则(默认层→经典五→收藏→最近,cap 12)、`previewOverride` 悬停覆写、`primaryParams` 主参数表;`presetI18n` 预设展示 key、`uiFontScale` 字号档 | React 状态、IPC 调用、时序 |
+| `i18n/index.tsx`(3033 行) | EN/ZH 类型化词典、`I18nProvider` / `useI18n`、预设 key 约定(R159.1:持久化 label 保持英文语言中立,仅展示点本地化) | 业务逻辑、IPC、持久化(除语言档)、逐帧路径 |
 | `useEngineLoop` | setTimeout 自调度 tick、消费者门禁、single-flight、worker 接线、帧落 ref、分发触发 | 效果计算、WebGL、overlay 窗口管理 |
 | `workers/previewEngineWorker.ts` | 调 `renderPreviewFrame`、OffscreenCanvas 文本 mask、`previousFrame` 缓冲复用、transferable 转出 | DOM / WebGL / React |
 | `src/engine` | 效果像素公式、mask/混合/平滑、视频墙数学、颜色 / 文本 mask / EQ / 音频指标 | DOM、WebGL、Electron、调度与 IO |
@@ -115,6 +120,7 @@ flowchart TB
 | `profileStore` / `systemSettingsStore` | `userData/config` 下 JSON 读写、AI key safeStorage 加密 | profile 语义(默认值合并除外)、UI 状态 |
 | `denoiseService` | utilityProcess 会话(fork / relay / 停止) | DSP 算法(`shared/dtlnDsp.ts` + `denoiseProcessor.ts`) |
 | `screensaverManager` / `snipManager` | 各自状态机(§9)、窗口池 | 效果渲染 |
+| `crashLog`(R158.3) | 主进程未捕获异常 / rejection 的 rotated JSON 记录 + crashReporter(`submit:false`)minidump、`crashLogList` / `crashLogExport` handler(原生另存对话框) | 任何网络上传、renderer 进程崩溃捕获 |
 | `src/shared` | 类型 / 通道常量 / 默认 profile / 模型清单 / 纯客户端逻辑(ai8Client) | 任何运行时副作用 |
 
 ## 5. Dependency Architecture
@@ -224,7 +230,7 @@ sequenceDiagram
     end
 ```
 
-`PreviewGrid` 以自身 rAF 从 `frameRef` 拉帧上屏,不在本图内。single-flight:worker 队列至多一条在途消息,超量记为 `droppedTicksSinceLastPost`。
+`PreviewGrid` 以自身 rAF 从 `frameRef` 拉帧上屏,不在本图内。single-flight:worker 队列至多一条在途消息,超量记为 `droppedTicksSinceLastPost`。R164.2 悬停预览期间:`profileForWorker` 改走 `applyLayerOverride`(覆写选中层为悬停效果、跳过 automation),且 `distributeFrameToOverlays` 被门控——预览帧只在应用内,不下发物理浮窗;清空覆写即恢复,持久化与 React 状态零接触。
 
 ### 7.2 GPU 直通路径(3D;2D 同构)
 
@@ -268,7 +274,7 @@ GPU 直通的意义:overlay 收到的是 shader uniforms 而非降采样网格�
 | AI8 | `ai8OpenLogin`, `ai8SaveCredentials`, `ai8ClearCredentials`, `ai8AutoLogin`, `ai8SaveArtifact`, `ai8ShowItemInFolder`, `ai8PickMdFolder`, `ai8SaveImageToFolder` | invoke |
 | 剪贴板 / 截屏画廊 | `clipboardWriteImage`, `clipboardWriteText`, `clipboardWriteRich`, `clipboardReadText`, `capturesList`, `capturesAdd`, `capturesDelete`, `capturesRead`, `capturesImport` | invoke |
 | Snip | `snipPushFrame`(推送), `snipFramePainted`, `snipFinish`, `snipCancel`, `snipGetHotkey`, `snipSetHotkey` | 混合 |
-| UI / 诊断 / 自测 | `uiSetLocale`, `getProcessCpuSamples`, `perfSelfTestToggleOverlay`(推送), `perfSelfTestCollectOverlayTiming`(推送), `perfSelfTestOverlayTimingReport` | 混合(自测通道日常不发) |
+| UI / 诊断 / 自测 | `uiSetLocale`, `getProcessCpuSamples`, `crashLogList`, `crashLogExport`, `perfSelfTestToggleOverlay`(推送), `perfSelfTestCollectOverlayTiming`(推送), `perfSelfTestOverlayTimingReport` | 混合(自测通道日常不发;crashLog 仅诊断卡) |
 
 ### 8.2 BroadcastChannel(同源 renderer 间)
 
@@ -298,9 +304,9 @@ GPU 直通的意义:overlay 收到的是 shader uniforms 而非降采样网格�
 | `media://app/<subpath>` | 打包产物 `out/renderer/<subpath>` | 防路径穿越;vision wasm / `.task` 模型 |
 | `media://local?p=<urlencoded>` | 任意本地媒体文件 | MIME 表 + HTTP Range(200/206/416),`createReadStream` 流式(>2GiB 安全) |
 
-### 8.5 preload 桥(`RgbBoxApi`,339 行)
+### 8.5 preload 桥(`RgbBoxApi`,340 行)
 
-单一根 `window.rgbbox`;事件订阅统一返回反注册函数;方法与 §8.1 通道一一映射(camelCase),分组:引擎 / profile / 显示与 overlay / 捕获 / 电源与系统 / AI / 剪贴板与画廊 / snip / vision host / 音频源 / 模型 / 降噪 / locale / 自测。渲染层不得出现 `ipcRenderer` 直连(R5.1)。
+单一根 `window.rgbbox`;事件订阅统一返回反注册函数;方法与 §8.1 通道一一映射(camelCase),分组:引擎 / profile / 显示与 overlay / 捕获 / 电源与系统 / AI / 剪贴板与画廊 / snip / vision host / 音频源 / 模型 / 降噪 / locale / 自测 / 崩溃日志。渲染层不得出现 `ipcRenderer` 直连(R5.1)。
 
 ## 9. State / Lifecycle
 
@@ -419,7 +425,7 @@ classDiagram
     RgbFrame ..> EffectLayer : renderPreviewFrame 产物
 ```
 
-`EffectKind` 为字符串字面量联合:49 CPU 种(`effects.ts` switch)+ 6 GPU 3D 种(`Effect3DKind`),共 55,与 `defaultProfile` 的 55 个预设一一对齐;`is3DEffect()` 守卫决定走 worker 还是 Preview3D。
+`EffectKind` 为字符串字面量联合:49 CPU 种(`effects.ts` switch)+ 6 GPU 3D 种(`Effect3DKind`),共 55,与 `defaultProfile` 的 55 个预设一一对齐;`is3DEffect()` 守卫决定走 worker 还是 Preview3D。每个预设带派生 i18n key(`labelKey` / `descKey`,R159.1):持久化的英文 `label` / `description` 与 `layer.name` 保持语言中立,仅 UI 展示点本地化。
 
 **持久化布局**(`userData` 下):
 
@@ -432,7 +438,7 @@ classDiagram
 | `captures/*.png + index.json` | 截屏画廊,FIFO 上限 200 | `captureStore` |
 | `models/` | 按需下载的 `.splat` / `.onnx`(±10% 字节数校验) | `modelDownload` |
 | `ai8-artifacts/` | AI8 生成产物缓存 | `index.ts` |
-| `logs/` | 文件日志(`shared/logger`) | logger |
+| `logs/` | 文件日志(`shared/logger`)+ 崩溃记录(R158.3:`CrashRecord` rotated JSON + crashReporter minidump,仅本地无网络) | logger / crashLog |
 
 ## 11. Non-Functional Requirements
 
@@ -442,7 +448,9 @@ classDiagram
 | 节奏 | `max(16, 1000/fps)` setTimeout 自调度,最小化后仍存活(不依赖 rAF);single-flight 丢弃计数 |
 | 音频 | 60Hz ref 通道 + `subscribe(cb)` 细粒度订阅;status state 仅 active/error 迁移时变更 |
 | 画质 | GPU 直通效果在 overlay 以物理分辨率经 shader 重绘;时间平滑 EMA 仅 `usePerformanceGuard` 开启时生效 |
-| 测试门槛 | 覆盖率 lines/statements 75、branches/functions 60(vitest 实配;排除 `main/index.ts`、`App.tsx`、`3d/`、`gl/`) |
+| 测试门槛 | 分层覆盖率阈值(R163:全局绿线贴水面 58 lines / 46 branches / 48 functions / 56 statements;分层独立红线,如 engine 90/75/88/88、renderer engine·workers 95 档、shared 85/72/75/85、main 52/45/52/52;R12.6.1 的 75/60 为 R156-S6 终点);排除项不变(`main/index.ts`、`App.tsx`、`3d/`、`gl/` 等) |
+| 门禁工具链 | GL 用例条件化真跑(headless `gl`,15 用例,R163)+ video 掩膜;playwright-core + pixelmatch 快照硬门禁(`ui:snapshot`,stale-out fail-fast,R152);运行时探针 `probe`(R158 资产化) |
+| 可及性 | 全 app rem 字阶(16px root 单点)+ 五档字号 0.85×–1.3×(R160,130% 为本轮 deliberate cap)+ aria 语义面(R161) |
 | 资产预算 | 单模型 ≤100MB(R90.2 硬预算,`ast_audioset` ~91MB);release 包排除 `*.splat` 等模型二进制 |
 | 大文件 | `media://` Range 流式,>2GiB 开区间不整段缓冲(R70.15) |
 | 启动 | 重 view / three / splat 全 lazy;snip 独立轻入口 ~250KB |
@@ -467,12 +475,15 @@ classDiagram
 | ADR-012 | DTLN 推理在 utilityProcess | Accepted | 主进程推理 | 不阻塞主进程 | 帧数据需 IPC 转发 |
 | ADR-013 | `media://` 协议替代 `file://` 直读(R70.15) | Accepted | file:// | 跨 origin + Range 流式 | 需防穿越逻辑 |
 | ADR-014 | 单 PRD 工作流(流程决策,非代码) | Accepted | 多 PRD | 需求可追溯 | 所有变更挂 R-N |
+| ADR-015 | 崩溃可见性仅本地:crashReporter `submit:false` + rotated JSON + 原生导出对话框(R158.3) | Accepted | 上报 SDK | 用户可自诊,零遥测零网络 | `userData/logs` 新增崩溃记录与 minidump |
+| ADR-016 | 悬停预览在 engine 输入层覆写 profile,不触碰 React 状态 / 持久化,预览帧不下发 overlay(R164.2) | Accepted | 直接改 profile 状态再恢复 | 物理屏绝不被未选择的灯效点亮;覆写零风险 | 悬停期间浮窗保持最后一帧 |
+| ADR-017 | 精选条带数据驱动:默认层 kinds → 经典五 → 收藏 → 最近,去重 cap 12,不手工维护(R164.1) | Accepted | 手工固定清单 | 与默认 profile / 收藏 / 最近自动同步,无陈旧条目 | 新效果只有进默认层才可能占据精选头部 |
 
 ## 13. Risks / Open Issues
 
 | ID | Issue / Risk | Impact | 缓解 / 现状 | Status |
 |---|---|---|---|---|
-| RSK-1 | `src/main/index.ts` 1597 行,IPC / 捕获 / 窗口 / 协议多职责集中 | 高(改动回归面大) | CLAUDE.md 约定非 R-N 不顺手重构;覆盖率排除在外 | Open |
+| RSK-1 | `src/main/index.ts` 1584 行,IPC / 捕获 / 窗口 / 协议多职责集中 | 高(改动回归面大) | CLAUDE.md 约定非 R-N 不顺手重构;覆盖率排除在外 | Open |
 | RSK-2 | DXGI / ScreenCaptureKit 为永久 stub | 中(原生捕获缺位,始终 desktopCapturer) | 抽象 + 永久回退已就绪 | Open |
 | RSK-3 | 覆盖率排除 `main/index.ts` 与 `App.tsx` 两端 | 中(核心装配层测试盲区) | App 有 mount 冒烟;main 靠 `tests/main/` + 集成测试 | Open |
 | RSK-4 | `download-models.mjs` 注释称 postinstall 自动触发,但 `package.json` 无该 hook | 低(注释过期,误导贡献者) | 手动 `yarn download-models` | Open |
