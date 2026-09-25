@@ -19,10 +19,10 @@ async function openTab(container: HTMLElement, tab: 'config' | 'chat' | 'ocr') {
 }
 
 describe('AiLabView (R89)', () => {
-  it('renders six tabs (config/chat/ocr/audio/vision/ai8) and switches between them', { timeout: 15000 }, async () => {
+  it('renders seven tabs (config/chat/ocr/audio/vision/svg/ai8) and switches between them', { timeout: 15000 }, async () => {
     const { container } = mount()
     const tabs = container.querySelectorAll('.ai-tab')
-    expect(tabs.length).toBe(6)
+    expect(tabs.length).toBe(7)
     const audioTab = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === 'audio') as HTMLElement
     fireEvent.click(audioTab)
     await waitFor(() => expect(audioTab.classList.contains('active')).toBe(true))
@@ -34,12 +34,17 @@ describe('AiLabView (R89)', () => {
     expect(container.querySelector('.ai-vision-lab')).not.toBeNull()
     // R153: board cards (div) + collapsed rows (tr) both carry data-cap
     expect(container.querySelectorAll('[data-cap]').length).toBe(24)
+    // R171: the SVG animation tab mounts the pelican scene
+    const svgTab = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === 'svg') as HTMLElement
+    fireEvent.click(svgTab)
+    await waitFor(() => expect(svgTab.classList.contains('active')).toBe(true))
+    expect(container.querySelector('.ai-svg-scene')).not.toBeNull()
   })
 
   it('renders the legacy three core tabs and switches between them', async () => {
     const { container } = mount()
     const tabs = container.querySelectorAll('.ai-tab')
-    expect(tabs.length).toBe(6)
+    expect(tabs.length).toBe(7)
     expect(tabs[0].classList.contains('active')).toBe(true) // config default
     await openTab(container, 'chat')
     expect(container.querySelector('textarea[data-field="chat-input"]')).not.toBeNull()

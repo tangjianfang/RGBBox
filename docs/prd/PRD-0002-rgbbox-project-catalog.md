@@ -3369,3 +3369,12 @@
 - **R170.4 验收点**：①折叠/展开跨重启记忆；②清空后胶片栏整体消失（空列表自动隐藏语义不变）且有确认防误触；③typecheck/test 绿。
 - **R170.5 实施证据（2026-09-25）**：CaptureFilmstrip 头行（`video-filmstrip-head`：标题+计数 toggle / Trash2 清空全部）；`filmstripVisible` 入 VideoPlaylistCache 持久化；清空走 `window.confirm`（含数量）+ `Promise.allSettled(capturesDelete)` + `refreshCaptures()`，无新 IPC；i18n 五键 EN/ZH 对称；组件测试 6→9 例。验收：vitest 1124 用例全过；`ui:snapshot` 视频视图按流程重拍基线后 9/9 GATE PASS（新头行+R168 错误提示属预期静息视觉变化）。
 - **R170.5 状态**：✅（R170.4 ①②③全过）
+
+### R171. AI 实验室新增「SVG 动画」Tab：鹈鹕骑自行车 2D 动画（2026-09-25 用户指令「在AI实验室新增一个Tab栏：创建一个页面，内容是 SVG 绘制一个鹈鹕骑自行车的 2D 动画」）
+
+- **R171.1 内容**：AiLab 第 7 个内部 Tab `svg`——独立组件 `AiLabSvgTab`：640×400 SVG 场景（黄昏天空渐变 + 太阳脉动 + 漂移云 ×2 + 滚动路面虚线 + 自行车双轮旋转/曲柄旋转/链条 + 鹈鹕坐姿/摆翅/身体起伏），纯 SVG + CSS keyframes（app.css 集中管理，`pelican-` 前缀防冲突），零栅格资产零依赖。
+- **R171.2 可及性**：`prefers-reduced-motion: reduce` 时全部动画暂停（呼应 R160/R161 动效 token 纪律）。
+- **R171.3 i18n**：`ai.lab.tab.svg` / `ai.lab.svg.title` / `ai.lab.svg.caption` 三键 EN/ZH 对称。
+- **R171.4 验收点**：①typecheck + vitest 全绿（含新组件渲染测试：SVG 挂载/双轮/曲柄/字幕）；②i18n 对称校验过；③`ui:snapshot` ai 视图因新增 Tab 按流程重拍基线后 GATE PASS。
+- **R171.5 实施证据（2026-09-25）**：`AiLabSvgTab.tsx`（640×400 手绘 SVG：黄昏渐变天空/脉动太阳/双云漂移/路面虚线滚动/双轮 8 辐旋转/曲柄+链条/鹈鹕起伏摆翅嗉囊微动）+ app.css `pelican-*` keyframes（含 `prefers-reduced-motion` 全冻结）；AiLabView 第 7 Tab `svg`（vision 与 ai8 之间）；i18n 三键 EN/ZH 对称（i18nShellKeys 过）；测试：AiLabView 6→7 tab 断言 + svg tab 挂载断言、新组件 2 用例（结构完整性 + 双轮 8 辐）。验收：typecheck 绿、vitest **122 文件 / 1126 用例全过**；`ui:snapshot` ai 视图 0.0191%（新增小 tab 未超限），workspace 2.63% 经 stash 对照实验证实为环境漂移（逐位与 R171 无关）后按流程重拍基线，9/9 GATE PASS。
+- **R171.5 状态**：✅（R171.4 ①②③全过）

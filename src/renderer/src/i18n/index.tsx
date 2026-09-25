@@ -44,6 +44,10 @@ const EN = {
   'ai.lab.tab.ocr': 'OCR & Translate',
   'ai.lab.tab.audio': 'Audio',
   'ai.lab.tab.vision': 'Vision',
+  // R171: SVG animation tab (pelican on a bicycle)
+  'ai.lab.tab.svg': 'SVG Animation',
+  'ai.lab.svg.title': 'Pelican Rider',
+  'ai.lab.svg.caption': 'A pelican riding a bicycle — pure SVG + CSS, no raster assets. Reduced-motion freezes the scene.',
   'ai.lab.tab.ai8': 'AI8',
   'ai.lab.vision.title': 'Gesture & Expression Capability Bench',
   'ai.lab.vision.start': 'Start check',
@@ -1553,6 +1557,10 @@ const ZH: TranslationTable = {
   'ai.lab.tab.ocr': 'OCR · 翻译',
   'ai.lab.tab.audio': '音频',
   'ai.lab.tab.vision': '体感',
+  // R171: SVG 动画 Tab(鹈鹕骑自行车)
+  'ai.lab.tab.svg': 'SVG 动画',
+  'ai.lab.svg.title': '鹈鹕骑士',
+  'ai.lab.svg.caption': '鹈鹕骑自行车——纯 SVG + CSS 绘制的 2D 动画,零栅格资产。系统「减少动态效果」开启时场景静止。',
   'ai.lab.tab.ai8': 'AI8',
   'ai.lab.vision.title': '体感能力清单 · 逐项体检',
   'ai.lab.vision.start': '开始体检',

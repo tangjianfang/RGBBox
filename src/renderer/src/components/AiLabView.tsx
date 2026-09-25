@@ -6,6 +6,7 @@ import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile } from '../..
 import { AiLabAudioTab } from './AiLabAudioTab'
 import { AiLabAi8Tab } from './AiLabAi8Tab'
 import { AiLabVisionTab } from './AiLabVisionTab'
+import { AiLabSvgTab } from './AiLabSvgTab'
 
 interface ChatTurn extends AiChatMessage {
   latencyMs?: number
@@ -18,7 +19,7 @@ type ConnState =
   | { kind: 'ok'; latencyMs: number; model: string }
   | { kind: 'fail'; hint?: AiErrorHint }
 
-type AiLabTab = 'config' | 'chat' | 'ocr' | 'audio' | 'vision' | 'ai8'
+type AiLabTab = 'config' | 'chat' | 'ocr' | 'audio' | 'vision' | 'svg' | 'ai8'
 
 /** R145: Bedrock form mirror — sessionToken is a plain string here (always
  *  controlled); it is dropped from the saved profile when empty. */
@@ -277,7 +278,7 @@ export function AiLabView(): JSX.Element {
     // scroll + a pinned composer) instead of growing the whole page.
     <div className={tab === 'ai8' ? 'ai-lab ai-lab-flush' : 'ai-lab'}>
       <div className="ai-tabs" role="tablist" aria-label="AI Lab sections">
-        {(['config', 'chat', 'ocr', 'audio', 'vision', 'ai8'] as const).map((key) => (
+        {(['config', 'chat', 'ocr', 'audio', 'vision', 'svg', 'ai8'] as const).map((key) => (
           <button
             key={key}
             type="button"
@@ -497,6 +498,9 @@ export function AiLabView(): JSX.Element {
       {tab === 'audio' && <AiLabAudioTab />}
 
       {tab === 'vision' && <AiLabVisionTab />}
+
+      {/* R171: pure-SVG pelican-on-a-bicycle animation showcase */}
+      {tab === 'svg' && <AiLabSvgTab />}
 
       {tab === 'ai8' && <AiLabAi8Tab />}
     </div>

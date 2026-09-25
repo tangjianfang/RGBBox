@@ -8846,3 +8846,144 @@ input:disabled {
   border-color: var(--btn-danger-border);
   color: var(--btn-danger-fg);
 }
+/* ── R171: AI Lab SVG tab — pelican riding a bicycle (pure SVG + CSS) ────── */
+
+.ai-svg-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 6px;
+}
+
+.ai-svg-stage {
+  width: min(640px, 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #101724;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+}
+
+.ai-svg-scene {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.ai-svg-caption {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+}
+
+/* rotating groups need fill-box so transform-origin resolves per element */
+.pelican-spin,
+.pelican-crank {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pelican-rotate 0.9s linear infinite;
+}
+
+.pelican-crank {
+  animation-duration: 1.5s;
+}
+
+@keyframes pelican-rotate {
+  to { transform: rotate(360deg); }
+}
+
+/* chain creeps with the crank (dash period 8px × repeat) */
+.pelican-chain {
+  animation: pelican-chain 0.5s linear infinite;
+}
+
+@keyframes pelican-chain {
+  to { stroke-dashoffset: 16; }
+}
+
+/* road dashes stream leftward (dash period 52px × 10 for a seamless loop) */
+.pelican-road {
+  animation: pelican-road 0.8s linear infinite;
+}
+
+@keyframes pelican-road {
+  to { stroke-dashoffset: 520; }
+}
+
+.pelican-bob {
+  animation: pelican-bob 1.5s ease-in-out infinite;
+}
+
+@keyframes pelican-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.pelican-wing,
+.pelican-pouch {
+  transform-box: fill-box;
+  transform-origin: 20% 80%;
+  animation: pelican-wing 1.5s ease-in-out infinite;
+}
+
+.pelican-pouch {
+  transform-origin: 0% 20%;
+  animation-name: pelican-pouch;
+}
+
+@keyframes pelican-wing {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-5deg); }
+}
+
+@keyframes pelican-pouch {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.08); }
+}
+
+.pelican-sun {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pelican-sun 5s ease-in-out infinite;
+}
+
+@keyframes pelican-sun {
+  0%, 100% { transform: scale(1); opacity: 0.95; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+
+.pelican-cloud {
+  animation: pelican-cloud-a 52s linear infinite;
+}
+
+.pelican-cloud-b {
+  animation-name: pelican-cloud-b;
+  animation-duration: 74s;
+  animation-delay: -30s;
+}
+
+@keyframes pelican-cloud-a {
+  from { transform: translateX(-80px); }
+  to { transform: translateX(720px); }
+}
+
+@keyframes pelican-cloud-b {
+  from { transform: translateX(-60px); }
+  to { transform: translateX(700px); }
+}
+
+/* R171.2: reduced motion — freeze every pelican animation */
+@media (prefers-reduced-motion: reduce) {
+  .pelican-spin,
+  .pelican-crank,
+  .pelican-chain,
+  .pelican-road,
+  .pelican-bob,
+  .pelican-wing,
+  .pelican-pouch,
+  .pelican-sun,
+  .pelican-cloud {
+    animation: none;
+  }
+}
