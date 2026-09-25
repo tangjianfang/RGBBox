@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup, fireEvent } from '@testing-library/react'
-import { CaptureFilmstrip, computeCanNav } from '../../../src/renderer/src/components/CaptureFilmstrip'
+import { CaptureFilmstrip, computeCanNav, type CaptureFilmstripProps } from '../../../src/renderer/src/components/CaptureFilmstrip'
 import type { CaptureEntry } from '../../../src/shared/types'
 import { setupRendererMocks } from '../_helpers'
 
@@ -11,11 +11,16 @@ const item = (id: string): CaptureEntry => ({
   id, file: `C:\\cap\\${id}.png`, name: `${id}.png`, ts: 1700000000000, kind: 'photo',
 })
 
+// R170: header-row props are required now — default them per test.
+const stripProps = (over: Partial<CaptureFilmstripProps> = {}): CaptureFilmstripProps => ({
+  items: [], onEdit: () => {}, onDelete: () => {}, onImport: () => {},
+  collapsed: false, onToggleCollapsed: () => {}, onClearAll: () => {},
+  ...over,
+})
+
 describe('CaptureFilmstrip', () => {
   it('renders one item per capture plus the import button', () => {
-    const { container } = render(
-      <CaptureFilmstrip items={[item('a'), item('b')]} onEdit={() => {}} onDelete={() => {}} onImport={() => {}} />,
-    )
+    const { container } = render(<CaptureFilmstrip {...stripProps({ items: [item('a'), item('b')] })} />)
     expect(container.querySelectorAll('.video-filmstrip-item').length).toBe(2)
     expect(container.querySelector('.video-filmstrip-add')).toBeTruthy()
     // 缩略图走 media:// 协议
@@ -25,9 +30,7 @@ describe('CaptureFilmstrip', () => {
 
   it('edit / delete / import callbacks fire with the right args', () => {
     const onEdit = vi.fn(), onDelete = vi.fn(), onImport = vi.fn()
-    const { container } = render(
-      <CaptureFilmstrip items={[item('a')]} onEdit={onEdit} onDelete={onDelete} onImport={onImport} />,
-    )
+    const { container } = render(<CaptureFilmstrip {...stripProps({ items: [item('a')], onEdit, onDelete, onImport })} />)
     fireEvent.click(container.querySelector('.video-filmstrip-edit')!)
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }))
     fireEvent.click(container.querySelector('.video-filmstrip-del')!)
@@ -37,9 +40,7 @@ describe('CaptureFilmstrip', () => {
   })
 
   it('renders nothing for an empty list', () => {
-    const { container } = render(
-      <CaptureFilmstrip items={[]} onEdit={() => {}} onDelete={() => {}} onImport={() => {}} />,
-    )
+    const { container } = render(<CaptureFilmstrip {...stripProps()} />)
     expect(container.querySelector('.video-filmstrip')).toBeNull()
   })
 
@@ -52,9 +53,7 @@ describe('CaptureFilmstrip', () => {
 
   it('R79.4: double-click a thumbnail opens the editor', () => {
     const onEdit = vi.fn()
-    const { container } = render(
-      <CaptureFilmstrip items={[item('a')]} onEdit={onEdit} onDelete={() => {}} onImport={() => {}} />,
-    )
+    const { container } = render(<CaptureFilmstrip {...stripProps({ items: [item('a')], onEdit })} />)
     fireEvent.dblClick(container.querySelector('.video-filmstrip-thumb')!)
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }))
   })
@@ -71,9 +70,7 @@ describe('CaptureFilmstrip', () => {
     Object.defineProperty(HTMLDivElement.prototype, 'scrollWidth', { configurable: true, get: () => 600 })
     Object.defineProperty(HTMLDivElement.prototype, 'clientWidth', { configurable: true, get: () => 300 })
     try {
-      const { container } = render(
-        <CaptureFilmstrip items={[item('a'), item('b'), item('c')]} onEdit={() => {}} onDelete={() => {}} onImport={() => {}} />,
-      )
+      const { container } = render(<CaptureFilmstrip {...stripProps({ items: [item('a'), item('b'), item('c')] })} />)
       const next = container.querySelector('.video-filmstrip-next') as HTMLButtonElement
       expect(next).toBeTruthy()   // 溢出 → next 显示；scrollLeft=0 → prev 隐藏
       expect(container.querySelector('.video-filmstrip-prev')).toBeNull()
@@ -87,5 +84,30 @@ describe('CaptureFilmstrip', () => {
       if (origCW) Object.defineProperty(HTMLDivElement.prototype, 'clientWidth', origCW)
       else delete divProto.clientWidth
     }
+  })
+
+  it('R170: header row shows the title with count', () => {
+    const { container } = render(<CaptureFilmstrip {...stripProps({ items: [item('a'), item('b')] })} />)
+    const title = container.querySelector('.video-filmstrip-toggle')!
+    expect(title.textContent).toContain('2')
+    expect(container.querySelector('.video-filmstrip-clearall')).toBeTruthy()
+  })
+
+  it('R170: collapse toggle hides the strip but keeps the header, firing onToggleCollapsed', () => {
+    const onToggleCollapsed = vi.fn()
+    const { container } = render(
+      <CaptureFilmstrip {...stripProps({ items: [item('a')], collapsed: true, onToggleCollapsed })} />,
+    )
+    expect(container.querySelector('.video-filmstrip')).toBeNull()          // strip hidden
+    expect(container.querySelector('.video-filmstrip-toggle')).toBeTruthy() // header stays
+    fireEvent.click(container.querySelector('.video-filmstrip-toggle')!)
+    expect(onToggleCollapsed).toHaveBeenCalledTimes(1)
+  })
+
+  it('R170: clear-all button fires onClearAll (confirm lives in the parent)', () => {
+    const onClearAll = vi.fn()
+    const { container } = render(<CaptureFilmstrip {...stripProps({ items: [item('a')], onClearAll })} />)
+    fireEvent.click(container.querySelector('.video-filmstrip-clearall')!)
+    expect(onClearAll).toHaveBeenCalledTimes(1)
   })
 })

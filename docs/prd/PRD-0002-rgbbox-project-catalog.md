@@ -3353,3 +3353,19 @@
 - **R168.6 验收点**：①typecheck + vitest 全绿（含新纯函数单测）；②i18n 键对称校验通过；③对坏文件（本例 mkv）播放时 UI 出现明确提示而非静默黑屏（人工验证项）。
 - **R168.7 实施证据（2026-09-25）**：`domain/mediaError.ts`（code 1-4→key 映射 + detail 透传，未知 code 归 unsupported）+ 单测 5 例；VideoStudioView 主播放器 `onError` → `streamError` + `clearPlayerSource()`（空态叠加层常驻展示，`mediaLoaded` 归 false 使叠加层可见）；AudioStudioView `error` 监听 → now-playing 行 `⚠` 提示（title 悬浮 detail，`--status-error` 着色，切歌清空）；i18n `media.error.*` 四键 EN/ZH 对称（i18nShellKeys 过）。验收：typecheck 绿、vitest **121 文件 / 1121 用例全过**；无静息态视觉 delta，`ui:snapshot` 基线不涉重拍。
 - **R168.7 状态**：✅（R168.6 ①②过；③待用户以坏文件人工验证）
+
+### R169. 修复：视频播放器进入全屏后画面未铺满预览窗口（2026-09-25 用户报障「视频全屏模式下,视觉显示的视频窗口,没有铺满整个预览窗口」）
+
+- **R169.1 根因**：播放器缩放 hook（R75.1）的 fit/free 双模式中，free 模式的 absScale/offset 在进入原生全屏后原样保留——用户一旦滚轮缩放（如截图中的 46%），全屏后画面仍按旧变换渲染，远小于铺满；fit 模式本身会随 ResizeObserver 自适应（R94）无此问题。另 `.video-player-wrap` 无 `:fullscreen` 样式，14px 圆角在全屏下残留。
+- **R169.2 修复**：①`togglePlayerFullscreen` 进入全屏时 `playerZoom.reset()` 回 fit 模式（全屏=按新窗口尺寸重新 contain 铺满，主流播放器同语义；退出全屏 fit 自动回归）；②CSS 增加 `.video-player-wrap:fullscreen { border-radius: 0 }`。
+- **R169.3 验收点**：free 缩放状态下点全屏 → 画面按屏幕 contain 铺满（16:9 片源边到边）；typecheck/test 绿。
+- **R169.4 实施证据（2026-09-25）**：`togglePlayerFullscreen` 进入全屏前 `playerZoom.reset()`（deps +playerZoom.reset）；CSS `.video-player-wrap:fullscreen { border-radius:0; width/height:100% }`。typecheck 绿、vitest 121 文件全过。
+
+### R170. 视频截图胶片栏：折叠开关 + 一键清空（2026-09-25 用户指令「底部截图预览列表没有开关,一直显示在视频预览下面,只有全部删除图片才不显示,应该有一个开关或折叠；再增加一个清理全部截图预览列表的按钮」）
+
+- **R170.1 折叠开关**：胶片栏顶部加紧凑头行——「截图预览 (N)」标签 + 折叠/展开 chevron；折叠时仅留头行。状态入 `VideoPlaylistCache`（localStorage `rgbbox-video-playlist-config`，key `filmstripVisible`，默认展开），与 `playlistVisible` 同模式。
+- **R170.2 清空全部**：头行右侧「清空全部」按钮（Trash2 图标 + confirm 确认含数量），逐条 `capturesDelete` 后 `refreshCaptures()`（复用现有 IPC，不加新通道；captures FIFO 上限 200 内循环量级安全）。
+- **R170.3 i18n**：`video.filmstrip.title / clearAll / clearAllConfirm / collapse / expand` 五键 EN/ZH 对称。
+- **R170.4 验收点**：①折叠/展开跨重启记忆；②清空后胶片栏整体消失（空列表自动隐藏语义不变）且有确认防误触；③typecheck/test 绿。
+- **R170.5 实施证据（2026-09-25）**：CaptureFilmstrip 头行（`video-filmstrip-head`：标题+计数 toggle / Trash2 清空全部）；`filmstripVisible` 入 VideoPlaylistCache 持久化；清空走 `window.confirm`（含数量）+ `Promise.allSettled(capturesDelete)` + `refreshCaptures()`，无新 IPC；i18n 五键 EN/ZH 对称；组件测试 6→9 例。验收：vitest 1124 用例全过；`ui:snapshot` 视频视图按流程重拍基线后 9/9 GATE PASS（新头行+R168 错误提示属预期静息视觉变化）。
+- **R170.5 状态**：✅（R170.4 ①②③全过）

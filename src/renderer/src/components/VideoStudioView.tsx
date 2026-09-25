@@ -75,6 +75,8 @@ interface VideoPlaylistCache {
   playlist: Array<{ id: string; name: string; group: string }>
   groups: VideoGroup[]
   playlistVisible: boolean
+  /** R170: capture filmstrip collapsed? (default expanded) */
+  filmstripVisible: boolean
 }
 
 function loadVideoCache(): Partial<VideoPlaylistCache> {
@@ -337,6 +339,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
   const [videoPlaylist, setVideoPlaylist] = useState<VideoItem[]>([])
   const [videoGroups, setVideoGroups] = useState<VideoGroup[]>(videoCache.groups || [])
   const [playlistVisible, setPlaylistVisible] = useState(videoCache.playlistVisible ?? true)
+  // R170: capture filmstrip collapse state — persisted alongside the playlist.
+  const [filmstripVisible, setFilmstripVisible] = useState(videoCache.filmstripVisible ?? true)
   const [currentVideoIndex, setCurrentVideoIndex] = useState(-1)
   const [videoIsRestored, setVideoIsRestored] = useState(false)
   const videoFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -987,9 +991,14 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     if (document.fullscreenElement === wrap) {
       void document.exitFullscreen().catch(() => { /* noop */ })
     } else {
+      // R169: a stale free-zoom (e.g. 46% from an accidental wheel scroll)
+      // used to ride into fullscreen, leaving the picture as a small rect in
+      // the middle of the screen. Fullscreen means "refit to the new window" —
+      // reset to fit mode; containRect then fills the screen edge-to-edge.
+      playerZoom.reset()
       void wrap.requestFullscreen().catch(() => { /* noop */ })
     }
-  }, [])
+  }, [playerZoom.reset])
 
   // ── Player keyboard shortcuts ───────────────────────────────────────────────
   useEffect(() => {
@@ -1250,6 +1259,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
       playlist: videoPlaylist.map(v => ({ id: v.id, name: v.name, group: v.group })),
       groups: videoGroups,
       playlistVisible,
+      filmstripVisible,
     })
     // R91.1: media:// entries only (blob:/remote have no path), progress merged
     const pathEntries = buildPathEntries(videoPlaylist, progressRef.current)
@@ -1257,7 +1267,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     // every video never reached disk, and the stale file resurrected them on
     // the next launch. The main-process handler overwrites unconditionally.
     window.rgbbox.videoSavePaths(pathEntries).catch(() => { /* persistence is best-effort */ })
-  }, [videoIsRestored, videoPlaylist, videoGroups, playlistVisible])
+  }, [videoIsRestored, videoPlaylist, videoGroups, playlistVisible, filmstripVisible])
 
   // R94: on entering the player with no active source, auto-load the last
   // played playlist item (once per app session) — the player no longer opens
@@ -1704,6 +1714,15 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
           {/* R77.1: 拍摄缓存胶片栏（预览区下方、传输条上方；空列表自动隐藏） */}
           <CaptureFilmstrip
             items={captures}
+            collapsed={!filmstripVisible}
+            onToggleCollapsed={() => setFilmstripVisible((v) => !v)}
+            onClearAll={() => {
+              // R170: destructive — confirm with the count before mass delete.
+              if (!window.confirm(t('video.filmstrip.clearAllConfirm').replace('{count}', String(captures.length)))) return
+              void Promise.allSettled(captures.map((it) => window.rgbbox.capturesDelete(it.id)))
+                .then(refreshCaptures)
+                .catch(() => { /* best-effort */ })
+            }}
             onEdit={(it) => {
               window.rgbbox.capturesRead(it.id)
                 .then((url) => {

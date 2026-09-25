@@ -6418,6 +6418,64 @@ input[type='range'].audio-slider {
   justify-content: center;
 }
 
+/* R169: native fullscreen on the wrap — drop the in-app rounding so the
+   picture stage is edge-to-edge. */
+.video-player-wrap:fullscreen {
+  border-radius: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* R170: filmstrip header row — title + count, clear-all, collapse toggle. */
+.video-filmstrip-block {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.video-filmstrip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.video-filmstrip-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.65));
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.video-filmstrip-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary, #fff);
+}
+
+.video-filmstrip-clearall {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--status-error);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.video-filmstrip-clearall:hover {
+  background: var(--btn-danger-bg, rgba(248, 113, 113, 0.14));
+  border-color: var(--btn-danger-border, rgba(248, 113, 113, 0.4));
+}
+
 .video-player-controls-overlay {
   position: absolute;
   bottom: 0;
