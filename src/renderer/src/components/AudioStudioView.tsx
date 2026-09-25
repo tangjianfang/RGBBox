@@ -20,6 +20,7 @@ import {
   computeBiquadResponse, logFreqPoints,
 } from '../../../engine/eqResponse'
 import { formatMediaTime } from '../../../shared/timeFormat'
+import { describeMediaError, type MediaFailure } from '../domain/mediaError'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -1088,6 +1089,10 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   const lrcFileInputRef = useRef<HTMLInputElement | null>(null)
   const lyricsContainerRef = useRef<HTMLDivElement | null>(null)
 
+  // R168: last playback failure (corrupt / unsupported / unreadable source) —
+  // shown in the transport bar's now-playing row; null once a new track loads.
+  const [playbackError, setPlaybackError] = useState<MediaFailure | null>(null)
+
   // Refs
   const audioContextRef = useRef<AudioContext | null>(null)
   const audioElementRef = useRef<HTMLAudioElement | null>(null)
@@ -1701,6 +1706,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     audio.crossOrigin = 'anonymous'
     audioElementRef.current = audio
     correctedDurationRef.current = null // R53: new track — clear any previous correction
+    setPlaybackError(null) // R168: the incoming track starts with a clean slate
     setDuration(0) // R53.9: don't carry over the previous track's duration while loading
     setProgress(0) // R71.4: …nor its position — the old value briefly pinned a max=1 slider
     // R71.4: the previous track's LRC has no binding to the new one — stale
@@ -1776,6 +1782,13 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
       // to a full decode.
       if (isWav || cachedDuration != null) return
       if (!(isFinite(audio.duration) && audio.duration > 0)) decodeForDuration()
+    })
+    // R168: corrupt/unsupported files used to fail silently (play button did
+    // nothing, transport stayed at 0:00) — surface the MediaError in the
+    // transport bar's now-playing row.
+    audio.addEventListener('error', () => {
+      const failure = describeMediaError(audio.error)
+      if (failure) setPlaybackError(failure)
     })
     if (cachedDuration != null) {
       correctedDurationRef.current = cachedDuration
@@ -2198,8 +2211,14 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
         <div className="audio-transport-row audio-transport-row-nowplaying">
           <span className="audio-transport-spacer" />
           <Music size={13} className="audio-now-playing-icon" />
-          <span className="audio-now-playing-label">
-            {currentTrackIndex >= 0 && playlist[currentTrackIndex] ? playlist[currentTrackIndex].name : t('audio.nowPlaying.none')}
+          <span
+            className="audio-now-playing-label"
+            title={playbackError?.detail || undefined}
+            style={playbackError ? { color: 'var(--status-error)' } : undefined}
+          >
+            {playbackError
+              ? `⚠ ${t(playbackError.key)}`
+              : currentTrackIndex >= 0 && playlist[currentTrackIndex] ? playlist[currentTrackIndex].name : t('audio.nowPlaying.none')}
           </span>
           <span className="audio-transport-spacer" />
           <button

@@ -3342,3 +3342,14 @@
 - **R167.4 验收点**：①测量脚本前后对照表进评审文档；②typecheck + vitest 全绿（含新门禁）；③`ui:snapshot` 效果卡基线按流程重拍；④不新增任何性能预算超标（科学款 tick 耗时复测不高于基线 +20%）。
 - **R167.6 实施证据（2026-09-24）**：27 款交付层调参 + 3 默认值微调（starlight density .25→.42 / matrix-rain .55→.72 / comet tail .35→.5）+ 音频 idle（audio-beat 0→.033/46%、audio-equalizer .026→.202）；前后对照表见评审文档 §6.2（最差五款：solar-system .023/.096→.103/.557、comet-tail .013/.06→.094/.259、audio-equalizer、starlight NaN→.115、protein .016→.070）；S/A 档 16 款零触碰防回归。常设门禁 `tests/engine/effects-visual-floor.test.ts`（四档地板 + NaN 扫 + 档位全覆盖）。验收：typecheck 绿、vitest 120/1103 全过、`ui:snapshot` 基线重拍后 9/9 GATE PASS（重拍前 stash 对照实验证实 6 view 超限为环境漂移，与本轮改动逐位无关）。
 - **R167.5 状态**：✅（R167.4 ①-④ 全过；GPU 3D 六款 shader 属 RC-2 范围本轮不动）
+
+### R168. 播放失败用户提示：视频/音频工作站打开不支持或异常文件时给出明确报错（2026-09-25 用户指令「打开不支持或异常的视频或音频文件时报错，增加提示窗口提醒用户」；承载 9-25 诊断结论——`4K高清资源.mkv` 为非法容器导致静默黑屏，用户无从判断是文件问题还是应用问题）
+
+- **R168.1 根因背景**：`<video>`/`new Audio()` 的 `error` 事件此前无人消费——media:// 服务层正确应答后，解码层失败（`DEMUXER_ERROR_COULD_NOT_OPEN` → `MediaError.code=4`）只表现为黑屏/零时长，无任何 UI 反馈。
+- **R168.2 纯函数映射**：新增 `domain/mediaError.ts` `describeMediaError(err)`——`MediaError.code` 1-4 → i18n key（aborted / network / decode / unsupported），未知 code 归入 unsupported；携带浏览器原始 message 作 detail 供诊断。
+- **R168.3 视频站**：主播放器 `<video>` 加 `onError`——映射为 `streamError` 文案（含 detail），并 `clearPlayerSource()` 回到空态叠加层（`⚠ 文案` 常驻显示）；新源加载时按既有逻辑清空。
+- **R168.4 音频站**：`new Audio` 增加 `error` 监听 → now-playing 行以 `⚠` 提示替代曲目名（title 悬浮显示 detail）；切歌时清空。
+- **R168.5 i18n**：`media.error.unsupported / decode / network / aborted` 四键，EN/ZH 对称。
+- **R168.6 验收点**：①typecheck + vitest 全绿（含新纯函数单测）；②i18n 键对称校验通过；③对坏文件（本例 mkv）播放时 UI 出现明确提示而非静默黑屏（人工验证项）。
+- **R168.7 实施证据（2026-09-25）**：`domain/mediaError.ts`（code 1-4→key 映射 + detail 透传，未知 code 归 unsupported）+ 单测 5 例；VideoStudioView 主播放器 `onError` → `streamError` + `clearPlayerSource()`（空态叠加层常驻展示，`mediaLoaded` 归 false 使叠加层可见）；AudioStudioView `error` 监听 → now-playing 行 `⚠` 提示（title 悬浮 detail，`--status-error` 着色，切歌清空）；i18n `media.error.*` 四键 EN/ZH 对称（i18nShellKeys 过）。验收：typecheck 绿、vitest **121 文件 / 1121 用例全过**；无静息态视觉 delta，`ui:snapshot` 基线不涉重拍。
+- **R168.7 状态**：✅（R168.6 ①②过；③待用户以坏文件人工验证）

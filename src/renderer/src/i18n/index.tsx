@@ -1458,6 +1458,11 @@ const EN = {
   'video.player.loop': 'Loop',
   'video.player.speed': 'Speed',
   'video.player.empty': 'Open a video file to play',
+  // R168: playback-failure prompts (shared by video + audio studios)
+  'media.error.unsupported': 'Cannot play — file format is invalid or unsupported (corrupt, encrypted, or an incomplete download)',
+  'media.error.decode': 'Cannot play — decoding failed (corrupt data or an unsupported codec)',
+  'media.error.network': 'Cannot play — the file could not be read (moved, deleted, or the drive is unavailable)',
+  'media.error.aborted': 'Playback was aborted',
   'video.player.formats': 'Local: mp4, webm, mkv, mov, avi… · Network: direct mp4/webm URLs and HLS (.m3u8) streams',
   'video.player.streamUrl': 'Network stream URL',
   'video.player.streamPlaceholder': 'https://…/stream.m3u8 or .mp4',
@@ -2936,6 +2941,11 @@ const ZH: TranslationTable = {
   'video.player.loop': '循环',
   'video.player.speed': '速度',
   'video.player.empty': '打开一个视频文件进行播放',
+  // R168: 播放失败提示（视频/音频工作站共用）
+  'media.error.unsupported': '无法播放：文件格式无效或不受支持（文件可能已损坏、被加密或下载不完整）',
+  'media.error.decode': '无法播放：解码失败（数据损坏或编码不受支持）',
+  'media.error.network': '无法播放：文件读取失败（可能已被移动、删除或磁盘不可用）',
+  'media.error.aborted': '播放已中止',
   'video.player.formats': '本地：mp4、webm、mkv、mov、avi 等 · 网络：直链 mp4/webm 及 HLS（.m3u8）直播流',
   'video.player.streamUrl': '网络视频流地址',
   'video.player.streamPlaceholder': 'https://…/stream.m3u8 或 .mp4',

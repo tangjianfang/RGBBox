@@ -30,6 +30,7 @@ import { PreviewZoomBar } from './video/PreviewZoomBar'
 import { freezeVideoFrame } from './video/frameCapture'
 import { RegionSnipOverlay } from './video/RegionSnipOverlay'
 import { buildPathEntries, ingestRestoredProgress, shouldOfferResume, type ProgressEntry } from './video/playlistProgress'
+import { describeMediaError, formatMediaFailure } from '../domain/mediaError'
 import { MiniPlayerCard } from './video/MiniPlayerCard'
 import { ENHANCE_PRESETS, type EnhancePresetId } from './video/audioEnhance'
 import { useVideoAudioEnhance } from './video/useVideoAudioEnhance'
@@ -1356,6 +1357,16 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                   src={playerUrl || undefined}
                   loop={playerLoop}
                   playsInline
+                  onError={() => {
+                    // R168: a corrupt/unsupported file (media:// answers fine;
+                    // the demuxer is what fails) used to die as a silent black
+                    // screen — surface the MediaError through the empty-state
+                    // overlay and drop the dead source.
+                    const failure = describeMediaError(playerRef.current?.error ?? null)
+                    if (!failure) return
+                    setStreamError(formatMediaFailure(failure, t))
+                    clearPlayerSource()
+                  }}
                 />
                 {/* R75.3: 冻结帧（框选期间画面静止） */}
                 {snipActive && snipFrame && (
