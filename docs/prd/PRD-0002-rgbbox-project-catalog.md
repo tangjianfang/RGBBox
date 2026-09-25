@@ -3378,3 +3378,15 @@
 - **R171.4 验收点**：①typecheck + vitest 全绿（含新组件渲染测试：SVG 挂载/双轮/曲柄/字幕）；②i18n 对称校验过；③`ui:snapshot` ai 视图因新增 Tab 按流程重拍基线后 GATE PASS。
 - **R171.5 实施证据（2026-09-25）**：`AiLabSvgTab.tsx`（640×400 手绘 SVG：黄昏渐变天空/脉动太阳/双云漂移/路面虚线滚动/双轮 8 辐旋转/曲柄+链条/鹈鹕起伏摆翅嗉囊微动）+ app.css `pelican-*` keyframes（含 `prefers-reduced-motion` 全冻结）；AiLabView 第 7 Tab `svg`（vision 与 ai8 之间）；i18n 三键 EN/ZH 对称（i18nShellKeys 过）；测试：AiLabView 6→7 tab 断言 + svg tab 挂载断言、新组件 2 用例（结构完整性 + 双轮 8 辐）。验收：typecheck 绿、vitest **122 文件 / 1126 用例全过**；`ui:snapshot` ai 视图 0.0191%（新增小 tab 未超限），workspace 2.63% 经 stash 对照实验证实为环境漂移（逐位与 R171 无关）后按流程重拍基线，9/9 GATE PASS。
 - **R171.5 状态**：✅（R171.4 ①②③全过）
+
+### R172. 规划：pi coding agent 集成 AI 实验室 / AI8 模块——借助现有 AI 模型能力实现 agent（2026-09-25 用户指令；本条为只读规划条款，`src/` 0 diff，产出方案文档待拍板后分期实施）
+
+- **R172.1 pi 事实链（官方仓库/文档核实）**：badlogic（Mario Zechner）MIT/TS 单仓多包（scope `@earendil-works/`，有迁移史）；SDK 一等公民（`createAgentSession`/`prompt`/`subscribe` 流式事件/JSONL 会话/`customTools` 整组替换内置工具）；30+ 供应商含 **ZAI（智谱 GLM）**与 Amazon Bedrock，⚠ 通用 OpenAI 兼容自定义 baseUrl 未承诺、ollama 未列出；**无内置权限系统**。
+- **R172.2 现状关键结论**：现有 `chatCompletion` 管线无 `tools` 透传；AI8 为会话制逆向协议（`ai8://chat`）**无 function-calling 语义**——agent over AI8 必须文本协议（ReAct）桥；utilityProcess 先例（denoiseService）可直接复用。
+- **R172.3 三方案对比**：A 引 pi SDK（推荐，GLM/Bedrock 直驱、AI8 走 S3 桥；spike 为门）/ B 自研极简内核（+0 依赖，AI8 协议自主，兜底案）/ C CLI RPC 子进程（不推荐）；两案共享同一审批层与 UI。
+- **R172.4 安全设计**：工作区路径钳制、审批三档（计划/标准/信任）、命令 denylist+超时+输出截断、审计 JSONL、零遥测；Windows 无容器隔离的残余风险明示。
+- **R172.5 分期**：S0 spike（0.5 会话，go/no-go）→ S1 内核接入（1-2）→ S2 Agent 工作台 UI（2-3，AI8 Tab 双模式或独立第 8 Tab）→ S3 AI8 ReAct 桥（1-2，标注「实验」）→ S4 加固发版（1）。
+- **R172.6 风险**：R-1 pi-ai 对 open.bigmodel.cn 覆盖未实证（spike 首验）/ R-2 AI8 ReAct 遵循度 / R-3 pi 演进断版 / R-4 注入 / R-5 无容器隔离 / R-6 token 放大 / R-7 半成品写入 / R-8 打包体积。
+- **R172.7 待拍板**：①方案 A/B ②UI 落位（AI8 Tab 双模式 vs 独立 Tab）③写前 .bak 备份策略 ④AI8 档位以「实验」进入。
+- **R172.8 方案全文**：[`2026-09-25-pi-agent-integration-plan.md`](../reviews/2026-09-25-pi-agent-integration-plan.md)
+- **R172.9 状态**：🔄（规划条款待用户拍板；S0-S4 实施轮另行立项）
