@@ -14,7 +14,22 @@ import type { AgentApprovalRequest, AgentEvent, AgentMode, AgentSessionMeta, AiP
  * 显示站点模型下拉(模板是公开接口,分组复用 AI8 页逻辑),经 modelOverride 下发。
  */
 interface ToolCard { id: string; name: string; args: string; result: string; status: 'running' | 'done' | 'denied' | 'error' }
-interface TranscriptItem { kind: 'user' | 'assistant' | 'tool' | 'approval'; text?: string; tool?: ToolCard; approval?: AgentApprovalRequest; resolved?: boolean }
+interface TranscriptItem { kind: 'user' | 'assistant' | 'assistant-streaming' | 'tool' | 'approval'; text?: string; tool?: ToolCard; approval?: AgentApprovalRequest; resolved?: boolean }
+
+// R175: prompt history cache — ↑ recalls the previous prompt, ↓ forward again
+// (cursor-at-edge semantics, like Claude Code); persisted across restarts.
+const HISTORY_KEY = 'rgbbox:agentInputHistory'
+const HISTORY_CAP = 30
+function loadHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+  } catch { return [] }
+}
+function saveHistory(list: string[]): void {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_CAP))) } catch { /* best-effort */ }
+}
 
 /** AI8 聊天模型模板(公开、无需 token)——成功后模块级缓存,切页秒开。 */
 let ai8ModelCache: Ai8Model[] | null = null
@@ -28,6 +43,7 @@ interface AgentPrefs {
   mode?: AgentMode
   ai8Model?: string
   disabledModels?: string[]
+  agentDraft?: string
 }
 function loadPrefs(): AgentPrefs {
   try {
@@ -48,7 +64,7 @@ export function AiLabAgentTab(): JSX.Element {
   const [profileId, setProfileId] = useState('')
   const [workspace, setWorkspace] = useState(prefs.workspace ?? '')
   const [mode, setMode] = useState<AgentMode>(prefs.mode ?? 'standard')
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(prefs.agentDraft ?? '')
   const [running, setRunning] = useState(false)
   const [items, setItems] = useState<TranscriptItem[]>([])
   const [pendingApproval, setPendingApproval] = useState<AgentApprovalRequest | null>(null)
@@ -57,13 +73,16 @@ export function AiLabAgentTab(): JSX.Element {
   const [ai8Models, setAi8Models] = useState<Ai8Model[]>(ai8ModelCache ?? [])
   const [ai8ModelError, setAi8ModelError] = useState(false)
   const [ai8ModelValue, setAi8ModelValue] = useState(prefs.ai8Model ?? '')
+  const [inputHistory, setInputHistory] = useState<string[]>(loadHistory)
+  const historyIdxRef = useRef<number | null>(null)
+  const draftRef = useRef(prefs.agentDraft ?? '')
   const [disabledModels, setDisabledModels] = useState<string[]>(prefs.disabledModels ?? [])
   const sessionIdRef = useRef('')
   const logRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    savePrefs({ profileId: profileId || undefined, workspace: workspace || undefined, mode, ai8Model: ai8ModelValue || undefined, disabledModels })
-  }, [profileId, workspace, mode, ai8ModelValue, disabledModels])
+    savePrefs({ profileId: profileId || undefined, workspace: workspace || undefined, mode, ai8Model: ai8ModelValue || undefined, disabledModels, agentDraft: input || undefined })
+  }, [profileId, workspace, mode, ai8ModelValue, disabledModels, input])
 
   const refreshSessions = useCallback(() => {
     void window.rgbbox.agentSessionsList().then(setSessions).catch(() => setSessions([]))
@@ -123,8 +142,25 @@ export function AiLabAgentTab(): JSX.Element {
         const next = [...prev]
         switch (ev.kind) {
           case 'user': next.push({ kind: 'user', text: ev.text }); break
-          case 'text': next.push({ kind: 'assistant', text: ev.text }); break
-          case 'tool-start': next.push({ kind: 'tool', tool: ev.call }); break
+          case 'text-delta': {
+            // R175: Claude-style token streaming — append to the open bubble
+            const last = next[next.length - 1]
+            if (last && last.kind === 'assistant-streaming') last.text = (last.text ?? '') + ev.text
+            else next.push({ kind: 'assistant-streaming', text: ev.text })
+            break
+          }
+          case 'text': {
+            const last = next[next.length - 1]
+            if (last && last.kind === 'assistant-streaming') { last.text = ev.text; last.kind = 'assistant' }
+            else next.push({ kind: 'assistant', text: ev.text })
+            break
+          }
+          case 'tool-start': {
+            const last = next[next.length - 1]
+            if (last && last.kind === 'assistant-streaming') last.kind = 'assistant'
+            next.push({ kind: 'tool', tool: ev.call })
+            break
+          }
           case 'tool-result': {
             const idx = [...next].reverse().findIndex((it) => it.kind === 'tool' && it.tool?.id === ev.call.id)
             if (idx >= 0) next[next.length - 1 - idx] = { kind: 'tool', tool: ev.call }
@@ -159,6 +195,13 @@ export function AiLabAgentTab(): JSX.Element {
     setInput('')
     setError(null)
     setRunning(true)
+    // R175: prompt history cache (newest first)
+    if (text !== (inputHistory[0] ?? '')) {
+      const next = [text, ...inputHistory].slice(0, HISTORY_CAP)
+      setInputHistory(next)
+      saveHistory(next)
+    }
+    historyIdxRef.current = null
     // R174.6: AI8 档附带当前选择的站点模型
     const modelOverride = isAi8 && effectiveAi8Model !== '' ? effectiveAi8Model : undefined
     const out = await window.rgbbox.agentSend({ text, profileId, workspace, mode, sessionId: sessionIdRef.current, modelOverride })
@@ -172,7 +215,7 @@ export function AiLabAgentTab(): JSX.Element {
       }
     }
     if (!out.ok && out.sessionId === '') setRunning(false)
-  }, [input, running, workspace, profileId, mode, isAi8, effectiveAi8Model])
+  }, [input, running, workspace, profileId, mode, isAi8, effectiveAi8Model, inputHistory])
 
   const respond = (decision: 'once' | 'always' | 'deny'): void => {
     if (!pendingApproval) return
@@ -302,6 +345,14 @@ export function AiLabAgentTab(): JSX.Element {
           {items.length === 0 && <p className="ai-hint-line">{t('ai.agent.empty')}</p>}
           {items.map((it, i) => {
             if (it.kind === 'user') return <div key={i} className="agent-msg agent-msg-user">{it.text}</div>
+            if (it.kind === 'assistant-streaming') {
+              return (
+                <div key={i} className="agent-msg agent-msg-assistant agent-streaming">
+                  <MarkdownView text={it.text ?? ''} copyLabel={t('ai.agent.copy')} copiedLabel={t('ai.agent.copied')} />
+                  <span className="agent-caret" aria-hidden="true" />
+                </div>
+              )
+            }
             if (it.kind === 'assistant') {
               // R172-S2 fix: assistant replies carry markdown (code blocks,
               // lists, headings) — render them instead of dumping raw text.
@@ -358,7 +409,22 @@ export function AiLabAgentTab(): JSX.Element {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               const native = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
-              if (e.key === 'Enter' && !e.shiftKey && !native.isComposing) { e.preventDefault(); void send() }
+              if (e.key === 'Enter' && !e.shiftKey && !native.isComposing) { e.preventDefault(); void send(); return }
+              // R175: ↑/↓ at the text edges walk the prompt history
+              if (e.key === 'ArrowUp' && inputHistory.length > 0 && (e.target as HTMLTextAreaElement).selectionStart === 0) {
+                e.preventDefault()
+                if (historyIdxRef.current === null) { draftRef.current = input; historyIdxRef.current = 0 }
+                else if (historyIdxRef.current < inputHistory.length - 1) historyIdxRef.current += 1
+                setInput(inputHistory[historyIdxRef.current])
+                return
+              }
+              if (e.key === 'ArrowDown' && historyIdxRef.current !== null) {
+                if ((e.target as HTMLTextAreaElement).selectionStart >= input.length) {
+                  e.preventDefault()
+                  if (historyIdxRef.current <= 0) { historyIdxRef.current = null; setInput(draftRef.current) }
+                  else { historyIdxRef.current -= 1; setInput(inputHistory[historyIdxRef.current]) }
+                }
+              }
             }}
           />
           {running ? (

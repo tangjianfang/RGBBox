@@ -14,7 +14,11 @@ import type { TtsEngineStatus } from '../../../shared/types'
  */
 export function AiLabVoiceTab(): JSX.Element {
   const { t } = useI18n()
-  const [text, setText] = useState('')
+  // R175: the composition draft survives restarts (same contract as the
+  // agent tab draft) — long textbook pastes never vanish on a crash.
+  const [text, setText] = useState(() => {
+    try { return localStorage.getItem('rgbbox:voiceDraft') ?? '' } catch { return '' }
+  })
   const [rate, setRate] = useState(1)
   const [engine, setEngine] = useState<'system' | 'kokoro'>('system')
   const [ttsStatus, setTtsStatus] = useState<TtsEngineStatus | null>(null)
@@ -116,7 +120,10 @@ export function AiLabVoiceTab(): JSX.Element {
           data-field="vs-text"
           value={text}
           placeholder={t('ai.voice.textPlaceholder')}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value)
+            try { localStorage.setItem('rgbbox:voiceDraft', e.target.value) } catch { /* best-effort */ }
+          }}
         />
         <div className="vs-toolbar">
           <select data-field="vs-engine" value={engine} onChange={(e) => { stopAll(); setEngine(e.target.value as 'system' | 'kokoro') }} aria-label={t('ai.voice.engine')}>

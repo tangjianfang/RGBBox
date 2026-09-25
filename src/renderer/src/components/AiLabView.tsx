@@ -67,6 +67,13 @@ function mirrorOf(p: AiProfile | null): EditMirror {
 export function AiLabView(): JSX.Element {
   const { t } = useI18n()
   const [tab, setTab] = useState<AiLabTab>('config')
+  // R175: first visit mounts; afterwards keep-alive via display:none wrappers
+  const [agentVisited, setAgentVisited] = useState(false)
+  const [voiceVisited, setVoiceVisited] = useState(false)
+  useEffect(() => {
+    if (tab === 'agent') setAgentVisited(true)
+    if (tab === 'voice') setVoiceVisited(true)
+  }, [tab])
   const [profiles, setProfiles] = useState<AiProfile[]>([])
   const [activeId, setActiveId] = useState('')
   const [editId, setEditId] = useState('')
@@ -84,6 +91,12 @@ export function AiLabView(): JSX.Element {
   const [ocrResult, setOcrResult] = useState('')
   const [ocrHint, setOcrHint] = useState<AiErrorHint>()
   const [ocrBusy, setOcrBusy] = useState<'cleanup' | 'translate' | null>(null)
+  // R175: keep-alive for the agent & voice tabs — once visited they stay
+  // mounted (display:none) so a running agent keeps streaming and transcripts
+  // / drafts survive tab switches (Claude-style background run).
+  // R175: keep-alive for the agent & voice tabs — once visited they stay
+  // mounted (display:none) so a running agent keeps streaming and transcripts
+  // / drafts survive tab switches (Claude-style background run).
 
   useEffect(() => {
     window.rgbbox.aiGetProfiles().then((c) => {
@@ -504,11 +517,22 @@ export function AiLabView(): JSX.Element {
       {/* R171: pure-SVG pelican-on-a-bicycle animation showcase */}
       {tab === 'svg' && <AiLabSvgTab />}
 
-      {/* R173: VoiceScribe — offline dual-direction speech workstation (P1) */}
-      {tab === 'voice' && <AiLabVoiceTab />}
+      {/* R173: VoiceScribe — offline dual-direction speech workstation (P1).
+          R175: keep-alive — draft text survives tab switches. */}
+      {voiceVisited && (
+        <div style={{ display: tab === 'voice' ? undefined : 'none' }}>
+          <AiLabVoiceTab />
+        </div>
+      )}
 
-      {/* R172: coding-agent workbench (kernel engine + approval loop) */}
-      {tab === 'agent' && <AiLabAgentTab />}
+      {/* R172: coding-agent workbench (kernel engine + approval loop).
+          R175: keep-alive — the agent keeps running and the transcript stays
+          put while the user browses other tabs (Claude-style background run). */}
+      {agentVisited && (
+        <div style={{ display: tab === 'agent' ? undefined : 'none' }}>
+          <AiLabAgentTab />
+        </div>
+      )}
 
       {tab === 'ai8' && <AiLabAi8Tab />}
     </div>

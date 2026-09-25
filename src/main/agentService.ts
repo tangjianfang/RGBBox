@@ -180,6 +180,7 @@ export function createAgentService(deps: AgentServiceDeps) {
       // R172-S3: AI8 桥——会话制逆向协议无 function-calling,传输走
       // ai8Provider(会话管理/凭据/自动登录都在其内);工具调用由
       // REACT_SYSTEM_PROMPT 文本约定,这里只负责解析 ```tool``` 块。
+      // (AI8 桥暂为整段返回;Claude 式逐 token 流式仅 OpenAI 兼容档。)
       const out = await ai8ChatCompletion(run!.messages, s)
       if (!out.ok) throw new Error(`ai8: ${out.hint ?? 'failed'}${out.detail ? ' — ' + out.detail : ''}`)
       content = out.text
@@ -188,6 +189,8 @@ export function createAgentService(deps: AgentServiceDeps) {
       return { content, toolCalls }
     }
 
+    // R175: Claude-style streaming — `stream: true` + SSE deltas pushed to the
+    // workbench as they arrive; tool-call argument fragments accumulate by index.
     const base = s.baseUrl.trim().replace(/\/+$/, '')
     const body: Record<string, unknown> = {
       model: s.model.trim(),
@@ -195,30 +198,61 @@ export function createAgentService(deps: AgentServiceDeps) {
       temperature: 0.3,
       tools: AGENT_TOOL_SCHEMAS,
       tool_choice: 'auto',
+      stream: true,
     }
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (s.apiKey.trim() !== '') headers.Authorization = `Bearer ${s.apiKey.trim()}`
     const res = await fetch(`${base}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(180_000) })
     if (!res.ok) throw new Error(`model HTTP ${res.status}`)
-    const json = (await res.json()) as {
-      choices?: Array<{
-        message?: {
-          content?: unknown
-          tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>
+    const ctype = res.headers.get('content-type') ?? ''
+
+    if (!ctype.includes('text/event-stream')) {
+      // provider ignored stream:true — fall back to the buffered shape
+      const json = (await res.json()) as {
+        choices?: Array<{
+          message?: {
+            content?: unknown
+            tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>
+          }
+        }>
+      }
+      const message = json.choices?.[0]?.message
+      content = typeof message?.content === 'string' ? message.content : ''
+      if (Array.isArray(message?.tool_calls)) {
+        for (const tc of message.tool_calls) {
+          const name = tc.function?.name ?? ''
+          if (name === '') continue
+          let args: Record<string, unknown> = {}
+          try { args = JSON.parse(tc.function?.arguments ?? '{}') as Record<string, unknown> } catch { /* empty args */ }
+          toolCalls.push({ id: tc.id ?? `call-${++seq}`, name, args })
         }
-      }>
+      }
+      return { content, toolCalls }
     }
-    const message = json.choices?.[0]?.message
-    content = typeof message?.content === 'string' ? message.content : ''
-    if (Array.isArray(message?.tool_calls)) {
-      for (const tc of message.tool_calls) {
-        const name = tc.function?.name ?? ''
-        if (name === '') continue
-        let args: Record<string, unknown> = {}
-        try { args = JSON.parse(tc.function?.arguments ?? '{}') as Record<string, unknown> } catch { /* empty args */ }
-        toolCalls.push({ id: tc.id ?? `call-${++seq}`, name, args })
+
+    const assembler = createSseAssembler()
+    const reader = res.body?.getReader()
+    if (!reader) throw new Error('model stream: empty body')
+    const decoder = new TextDecoder()
+    let buf = ''
+    let sawDone = false
+    while (!sawDone) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      let nl = buf.indexOf('\n')
+      while (nl >= 0) {
+        const line = buf.slice(0, nl).replace(/\r$/, '')
+        buf = buf.slice(nl + 1)
+        nl = buf.indexOf('\n')
+        const out = assembler.feed(line)
+        if (out.delta !== '') deps.pushEvent({ kind: 'text-delta', text: out.delta })
+        for (const tc of out.newToolCalls) toolCalls.push(tc)
+        if (out.done) sawDone = true
       }
     }
+    content = assembler.content
+    for (const tc of assembler.finish(++seq)) toolCalls.push(tc)
     return { content, toolCalls }
   }
 
@@ -345,3 +379,82 @@ export function createAgentService(deps: AgentServiceDeps) {
 }
 
 export type AgentService = ReturnType<typeof createAgentService>
+
+// ── R175: OpenAI SSE 组装器(Claude 式流式;纯函数可单测)────────────────────
+
+export interface SseAssemblerResult {
+  delta: string
+  newToolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>
+  done: boolean
+}
+
+export interface SseAssembler {
+  feed: (line: string) => SseAssemblerResult
+  /** Flush accumulated tool-call fragments into complete calls. */
+  finish: (seqStart: number) => Array<{ id: string; name: string; args: Record<string, unknown> }>
+  content: string
+}
+
+/** Incremental parser for `chat/completions` SSE lines (stream:true):
+ *  content deltas stream straight through; tool_call argument fragments
+ *  accumulate per provider index and materialise on finish(). */
+export function createSseAssembler(): SseAssembler {
+  let content = ''
+  const fragments = new Map<number, { id: string; name: string; args: string }>()
+  return {
+    get content() {
+      return content
+    },
+    feed(line: string): SseAssemblerResult {
+      const result: SseAssemblerResult = { delta: '', newToolCalls: [], done: false }
+      const trimmed = line.trim()
+      if (trimmed === '' || !trimmed.startsWith('data:')) return result
+      const payload = trimmed.slice(5).trim()
+      if (payload === '[DONE]') {
+        result.done = true
+        return result
+      }
+      try {
+        const chunk = JSON.parse(payload) as {
+          choices?: Array<{
+            delta?: {
+              content?: string | null
+              tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>
+            }
+            finish_reason?: string | null
+          }>
+        }
+        const choice = chunk.choices?.[0]
+        if (choice?.finish_reason) {
+          result.done = true
+        }
+        const delta = choice?.delta
+        if (typeof delta?.content === 'string' && delta.content !== '') {
+          content += delta.content
+          result.delta = delta.content
+        }
+        if (Array.isArray(delta?.tool_calls)) {
+          for (const tc of delta.tool_calls) {
+            const idx = typeof tc.index === 'number' ? tc.index : 0
+            const frag = fragments.get(idx) ?? { id: '', name: '', args: '' }
+            if (typeof tc.id === 'string' && tc.id !== '') frag.id = tc.id
+            if (typeof tc.function?.name === 'string' && tc.function.name !== '') frag.name += tc.function.name
+            if (typeof tc.function?.arguments === 'string') frag.args += tc.function.arguments
+            fragments.set(idx, frag)
+          }
+        }
+      } catch { /* non-JSON keep-alive line — ignore */ }
+      return result
+    },
+    finish(seqStart: number) {
+      const out: Array<{ id: string; name: string; args: Record<string, unknown> }> = []
+      for (const [, frag] of [...fragments.entries()].sort((a, b) => a[0] - b[0])) {
+        if (frag.name === '') continue
+        let args: Record<string, unknown> = {}
+        try { args = JSON.parse(frag.args === '' ? '{}' : frag.args) as Record<string, unknown> } catch { /* bad args json */ }
+        out.push({ id: frag.id !== '' ? frag.id : `call-${seqStart++}`, name: frag.name, args })
+      }
+      return out
+    },
+  }
+}

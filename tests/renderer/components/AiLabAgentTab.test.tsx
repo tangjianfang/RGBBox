@@ -42,6 +42,10 @@ beforeEach(() => {
   cleanup()
 })
 
+function loadHistoryDirect(): string[] {
+  try { return JSON.parse(localStorage.getItem('rgbbox:agentInputHistory') ?? '[]') as string[] } catch { return [] }
+}
+
 describe('AiLabAgentTab (R172-S2)', () => {
   it('mounts the workbench: profile select, workspace picker, mode select', async () => {
     const { container } = render(<AiLabAgentTab />)
@@ -105,6 +109,37 @@ describe('AiLabAgentTab (R172-S2)', () => {
     expect(opt.disabled).toBe(true)
     second.unmount()
     localStorage.removeItem('rgbbox:agentPrefs')
+  })
+
+  it('R175: streaming deltas accumulate into one bubble; history cache recalls with ↑', async () => {
+    let subscriber: ((ev: unknown) => void) | undefined
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.onAgentEvent = vi.fn().mockImplementation((cb: (ev: unknown) => void) => { subscriber = cb; return () => undefined })
+    rgbbox.agentSend = vi.fn().mockResolvedValue({ ok: true, sessionId: 's-2' })
+    const { container } = render(<AiLabAgentTab />)
+    await waitFor(() => expect(rgbbox.aiGetProfiles).toHaveBeenCalled())
+
+    // pick workspace + type
+    fireEvent.click(container.querySelector('[data-action="agent-pick"]')!)
+    await waitFor(() => expect((container.querySelector('input[data-field="agent-workspace"]') as HTMLInputElement).value).not.toBe(''))
+    const area = container.querySelector('textarea[data-field="agent-input"]') as HTMLTextAreaElement
+    fireEvent.change(area, { target: { value: 'prompt one' } })
+    fireEvent.click(container.querySelector('[data-action="agent-send"]')!)
+
+    // streamed deltas accumulate into a SINGLE streaming bubble
+    subscriber?.({ kind: 'text-delta', text: 'Hel' })
+    subscriber?.({ kind: 'text-delta', text: 'lo w' })
+    await waitFor(() => expect(container.querySelectorAll('.agent-msg-assistant').length).toBe(1))
+    subscriber?.({ kind: 'text', text: 'Hello world' })
+    await waitFor(() => expect(container.querySelector('.agent-msg-assistant')?.textContent).toContain('Hello world'))
+
+    // send finished → prompt cached
+    await waitFor(() => expect(loadHistoryDirect().includes('prompt one')).toBe(true))
+
+    // second prompt via ↑ recall: empty input + ArrowUp at caret 0 → last prompt
+    const area2 = container.querySelector('textarea[data-field="agent-input"]') as HTMLTextAreaElement
+    fireEvent.keyDown(area2, { key: 'ArrowUp', selectionStart: 0 })
+    expect(area2.value).toBe('prompt one')
   })
 
   it('R174.6: no ai8 profile + stored token → auto-creates one', async () => {

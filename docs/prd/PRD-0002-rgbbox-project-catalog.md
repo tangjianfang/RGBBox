@@ -3428,3 +3428,12 @@
 - **R174.9 Agent 设置持久化 + 会话模型记忆 + 停用模型标记（2026-09-26 用户需求「设置自动缓存/切会话用上次的模型」+ 复跑实证站点原文「当前对话选择的模型已停用」）**：①Agent 工作台设置（档案/工作区/审批模式/AI8 模型/停用名单）持久化 `localStorage['rgbbox:agentPrefs']`,重开页面原样恢复(档案校验存在性,失效回落激活档);②`session-meta` 事件携带 workspace,加载历史会话时反向恢复**该会话上次使用的模型与工作区**;③站点「已停用」模型(模板仍挂名但会话接口拒绝)自动记入本地停用名单并持久化,下拉中禁用+标注,不再反复踩;④错误显示修正——内核原文(含站点 detail)原样打印,不再错误套用 i18n 键前缀。测试 +1(prefs 跨卸载恢复 + 停用标记回归,过程中修复测试自身节点失配问题);typecheck 双绿;vitest **127 文件 / 1154 用例全过**。用户侧验证:换一个未停用模型(下拉中无「站点已停用」标注的)重发任务。
 - **R174.10 状态**：✅
 - **R174.11 Agent AI8 模型列表与 AI8 页对齐（2026-09-26 用户反馈「显示的模型列表和 AI8 中模型列表不一样」）**：差异=AI8 页选择器头部有 `matchCurated` 四档精选分组（旗舰/极速/免费/实惠）且每项带「` · N积分`」成本标注,Agent 下拉缺两者。修复:Agent 选中 AI8 档时同源渲染——curated 四组置顶（复用 `ai.ai8.curated.*` i18n）+ provider 分组每项附 integral 标注;停用标记逻辑不变。vitest 127 文件/1154 用例全过。
+
+### R175. Agent/声文体验轮：Claude 式流式 + 提示词历史缓存 + keep-alive + 视觉/自动化测试（2026-09-26 用户指令「视觉review+自动化测试+UI优化+输入输出合理交互+提示词历史缓存；Agent 按 Claude 的方式集成」；实施于 feat/ai-lab-expansion）
+
+- **R175.1 Claude 式流式输出**：内核 OpenAI 兼容档改 `stream:true`——SSE 增量经 `createSseAssembler`（纯函数,content delta 直通 / tool_calls 参数按 index 累积 / finish() 物化 / [DONE]+finish_reason 双终态 / 非 JSON keep-alive 忽略）逐 token 推 `text-delta`;provider 忽略 stream 时回落缓冲式;AI8 桥暂整段返回（标注）。工作台流式气泡（绿色光标动画）+ 工具启动时自动封口。SSE 组装器 4 用例单测。
+- **R175.2 提示词历史缓存**：`localStorage['rgbbox:agentInputHistory']`(cap 30,去重最新在前);输入框 **↑ 从历史回溯 / ↓ 前进,回到最旧之下恢复草稿**(光标在边缘才触发,Claude Code 同语义);Agent 草稿持久化(`agentPrefs.agentDraft`,崩溃/重启不丢);声文课文草稿同理(`rgbbox:voiceDraft`)。
+- **R175.3 keep-alive(后台运行)**：agent/voice 两 Tab 首访后常驻(display:none,R91.2 audio/video 同模式)——**Agent 运行中切走其他 Tab 任务继续跑、transcript 原地不动**,回来自动接上。
+- **R175.4 视觉/自动化测试**：typecheck 双绿;vitest **128 文件 / 1159 用例全过**(+SSE 组装器 4、流式/历史交互 1、既有回归);`ui:snapshot` 重拍基线后 **9/9 GATE PASS**。
+- **R175.5 遗留**：AI8 桥流式(需会话级 SSE 直连,标注后续);agent 工具卡长输出折叠(flash 轮)。
+- **R175.6 状态**：✅（R175.4 全过;实机流式观感待用户以 GLM 档跑一次任务确认）
