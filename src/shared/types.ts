@@ -573,7 +573,7 @@ export interface AgentToolCallView {
 }
 
 export type AgentEvent =
-  | { kind: 'session-meta'; sessionId: string; model: string }
+  | { kind: 'session-meta'; sessionId: string; model: string; workspace?: string }
   | { kind: 'turn-start'; turn: number }
   | { kind: 'text-delta'; text: string }
   | { kind: 'text'; text: string }

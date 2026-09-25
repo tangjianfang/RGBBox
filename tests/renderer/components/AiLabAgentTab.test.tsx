@@ -68,6 +68,45 @@ describe('AiLabAgentTab (R172-S2)', () => {
     ))
   })
 
+  it('R174.9: prefs persist across remount; discontinued model gets marked', async () => {
+    localStorage.setItem('rgbbox:agentPrefs', JSON.stringify({ profileId: 'p1', workspace: 'C:\kept\ws', mode: 'plan', ai8Model: 'anthropic_chat::claude-4.6', disabledModels: [] }))
+    // profileId from prefs must survive when it exists in the list
+    const first = render(<AiLabAgentTab />)
+    await waitFor(() => expect((first.container.querySelector('input[data-field="agent-workspace"]') as HTMLInputElement).value).toBe('C:\kept\ws'))
+    await waitFor(() => expect((first.container.querySelector('select[data-field="agent-mode"]') as HTMLSelectElement).value).toBe('plan'))
+    first.unmount()
+
+    // failure carrying 停用 marks the model locally
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.agentSend = vi.fn().mockResolvedValue({ ok: false, sessionId: '', error: 'ai8: network — 当前对话选择的模型已停用，请重新选择' })
+    const second = render(<AiLabAgentTab />)
+    // async profile load must settle first (one-time init sets p1 from prefs)
+    await waitFor(() => expect((second.container.querySelector('select[data-field="agent-profile"]') as HTMLSelectElement).value).toBe('p1'))
+    fireEvent.change(second.container.querySelector('select[data-field="agent-profile"]')!, { target: { value: 'p2' } })
+    // pick workspace FIRST (its re-render replaces nodes captured earlier)
+    fireEvent.click(second.container.querySelector('[data-action="agent-pick"]')!)
+    await waitFor(() => expect((second.container.querySelector('input[data-field="agent-workspace"]') as HTMLInputElement).value).not.toBe(''))
+    const modelSel = await waitFor(() => {
+      const el = second.container.querySelector('select[data-field="agent-ai8-model"]') as HTMLSelectElement
+      expect(el).not.toBeNull()
+      return el
+    })
+    await waitFor(() => expect(modelSel.options.length).toBeGreaterThan(1))
+    fireEvent.change(modelSel, { target: { value: 'anthropic_chat::claude-4.6' } })
+    fireEvent.change(second.container.querySelector('textarea[data-field="agent-input"]')!, { target: { value: 'go' } })
+    fireEvent.click(second.container.querySelector('[data-action="agent-send"]')!)
+    await waitFor(() => {
+      const prefs = JSON.parse(localStorage.getItem('rgbbox:agentPrefs')!) as { disabledModels?: string[] }
+      expect(prefs.disabledModels).toContain('anthropic_chat::claude-4.6')
+    })
+    // the option is disabled in the picker
+    const opt = [...(second.container.querySelector('select[data-field="agent-ai8-model"]') as HTMLSelectElement).options]
+      .find((o) => o.value === 'anthropic_chat::claude-4.6') as HTMLOptionElement
+    expect(opt.disabled).toBe(true)
+    second.unmount()
+    localStorage.removeItem('rgbbox:agentPrefs')
+  })
+
   it('R174.6: no ai8 profile + stored token → auto-creates one', async () => {
     localStorage.setItem('rgbbox:ai8Token', 'tk-xyz')
     const rgbbox = setupRendererMocks() as unknown as Record<string, ReturnType<typeof vi.fn>>

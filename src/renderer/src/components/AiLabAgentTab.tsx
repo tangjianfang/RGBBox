@@ -19,12 +19,35 @@ interface TranscriptItem { kind: 'user' | 'assistant' | 'tool' | 'approval'; tex
 /** AI8 聊天模型模板(公开、无需 token)——成功后模块级缓存,切页秒开。 */
 let ai8ModelCache: Ai8Model[] | null = null
 
+// R174.9: workbench prefs persist across restarts (profile/workspace/mode/
+// last ai8 model + site-discontinued models marked locally).
+const PREFS_KEY = 'rgbbox:agentPrefs'
+interface AgentPrefs {
+  profileId?: string
+  workspace?: string
+  mode?: AgentMode
+  ai8Model?: string
+  disabledModels?: string[]
+}
+function loadPrefs(): AgentPrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY)
+    return raw ? (JSON.parse(raw) as AgentPrefs) : {}
+  } catch {
+    return {}
+  }
+}
+function savePrefs(p: AgentPrefs): void {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)) } catch { /* best-effort */ }
+}
+
 export function AiLabAgentTab(): JSX.Element {
   const { t } = useI18n()
+  const prefs = useMemo(() => loadPrefs(), [])
   const [profiles, setProfiles] = useState<AiProfile[]>([])
   const [profileId, setProfileId] = useState('')
-  const [workspace, setWorkspace] = useState('')
-  const [mode, setMode] = useState<AgentMode>('standard')
+  const [workspace, setWorkspace] = useState(prefs.workspace ?? '')
+  const [mode, setMode] = useState<AgentMode>(prefs.mode ?? 'standard')
   const [input, setInput] = useState('')
   const [running, setRunning] = useState(false)
   const [items, setItems] = useState<TranscriptItem[]>([])
@@ -33,16 +56,26 @@ export function AiLabAgentTab(): JSX.Element {
   const [sessions, setSessions] = useState<AgentSessionMeta[]>([])
   const [ai8Models, setAi8Models] = useState<Ai8Model[]>(ai8ModelCache ?? [])
   const [ai8ModelError, setAi8ModelError] = useState(false)
-  const [ai8ModelValue, setAi8ModelValue] = useState('')
+  const [ai8ModelValue, setAi8ModelValue] = useState(prefs.ai8Model ?? '')
+  const [disabledModels, setDisabledModels] = useState<string[]>(prefs.disabledModels ?? [])
   const sessionIdRef = useRef('')
   const logRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    savePrefs({ profileId: profileId || undefined, workspace: workspace || undefined, mode, ai8Model: ai8ModelValue || undefined, disabledModels })
+  }, [profileId, workspace, mode, ai8ModelValue, disabledModels])
 
   const refreshSessions = useCallback(() => {
     void window.rgbbox.agentSessionsList().then(setSessions).catch(() => setSessions([]))
   }, [])
 
+  // R174.9: profiles may refetch — the prefs restore is a ONE-TIME init and
+  // must never clobber a selection the user made in this session.
+  const profileInitRef = useRef(false)
   useEffect(() => {
+    if (profileInitRef.current) return
     void window.rgbbox.aiGetProfiles().then(async (c) => {
+      profileInitRef.current = true
       let list = c.profiles
       // R174.6: AI8 页登录过的 token 一直没落到档案(syncTokenToProfiles 只更新
       // 不创建)——Agent 侧补齐:无 ai8 档案 + 有存储 token → 自动建一个。
@@ -55,10 +88,11 @@ export function AiLabAgentTab(): JSX.Element {
         } catch { /* manual profile creation stays available */ }
       }
       setProfiles(list)
-      setProfileId(c.activeId)
+      // R174.9: restore the LAST-USED profile when it still exists.
+      setProfileId(prefs.profileId && list.some((p) => p.id === prefs.profileId) ? prefs.profileId : c.activeId)
     }).catch(() => { /* offline */ })
     refreshSessions()
-  }, [refreshSessions])
+  }, [refreshSessions, prefs.profileId])
 
   const activeProfile = useMemo(() => profiles.find((p) => p.id === profileId) ?? null, [profiles, profileId])
   const isAi8 = activeProfile?.baseUrl.startsWith('ai8://') === true
@@ -125,7 +159,15 @@ export function AiLabAgentTab(): JSX.Element {
     // R174.6: AI8 档附带当前选择的站点模型
     const modelOverride = isAi8 && effectiveAi8Model !== '' ? effectiveAi8Model : undefined
     const out = await window.rgbbox.agentSend({ text, profileId, workspace, mode, sessionId: sessionIdRef.current, modelOverride })
-    if (!out.ok && out.error && out.error !== 'error') setError(out.error)
+    if (!out.ok && out.error && out.error !== 'error') {
+      setError(out.error)
+      // R174.9: the site discontinues models while still listing them in the
+      // public template ("当前对话选择的模型已停用") — mark locally so the
+      // picker disables it and the user stops stepping on the same rake.
+      if (modelOverride !== undefined && /停用|discontinued|deactivated/i.test(out.error)) {
+        setDisabledModels((list) => (list.includes(modelOverride) ? list : [...list, modelOverride]))
+      }
+    }
     if (!out.ok && out.sessionId === '') setRunning(false)
   }, [input, running, workspace, profileId, mode, isAi8, effectiveAi8Model])
 
@@ -143,6 +185,15 @@ export function AiLabAgentTab(): JSX.Element {
     void window.rgbbox.agentSessionLoad(id).then((events) => {
       const restored: TranscriptItem[] = []
       let lastTool: ToolCard | null = null
+      // R174.9: continue with the model + workspace this session last used.
+      for (let i = events.length - 1; i >= 0; i -= 1) {
+        const ev = events[i]
+        if (ev.kind === 'session-meta') {
+          if (ev.workspace) setWorkspace(ev.workspace)
+          if (isAi8 && ev.model !== '') setAi8ModelValue(ev.model)
+          break
+        }
+      }
       for (const ev of events) {
         if (ev.kind === 'user') restored.push({ kind: 'user', text: ev.text })
         if (ev.kind === 'text') restored.push({ kind: 'assistant', text: ev.text })
@@ -206,7 +257,9 @@ export function AiLabAgentTab(): JSX.Element {
               {ai8Groups.map((g) => (
                 <optgroup key={g.provider} label={g.provider}>
                   {g.models.map((m) => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
+                    <option key={m.value} value={m.value} disabled={disabledModels.includes(m.value)}>
+                      {m.label}{disabledModels.includes(m.value) ? `（${t('ai.agent.modelDiscontinued')}）` : ''}
+                    </option>
                   ))}
                 </optgroup>
               ))}
@@ -272,7 +325,13 @@ export function AiLabAgentTab(): JSX.Element {
           </div>
         )}
 
-        {error && <p className="ai-hint-line">{t(`ai.agent.err.${error}` as Parameters<typeof t>[0]) || error}</p>}
+        {error && (() => {
+          // R174.9: known keys translate; raw kernel messages (e.g. "ai8:
+          // network — 当前对话选择的模型已停用…") print as-is.
+          const key = `ai.agent.err.${error}` as Parameters<typeof t>[0]
+          const label = t(key)
+          return <p className="ai-hint-line">{label === key ? error : label}</p>
+        })()}
 
         <div className="agent-input-row">
           <textarea

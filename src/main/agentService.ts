@@ -255,7 +255,7 @@ export function createAgentService(deps: AgentServiceDeps) {
       }
       run.messages.push({ role: 'user', content: a.text })
 
-      emit({ kind: 'session-meta', sessionId, model: settings.model })
+      emit({ kind: 'session-meta', sessionId, model: settings.model, workspace: a.workspace })
       emit({ kind: 'user', text: a.text })
       try {
         for (let turn = 1; turn <= AGENT_MAX_TURNS; turn += 1) {
