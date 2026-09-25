@@ -2,6 +2,7 @@
 
 **日期**:2026-09-25　**输入**:用户指令「将最近比较火的 pi coding agent 集成到 AI 实验室中的 AI8 模块,借助当前的 AI 模型能力实现 agent 功能」
 **性质**:只读评估 + 方案设计,`src/` 0 diff　**决策**:三方案对比待拍板后立项实施(PR R172)
+**决策状态(2026-09-25 更新)**:✅ **四项已拍板**(用户授权 AI 代决,PRD R172.10)——①方案 A;②UI 独立第 8 Tab「Agent」;③写前 `.bak` 备份要;④AI8 档位以「实验」标识进入。详见 §8 决策记录。
 
 ---
 
@@ -46,7 +47,7 @@
 
 ```mermaid
 sequenceDiagram
-    participant U as Agent 工作台(AI8 Tab 内)
+    participant U as Agent 工作台(独立 Agent Tab)
     participant M as Main:agentService
     participant P as pi SDK(UtilityProcess)
     participant T as 审批门禁工具组
@@ -72,7 +73,7 @@ sequenceDiagram
 
 **模型接入映射**:GLM/DeepSeek/OpenAI/Kimi/Qwen → pi-ai 对应供应商(或 B 案:现有管线 + tools 透传);Bedrock → 现有 SigV4 档位;**AI8 → S3 ReAct 桥(界面标注「实验」)**。ollama 档位 v1 不承诺(A 案 pi-ai 未列出)。
 
-**UI 落位**(按用户指令在 AI8 模块内):AI8 Tab 顶部双模式切换「AI8 工作台 / Agent 工作台」;若与 AI8 内嵌站点布局冲突,备选为独立第 8 Tab `agent`——拍板时定。
+**UI 落位(已拍板 ②)**:**独立第 8 Tab「Agent」**(AI 实验室内,与 AI8 Tab 平级)。理由:AI8 workbench 是全屏 flush 布局 + 内嵌站点会话(`ai-lab-flush`),双模式切换会破坏其布局与登录态;独立 Tab 零冲突,且与 AI8 共享 provider/凭据无任何成本——agent 档位下拉默认含「AI8(实验)」,选它即走 S3 ReAct 桥。
 
 ## 5. 安全与权限设计(对齐零遥测纪律)
 
@@ -105,15 +106,19 @@ sequenceDiagram
 | R-4 | prompt injection(工作区文件内容诱导) | 审批层不分来源兜底;文档明示残余风险 |
 | R-5 | Windows 命令执行无容器隔离 | denylist+审批+工作区钳制;容器化不立项(后续可选 WSL) |
 | R-6 | agent 循环放大 token 消耗 | 会话轮数/上下文上限 + 成本提示行 |
-| R-7 | 中断时半成品写入 | edit 原子写(临时文件+rename);「写前备份 .bak」列为待拍板项 |
+| R-7 | 中断时半成品写入 | **已决策(③)**:edit 原子写(临时文件+rename)+ 写前生成 `.bak` 备份(同目录,会话内旧 .bak 覆盖只留最新一份) |
 | R-8 | 新依赖进入 main 包的体积与 electron-builder files 核查 | S4 验收项(现网 onnxruntime 剪枝先例) |
 
-## 8. 决策请求(拍板清单)
+## 8. 决策记录(2026-09-25 拍板,用户授权 AI 代决;PRD R172.10)
 
-1. 方案:A(pi SDK,推荐)还是 B(自研内核)?
-2. UI 落位:AI8 Tab 内双模式(符合原始指令)还是独立第 8 Tab?
-3. R-7 写前备份策略:要 `.bak` 还是纯原子写?
-4. AI8 档位以「实验」标识进入,是否接受?
+| # | 决策项 | 结论 | 理由 |
+|---|---|---|---|
+| ① | 方案 A / B | **A:引 pi SDK**,S0 spike 为门,B 自研内核兜底 | agent 循环健壮性现成,GLM(ZAI)/Bedrock 直驱最快;spike 失败无缝切 B,S1-S4 不变 |
+| ② | UI 落位 | **独立第 8 Tab「Agent」**(AI 实验室内,与 AI8 平级) | AI8 workbench 全屏 flush 布局+内嵌站点会话,双模式破坏布局与登录态;独立 Tab 与 AI8 共享凭据零成本,agent 档位下拉默认含「AI8(实验)」 |
+| ③ | 写前 `.bak` 备份 | **要** | agent 编辑的信任成本低成本高回报;与原子写并存(.bak 会话内只留最新一份) |
+| ④ | AI8 档位「实验」标识 | **接受** | ReAct 桥依赖模型遵循度,实验标注管理预期;失败仅影响 AI8 档位 |
+
+**后续**:实施排期待定(当前优先级让位 R173 声文 Tab);开工时按 §6 分期,S0 spike 首验 R-1(pi-ai 对 open.bigmodel.cn 覆盖)。
 
 ---
 

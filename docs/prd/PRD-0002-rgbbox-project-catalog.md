@@ -3390,3 +3390,16 @@
 - **R172.7 待拍板**：①方案 A/B ②UI 落位（AI8 Tab 双模式 vs 独立 Tab）③写前 .bak 备份策略 ④AI8 档位以「实验」进入。
 - **R172.8 方案全文**：[`2026-09-25-pi-agent-integration-plan.md`](../reviews/2026-09-25-pi-agent-integration-plan.md)
 - **R172.9 状态**：🔄（规划条款待用户拍板；S0-S4 实施轮另行立项）
+
+- **R172.10 用户裁决（2026-09-25，授权 AI 代决四项）**：①方案 **A**（pi SDK 起步，S0 spike 为门，B 自研内核兜底）；②UI 落位：**独立第 8 Tab「Agent」**（理由：AI8 workbench 是全屏 flush 布局+内嵌站点，双模式切换破坏其会话布局；独立 Tab 与 AI8 档位共享 provider/凭据零成本，agent 档位下拉默认含 AI8-实验）；③写前 `.bak` 备份：**要**（agent 信任成本低成本高回报；原子写照做）；④AI8 档位以「实验」标识进入：**接受**。
+- **R172.11 状态补充**：规划拍板完成；S0-S4 实施轮待排期（当前优先级低于 R173 声文 Tab）。
+
+### R173. AI 实验室新增「声文」Tab：VoiceScribe 双向语音工作站 P1 骨架（2026-09-25 用户指令「给当前AI实验室添加一个新的 label 实现它，技术方案已讨论：声文VoiceScribe-技术方案.md v2.1 终稿」）
+
+- **R173.0 方案适配**：VoiceScribe 方案为独立产品架构（Electron+SQLite+kokoro-js+sherpa-onnx），嵌入 AI 实验室作第 8 Tab `voice`；分期切片——**本条=P1 骨架**（零新依赖、立即可用），Kokoro 离线引擎/模型下载（复用 modelDownload 管道）/worker 合成/WAV 导出/ASR 按 R173-B 另行 spike 立项（方案 ADR-001/005/006 路径不变）。
+- **R173.1 TextPipeline（纯函数）**：`domain/voiceScribe.ts`——文本规范化（空白折叠）+ 中英分句（。！？；!?;\n 及省略号聚合）+ **词典钉音替换**（词→重拼写，朗读前预处理，方案 ADR-003 的词典层在系统引擎下的等价实现）。
+- **R173.2 朗读播放器**：Web Speech API（`speechSynthesis`）句级队列——当前句高亮跟读、点击句子跳播、播放/暂停/停止、语速 0.5-2.0、语言自动检测（CJK 判定）；引擎标注「系统（离线 Kokoro 引擎 R173-B 接入）」。`speechSynthesis` 不可用（测试环境）时降级提示。
+- **R173.3 发音词典**：`localStorage['rgbbox:voiceLexicon']` 持久化 {word→respell}；Tab 内编辑器（增/删/列表）；替换仅作用于朗读文本，不改动原文显示。
+- **R173.4 i18n**：`ai.lab.tab.voice` + `ai.voice.*` ~14 键 EN/ZH 对称。
+- **R173.5 验收点**：①typecheck + vitest 全绿（新 domain 单测：分句/规范化/词典替换/语言检测；组件挂载测试）；②i18n 对称过；③`ui:snapshot` ai 视图重拍基线 GATE PASS。
+- **R173.6 状态**：🔄（实施中）
