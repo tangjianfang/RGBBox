@@ -181,7 +181,7 @@ export function createAgentService(deps: AgentServiceDeps) {
       // ai8Provider(会话管理/凭据/自动登录都在其内);工具调用由
       // REACT_SYSTEM_PROMPT 文本约定,这里只负责解析 ```tool``` 块。
       const out = await ai8ChatCompletion(run!.messages, s)
-      if (!out.ok) throw new Error(out.hint ? `ai8: ${out.hint}` : 'ai8: request failed')
+      if (!out.ok) throw new Error(`ai8: ${out.hint ?? 'failed'}${out.detail ? ' — ' + out.detail : ''}`)
       content = out.text
       const parsed = parseReactToolCall(content)
       if (parsed) toolCalls.push({ id: `react-${++seq}`, name: parsed.tool, args: parsed.args })

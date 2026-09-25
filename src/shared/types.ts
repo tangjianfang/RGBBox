@@ -474,6 +474,9 @@ export interface AiChatOutcome {
   text: string
   hint?: AiErrorHint
   latencyMs: number
+  /** R174.8: raw provider/site message (e.g. AI8 积分不足 / 模型不可用) — the
+   *  hint taxonomy alone flattened every non-auth failure into "network". */
+  detail?: string
 }
 
 // ── R89: AI Lab named profiles ────────────────────────────────────────────
