@@ -45,12 +45,14 @@ export function applyLexicon(text: string, entries: LexiconEntry[]): string {
   return out
 }
 
-/** CJK 占比过半判中文，否则英文（系统引擎 lang 映射用）。 */
+/** CJK 占比过半判中文,否则英文(系统引擎 lang 映射用)。CJK 每字符信息量
+ *  高于拉丁字母,按 1.5× 加权——「混合 mixed 中文」判中文,零星汉字的英文
+ *  句仍判英文。 */
 export function detectLang(text: string): 'zh' | 'en' {
   const cjk = text.match(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g)?.length ?? 0
   const letters = text.match(/[A-Za-z]/g)?.length ?? 0
   if (cjk === 0 && letters === 0) return 'zh'
-  return cjk >= letters ? 'zh' : 'en'
+  return cjk * 1.5 >= letters ? 'zh' : 'en'
 }
 
 /** localStorage 词典读写（损坏/缺失回退空表）。 */

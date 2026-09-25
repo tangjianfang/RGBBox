@@ -7,6 +7,8 @@ import { AiLabAudioTab } from './AiLabAudioTab'
 import { AiLabAi8Tab } from './AiLabAi8Tab'
 import { AiLabVisionTab } from './AiLabVisionTab'
 import { AiLabSvgTab } from './AiLabSvgTab'
+import { AiLabVoiceTab } from './AiLabVoiceTab'
+import { AiLabAgentTab } from './AiLabAgentTab'
 
 interface ChatTurn extends AiChatMessage {
   latencyMs?: number
@@ -19,7 +21,7 @@ type ConnState =
   | { kind: 'ok'; latencyMs: number; model: string }
   | { kind: 'fail'; hint?: AiErrorHint }
 
-type AiLabTab = 'config' | 'chat' | 'ocr' | 'audio' | 'vision' | 'svg' | 'ai8'
+type AiLabTab = 'config' | 'chat' | 'ocr' | 'audio' | 'vision' | 'svg' | 'voice' | 'agent' | 'ai8'
 
 /** R145: Bedrock form mirror — sessionToken is a plain string here (always
  *  controlled); it is dropped from the saved profile when empty. */
@@ -278,7 +280,7 @@ export function AiLabView(): JSX.Element {
     // scroll + a pinned composer) instead of growing the whole page.
     <div className={tab === 'ai8' ? 'ai-lab ai-lab-flush' : 'ai-lab'}>
       <div className="ai-tabs" role="tablist" aria-label="AI Lab sections">
-        {(['config', 'chat', 'ocr', 'audio', 'vision', 'svg', 'ai8'] as const).map((key) => (
+        {(['config', 'chat', 'ocr', 'audio', 'vision', 'svg', 'voice', 'agent', 'ai8'] as const).map((key) => (
           <button
             key={key}
             type="button"
@@ -501,6 +503,12 @@ export function AiLabView(): JSX.Element {
 
       {/* R171: pure-SVG pelican-on-a-bicycle animation showcase */}
       {tab === 'svg' && <AiLabSvgTab />}
+
+      {/* R173: VoiceScribe — offline dual-direction speech workstation (P1) */}
+      {tab === 'voice' && <AiLabVoiceTab />}
+
+      {/* R172: coding-agent workbench (kernel engine + approval loop) */}
+      {tab === 'agent' && <AiLabAgentTab />}
 
       {tab === 'ai8' && <AiLabAi8Tab />}
     </div>

@@ -3403,3 +3403,13 @@
 - **R173.4 i18n**：`ai.lab.tab.voice` + `ai.voice.*` ~14 键 EN/ZH 对称。
 - **R173.5 验收点**：①typecheck + vitest 全绿（新 domain 单测：分句/规范化/词典替换/语言检测；组件挂载测试）；②i18n 对称过；③`ui:snapshot` ai 视图重拍基线 GATE PASS。
 - **R173.6 状态**：🔄（实施中）
+
+- **R172.12 分支实施记录（2026-09-25，`feat/ai-lab-expansion`，承载 S0-S3）**：
+  - **S0（A2）静态实证**：`@earendil-works/pi-coding-agent` + `kokoro-js` 安装成功；pi-ai 供应商目录实证 **`zai-coding-cn` provider baseUrl = `https://open.bigmodel.cn/api/coding/paas/v4`**（正是智谱国内站,env `ZAI_CODING_CN_API_KEY`），模型含 **glm-5.3 / glm-5.3-flash / glm-5.3-highspeed / glm-4.6v**——R-1（pi-ai 对 bigmodel.cn 覆盖）静态层面成立；`createAgentSession({cwd,model,customTools,noTools})` 类型面核实。动态 go/no-go harness：`scripts/pi-spike.mjs`（双模型冒烟任务,待用户以 API key 实跑出分界线,含 flash 对比=档位标注依据）。
+  - **S1 内核（A3）**：v1 运行时采用 **kernel 内核**（直接复用现有 profile 体系含 key 解密与三类 provider 分发；pi 引擎保留为可替换插槽,避免 SDK 会话/凭据体系与 app 档位解耦的二次映射）——`src/main/agentService.ts`（循环/审批三档/会话 JSONL 恢复/审计 `logs/agent-audit.jsonl`/24 轮上限/取消）+ `src/main/agentTools.ts`（6 工具:read/write/edit/bash/list/glob;工作区钳制、denylist、120s 超时、64KB 截断、`.bak`+原子写=决策③）。
+  - **S2 工作台（A4）**：独立 Tab `agent`（决策②）——`AiLabAgentTab.tsx`：档案下拉（ai8 档显示「实验」=决策④）/工作区选择/审批模式三档/流式 transcript（工具卡片+diff 预览）/审批条（本次/总是/拒绝）/会话列表恢复；IPC `agentSend/Cancel/ApprovalRespond/SessionsList/SessionLoad/PickWorkspace` + 推送 `agentEvent`；preload 桥 + i18n 20 键。
+  - **S3 AI8 ReAct 桥（A6）**：ai8:// 档位自动切文本协议（`REACT_SYSTEM_PROMPT` + `parseReactToolCall` 取最后 ```tool``` JSON 块,4 用例单测）,界面「实验」提示。
+  - **门禁**：typecheck 双配置绿;vitest **127 文件 / 1151 用例全过**（新增 agentTools 7 例/agentService+ttsWav 8 例/AgentTab 3 例/VoiceTab 3 例/AiLabView 9-tab）;`ui:snapshot` 重拍基线后 **9/9 GATE PASS×2 全确定性**（中途 0.45% 超限定位为陈旧 out/,重建后归零）。
+  - **遗留（转 C1/B）**：pi 引擎动态验证（待 key）、Windows `rm -rf C:\` 类路径的 denylist 补充（已记单测注释）、打包体积核查（kokoro-js+transformers 入包,R-8）。
+
+- **R173.7 S1/S2 实施记录（2026-09-25，`feat/ai-lab-expansion`）**：S1 ✅——`AiLabVoiceTab.tsx`（第 8 Tab `voice`「声文」：文本区/分句预览点击跳读/系统引擎句级队列+当前句高亮/语速/中英自动检测（CJK 1.5× 加权）/词典钉音编辑器 localStorage 持久化/`speechSynthesis` 缺失降级提示）+ domain 6 用例 + 组件 3 用例 + i18n 18 键。S2 代码完成——`ttsService.ts`（kokoro-js 动态加载/HF_ENDPOINT→hf-mirror/缓存 userData/models/hf/实例常驻/失败回落系统引擎不阻塞）+ `ttsWav.ts`（纯 WAV 编码 3 用例）+ `ttsSynthesize/ttsExport`（原生另存对话框）IPC+preload；**首次合成需下载 ~86MB 模型,真机音频质量验证待用户首跑**（同 vision 模型先例,静息门禁不覆盖）。

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
 import { validateChatMessages } from '../shared/aiChatValidation'
-import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
+import type { AgentEvent, AgentSendArgs, AgentSessionMeta, TtsEngineStatus, AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -328,6 +328,28 @@ const api = {
     ipcRenderer.invoke(ipcChannels.videoOpenFiles),
   videoOpenFolder: (): Promise<Array<{ path: string; name: string; folder: string }>> =>
     ipcRenderer.invoke(ipcChannels.videoOpenFolder),
+
+  // ── R172: coding-agent workbench ────────────────────────────────────────────
+  agentSend: (args: AgentSendArgs): Promise<{ ok: boolean; sessionId: string; error?: string }> =>
+    ipcRenderer.invoke(ipcChannels.agentSend, args),
+  agentCancel: (): Promise<{ ok: boolean }> => ipcRenderer.invoke(ipcChannels.agentCancel),
+  agentApprovalRespond: (id: string, decision: 'once' | 'always' | 'deny'): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(ipcChannels.agentApprovalRespond, { id, decision }),
+  agentSessionsList: (): Promise<AgentSessionMeta[]> => ipcRenderer.invoke(ipcChannels.agentSessionsList),
+  agentSessionLoad: (id: string): Promise<AgentEvent[]> => ipcRenderer.invoke(ipcChannels.agentSessionLoad, id),
+  agentPickWorkspace: (): Promise<string | null> => ipcRenderer.invoke(ipcChannels.agentPickWorkspace),
+  onAgentEvent: (callback: (ev: AgentEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, ev: AgentEvent): void => callback(ev)
+    ipcRenderer.on(ipcChannels.agentEvent, handler)
+    return () => ipcRenderer.off(ipcChannels.agentEvent, handler)
+  },
+
+  // ── R173-S2: offline TTS ────────────────────────────────────────────────────
+  ttsEngineStatus: (): Promise<TtsEngineStatus> => ipcRenderer.invoke(ipcChannels.ttsEngineStatus),
+  ttsSynthesize: (segments: string[], opts?: { voice?: string; speed?: number }): Promise<{ ok: boolean; wav?: ArrayBuffer; sampleRate?: number; error?: string }> =>
+    ipcRenderer.invoke(ipcChannels.ttsSynthesize, { segments, ...opts }),
+  ttsExport: (segments: string[], opts?: { voice?: string; speed?: number }): Promise<{ ok: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke(ipcChannels.ttsExport, { segments, ...opts }),
 
   // System display list (for multi-monitor spectrum pop-out)
   getDisplays: (): Promise<Array<{ id: number; label: string; bounds: { x: number; y: number; width: number; height: number }; primary: boolean }>> =>

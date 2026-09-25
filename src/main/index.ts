@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, safeStorage, screen, session, shell, Tray } from 'electron'
 import { access, mkdir, readdir, stat, unlink } from 'node:fs/promises'
-import { createReadStream, createWriteStream, statSync } from 'node:fs'
+import { createReadStream, createWriteStream, statSync, writeFileSync } from 'node:fs'
 import { get as httpGet } from 'node:http'
 import { get as httpsGet } from 'node:https'
 import { pipeline } from 'node:stream/promises'
@@ -14,7 +14,7 @@ import { ipcChannels } from '../shared/ipc'
 import { getLogger, initLogger } from '../shared/logger'
 import { MODELS_MANIFEST } from '../shared/modelsManifest'
 import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
-import type { AiProfile, CaptureEntry, DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, RgbFrame, ScreenCaptureRequest } from '../shared/types'
+import type { AgentEvent, AiProfile, CaptureEntry, DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
 import { runPerfSelfTest } from './perfSelfTest'
 import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOverlay, getAudioVizWindowIds, getOverlayDisplayIds, openAudioVizWindow, openOverlay, pushFrameToDisplay, pushFrameToOverlays, reopenOverlay, setOverlayClosedCallback } from './overlayManager'
@@ -30,6 +30,8 @@ import { loadSystemSettings, saveSystemSettings, type SystemSettings } from './s
 import { ai8AutoLoginWith, clearAi8Credentials, loadAi8Credentials, saveAi8Credentials } from './ai8Credentials'
 import { setRapidOcrRunner } from './ocrService'
 import { cleanupOcrText, translateOcrText, chatCompletion, testConnection, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
+import { createAgentService } from './agentService'
+import { ttsEngineStatus, ttsSynthesize } from './ttsService'
 import { type SafeStorageCodec } from './aiSecretCodec'
 import { decodeProfileSecrets, encodeProfileSecrets, sanitizeAws } from './aiProfileStore'
 import { autoProfileName, mergePreservedKeys, mirrorLegacy, normalizeAiStore, type AiStoreShape } from './aiProfileStore'
@@ -735,6 +737,79 @@ function registerIpc(): void {
     if (messages === null) return { ok: false, text: '', hint: 'parse', latencyMs: 0 }
     const s = await loadSystemSettings()
     return chatCompletion(messages, asAiSettings(s.ai), { temperature: 0.7 })
+  })
+
+  // ── R172: coding-agent workbench (kernel engine + approval loop) ─────────
+  const agentPush = (ev: AgentEvent): void => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ipcChannels.agentEvent, ev)
+  }
+  const agentSvc = createAgentService({
+    resolveSettings: async (profileId) => {
+      const { profiles, activeId } = await loadAiStore()
+      const target = profiles.find((p) => p.id === (profileId && profileId !== '' ? profileId : activeId))
+        ?? profiles.find((p) => p.id === activeId)
+      if (!target) return { ...DEFAULT_AI_SETTINGS }
+      const { profile } = decodeProfileSecrets(target, safeStorageCodec)
+      return { baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, ...(profile.aws ? { aws: profile.aws } : {}) }
+    },
+    pushEvent: agentPush,
+    sessionsDir: join(app.getPath('userData'), 'agent-sessions'),
+    auditPath: join(app.getPath('userData'), 'logs', 'agent-audit.jsonl'),
+  })
+  ipcMain.handle(ipcChannels.agentSend, async (_event, p: unknown) => {
+    const a = p as { text?: unknown; profileId?: unknown; workspace?: unknown; mode?: unknown; sessionId?: unknown }
+    if (typeof a.text !== 'string' || a.text.trim() === '' || typeof a.workspace !== 'string' || a.workspace.trim() === '') {
+      return { ok: false, sessionId: '', error: 'parse' }
+    }
+    const mode = a.mode === 'plan' || a.mode === 'trust' ? a.mode : 'standard'
+    return agentSvc.send({ text: a.text, profileId: typeof a.profileId === 'string' ? a.profileId : undefined, workspace: a.workspace, mode, sessionId: typeof a.sessionId === 'string' ? a.sessionId : undefined })
+  })
+  ipcMain.handle(ipcChannels.agentCancel, () => { agentSvc.cancel(); return { ok: true } })
+  ipcMain.handle(ipcChannels.agentApprovalRespond, (_event, p: unknown) => {
+    const a = p as { id?: unknown; decision?: unknown }
+    if (typeof a.id === 'string' && (a.decision === 'once' || a.decision === 'always' || a.decision === 'deny')) {
+      agentSvc.respondApproval(a.id, a.decision)
+    }
+    return { ok: true }
+  })
+  ipcMain.handle(ipcChannels.agentSessionsList, () => agentSvc.sessionsList())
+  ipcMain.handle(ipcChannels.agentSessionLoad, (_event, p: unknown) => {
+    const id = typeof p === 'string' ? p : (p as { id?: unknown })?.id
+    return agentSvc.sessionLoad(typeof id === 'string' ? id : '')
+  })
+  ipcMain.handle(ipcChannels.agentPickWorkspace, async () => {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+  })
+
+  // ── R173-S2: offline TTS (Kokoro) + WAV export ─────────────────────────────
+  ipcMain.handle(ipcChannels.ttsEngineStatus, () => ttsEngineStatus())
+  ipcMain.handle(ipcChannels.ttsSynthesize, async (_event, p: unknown) => {
+    const a = p as { segments?: unknown; voice?: unknown; speed?: unknown }
+    if (!Array.isArray(a.segments) || a.segments.some((x) => typeof x !== 'string')) return { ok: false, error: 'parse' }
+    return ttsSynthesize(a.segments as string[], {
+      voice: typeof a.voice === 'string' ? a.voice : undefined,
+      speed: typeof a.speed === 'number' ? a.speed : undefined,
+      cacheDir: join(app.getPath('userData'), 'models'),
+    })
+  })
+  ipcMain.handle(ipcChannels.ttsExport, async (_event, p: unknown) => {
+    const a = p as { segments?: unknown; voice?: unknown; speed?: unknown }
+    if (!Array.isArray(a.segments)) return { ok: false, error: 'parse' }
+    const out = await ttsSynthesize(a.segments as string[], {
+      voice: typeof a.voice === 'string' ? a.voice : undefined,
+      speed: typeof a.speed === 'number' ? a.speed : undefined,
+      cacheDir: join(app.getPath('userData'), 'models'),
+    })
+    if (!out.ok || !out.wav) return { ok: false, error: out.error ?? 'synthesis' }
+    const target = await dialog.showSaveDialog({
+      title: 'Export WAV',
+      defaultPath: `voicescribe-${new Date().toISOString().slice(0, 10)}.wav`,
+      filters: [{ name: 'WAV audio', extensions: ['wav'] }],
+    })
+    if (target.canceled || target.filePath === '') return { ok: false, error: 'cancelled' }
+    writeFileSync(target.filePath, out.wav)
+    return { ok: true, path: target.filePath }
   })
 
   // R90 P1: audio AI test lab (VAD + AST). pcm = mono Float32Array @16kHz.
