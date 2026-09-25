@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import { Bot, CheckCheck, FolderOpen, History, Play, Send, ShieldCheck, Square, X } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { MarkdownView } from '../ai8/markdown'
-import { groupModelsByProvider } from '../ai8/localStore'
+import { groupModelsByProvider, matchCurated } from '../ai8/localStore'
 import { Ai8Client, readStoredToken, type Ai8Model } from '../../../shared/ai8Client'
 import type { AgentApprovalRequest, AgentEvent, AgentMode, AgentSessionMeta, AiProfile } from '../../../shared/types'
 
@@ -112,6 +112,9 @@ export function AiLabAgentTab(): JSX.Element {
   }, [isAi8])
 
   const ai8Groups = useMemo(() => groupModelsByProvider(ai8Models), [ai8Models])
+  // R174.11: mirror the AI8 page picker — curated groups (flagship/fast/free/budget)
+  // on top + integral cost suffix, so both lists read the same.
+  const ai8Curated = useMemo(() => matchCurated(ai8Models), [ai8Models])
   const effectiveAi8Model = ai8ModelValue !== '' ? ai8ModelValue : (activeProfile?.model ?? '')
 
   useEffect(() => {
@@ -254,13 +257,27 @@ export function AiLabAgentTab(): JSX.Element {
               disabled={ai8Groups.length === 0}
             >
               {ai8Groups.length === 0 && <option value="">{ai8ModelError ? t('ai.agent.ai8ModelsError') : t('ai.agent.ai8ModelsLoading')}</option>}
+              {(['flagship', 'fast', 'free', 'budget'] as const).map((groupId) => (
+                ai8Curated[groupId] ? (
+                  <optgroup key={groupId} label={t(`ai.ai8.curated.${groupId}` as Parameters<typeof t>[0])}>
+                    {ai8Curated[groupId].map((m) => (
+                      <option key={m.value} value={m.value} disabled={disabledModels.includes(m.value)}>
+                        {m.label}{disabledModels.includes(m.value) ? `（${t('ai.agent.modelDiscontinued')}）` : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null
+              ))}
               {ai8Groups.map((g) => (
                 <optgroup key={g.provider} label={g.provider}>
-                  {g.models.map((m) => (
-                    <option key={m.value} value={m.value} disabled={disabledModels.includes(m.value)}>
-                      {m.label}{disabledModels.includes(m.value) ? `（${t('ai.agent.modelDiscontinued')}）` : ''}
-                    </option>
-                  ))}
+                  {g.models.map((m) => {
+                    const integral = ai8Models.find((mm) => mm.value === m.value)?.attr?.integral
+                    return (
+                      <option key={m.value} value={m.value} disabled={disabledModels.includes(m.value)}>
+                        {m.label}{integral ? ` · ${integral}` : ''}{disabledModels.includes(m.value) ? `（${t('ai.agent.modelDiscontinued')}）` : ''}
+                      </option>
+                    )
+                  })}
                 </optgroup>
               ))}
             </select>
