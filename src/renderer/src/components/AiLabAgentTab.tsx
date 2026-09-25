@@ -2,15 +2,22 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import { Bot, CheckCheck, FolderOpen, History, Play, Send, ShieldCheck, Square, X } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { MarkdownView } from '../ai8/markdown'
+import { groupModelsByProvider } from '../ai8/localStore'
+import { Ai8Client, readStoredToken, type Ai8Model } from '../../../shared/ai8Client'
 import type { AgentApprovalRequest, AgentEvent, AgentMode, AgentSessionMeta, AiProfile } from '../../../shared/types'
 
 /**
  * Agent 工作台 — R172-S2(独立 Tab,决策 ②)。
  * 内核引擎经 agentSend IPC;流式事件 onAgentEvent;审批条三档决策;
  * 会话 JSONL 恢复;ai8 档位显示「实验」徽标(决策 ④)。
+ * R174.6: AI8 支持——无 ai8 档案但有存储 token 时自动补建;选中 AI8 档时
+ * 显示站点模型下拉(模板是公开接口,分组复用 AI8 页逻辑),经 modelOverride 下发。
  */
 interface ToolCard { id: string; name: string; args: string; result: string; status: 'running' | 'done' | 'denied' | 'error' }
 interface TranscriptItem { kind: 'user' | 'assistant' | 'tool' | 'approval'; text?: string; tool?: ToolCard; approval?: AgentApprovalRequest; resolved?: boolean }
+
+/** AI8 聊天模型模板(公开、无需 token)——成功后模块级缓存,切页秒开。 */
+let ai8ModelCache: Ai8Model[] | null = null
 
 export function AiLabAgentTab(): JSX.Element {
   const { t } = useI18n()
@@ -24,6 +31,9 @@ export function AiLabAgentTab(): JSX.Element {
   const [pendingApproval, setPendingApproval] = useState<AgentApprovalRequest | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sessions, setSessions] = useState<AgentSessionMeta[]>([])
+  const [ai8Models, setAi8Models] = useState<Ai8Model[]>(ai8ModelCache ?? [])
+  const [ai8ModelError, setAi8ModelError] = useState(false)
+  const [ai8ModelValue, setAi8ModelValue] = useState('')
   const sessionIdRef = useRef('')
   const logRef = useRef<HTMLDivElement | null>(null)
 
@@ -32,12 +42,43 @@ export function AiLabAgentTab(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    void window.rgbbox.aiGetProfiles().then((c) => {
-      setProfiles(c.profiles)
+    void window.rgbbox.aiGetProfiles().then(async (c) => {
+      let list = c.profiles
+      // R174.6: AI8 页登录过的 token 一直没落到档案(syncTokenToProfiles 只更新
+      // 不创建)——Agent 侧补齐:无 ai8 档案 + 有存储 token → 自动建一个。
+      const hasAi8 = list.some((p) => p.baseUrl.trim() === 'ai8://chat')
+      const stored = readStoredToken()
+      if (!hasAi8 && stored !== '') {
+        try {
+          const created = await window.rgbbox.aiSaveProfile({ id: '', name: 'AI8', baseUrl: 'ai8://chat', apiKey: stored, model: 'openai_chat::gpt-5.4' })
+          list = [...list, created]
+        } catch { /* manual profile creation stays available */ }
+      }
+      setProfiles(list)
       setProfileId(c.activeId)
     }).catch(() => { /* offline */ })
     refreshSessions()
   }, [refreshSessions])
+
+  const activeProfile = useMemo(() => profiles.find((p) => p.id === profileId) ?? null, [profiles, profileId])
+  const isAi8 = activeProfile?.baseUrl.startsWith('ai8://') === true
+
+  // R174.6: AI8 模型下拉的数据源(公开模板,与 AI8 页同一缓存策略)
+  useEffect(() => {
+    if (!isAi8 || ai8ModelCache !== null) return
+    let cancelled = false
+    new Ai8Client({ token: '' }).getChatTemplate()
+      .then((tmpl) => {
+        if (cancelled) return
+        ai8ModelCache = (tmpl.models ?? []).filter((m) => m.attr?.modelType === 'chat')
+        setAi8Models(ai8ModelCache)
+      })
+      .catch(() => { if (!cancelled) setAi8ModelError(true) })
+    return () => { cancelled = true }
+  }, [isAi8])
+
+  const ai8Groups = useMemo(() => groupModelsByProvider(ai8Models), [ai8Models])
+  const effectiveAi8Model = ai8ModelValue !== '' ? ai8ModelValue : (activeProfile?.model ?? '')
 
   useEffect(() => {
     const off = window.rgbbox.onAgentEvent((ev: AgentEvent) => {
@@ -75,19 +116,18 @@ export function AiLabAgentTab(): JSX.Element {
 
   useEffect(() => { logRef.current?.scrollTo({ top: logRef.current.scrollHeight }) }, [items])
 
-  const activeProfile = useMemo(() => profiles.find((p) => p.id === profileId) ?? null, [profiles, profileId])
-  const isAi8 = activeProfile?.baseUrl.startsWith('ai8://') === true
-
   const send = useCallback(async (): Promise<void> => {
     const text = input.trim()
     if (text === '' || running || workspace === '') return
     setInput('')
     setError(null)
     setRunning(true)
-    const out = await window.rgbbox.agentSend({ text, profileId, workspace, mode, sessionId: sessionIdRef.current })
+    // R174.6: AI8 档附带当前选择的站点模型
+    const modelOverride = isAi8 && effectiveAi8Model !== '' ? effectiveAi8Model : undefined
+    const out = await window.rgbbox.agentSend({ text, profileId, workspace, mode, sessionId: sessionIdRef.current, modelOverride })
     if (!out.ok && out.error && out.error !== 'error') setError(out.error)
     if (!out.ok && out.sessionId === '') setRunning(false)
-  }, [input, running, workspace, profileId, mode])
+  }, [input, running, workspace, profileId, mode, isAi8, effectiveAi8Model])
 
   const respond = (decision: 'once' | 'always' | 'deny'): void => {
     if (!pendingApproval) return
@@ -153,6 +193,26 @@ export function AiLabAgentTab(): JSX.Element {
           </select>
         </label>
         {isAi8 && <p className="ai-hint-line">{t('ai.agent.ai8Experimental')}</p>}
+        {isAi8 && (
+          <label className="agent-field">
+            <span>{t('ai.agent.ai8Model')}</span>
+            <select
+              data-field="agent-ai8-model"
+              value={effectiveAi8Model}
+              onChange={(e) => setAi8ModelValue(e.target.value)}
+              disabled={ai8Groups.length === 0}
+            >
+              {ai8Groups.length === 0 && <option value="">{ai8ModelError ? t('ai.agent.ai8ModelsError') : t('ai.agent.ai8ModelsLoading')}</option>}
+              {ai8Groups.map((g) => (
+                <optgroup key={g.provider} label={g.provider}>
+                  {g.models.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="agent-sessions">
           <h5><History size={12} /> {t('ai.agent.sessions')}</h5>
           {sessions.length === 0 ? <p className="ai-hint-line">{t('ai.agent.noSessions')}</p> : (

@@ -226,7 +226,10 @@ export function createAgentService(deps: AgentServiceDeps) {
   return {
     async send(a: AgentSendArgs): Promise<{ ok: boolean; sessionId: string; error?: string }> {
       if (run && run.pending.size > 0) return { ok: false, sessionId: '', error: 'approval-pending' }
-      const settings = await deps.resolveSettings(a.profileId)
+      const base = await deps.resolveSettings(a.profileId)
+      const settings = typeof a.modelOverride === 'string' && a.modelOverride.trim() !== ''
+        ? { ...base, model: a.modelOverride.trim() }
+        : base
       const sessionId = a.sessionId && a.sessionId !== '' ? a.sessionId : `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
       mkdirSync(deps.sessionsDir, { recursive: true })
       const isNew = !(a.sessionId && a.sessionId !== '')

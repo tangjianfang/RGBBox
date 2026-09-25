@@ -772,12 +772,12 @@ function registerIpc(): void {
     auditPath: join(app.getPath('userData'), 'logs', 'agent-audit.jsonl'),
   })
   ipcMain.handle(ipcChannels.agentSend, async (_event, p: unknown) => {
-    const a = p as { text?: unknown; profileId?: unknown; workspace?: unknown; mode?: unknown; sessionId?: unknown }
+    const a = p as { text?: unknown; profileId?: unknown; workspace?: unknown; mode?: unknown; sessionId?: unknown; modelOverride?: unknown }
     if (typeof a.text !== 'string' || a.text.trim() === '' || typeof a.workspace !== 'string' || a.workspace.trim() === '') {
       return { ok: false, sessionId: '', error: 'parse' }
     }
     const mode = a.mode === 'plan' || a.mode === 'trust' ? a.mode : 'standard'
-    return agentSvc.send({ text: a.text, profileId: typeof a.profileId === 'string' ? a.profileId : undefined, workspace: a.workspace, mode, sessionId: typeof a.sessionId === 'string' ? a.sessionId : undefined })
+    return agentSvc.send({ text: a.text, profileId: typeof a.profileId === 'string' ? a.profileId : undefined, workspace: a.workspace, mode, sessionId: typeof a.sessionId === 'string' ? a.sessionId : undefined, modelOverride: typeof a.modelOverride === 'string' ? a.modelOverride : undefined })
   })
   ipcMain.handle(ipcChannels.agentCancel, () => { agentSvc.cancel(); return { ok: true } })
   ipcMain.handle(ipcChannels.agentApprovalRespond, (_event, p: unknown) => {

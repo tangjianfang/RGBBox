@@ -94,6 +94,9 @@ const EN = {
   'ai.agent.err.error': 'Agent run failed',
   'ai.agent.copy': 'Copy',
   'ai.agent.copied': 'Copied',
+  'ai.agent.ai8Model': 'AI8 model',
+  'ai.agent.ai8ModelsLoading': 'Loading models…',
+  'ai.agent.ai8ModelsError': 'Model list unavailable (network)',
   'ai.agent.needAi8Profile': 'No AI8 profile yet — create one on the Config tab (provider: AI8), or log in from the AI8 tab first.',
 
   'ai.lab.svg.title': 'Pelican Rider',
@@ -1657,6 +1660,9 @@ const ZH: TranslationTable = {
   'ai.agent.err.error': 'Agent 运行失败',
   'ai.agent.copy': '复制',
   'ai.agent.copied': '已复制',
+  'ai.agent.ai8Model': 'AI8 模型',
+  'ai.agent.ai8ModelsLoading': '模型加载中…',
+  'ai.agent.ai8ModelsError': '模型列表获取失败（网络）',
   'ai.agent.needAi8Profile': '还没有 AI8 档案——先在「配置」页新建(provider 选 AI8),或先去 AI8 页完成登录。',
 
   'ai.lab.svg.title': '鹈鹕骑士',

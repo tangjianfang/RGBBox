@@ -3420,4 +3420,5 @@
 - **R174.2 修复三件套**：登录窗口 UA 剥离 `Electron/x` 段（仅该窗口）；`ai8OpenLogin({fresh})` 新参——fresh 时先 `clearStorageData(localstorage/cookies/indexdb)` 再加载站点（手动登录=换 token 一律 fresh,防死 token 抢跑）；探针脚本入库（诊断资产,复用 app userData 可复跑）。
 - **R174.3 Agent 回复排版**：AiLabAgentTab 助手消息接 `MarkdownView`（复用 R114 AI8 渲染器：标题/列表/代码块/复制按钮）;另修 A3 遗留缺口——AI8 档位传输层此前未接 `ai8ChatCompletion`（fetch 假地址必失败）,现 kernel 双分支：OpenAI 兼容走 tools 透传、AI8 走 ai8Provider+ReAct 解析。
 - **R174.4 验收**：typecheck 双绿;vitest 127 文件/1151 用例全过;探针窗口 12s 存活无崩溃/无自关（UA 修复+fresh 清理的端到端登录验证待用户实机——AI8 账密在用户手中）。
-- **R174.5 状态**：✅（代码侧;登录成功与否待用户实机确认,失败则按探针路径继续排查站点风控）
+- **R174.6 Agent 选择 AI8 模型（2026-09-26 用户反馈「Agent 中还是无法选择 AI8 中的模型」）**：根因——`syncTokenToProfiles` 只更新不创建,用户从未在配置页手建 ai8 档案 → Agent 档案下拉里根本没有 AI8;且即使有档案,档案的单一 model 字段也无法覆盖 AI8 站点的大模型清单。实现三件套:①Agent Tab 挂载时「无 ai8 档案 + localStorage 有 token(`readStoredToken`)」→ 自动 `aiSaveProfile` 补建;②选中 ai8 档时显示**站点模型下拉**(公开 chat 模板 `Ai8Client({token:''}).getChatTemplate()`,模块级缓存,`groupModelsByProvider` 分组 optgroup,加载/失败态);③`AgentSendArgs.modelOverride` 贯通 preload/main,agentService 以覆写值调用 ai8Provider。测试 +2(自动建档案断言 / 模型下拉选择→agentSend 带 modelOverride 断言,Ai8Client 模板 mock)。
+- **R174.7 状态**：✅（typecheck 双绿;vitest 127 文件 / 1153 用例全过;实机 AI8 会话质量属 R172.8「实验」范畴）

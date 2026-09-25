@@ -595,6 +595,8 @@ export interface AgentSendArgs {
   mode: AgentMode
   /** Continue an existing session id, or empty for a new session. */
   sessionId?: string
+  /** R174.6: per-run model override (AI8 model picker sends e.g. openai_chat::gpt-5.4). */
+  modelOverride?: string
 }
 
 // ── R173-S2: offline TTS engine ─────────────────────────────────────────────
