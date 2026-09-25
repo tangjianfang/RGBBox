@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import type { AgentApprovalRequest, AgentEvent, AgentMode, AgentSendArgs, AgentSessionMeta } from '../shared/types'
 import type { AiChatMessage } from '../shared/types'
 import type { AiCleanupSettings } from './aiCleanupService'
+import { ai8ChatCompletion } from './ai8Provider'
 import { AGENT_TOOL_SCHEMAS, isBashDenied, toolBash, toolEdit, toolGlob, toolList, toolRead, toolWrite } from './agentTools'
 
 export const AGENT_MAX_TURNS = 24
@@ -172,30 +173,45 @@ export function createAgentService(deps: AgentServiceDeps) {
   const callModel = async (): Promise<{ content: string; toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }> }> => {
     const s = run!.settings
     const isAi8 = s.baseUrl.startsWith('ai8://')
+    const toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }> = []
+    let content = ''
+
+    if (isAi8) {
+      // R172-S3: AI8 桥——会话制逆向协议无 function-calling,传输走
+      // ai8Provider(会话管理/凭据/自动登录都在其内);工具调用由
+      // REACT_SYSTEM_PROMPT 文本约定,这里只负责解析 ```tool``` 块。
+      const out = await ai8ChatCompletion(run!.messages, s)
+      if (!out.ok) throw new Error(out.hint ? `ai8: ${out.hint}` : 'ai8: request failed')
+      content = out.text
+      const parsed = parseReactToolCall(content)
+      if (parsed) toolCalls.push({ id: `react-${++seq}`, name: parsed.tool, args: parsed.args })
+      return { content, toolCalls }
+    }
+
     const base = s.baseUrl.trim().replace(/\/+$/, '')
     const body: Record<string, unknown> = {
       model: s.model.trim(),
       messages: run!.messages,
       temperature: 0.3,
-    }
-    if (!isAi8) {
-      body.tools = AGENT_TOOL_SCHEMAS
-      body.tool_choice = 'auto'
+      tools: AGENT_TOOL_SCHEMAS,
+      tool_choice: 'auto',
     }
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    let url = `${base}/chat/completions`
-    if (!isAi8 && s.apiKey.trim() !== '') headers.Authorization = `Bearer ${s.apiKey.trim()}`
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(180_000) })
+    if (s.apiKey.trim() !== '') headers.Authorization = `Bearer ${s.apiKey.trim()}`
+    const res = await fetch(`${base}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(180_000) })
     if (!res.ok) throw new Error(`model HTTP ${res.status}`)
-    const json = (await res.json()) as { choices?: Array<{ message?: { content?: unknown; tool_calls?: unknown } }> }
+    const json = (await res.json()) as {
+      choices?: Array<{
+        message?: {
+          content?: unknown
+          tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>
+        }
+      }>
+    }
     const message = json.choices?.[0]?.message
-    const content = typeof message?.content === 'string' ? message.content : ''
-    const toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }> = []
-    if (isAi8) {
-      const parsed = parseReactToolCall(content)
-      if (parsed) toolCalls.push({ id: `react-${++seq}`, name: parsed.tool, args: parsed.args })
-    } else if (Array.isArray(message?.tool_calls)) {
-      for (const tc of message.tool_calls as Array<{ id?: string; function?: { name?: string; arguments?: string } }>) {
+    content = typeof message?.content === 'string' ? message.content : ''
+    if (Array.isArray(message?.tool_calls)) {
+      for (const tc of message.tool_calls) {
         const name = tc.function?.name ?? ''
         if (name === '') continue
         let args: Record<string, unknown> = {}

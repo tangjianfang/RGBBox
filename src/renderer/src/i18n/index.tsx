@@ -92,6 +92,9 @@ const EN = {
   'ai.agent.err.parse': 'Invalid request',
   'ai.agent.err.max-turns': 'Stopped: turn limit reached (24)',
   'ai.agent.err.error': 'Agent run failed',
+  'ai.agent.copy': 'Copy',
+  'ai.agent.copied': 'Copied',
+  'ai.agent.needAi8Profile': 'No AI8 profile yet — create one on the Config tab (provider: AI8), or log in from the AI8 tab first.',
 
   'ai.lab.svg.title': 'Pelican Rider',
   'ai.lab.svg.caption': 'A pelican riding a bicycle — pure SVG + CSS, no raster assets. Reduced-motion freezes the scene.',
@@ -1652,6 +1655,9 @@ const ZH: TranslationTable = {
   'ai.agent.err.parse': '请求无效',
   'ai.agent.err.max-turns': '已停止：达到轮数上限（24）',
   'ai.agent.err.error': 'Agent 运行失败',
+  'ai.agent.copy': '复制',
+  'ai.agent.copied': '已复制',
+  'ai.agent.needAi8Profile': '还没有 AI8 档案——先在「配置」页新建(provider 选 AI8),或先去 AI8 页完成登录。',
 
   'ai.lab.svg.title': '鹈鹕骑士',
   'ai.lab.svg.caption': '鹈鹕骑自行车——纯 SVG + CSS 绘制的 2D 动画,零栅格资产。系统「减少动态效果」开启时场景静止。',

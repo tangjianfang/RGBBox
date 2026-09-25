@@ -3413,3 +3413,11 @@
   - **遗留（转 C1/B）**：pi 引擎动态验证（待 key）、Windows `rm -rf C:\` 类路径的 denylist 补充（已记单测注释）、打包体积核查（kokoro-js+transformers 入包,R-8）。
 
 - **R173.7 S1/S2 实施记录（2026-09-25，`feat/ai-lab-expansion`）**：S1 ✅——`AiLabVoiceTab.tsx`（第 8 Tab `voice`「声文」：文本区/分句预览点击跳读/系统引擎句级队列+当前句高亮/语速/中英自动检测（CJK 1.5× 加权）/词典钉音编辑器 localStorage 持久化/`speechSynthesis` 缺失降级提示）+ domain 6 用例 + 组件 3 用例 + i18n 18 键。S2 代码完成——`ttsService.ts`（kokoro-js 动态加载/HF_ENDPOINT→hf-mirror/缓存 userData/models/hf/实例常驻/失败回落系统引擎不阻塞）+ `ttsWav.ts`（纯 WAV 编码 3 用例）+ `ttsSynthesize/ttsExport`（原生另存对话框）IPC+preload；**首次合成需下载 ~86MB 模型,真机音频质量验证待用户首跑**（同 vision 模型先例,静息门禁不覆盖）。
+
+### R174. 修复：AI8 登录窗口「开窗即关/输入账密无法登录」+ Agent 回复无排版（2026-09-26 用户报障；实施于 feat/ai-lab-expansion）
+
+- **R174.1 AI8 根因（探针实证 `scripts/ai8-login-probe.mjs` 复用真实 persist:ai8 分区）**：①「闪退」= 分区残留失效 token 时,登录窗口轮询 1.5s 内捕获死 token→自动关窗,用户来不及操作（leveldb 含 8 处 userStore 历史版本,现行 auth:null）；②「输入账密无法登录」= 登录窗口 UA 含 `Electron/41.4.0`,站点拒绝内嵌浏览器登录（外部 Chrome 正常）——探针证实站点加载正常、无渲染崩溃、窗口不自关,排除应用侧崩溃因素。
+- **R174.2 修复三件套**：登录窗口 UA 剥离 `Electron/x` 段（仅该窗口）；`ai8OpenLogin({fresh})` 新参——fresh 时先 `clearStorageData(localstorage/cookies/indexdb)` 再加载站点（手动登录=换 token 一律 fresh,防死 token 抢跑）；探针脚本入库（诊断资产,复用 app userData 可复跑）。
+- **R174.3 Agent 回复排版**：AiLabAgentTab 助手消息接 `MarkdownView`（复用 R114 AI8 渲染器：标题/列表/代码块/复制按钮）;另修 A3 遗留缺口——AI8 档位传输层此前未接 `ai8ChatCompletion`（fetch 假地址必失败）,现 kernel 双分支：OpenAI 兼容走 tools 透传、AI8 走 ai8Provider+ReAct 解析。
+- **R174.4 验收**：typecheck 双绿;vitest 127 文件/1151 用例全过;探针窗口 12s 存活无崩溃/无自关（UA 修复+fresh 清理的端到端登录验证待用户实机——AI8 账密在用户手中）。
+- **R174.5 状态**：✅（代码侧;登录成功与否待用户实机确认,失败则按探针路径继续排查站点风控）

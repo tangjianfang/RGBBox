@@ -326,7 +326,8 @@ export function AiLabAi8Tab(): JSX.Element {
       } catch {
         // no stored credentials / IPC hiccup → the window flow below
       }
-      const out = await window.rgbbox.ai8OpenLogin()
+      // R129b: manual login = token replacement — start from a clean site session
+      const out = await window.rgbbox.ai8OpenLogin({ fresh: true })
       if (out.ok && out.token) {
         setToken(out.token)
         writeStoredToken(out.token)

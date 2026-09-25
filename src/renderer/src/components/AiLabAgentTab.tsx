@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { Bot, CheckCheck, FolderOpen, History, Play, Send, ShieldCheck, Square, X } from 'lucide-react'
 import { useI18n } from '../i18n'
+import { MarkdownView } from '../ai8/markdown'
 import type { AgentApprovalRequest, AgentEvent, AgentMode, AgentSessionMeta, AiProfile } from '../../../shared/types'
 
 /**
@@ -171,7 +172,15 @@ export function AiLabAgentTab(): JSX.Element {
           {items.length === 0 && <p className="ai-hint-line">{t('ai.agent.empty')}</p>}
           {items.map((it, i) => {
             if (it.kind === 'user') return <div key={i} className="agent-msg agent-msg-user">{it.text}</div>
-            if (it.kind === 'assistant') return <div key={i} className="agent-msg agent-msg-assistant">{it.text}</div>
+            if (it.kind === 'assistant') {
+              // R172-S2 fix: assistant replies carry markdown (code blocks,
+              // lists, headings) — render them instead of dumping raw text.
+              return (
+                <div key={i} className="agent-msg agent-msg-assistant">
+                  <MarkdownView text={it.text ?? ''} copyLabel={t('ai.agent.copy')} copiedLabel={t('ai.agent.copied')} />
+                </div>
+              )
+            }
             if (it.kind === 'approval' && it.approval) {
               return (
                 <div key={i} className={`agent-approval${it.resolved ? ' resolved' : ''}`}>

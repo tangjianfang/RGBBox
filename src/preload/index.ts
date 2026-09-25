@@ -231,8 +231,8 @@ const api = {
     ipcRenderer.invoke(ipcChannels.aiDeleteProfile, id),
   // R111: AI8 embedded login — resolves {ok:true, token, account} once the
   // user signs in inside the child window, {ok:false} if it was closed.
-  ai8OpenLogin: (): Promise<{ ok: boolean; token?: string; account?: string }> =>
-    ipcRenderer.invoke(ipcChannels.ai8OpenLogin),
+  ai8OpenLogin: (opts?: { fresh?: boolean }): Promise<{ ok: boolean; token?: string; account?: string }> =>
+    ipcRenderer.invoke(ipcChannels.ai8OpenLogin, opts),
   // R121: remembered credentials — save/clear + the main-side auto sign-in
   // (the plaintext password never crosses IPC after the save)
   ai8SaveCredentials: (account: string, password: string): Promise<{ ok: boolean }> =>

@@ -617,7 +617,8 @@ function registerIpc(): void {
   // localStorage for the GoAmzAI userStore token, and resolves the invoking
   // renderer with the captured token. Single-flight: one login window at a time.
   let ai8LoginWindow: BrowserWindow | null = null
-  ipcMain.handle(ipcChannels.ai8OpenLogin, async () => {
+  ipcMain.handle(ipcChannels.ai8OpenLogin, async (_event, p?: unknown) => {
+    const fresh = (p as { fresh?: unknown } | null | undefined)?.fresh === true
     if (ai8LoginWindow && !ai8LoginWindow.isDestroyed()) {
       ai8LoginWindow.focus()
       return { ok: false as const }
@@ -640,6 +641,9 @@ function registerIpc(): void {
         partition: 'persist:ai8',
       },
     })
+    // R129b: the site rejects logins from embedded browsers (works in regular
+    // Chrome) — present a clean Chrome UA for this window only.
+    win.webContents.setUserAgent(win.webContents.getUserAgent().replace(/\s*Electron\/[\d.]+/i, ''))
     ai8LoginWindow = win
     let poller: ReturnType<typeof setInterval> | null = null
     const stopPolling = () => {
@@ -688,7 +692,18 @@ function registerIpc(): void {
           if (!win.isDestroyed()) win.webContents.reload()
         }
       }
-      void win.loadURL('https://ai8.rcouyi.com/').catch(() => undefined)
+      // R129b: token-replacement flow passes fresh=true — a stale userStore
+      // (auth token the site already invalidated) made the poller capture the
+      // dead token and auto-close the window before the user could log in
+      // ("开窗即闪退"). Clear the partition's site storage first so the flow
+      // starts from a clean logged-out state.
+      if (fresh) {
+        void win.webContents.session.clearStorageData({ storages: ['localstorage', 'cookies', 'indexdb'] })
+          .catch(() => undefined)
+          .then(() => { if (!win.isDestroyed()) win.loadURL('https://ai8.rcouyi.com/').catch(() => undefined) })
+      } else {
+        void win.loadURL('https://ai8.rcouyi.com/').catch(() => undefined)
+      }
       win.webContents.on('did-navigate', () => {
         void readState().then(handleState)
       })
