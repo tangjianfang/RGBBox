@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseReactToolCall } from '../../src/main/agentService'
+import { buildAi8TurnPrompt, parseReactToolCall } from '../../src/main/agentService'
 import { buildWavHeader, floatTo16BitPcm, segmentsToWav } from '../../src/main/ttsWav'
 
 describe('main/agentService parseReactToolCall (R172-S3 AI8 桥)', () => {
@@ -22,6 +22,18 @@ describe('main/agentService parseReactToolCall (R172-S3 AI8 桥)', () => {
     expect(parseReactToolCall('Done — created two files.')).toBeNull()
     expect(parseReactToolCall('```tool\nnot json\n```')).toBeNull()
     expect(parseReactToolCall('```tool\n{"novalue": true}\n```')).toBeNull()
+  })
+})
+
+describe('main/agentService buildAi8TurnPrompt (R178)', () => {
+  it('injects workspace + tool legend above the task text', () => {
+    const out = buildAi8TurnPrompt('C:\ws', '评估这个项目')
+    expect(out).toContain('[工作区] C:\ws')
+    expect(out).toContain('[任务] 评估这个项目')
+    expect(out).toContain('read(path)')
+    expect(out).toContain('```tool')
+    // order: workspace/legend BEFORE the task
+    expect(out.indexOf('[工作区]')).toBeLessThan(out.indexOf('[任务]'))
   })
 })
 

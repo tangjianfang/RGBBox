@@ -37,6 +37,25 @@ export function parseReactToolCall(text: string): ReactCall | null {
   return null
 }
 
+/**
+ * R178: AI8 桥的工具可见性——站点的 systemPrompt 参数对部分模型不生效
+ * (实测「评估项目」回复"无法读取目录"),ReAct 工具说明必须随用户消息
+ * 直接注入。每轮初始提示都带,TOOL_RESULT 消息不带。
+ */
+export function buildAi8TurnPrompt(workspace: string, text: string): string {
+  const fence = '```'
+  const legend = [
+    `[工作区] ${workspace}`,
+    `[工具] 你可以调用以下工具来完成该任务(路径一律相对工作区):`,
+    `read(path) · write(path, content) · edit(path, find, replace) · bash(command) · list(path) · glob(pattern)`,
+    `调用方式:回复一个 ${fence}tool JSON 块(如 ${fence}tool\n{"tool":"list","args":{"path":"."}}\n${fence} ),环境会以 TOOL_RESULT 消息回传结果;`,
+    `不要向用户索要文件内容——用工具自己读。任务完成后用纯文本总结,不再带 tool 块。`,
+    ``,
+    `[任务] ${text}`,
+  ]
+  return legend.join('\n')
+}
+
 export const REACT_SYSTEM_PROMPT = `You are a coding agent working inside a workspace directory. You have NO native tool-calling; instead, when you want to use a tool you MUST reply with exactly one fenced block (and nothing after it):
 
 \`\`\`tool
@@ -287,7 +306,12 @@ export function createAgentService(deps: AgentServiceDeps) {
           run.messages = history
         } catch { /* new file */ }
       }
-      run.messages.push({ role: 'user', content: a.text })
+      // R178: AI8 无 function-calling——工具说明随用户消息注入(站点 system
+      // 参数对部分模型不生效);OpenAI 兼容档走 tools 透传无需注入。
+      const turnPrompt = settings.baseUrl.startsWith('ai8://')
+        ? buildAi8TurnPrompt(a.workspace, a.text)
+        : a.text
+      run.messages.push({ role: 'user', content: turnPrompt })
 
       emit({ kind: 'session-meta', sessionId, model: settings.model, workspace: a.workspace })
       emit({ kind: 'user', text: a.text })

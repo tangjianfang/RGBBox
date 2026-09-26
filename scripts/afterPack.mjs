@@ -49,6 +49,39 @@ export default async function afterPack(context) {
     console.log(`[afterPack] pruned onnxruntime-node to ${electronPlatformName}/${arch}`)
   }
 
+  // ── R176.3: prune the NESTED onnxruntime-node that ships inside
+  // @huggingface/transformers (kokoro-js → transformers.js) — same all-platform
+  // bloat (~208MB), same fix. Also drop the optional image stack (@img/sharp
+  // binaries): the TTS pipeline never processes images.
+  const hfOrtBin = join(
+    appOutDir, 'resources', 'app.asar.unpacked', 'node_modules',
+    '@huggingface', 'transformers', 'node_modules', 'onnxruntime-node', 'bin',
+  )
+  if (existsSync(hfOrtBin)) {
+    for (const napiDir of readdirSync(hfOrtBin)) {
+      const platformRoot = join(hfOrtBin, napiDir)
+      for (const platform of readdirSync(platformRoot)) {
+        if (platform !== electronPlatformName) {
+          rmSync(join(platformRoot, platform), { recursive: true, force: true })
+          continue
+        }
+        for (const archDir of readdirSync(join(platformRoot, platform))) {
+          if (archDir !== arch) {
+            rmSync(join(platformRoot, platform, archDir), { recursive: true, force: true })
+          }
+        }
+      }
+    }
+    console.log(`[afterPack] pruned @huggingface/transformers onnxruntime-node to ${electronPlatformName}/${arch}`)
+  }
+  for (const imgDir of ['node_modules/@img', 'node_modules/sharp']) {
+    const p = join(appOutDir, 'resources', 'app.asar.unpacked', 'node_modules', imgDir)
+    if (existsSync(p)) {
+      rmSync(p, { recursive: true, force: true })
+      console.log(`[afterPack] removed unused image stack: ${imgDir}`)
+    }
+  }
+
   // ── icon embedding (Windows only) ─────────────────────────────────────
   if (electronPlatformName !== 'win32') return
 
