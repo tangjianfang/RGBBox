@@ -51,9 +51,9 @@ describe('main/ttsService ttsDownloadModels R185 pool', () => {
     vi.stubGlobal('fetch', fetchMock)
     const out = await ttsDownloadModels(ws, (ev) => { events.push({ path: ev.path, done: ev.done }) })
     expect(out.ok).toBe(true)
-    // all 7 manifest files landed
+    // all 8 manifest files landed (R192.2 added tokenizer_config.json)
     const doneEvents = events.filter((e) => e.done && !('error' in e))
-    expect(doneEvents.length).toBe(7)
+    expect(doneEvents.length).toBe(8)
     // concurrency actually happened (3 lanes were saturated at least once)
     expect(maxInFlight).toBeGreaterThanOrEqual(3)
   })

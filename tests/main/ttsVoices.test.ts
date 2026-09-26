@@ -15,23 +15,24 @@ afterEach(() => {
   rmSync(ws, { recursive: true, force: true })
 })
 
-describe('R187 voice catalog (shared/kokoroVoices)', () => {
-  it('every id is well-formed with a known locale prefix', () => {
-    expect(KOKORO_VOICE_CATALOG.length).toBeGreaterThanOrEqual(50)
-    expect(KOKORO_VOICE_CATALOG.length).toBeLessThanOrEqual(56)
+describe('R187/R192 voice catalog (shared/kokoroVoices)', () => {
+  it('lists exactly the engine-supported English voices (kokoro-js@1.2.1 registry)', () => {
+    // R192.2 实测:引擎 _validate_voice 只认 28 个英语音色——zf/zm/jf 等仓库里
+    // 存在的 .bin 选了必报 "Voice not found",目录必须收敛到引擎支持集。
+    expect(KOKORO_VOICE_CATALOG.length).toBe(28)
     for (const id of KOKORO_VOICE_CATALOG) {
       expect(id).toMatch(/^[a-z]{2}_[a-z]+$/)
       expect(VOICE_LOCALES[id.slice(0, 2)]).toBeDefined()
     }
-    // packed tensors are NOT voices
-    expect(KOKORO_VOICE_CATALOG).not.toContain('af')
-    expect(KOKORO_VOICE_CATALOG).not.toContain('am')
-    // the bundled four + Mandarin voices are present
-    for (const v of ['af_heart', 'af_bella', 'am_fenrir', 'bf_emma', 'zf_xiaoxiao', 'zm_yunxi']) {
+    for (const v of ['af_heart', 'af_bella', 'am_fenrir', 'bf_emma', 'bm_fable', 'af_sky']) {
       expect(KOKORO_VOICE_CATALOG).toContain(v)
     }
+    // non-English repo bins are deliberately excluded (engine rejects them)
+    for (const v of ['zf_xiaobei', 'zm_yunxi', 'jf_alpha']) {
+      expect(KOKORO_VOICE_CATALOG).not.toContain(v)
+    }
     expect(voiceLabel('af_heart')).toContain('美式英语')
-    expect(voiceLabel('zm_yunjian')).toContain('中文')
+    expect(voiceLabel('bm_fable')).toContain('英式英语')
   })
 })
 
@@ -41,11 +42,15 @@ describe('R187 ttsService voices', () => {
     const dir = join(ws, 'kokoro-local', 'onnx-community', 'kokoro-82M-v1.0-ONNX', 'voices')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'af_heart.bin'), 'x')
+    writeFileSync(join(dir, 'bm_fable.bin'), 'x')
+    // non-English bin exists on disk but the engine cannot use it (R192.2) —
+    // the scan is catalog ∩ disk; junk is filtered the same way
     writeFileSync(join(dir, 'zf_xiaoxiao.bin'), 'x')
-    writeFileSync(join(dir, 'not_a_voice.bin'), 'x') // junk is filtered
+    writeFileSync(join(dir, 'not_a_voice.bin'), 'x')
     const status = ttsModelStatus(ws)
     expect(status.voices).toContain('af_heart')
-    expect(status.voices).toContain('zf_xiaoxiao')
+    expect(status.voices).toContain('bm_fable')
+    expect(status.voices).not.toContain('zf_xiaoxiao')
     expect(status.voices).not.toContain('not_a_voice')
   })
 
@@ -59,11 +64,11 @@ describe('R187 ttsService voices', () => {
     }))
     vi.stubGlobal('fetch', fetchMock)
     const events: { path: string; done: boolean }[] = []
-    const out = await ttsDownloadVoice(ws, 'zf_xiaobei', (ev) => events.push({ path: ev.path, done: ev.done }))
+    const out = await ttsDownloadVoice(ws, 'bm_fable', (ev) => events.push({ path: ev.path, done: ev.done }))
     expect(out.ok).toBe(true)
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(String(fetchMock.mock.calls[0][0])).toContain('voices/zf_xiaobei.bin')
-    const bin = join(ws, 'kokoro-local', 'onnx-community', 'kokoro-82M-v1.0-ONNX', 'voices', 'zf_xiaobei.bin')
+    expect(String(fetchMock.mock.calls[0][0])).toContain('voices/bm_fable.bin')
+    const bin = join(ws, 'kokoro-local', 'onnx-community', 'kokoro-82M-v1.0-ONNX', 'voices', 'bm_fable.bin')
     expect(existsSync(bin)).toBe(true)
     expect(statSync(bin).size).toBe(4096)
     expect(events.some((e) => e.done)).toBe(true)

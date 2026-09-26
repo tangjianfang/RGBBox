@@ -9317,6 +9317,23 @@ input:disabled {
 .vs-model-head strong { font-size: 12.5px; }
 .vs-model-chip.ok { color: var(--accent, #6ee7a0); font-size: 12px; }
 
+/* R192.2: the panel head doubles as the fold toggle (collapsed-by-default
+   once complete); the ready chip rides along as the folded summary. */
+.vs-model-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.vs-model-chevron { margin-left: auto; color: var(--text-secondary, rgba(255, 255, 255, 0.55)); font-size: 11px; }
+
 .vs-model-bar {
   height: 6px;
   border-radius: 3px;

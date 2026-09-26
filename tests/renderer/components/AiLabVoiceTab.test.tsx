@@ -86,7 +86,7 @@ describe('AiLabVoiceTab (R173-S1)', () => {
     expect(rgbbox.ttsModelDownload).toHaveBeenCalledWith(['onnx/model_q4.onnx'])
   })
 
-  it('R187: kokoro voice picker lists the catalog; a missing voice offers on-demand download', async () => {
+  it('R187/R192: kokoro voice picker lists the engine-supported catalog; missing voice offers download; panel folds when complete', async () => {
     const rgbbox = setupRendererMocks() as unknown as Record<string, ReturnType<typeof vi.fn>>
     rgbbox.ttsEngineStatus = vi.fn().mockResolvedValue({
       complete: true,
@@ -94,38 +94,43 @@ describe('AiLabVoiceTab (R173-S1)', () => {
       bundledVoices: ['af_heart'],
       voices: ['af_heart'],
       files: [
-        { path: 'config.json', bytes: 5120, present: true, actualBytes: 44 },
+        { path: 'config.json', bytes: 44, present: true, actualBytes: 44 },
         { path: 'onnx/model_q4.onnx', bytes: 305_000_000, present: true, actualBytes: 305_000_000 },
       ],
     })
     rgbbox.onTtsModelProgress = vi.fn().mockReturnValue(() => undefined)
     rgbbox.ttsVoiceDownload = vi.fn().mockResolvedValue({ ok: true })
     const { container } = render(<AiLabVoiceTab />)
+    // complete → panel auto-collapsed to the summary line
+    await waitFor(() => expect(container.querySelector('.vs-model-list')).toBeNull())
+    await waitFor(() => expect(container.querySelector('.vs-model-toggle')?.textContent).toContain('2/2'))
+    // unfold persists
+    fireEvent.click(container.querySelector('[data-action="vs-model-toggle"]')!)
+    await waitFor(() => expect(container.querySelector('.vs-model-list')).not.toBeNull())
+    expect(localStorage.getItem('rgbbox:voiceModelsCollapsed')).toBe('0')
+
     // switch to the kokoro engine (enabled — model complete)
-    const engine = await waitFor(() => {
-      const el = container.querySelector('select[data-field="vs-engine"]') as HTMLSelectElement
-      expect(el).toBeTruthy()
-      return el
-    })
+    const engine = container.querySelector('select[data-field="vs-engine"]') as HTMLSelectElement
     fireEvent.change(engine, { target: { value: 'kokoro' } })
     const voiceSel = await waitFor(() => {
       const el = container.querySelector('select[data-field="vs-voice"]') as HTMLSelectElement
       expect(el).toBeTruthy()
       return el
     })
-    // full catalog present; on-disk voice carries the ✓ prefix
-    expect(voiceSel.options.length).toBeGreaterThanOrEqual(50)
+    // engine-supported English catalog (28); on-disk voice carries the ✓ prefix
+    expect(voiceSel.options.length).toBe(28)
+    expect([...voiceSel.options].some((o) => o.value === 'zf_xiaobei')).toBe(false)
     const heart = [...voiceSel.options].find((o) => o.value === 'af_heart')
     expect(heart?.textContent).toContain('✓')
     // pick a missing voice → inline download row appears and targets the id
-    fireEvent.change(voiceSel, { target: { value: 'zf_xiaobei' } })
+    fireEvent.change(voiceSel, { target: { value: 'bm_fable' } })
     const btn = await waitFor(() => {
       const el = container.querySelector('[data-action="vs-voice-download"]') as HTMLButtonElement
       expect(el).toBeTruthy()
       return el
     })
     fireEvent.click(btn)
-    expect(rgbbox.ttsVoiceDownload).toHaveBeenCalledWith('zf_xiaobei')
+    expect(rgbbox.ttsVoiceDownload).toHaveBeenCalledWith('bm_fable')
   })
 
   it('R187: streaming queue synthesizes sentence-by-sentence with progress', async () => {

@@ -45,6 +45,11 @@ export function AiLabVoiceTab(): JSX.Element {
   const [dlProgress, setDlProgress] = useState<Record<string, TtsModelProgress>>({})
   const [downloading, setDownloading] = useState(false)
   const [dlError, setDlError] = useState<string | null>(null)
+  // R192.2: the dependency panel folds away once everything is on disk —
+  // null = auto (collapsed ⟺ complete), an explicit toggle persists.
+  const [modelsCollapsed, setModelsCollapsed] = useState<boolean | null>(() => {
+    try { const v = localStorage.getItem('rgbbox:voiceModelsCollapsed'); return v === null ? null : v === '1' } catch { return null }
+  })
 
   useEffect(() => {
     setLexicon(loadLexicon(localStorage))
@@ -232,6 +237,12 @@ export function AiLabVoiceTab(): JSX.Element {
   }
 
   const kokoroReady = ttsStatus?.kokoroInstalled === true && modelReady
+  const modelsPanelCollapsed = modelsCollapsed ?? modelReady
+  const toggleModels = (): void => {
+    const next = !modelsPanelCollapsed
+    setModelsCollapsed(next)
+    try { localStorage.setItem('rgbbox:voiceModelsCollapsed', next ? '1' : '0') } catch { /* best-effort */ }
+  }
   const voicesOnDisk = useMemo(() => ttsStatus?.voices ?? [], [ttsStatus])
 
   return (
@@ -302,13 +313,24 @@ export function AiLabVoiceTab(): JSX.Element {
             <span className="vs-model-inline-bar"><span className="vs-model-inline-bar-fill" style={{ width: `${Math.round((synth.done / Math.max(1, synth.total)) * 100)}%` }} /></span>
           </div>
         )}
-        {/* R179: 模型依赖栏——URL/流程/进度直显,下载与重试就地完成 */}
+        {/* R179: 模型依赖栏——URL/流程/进度直显,下载与重试就地完成。
+            R192.2: 完成后默认折叠成一行摘要(点标题行展开/收起,选择持久化)。 */}
         <div className="vs-model-panel" data-field="vs-models">
           <div className="vs-model-head">
-            <strong>{t('ai.voice.models')}</strong>
-            {modelReady ? (
-              <span className="vs-model-chip ok">✓ {t('ai.voice.modelReady')}</span>
-            ) : (
+            <button
+              type="button"
+              className="vs-model-toggle"
+              data-action="vs-model-toggle"
+              onClick={toggleModels}
+              aria-expanded={!modelsPanelCollapsed}
+            >
+              <strong>{t('ai.voice.models')}</strong>
+              {modelsPanelCollapsed && modelReady && (
+                <span className="vs-model-chip ok">✓ {t('ai.voice.modelReady')} · {formatBytes(diskUsed)} · {filesDone}/{filesTotal}</span>
+              )}
+              <span className="vs-model-chevron" aria-hidden="true">{modelsPanelCollapsed ? '▸' : '▾'}</span>
+            </button>
+            {!modelReady && (
               <button
                 type="button"
                 className="video-btn"
@@ -320,12 +342,20 @@ export function AiLabVoiceTab(): JSX.Element {
               </button>
             )}
           </div>
-          {ttsStatus?.kokoroInstalled !== true && <p className="ai-hint-line">{t('ai.voice.kokoroNeeded')}</p>}
-          <div className="vs-model-bar">
-            <div className="vs-model-bar-fill" style={{ width: `${modelTotal > 0 ? Math.min(100, Math.round((modelDone / modelTotal) * 100)) : 0}%` }} />
-          </div>
-          <span className="vs-model-count">{modelTotal > 0 ? `${formatBytes(modelDone)} / ${formatBytes(modelTotal)} · ${Math.min(100, Math.round((modelDone / modelTotal) * 100))}%` : ''}</span>
-          <ul className="vs-model-list">
+          {modelsPanelCollapsed && !modelReady && (
+            /* folded but still downloading → compact progress line */
+            <div className="vs-model-bar">
+              <div className="vs-model-bar-fill" style={{ width: `${modelTotal > 0 ? Math.min(100, Math.round((modelDone / modelTotal) * 100)) : 0}%` }} />
+            </div>
+          )}
+          {!modelsPanelCollapsed && ttsStatus?.kokoroInstalled !== true && <p className="ai-hint-line">{t('ai.voice.kokoroNeeded')}</p>}
+          {!modelsPanelCollapsed && (
+            <>
+              <div className="vs-model-bar">
+                <div className="vs-model-bar-fill" style={{ width: `${modelTotal > 0 ? Math.min(100, Math.round((modelDone / modelTotal) * 100)) : 0}%` }} />
+              </div>
+              <span className="vs-model-count">{modelTotal > 0 ? `${formatBytes(modelDone)} / ${formatBytes(modelTotal)} · ${Math.min(100, Math.round((modelDone / modelTotal) * 100))}%` : ''}</span>
+              <ul className="vs-model-list">
             {(ttsStatus?.files ?? []).map((f) => {
               const prog = dlProgress[f.path]
               const pct = prog ? Math.min(100, Math.round((prog.receivedBytes / Math.max(1, prog.totalBytes)) * 100)) : f.present ? 100 : 0
@@ -362,11 +392,13 @@ export function AiLabVoiceTab(): JSX.Element {
               )
             })}
           </ul>
-          {dlError && <p className="ai-hint-line">{t(`ai.voice.err.${dlError === 'already-downloading' ? 'downloading' : 'network'}` as Parameters<typeof t>[0])}</p>}
-          {/* R185: real on-disk accounting — "326 MB" totals stop reading as
-              already-downloaded when 0 files are present. */}
-          {filesTotal > 0 && (
-            <span className="vs-model-stats">{t('ai.voice.diskUsage')} · {formatBytes(diskUsed)} · {filesDone}/{filesTotal}</span>
+              {dlError && <p className="ai-hint-line">{t(`ai.voice.err.${dlError === 'already-downloading' ? 'downloading' : 'network'}` as Parameters<typeof t>[0])}</p>}
+              {/* R185: real on-disk accounting — "326 MB" totals stop reading as
+                  already-downloaded when 0 files are present. */}
+              {filesTotal > 0 && (
+                <span className="vs-model-stats">{t('ai.voice.diskUsage')} · {formatBytes(diskUsed)} · {filesDone}/{filesTotal}</span>
+              )}
+            </>
           )}
         </div>
         {voiceError && <p className="ai-hint-line">{t(`ai.voice.err.${voiceError}` as never)}</p>}

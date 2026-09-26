@@ -3564,5 +3564,11 @@
 ### R192. Q-3 发版准备 v0.3.84（R189 第三批;含复验发现项修复）
 
 - **R192.1 复验#1 根因修复——tokenizer.json「size mismatch 3497/2726298」**:经镜像实测取证,**根因不是 HTML 污染也不是网络截断——上游 tokenizer.json 本就是 3,497 字节的字符级小文件(非 2.6MB LFS blob),manifest 预估自 R179 起就是错的**,精确对账把完整文件反复拒收删除**(下载器防御按设计工作,拒收的依据错了)**。取证链:GET status 200/textplain/3497B 合法 JSON 前缀且 tail 完整闭合、Range→416 不支持、`/raw/main` 同样 3497、tree API 确认 size=3497 非 LFS。修复:①KOKORO_FILES 全部改 API 实测值(config 44/tokenizer 3,497/model_q4 305,215,966/voices 522,240,真实总量≈293MB,与用户面板磁盘占用吻合);②修 `received = have` 双计数 bug(服务器对 Range 回 200 全量时,旧逻辑 have+全量>total 永 mismatch);③回归 2 例(3497 精确对账通过/200 忽略 Range 覆写落盘)。**用户侧待办:更新构建后在 tokenizer 行点「重试此文件」即应完成 7/7**。
-- **R192.2 发版流程**:用户复验#2(P-4 冒烟)/#3(P-5 合成)→`dist:dir` 冷启动验证→`dist:win` 出包→体积核查(R176.3 口径)。
-- **R192.3 状态**:🔄
+- **R192.2 复验#2/#3 根因修复——Kokoro「能选中引擎但播放无声」+ 音色目录失真**(2026-09-26 用户报障「选 Kokoro 美式/英式音色,输入 can I help you,播放无声」):
+  - **取证**(隔离 profile 拷真实权重 + 直调 IPC):`ttsSynthesize` 报 `fetch failed`(10.9s)。**根因①**——kokoro-js 导出的 `env` 是 `{wasmPaths}` 壳,**并非 transformers 的 env**;R179 的 `allowRemoteModels=false`/`localModelPath` 一直设在壳上无效,真实 env 默认允许远端+本地路径未生效 → 缺 `tokenizer_config.json`(上游 113B,AutoTokenizer 必读,不在清单)时直连 huggingface.co → DNS 污染 10s 超时。**根因②**(取证副产物)——kokoro-js@1.2.1 内置音色注册表仅 28 个英语音色,zf/zm/jf 等仓库 .bin 选中必报 "Voice not found"(R187 的 55 音色目录失真)。
+  - **修复**:①env 改从 `@huggingface/transformers` 真身设置(并将其声明为直接依赖 ^3.8.1,与 kokoro-js 共用 hoisted 单实例);②manifest 补 `tokenizer_config.json`(113B,required);③音色目录收敛为引擎支持的 28 个英语音色(shared/kokoroVoices 重写并注明依据)。
+  - **真机端到端验证**(真实权重):af_heart/美式 **79,244B WAV ✓ 2.7s**;bf_emma/英式 **87,644B WAV ✓**;zf_xiaobei 按预期拒绝(已从下拉移除)。
+  - **附带交付(用户需求)**:模型依赖面板完成后默认折叠为一行摘要(`✓ 就绪 · 293 MB · 8/8 ▸`),点标题行展开/收起,选择持久化(localStorage);下载中折叠态保留迷你进度条;真机验证折叠/展开/8 行明细全通过。
+  - **用户侧待办**:更新构建重启 → 依赖面板会显示缺 tokenizer_config.json(113B)→ 点一次「下载」→ 8/8 → 播放即有声。
+- **R192.3 发版流程**:用户复验#2(P-4 冒烟)/#3(P-5 合成观感)→`dist:dir` 冷启动验证→`dist:win` 出包→体积核查(R176.3 口径)。
+- **R192.4 状态**:🔄

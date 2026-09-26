@@ -40,6 +40,9 @@ export interface KokoroFileSpec {
 export const KOKORO_FILES: KokoroFileSpec[] = [
   { path: 'config.json', bytes: 44, required: true },
   { path: 'tokenizer.json', bytes: 3497, required: true },
+  // R192.2: AutoTokenizer reads this alongside tokenizer.json — without it the
+  // engine load fell through to a remote fetch and died on DNS ("fetch failed").
+  { path: 'tokenizer_config.json', bytes: 113, required: true },
   { path: 'onnx/model_q4.onnx', bytes: 305_215_966, required: true },
   ...KOKORO_BUNDLED_VOICES.map((v) => ({ path: `voices/${v}.bin`, bytes: 522_240, required: false })),
 ]
@@ -265,13 +268,21 @@ async function getEngine(cacheRoot: string): Promise<KokoroTtsInstance> {
       if (!status.complete) throw new Error('model-not-ready')
       const mod = (await import('kokoro-js')) as unknown as {
         KokoroTTS?: { from_pretrained: (repo: string, opts: Record<string, unknown>) => Promise<KokoroTtsInstance> }
-        env?: { localModelPath?: string; allowRemoteModels?: boolean; cacheDir?: string }
       }
       if (!mod.KokoroTTS) throw new Error('KokoroTTS export missing')
-      // R179: 纯本地——文件由我们的下载器落盘,transformers 不再触网。
-      if (mod.env) {
-        mod.env.allowRemoteModels = false
-        mod.env.localModelPath = join(cacheRoot, 'kokoro-local')
+      // R192.2: kokoro-js re-exports an `env` that is a {wasmPaths} shim — NOT
+      // the transformers env. Setting allowRemoteModels/localModelPath on it
+      // was a silent no-op, so a missing tokenizer_config.json made the load
+      // fall through to a live huggingface.co fetch (DNS-polluted → "fetch
+      // failed" after ~10s). The REAL env lives in @huggingface/transformers
+      // (declared as a direct dep so the hoisted instance is the same one
+      // kokoro-js uses).
+      const tr = (await import('@huggingface/transformers')) as unknown as {
+        env?: { localModelPath?: string; allowRemoteModels?: boolean }
+      }
+      if (tr.env) {
+        tr.env.allowRemoteModels = false
+        tr.env.localModelPath = join(cacheRoot, 'kokoro-local')
       }
       return mod.KokoroTTS.from_pretrained(KOKORO_REPO, { dtype: 'q4', device: 'cpu' })
     })().catch((err) => {
