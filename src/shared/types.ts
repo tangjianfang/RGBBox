@@ -572,7 +572,9 @@ export interface AgentToolCallView {
   status: 'running' | 'done' | 'denied' | 'error'
 }
 
-export type AgentEvent =
+// R184: persisted JSONL lines carry the write time — session restore rebuilds
+// tool-call durations from it (live runs time event arrivals renderer-side).
+export type AgentEvent = (
   | { kind: 'session-meta'; sessionId: string; model: string; workspace?: string }
   | { kind: 'turn-start'; turn: number }
   | { kind: 'text-delta'; text: string }
@@ -582,6 +584,7 @@ export type AgentEvent =
   | { kind: 'approval'; approval: AgentApprovalRequest }
   | { kind: 'user'; text: string }
   | { kind: 'done'; reason: 'completed' | 'cancelled' | 'error' | 'max-turns'; error?: string }
+) & { ts?: number }
 
 export interface AgentSessionMeta {
   id: string

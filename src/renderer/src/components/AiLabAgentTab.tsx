@@ -13,8 +13,53 @@ import type { AgentApprovalRequest, AgentEvent, AgentMode, AgentSessionMeta, AiP
  * R174.6: AI8 支持——无 ai8 档案但有存储 token 时自动补建;选中 AI8 档时
  * 显示站点模型下拉(模板是公开接口,分组复用 AI8 页逻辑),经 modelOverride 下发。
  */
-interface ToolCard { id: string; name: string; args: string; result: string; status: 'running' | 'done' | 'denied' | 'error' }
+interface ToolCard { id: string; name: string; args: string; result: string; status: 'running' | 'done' | 'denied' | 'error'; startedAt?: number; endedAt?: number }
 interface TranscriptItem { kind: 'user' | 'assistant' | 'assistant-streaming' | 'tool' | 'approval'; text?: string; tool?: ToolCard; approval?: AgentApprovalRequest; resolved?: boolean }
+
+/** R184: tool results beyond this many lines render folded by default. */
+const TOOL_FOLD_LINES = 12
+/** R184: hard char cap on the rendered excerpt (main process caps raw at 64KB). */
+const TOOL_RESULT_CHAR_CAP = 4000
+
+function formatDuration(ms: number): string {
+  return ms < 1000 ? `${Math.max(0, Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`
+}
+
+/** R184: a tool call as a card — name + status glyph + duration header, args,
+ *  result folded past TOOL_FOLD_LINES with an explicit expand/collapse toggle. */
+function AgentToolCard({ tool, t }: { tool: ToolCard; t: ReturnType<typeof useI18n>['t'] }): JSX.Element {
+  const [expanded, setExpanded] = useState(false)
+  const resultLines = useMemo(() => tool.result.split('\n'), [tool.result])
+  const foldable = resultLines.length > TOOL_FOLD_LINES
+  const shown = foldable && !expanded ? resultLines.slice(0, TOOL_FOLD_LINES).join('\n') : tool.result
+  const truncated = tool.result.length > TOOL_RESULT_CHAR_CAP
+  const excerpt = shown.slice(0, TOOL_RESULT_CHAR_CAP)
+  const duration = tool.startedAt !== undefined && tool.endedAt !== undefined ? tool.endedAt - tool.startedAt : null
+  const glyph = tool.status === 'done' ? '✓' : tool.status === 'error' ? '✕' : tool.status === 'denied' ? '⚠' : '●'
+  return (
+    <div className={`agent-tool status-${tool.status}${expanded ? ' expanded' : ''}`}>
+      <div className="agent-tool-head">
+        <span className={`agent-tool-glyph ${tool.status}`} aria-hidden="true">{glyph}</span>
+        <span className="agent-tool-name">{tool.name}</span>
+        {duration !== null && <span className="agent-tool-duration">{formatDuration(duration)}</span>}
+      </div>
+      <pre className="agent-tool-args">{tool.args}</pre>
+      {tool.result !== '' && (
+        <>
+          <pre className="agent-tool-result">{excerpt}</pre>
+          <div className="agent-tool-foot">
+            {foldable && (
+              <button type="button" className="agent-tool-fold" onClick={() => setExpanded((v) => !v)}>
+                {expanded ? t('ai.agent.collapse') : t('ai.agent.expandLines').replace('{n}', String(resultLines.length))}
+              </button>
+            )}
+            {truncated && <span className="agent-tool-truncated">{t('ai.agent.truncated')}</span>}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 // R175: prompt history cache — ↑ recalls the previous prompt, ↓ forward again
 // (cursor-at-edge semantics, like Claude Code); persisted across restarts.
@@ -159,19 +204,25 @@ export function AiLabAgentTab(): JSX.Element {
           case 'tool-start': {
             const last = next[next.length - 1]
             if (last && last.kind === 'assistant-streaming') last.kind = 'assistant'
-            next.push({ kind: 'tool', tool: ev.call })
+            // R184: arrival timing feeds the duration badge (restore path uses ts)
+            next.push({ kind: 'tool', tool: { ...ev.call, startedAt: Date.now() } })
             break
           }
           case 'tool-result': {
             const idx = [...next].reverse().findIndex((it) => it.kind === 'tool' && it.tool?.id === ev.call.id)
-            if (idx >= 0) next[next.length - 1 - idx] = { kind: 'tool', tool: ev.call }
-            else next.push({ kind: 'tool', tool: ev.call })
+            const prior = idx >= 0 ? next[next.length - 1 - idx].tool : undefined
+            const tool: ToolCard = { ...ev.call, startedAt: prior?.startedAt, endedAt: Date.now() }
+            if (idx >= 0) next[next.length - 1 - idx] = { kind: 'tool', tool }
+            else next.push({ kind: 'tool', tool })
             break
           }
           case 'approval': next.push({ kind: 'approval', approval: ev.approval, resolved: false }); setPendingApproval(ev.approval); break
           case 'done':
             if (ev.reason === 'error') setError(ev.error ?? 'error')
             if (ev.reason === 'max-turns') setError('max-turns')
+            // R184: any run end (incl. error/cancelled) closes the streaming
+            // bubble — the caret must not blink on a dead run.
+            for (const it of next) if (it.kind === 'assistant-streaming') it.kind = 'assistant'
             break
           default: break
         }
@@ -248,10 +299,12 @@ export function AiLabAgentTab(): JSX.Element {
       for (const ev of events) {
         if (ev.kind === 'user') restored.push({ kind: 'user', text: ev.text })
         if (ev.kind === 'text') restored.push({ kind: 'assistant', text: ev.text })
-        if (ev.kind === 'tool-start') { lastTool = { ...ev.call }; restored.push({ kind: 'tool', tool: lastTool }) }
+        if (ev.kind === 'approval') restored.push({ kind: 'approval', approval: ev.approval, resolved: true })
+        if (ev.kind === 'tool-start') { lastTool = { ...ev.call, startedAt: ev.ts }; restored.push({ kind: 'tool', tool: lastTool }) }
         if (ev.kind === 'tool-result') {
           const idx = [...restored].reverse().findIndex((it) => it.kind === 'tool' && it.tool?.id === ev.call.id)
-          if (idx >= 0) restored[restored.length - 1 - idx] = { kind: 'tool', tool: ev.call }
+          const tool: ToolCard = { ...ev.call, startedAt: idx >= 0 ? restored[restored.length - 1 - idx].tool?.startedAt : ev.ts, endedAt: ev.ts }
+          if (idx >= 0) restored[restored.length - 1 - idx] = { kind: 'tool', tool }
           lastTool = null
         }
         if (ev.kind === 'done' && ev.reason === 'error') restoredError = ev.error ?? 'error'
@@ -375,7 +428,6 @@ export function AiLabAgentTab(): JSX.Element {
               return (
                 <div key={i} className="agent-msg agent-msg-assistant agent-streaming">
                   <MarkdownView text={it.text ?? ''} copyLabel={t('ai.agent.copy')} copiedLabel={t('ai.agent.copied')} />
-                  <span className="agent-caret" aria-hidden="true" />
                 </div>
               )
             }
@@ -389,23 +441,26 @@ export function AiLabAgentTab(): JSX.Element {
               )
             }
             if (it.kind === 'approval' && it.approval) {
+              // R184: unified diff palette — before = removal (red), after = addition (green)
               return (
                 <div key={i} className={`agent-approval${it.resolved ? ' resolved' : ''}`}>
                   <strong>⚠ {it.approval.summary}</strong>
-                  {it.approval.before !== undefined && <pre className="agent-diff before">{it.approval.before}</pre>}
-                  {it.approval.after !== undefined && <pre className="agent-diff after">{it.approval.after}</pre>}
+                  {it.approval.before !== undefined && (
+                    <div className="agent-diff-block">
+                      <span className="agent-diff-label before">− {t('ai.agent.diffBefore')}</span>
+                      <pre className="agent-diff before">{it.approval.before}</pre>
+                    </div>
+                  )}
+                  {it.approval.after !== undefined && (
+                    <div className="agent-diff-block">
+                      <span className="agent-diff-label after">+ {t('ai.agent.diffAfter')}</span>
+                      <pre className="agent-diff after">{it.approval.after}</pre>
+                    </div>
+                  )}
                 </div>
               )
             }
-            if (it.tool) {
-              return (
-                <div key={i} className={`agent-tool status-${it.tool.status}`}>
-                  <span className="agent-tool-name">{it.tool.name}</span>
-                  <pre className="agent-tool-args">{it.tool.args}</pre>
-                  {it.tool.result !== '' && <pre className="agent-tool-result">{it.tool.result.slice(0, 2000)}</pre>}
-                </div>
-              )
-            }
+            if (it.tool) return <AgentToolCard key={i} tool={it.tool} t={t} />
             return null
           })}
         </div>

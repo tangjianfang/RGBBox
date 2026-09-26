@@ -240,4 +240,78 @@ describe('AiLabAgentTab (R172-S2)', () => {
     await waitFor(() => expect(container.querySelector('.agent-error-banner')).not.toBeNull())
     expect(container.querySelector('.agent-error-banner')?.textContent).toContain('模型响应解析失败')
   })
+
+  it('R184: long tool results fold past 12 lines; toggle expands; duration badge renders', async () => {
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    const longResult = Array.from({ length: 30 }, (_, i) => `line-${i + 1}`).join('\n')
+    rgbbox.agentSessionsList = vi.fn().mockResolvedValue([{ id: 's-fold', title: '长输出', updatedAt: 3, events: 4 }])
+    rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([
+      { kind: 'session-meta', sessionId: 's-fold', model: 'glm-5.3', workspace: 'C:\\tmp\\ws' },
+      { kind: 'user', text: '读大文件' },
+      { kind: 'tool-start', call: { id: 't1', name: 'read', args: '{"path":"big.txt"}', result: '', status: 'running' }, ts: 1000 },
+      { kind: 'tool-result', call: { id: 't1', name: 'read', args: '{"path":"big.txt"}', result: longResult, status: 'done' }, ts: 2500 },
+      { kind: 'done', reason: 'completed' },
+    ])
+    const { container } = render(<AiLabAgentTab />)
+    const btn = await waitFor(() => {
+      const el = container.querySelector('[data-action="agent-load"]') as HTMLButtonElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.click(btn)
+    await waitFor(() => expect(rgbbox.agentSessionLoad).toHaveBeenCalledWith('s-fold'))
+    // folded by default: only the first 12 lines render + the fold toggle
+    // (i18n mock returns the key as-is, so the {n} count is asserted via the
+    // rendered line window instead)
+    await waitFor(() => expect(container.querySelector('.agent-tool-fold')).not.toBeNull())
+    expect(container.querySelector('.agent-tool-fold')?.textContent).toContain('ai.agent.expandLines')
+    const pre = container.querySelector('.agent-tool-result') as HTMLPreElement
+    expect(pre.textContent).toContain('line-12')
+    expect(pre.textContent).not.toContain('line-13')
+    // duration badge from JSONL ts delta (2500-1000 = 1.5s)
+    expect(container.querySelector('.agent-tool-duration')?.textContent).toBe('1.5s')
+    // expand → all lines; collapse → back to the fold window
+    fireEvent.click(container.querySelector('.agent-tool-fold')!)
+    expect((container.querySelector('.agent-tool-result') as HTMLPreElement).textContent).toContain('line-30')
+    expect(container.querySelector('.agent-tool-fold')?.textContent).toContain('ai.agent.collapse')
+    fireEvent.click(container.querySelector('.agent-tool-fold')!)
+    expect((container.querySelector('.agent-tool-result') as HTMLPreElement).textContent).not.toContain('line-13')
+  })
+
+  it('R184: run end closes the streaming bubble (no caret on a dead run); approval card restores', async () => {
+    let subscriber: ((ev: unknown) => void) | undefined
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.onAgentEvent = vi.fn().mockImplementation((cb: (ev: unknown) => void) => { subscriber = cb; return () => undefined })
+    const { container } = render(<AiLabAgentTab />)
+    await waitFor(() => expect(rgbbox.aiGetProfiles).toHaveBeenCalled())
+    subscriber?.({ kind: 'user', text: 'go' })
+    subscriber?.({ kind: 'text-delta', text: 'partial answer…' })
+    await waitFor(() => expect(container.querySelector('.agent-streaming')).not.toBeNull())
+    // error end: bubble closes, banner shows, no streaming element remains
+    subscriber?.({ kind: 'done', reason: 'error', error: 'boom' })
+    await waitFor(() => expect(container.querySelector('.agent-streaming')).toBeNull())
+    await waitFor(() => expect(container.querySelector('.agent-error-banner')).not.toBeNull())
+    expect(container.querySelector('.agent-msg-assistant')?.textContent).toContain('partial answer')
+
+    // approval card restoration (resolved, with unified diff labels)
+    rgbbox.agentSessionsList = vi.fn().mockResolvedValue([{ id: 's-ap', title: '审批会话', updatedAt: 4, events: 3 }])
+    rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([
+      { kind: 'user', text: '改文件' },
+      { kind: 'approval', approval: { id: 'ap1', kind: 'edit', summary: 'edit a.txt', before: 'old', after: 'new' } },
+      { kind: 'done', reason: 'completed' },
+    ])
+    const second = render(<AiLabAgentTab />)
+    const loadBtn = await waitFor(() => {
+      const el = second.container.querySelector('[data-action="agent-load"]') as HTMLButtonElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.click(loadBtn)
+    await waitFor(() => expect(second.container.querySelector('.agent-approval.resolved')).not.toBeNull())
+    expect(second.container.querySelectorAll('.agent-diff-label').length).toBe(2)
+    expect(second.container.querySelector('.agent-diff-label.before')?.textContent).toContain('Before')
+    expect(second.container.querySelector('.agent-diff.before')).not.toBeNull()
+    expect(second.container.querySelector('.agent-diff.after')).not.toBeNull()
+    second.unmount()
+  })
 })

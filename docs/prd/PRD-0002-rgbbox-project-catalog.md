@@ -3488,3 +3488,12 @@
 - **R183.2 修复(16 项归零)**:Agent——布局撑满(keep-alive 容器 flex 化 + 去 agent-log 480px 钳制→输入沉底/空态居中)、会话列表选中态、**错误终态横幅 + 会话恢复错误回放**(此前失败运行与成功运行视觉无差别)、textarea 去 resize 手柄、按钮光学对齐、空态引导对比度、深色滚动条;声文——**模型行右列截断修复**(尾簇钉右+路径缩略)、formatBytes(5KB 文件不再显示 0.0 MB/0)、语速标签折行、分句列表序号+卡片+省略号、进度轨道明度、对比度补齐;全局——**顶栏标题绝对居中**(7/9 视图报偏移)、rail 标签 9→11px、效果库底部渐隐 mask、音频可视化空态引导。10 项入档(设计系统级/需产品决策,附去向)。
 - **R183.3 验收**:typecheck 双绿;vitest **131 文件/1170 用例全过**(+2:formatBytes/会话恢复横幅回归);CDP 客观 DOM 断言 **10/10 PASS**(标题中心 720.0/输入沉底 20px/log 636px/行零溢出等);`ui:snapshot` 预期漂移(全局 chrome)核对后 `--update-baseline` 重立于 a6bbc1d,复跑 **9/9 GATE PASS 0.0000%**。
 - **R183.4 状态**:✅
+
+### R184. P-2 Agent 工具卡打磨（R177 方案第二批;2026-09-26「执行这个优化」）
+
+- **R184.1 折叠**:工具结果 >12 行默认折叠(点击展开/收起,标注总行数),长输出不再撑爆 transcript;行数与展开态按卡片独立。
+- **R184.2 徽标**:卡片头部 = 工具名 + 状态徽标(running 脉冲/✓ done/✕ error/⚠ denied) + 耗时(如 340ms / 1.2s);耗时来源——live 为事件到达间隔,会话恢复为 JSONL `ts` 差(emit 落盘补 ts)。
+- **R184.3 diff 配色统一**:审批 before/after 摘录统一红/绿 tint(before 删除语义、after 新增语义),替换现行 opacity/border 方案。
+- **R184.4 流式光标收尾**:done(含 error/cancelled/max-turns)后残余的 streaming 气泡收敛为普通 assistant 气泡(光标移除);移除无样式残留的 `.agent-caret` span。附带:loadSession 恢复 approval 卡片(此前不回放)。
+- **R184.5 验收**:typecheck 双绿;vitest **131 文件/1172 用例全过**(+2:折叠交互+耗时徽标/ts 差 1.5s 断言/流式收尾+审批恢复+diff 标签);`ui:snapshot` **9/9 GATE PASS 0.0000%**(Agent Tab 默认隐藏,静息视图零影响,无需重拍)。
+- **R184.6 状态**:✅

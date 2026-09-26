@@ -101,7 +101,9 @@ export function createAgentService(deps: AgentServiceDeps) {
   const emit = (ev: AgentEvent): void => {
     deps.pushEvent(ev)
     try {
-      appendFileSync(join(deps.sessionsDir, `${runSessionId()}.jsonl`), JSON.stringify(ev) + '\n')
+      // R184: ts rides along into the JSONL only (the live push stays lean) —
+      // restored sessions use it to rebuild tool-call durations.
+      appendFileSync(join(deps.sessionsDir, `${runSessionId()}.jsonl`), JSON.stringify({ ...ev, ts: Date.now() }) + '\n')
     } catch { /* session persistence is best-effort */ }
   }
   const runSessionId = (): string => (run ? run.sessionId : 'orphan')
