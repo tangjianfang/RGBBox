@@ -19,10 +19,10 @@ async function openTab(container: HTMLElement, tab: 'config' | 'chat' | 'ocr') {
 }
 
 describe('AiLabView (R89)', () => {
-  it('renders tabs with the agent chip collapsed by default (R179) and switches between them', { timeout: 15000 }, async () => {
+  it('renders all 9 tabs with the agent tab permanent (R192.5) and switches between them', { timeout: 15000 }, async () => {
     const { container } = mount()
     const tabs = container.querySelectorAll('.ai-tab')
-    expect(tabs.length).toBe(8 + 1) // 8 tabs + the 🤖 toggle (R179)
+    expect(tabs.length).toBe(9) // R192.5: agent is a permanent strip member
     const audioTab = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === 'audio') as HTMLElement
     fireEvent.click(audioTab)
     await waitFor(() => expect(audioTab.classList.contains('active')).toBe(true))
@@ -44,20 +44,13 @@ describe('AiLabView (R89)', () => {
     fireEvent.click(voiceTab)
     await waitFor(() => expect(voiceTab.classList.contains('active')).toBe(true))
     expect(container.querySelector('.vs-tab')).not.toBeNull()
-    // R179: agent chip hidden by default; the 🤖 toggle reveals it, then it mounts
-    expect([...container.querySelectorAll('.ai-tab')].some((b) => b.getAttribute('data-tab') === 'agent')).toBe(false)
-    fireEvent.click(container.querySelector('[data-action="toggle-agent-tab"]')!)
-    const agentTab = await waitFor(() => {
-      const el = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === 'agent') as HTMLElement
-      expect(el).toBeTruthy()
-      return el
-    })
+    // R192.5: the agent tab is always in the strip (no 🤖 reveal toggle) and mounts
+    expect(container.querySelector('[data-action="toggle-agent-tab"]')).toBeNull()
+    const agentTab = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === 'agent') as HTMLElement
+    expect(agentTab).toBeTruthy()
     fireEvent.click(agentTab)
     await waitFor(() => expect(agentTab.classList.contains('active')).toBe(true))
     expect(container.querySelector('.agent-tab')).not.toBeNull()
-    // persisted: stays open for the session
-    expect(localStorage.getItem('rgbbox:aiLabAgentTabOpen')).toBe('1')
-    localStorage.removeItem('rgbbox:aiLabAgentTabOpen')
   })
 
   it('renders the legacy three core tabs and switches between them', async () => {

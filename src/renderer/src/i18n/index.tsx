@@ -83,7 +83,6 @@ const EN = {
   'ai.voice.err.model-not-ready': 'Model files incomplete — finish the download above first',
   // R172: Agent workbench tab
   'ai.lab.tab.agent': 'Agent',
-  'ai.lab.toggleAgent': 'Show/hide the coding agent tab',
   'ai.agent.title': 'Coding Agent',
   'ai.agent.emptyTitle': 'Your coding agent',
   'ai.agent.step1': 'Pick the workspace folder you want it to work in',
@@ -1684,7 +1683,6 @@ const ZH: TranslationTable = {
   'ai.voice.err.model-not-ready': '模型文件不完整——请先完成上方下载',
   // R172: Agent 工作台 Tab
   'ai.lab.tab.agent': 'Agent',
-  'ai.lab.toggleAgent': '显示/隐藏编码 Agent 标签页',
   'ai.agent.title': '编码 Agent',
   'ai.agent.emptyTitle': '你的编码 Agent',
   'ai.agent.step1': '选择要工作的文件夹(工作区)',
