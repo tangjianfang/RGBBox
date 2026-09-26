@@ -53,10 +53,10 @@ vi.mock('lucide-react', () => {
     'AppWindow','ArrowDown','ArrowLeft','ArrowRight','ArrowUp','AtSign','Award',
     'Battery','BatteryCharging','Bell','BellOff','Bluetooth','Bold','Book','BookOpen','Bookmark','Box',
     'Briefcase','Calendar','Camera','CameraOff','Cast','Check','ChevronDown','ChevronLeft',
-    'ChevronRight','ChevronUp','Circle','Clipboard','Clock','Cloud','CloudOff','Code','Codepen',
+    'ChevronRight','CheckCheck','ChevronUp','Circle','Clipboard','Clock','Cloud','CloudOff','Code','Codepen',
     'Coffee','Command','Compass','Copy','Cpu','Crop','Crosshair','Database','Delete','Disc',
     'Download','Droplet','Edit','Edit2','Eye','EyeOff','Facebook','File','FilePlus','FileText','Film',
-    'Filter','Flag','FlipHorizontal','FlipVertical','Folder','FolderOpen','Frown','Frame','Gift','GitBranch','GitCommit','GitMerge',
+    'Filter','Flag','FlipHorizontal','FlipVertical','Folder','FolderOpen','Frown','Frame','Gift','History','GitBranch','GitCommit','GitMerge',
     'GitPullRequest','Globe','Grid','Gauge','HardDrive','Hash','Headphones','Heart','HelpCircle',
     'Hexagon','Home','Image','Inbox','Info','Instagram','Italic','Key','Languages','Layers','Layout',
     'LifeBuoy','Link','Link2','Link2Off','Linkedin','List','Loader','Lock','LogIn','LogOut','Mail','Map','MapPin',
@@ -65,7 +65,7 @@ vi.mock('lucide-react', () => {
     'Octagon','Package','Paperclip','Pause','PenTool','Pencil','Percent','Phone','PhoneCall','PhoneOff',
     'PieChart','Play','PlayCircle','Plus','PlusCircle','Pocket','Power','Printer','Radio',
     'RefreshCw','Repeat','Reply','Rewind','RotateCcw','RotateCw','Rss','Save','Scissors',
-    'Search','Send','Server','Settings','Share','Share2','Shield','ShieldOff','ShoppingBag',
+    'Search','Send','Server','Settings','Share','Share2','ShieldCheck','Shield','ShieldOff','ShoppingBag',
     'ShoppingCart','Shuffle','Sidebar','SkipBack','SkipForward','Slack','Slash','Sliders','SlidersHorizontal','Scan',
     'Smartphone','Smile','Sparkles','Speaker','Square','Star','StopCircle','Sun','Sunrise','Sunset',
     'Tablet','Tag','Target','Terminal','Thermometer','ThumbsDown','ThumbsUp','ToggleLeft',
@@ -79,7 +79,8 @@ vi.mock('lucide-react', () => {
     'ArrowUpRight','ArrowUpLeft','ArrowDownLeft','ArrowDownRight',
     'AlignLeft','AlignCenter','AlignRight','ArrowUpToLine','ArrowDownToLine','ScanText',
     // R85 tab shell: dashboard tab icon + shutdown chip icon
-    'LayoutGrid','Timer','Bot'
+    'LayoutGrid','Timer','Bot',
+
   ]
   for (const n of NAMES) icons[n] = catchAll
   return icons

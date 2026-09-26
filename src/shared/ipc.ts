@@ -191,6 +191,18 @@ export const ipcChannels = {
   audioAiStreamStart: 'rgbbox:audio-ai:stream-start',
   audioAiStreamFeed: 'rgbbox:audio-ai:stream-feed',
   audioAiStreamStop: 'rgbbox:audio-ai:stream-stop',
+  // R172: coding-agent workbench (kernel engine + approval loop)
+  agentSend: 'rgbbox:agent:send',
+  agentCancel: 'rgbbox:agent:cancel',
+  agentApprovalRespond: 'rgbbox:agent:approval-respond',
+  agentSessionsList: 'rgbbox:agent:sessions-list',
+  agentSessionLoad: 'rgbbox:agent:session-load',
+  agentPickWorkspace: 'rgbbox:agent:pick-workspace',
+  agentEvent: 'rgbbox:agent:event', // main -> renderer push
+  // R173-S2: offline TTS (Kokoro) engine + WAV export
+  ttsEngineStatus: 'rgbbox:tts:engine-status',
+  ttsSynthesize: 'rgbbox:tts:synthesize',
+  ttsExport: 'rgbbox:tts:export',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

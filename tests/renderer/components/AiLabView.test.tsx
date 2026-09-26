@@ -19,10 +19,10 @@ async function openTab(container: HTMLElement, tab: 'config' | 'chat' | 'ocr') {
 }
 
 describe('AiLabView (R89)', () => {
-  it('renders seven tabs (config/chat/ocr/audio/vision/svg/ai8) and switches between them', { timeout: 15000 }, async () => {
+  it('renders nine tabs (config/chat/ocr/audio/vision/svg/voice/agent/ai8) and switches between them', { timeout: 15000 }, async () => {
     const { container } = mount()
     const tabs = container.querySelectorAll('.ai-tab')
-    expect(tabs.length).toBe(7)
+    expect(tabs.length).toBe(9)
     const audioTab = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === 'audio') as HTMLElement
     fireEvent.click(audioTab)
     await waitFor(() => expect(audioTab.classList.contains('active')).toBe(true))
@@ -39,12 +39,22 @@ describe('AiLabView (R89)', () => {
     fireEvent.click(svgTab)
     await waitFor(() => expect(svgTab.classList.contains('active')).toBe(true))
     expect(container.querySelector('.ai-svg-scene')).not.toBeNull()
+    // R173: the VoiceScribe tab mounts the reader
+    const voiceTab = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === 'voice') as HTMLElement
+    fireEvent.click(voiceTab)
+    await waitFor(() => expect(voiceTab.classList.contains('active')).toBe(true))
+    expect(container.querySelector('.vs-tab')).not.toBeNull()
+    // R172: the agent workbench mounts
+    const agentTab = [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === 'agent') as HTMLElement
+    fireEvent.click(agentTab)
+    await waitFor(() => expect(agentTab.classList.contains('active')).toBe(true))
+    expect(container.querySelector('.agent-tab')).not.toBeNull()
   })
 
   it('renders the legacy three core tabs and switches between them', async () => {
     const { container } = mount()
     const tabs = container.querySelectorAll('.ai-tab')
-    expect(tabs.length).toBe(7)
+    expect(tabs.length).toBe(9)
     expect(tabs[0].classList.contains('active')).toBe(true) // config default
     await openTab(container, 'chat')
     expect(container.querySelector('textarea[data-field="chat-input"]')).not.toBeNull()

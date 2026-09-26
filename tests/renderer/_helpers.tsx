@@ -42,6 +42,18 @@ export function setupRendererMocks() {
     modelGetCachedPaths: vi.fn().mockResolvedValue({}),
     modelDownload: vi.fn().mockResolvedValue('file:///cached/x.splat'),
     onModelDownloadProgress: vi.fn().mockReturnValue(() => undefined),
+    // R173: VoiceScribe tts surface
+    ttsEngineStatus: vi.fn().mockResolvedValue({ kokoroInstalled: false, modelHint: 'engine-unavailable' }),
+    ttsSynthesize: vi.fn().mockResolvedValue({ ok: false, error: 'engine-unavailable' }),
+    ttsExport: vi.fn().mockResolvedValue({ ok: false, error: 'engine-unavailable' }),
+    // R172: agent workbench surface
+    agentSend: vi.fn().mockResolvedValue({ ok: true, sessionId: 's-test' }),
+    agentCancel: vi.fn().mockResolvedValue({ ok: true }),
+    agentApprovalRespond: vi.fn().mockResolvedValue({ ok: true }),
+    agentSessionsList: vi.fn().mockResolvedValue([]),
+    agentSessionLoad: vi.fn().mockResolvedValue([]),
+    agentPickWorkspace: vi.fn().mockResolvedValue(null),
+    onAgentEvent: vi.fn().mockReturnValue(() => undefined),
     // R91.3b: DTLN denoise surface (unmount cleanup calls denoiseStop)
     denoiseStart: vi.fn().mockResolvedValue({ ok: true }),
     denoiseSendFrames: vi.fn(),

@@ -474,6 +474,9 @@ export interface AiChatOutcome {
   text: string
   hint?: AiErrorHint
   latencyMs: number
+  /** R174.8: raw provider/site message (e.g. AI8 积分不足 / 模型不可用) — the
+   *  hint taxonomy alone flattened every non-auth failure into "network". */
+  detail?: string
 }
 
 // ── R89: AI Lab named profiles ────────────────────────────────────────────
@@ -543,4 +546,67 @@ export interface SnipPushFrame {
   height: number
   /** BGRA 字节序列（nativeImage.toBitmap()）；渲染端 swapBgraToRgba 后 putImageData。 */
   data: Uint8Array
+}
+
+// ── R172: coding-agent workbench (kernel engine) ───────────────────────────
+
+export type AgentMode = 'plan' | 'standard' | 'trust'
+
+export interface AgentApprovalRequest {
+  id: string
+  kind: 'write' | 'edit' | 'bash'
+  /** One-line summary for the approval bar. */
+  summary: string
+  path?: string
+  command?: string
+  /** edit: before/after excerpts; write: new content excerpt. */
+  before?: string
+  after?: string
+}
+
+export interface AgentToolCallView {
+  id: string
+  name: string
+  args: string
+  result: string
+  status: 'running' | 'done' | 'denied' | 'error'
+}
+
+export type AgentEvent =
+  | { kind: 'session-meta'; sessionId: string; model: string; workspace?: string }
+  | { kind: 'turn-start'; turn: number }
+  | { kind: 'text-delta'; text: string }
+  | { kind: 'text'; text: string }
+  | { kind: 'tool-start'; call: AgentToolCallView }
+  | { kind: 'tool-result'; call: AgentToolCallView }
+  | { kind: 'approval'; approval: AgentApprovalRequest }
+  | { kind: 'user'; text: string }
+  | { kind: 'done'; reason: 'completed' | 'cancelled' | 'error' | 'max-turns'; error?: string }
+
+export interface AgentSessionMeta {
+  id: string
+  title: string
+  updatedAt: number
+  events: number
+}
+
+export interface AgentSendArgs {
+  text: string
+  /** Profile id from aiProfileStore; empty = active profile. */
+  profileId?: string
+  workspace: string
+  mode: AgentMode
+  /** Continue an existing session id, or empty for a new session. */
+  sessionId?: string
+  /** R174.6: per-run model override (AI8 model picker sends e.g. openai_chat::gpt-5.4). */
+  modelOverride?: string
+}
+
+// ── R173-S2: offline TTS engine ─────────────────────────────────────────────
+
+export interface TtsEngineStatus {
+  /** kokoro-js + its runtime deps resolve in the main process. */
+  kokoroInstalled: boolean
+  /** First synthesis downloads ~86MB of ONNX weights via HF_ENDPOINT (hf-mirror default). */
+  modelHint: string
 }

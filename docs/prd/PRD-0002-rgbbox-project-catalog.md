@@ -3403,3 +3403,37 @@
 - **R173.4 i18n**：`ai.lab.tab.voice` + `ai.voice.*` ~14 键 EN/ZH 对称。
 - **R173.5 验收点**：①typecheck + vitest 全绿（新 domain 单测：分句/规范化/词典替换/语言检测；组件挂载测试）；②i18n 对称过；③`ui:snapshot` ai 视图重拍基线 GATE PASS。
 - **R173.6 状态**：🔄（实施中）
+
+- **R172.12 分支实施记录（2026-09-25，`feat/ai-lab-expansion`，承载 S0-S3）**：
+  - **S0（A2）静态实证**：`@earendil-works/pi-coding-agent` + `kokoro-js` 安装成功；pi-ai 供应商目录实证 **`zai-coding-cn` provider baseUrl = `https://open.bigmodel.cn/api/coding/paas/v4`**（正是智谱国内站,env `ZAI_CODING_CN_API_KEY`），模型含 **glm-5.3 / glm-5.3-flash / glm-5.3-highspeed / glm-4.6v**——R-1（pi-ai 对 bigmodel.cn 覆盖）静态层面成立；`createAgentSession({cwd,model,customTools,noTools})` 类型面核实。动态 go/no-go harness：`scripts/pi-spike.mjs`（双模型冒烟任务,待用户以 API key 实跑出分界线,含 flash 对比=档位标注依据）。
+  - **S1 内核（A3）**：v1 运行时采用 **kernel 内核**（直接复用现有 profile 体系含 key 解密与三类 provider 分发；pi 引擎保留为可替换插槽,避免 SDK 会话/凭据体系与 app 档位解耦的二次映射）——`src/main/agentService.ts`（循环/审批三档/会话 JSONL 恢复/审计 `logs/agent-audit.jsonl`/24 轮上限/取消）+ `src/main/agentTools.ts`（6 工具:read/write/edit/bash/list/glob;工作区钳制、denylist、120s 超时、64KB 截断、`.bak`+原子写=决策③）。
+  - **S2 工作台（A4）**：独立 Tab `agent`（决策②）——`AiLabAgentTab.tsx`：档案下拉（ai8 档显示「实验」=决策④）/工作区选择/审批模式三档/流式 transcript（工具卡片+diff 预览）/审批条（本次/总是/拒绝）/会话列表恢复；IPC `agentSend/Cancel/ApprovalRespond/SessionsList/SessionLoad/PickWorkspace` + 推送 `agentEvent`；preload 桥 + i18n 20 键。
+  - **S3 AI8 ReAct 桥（A6）**：ai8:// 档位自动切文本协议（`REACT_SYSTEM_PROMPT` + `parseReactToolCall` 取最后 ```tool``` JSON 块,4 用例单测）,界面「实验」提示。
+  - **门禁**：typecheck 双配置绿;vitest **127 文件 / 1151 用例全过**（新增 agentTools 7 例/agentService+ttsWav 8 例/AgentTab 3 例/VoiceTab 3 例/AiLabView 9-tab）;`ui:snapshot` 重拍基线后 **9/9 GATE PASS×2 全确定性**（中途 0.45% 超限定位为陈旧 out/,重建后归零）。
+  - **遗留（转 C1/B）**：pi 引擎动态验证（待 key）、Windows `rm -rf C:\` 类路径的 denylist 补充（已记单测注释）、打包体积核查（kokoro-js+transformers 入包,R-8）。
+
+- **R173.7 S1/S2 实施记录（2026-09-25，`feat/ai-lab-expansion`）**：S1 ✅——`AiLabVoiceTab.tsx`（第 8 Tab `voice`「声文」：文本区/分句预览点击跳读/系统引擎句级队列+当前句高亮/语速/中英自动检测（CJK 1.5× 加权）/词典钉音编辑器 localStorage 持久化/`speechSynthesis` 缺失降级提示）+ domain 6 用例 + 组件 3 用例 + i18n 18 键。S2 代码完成——`ttsService.ts`（kokoro-js 动态加载/HF_ENDPOINT→hf-mirror/缓存 userData/models/hf/实例常驻/失败回落系统引擎不阻塞）+ `ttsWav.ts`（纯 WAV 编码 3 用例）+ `ttsSynthesize/ttsExport`（原生另存对话框）IPC+preload；**首次合成需下载 ~86MB 模型,真机音频质量验证待用户首跑**（同 vision 模型先例,静息门禁不覆盖）。
+
+### R174. 修复：AI8 登录窗口「开窗即关/输入账密无法登录」+ Agent 回复无排版（2026-09-26 用户报障；实施于 feat/ai-lab-expansion）
+
+- **R174.1 AI8 根因（探针实证 `scripts/ai8-login-probe.mjs` 复用真实 persist:ai8 分区）**：①「闪退」= 分区残留失效 token 时,登录窗口轮询 1.5s 内捕获死 token→自动关窗,用户来不及操作（leveldb 含 8 处 userStore 历史版本,现行 auth:null）；②「输入账密无法登录」= 登录窗口 UA 含 `Electron/41.4.0`,站点拒绝内嵌浏览器登录（外部 Chrome 正常）——探针证实站点加载正常、无渲染崩溃、窗口不自关,排除应用侧崩溃因素。
+- **R174.2 修复三件套**：登录窗口 UA 剥离 `Electron/x` 段（仅该窗口）；`ai8OpenLogin({fresh})` 新参——fresh 时先 `clearStorageData(localstorage/cookies/indexdb)` 再加载站点（手动登录=换 token 一律 fresh,防死 token 抢跑）；探针脚本入库（诊断资产,复用 app userData 可复跑）。
+- **R174.3 Agent 回复排版**：AiLabAgentTab 助手消息接 `MarkdownView`（复用 R114 AI8 渲染器：标题/列表/代码块/复制按钮）;另修 A3 遗留缺口——AI8 档位传输层此前未接 `ai8ChatCompletion`（fetch 假地址必失败）,现 kernel 双分支：OpenAI 兼容走 tools 透传、AI8 走 ai8Provider+ReAct 解析。
+- **R174.4 验收**：typecheck 双绿;vitest 127 文件/1151 用例全过;探针窗口 12s 存活无崩溃/无自关（UA 修复+fresh 清理的端到端登录验证待用户实机——AI8 账密在用户手中）。
+- **R174.6 Agent 选择 AI8 模型（2026-09-26 用户反馈「Agent 中还是无法选择 AI8 中的模型」）**：根因——`syncTokenToProfiles` 只更新不创建,用户从未在配置页手建 ai8 档案 → Agent 档案下拉里根本没有 AI8;且即使有档案,档案的单一 model 字段也无法覆盖 AI8 站点的大模型清单。实现三件套:①Agent Tab 挂载时「无 ai8 档案 + localStorage 有 token(`readStoredToken`)」→ 自动 `aiSaveProfile` 补建;②选中 ai8 档时显示**站点模型下拉**(公开 chat 模板 `Ai8Client({token:''}).getChatTemplate()`,模块级缓存,`groupModelsByProvider` 分组 optgroup,加载/失败态);③`AgentSendArgs.modelOverride` 贯通 preload/main,agentService 以覆写值调用 ai8Provider。测试 +2(自动建档案断言 / 模型下拉选择→agentSend 带 modelOverride 断言,Ai8Client 模板 mock)。
+- **R174.7 状态**：✅（typecheck 双绿;vitest 127 文件 / 1153 用例全过;实机 AI8 会话质量属 R172.8「实验」范畴）
+
+- **R174.8 AI8 桥错误可见性（2026-09-26 用户报障 `ai.agent.err.ai8: network` 后分析）**：根因——ai8Provider 把除 code=2 外的一切失败（SSE 流内站点错误=积分不足/模型不可用/审核拒绝、会话创建被拒、fetch 异常、**SSE 永不终止的挂起**——该路径原本无超时）统一压成 hint=network,真实原因不可见。修复：①`AiChatOutcome.detail?` 携带站点原始消息（"AI8 API error code=N" 这类无信息量包装仍隐藏）;②code=-2（未激活）归 auth;③`collectAi8Reply` 加 180s AbortSignal 硬超时（挂起不再让 agent 永久转圈）;④agentService 抛错透传 detail → UI 显示 `ai8: network — <站点原文>`。typecheck 双绿;vitest 127 文件/1153 用例全过。**用户复跑同任务即见真实原因**（最可能:所选模型在会话接口不可用/积分不足/内容审核——按 detail 文案对症）。
+
+- **R174.9 Agent 设置持久化 + 会话模型记忆 + 停用模型标记（2026-09-26 用户需求「设置自动缓存/切会话用上次的模型」+ 复跑实证站点原文「当前对话选择的模型已停用」）**：①Agent 工作台设置（档案/工作区/审批模式/AI8 模型/停用名单）持久化 `localStorage['rgbbox:agentPrefs']`,重开页面原样恢复(档案校验存在性,失效回落激活档);②`session-meta` 事件携带 workspace,加载历史会话时反向恢复**该会话上次使用的模型与工作区**;③站点「已停用」模型(模板仍挂名但会话接口拒绝)自动记入本地停用名单并持久化,下拉中禁用+标注,不再反复踩;④错误显示修正——内核原文(含站点 detail)原样打印,不再错误套用 i18n 键前缀。测试 +1(prefs 跨卸载恢复 + 停用标记回归,过程中修复测试自身节点失配问题);typecheck 双绿;vitest **127 文件 / 1154 用例全过**。用户侧验证:换一个未停用模型(下拉中无「站点已停用」标注的)重发任务。
+- **R174.10 状态**：✅
+- **R174.11 Agent AI8 模型列表与 AI8 页对齐（2026-09-26 用户反馈「显示的模型列表和 AI8 中模型列表不一样」）**：差异=AI8 页选择器头部有 `matchCurated` 四档精选分组（旗舰/极速/免费/实惠）且每项带「` · N积分`」成本标注,Agent 下拉缺两者。修复:Agent 选中 AI8 档时同源渲染——curated 四组置顶（复用 `ai.ai8.curated.*` i18n）+ provider 分组每项附 integral 标注;停用标记逻辑不变。vitest 127 文件/1154 用例全过。
+
+### R175. Agent/声文体验轮：Claude 式流式 + 提示词历史缓存 + keep-alive + 视觉/自动化测试（2026-09-26 用户指令「视觉review+自动化测试+UI优化+输入输出合理交互+提示词历史缓存；Agent 按 Claude 的方式集成」；实施于 feat/ai-lab-expansion）
+
+- **R175.1 Claude 式流式输出**：内核 OpenAI 兼容档改 `stream:true`——SSE 增量经 `createSseAssembler`（纯函数,content delta 直通 / tool_calls 参数按 index 累积 / finish() 物化 / [DONE]+finish_reason 双终态 / 非 JSON keep-alive 忽略）逐 token 推 `text-delta`;provider 忽略 stream 时回落缓冲式;AI8 桥暂整段返回（标注）。工作台流式气泡（绿色光标动画）+ 工具启动时自动封口。SSE 组装器 4 用例单测。
+- **R175.2 提示词历史缓存**：`localStorage['rgbbox:agentInputHistory']`(cap 30,去重最新在前);输入框 **↑ 从历史回溯 / ↓ 前进,回到最旧之下恢复草稿**(光标在边缘才触发,Claude Code 同语义);Agent 草稿持久化(`agentPrefs.agentDraft`,崩溃/重启不丢);声文课文草稿同理(`rgbbox:voiceDraft`)。
+- **R175.3 keep-alive(后台运行)**：agent/voice 两 Tab 首访后常驻(display:none,R91.2 audio/video 同模式)——**Agent 运行中切走其他 Tab 任务继续跑、transcript 原地不动**,回来自动接上。
+- **R175.4 视觉/自动化测试**：typecheck 双绿;vitest **128 文件 / 1159 用例全过**(+SSE 组装器 4、流式/历史交互 1、既有回归);`ui:snapshot` 重拍基线后 **9/9 GATE PASS**。
+- **R175.5 遗留**：AI8 桥流式(需会话级 SSE 直连,标注后续);agent 工具卡长输出折叠(flash 轮)。
+- **R175.6 状态**：✅（R175.4 全过;实机流式观感待用户以 GLM 档跑一次任务确认）

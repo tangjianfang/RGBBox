@@ -11,7 +11,7 @@
  * (expired/deleted server-side) is rebuilt once and retried.
  */
 
-import { Ai8Client, Ai8Error } from '../shared/ai8Client'
+import { Ai8Client, Ai8Error, type Ai8ChatOptions } from '../shared/ai8Client'
 import type { AiChatMessage, AiChatOutcome } from '../shared/types'
 
 export const AI8_PROVIDER_BASEURL = 'ai8://chat'
@@ -38,10 +38,14 @@ function normalizeSessionId(raw: unknown): string | number {
   return raw as string | number
 }
 
-/** Collect the full reply off an SSE chat stream; throws Ai8Error on failure. */
-async function collectAi8Reply(client: Ai8Client, sessionId: string | number, text: string, systemPrompt?: string): Promise<string> {
+/** Collect the full reply off an SSE chat stream; throws Ai8Error on failure.
+ *  R174.8: bounded by a hard timeout — an SSE stream that never terminates
+ *  used to hang the caller (agent tick) forever. */
+async function collectAi8Reply(client: Ai8Client, sessionId: string | number, text: string, systemPrompt?: string, timeoutMs = 180_000): Promise<string> {
   let full = ''
-  for await (const ev of client.chat(sessionId, text, systemPrompt !== undefined && systemPrompt !== '' ? { systemPrompt } : {})) {
+  const opts: Ai8ChatOptions = { signal: AbortSignal.timeout(timeoutMs) }
+  if (systemPrompt !== undefined && systemPrompt !== '') opts.systemPrompt = systemPrompt
+  for await (const ev of client.chat(sessionId, text, opts)) {
     if (ev.type === 'delta') full += ev.text
     else if (ev.type === 'error') throw new Ai8Error(-3, ev.message)
   }
@@ -85,8 +89,12 @@ async function runAi8Call(messages: AiChatMessage[], s: Ai8ProviderSettings, opt
       return { ok: true, text, latencyMs: Date.now() - startedAt }
     }
   } catch (error) {
+    // R174.8: carry the site's own message — "network" alone hid 积分不足 /
+    // 模型不可用 / 审核拒绝 behind one word. code -2 (未激活) reads as auth.
+    const detail = error instanceof Error ? error.message : String(error)
     const code = error instanceof Ai8Error ? error.code : 0
-    return { ok: false, text: '', hint: code === 2 ? 'auth' : 'network', latencyMs: Date.now() - startedAt }
+    const hint = code === 2 || code === -2 ? 'auth' : 'network'
+    return { ok: false, text: '', hint, detail: detail.startsWith('AI8 API error') ? undefined : detail, latencyMs: Date.now() - startedAt }
   }
 }
 
