@@ -69,19 +69,23 @@ export function buildReplayContext(messages: AiChatMessage[], cap = 9000): strin
  *  R174.8: bounded by a hard timeout — an SSE stream that never terminates
  *  used to hang the caller (agent tick) forever.
  *  R193.3: an UNCLOSED <think> (stream cut mid-think) is stripped too — the
- *  old regex only matched closed pairs and leaked raw reasoning text. */
-async function collectAi8Reply(client: Ai8Client, sessionId: string | number, text: string, systemPrompt?: string, timeoutMs = 180_000): Promise<string> {
+ *  old regex only matched closed pairs and leaked raw reasoning text.
+ *  R194: onDelta forwards raw stream chunks as they arrive (agent streaming). */
+async function collectAi8Reply(client: Ai8Client, sessionId: string | number, text: string, systemPrompt?: string, timeoutMs = 180_000, onDelta?: (chunk: string) => void): Promise<string> {
   let full = ''
   const opts: Ai8ChatOptions = { signal: AbortSignal.timeout(timeoutMs) }
   if (systemPrompt !== undefined && systemPrompt !== '') opts.systemPrompt = systemPrompt
   for await (const ev of client.chat(sessionId, text, opts)) {
-    if (ev.type === 'delta') full += ev.text
+    if (ev.type === 'delta') {
+      full += ev.text
+      onDelta?.(ev.text)
+    }
     else if (ev.type === 'error') throw new Ai8Error(-3, ev.message)
   }
   return full.replace(/<think>[\s\S]*?(?:<\/think>|$)/g, '').trim()
 }
 
-async function runAi8Call(messages: AiChatMessage[], s: Ai8ProviderSettings, opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean; sessionKey?: string }): Promise<AiChatOutcome> {
+async function runAi8Call(messages: AiChatMessage[], s: Ai8ProviderSettings, opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean; sessionKey?: string; onDelta?: (chunk: string) => void }): Promise<AiChatOutcome> {
   const startedAt = Date.now()
   // test seam: e2e verification points main-process fetch at a local mock
   // server (page.route cannot intercept main-process traffic)
@@ -129,7 +133,7 @@ async function runAi8Call(messages: AiChatMessage[], s: Ai8ProviderSettings, opt
   try {
     const { session, fresh } = await getOrCreate()
     try {
-      const text = await collectAi8Reply(client, session.id, fresh ? withReplay() : lastUser.content, system)
+      const text = await collectAi8Reply(client, session.id, fresh ? withReplay() : lastUser.content, system, 180_000, opts?.onDelta)
       return { ok: true, text, latencyMs: Date.now() - startedAt }
     } catch (error) {
       // one rebuild-and-retry: the cached session may be dead server-side
@@ -137,7 +141,7 @@ async function runAi8Call(messages: AiChatMessage[], s: Ai8ProviderSettings, opt
       const rebuilt = await client.createSession<{ id: unknown }>(model !== '' ? { model } : {})
       toolSessions.set(key, { model, id: normalizeSessionId(rebuilt?.id) })
       // the rebuilt session is blank → replay keeps the run's context alive
-      const text = await collectAi8Reply(client, normalizeSessionId(rebuilt?.id), withReplay(), system)
+      const text = await collectAi8Reply(client, normalizeSessionId(rebuilt?.id), withReplay(), system, 180_000, opts?.onDelta)
       return { ok: true, text, latencyMs: Date.now() - startedAt }
     }
   } catch (error) {
@@ -158,7 +162,7 @@ export function resetAi8ToolSession(): void {
 export async function ai8ChatCompletion(
   messages: AiChatMessage[],
   s: Ai8ProviderSettings,
-  opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean; sessionKey?: string },
+  opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean; sessionKey?: string; onDelta?: (chunk: string) => void },
 ): Promise<AiChatOutcome> {
   if (s.apiKey.trim() === '') return { ok: false, text: '', hint: 'nokey', latencyMs: 0 }
   return runAi8Call(messages, s, opts)

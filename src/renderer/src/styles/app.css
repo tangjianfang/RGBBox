@@ -9191,6 +9191,8 @@ input:disabled {
 }
 
 .agent-msg { padding: 6px 10px; border-radius: 10px; font-size: 13px; white-space: pre-wrap; }
+/* R194: 助手气泡元数据——字数 · 首 token 延迟 · 回合总时长 */
+.agent-msg-meta { margin-top: 3px; font-size: 10.5px; color: var(--text-secondary, rgba(255, 255, 255, 0.5)); font-variant-numeric: tabular-nums; white-space: normal; }
 .agent-msg-user { align-self: flex-end; max-width: 85%; background: rgba(110, 231, 160, 0.12); }
 .agent-msg-assistant { align-self: flex-start; max-width: 95%; background: rgba(255, 255, 255, 0.05); }
 

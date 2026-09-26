@@ -273,22 +273,52 @@ export function createAgentService(deps: AgentServiceDeps) {
       // R193.2: "I can't access your filesystem" style replies with no tool
       // call get ONE corrective nudge (separate counter — never loops).
       const isToolBlind = (text: string): boolean => TOOL_BLIND_RE.test(text)
+      // R194: 围栏扣留式流式——首个 ``` 之前的文本随 delta 直出;围栏开起的
+      // 内容扣住不给 UI(可能是 tool 块,流完才知道),末尾 3 字符 holdback
+      // 防止围栏 opener 被拆到两个 chunk 时漏出。
+      let raw = ''
+      let emittedLen = 0
+      const onDelta = (chunk: string): void => {
+        raw += chunk
+        const fenceIdx = raw.indexOf('```')
+        const safeEnd = fenceIdx === -1 ? Math.max(0, raw.length - 3) : fenceIdx
+        if (safeEnd > emittedLen) {
+          deps.pushEvent({ kind: 'text-delta', text: raw.slice(emittedLen, safeEnd) })
+          emittedLen = safeEnd
+        }
+      }
+      // 纠偏重问前,把本轮已流出的部分收成一个完整气泡(重问的 delta 开新泡)
+      const finalizeStreamed = (): void => {
+        if (emittedLen === 0) return
+        const preFence = content.includes('```') ? content.slice(0, content.indexOf('```')) : content
+        if (preFence.trim() !== '') emit({ kind: 'text', text: preFence })
+        raw = ''
+        emittedLen = 0
+      }
       const callAi8 = async (): Promise<string> => {
         // R193.1: per-agent-session server session — no cross-conversation
         // contamination; fresh sessions carry a replayed history preamble.
-        const out = await ai8ChatCompletion(run!.messages, s, { sessionKey: run!.sessionId })
+        const out = await ai8ChatCompletion(run!.messages, s, { sessionKey: run!.sessionId, onDelta })
         if (!out.ok) throw new Error(`ai8: ${out.hint ?? 'failed'}${out.detail ? ' — ' + out.detail : ''}`)
+        // stream completed with NO fence → release the 3-char holdback tail
+        // (pure-prose answers stream in full; fenced/tool replies keep it)
+        if (!raw.includes('```') && raw.length > emittedLen) {
+          deps.pushEvent({ kind: 'text-delta', text: raw.slice(emittedLen) })
+          emittedLen = raw.length
+        }
         return out.text
       }
       content = await callAi8()
       let parsed = parseReactToolCall(content)
       if (parsed === null && isToolBlind(content)) {
+        finalizeStreamed()
         run!.messages.push({ role: 'assistant', content })
         run!.messages.push({ role: 'user', content: REACT_TOOL_BLIND_NUDGE })
         content = await callAi8()
         parsed = parseReactToolCall(content)
       }
       for (let attempt = 1; parsed === null && hasToolIntent(content) && attempt <= REACT_RETRY_LIMIT; attempt += 1) {
+        finalizeStreamed()
         run!.messages.push({ role: 'assistant', content })
         run!.messages.push({ role: 'user', content: REACT_PROTOCOL_NUDGE })
         content = await callAi8()

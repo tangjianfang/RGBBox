@@ -14,7 +14,7 @@ import type { AgentApprovalRequest, AgentEvent, AgentMode, AgentSessionMeta, AiP
  * 显示站点模型下拉(模板是公开接口,分组复用 AI8 页逻辑),经 modelOverride 下发。
  */
 interface ToolCard { id: string; name: string; args: string; result: string; status: 'running' | 'done' | 'denied' | 'error'; startedAt?: number; endedAt?: number }
-interface TranscriptItem { kind: 'user' | 'assistant' | 'assistant-streaming' | 'tool' | 'approval'; text?: string; tool?: ToolCard; approval?: AgentApprovalRequest; resolved?: boolean }
+interface TranscriptItem { kind: 'user' | 'assistant' | 'assistant-streaming' | 'tool' | 'approval'; text?: string; tool?: ToolCard; approval?: AgentApprovalRequest; resolved?: boolean; meta?: string; startAt?: number; firstAt?: number }
 
 /** R184: tool results beyond this many lines render folded by default. */
 const TOOL_FOLD_LINES = 12
@@ -143,6 +143,16 @@ export function AiLabAgentTab(): JSX.Element {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const sessionIdRef = useRef('')
   const logRef = useRef<HTMLDivElement | null>(null)
+  /** R194: per-turn timing — turn-start stamps t0, the first delta stamps 首token. */
+  const turnStartRef = useRef<number>(0)
+
+  /** R194: 助手气泡元数据——字数 + 首 token 延迟 + 回合总时长。 */
+  function msgMeta(item: TranscriptItem): string | undefined {
+    if (item.startAt === undefined || item.firstAt === undefined || item.text === undefined) return undefined
+    const first = Math.max(0, item.firstAt - item.startAt)
+    const total = Math.max(first, Date.now() - item.startAt)
+    return `${item.text.length}${t('ai.agent.metaChars')} · ${t('ai.agent.metaFirst')} ${first}ms · ${t('ai.agent.metaTotal')} ${(total / 1000).toFixed(1)}s`
+  }
 
   useEffect(() => {
     savePrefs({ profileId: profileId || undefined, workspace: workspace || undefined, mode, ai8Model: ai8ModelValue || undefined, disabledModels, agentDraft: input || undefined, lastSessionId: lastSessionId || undefined })
@@ -219,14 +229,20 @@ export function AiLabAgentTab(): JSX.Element {
           case 'text-delta': {
             // R175: Claude-style token streaming — append to the open bubble
             const last = next[next.length - 1]
+            const now = Date.now()
             if (last && last.kind === 'assistant-streaming') last.text = (last.text ?? '') + ev.text
-            else next.push({ kind: 'assistant-streaming', text: ev.text })
+            else next.push({ kind: 'assistant-streaming', text: ev.text, startAt: turnStartRef.current || now, firstAt: now })
             break
           }
           case 'text': {
             const last = next[next.length - 1]
-            if (last && last.kind === 'assistant-streaming') { last.text = ev.text; last.kind = 'assistant' }
-            else next.push({ kind: 'assistant', text: ev.text })
+            if (last && last.kind === 'assistant-streaming') {
+              last.text = ev.text
+              last.kind = 'assistant'
+              last.meta = msgMeta(last)
+            } else {
+              next.push({ kind: 'assistant', text: ev.text })
+            }
             break
           }
           case 'tool-start': {
@@ -257,6 +273,7 @@ export function AiLabAgentTab(): JSX.Element {
         return next
       })
       if (ev.kind === 'session-meta') { sessionIdRef.current = ev.sessionId; setActiveSessionId(ev.sessionId); setLastSessionId(ev.sessionId) }
+      if (ev.kind === 'turn-start') turnStartRef.current = Date.now()
       if (ev.kind === 'done') {
         setRunning(false)
         setPendingApproval(null)
@@ -547,6 +564,7 @@ export function AiLabAgentTab(): JSX.Element {
               return (
                 <div key={i} className="agent-msg agent-msg-assistant">
                   <MarkdownView text={it.text ?? ''} copyLabel={t('ai.agent.copy')} copiedLabel={t('ai.agent.copied')} />
+                  {it.meta !== undefined && <div className="agent-msg-meta">{it.meta}</div>}
                 </div>
               )
             }

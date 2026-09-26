@@ -113,6 +113,36 @@ describe('R193 ai8ChatCompletion sessions + replay', () => {
     expect(chatBodies[1].text.startsWith('再来')).toBe(true)
   })
 
+  it('R194: onDelta forwards raw SSE chunks as they arrive', async () => {
+    const { ai8ChatCompletion } = await import('../../src/main/ai8Provider')
+    // two data frames streamed in order
+    server.close()
+    server = createServer((req, res) => {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('end', () => {
+        if (req.url === '/chat/session') {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ code: 0, data: { id: nextId++ } }))
+          return
+        }
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        res.write(`data: ${JSON.stringify({ code: 0, data: '第一段' })}\n\n`)
+        res.write(`data: ${JSON.stringify({ code: 0, data: '第二段' })}\n\n`)
+        res.write('data: [DONE]\n\n')
+        res.end()
+      })
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    process.env.RGBBOX_AI8_BASE_URL = baseUrl
+    const chunks: string[] = []
+    const out = await ai8ChatCompletion([{ role: 'user', content: 'q' }], S, { sessionKey: 's-d', onDelta: (c) => chunks.push(c) })
+    expect(out.ok).toBe(true)
+    expect(out.text).toBe('第一段第二段')
+    expect(chunks).toEqual(['第一段', '第二段'])
+  })
+
   it('strips an UNCLOSED <think> block from a cut stream', async () => {
     const { ai8ChatCompletion } = await import('../../src/main/ai8Provider')
     replyScript = ['<think>推理中被打断的思考', '<think>完整思考</think>可见回答']

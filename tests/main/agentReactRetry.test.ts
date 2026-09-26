@@ -85,14 +85,70 @@ describe('R186 AI8 retry rounds', () => {
   })
 
   it('a plain-prose reply without tool intent is accepted as the final answer, no retries', { timeout: 20_000 }, async () => {
+    const { ai8ChatCompletion } = await import('../../src/main/ai8Provider')
+    vi.mocked(ai8ChatCompletion).mockImplementation(async () => ({ ok: true, text: ai8Replies.shift() ?? '', latencyMs: 5 }))
     ai8Replies = ['这个任务不需要工具——直接回答完成。']
     const service = await svc(ws)
     const out = await service.send({ text: '打招呼', workspace: ws, mode: 'plan' })
     expect(out.ok).toBe(true)
-    const { ai8ChatCompletion } = await import('../../src/main/ai8Provider')
     expect(ai8ChatCompletion).toHaveBeenCalledTimes(1)
     const text = events.find((e) => e.kind === 'text')
     expect(text && text.kind === 'text' && text.text).toContain('不需要工具')
     expect(existsSync(join(ws, 'sessions'))).toBe(true)
+  })
+
+  it('R194: AI8 replies stream live with the fenced tool block withheld from the UI', { timeout: 20_000 }, async () => {
+    // provider stub: round 1 → tool call (streamed), round 2 → final prose
+    const { ai8ChatCompletion } = await import('../../src/main/ai8Provider')
+    let round = 0
+    vi.mocked(ai8ChatCompletion).mockImplementation(async (_m, _s, opts) => {
+      round += 1
+      if (round === 1) {
+        for (const c of ['我先看一下目录。\n', '```tool\n', '{"tool": "list", "args": {"path": "."}}', '\n```']) {
+          opts?.onDelta?.(c)
+        }
+        return { ok: true, text: '我先看一下目录。\n```tool\n{"tool": "list", "args": {"path": "."}}\n```', latencyMs: 5 }
+      }
+      opts?.onDelta?.('目录已列出。')
+      return { ok: true, text: '目录已列出。', latencyMs: 5 }
+    })
+    const service = await svc(ws)
+    const out = await service.send({ text: '看目录', workspace: ws, mode: 'plan' })
+    expect(out.ok).toBe(true)
+    expect(events.filter((e) => e.kind === 'tool-start').length).toBe(1)
+    const deltas = events.filter((e) => e.kind === 'text-delta') as Array<{ kind: 'text-delta'; text: string }>
+    // only the pre-fence prose streamed — never the fence or the JSON block
+    const streamed = deltas.map((d) => d.text).join('')
+    expect(streamed).toBe('我先看一下目录。\n目录已列出。')
+    expect(streamed).not.toContain('```')
+    const finalText = events.filter((e) => e.kind === 'text').at(-1) as { kind: 'text'; text: string }
+    expect(finalText.text).toBe('目录已列出。')
+  })
+
+  it('R194: a nudge retry finalizes the streamed round-1 bubble before re-streaming', { timeout: 20_000 }, async () => {
+    const { ai8ChatCompletion } = await import('../../src/main/ai8Provider')
+    let round = 0
+    vi.mocked(ai8ChatCompletion).mockImplementation(async (_m, _s, opts) => {
+      round += 1
+      if (round === 1) {
+        for (const c of ['我无法', '访问文件系统']) opts?.onDelta?.(c)
+        return { ok: true, text: '我无法访问文件系统', latencyMs: 5 }
+      }
+      for (const c of ['好的,', '我用工具']) opts?.onDelta?.(c)
+      return { ok: true, text: '好的,我用工具完成。', latencyMs: 5 }
+    })
+    const service = await svc(ws)
+    const out = await service.send({ text: '读文件', workspace: ws, mode: 'plan' })
+    expect(out.ok).toBe(true)
+    // round-1 streamed text got CLOSED as a 'text' event before round-2 deltas
+    const kinds = events.map((e) => e.kind)
+    const firstTextIdx = kinds.indexOf('text')
+    const lastDeltaRound1 = kinds.map((k, i) => [k, i] as const).filter(([k]) => k === 'text-delta').at(-1)![1]
+    void lastDeltaRound1
+    expect(firstTextIdx).toBeGreaterThan(-1)
+    const round1Text = events.find((e) => e.kind === 'text') as { kind: 'text'; text: string }
+    expect(round1Text.text).toContain('我无法访问文件系统')
+    const finalText = events.filter((e) => e.kind === 'text').at(-1) as { kind: 'text'; text: string }
+    expect(finalText.text).toContain('我用工具')
   })
 })

@@ -339,6 +339,29 @@ describe('AiLabAgentTab (R172-S2)', () => {
     expect(JSON.parse(localStorage.getItem('rgbbox:agentPrefs')!).lastSessionId).toBeUndefined()
   })
 
+  it('R194: a completed assistant bubble carries the chars/first-token/total meta line', async () => {
+    let subscriber: ((ev: unknown) => void) | undefined
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.onAgentEvent = vi.fn().mockImplementation((cb: (ev: unknown) => void) => { subscriber = cb; return () => undefined })
+    const { container } = render(<AiLabAgentTab />)
+    await waitFor(() => expect(rgbbox.aiGetProfiles).toHaveBeenCalled())
+    subscriber?.({ kind: 'turn-start', turn: 1 })
+    subscriber?.({ kind: 'text-delta', text: '部分回答' })
+    subscriber?.({ kind: 'text-delta', text: '继续' })
+    await waitFor(() => expect(container.querySelector('.agent-streaming')?.textContent).toContain('部分回答继续'))
+    subscriber?.({ kind: 'text', text: '完整回答内容' })
+    subscriber?.({ kind: 'done', reason: 'completed' })
+    const meta = await waitFor(() => {
+      const el = container.querySelector('.agent-msg-meta')
+      expect(el).toBeTruthy()
+      return el as HTMLElement
+    })
+    expect(meta.textContent).toContain('ai.agent.metaChars')
+    expect(meta.textContent).toContain('ms')
+    expect(meta.textContent).toContain('s')
+    expect(container.querySelector('.agent-msg-assistant')?.textContent).toContain('完整回答内容')
+  })
+
   it('R191: while running, load/new/rename are disabled (no stream cross-contamination)', async () => {
     let subscriber: ((ev: unknown) => void) | undefined
     const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
