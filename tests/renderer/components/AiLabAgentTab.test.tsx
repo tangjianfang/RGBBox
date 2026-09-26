@@ -362,6 +362,23 @@ describe('AiLabAgentTab (R172-S2)', () => {
     expect(container.querySelector('.agent-msg-assistant')?.textContent).toContain('完整回答内容')
   })
 
+  it('R195: a running turn shows a ticking elapsed counter in the input row', async () => {
+    let subscriber: ((ev: unknown) => void) | undefined
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.agentSend = vi.fn().mockResolvedValue({ ok: true, sessionId: 's-tick' })
+    rgbbox.onAgentEvent = vi.fn().mockImplementation((cb: (ev: unknown) => void) => { subscriber = cb; return () => undefined })
+    const { container } = render(<AiLabAgentTab />)
+    await waitFor(() => expect(rgbbox.aiGetProfiles).toHaveBeenCalled())
+    fireEvent.click(container.querySelector('[data-action="agent-pick"]')!)
+    await waitFor(() => expect((container.querySelector('input[data-field="agent-workspace"]') as HTMLInputElement).value).not.toBe(''))
+    fireEvent.change(container.querySelector('textarea[data-field="agent-input"]')!, { target: { value: 'tick' } })
+    fireEvent.click(container.querySelector('[data-action="agent-send"]')!)
+    // counter appears while running (0s at first, value not asserted past presence)
+    await waitFor(() => expect(container.querySelector('.agent-elapsed')).not.toBeNull())
+    subscriber?.({ kind: 'done', reason: 'completed' })
+    await waitFor(() => expect(container.querySelector('.agent-elapsed')).toBeNull())
+  })
+
   it('R191: while running, load/new/rename are disabled (no stream cross-contamination)', async () => {
     let subscriber: ((ev: unknown) => void) | undefined
     const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>

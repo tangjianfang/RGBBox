@@ -143,6 +143,72 @@ describe('R193 ai8ChatCompletion sessions + replay', () => {
     expect(chunks).toEqual(['第一段', '第二段'])
   })
 
+  it('R195: first-token watchdog retries once on the same session, then fails fast without rebuilding', { timeout: 15_000 }, async () => {
+    const { ai8ChatCompletion } = await import('../../src/main/ai8Provider')
+    // a stalling server: accepts the connection, never sends a byte
+    server.close()
+    server = createServer((req, res) => {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('end', () => {
+        const parsed = body === '' ? {} : JSON.parse(body)
+        if (req.url === '/chat/session') {
+          sessionCreates.push(parsed)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ code: 0, data: { id: nextId++ } }))
+          return
+        }
+        chatBodies.push({ sessionId: parsed.sessionId, text: parsed.text })
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        // …and then silence. Never a frame, never an end.
+      })
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    process.env.RGBBOX_AI8_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    const t0 = Date.now()
+    const out = await ai8ChatCompletion([{ role: 'user', content: 'q' }], S, { sessionKey: 's-w', firstTokenMs: 300 })
+    const ms = Date.now() - t0
+    expect(out.ok).toBe(false)
+    expect(out.detail).toContain('首token看门狗')
+    // two attempts × 300ms + overhead — fast-fail, nowhere near the 180s cap
+    expect(ms).toBeLessThan(5000)
+    // NO session rebuild happened for the timeouts (2 completions, 1 create)
+    expect(sessionCreates.length).toBe(1)
+    const completions = chatBodies.length
+    expect(completions).toBe(2)
+  })
+
+  it('R195: a stream that delivers after the watchdog window is disarmed by its first delta', { timeout: 15_000 }, async () => {
+    const { ai8ChatCompletion } = await import('../../src/main/ai8Provider')
+    server.close()
+    server = createServer((req, res) => {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('end', () => {
+        if (req.url === '/chat/session') {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ code: 0, data: { id: nextId++ } }))
+          return
+        }
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        // first frame arrives after the watchdog window would have fired —
+        // but the watchdog is only armed UNTIL the first delta, so a slow START
+        // followed by delivery succeeds once the first chunk lands in time.
+        setTimeout(() => {
+          res.write(`data: ${JSON.stringify({ code: 0, data: '迟到的第一帧' })}\n\n`)
+          res.write(`data: ${JSON.stringify({ code: 0, data: '第二帧' })}\n\n`)
+          res.write('data: [DONE]\n\n')
+          res.end()
+        }, 400)
+      })
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    process.env.RGBBOX_AI8_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    const out = await ai8ChatCompletion([{ role: 'user', content: 'q' }], S, { sessionKey: 's-w2', firstTokenMs: 600 })
+    expect(out.ok).toBe(true)
+    expect(out.text).toContain('迟到的第一帧')
+  })
+
   it('strips an UNCLOSED <think> block from a cut stream', async () => {
     const { ai8ChatCompletion } = await import('../../src/main/ai8Provider')
     replyScript = ['<think>推理中被打断的思考', '<think>完整思考</think>可见回答']

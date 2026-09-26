@@ -145,6 +145,14 @@ export function AiLabAgentTab(): JSX.Element {
   const logRef = useRef<HTMLDivElement | null>(null)
   /** R194: per-turn timing — turn-start stamps t0, the first delta stamps 首token. */
   const turnStartRef = useRef<number>(0)
+  /** R195.3: running heartbeat — a ticking seconds counter instead of dead air. */
+  const [runElapsed, setRunElapsed] = useState(0)
+  useEffect(() => {
+    if (!running) { setRunElapsed(0); return }
+    const startedAt = Date.now()
+    const timer = setInterval(() => setRunElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000)
+    return () => clearInterval(timer)
+  }, [running])
 
   /** R194: 助手气泡元数据——字数 + 首 token 延迟 + 回合总时长。 */
   function msgMeta(item: TranscriptItem): string | undefined {
@@ -649,6 +657,7 @@ export function AiLabAgentTab(): JSX.Element {
             <button type="button" className="video-btn" data-action="agent-send" onClick={() => void send()} disabled={input.trim() === '' || workspace === ''} aria-label={t('ai.agent.send')}><Send size={14} /></button>
           )}
           {running && <Play size={12} className="agent-spinner" />}
+          {running && <span className="agent-elapsed" aria-live="off">{runElapsed}s</span>}
         </div>
       </div>
     </div>

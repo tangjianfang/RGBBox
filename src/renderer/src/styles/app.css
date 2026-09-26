@@ -9281,6 +9281,8 @@ input:disabled {
 /* R183: optically center the 26px action buttons on the 44px single-line row */
 .agent-input-row .video-btn { margin-bottom: 4px; }
 .agent-spinner { animation: agent-pulse 1.2s ease-in-out infinite; color: var(--accent, #6ee7a0); }
+/* R195.3: 运行秒表——模型无响应时用户看到的是走字而不是死寂 */
+.agent-elapsed { font-size: 11px; color: var(--text-secondary, rgba(255, 255, 255, 0.55)); font-variant-numeric: tabular-nums; align-self: flex-end; margin-bottom: 6px; white-space: nowrap; }
 @keyframes agent-pulse { 50% { opacity: 0.35; } }
 
 /* ── R175: agent streaming caret + prompt history affordance ─────────────── */

@@ -65,27 +65,57 @@ export function buildReplayContext(messages: AiChatMessage[], cap = 9000): strin
   return entries.join('\n')
 }
 
+/** R195: 首token看门狗——流上这么久还没有任何 delta 就主动中止(毫秒)。 */
+export const AI8_FIRST_TOKEN_WATCHDOG_MS = 30_000
+
 /** Collect the full reply off an SSE chat stream; throws Ai8Error on failure.
  *  R174.8: bounded by a hard timeout — an SSE stream that never terminates
  *  used to hang the caller (agent tick) forever.
  *  R193.3: an UNCLOSED <think> (stream cut mid-think) is stripped too — the
  *  old regex only matched closed pairs and leaked raw reasoning text.
- *  R194: onDelta forwards raw stream chunks as they arrive (agent streaming). */
-async function collectAi8Reply(client: Ai8Client, sessionId: string | number, text: string, systemPrompt?: string, timeoutMs = 180_000, onDelta?: (chunk: string) => void): Promise<string> {
+ *  R194: onDelta forwards raw stream chunks as they arrive (agent streaming).
+ *  R195: a FIRST-TOKEN watchdog aborts a silent stream early (the site accepts
+ *  the connection then stalls — users used to stare at nothing for 180s, then
+ *  the rebuild-retry stared for another 180s). */
+async function collectAi8Reply(client: Ai8Client, sessionId: string | number, text: string, systemPrompt?: string, timeoutMs = 180_000, onDelta?: (chunk: string) => void, firstTokenMs = AI8_FIRST_TOKEN_WATCHDOG_MS): Promise<string> {
   let full = ''
-  const opts: Ai8ChatOptions = { signal: AbortSignal.timeout(timeoutMs) }
-  if (systemPrompt !== undefined && systemPrompt !== '') opts.systemPrompt = systemPrompt
-  for await (const ev of client.chat(sessionId, text, opts)) {
-    if (ev.type === 'delta') {
-      full += ev.text
-      onDelta?.(ev.text)
+  const ctl = new AbortController()
+  const overall = setTimeout(() => ctl.abort(), timeoutMs)
+  let watchdog: ReturnType<typeof setTimeout> | null = setTimeout(() => ctl.abort(), firstTokenMs)
+  const feed = (): void => {
+    if (watchdog !== null) {
+      clearTimeout(watchdog)
+      watchdog = null
     }
-    else if (ev.type === 'error') throw new Ai8Error(-3, ev.message)
   }
-  return full.replace(/<think>[\s\S]*?(?:<\/think>|$)/g, '').trim()
+  const opts: Ai8ChatOptions = { signal: ctl.signal }
+  if (systemPrompt !== undefined && systemPrompt !== '') opts.systemPrompt = systemPrompt
+  let gotFirst = false
+  try {
+    for await (const ev of client.chat(sessionId, text, opts)) {
+      if (ev.type === 'delta') {
+        if (!gotFirst) { gotFirst = true; feed() }
+        full += ev.text
+        onDelta?.(ev.text)
+      }
+      else if (ev.type === 'error') throw new Ai8Error(-3, ev.message)
+    }
+    if (!gotFirst) throw new Ai8Error(-4, `model produced nothing within ${Math.round(firstTokenMs / 1000)}s (first-token watchdog)`)
+    return full.replace(/<think>[\s\S]*?(?:<\/think>|$)/g, '').trim()
+  } catch (err) {
+    // aborted with zero output → the watchdog fired (overall timeout keeps its
+    // generic message; R195.2 makes the caller fail fast instead of rebuilding)
+    if (!gotFirst && err instanceof Error && /aborted|abort/i.test(err.message)) {
+      throw new Ai8Error(-4, `model produced nothing within ${Math.round(firstTokenMs / 1000)}s (first-token watchdog)`)
+    }
+    throw err
+  } finally {
+    clearTimeout(overall)
+    feed()
+  }
 }
 
-async function runAi8Call(messages: AiChatMessage[], s: Ai8ProviderSettings, opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean; sessionKey?: string; onDelta?: (chunk: string) => void }): Promise<AiChatOutcome> {
+async function runAi8Call(messages: AiChatMessage[], s: Ai8ProviderSettings, opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean; sessionKey?: string; onDelta?: (chunk: string) => void; firstTokenMs?: number }): Promise<AiChatOutcome> {
   const startedAt = Date.now()
   // test seam: e2e verification points main-process fetch at a local mock
   // server (page.route cannot intercept main-process traffic)
@@ -133,15 +163,28 @@ async function runAi8Call(messages: AiChatMessage[], s: Ai8ProviderSettings, opt
   try {
     const { session, fresh } = await getOrCreate()
     try {
-      const text = await collectAi8Reply(client, session.id, fresh ? withReplay() : lastUser.content, system, 180_000, opts?.onDelta)
+      const text = await collectAi8Reply(client, session.id, fresh ? withReplay() : lastUser.content, system, 180_000, opts?.onDelta, opts?.firstTokenMs)
       return { ok: true, text, latencyMs: Date.now() - startedAt }
     } catch (error) {
-      // one rebuild-and-retry: the cached session may be dead server-side
       if (error instanceof Ai8Error && error.code === 2) throw error // token problem — no point retrying
+      // R195.1: first-token watchdog → ONE immediate retry on the SAME session
+      // (a stalled generation is often a transient queue slot)
+      if (error instanceof Ai8Error && error.code === -4) {
+        try {
+          const text = await collectAi8Reply(client, session.id, lastUser.content, system, 180_000, opts?.onDelta, opts?.firstTokenMs)
+          return { ok: true, text, latencyMs: Date.now() - startedAt }
+        } catch {
+          return { ok: false, text: '', hint: 'network', detail: '模型两次均迟迟未响应(首token看门狗 30s×2)——稍后重试', latencyMs: Date.now() - startedAt }
+        }
+      }
+      // one rebuild-and-retry: the cached session may be dead server-side.
+      // R195.2: timeouts/aborts do NOT rebuild — a new session cannot fix a
+      // stalled generation, it just doubled the dead-air time.
+      if (error instanceof Error && /aborted|abort|timeout/i.test(error.message)) throw error
       const rebuilt = await client.createSession<{ id: unknown }>(model !== '' ? { model } : {})
       toolSessions.set(key, { model, id: normalizeSessionId(rebuilt?.id) })
       // the rebuilt session is blank → replay keeps the run's context alive
-      const text = await collectAi8Reply(client, normalizeSessionId(rebuilt?.id), withReplay(), system, 180_000, opts?.onDelta)
+      const text = await collectAi8Reply(client, normalizeSessionId(rebuilt?.id), withReplay(), system, 180_000, opts?.onDelta, opts?.firstTokenMs)
       return { ok: true, text, latencyMs: Date.now() - startedAt }
     }
   } catch (error) {
@@ -162,7 +205,7 @@ export function resetAi8ToolSession(): void {
 export async function ai8ChatCompletion(
   messages: AiChatMessage[],
   s: Ai8ProviderSettings,
-  opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean; sessionKey?: string; onDelta?: (chunk: string) => void },
+  opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number; probe?: boolean; sessionKey?: string; onDelta?: (chunk: string) => void; firstTokenMs?: number },
 ): Promise<AiChatOutcome> {
   if (s.apiKey.trim() === '') return { ok: false, text: '', hint: 'nokey', latencyMs: 0 }
   return runAi8Call(messages, s, opts)
