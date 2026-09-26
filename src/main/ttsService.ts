@@ -79,7 +79,20 @@ export interface TtsDownloadEvent {
   error?: string
 }
 
-/** 逐文件流式下载(mirror 主源失败自动回落 HF 官方);tmp 写入后 rename 防半成品。 */
+/** R179.1: download through Electron's network stack (Chromium) — it follows
+ *  the system proxy, which plain Node fetch (undici) ignores. Node fetch is
+ *  the fallback so this module stays unit-testable outside Electron. */
+interface FetchLike { ok: boolean; status: number; headers: { get(name: string): string | null }; body: unknown }
+async function xfetch(url: string, opts?: { signal?: AbortSignal; headers?: Record<string, string> }): Promise<FetchLike> {
+  try {
+    const { net } = await import('electron')
+    if (net?.fetch) return (await net.fetch(url, { signal: opts?.signal, headers: opts?.headers, bypassCustomProtocolHandlers: true })) as unknown as FetchLike
+  } catch { /* not in Electron (tests) */ }
+  return fetch(url, { signal: opts?.signal, headers: opts?.headers }) as unknown as FetchLike
+}
+
+/** 逐文件流式下载(mirror 主源失败回落 HF 官方,每个源 2 次;`.part` 断点续传:
+ *  已有分片走 `Range: bytes=N-` 追加写)。落盘用 tmp+rename 防半成品混入。 */
 export async function ttsDownloadModels(
   cacheRoot: string,
   onEvent: (ev: TtsDownloadEvent) => void,
@@ -91,28 +104,42 @@ export async function ttsDownloadModels(
     const target = join(dir, spec.path)
     if (existsSync(target) && statSync(target).size > 1024) continue
     mkdirSync(join(target, '..'), { recursive: true })
+    const partPath = `${target}.part`
     let lastErr = ''
     for (const mirror of [true, false]) {
-      try {
-        const res = await fetch(kokoroFileUrl(spec.path, mirror), { signal })
-        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
-        const total = Number(res.headers.get('content-length') ?? spec.bytes)
-        let received = 0
-        const stream = Readable.fromWeb(res.body as unknown as Parameters<typeof Readable.fromWeb>[0])
-        stream.on('data', (chunk: Buffer) => {
-          received += chunk.length
-          onEvent({ path: spec.path, receivedBytes: received, totalBytes: total, done: false })
-        })
-        await pipeline(stream, createWriteStream(`${target}.part`))
-        if (received < 1024) throw new Error('empty download')
-        renameSync(`${target}.part`, target)
-        onEvent({ path: spec.path, receivedBytes: received, totalBytes: received, done: true })
-        lastErr = ''
-        break
-      } catch (e) {
-        lastErr = e instanceof Error ? e.message : String(e)
+      for (let attempt = 0; attempt < 2; attempt += 1) {
         if (signal?.aborted) return { ok: false, error: 'cancelled' }
+        try {
+        // resume: continue from an existing .part when the server honors Range
+        const have = existsSync(partPath) ? statSync(partPath).size : 0
+        const res = await xfetch(kokoroFileUrl(spec.path, mirror), {
+          signal,
+          headers: have > 0 ? { Range: `bytes=${have}-` } : undefined,
+        })
+        const resAny = res as unknown as { status: number }
+          if (resAny.status !== 200 && resAny.status !== 206) throw new Error(`HTTP ${resAny.status}`)
+          const totalHeader = Number(res.headers.get('content-length') ?? 0)
+          const total = resAny.status === 206 ? have + totalHeader : (totalHeader || spec.bytes)
+          let received = have
+          const stream = Readable.fromWeb((res as unknown as { body: Parameters<typeof Readable.fromWeb>[0] }).body)
+          const out = createWriteStream(partPath, { flags: resAny.status === 206 && have > 0 ? 'a' : 'w' })
+          stream.on('data', (chunk: Buffer) => {
+            received += chunk.length
+            onEvent({ path: spec.path, receivedBytes: received, totalBytes: total, done: false })
+          })
+          await pipeline(stream, out)
+          if (received < 1024) throw new Error('empty download')
+          renameSync(partPath, target)
+          onEvent({ path: spec.path, receivedBytes: received, totalBytes: received, done: true })
+          lastErr = ''
+          break
+        } catch (e) {
+          lastErr = e instanceof Error ? e.message : String(e)
+          if (signal?.aborted) return { ok: false, error: 'cancelled' }
+          await new Promise((r) => setTimeout(r, 1500)) // backoff between attempts
+        }
       }
+      if (lastErr === '') break
     }
     if (lastErr !== '' && spec.required) {
       onEvent({ path: spec.path, receivedBytes: 0, totalBytes: spec.bytes, done: true, error: lastErr })

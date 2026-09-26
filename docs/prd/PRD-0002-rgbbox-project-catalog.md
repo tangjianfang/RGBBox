@@ -3437,6 +3437,7 @@
 - **R175.3 keep-alive(后台运行)**：agent/voice 两 Tab 首访后常驻(display:none,R91.2 audio/video 同模式)——**Agent 运行中切走其他 Tab 任务继续跑、transcript 原地不动**,回来自动接上。
 - **R175.4 视觉/自动化测试**：typecheck 双绿;vitest **128 文件 / 1159 用例全过**(+SSE 组装器 4、流式/历史交互 1、既有回归);`ui:snapshot` 重拍基线后 **9/9 GATE PASS**。
 - **R175.7 界面优化轮补充（2026-09-26 用户指令「Agent 默认折叠;声文模型依赖一栏,URL/流程/进度直显;首下失败 ai.voice.err.fetch failed」）**：①**模型下载根因**——hf-mirror 上 `model_q8.onnx` **404**(HEAD 实测),transformers 自动拉取必然失败;重构为**自建下载器**(ttsService:KOKORO_FILES 清单[config/tokenizer/model_q4 291MB/4 音色],hf-mirror 主源+HF 官方备源逐文件流式下载,tmp+rename 防半成品,逐文件进度事件 `ttsModelProgress` 推送;完成后 `env.localModelPath+allowRemoteModels=false` 纯本地加载零网络);②声文「模型依赖栏」:文件清单(URL 悬浮直显)/总进度条+百分比/逐文件 ✓·⇣·%/错误态/下载+按文件续传重试;③Agent Tab **默认折叠**为 🤖 切换钮(持久化 `rgbbox:aiLabAgentTabOpen`),折叠时不占 tab 位;④i18n ~10 键。测试:VoiceTab +1(下载触发+进度渲染)/AiLabView 改断言(默认 8+🤖,展开后 agent 挂载+持久化);vitest **128 文件/1161 用例全过**;快照重拍 9/9 GATE PASS。
+- **R175.8 模型下载二次失败修复（2026-09-26 用户复测 `config.json fetch failed` 0%）**：根因——主进程 Node fetch(undici)**不走系统代理**(渲染进程走,故 AI8 页模型列表正常而模型下载失败)。修复:①下载改走 **Electron `net.fetch`**(Chromium 网络栈,跟随系统代理;非 Electron 环境回落 Node fetch 保可测);②**真·断点续传**——`.part` 分片保留 + `Range: bytes=N-` 追加写(206 才追加,200 重写),291MB 主模型中断不再从头来;③每源 2 次尝试 + 1.5s 退避;④签名收敛为 `xfetch(url,{signal,headers})`。typecheck 双绿;vitest **128 文件/1161 用例全过**。用户验证:重试下载应能走通(系统代理生效)或至少推进百分比(断点续传生效)。
 - **R175.5 遗留**：AI8 桥流式(需会话级 SSE 直连,标注后续);agent 工具卡长输出折叠(flash 轮)。
 - **R175.6 状态**：✅（R175.4 全过;实机流式观感待用户以 GLM 档跑一次任务确认）
 
