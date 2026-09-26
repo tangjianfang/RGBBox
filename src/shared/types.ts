@@ -615,6 +615,8 @@ export interface TtsEngineStatus {
   /** kokoro-js + its runtime deps resolve in the main process. */
   kokoroInstalled: boolean
   bundledVoices: string[]
+  /** R187: voice ids with a downloaded .bin (catalog ∩ on-disk). */
+  voices: string[]
 }
 export interface TtsModelProgress {
   path: string

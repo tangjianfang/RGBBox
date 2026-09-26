@@ -58,6 +58,10 @@ export function setupRendererMocks() {
     onTtsModelProgress: vi.fn().mockReturnValue(() => undefined),
     ttsSynthesize: vi.fn().mockResolvedValue({ ok: false, error: 'model-not-ready' }),
     ttsExport: vi.fn().mockResolvedValue({ ok: false, error: 'model-not-ready' }),
+    // R187: on-demand voice + lexicon file I/O
+    ttsVoiceDownload: vi.fn().mockResolvedValue({ ok: true }),
+    voiceLexiconExport: vi.fn().mockResolvedValue({ ok: true, path: 'C:/lex.json' }),
+    voiceLexiconImport: vi.fn().mockResolvedValue({ ok: false, error: 'cancelled' }),
     // R172: agent workbench surface
     agentSend: vi.fn().mockResolvedValue({ ok: true, sessionId: 's-test' }),
     agentCancel: vi.fn().mockResolvedValue({ ok: true }),

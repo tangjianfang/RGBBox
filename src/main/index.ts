@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, protocol, safeStorage, screen, session, shell, Tray } from 'electron'
 import { access, mkdir, readdir, stat, unlink } from 'node:fs/promises'
-import { createReadStream, createWriteStream, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, createWriteStream, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { get as httpGet } from 'node:http'
 import { get as httpsGet } from 'node:https'
 import { pipeline } from 'node:stream/promises'
@@ -31,7 +31,7 @@ import { ai8AutoLoginWith, clearAi8Credentials, loadAi8Credentials, saveAi8Crede
 import { setRapidOcrRunner } from './ocrService'
 import { cleanupOcrText, translateOcrText, chatCompletion, testConnection, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
 import { createAgentService } from './agentService'
-import { ttsDownloadModels, ttsModelStatus, ttsSynthesize, type TtsDownloadEvent } from './ttsService'
+import { ttsDownloadModels, ttsDownloadVoice, ttsModelStatus, ttsSynthesize, type TtsDownloadEvent } from './ttsService'
 import { type SafeStorageCodec } from './aiSecretCodec'
 import { decodeProfileSecrets, encodeProfileSecrets, sanitizeAws } from './aiProfileStore'
 import { autoProfileName, mergePreservedKeys, mirrorLegacy, normalizeAiStore, type AiStoreShape } from './aiProfileStore'
@@ -841,6 +841,44 @@ function registerIpc(): void {
     if (target.canceled || target.filePath === '') return { ok: false, error: 'cancelled' }
     writeFileSync(target.filePath, out.wav)
     return { ok: true, path: target.filePath }
+  })
+
+  // R187: on-demand single-voice bin download (~8MB, catalog-checked)
+  ipcMain.handle(ipcChannels.ttsVoiceDownload, async (_event, p: unknown) => {
+    const voice = typeof p === 'string' ? p : ''
+    if (voice === '') return { ok: false, error: 'unknown-voice' }
+    const push = (ev: TtsDownloadEvent): void => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ipcChannels.ttsModelProgress, ev)
+    }
+    return ttsDownloadVoice(ttsCacheRoot, voice, push)
+  })
+
+  // R187: lexicon JSON export/import through native dialogs (renderer validates)
+  ipcMain.handle(ipcChannels.voiceLexiconExport, async (_event, p: unknown) => {
+    const json = typeof p === 'string' ? p : ''
+    if (json === '') return { ok: false, error: 'parse' }
+    const target = await dialog.showSaveDialog({
+      title: 'Export lexicon',
+      defaultPath: `rgbbox-lexicon-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (target.canceled || target.filePath === '') return { ok: false, error: 'cancelled' }
+    writeFileSync(target.filePath, json, 'utf8')
+    return { ok: true, path: target.filePath }
+  })
+  ipcMain.handle(ipcChannels.voiceLexiconImport, async () => {
+    const pick = await dialog.showOpenDialog({
+      title: 'Import lexicon',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      properties: ['openFile'],
+    })
+    const file = pick.filePaths[0] ?? ''
+    if (file === '') return { ok: false, error: 'cancelled' }
+    try {
+      return { ok: true, text: readFileSync(file, 'utf8') }
+    } catch {
+      return { ok: false, error: 'read' }
+    }
   })
 
   // R90 P1: audio AI test lab (VAD + AST). pcm = mono Float32Array @16kHz.

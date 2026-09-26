@@ -86,6 +86,111 @@ describe('AiLabVoiceTab (R173-S1)', () => {
     expect(rgbbox.ttsModelDownload).toHaveBeenCalledWith(['onnx/model_q4.onnx'])
   })
 
+  it('R187: kokoro voice picker lists the catalog; a missing voice offers on-demand download', async () => {
+    const rgbbox = setupRendererMocks() as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.ttsEngineStatus = vi.fn().mockResolvedValue({
+      complete: true,
+      kokoroInstalled: true,
+      bundledVoices: ['af_heart'],
+      voices: ['af_heart'],
+      files: [
+        { path: 'config.json', bytes: 5120, present: true, actualBytes: 44 },
+        { path: 'onnx/model_q4.onnx', bytes: 305_000_000, present: true, actualBytes: 305_000_000 },
+      ],
+    })
+    rgbbox.onTtsModelProgress = vi.fn().mockReturnValue(() => undefined)
+    rgbbox.ttsVoiceDownload = vi.fn().mockResolvedValue({ ok: true })
+    const { container } = render(<AiLabVoiceTab />)
+    // switch to the kokoro engine (enabled — model complete)
+    const engine = await waitFor(() => {
+      const el = container.querySelector('select[data-field="vs-engine"]') as HTMLSelectElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.change(engine, { target: { value: 'kokoro' } })
+    const voiceSel = await waitFor(() => {
+      const el = container.querySelector('select[data-field="vs-voice"]') as HTMLSelectElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    // full catalog present; on-disk voice carries the ✓ prefix
+    expect(voiceSel.options.length).toBeGreaterThanOrEqual(50)
+    const heart = [...voiceSel.options].find((o) => o.value === 'af_heart')
+    expect(heart?.textContent).toContain('✓')
+    // pick a missing voice → inline download row appears and targets the id
+    fireEvent.change(voiceSel, { target: { value: 'zf_xiaobei' } })
+    const btn = await waitFor(() => {
+      const el = container.querySelector('[data-action="vs-voice-download"]') as HTMLButtonElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.click(btn)
+    expect(rgbbox.ttsVoiceDownload).toHaveBeenCalledWith('zf_xiaobei')
+  })
+
+  it('R187: streaming queue synthesizes sentence-by-sentence with progress', async () => {
+    const rgbbox = setupRendererMocks() as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.ttsEngineStatus = vi.fn().mockResolvedValue({
+      complete: true,
+      kokoroInstalled: true,
+      bundledVoices: ['af_heart'],
+      voices: ['af_heart'],
+      files: [{ path: 'config.json', bytes: 5120, present: true, actualBytes: 44 }],
+    })
+    rgbbox.onTtsModelProgress = vi.fn().mockReturnValue(() => undefined)
+    // each call synthesizes exactly ONE sentence (the streaming contract)
+    rgbbox.ttsSynthesize = vi.fn().mockImplementation(async (segs: string[]) => ({
+      ok: true,
+      wav: new TextEncoder().encode(`wav:${segs[0]}`).buffer,
+    }))
+    // happy-dom has no media timeline — play() resolves and we fire onended
+    // (the queue assigns onended BEFORE calling play, so a macrotask is safe)
+    const playStub = vi.fn().mockImplementation(function (this: HTMLAudioElement) {
+      setTimeout(() => { this.onended?.(new Event('ended') as never) }, 0)
+      return Promise.resolve()
+    })
+    window.HTMLMediaElement.prototype.play = playStub as () => Promise<void>
+    window.HTMLMediaElement.prototype.pause = vi.fn()
+
+    const { container } = render(<AiLabVoiceTab />)
+    fireEvent.change(container.querySelector('textarea[data-field="vs-text"]')!, { target: { value: '第一句。第二句！第三句？' } })
+    const engine = container.querySelector('select[data-field="vs-engine"]') as HTMLSelectElement
+    await waitFor(() => expect([...engine.options].find((o) => o.value === 'kokoro')!.disabled).toBe(false))
+    fireEvent.change(engine, { target: { value: 'kokoro' } })
+    const play = await waitFor(() => {
+      const el = container.querySelector('[data-action="vs-kokoro"]') as HTMLButtonElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.click(play)
+    // three single-sentence synthesis calls happened (or are on their way)
+    await waitFor(() => expect(rgbbox.ttsSynthesize).toHaveBeenCalledTimes(3), { timeout: 4000 })
+    const calls = rgbbox.ttsSynthesize.mock.calls as unknown as [string[]][]
+    for (const c of calls) expect(c[0].length).toBe(1)
+    // every sentence eventually played through the audio element
+    await waitFor(() => expect(playStub).toHaveBeenCalledTimes(3), { timeout: 4000 })
+    // progress UI appeared during the run and cleared on natural completion
+    await waitFor(() => expect(container.querySelector('.vs-synth-progress')).toBeNull(), { timeout: 4000 })
+  })
+
+  it('R187: lexicon export posts JSON; import merges and persists', async () => {
+    const rgbbox = setupRendererMocks() as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.voiceLexiconExport = vi.fn().mockResolvedValue({ ok: true })
+    rgbbox.voiceLexiconImport = vi.fn().mockResolvedValue({ ok: true, text: JSON.stringify([{ word: 'read', respell: 'reed' }, { word: 'bad', respell: 1 }]) })
+    const { container } = render(<AiLabVoiceTab />)
+    // seed one local entry, then import (read replaces nothing, invalid row dropped)
+    fireEvent.change(container.querySelector('input[data-field="vs-word"]')!, { target: { value: 'local' } })
+    fireEvent.change(container.querySelector('input[data-field="vs-respell"]')!, { target: { value: 'lokal' } })
+    fireEvent.click(container.querySelector('[data-action="vs-add"]')!)
+    fireEvent.click(container.querySelector('[data-action="vs-lex-export"]')!)
+    await waitFor(() => expect(rgbbox.voiceLexiconExport).toHaveBeenCalled())
+    const exported = (rgbbox.voiceLexiconExport as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    expect(JSON.parse(exported)).toEqual([{ word: 'local', respell: 'lokal' }])
+    fireEvent.click(container.querySelector('[data-action="vs-lex-import"]')!)
+    await waitFor(() => expect(container.querySelectorAll('.vs-lexicon-list li').length).toBe(2))
+    expect(JSON.parse(localStorage.getItem('rgbbox:voiceLexicon')!).length).toBe(2)
+  })
+
   it('typing text splits into a clickable sentence preview', () => {
     const { container } = render(<AiLabVoiceTab />)
     const area = container.querySelector('textarea[data-field="vs-text"]') as HTMLTextAreaElement

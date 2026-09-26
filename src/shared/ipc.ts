@@ -205,6 +205,10 @@ export const ipcChannels = {
   ttsModelProgress: 'rgbbox:tts:model-progress', // main -> renderer push
   ttsSynthesize: 'rgbbox:tts:synthesize',
   ttsExport: 'rgbbox:tts:export',
+  // R187: on-demand voice bins + lexicon JSON import/export
+  ttsVoiceDownload: 'rgbbox:tts:voice-download',
+  voiceLexiconExport: 'rgbbox:voice:lexicon-export',
+  voiceLexiconImport: 'rgbbox:voice:lexicon-import',
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

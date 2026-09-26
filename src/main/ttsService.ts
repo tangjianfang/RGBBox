@@ -7,11 +7,12 @@
  * 下载到 userData/models/kokoro-local/...,带逐文件进度事件;完成后以
  * `env.localModelPath + allowRemoteModels=false` 纯本地加载,零网络。
  */
-import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { segmentsToWav } from './ttsWav'
+import { KOKORO_VOICE_CATALOG } from '../shared/kokoroVoices'
 
 const KOKORO_REPO = 'onnx-community/kokoro-82M-v1.0-ONNX'
 export const KOKORO_SAMPLE_RATE = 24000
@@ -19,6 +20,9 @@ export const DEFAULT_VOICE = 'af_heart'
 
 /** v1 随包预置的音色(每个 ~8MB;其余音色 P-5 再开放按需下载)。 */
 export const KOKORO_BUNDLED_VOICES = ['af_heart', 'af_bella', 'am_fenrir', 'bf_emma']
+
+// R187: catalog + labels live in shared (renderer picker needs them too)
+export { KOKORO_VOICE_CATALOG, voiceLabel } from '../shared/kokoroVoices'
 
 export interface KokoroFileSpec {
   /** 相对 MODEL_DIR 的路径(transformers localModelPath 布局) */
@@ -58,6 +62,8 @@ export interface TtsModelStatus {
   /** 引擎运行时(kokoro-js 包本体)是否可用。 */
   kokoroInstalled: boolean
   bundledVoices: string[]
+  /** R187: 音色 .bin 已在盘上的 id(含按需下载的目录外音色)。 */
+  voices: string[]
 }
 
 export function ttsModelStatus(cacheRoot: string): TtsModelStatus {
@@ -71,11 +77,19 @@ export function ttsModelStatus(cacheRoot: string): TtsModelStatus {
     const size = statSync(full).size
     return { path: f.path, bytes: f.bytes, present: size > 0, actualBytes: size }
   })
+  // R187: scan the voices dir for every downloaded voice bin (catalog + any)
+  let voices: string[] = []
+  try {
+    voices = readdirSync(join(dir, 'voices'))
+      .filter((f) => f.endsWith('.bin') && KOKORO_VOICE_CATALOG.includes(f.replace(/\.bin$/, '')))
+      .map((f) => f.replace(/\.bin$/, ''))
+  } catch { /* no voices dir yet */ }
   return {
     complete: files.filter((f) => KOKORO_FILES.find((k) => k.path === f.path)?.required).every((f) => f.present),
     files,
     kokoroInstalled: (() => { try { require.resolve('kokoro-js'); return true } catch { return false } })(),
     bundledVoices: KOKORO_BUNDLED_VOICES,
+    voices,
   }
 }
 
@@ -213,6 +227,22 @@ export async function ttsDownloadModels(
   await Promise.all(Array.from({ length: lanes }, () => worker()))
   if (signal?.aborted) return { ok: false, error: 'cancelled' }
   return failures.length > 0 ? { ok: false, error: failures.join('; ') } : { ok: true }
+}
+
+/** R187: 按需下载单个音色(目录内 55 个之一;~8MB)。复用 downloadOneFile 的
+ *  Range 续传/HTML 页检测/字节对账;音色不入 KOKORO_FILES,complete 语义不变。 */
+export async function ttsDownloadVoice(
+  cacheRoot: string,
+  voice: string,
+  onEvent: (ev: TtsDownloadEvent) => void,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!KOKORO_VOICE_CATALOG.includes(voice)) return { ok: false, error: 'unknown-voice' }
+  const err = await downloadOneFile(
+    { path: `voices/${voice}.bin`, bytes: 8 * M, required: false },
+    kokoroModelDir(cacheRoot),
+    (ev) => onEvent({ ...ev, path: `voices/${voice}.bin` }),
+  )
+  return err === '' ? { ok: true } : { ok: false, error: err }
 }
 
 // ── 引擎(纯本地加载)───────────────────────────────────────────────────────

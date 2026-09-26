@@ -5,6 +5,7 @@ import {
   applyLexicon, detectLang, formatBytes, loadLexicon, normalizeText, saveLexicon, splitSentences,
   type LexiconEntry,
 } from '../domain/voiceScribe'
+import { KOKORO_VOICE_CATALOG, voiceLabel } from '../../../shared/kokoroVoices'
 import type { TtsEngineStatus, TtsModelProgress } from '../../../shared/types'
 
 /**
@@ -21,6 +22,10 @@ export function AiLabVoiceTab(): JSX.Element {
   })
   const [rate, setRate] = useState(1)
   const [engine, setEngine] = useState<'system' | 'kokoro'>('system')
+  // R187: chosen voice persists; catalog marks what's on disk
+  const [voiceId, setVoiceId] = useState(() => {
+    try { return localStorage.getItem('rgbbox:voiceVoice') ?? 'af_heart' } catch { return 'af_heart' }
+  })
   const [ttsStatus, setTtsStatus] = useState<TtsEngineStatus | null>(null)
   const [currentIdx, setCurrentIdx] = useState(-1)
   const [playing, setPlaying] = useState(false)
@@ -31,6 +36,11 @@ export function AiLabVoiceTab(): JSX.Element {
   const [newRespell, setNewRespell] = useState('')
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const kokoroUrlRef = useRef<string | null>(null)
+  /** R187: streaming-queue cancel token — stop() flips it and pauses the audio. */
+  const kokoroQueueRef = useRef<{ cancel: boolean } | null>(null)
+  /** R187: sentence-level synthesis progress (N/M) while the queue runs. */
+  const [synth, setSynth] = useState<{ done: number; total: number } | null>(null)
+  const [voiceDownloading, setVoiceDownloading] = useState(false)
 
   const [dlProgress, setDlProgress] = useState<Record<string, TtsModelProgress>>({})
   const [downloading, setDownloading] = useState(false)
@@ -78,11 +88,14 @@ export function AiLabVoiceTab(): JSX.Element {
   const speechTexts = useMemo(() => sentences.map((s) => applyLexicon(s, lexicon)), [sentences, lexicon])
 
   const stopAll = (): void => {
+    // R187: kill the streaming queue first — its play-loop resolves on pause
+    if (kokoroQueueRef.current) kokoroQueueRef.current.cancel = true
     if (typeof window.speechSynthesis !== 'undefined') window.speechSynthesis.cancel()
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = '' }
     if (kokoroUrlRef.current) { URL.revokeObjectURL(kokoroUrlRef.current); kokoroUrlRef.current = null }
     setPlaying(false)
     setCurrentIdx(-1)
+    setSynth(null)
   }
 
   // 系统引擎:句级队列 + 高亮跟读
@@ -102,29 +115,61 @@ export function AiLabVoiceTab(): JSX.Element {
     })
   }
 
-  const kokoroSynth = async (): Promise<void> => {
-    if (busy || sentences.length === 0) return
+  // R187: 句级流式合成——播第 i 句时预合成第 i+1 句,长文本不再整段等待;
+  // 停止即掐断(cancel token),再点任意句子从该句续跑。
+  const speakKokoroFrom = async (startIdx: number): Promise<void> => {
+    if (busy || !kokoroReady) return
+    const segs = speechTexts.slice(startIdx)
+    if (segs.length === 0) return
+    stopAll()
+    const token: { cancel: boolean } = { cancel: false }
+    kokoroQueueRef.current = token
+    setPlaying(true)
     setBusy(true)
     setVoiceError(null)
+    setSynth({ done: 0, total: segs.length })
+    const makeUrl = async (i: number): Promise<string> => {
+      const out = await window.rgbbox.ttsSynthesize([segs[i]], { voice: voiceId, speed: rate })
+      if (!out.ok || !out.wav) throw new Error(out.error ?? 'synthesis')
+      return URL.createObjectURL(new Blob([out.wav], { type: 'audio/wav' }))
+    }
     try {
-      const out = await window.rgbbox.ttsSynthesize(speechTexts, { speed: rate })
-      if (!out.ok || !out.wav) { setVoiceError(out.error ?? 'synthesis'); return }
-      if (kokoroUrlRef.current) URL.revokeObjectURL(kokoroUrlRef.current)
-      kokoroUrlRef.current = URL.createObjectURL(new Blob([out.wav], { type: 'audio/wav' }))
-      const el = audioRef.current
-      if (el) {
-        el.src = kokoroUrlRef.current
-        void el.play()
-        setPlaying(true)
+      let nextUrl = makeUrl(0)
+      for (let i = 0; i < segs.length; i += 1) {
+        if (token.cancel) break
+        const url = await nextUrl
+        if (token.cancel) { URL.revokeObjectURL(url); break }
+        if (i + 1 < segs.length) nextUrl = makeUrl(i + 1) // prefetch behind playback
+        setCurrentIdx(startIdx + i)
+        await new Promise<void>((resolve) => {
+          const el = audioRef.current
+          if (!el) { resolve(); return }
+          const finish = (): void => { el.onended = null; el.onpause = null; resolve() }
+          el.onended = finish
+          el.onpause = () => { if (token.cancel) finish() }
+          el.src = url
+          void el.play().catch(() => finish())
+        })
+        URL.revokeObjectURL(url)
+        if (token.cancel) break
+        setSynth({ done: i + 1, total: segs.length })
       }
-    } catch { setVoiceError('network') } finally { setBusy(false) }
+      if (!token.cancel) { setPlaying(false); setCurrentIdx(-1); setSynth(null) }
+    } catch {
+      setVoiceError('synthesis')
+      setPlaying(false)
+      setSynth(null)
+    } finally {
+      setBusy(false)
+      if (kokoroQueueRef.current === token) kokoroQueueRef.current = null
+    }
   }
 
   const exportWav = async (): Promise<void> => {
     if (busy || sentences.length === 0) return
     setBusy(true)
     try {
-      const out = await window.rgbbox.ttsExport(speechTexts, { speed: rate })
+      const out = await window.rgbbox.ttsExport(speechTexts, { voice: voiceId, speed: rate })
       if (!out.ok) setVoiceError(out.error ?? 'synthesis')
     } finally { setBusy(false) }
   }
@@ -146,7 +191,43 @@ export function AiLabVoiceTab(): JSX.Element {
     saveLexicon(next, localStorage)
   }
 
+  // R187: 按需下载当前选中的音色(~8MB;进度走同一 onTtsModelProgress 通道)
+  const downloadVoice = async (): Promise<void> => {
+    if (voiceDownloading) return
+    setVoiceDownloading(true)
+    try {
+      const out = await window.rgbbox.ttsVoiceDownload(voiceId)
+      if (!out.ok) setDlError(out.error === 'unknown-voice' ? 'network' : out.error ?? 'network')
+      void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch(() => undefined)
+    } finally {
+      setVoiceDownloading(false)
+    }
+  }
+
+  // R187: 词典 JSON 导入/导出(原生对话框;校验复用 loadLexicon 的形状规则)
+  const exportLexicon = async (): Promise<void> => {
+    try { await window.rgbbox.voiceLexiconExport(JSON.stringify(lexicon, null, 2)) } catch { /* dialog cancelled */ }
+  }
+  const importLexicon = async (): Promise<void> => {
+    const out = await window.rgbbox.voiceLexiconImport().catch(() => null)
+    if (!out || !out.ok || out.text === undefined) return
+    try {
+      const parsed: unknown = JSON.parse(out.text)
+      if (!Array.isArray(parsed)) throw new Error('shape')
+      const valid = parsed.filter((e): e is LexiconEntry =>
+        typeof e === 'object' && e !== null && typeof (e as LexiconEntry).word === 'string' && typeof (e as LexiconEntry).respell === 'string')
+      // imported entries replace same-word rows; local-only rows survive
+      const merged = [...lexicon.filter((e) => !valid.some((v) => v.word === e.word)), ...valid]
+        .sort((a, b) => a.word.localeCompare(b.word))
+      setLexicon(merged)
+      saveLexicon(merged, localStorage)
+    } catch {
+      setVoiceError('lexicon-import')
+    }
+  }
+
   const kokoroReady = ttsStatus?.kokoroInstalled === true && modelReady
+  const voicesOnDisk = useMemo(() => ttsStatus?.voices ?? [], [ttsStatus])
 
   return (
     <div className="vs-tab">
@@ -166,20 +247,30 @@ export function AiLabVoiceTab(): JSX.Element {
             <option value="system">{t('ai.voice.engineSystem')}</option>
             <option value="kokoro" disabled={!kokoroReady}>{t('ai.voice.engineKokoro')}</option>
           </select>
+          {engine === 'kokoro' && (
+            <select
+              data-field="vs-voice"
+              value={voiceId}
+              onChange={(e) => { setVoiceId(e.target.value); try { localStorage.setItem('rgbbox:voiceVoice', e.target.value) } catch { /* best-effort */ } }}
+              aria-label={t('ai.voice.voice')}
+            >
+              {KOKORO_VOICE_CATALOG.map((v) => (
+                <option key={v} value={v}>{`${voicesOnDisk.includes(v) ? '✓ ' : ''}${voiceLabel(v)}`}</option>
+              ))}
+            </select>
+          )}
           <label className="vs-rate">
             <span>{t('ai.voice.rate')}</span>
             <input data-field="vs-rate" type="range" min={0.5} max={2} step={0.05} value={rate} onChange={(e) => setRate(Number(e.target.value))} />
             <span>{rate.toFixed(2)}×</span>
           </label>
           {engine === 'system' ? (
-            <>
-              <button type="button" className="video-btn" data-action="vs-play" onClick={() => (playing ? stopAll() : speakFrom(0))} disabled={sentences.length === 0}>
-                {playing ? <Square size={13} /> : <Play size={13} />}
-              </button>
-            </>
+            <button type="button" className="video-btn" data-action="vs-play" onClick={() => (playing ? stopAll() : speakFrom(0))} disabled={sentences.length === 0}>
+              {playing ? <Square size={13} /> : <Play size={13} />}
+            </button>
           ) : (
-            <button type="button" className="video-btn" data-action="vs-kokoro" onClick={() => void kokoroSynth()} disabled={busy || sentences.length === 0 || !kokoroReady}>
-              {busy ? '…' : <Play size={13} />}
+            <button type="button" className="video-btn" data-action="vs-kokoro" onClick={() => { if (playing) stopAll(); else void speakKokoroFrom(0) }} disabled={busy || sentences.length === 0 || !kokoroReady}>
+              {busy ? '…' : playing ? <Square size={13} /> : <Play size={13} />}
             </button>
           )}
           <button type="button" className="video-btn" data-action="vs-stop" onClick={stopAll} disabled={!playing}>
@@ -190,6 +281,22 @@ export function AiLabVoiceTab(): JSX.Element {
           </button>
           <span className="vs-count">{lang === 'zh' ? '中文' : 'EN'} · {sentences.length} {t('ai.voice.sentences')}</span>
         </div>
+        {/* R187: 选中音色未下载 → 行内按需下载(~8MB) */}
+        {engine === 'kokoro' && !voicesOnDisk.includes(voiceId) && (
+          <div className="vs-voice-missing">
+            <span>{t('ai.voice.voiceMissing')}</span>
+            <button type="button" className="video-btn" data-action="vs-voice-download" onClick={() => { void downloadVoice() }} disabled={voiceDownloading}>
+              {voiceDownloading ? t('ai.voice.downloading') : t('ai.voice.voiceDownload')}
+            </button>
+          </div>
+        )}
+        {/* R187: 句级合成进度(边合成边播) */}
+        {synth && (
+          <div className="vs-synth-progress" role="status">
+            <span>{t('ai.voice.synthesizing')} {synth.done + 1}/{synth.total}</span>
+            <span className="vs-model-inline-bar"><span className="vs-model-inline-bar-fill" style={{ width: `${Math.round((synth.done / Math.max(1, synth.total)) * 100)}%` }} /></span>
+          </div>
+        )}
         {/* R179: 模型依赖栏——URL/流程/进度直显,下载与重试就地完成 */}
         <div className="vs-model-panel" data-field="vs-models">
           <div className="vs-model-head">
@@ -258,12 +365,19 @@ export function AiLabVoiceTab(): JSX.Element {
           )}
         </div>
         {voiceError && <p className="ai-hint-line">{t(`ai.voice.err.${voiceError}` as never)}</p>}
-        <audio ref={audioRef} onEnded={() => { setPlaying(false); setCurrentIdx(-1) }} hidden />
+        {/* the streaming queue drives src/play/end — no React handler needed */}
+        <audio ref={audioRef} hidden />
       </div>
 
       <aside className="vs-side">
         <div className="vs-lexicon">
-          <h4><Mic size={13} /> {t('ai.voice.lexicon')}</h4>
+          <h4>
+            <Mic size={13} /> {t('ai.voice.lexicon')}
+            <span className="vs-lexicon-io">
+              <button type="button" className="video-btn" data-action="vs-lex-export" onClick={() => { void exportLexicon() }} aria-label={t('ai.voice.lexiconExport')} title={t('ai.voice.lexiconExport')}>↓</button>
+              <button type="button" className="video-btn" data-action="vs-lex-import" onClick={() => { void importLexicon() }} aria-label={t('ai.voice.lexiconImport')} title={t('ai.voice.lexiconImport')}>↑</button>
+            </span>
+          </h4>
           <div className="vs-lexicon-add">
             <input data-field="vs-word" value={newWord} placeholder={t('ai.voice.word')} onChange={(e) => setNewWord(e.target.value)} />
             <input data-field="vs-respell" value={newRespell} placeholder={t('ai.voice.respell')} onChange={(e) => setNewRespell(e.target.value)} />
@@ -290,15 +404,16 @@ export function AiLabVoiceTab(): JSX.Element {
             <ol className="vs-sentence-list">
               {sentences.map((s, i) => {
                 const display = normalizeText(s).slice(0, 120)
+                const clickable = engine === 'system' || kokoroReady
                 return (
                   <li
                     key={i}
                     className={i === currentIdx ? 'current' : ''}
                     title={normalizeText(s)}
-                    onClick={() => { if (engine === 'system') speakFrom(i) }}
+                    onClick={() => { if (engine === 'system') speakFrom(i); else void speakKokoroFrom(i) }}
                   >
                     <span className="vs-sentence-idx">{i + 1}</span>
-                    <span className="vs-sentence-text" style={{ cursor: engine === 'system' ? 'pointer' : 'default' }}>{display}</span>
+                    <span className="vs-sentence-text" style={{ cursor: clickable ? 'pointer' : 'default' }}>{display}</span>
                   </li>
                 )
               })}
