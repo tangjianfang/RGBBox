@@ -16,6 +16,13 @@ import { AGENT_TOOL_SCHEMAS, isBashDenied, toolBash, toolEdit, toolGlob, toolLis
 
 export const AGENT_MAX_TURNS = 24
 
+/** R186: AI8 桥协议纠正消息——解析失败时的「重问」措辞(每轮注入,上限见
+ *  REACT_RETRY_LIMIT)。 */
+export const REACT_PROTOCOL_NUDGE = '[protocol] The previous reply contained a tool-call intent that could not be parsed. Reply again with EITHER exactly one fenced tool block:\n```\n{"tool": "<name>", "args": { ... }}\n```\nand nothing after it, OR a plain-prose final answer with no fenced block. The JSON must be valid (double quotes, no trailing commas).'
+
+/** R186: 重试轮上限——纠正重问最多 2 次,之后仍有工具意图则报错收束。 */
+export const REACT_RETRY_LIMIT = 2
+
 // ── ReAct(AI8 桥)纯函数 ────────────────────────────────────────────────────
 
 export interface ReactCall { tool: string; args: Record<string, unknown> }
@@ -50,21 +57,46 @@ export function buildAi8TurnPrompt(workspace: string, text: string): string {
     `read(path) · write(path, content) · edit(path, find, replace) · bash(command) · list(path) · glob(pattern)`,
     `调用方式:回复一个 ${fence}tool JSON 块(如 ${fence}tool\n{"tool":"list","args":{"path":"."}}\n${fence} ),环境会以 TOOL_RESULT 消息回传结果;`,
     `不要向用户索要文件内容——用工具自己读。任务完成后用纯文本总结,不再带 tool 块。`,
+    // R186: 工作流要点随轮注入(部分模型无视 system 消息,见 R178)
+    `先读后写:没读过的文件不要直接写/改;工具报错时读错误、换路子重试,同一调用失败两次就停下报告。`,
     ``,
     `[任务] ${text}`,
   ]
   return legend.join('\n')
 }
 
-export const REACT_SYSTEM_PROMPT = `You are a coding agent working inside a workspace directory. You have NO native tool-calling; instead, when you want to use a tool you MUST reply with exactly one fenced block (and nothing after it):
+// R186: prompt iteration in the Claude Code idiom — short imperatives, a
+// staged workflow, an explicit failure policy, a terse finish. Both prompts
+// share the same skeleton so behaviour stays consistent across providers.
+export const REACT_SYSTEM_PROMPT = `You are a coding agent working inside the user's workspace. You have NO native tool-calling: tools are invoked by your REPLY FORMAT.
 
+Tool call — reply with EXACTLY one fenced block and NOTHING after it:
 \`\`\`tool
 {"tool": "<name>", "args": { ... }}
 \`\`\`
+The JSON must be valid (double quotes, no trailing commas). The environment answers with a TOOL_RESULT user message; continue from there.
 
-Available tools: read(path, offset?, limit?) · write(path, content) · edit(path, find, replace) · bash(command) · list(path, recursive?) · glob(pattern). All paths are workspace-relative. After the block, the environment replies with a TOOL_RESULT user message; continue until the task is done, then answer in plain prose WITHOUT any tool block. One tool call per reply. Never invent tool names.`
+Tools: read(path, offset?, limit?) · write(path, content) · edit(path, find, replace) · bash(command) · list(path, recursive?) · glob(pattern). Paths are workspace-relative. One tool call per reply. Never invent tool names.
 
-export const KERNEL_SYSTEM_PROMPT = `You are a focused coding agent. Use the provided tools to inspect and modify files inside the workspace (paths are workspace-relative). Prefer read/list/glob before writing; make minimal, surgical edits; run tests/builds with bash when useful. When the task is complete, stop calling tools and summarize what you did in one short paragraph.`
+Working rules:
+- Explore before you edit: read/glob/list first; never write or edit a file you have not read in this session.
+- Make the smallest change that completes the task. No files or commands beyond what the user asked for.
+- Use read/glob to inspect files; use bash for tests and searches, not for reading files you can read directly.
+- If a tool errors, read the error in TOOL_RESULT, fix the cause, and try a DIFFERENT approach. Never repeat an identical failing call; after 2 failures stop and report what you tried.
+- Do not ask the user for file contents — read them yourself.
+
+Final answer: plain prose WITHOUT any fenced block — a few short bullets: what changed, how to verify. No preamble, no restating the task.`
+
+export const KERNEL_SYSTEM_PROMPT = `You are a precise coding agent working in the user's workspace. Paths are workspace-relative.
+
+Working rules:
+- Explore before you edit: read/glob/list to see current content first; never edit a file you have not read in this session.
+- Make the smallest change that completes the task. One tool call at a time when the next call depends on the previous result.
+- Prefer read/glob for inspecting files; use bash for tests and builds, not for reading files.
+- If a tool call fails, read the error, fix the cause, and try a different approach. Never repeat an identical failing call; after 2 failures stop and report what you tried.
+- The user's request is the spec — no extra files, commands, or "improvements" beyond it.
+
+Finish: when the task is done, stop calling tools and answer in a few short bullets — what changed, how to verify. No preamble, no restating the task.`
 
 // ── 服务 ────────────────────────────────────────────────────────────────────
 
@@ -204,10 +236,30 @@ export function createAgentService(deps: AgentServiceDeps) {
       // ai8Provider(会话管理/凭据/自动登录都在其内);工具调用由
       // REACT_SYSTEM_PROMPT 文本约定,这里只负责解析 ```tool``` 块。
       // (AI8 桥暂为整段返回;Claude 式逐 token 流式仅 OpenAI 兼容档。)
-      const out = await ai8ChatCompletion(run!.messages, s)
-      if (!out.ok) throw new Error(`ai8: ${out.hint ?? 'failed'}${out.detail ? ' — ' + out.detail : ''}`)
-      content = out.text
-      const parsed = parseReactToolCall(content)
+      // R186: 重试轮自适应——空回复、或围栏块带 tool/name 意图但 JSON 不合法时,
+      // 注入协议纠正消息重问(上限 REACT_RETRY_LIMIT);耗尽仍有工具意图则
+      // 报错收束,不再把坏块当最终答案静默「完成」。纯文本最终回答不受影响。
+      const hasToolIntent = (text: string): boolean => {
+        if (text.trim() === '') return true
+        const fenced = [...text.matchAll(/```(?:tool|json)?\s*([\s\S]*?)```/g)].map((m) => m[1])
+        return fenced.some((b) => /"(tool|name)"\s*:/.test(b))
+      }
+      const callAi8 = async (): Promise<string> => {
+        const out = await ai8ChatCompletion(run!.messages, s)
+        if (!out.ok) throw new Error(`ai8: ${out.hint ?? 'failed'}${out.detail ? ' — ' + out.detail : ''}`)
+        return out.text
+      }
+      content = await callAi8()
+      let parsed = parseReactToolCall(content)
+      for (let attempt = 1; parsed === null && hasToolIntent(content) && attempt <= REACT_RETRY_LIMIT; attempt += 1) {
+        run!.messages.push({ role: 'assistant', content })
+        run!.messages.push({ role: 'user', content: REACT_PROTOCOL_NUDGE })
+        content = await callAi8()
+        parsed = parseReactToolCall(content)
+      }
+      if (parsed === null && hasToolIntent(content)) {
+        throw new Error('react protocol: unparseable tool block after retries')
+      }
       if (parsed) toolCalls.push({ id: `react-${++seq}`, name: parsed.tool, args: parsed.args })
       return { content, toolCalls }
     }
