@@ -42,10 +42,22 @@ export function setupRendererMocks() {
     modelGetCachedPaths: vi.fn().mockResolvedValue({}),
     modelDownload: vi.fn().mockResolvedValue('file:///cached/x.splat'),
     onModelDownloadProgress: vi.fn().mockReturnValue(() => undefined),
-    // R173: VoiceScribe tts surface
-    ttsEngineStatus: vi.fn().mockResolvedValue({ kokoroInstalled: false, modelHint: 'engine-unavailable' }),
-    ttsSynthesize: vi.fn().mockResolvedValue({ ok: false, error: 'engine-unavailable' }),
-    ttsExport: vi.fn().mockResolvedValue({ ok: false, error: 'engine-unavailable' }),
+    // R173/R179: VoiceScribe tts surface (own-downloader status shape)
+    ttsEngineStatus: vi.fn().mockResolvedValue({
+      complete: false,
+      kokoroInstalled: true,
+      bundledVoices: ['af_heart'],
+      files: [
+        { path: 'config.json', bytes: 5120, present: false },
+        { path: 'tokenizer.json', bytes: 2726297, present: false },
+        { path: 'onnx/model_q4.onnx', bytes: 305_000_000, present: false },
+        { path: 'voices/af_heart.bin', bytes: 8_388_608, present: false },
+      ],
+    }),
+    ttsModelDownload: vi.fn().mockResolvedValue({ ok: true }),
+    onTtsModelProgress: vi.fn().mockReturnValue(() => undefined),
+    ttsSynthesize: vi.fn().mockResolvedValue({ ok: false, error: 'model-not-ready' }),
+    ttsExport: vi.fn().mockResolvedValue({ ok: false, error: 'model-not-ready' }),
     // R172: agent workbench surface
     agentSend: vi.fn().mockResolvedValue({ ok: true, sessionId: 's-test' }),
     agentCancel: vi.fn().mockResolvedValue({ ok: true }),

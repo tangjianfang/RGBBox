@@ -74,6 +74,15 @@ export function AiLabView(): JSX.Element {
     if (tab === 'agent') setAgentVisited(true)
     if (tab === 'voice') setVoiceVisited(true)
   }, [tab])
+  // R179: the coding agent is a rarely-used power tool — its tab chip stays
+  // collapsed behind a toggle unless the user opted in (persisted).
+  const [agentTabOpen, setAgentTabOpen] = useState(() => {
+    try { return localStorage.getItem('rgbbox:aiLabAgentTabOpen') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('rgbbox:aiLabAgentTabOpen', agentTabOpen ? '1' : '0') } catch { /* best-effort */ }
+    if (!agentTabOpen && tab === 'agent') switchTab('config')
+  }, [agentTabOpen]) // eslint-disable-line react-hooks/exhaustive-deps -- switchTab is stable
   const [profiles, setProfiles] = useState<AiProfile[]>([])
   const [activeId, setActiveId] = useState('')
   const [editId, setEditId] = useState('')
@@ -293,7 +302,7 @@ export function AiLabView(): JSX.Element {
     // scroll + a pinned composer) instead of growing the whole page.
     <div className={tab === 'ai8' ? 'ai-lab ai-lab-flush' : 'ai-lab'}>
       <div className="ai-tabs" role="tablist" aria-label="AI Lab sections">
-        {(['config', 'chat', 'ocr', 'audio', 'vision', 'svg', 'voice', 'agent', 'ai8'] as const).map((key) => (
+        {(['config', 'chat', 'ocr', 'audio', 'vision', 'svg', 'voice', ...(agentTabOpen ? (['agent'] as const) : []), 'ai8'] as const).map((key) => (
           <button
             key={key}
             type="button"
@@ -306,6 +315,16 @@ export function AiLabView(): JSX.Element {
             {t(`ai.lab.tab.${key}` as const)}
           </button>
         ))}
+        <button
+          type="button"
+          className={`ai-tab ai-tab-toggle${agentTabOpen ? ' on' : ''}`}
+          data-action="toggle-agent-tab"
+          aria-pressed={agentTabOpen}
+          title={t('ai.lab.toggleAgent' as Parameters<typeof t>[0])}
+          onClick={() => setAgentTabOpen((v) => !v)}
+        >
+          🤖
+        </button>
       </div>
 
       {tab === 'config' && (

@@ -5,7 +5,7 @@ import {
   applyLexicon, detectLang, loadLexicon, normalizeText, saveLexicon, splitSentences,
   type LexiconEntry,
 } from '../domain/voiceScribe'
-import type { TtsEngineStatus } from '../../../shared/types'
+import type { TtsEngineStatus, TtsModelProgress } from '../../../shared/types'
 
 /**
  * 声文 VoiceScribe — R173-S1 朗读器(P1 骨架)。
@@ -32,10 +32,41 @@ export function AiLabVoiceTab(): JSX.Element {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const kokoroUrlRef = useRef<string | null>(null)
 
+  const [dlProgress, setDlProgress] = useState<Record<string, TtsModelProgress>>({})
+  const [downloading, setDownloading] = useState(false)
+  const [dlError, setDlError] = useState<string | null>(null)
+
   useEffect(() => {
     setLexicon(loadLexicon(localStorage))
     void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch(() => setTtsStatus(null))
   }, [])
+
+  // R179: per-file download progress events → refresh status on completion
+  useEffect(() => {
+    const off = window.rgbbox.onTtsModelProgress((ev) => {
+      setDlProgress((prev) => ({ ...prev, [ev.path]: ev }))
+      if (ev.done && !ev.error) void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch(() => undefined)
+    })
+    return off
+  }, [])
+
+  const startDownload = async (): Promise<void> => {
+    if (downloading) return
+    setDownloading(true)
+    setDlError(null)
+    try {
+      const out = await window.rgbbox.ttsModelDownload()
+      if (!out.ok) setDlError(out.error ?? 'network')
+      void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch(() => undefined)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const modelReady = ttsStatus?.complete === true
+  const modelTotal = ttsStatus?.files.reduce((a, f) => a + f.bytes, 0) ?? 0
+  const modelDone = ttsStatus?.files.reduce((a, f) => a + (f.present ? f.bytes : 0), 0) ?? 0
+    + Object.values(dlProgress).filter((e) => !e.done).reduce((a, e) => a + e.receivedBytes, 0)
 
   const sentences = useMemo(() => splitSentences(text), [text])
   const lang = useMemo(() => detectLang(text), [text])
@@ -110,7 +141,7 @@ export function AiLabVoiceTab(): JSX.Element {
     saveLexicon(next, localStorage)
   }
 
-  const kokoroReady = ttsStatus?.kokoroInstalled === true
+  const kokoroReady = ttsStatus?.kokoroInstalled === true && modelReady
 
   return (
     <div className="vs-tab">
@@ -154,9 +185,46 @@ export function AiLabVoiceTab(): JSX.Element {
           </button>
           <span className="vs-count">{lang === 'zh' ? '中文' : 'EN'} · {sentences.length} {t('ai.voice.sentences')}</span>
         </div>
-        {engine === 'kokoro' && kokoroReady && ttsStatus?.modelHint === 'first-synthesis-downloads' && (
-          <p className="ai-hint-line">{t('ai.voice.kokoroDownloadHint')}</p>
-        )}
+        {/* R179: 模型依赖栏——URL/流程/进度直显,下载与重试就地完成 */}
+        <div className="vs-model-panel" data-field="vs-models">
+          <div className="vs-model-head">
+            <strong>{t('ai.voice.models')}</strong>
+            {modelReady ? (
+              <span className="vs-model-chip ok">✓ {t('ai.voice.modelReady')}</span>
+            ) : (
+              <button
+                type="button"
+                className="video-btn"
+                data-action="vs-model-download"
+                onClick={() => { void startDownload() }}
+                disabled={downloading || ttsStatus?.kokoroInstalled !== true}
+              >
+                {downloading ? t('ai.voice.downloading') : t('ai.voice.download')}
+              </button>
+            )}
+          </div>
+          {ttsStatus?.kokoroInstalled !== true && <p className="ai-hint-line">{t('ai.voice.kokoroNeeded')}</p>}
+          <div className="vs-model-bar">
+            <div className="vs-model-bar-fill" style={{ width: `${modelTotal > 0 ? Math.min(100, Math.round((modelDone / modelTotal) * 100)) : 0}%` }} />
+          </div>
+          <span className="vs-model-count">{modelTotal > 0 ? `${Math.min(100, Math.round((modelDone / modelTotal) * 100))}% · ${(modelTotal / 1048576).toFixed(0)} MB` : ''}</span>
+          <ul className="vs-model-list">
+            {(ttsStatus?.files ?? []).map((f) => {
+              const prog = dlProgress[f.path]
+              const pct = prog ? Math.min(100, Math.round((prog.receivedBytes / Math.max(1, prog.totalBytes)) * 100)) : f.present ? 100 : 0
+              return (
+                <li key={f.path} title={`https://hf-mirror.com/onnx-community/kokoro-82M-v1.0-ONNX/resolve/main/${f.path}`}>
+                  <span className={f.present || prog?.done ? 'ok' : ''}>{f.present || prog?.done ? '✓' : prog && !prog.done ? '⇣' : '·'}</span>
+                  <code>{f.path}</code>
+                  <span className="vs-model-size">{((prog && !prog.done ? prog.receivedBytes : f.actualBytes ?? f.bytes) / 1048576).toFixed(1)} MB{!prog && !f.present ? ` / ${(f.bytes / 1048576).toFixed(0)}` : ''}</span>
+                  {!f.present && prog && !prog.done && <span className="vs-model-pct">{pct}%</span>}
+                  {prog?.error && <span className="vs-model-err">{prog.error}</span>}
+                </li>
+              )
+            })}
+          </ul>
+          {dlError && <p className="ai-hint-line">{t(`ai.voice.err.${dlError === 'already-downloading' ? 'downloading' : 'network'}` as Parameters<typeof t>[0])}</p>}
+        </div>
         {voiceError && <p className="ai-hint-line">{t(`ai.voice.err.${voiceError}` as never)}</p>}
         <audio ref={audioRef} onEnded={() => { setPlaying(false); setCurrentIdx(-1) }} hidden />
       </div>

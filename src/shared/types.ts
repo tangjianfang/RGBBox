@@ -604,9 +604,19 @@ export interface AgentSendArgs {
 
 // ── R173-S2: offline TTS engine ─────────────────────────────────────────────
 
+export interface TtsModelFileStatus { path: string; bytes: number; present: boolean; actualBytes?: number }
 export interface TtsEngineStatus {
+  /** All REQUIRED model files are on disk (localModelPath loading, zero network). */
+  complete: boolean
+  files: TtsModelFileStatus[]
   /** kokoro-js + its runtime deps resolve in the main process. */
   kokoroInstalled: boolean
-  /** First synthesis downloads ~86MB of ONNX weights via HF_ENDPOINT (hf-mirror default). */
-  modelHint: string
+  bundledVoices: string[]
+}
+export interface TtsModelProgress {
+  path: string
+  receivedBytes: number
+  totalBytes: number
+  done: boolean
+  error?: string
 }

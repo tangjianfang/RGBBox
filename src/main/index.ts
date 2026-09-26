@@ -31,7 +31,7 @@ import { ai8AutoLoginWith, clearAi8Credentials, loadAi8Credentials, saveAi8Crede
 import { setRapidOcrRunner } from './ocrService'
 import { cleanupOcrText, translateOcrText, chatCompletion, testConnection, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
 import { createAgentService } from './agentService'
-import { ttsEngineStatus, ttsSynthesize } from './ttsService'
+import { ttsDownloadModels, ttsModelStatus, ttsSynthesize, type TtsDownloadEvent } from './ttsService'
 import { type SafeStorageCodec } from './aiSecretCodec'
 import { decodeProfileSecrets, encodeProfileSecrets, sanitizeAws } from './aiProfileStore'
 import { autoProfileName, mergePreservedKeys, mirrorLegacy, normalizeAiStore, type AiStoreShape } from './aiProfileStore'
@@ -797,8 +797,22 @@ function registerIpc(): void {
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
   })
 
-  // ── R173-S2: offline TTS (Kokoro) + WAV export ─────────────────────────────
-  ipcMain.handle(ipcChannels.ttsEngineStatus, () => ttsEngineStatus())
+  // ── R173-S2/R179: offline TTS (Kokoro) — own downloader + WAV export ────────
+  const ttsCacheRoot = join(app.getPath('userData'), 'models')
+  let ttsDownloading = false
+  ipcMain.handle(ipcChannels.ttsEngineStatus, () => ttsModelStatus(ttsCacheRoot))
+  ipcMain.handle(ipcChannels.ttsModelDownload, async () => {
+    if (ttsDownloading) return { ok: false, error: 'already-downloading' }
+    ttsDownloading = true
+    const push = (ev: TtsDownloadEvent): void => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ipcChannels.ttsModelProgress, ev)
+    }
+    try {
+      return await ttsDownloadModels(ttsCacheRoot, push)
+    } finally {
+      ttsDownloading = false
+    }
+  })
   ipcMain.handle(ipcChannels.ttsSynthesize, async (_event, p: unknown) => {
     const a = p as { segments?: unknown; voice?: unknown; speed?: unknown }
     if (!Array.isArray(a.segments) || a.segments.some((x) => typeof x !== 'string')) return { ok: false, error: 'parse' }

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
 import { validateChatMessages } from '../shared/aiChatValidation'
-import type { AgentEvent, AgentSendArgs, AgentSessionMeta, TtsEngineStatus, AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
+import type { AgentEvent, AgentSendArgs, AgentSessionMeta, TtsEngineStatus, TtsModelProgress, AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -344,8 +344,14 @@ const api = {
     return () => ipcRenderer.off(ipcChannels.agentEvent, handler)
   },
 
-  // ── R173-S2: offline TTS ────────────────────────────────────────────────────
+  // ── R173-S2/R179: offline TTS — model panel + downloader + WAV export ───────
   ttsEngineStatus: (): Promise<TtsEngineStatus> => ipcRenderer.invoke(ipcChannels.ttsEngineStatus),
+  ttsModelDownload: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(ipcChannels.ttsModelDownload),
+  onTtsModelProgress: (callback: (ev: TtsModelProgress) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, ev: TtsModelProgress): void => callback(ev)
+    ipcRenderer.on(ipcChannels.ttsModelProgress, handler)
+    return () => ipcRenderer.off(ipcChannels.ttsModelProgress, handler)
+  },
   ttsSynthesize: (segments: string[], opts?: { voice?: string; speed?: number }): Promise<{ ok: boolean; wav?: ArrayBuffer; sampleRate?: number; error?: string }> =>
     ipcRenderer.invoke(ipcChannels.ttsSynthesize, { segments, ...opts }),
   ttsExport: (segments: string[], opts?: { voice?: string; speed?: number }): Promise<{ ok: boolean; path?: string; error?: string }> =>

@@ -199,8 +199,10 @@ export const ipcChannels = {
   agentSessionLoad: 'rgbbox:agent:session-load',
   agentPickWorkspace: 'rgbbox:agent:pick-workspace',
   agentEvent: 'rgbbox:agent:event', // main -> renderer push
-  // R173-S2: offline TTS (Kokoro) engine + WAV export
+  // R173-S2/R179: offline TTS (Kokoro) — own downloader + WAV export
   ttsEngineStatus: 'rgbbox:tts:engine-status',
+  ttsModelDownload: 'rgbbox:tts:model-download',
+  ttsModelProgress: 'rgbbox:tts:model-progress', // main -> renderer push
   ttsSynthesize: 'rgbbox:tts:synthesize',
   ttsExport: 'rgbbox:tts:export',
 } as const
