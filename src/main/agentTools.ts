@@ -149,8 +149,14 @@ export function toolList(workspace: string, p: string, recursive = false): ToolO
 }
 
 export function toolGlob(workspace: string, pattern: string): ToolOutcome {
+  // R180: keep glob inside the workspace — absolute or `..`-leading patterns
+  // would escape the sandbox root.
+  const normalized = String(pattern ?? '').replace(/\\/g, '/')
+  if (normalized.startsWith('/') || /^[a-zA-Z]:/.test(normalized) || normalized.split('/').includes('..')) {
+    return { ok: false, text: 'ERR: pattern must be workspace-relative (no leading /, drive, or ..)' }
+  }
   try {
-    const hits = globSync(pattern, { cwd: resolve(workspace) })
+    const hits = globSync(normalized, { cwd: resolve(workspace) })
     if (hits.length === 0) return { ok: true, text: '(no matches)' }
     return { ok: true, text: truncateOutput(hits.slice(0, 500).join('\n')) }
   } catch (e) {

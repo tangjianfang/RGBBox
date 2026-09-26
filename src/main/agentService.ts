@@ -90,6 +90,8 @@ interface AgentRun {
   allowPrefixes: string[]
   allowPaths: string[]
   pending: Map<string, PendingApproval>
+  /** R180: aborts the in-flight model request on cancel (Claude-style stop). */
+  abort: AbortController
 }
 
 export function createAgentService(deps: AgentServiceDeps) {
@@ -221,7 +223,7 @@ export function createAgentService(deps: AgentServiceDeps) {
     }
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (s.apiKey.trim() !== '') headers.Authorization = `Bearer ${s.apiKey.trim()}`
-    const res = await fetch(`${base}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(180_000) })
+    const res = await fetch(`${base}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.any([AbortSignal.timeout(180_000), run!.abort.signal]) })
     if (!res.ok) throw new Error(`model HTTP ${res.status}`)
     const ctype = res.headers.get('content-type') ?? ''
 
@@ -278,23 +280,39 @@ export function createAgentService(deps: AgentServiceDeps) {
   // ── 公共 API(index.ts 挂 IPC)─────────────────────────────────────────────
   return {
     async send(a: AgentSendArgs): Promise<{ ok: boolean; sessionId: string; error?: string }> {
-      if (run && run.pending.size > 0) return { ok: false, sessionId: '', error: 'approval-pending' }
+      // R180: single-run invariant — a second send while one is running would
+      // reassign `run` and cross-contaminate both loops' messages/events.
+      // (A pending approval is part of the running turn; answer it first.)
+      // The run slot is claimed SYNCHRONOUSLY (before the first await) so a
+      // rapid second invoke can never slip past the guard.
+      if (run) return { ok: false, sessionId: '', error: 'busy' }
+      const sessionId = a.sessionId && a.sessionId !== '' ? a.sessionId : `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+      run = {
+        sessionId,
+        workspace: a.workspace,
+        mode: a.mode,
+        settings: { baseUrl: '', apiKey: '', model: a.modelOverride ?? '' },
+        cancelled: false,
+        messages: [],
+        allowPrefixes: [],
+        allowPaths: [],
+        pending: new Map(),
+        abort: new AbortController(),
+      }
       const base = await deps.resolveSettings(a.profileId)
-      const settings = typeof a.modelOverride === 'string' && a.modelOverride.trim() !== ''
+      run.settings = typeof a.modelOverride === 'string' && a.modelOverride.trim() !== ''
         ? { ...base, model: a.modelOverride.trim() }
         : base
-      const sessionId = a.sessionId && a.sessionId !== '' ? a.sessionId : `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
       mkdirSync(deps.sessionsDir, { recursive: true })
       const isNew = !(a.sessionId && a.sessionId !== '')
-      run = { sessionId, workspace: a.workspace, mode: a.mode, settings, cancelled: false, messages: [], allowPrefixes: [], allowPaths: [], pending: new Map() }
 
       if (isNew) {
-        run.messages.push({ role: 'system', content: settings.baseUrl.startsWith('ai8://') ? REACT_SYSTEM_PROMPT : KERNEL_SYSTEM_PROMPT })
+        run.messages.push({ role: 'system', content: run.settings.baseUrl.startsWith('ai8://') ? REACT_SYSTEM_PROMPT : KERNEL_SYSTEM_PROMPT })
       } else {
         // continuation: restore history from the session file
         try {
           const lines = readFileSync(join(deps.sessionsDir, `${sessionId}.jsonl`), 'utf8').split('\n').filter((l) => l.trim() !== '')
-          const history: AiChatMessage[] = [{ role: 'system', content: settings.baseUrl.startsWith('ai8://') ? REACT_SYSTEM_PROMPT : KERNEL_SYSTEM_PROMPT }]
+          const history: AiChatMessage[] = [{ role: 'system', content: run.settings.baseUrl.startsWith('ai8://') ? REACT_SYSTEM_PROMPT : KERNEL_SYSTEM_PROMPT }]
           for (const line of lines) {
             try {
               const ev = JSON.parse(line) as AgentEvent
@@ -308,16 +326,16 @@ export function createAgentService(deps: AgentServiceDeps) {
       }
       // R178: AI8 无 function-calling——工具说明随用户消息注入(站点 system
       // 参数对部分模型不生效);OpenAI 兼容档走 tools 透传无需注入。
-      const turnPrompt = settings.baseUrl.startsWith('ai8://')
+      const turnPrompt = run.settings.baseUrl.startsWith('ai8://')
         ? buildAi8TurnPrompt(a.workspace, a.text)
         : a.text
       run.messages.push({ role: 'user', content: turnPrompt })
 
-      emit({ kind: 'session-meta', sessionId, model: settings.model, workspace: a.workspace })
+      emit({ kind: 'session-meta', sessionId, model: run.settings.model, workspace: a.workspace })
       emit({ kind: 'user', text: a.text })
       try {
         for (let turn = 1; turn <= AGENT_MAX_TURNS; turn += 1) {
-          if (run.cancelled) { emit({ kind: 'done', reason: 'cancelled' }); return { ok: true, sessionId } }
+          if (run.cancelled) { emit({ kind: 'done', reason: 'cancelled' }); run = null; return { ok: true, sessionId } }
           emit({ kind: 'turn-start', turn })
           const { content, toolCalls } = await callModel()
           if (run.cancelled) { emit({ kind: 'done', reason: 'cancelled' }); return { ok: true, sessionId } }
@@ -325,6 +343,7 @@ export function createAgentService(deps: AgentServiceDeps) {
             emit({ kind: 'text', text: content })
             run.messages.push({ role: 'assistant', content })
             emit({ kind: 'done', reason: 'completed' })
+            run = null // R180: free the single-run slot so the next send works
             return { ok: true, sessionId }
           }
           run.messages.push({ role: 'assistant', content: content === '' ? '(using tools)' : content })
@@ -334,8 +353,14 @@ export function createAgentService(deps: AgentServiceDeps) {
           }
         }
         emit({ kind: 'done', reason: 'max-turns' })
+        run = null
         return { ok: true, sessionId }
       } catch (e) {
+        const wasCancelled = run?.cancelled === true
+        if (wasCancelled) {
+          emit({ kind: 'done', reason: 'cancelled' })
+          return { ok: true, sessionId }
+        }
         const error = e instanceof Error ? e.message : String(e)
         emit({ kind: 'done', reason: 'error', error })
         return { ok: false, sessionId, error }
@@ -345,6 +370,7 @@ export function createAgentService(deps: AgentServiceDeps) {
     cancel(): void {
       if (!run) return
       run.cancelled = true
+      run.abort.abort() // R180: kill the in-flight model request immediately
       for (const [, p] of run.pending) p.resolve('deny')
       run.pending.clear()
     },

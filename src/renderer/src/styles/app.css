@@ -9253,3 +9253,25 @@ input:disabled {
 
 .ai-tab-toggle { margin-left: auto; opacity: 0.75; }
 .ai-tab-toggle.on { opacity: 1; color: var(--accent, #6ee7a0); }
+
+/* ── R180: responsive guards for the agent & voice workbenches ────────────── */
+
+/* narrow windows: the side rail stacks above the main pane instead of squeezing */
+@media (max-width: 980px) {
+  .agent-tab,
+  .vs-tab {
+    flex-direction: column;
+  }
+  .agent-side,
+  .vs-side {
+    width: 100%;
+    max-height: 40vh;
+    overflow: auto;
+  }
+  .agent-side { max-height: none; }
+}
+
+/* very narrow: transcript/preview keep a readable minimum */
+.agent-log { min-width: 0; }
+.vs-text { min-width: 0; }
+.vs-sentence-list li:hover { background: rgba(255, 255, 255, 0.05); }

@@ -60,8 +60,11 @@ export function ttsModelStatus(cacheRoot: string): TtsModelStatus {
   const files: TtsModelFileStatus[] = KOKORO_FILES.map((f) => {
     const full = join(dir, f.path)
     if (!existsSync(full)) return { path: f.path, bytes: f.bytes, present: false }
-    const sizeOk = statSync(full).size > 1024 // >1KB heuristic vs partial file
-    return { path: f.path, bytes: f.bytes, present: sizeOk, actualBytes: statSync(full).size }
+    // R179: the downloader enforces exact content-length accounting, so any
+    // on-disk size >0 means the file completed (the old >1KB heuristic
+    // misclassified small legit files like config.json).
+    const size = statSync(full).size
+    return { path: f.path, bytes: f.bytes, present: size > 0, actualBytes: size }
   })
   return {
     complete: files.filter((f) => KOKORO_FILES.find((k) => k.path === f.path)?.required).every((f) => f.present),
