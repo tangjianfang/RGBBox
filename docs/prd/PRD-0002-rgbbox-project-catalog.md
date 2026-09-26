@@ -3560,3 +3560,9 @@
 - **R191.3 自动恢复**:prefs.lastSessionId 持久化;打开 Agent Tab 自动加载最近会话(Claude Code `--resume` 式缓存历史直达);发新消息产生的 session-meta 同步记录。
 - **R191.4 验收**:typecheck 双绿;vitest **136 文件/1198 用例全过**(+6:改名持久化跨服务实例/删除落盘清索引/busy-session 守卫/非法 id 拒绝;自动恢复/新建重置+改名删除流/运行中禁切换);**真机端到端**:点击会话→prefs.lastSessionId 落盘(活跃态+「刚刚 · 4」meta)→**应用重开自动恢复上次会话**;`ui:snapshot` 9/9 GATE PASS(Agent Tab 默认隐藏,静息零影响)。
 - **R191.5 状态**:✅
+
+### R192. Q-3 发版准备 v0.3.84（R189 第三批;含复验发现项修复）
+
+- **R192.1 复验#1 根因修复——tokenizer.json「size mismatch 3497/2726298」**:经镜像实测取证,**根因不是 HTML 污染也不是网络截断——上游 tokenizer.json 本就是 3,497 字节的字符级小文件(非 2.6MB LFS blob),manifest 预估自 R179 起就是错的**,精确对账把完整文件反复拒收删除**(下载器防御按设计工作,拒收的依据错了)**。取证链:GET status 200/textplain/3497B 合法 JSON 前缀且 tail 完整闭合、Range→416 不支持、`/raw/main` 同样 3497、tree API 确认 size=3497 非 LFS。修复:①KOKORO_FILES 全部改 API 实测值(config 44/tokenizer 3,497/model_q4 305,215,966/voices 522,240,真实总量≈293MB,与用户面板磁盘占用吻合);②修 `received = have` 双计数 bug(服务器对 Range 回 200 全量时,旧逻辑 have+全量>total 永 mismatch);③回归 2 例(3497 精确对账通过/200 忽略 Range 覆写落盘)。**用户侧待办:更新构建后在 tokenizer 行点「重试此文件」即应完成 7/7**。
+- **R192.2 发版流程**:用户复验#2(P-4 冒烟)/#3(P-5 合成)→`dist:dir` 冷启动验证→`dist:win` 出包→体积核查(R176.3 口径)。
+- **R192.3 状态**:🔄

@@ -32,14 +32,16 @@ export interface KokoroFileSpec {
   required: boolean
 }
 
-const M = 1048576
+// R192: bytes are the API-reported upstream sizes (hf-mirror tree API,
+// 2026-09-26). The old estimates were wrong at the SOURCE — upstream
+// tokenizer.json is a 3,497-byte character-level tokenizer (NOT a 2.6MB LFS
+// blob), so the exact-accounting check rejected the COMPLETE file on every
+// attempt ("size mismatch 3497/2726298"). Real total ≈ 293 MB.
 export const KOKORO_FILES: KokoroFileSpec[] = [
-  { path: 'config.json', bytes: 5 * 1024, required: true },
-  // R182: integer bytes — a float total (2.6*M = 2726297.6) can never equal the
-  // received count, so the exact-accounting check failed tokenizer.json forever.
-  { path: 'tokenizer.json', bytes: Math.round(2.6 * M), required: true },
-  { path: 'onnx/model_q4.onnx', bytes: 291 * M, required: true },
-  ...KOKORO_BUNDLED_VOICES.map((v) => ({ path: `voices/${v}.bin`, bytes: 8 * M, required: false })),
+  { path: 'config.json', bytes: 44, required: true },
+  { path: 'tokenizer.json', bytes: 3497, required: true },
+  { path: 'onnx/model_q4.onnx', bytes: 305_215_966, required: true },
+  ...KOKORO_BUNDLED_VOICES.map((v) => ({ path: `voices/${v}.bin`, bytes: 522_240, required: false })),
 ]
 
 export function kokoroFileUrl(path: string, mirror = true): string {
@@ -157,7 +159,10 @@ async function downloadOneFile(
         const resuming = res.status === 206 && have > 0
         const lenHeader = Number(res.headers.get('content-length') ?? 0)
         const total = resuming ? have + lenHeader : (lenHeader || spec.bytes)
-        let received = have
+        // R192: a 200 full-body answer to a Range request OVERWRITES the part
+        // (flags 'w') — counting the stale `have` on top double-counted bytes
+        // and failed accounting on every attempt. Only 206 resumes add `have`.
+        let received = resuming ? have : 0
         const stream = Readable.fromWeb((res as unknown as { body: Parameters<typeof Readable.fromWeb>[0] }).body)
         const out = createWriteStream(partPath, { flags: resuming ? 'a' : 'w' })
         let firstChunkChecked = false
@@ -238,7 +243,7 @@ export async function ttsDownloadVoice(
 ): Promise<{ ok: boolean; error?: string }> {
   if (!KOKORO_VOICE_CATALOG.includes(voice)) return { ok: false, error: 'unknown-voice' }
   const err = await downloadOneFile(
-    { path: `voices/${voice}.bin`, bytes: 8 * M, required: false },
+    { path: `voices/${voice}.bin`, bytes: 522_240, required: false },
     kokoroModelDir(cacheRoot),
     (ev) => onEvent({ ...ev, path: `voices/${voice}.bin` }),
   )

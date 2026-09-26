@@ -1,6 +1,6 @@
 // R185: concurrent pool + `only` filter for ttsDownloadModels.
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
-import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -98,4 +98,47 @@ describe('main/ttsService ttsDownloadModels R185 pool', () => {
     expect(existsSync(join(dir, 'config.json'))).toBe(true)
     expect(statSync(join(dir, 'config.json')).size).toBe(4096)
   }, 20000)
+
+  // R192: the tokenizer.json manifest size was wrong at the SOURCE — upstream
+  // ships a 3,497-byte character-level tokenizer and the old 2,726,298 estimate
+  // made exact accounting reject the COMPLETE file on every attempt.
+  it('tokenizer.json (3497B) passes exact accounting against the corrected manifest', async () => {
+    const { ttsDownloadModels, KOKORO_FILES } = await import('../../src/main/ttsService')
+    const spec = KOKORO_FILES.find((f) => f.path === 'tokenizer.json')!
+    expect(spec.bytes).toBe(3497)
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      if (!String(url).includes('tokenizer.json')) {
+        return { ok: false, status: 404, headers: { get: () => null }, body: null }
+      }
+      // no content-length (chunked) → the manifest bytes become the total
+      return { ok: true, status: 200, headers: { get: () => null }, body: bodyOf(3497) }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await ttsDownloadModels(ws, () => {}, undefined, { only: ['tokenizer.json'] })
+    expect(out.ok).toBe(true)
+    const file = join(ws, 'kokoro-local', 'onnx-community', 'kokoro-82M-v1.0-ONNX', 'tokenizer.json')
+    expect(existsSync(file)).toBe(true)
+    expect(statSync(file).size).toBe(3497)
+  })
+
+  // R192: a 200 full-body answer to a Range request must not double-count the
+  // stale .part length (received = have + full body > total →永远 mismatch).
+  it('a server that ignores Range (200 full body) overwrites the part and lands exactly total bytes', async () => {
+    const { ttsDownloadModels } = await import('../../src/main/ttsService')
+    const dir = join(ws, 'kokoro-local', 'onnx-community', 'kokoro-82M-v1.0-ONNX')
+    mkdirSync(join(dir), { recursive: true })
+    writeFileSync(join(dir, 'config.json.part'), 'x'.repeat(1000)) // stale partial
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200, // ignores the Range header entirely
+      headers: { get: (n: string) => (n.toLowerCase() === 'content-length' ? '4096' : null) },
+      body: bodyOf(4096),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await ttsDownloadModels(ws, () => {}, undefined, { only: ['config.json'] })
+    expect(out.ok).toBe(true)
+    expect(statSync(join(dir, 'config.json')).size).toBe(4096)
+    // the Range attempt happened, then the overwrite succeeded on the retry
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })
