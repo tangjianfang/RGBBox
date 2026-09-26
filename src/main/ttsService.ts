@@ -7,7 +7,7 @@
  * 下载到 userData/models/kokoro-local/...,带逐文件进度事件;完成后以
  * `env.localModelPath + allowRemoteModels=false` 纯本地加载,零网络。
  */
-import { createWriteStream, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -110,25 +110,38 @@ export async function ttsDownloadModels(
       for (let attempt = 0; attempt < 2; attempt += 1) {
         if (signal?.aborted) return { ok: false, error: 'cancelled' }
         try {
-        // resume: continue from an existing .part when the server honors Range
-        const have = existsSync(partPath) ? statSync(partPath).size : 0
-        const res = await xfetch(kokoroFileUrl(spec.path, mirror), {
-          signal,
-          headers: have > 0 ? { Range: `bytes=${have}-` } : undefined,
-        })
-        const resAny = res as unknown as { status: number }
-          if (resAny.status !== 200 && resAny.status !== 206) throw new Error(`HTTP ${resAny.status}`)
-          const totalHeader = Number(res.headers.get('content-length') ?? 0)
-          const total = resAny.status === 206 ? have + totalHeader : (totalHeader || spec.bytes)
+          // resume: continue from an existing .part when the server honors Range
+          let have = existsSync(partPath) ? statSync(partPath).size : 0
+          const useRange = have > 0
+          const res = await xfetch(kokoroFileUrl(spec.path, mirror), {
+            signal,
+            headers: useRange ? { Range: `bytes=${have}-` } : undefined,
+          })
+          // R179.2: 416 = the local .part is poisoned (0-byte/oversized from an
+          // earlier crash) — drop it and retry this attempt as a full download
+          if (res.status === 416 && useRange) {
+            rmSync(partPath, { force: true })
+            have = 0
+            attempt -= 1 // retry the same attempt slot without consuming it
+            continue
+          }
+          if (res.status !== 200 && res.status !== 206) throw new Error(`HTTP ${res.status}`)
+          const resuming = res.status === 206 && have > 0
+          const lenHeader = Number(res.headers.get('content-length') ?? 0)
+          const total = resuming ? have + lenHeader : (lenHeader || spec.bytes)
           let received = have
           const stream = Readable.fromWeb((res as unknown as { body: Parameters<typeof Readable.fromWeb>[0] }).body)
-          const out = createWriteStream(partPath, { flags: resAny.status === 206 && have > 0 ? 'a' : 'w' })
+          const out = createWriteStream(partPath, { flags: resuming ? 'a' : 'w' })
           stream.on('data', (chunk: Buffer) => {
             received += chunk.length
             onEvent({ path: spec.path, receivedBytes: received, totalBytes: total, done: false })
           })
           await pipeline(stream, out)
-          if (received < 1024) throw new Error('empty download')
+          // exact accounting — a short body means a truncated/corrupt file
+          if (total > 0 && received !== total) {
+            rmSync(partPath, { force: true })
+            throw new Error(`size mismatch ${received}/${total}`)
+          }
           renameSync(partPath, target)
           onEvent({ path: spec.path, receivedBytes: received, totalBytes: received, done: true })
           lastErr = ''
