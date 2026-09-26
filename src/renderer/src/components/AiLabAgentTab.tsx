@@ -342,7 +342,18 @@ export function AiLabAgentTab(): JSX.Element {
 
       <div className="agent-main">
         <div className="agent-log" ref={logRef}>
-          {items.length === 0 && <p className="ai-hint-line">{t('ai.agent.empty')}</p>}
+          {items.length === 0 && (
+            <div className="agent-empty" data-field="agent-empty">
+              <Bot size={34} className="agent-empty-icon" />
+              <h3>{t('ai.agent.emptyTitle')}</h3>
+              <p>{t('ai.agent.empty')}</p>
+              <ol className="agent-empty-steps">
+                <li>{t('ai.agent.step1')}</li>
+                <li>{t('ai.agent.step2')}</li>
+                <li>{t('ai.agent.step3')}</li>
+              </ol>
+            </div>
+          )}
           {items.map((it, i) => {
             if (it.kind === 'user') return <div key={i} className="agent-msg agent-msg-user">{it.text}</div>
             if (it.kind === 'assistant-streaming') {

@@ -213,9 +213,10 @@ export function AiLabVoiceTab(): JSX.Element {
               const prog = dlProgress[f.path]
               const pct = prog ? Math.min(100, Math.round((prog.receivedBytes / Math.max(1, prog.totalBytes)) * 100)) : f.present ? 100 : 0
               return (
-                <li key={f.path} title={`https://hf-mirror.com/onnx-community/kokoro-82M-v1.0-ONNX/resolve/main/${f.path}`}>
+                <li key={f.path} className={f.present || prog?.done ? 'done-row' : ''} title={`https://hf-mirror.com/onnx-community/kokoro-82M-v1.0-ONNX/resolve/main/${f.path}`}>
                   <span className={f.present || prog?.done ? 'ok' : ''}>{f.present || prog?.done ? '✓' : prog && !prog.done ? '⇣' : '·'}</span>
                   <code>{f.path}</code>
+                  {prog && !prog.done && <span className="vs-model-inline-bar"><span className="vs-model-inline-bar-fill" style={{ width: `${pct}%` }} /></span>}
                   <span className="vs-model-size">{((prog && !prog.done ? prog.receivedBytes : f.actualBytes ?? f.bytes) / 1048576).toFixed(1)} MB{!prog && !f.present ? ` / ${(f.bytes / 1048576).toFixed(0)}` : ''}</span>
                   {!f.present && prog && !prog.done && <span className="vs-model-pct">{pct}%</span>}
                   {prog?.error && <span className="vs-model-err">{prog.error}</span>}

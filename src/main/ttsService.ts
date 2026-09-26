@@ -31,14 +31,19 @@ export interface KokoroFileSpec {
 const M = 1048576
 export const KOKORO_FILES: KokoroFileSpec[] = [
   { path: 'config.json', bytes: 5 * 1024, required: true },
-  { path: 'tokenizer.json', bytes: 2.6 * M, required: true },
+  // R182: integer bytes — a float total (2.6*M = 2726297.6) can never equal the
+  // received count, so the exact-accounting check failed tokenizer.json forever.
+  { path: 'tokenizer.json', bytes: Math.round(2.6 * M), required: true },
   { path: 'onnx/model_q4.onnx', bytes: 291 * M, required: true },
   ...KOKORO_BUNDLED_VOICES.map((v) => ({ path: `voices/${v}.bin`, bytes: 8 * M, required: false })),
 ]
 
 export function kokoroFileUrl(path: string, mirror = true): string {
   const host = mirror ? 'https://hf-mirror.com' : 'https://huggingface.co'
-  return `${host}/${KOKORO_REPO}/resolve/main/${path}`
+  // ?download=true forces Content-Disposition: attachment — without it some
+  // CDN responses come back as an HTML page (a 3497-byte one poisoned
+  // tokenizer.json in the field) that passes HTTP 200.
+  return `${host}/${KOKORO_REPO}/resolve/main/${path}?download=true`
 }
 
 /** 布局:cacheRoot/onnx-community/kokoro-82M-v1.0-ONNX/<path>(transformers localModelPath 兼容) */
@@ -94,6 +99,13 @@ async function xfetch(url: string, opts?: { signal?: AbortSignal; headers?: Reco
   return fetch(url, { signal: opts?.signal, headers: opts?.headers }) as unknown as FetchLike
 }
 
+/** R182: hf-mirror sometimes answers 200 with an HTML notice page (3497B) —
+ *  detect and reject it so the retry/fallback chain can pick another source. */
+export function looksLikeHtmlPage(buf: Buffer): boolean {
+  const head = buf.subarray(0, 200).toString('latin1').trimStart().toLowerCase()
+  return head.startsWith('<!doctype') || head.startsWith('<html') || head.includes('<body')
+}
+
 /** 逐文件流式下载(mirror 主源失败回落 HF 官方,每个源 2 次;`.part` 断点续传:
  *  已有分片走 `Range: bytes=N-` 追加写)。落盘用 tmp+rename 防半成品混入。 */
 export async function ttsDownloadModels(
@@ -134,11 +146,25 @@ export async function ttsDownloadModels(
           const total = resuming ? have + lenHeader : (lenHeader || spec.bytes)
           let received = have
           const stream = Readable.fromWeb((res as unknown as { body: Parameters<typeof Readable.fromWeb>[0] }).body)
-          const out = createWriteStream(partPath, { flags: resuming ? 'a' : 'w' })
-          stream.on('data', (chunk: Buffer) => {
-            received += chunk.length
-            onEvent({ path: spec.path, receivedBytes: received, totalBytes: total, done: false })
-          })
+        const out = createWriteStream(partPath, { flags: resuming ? 'a' : 'w' })
+        let firstChunkChecked = false
+        stream.on('data', (chunk: Buffer) => {
+          if (!firstChunkChecked) {
+            firstChunkChecked = true
+            const head = Buffer.from(chunk.subarray(0, 64)).toString('latin1').trimStart().toLowerCase()
+            if (head.startsWith('<!doctype') || head.startsWith('<html')) {
+              stream.destroy()
+              out.destroy()
+              rmSync(partPath, { force: true })
+              onEvent({ path: spec.path, receivedBytes: 0, totalBytes: total, done: true, error: 'mirror returned an HTML page' })
+              lastErr = 'mirror returned an HTML page instead of the file'
+              stream.emit('error', new Error(lastErr))
+              return
+            }
+          }
+          received += chunk.length
+          onEvent({ path: spec.path, receivedBytes: received, totalBytes: total, done: false })
+        })
           await pipeline(stream, out)
           // exact accounting — a short body means a truncated/corrupt file
           if (total > 0 && received !== total) {
