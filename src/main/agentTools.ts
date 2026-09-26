@@ -31,6 +31,9 @@ export function clampToWorkspace(workspace: string, p: string): string | null {
 /** 危险命令 denylist(正则,大小写不敏感)。命中即拒绝,不给审批机会。 */
 export const BASH_DENYLIST: RegExp[] = [
   /rm\s+-[a-z]*r[a-z]*f?(\s+[^\s|;&]+)*\s+\/(\s|$)/i, // rm -rf … / 目标根
+  /rm\s+-[a-z]*r[a-z]*f?\s+"?[a-z]:[\\/]"?(\s|$)/i, // rm -rf C:\ 盘根(git-bash 风格)
+  /remove-item\s+[^\n]*-recurse[^\n]*-force/i, // PowerShell Remove-Item -Recurse -Force
+  /rd\s+(\/[sq]\s+)+"?[a-z]:[\\/]?(\s|$)/i,
   /format\s+[a-z]:/i,
   /shutdown|logoff\s+\/s|taskkill\s+\/f\s+\/im\s+explorer/i,
   /reg\s+(delete|add)\s+.*(HKLM|HKCR)/i,
