@@ -3497,3 +3497,11 @@
 - **R184.4 流式光标收尾**:done(含 error/cancelled/max-turns)后残余的 streaming 气泡收敛为普通 assistant 气泡(光标移除);移除无样式残留的 `.agent-caret` span。附带:loadSession 恢复 approval 卡片(此前不回放)。
 - **R184.5 验收**:typecheck 双绿;vitest **131 文件/1172 用例全过**(+2:折叠交互+耗时徽标/ts 差 1.5s 断言/流式收尾+审批恢复+diff 标签);`ui:snapshot` **9/9 GATE PASS 0.0000%**(Agent Tab 默认隐藏,静息视图零影响,无需重拍)。
 - **R184.6 状态**:✅
+
+### R185. P-3 下载体验 + AI8 下拉过滤（R177 方案第三批;2026-09-26「执行这个优化」）
+
+- **R185.1 并发下载**:`ttsDownloadModels` 拆出单文件 `downloadOneFile`(镜像回落/Range 续传/416 自愈/HTML 页检测/字节对账语义不变),上层数组改 **3 路并发池**;单文件失败不再中断其余文件。IPC `tts:model-download` 接受 `string[]` 收窄下载集(`only`),preload 透传。
+- **R185.2 单文件重试**:模型行内「重试此文件」↻ 按钮(未完成且无整体下载在跑时出现),只重下该文件;完成徽标 ✓ 弹出动画(prefers-reduced-motion 降级);统计行「磁盘占用 · 实际字节 · N/M 文件」(替代 0% 时 326MB 的歧义文案);总进度行改 `已用 X / 共 Y · Z%`。
+- **R185.3 AI8 下拉过滤**:本地已标记停用的模型从下拉**剔除**(原先灰显仍可一眼选中;已知问题 #2),当前值若已停用保留一条灰提示项。
+- **R185.4 验收**:typecheck 双绿;vitest **132 文件/1176 用例全过**(+4:并发池实测 max-in-flight≥3/`only` 单文件收窄/失败不阻断兄弟文件;行重试带 path/统计行 1/2);`ui:snapshot` **9/9 GATE PASS 0.0000%**;真网络冒烟:hf-mirror config.json **GET 200/44B 合法内容**,huggingface.co 直连超时(DNS 污染,与 R180 实证一致,mirror 优先排序正确)。
+- **R185.5 状态**:✅

@@ -361,12 +361,17 @@ export function AiLabAgentTab(): JSX.Element {
               disabled={ai8Groups.length === 0}
             >
               {ai8Groups.length === 0 && <option value="">{ai8ModelError ? t('ai.agent.ai8ModelsError') : t('ai.agent.ai8ModelsLoading')}</option>}
+              {/* R185: locally-known discontinued models are FILTERED OUT, not
+                  greyed — the known issue was users stepping on them again. */}
+              {disabledModels.includes(effectiveAi8Model) && effectiveAi8Model !== '' && (
+                <option value={effectiveAi8Model} disabled>{`(${t('ai.agent.modelDiscontinued')})`}</option>
+              )}
               {(['flagship', 'fast', 'free', 'budget'] as const).map((groupId) => (
                 ai8Curated[groupId] ? (
                   <optgroup key={groupId} label={t(`ai.ai8.curated.${groupId}` as Parameters<typeof t>[0])}>
-                    {ai8Curated[groupId].map((m) => (
-                      <option key={m.value} value={m.value} disabled={disabledModels.includes(m.value)}>
-                        {m.label}{disabledModels.includes(m.value) ? `（${t('ai.agent.modelDiscontinued')}）` : ''}
+                    {ai8Curated[groupId].filter((m) => !disabledModels.includes(m.value)).map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
                       </option>
                     ))}
                   </optgroup>
@@ -374,11 +379,11 @@ export function AiLabAgentTab(): JSX.Element {
               ))}
               {ai8Groups.map((g) => (
                 <optgroup key={g.provider} label={g.provider}>
-                  {g.models.map((m) => {
+                  {g.models.filter((m) => !disabledModels.includes(m.value)).map((m) => {
                     const integral = ai8Models.find((mm) => mm.value === m.value)?.attr?.integral
                     return (
-                      <option key={m.value} value={m.value} disabled={disabledModels.includes(m.value)}>
-                        {m.label}{integral ? ` · ${integral}` : ''}{disabledModels.includes(m.value) ? `（${t('ai.agent.modelDiscontinued')}）` : ''}
+                      <option key={m.value} value={m.value}>
+                        {m.label}{integral ? ` · ${integral}` : ''}
                       </option>
                     )
                   })}

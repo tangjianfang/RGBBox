@@ -50,12 +50,13 @@ export function AiLabVoiceTab(): JSX.Element {
     return off
   }, [])
 
-  const startDownload = async (): Promise<void> => {
+  // R185: paths narrows the run to a per-file retry (undefined = all missing)
+  const startDownload = async (paths?: string[]): Promise<void> => {
     if (downloading) return
     setDownloading(true)
     setDlError(null)
     try {
-      const out = await window.rgbbox.ttsModelDownload()
+      const out = await window.rgbbox.ttsModelDownload(paths)
       if (!out.ok) setDlError(out.error ?? 'network')
       void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch(() => undefined)
     } finally {
@@ -67,6 +68,10 @@ export function AiLabVoiceTab(): JSX.Element {
   const modelTotal = ttsStatus?.files.reduce((a, f) => a + f.bytes, 0) ?? 0
   const modelDone = ttsStatus?.files.reduce((a, f) => a + (f.present ? f.bytes : 0), 0) ?? 0
     + Object.values(dlProgress).filter((e) => !e.done).reduce((a, e) => a + e.receivedBytes, 0)
+  // R185: on-disk accounting for the stats line (actual bytes, not estimates)
+  const diskUsed = ttsStatus?.files.reduce((a, f) => a + (f.present ? (f.actualBytes ?? f.bytes) : 0), 0) ?? 0
+  const filesDone = ttsStatus?.files.filter((f) => f.present).length ?? 0
+  const filesTotal = ttsStatus?.files.length ?? 0
 
   const sentences = useMemo(() => splitSentences(text), [text])
   const lang = useMemo(() => detectLang(text), [text])
@@ -207,7 +212,7 @@ export function AiLabVoiceTab(): JSX.Element {
           <div className="vs-model-bar">
             <div className="vs-model-bar-fill" style={{ width: `${modelTotal > 0 ? Math.min(100, Math.round((modelDone / modelTotal) * 100)) : 0}%` }} />
           </div>
-          <span className="vs-model-count">{modelTotal > 0 ? `${Math.min(100, Math.round((modelDone / modelTotal) * 100))}% · ${(modelTotal / 1048576).toFixed(0)} MB` : ''}</span>
+          <span className="vs-model-count">{modelTotal > 0 ? `${formatBytes(modelDone)} / ${formatBytes(modelTotal)} · ${Math.min(100, Math.round((modelDone / modelTotal) * 100))}%` : ''}</span>
           <ul className="vs-model-list">
             {(ttsStatus?.files ?? []).map((f) => {
               const prog = dlProgress[f.path]
@@ -228,12 +233,29 @@ export function AiLabVoiceTab(): JSX.Element {
                     <span className="vs-model-size">{sizeText}</span>
                     {!f.present && isDownloading && <span className="vs-model-pct">{pct}%</span>}
                     {prog?.error && <span className="vs-model-err">{prog.error}</span>}
+                    {/* R185: per-file retry — one poisoned file no longer means re-running the whole batch */}
+                    {!isDone && !isDownloading && !downloading && (
+                      <button
+                        type="button"
+                        className="vs-model-retry"
+                        data-action="vs-model-retry"
+                        data-path={f.path}
+                        onClick={() => { void startDownload([f.path]) }}
+                        title={t('ai.voice.retryFile')}
+                        aria-label={`${t('ai.voice.retryFile')} ${f.path}`}
+                      >↻</button>
+                    )}
                   </span>
                 </li>
               )
             })}
           </ul>
           {dlError && <p className="ai-hint-line">{t(`ai.voice.err.${dlError === 'already-downloading' ? 'downloading' : 'network'}` as Parameters<typeof t>[0])}</p>}
+          {/* R185: real on-disk accounting — "326 MB" totals stop reading as
+              already-downloaded when 0 files are present. */}
+          {filesTotal > 0 && (
+            <span className="vs-model-stats">{t('ai.voice.diskUsage')} · {formatBytes(diskUsed)} · {filesDone}/{filesTotal}</span>
+          )}
         </div>
         {voiceError && <p className="ai-hint-line">{t(`ai.voice.err.${voiceError}` as never)}</p>}
         <audio ref={audioRef} onEnded={() => { setPlaying(false); setCurrentIdx(-1) }} hidden />

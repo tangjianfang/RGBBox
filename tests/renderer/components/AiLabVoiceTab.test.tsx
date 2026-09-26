@@ -57,6 +57,35 @@ describe('AiLabVoiceTab (R173-S1)', () => {
     await waitFor(() => expect(container.textContent).toContain('33%'))
   })
 
+  it('R185: per-file retry button posts just that path; stats line renders', async () => {
+    const rgbbox = setupRendererMocks() as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.ttsEngineStatus = vi.fn().mockResolvedValue({
+      complete: false,
+      kokoroInstalled: true,
+      bundledVoices: ['af_heart'],
+      files: [
+        { path: 'config.json', bytes: 5120, present: true, actualBytes: 44 },
+        { path: 'onnx/model_q4.onnx', bytes: 305_000_000, present: false },
+      ],
+    })
+    rgbbox.onTtsModelProgress = vi.fn().mockReturnValue(() => undefined)
+    rgbbox.ttsModelDownload = vi.fn().mockResolvedValue({ ok: true })
+    const { container } = render(<AiLabVoiceTab />)
+    // stats line: on-disk accounting with actual bytes + file counts
+    await waitFor(() => expect(container.querySelector('.vs-model-stats')?.textContent).toContain('1/2'))
+    // count line reads used/total bytes
+    expect(container.querySelector('.vs-model-count')?.textContent).toContain('/')
+    // the missing file row carries a retry button targeting its path
+    const retry = await waitFor(() => {
+      const el = container.querySelector('[data-action="vs-model-retry"]') as HTMLButtonElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    expect(retry.dataset.path).toBe('onnx/model_q4.onnx')
+    fireEvent.click(retry)
+    expect(rgbbox.ttsModelDownload).toHaveBeenCalledWith(['onnx/model_q4.onnx'])
+  })
+
   it('typing text splits into a clickable sentence preview', () => {
     const { container } = render(<AiLabVoiceTab />)
     const area = container.querySelector('textarea[data-field="vs-text"]') as HTMLTextAreaElement

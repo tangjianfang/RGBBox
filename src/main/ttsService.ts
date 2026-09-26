@@ -106,46 +106,45 @@ export function looksLikeHtmlPage(buf: Buffer): boolean {
   return head.startsWith('<!doctype') || head.startsWith('<html') || head.includes('<body')
 }
 
-/** 逐文件流式下载(mirror 主源失败回落 HF 官方,每个源 2 次;`.part` 断点续传:
- *  已有分片走 `Range: bytes=N-` 追加写)。落盘用 tmp+rename 防半成品混入。 */
-export async function ttsDownloadModels(
-  cacheRoot: string,
+/** R185: 单文件下载——mirror 主源失败回落 HF 官方,每源 2 次;`.part` 断点续传
+ *  (Range 追加写)、416 毒分片自愈、首块 HTML 页检测、精确字节对账、tmp+rename
+ *  原子落盘。返回 ''=成功(或已存在),否则为错误描述。 */
+async function downloadOneFile(
+  spec: KokoroFileSpec,
+  dir: string,
   onEvent: (ev: TtsDownloadEvent) => void,
   signal?: AbortSignal,
-): Promise<{ ok: boolean; error?: string }> {
-  const dir = kokoroModelDir(cacheRoot)
-  for (const spec of KOKORO_FILES) {
-    if (signal?.aborted) return { ok: false, error: 'cancelled' }
-    const target = join(dir, spec.path)
-    if (existsSync(target) && statSync(target).size > 1024) continue
-    mkdirSync(join(target, '..'), { recursive: true })
-    const partPath = `${target}.part`
-    let lastErr = ''
-    for (const mirror of [true, false]) {
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        if (signal?.aborted) return { ok: false, error: 'cancelled' }
-        try {
-          // resume: continue from an existing .part when the server honors Range
-          let have = existsSync(partPath) ? statSync(partPath).size : 0
-          const useRange = have > 0
-          const res = await xfetch(kokoroFileUrl(spec.path, mirror), {
-            signal,
-            headers: useRange ? { Range: `bytes=${have}-` } : undefined,
-          })
-          // R179.2: 416 = the local .part is poisoned (0-byte/oversized from an
-          // earlier crash) — drop it and retry this attempt as a full download
-          if (res.status === 416 && useRange) {
-            rmSync(partPath, { force: true })
-            have = 0
-            attempt -= 1 // retry the same attempt slot without consuming it
-            continue
-          }
-          if (res.status !== 200 && res.status !== 206) throw new Error(`HTTP ${res.status}`)
-          const resuming = res.status === 206 && have > 0
-          const lenHeader = Number(res.headers.get('content-length') ?? 0)
-          const total = resuming ? have + lenHeader : (lenHeader || spec.bytes)
-          let received = have
-          const stream = Readable.fromWeb((res as unknown as { body: Parameters<typeof Readable.fromWeb>[0] }).body)
+): Promise<string> {
+  const target = join(dir, spec.path)
+  if (existsSync(target) && statSync(target).size > 1024) return ''
+  mkdirSync(join(target, '..'), { recursive: true })
+  const partPath = `${target}.part`
+  let lastErr = ''
+  for (const mirror of [true, false]) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (signal?.aborted) return 'cancelled'
+      try {
+        // resume: continue from an existing .part when the server honors Range
+        let have = existsSync(partPath) ? statSync(partPath).size : 0
+        const useRange = have > 0
+        const res = await xfetch(kokoroFileUrl(spec.path, mirror), {
+          signal,
+          headers: useRange ? { Range: `bytes=${have}-` } : undefined,
+        })
+        // R179.2: 416 = the local .part is poisoned (0-byte/oversized from an
+        // earlier crash) — drop it and retry this attempt as a full download
+        if (res.status === 416 && useRange) {
+          rmSync(partPath, { force: true })
+          have = 0
+          attempt -= 1 // retry the same attempt slot without consuming it
+          continue
+        }
+        if (res.status !== 200 && res.status !== 206) throw new Error(`HTTP ${res.status}`)
+        const resuming = res.status === 206 && have > 0
+        const lenHeader = Number(res.headers.get('content-length') ?? 0)
+        const total = resuming ? have + lenHeader : (lenHeader || spec.bytes)
+        let received = have
+        const stream = Readable.fromWeb((res as unknown as { body: Parameters<typeof Readable.fromWeb>[0] }).body)
         const out = createWriteStream(partPath, { flags: resuming ? 'a' : 'w' })
         let firstChunkChecked = false
         stream.on('data', (chunk: Buffer) => {
@@ -165,30 +164,55 @@ export async function ttsDownloadModels(
           received += chunk.length
           onEvent({ path: spec.path, receivedBytes: received, totalBytes: total, done: false })
         })
-          await pipeline(stream, out)
-          // exact accounting — a short body means a truncated/corrupt file
-          if (total > 0 && received !== total) {
-            rmSync(partPath, { force: true })
-            throw new Error(`size mismatch ${received}/${total}`)
-          }
-          renameSync(partPath, target)
-          onEvent({ path: spec.path, receivedBytes: received, totalBytes: received, done: true })
-          lastErr = ''
-          break
-        } catch (e) {
-          lastErr = e instanceof Error ? e.message : String(e)
-          if (signal?.aborted) return { ok: false, error: 'cancelled' }
-          await new Promise((r) => setTimeout(r, 1500)) // backoff between attempts
+        await pipeline(stream, out)
+        // exact accounting — a short body means a truncated/corrupt file
+        if (total > 0 && received !== total) {
+          rmSync(partPath, { force: true })
+          throw new Error(`size mismatch ${received}/${total}`)
         }
+        renameSync(partPath, target)
+        onEvent({ path: spec.path, receivedBytes: received, totalBytes: received, done: true })
+        lastErr = ''
+        break
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : String(e)
+        if (signal?.aborted) return 'cancelled'
+        await new Promise((r) => setTimeout(r, 1500)) // backoff between attempts
       }
-      if (lastErr === '') break
     }
-    if (lastErr !== '' && spec.required) {
-      onEvent({ path: spec.path, receivedBytes: 0, totalBytes: spec.bytes, done: true, error: lastErr })
-      return { ok: false, error: `${spec.path}: ${lastErr}` }
+    if (lastErr === '') break
+  }
+  if (lastErr !== '' && spec.required) {
+    onEvent({ path: spec.path, receivedBytes: 0, totalBytes: spec.bytes, done: true, error: lastErr })
+    return `${spec.path}: ${lastErr}`
+  }
+  return ''
+}
+
+/** 下载全部(或 `only` 指定的)缺失文件。R185: 3 路并发——291MB 主模型不再被
+ *  5KB 的 config.json 串行阻塞;单文件失败不再中断其余文件(可单独重试)。 */
+export async function ttsDownloadModels(
+  cacheRoot: string,
+  onEvent: (ev: TtsDownloadEvent) => void,
+  signal?: AbortSignal,
+  opts?: { only?: string[] },
+): Promise<{ ok: boolean; error?: string }> {
+  const dir = kokoroModelDir(cacheRoot)
+  const specs = KOKORO_FILES.filter((f) => opts?.only === undefined || opts.only.includes(f.path))
+  const queue = [...specs]
+  const failures: string[] = []
+  const worker = async (): Promise<void> => {
+    for (let spec = queue.shift(); spec !== undefined; spec = queue.shift()) {
+      if (signal?.aborted) return
+      const err = await downloadOneFile(spec, dir, onEvent, signal)
+      if (err !== '') failures.push(err)
+      if (signal?.aborted) return
     }
   }
-  return { ok: true }
+  const lanes = Math.min(3, specs.length)
+  await Promise.all(Array.from({ length: lanes }, () => worker()))
+  if (signal?.aborted) return { ok: false, error: 'cancelled' }
+  return failures.length > 0 ? { ok: false, error: failures.join('; ') } : { ok: true }
 }
 
 // ── 引擎(纯本地加载)───────────────────────────────────────────────────────
