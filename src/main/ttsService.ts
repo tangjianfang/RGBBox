@@ -14,6 +14,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { segmentsToWav } from './ttsWav'
 import { KOKORO_VOICE_CATALOG } from '../shared/kokoroVoices'
+import { hanziToPhonemes } from '../shared/zhPhonemes'
 
 const KOKORO_REPO = 'onnx-community/kokoro-82M-v1.0-ONNX'
 export const KOKORO_SAMPLE_RATE = 24000
@@ -289,6 +290,9 @@ export async function ttsDownloadVoice(
 
 interface KokoroTtsInstance {
   generate: (text: string, opts?: { voice?: string; speed?: number }) => Promise<{ audio: Float32Array; sampling_rate?: number }>
+  /** R197: 直喂音素 id 的入口(绕过英语 G2P)——中文桥走这里。 */
+  generate_from_ids?: (ids: unknown, opts?: { voice?: string; speed?: number }) => Promise<{ audio: Float32Array; sampling_rate?: number }>
+  tokenizer?: (text: string, opts?: Record<string, unknown>) => { input_ids: unknown }
 }
 
 let enginePromise: Promise<KokoroTtsInstance> | null = null
@@ -327,17 +331,29 @@ async function getEngine(cacheRoot: string): Promise<KokoroTtsInstance> {
 
 export async function ttsSynthesize(
   segments: string[],
-  opts: { voice?: string; speed?: number; cacheDir: string },
+  opts: { voice?: string; speed?: number; cacheDir: string; perSegmentVoices?: Array<string | undefined> },
 ): Promise<{ ok: boolean; wav?: Buffer; sampleRate?: number; error?: string }> {
   if (segments.length === 0) return { ok: false, error: 'empty' }
   try {
     const engine = await getEngine(opts.cacheDir)
     const voice = opts.voice && opts.voice.trim() !== '' ? opts.voice.trim() : DEFAULT_VOICE
     const speed = typeof opts.speed === 'number' && opts.speed > 0 ? opts.speed : 1
+    // R197: 中文音色走拼音→IPA 桥 + generate_from_ids 直喂(kokoro-js 只有
+    // 英语 G2P;实测该入口不校验音色名,zf/zm 的 .bin 即可发声)。
+    // perSegmentVoices: 导出混合文本时逐句指定(zh 句桥音色/en 句英语音色)。
     const audio: Float32Array[] = []
-    for (const seg of segments) {
-      const out = await engine.generate(seg, { voice, speed })
-      audio.push(out.audio)
+    for (let i = 0; i < segments.length; i += 1) {
+      const segVoice = opts.perSegmentVoices?.[i] ?? voice
+      if (/^(zf|zm)_/.test(segVoice)) {
+        if (engine.generate_from_ids === undefined || engine.tokenizer === undefined) throw new Error('zh-bridge-unavailable')
+        const phonemes = hanziToPhonemes(segments[i])
+        const { input_ids } = engine.tokenizer(phonemes, { truncation: true })
+        const out = await engine.generate_from_ids(input_ids, { voice: segVoice, speed })
+        audio.push(out.audio)
+      } else {
+        const out = await engine.generate(segments[i], { voice: segVoice, speed })
+        audio.push(out.audio)
+      }
     }
     return { ok: true, wav: segmentsToWav(audio, KOKORO_SAMPLE_RATE), sampleRate: KOKORO_SAMPLE_RATE }
   } catch (e) {

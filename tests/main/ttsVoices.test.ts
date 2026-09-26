@@ -16,10 +16,10 @@ afterEach(() => {
 })
 
 describe('R187/R192 voice catalog (shared/kokoroVoices)', () => {
-  it('lists exactly the engine-supported English voices (kokoro-js@1.2.1 registry)', () => {
+  it('lists the 28 English + 8 zh-bridge voices (R197)', () => {
     // R192.2 实测:引擎 _validate_voice 只认 28 个英语音色——zf/zm/jf 等仓库里
     // 存在的 .bin 选了必报 "Voice not found",目录必须收敛到引擎支持集。
-    expect(KOKORO_VOICE_CATALOG.length).toBe(28)
+    expect(KOKORO_VOICE_CATALOG.length).toBe(36)
     for (const id of KOKORO_VOICE_CATALOG) {
       expect(id).toMatch(/^[a-z]{2}_[a-z]+$/)
       expect(VOICE_LOCALES[id.slice(0, 2)]).toBeDefined()
@@ -27,10 +27,10 @@ describe('R187/R192 voice catalog (shared/kokoroVoices)', () => {
     for (const v of ['af_heart', 'af_bella', 'am_fenrir', 'bf_emma', 'bm_fable', 'af_sky']) {
       expect(KOKORO_VOICE_CATALOG).toContain(v)
     }
-    // non-English repo bins are deliberately excluded (engine rejects them)
-    for (const v of ['zf_xiaobei', 'zm_yunxi', 'jf_alpha']) {
-      expect(KOKORO_VOICE_CATALOG).not.toContain(v)
-    }
+    // R197: the 8 zh bridge voices are back; ja/other repo bins stay out
+    expect(KOKORO_VOICE_CATALOG).toContain('zf_xiaobei')
+    expect(KOKORO_VOICE_CATALOG).toContain('zm_yunyang')
+    expect(KOKORO_VOICE_CATALOG).not.toContain('jf_alpha')
     expect(voiceLabel('af_heart')).toContain('美式英语')
     expect(voiceLabel('bm_fable')).toContain('英式英语')
   })
@@ -50,7 +50,7 @@ describe('R187 ttsService voices', () => {
     const status = ttsModelStatus(ws)
     expect(status.voices).toContain('af_heart')
     expect(status.voices).toContain('bm_fable')
-    expect(status.voices).not.toContain('zf_xiaoxiao')
+    expect(status.voices).toContain('zf_xiaoxiao') // R197: zh bins back in the catalog∩disk scan
     expect(status.voices).not.toContain('not_a_voice')
   })
 

@@ -31,6 +31,7 @@ import { ai8AutoLoginWith, clearAi8Credentials, loadAi8Credentials, saveAi8Crede
 import { setRapidOcrRunner } from './ocrService'
 import { cleanupOcrText, translateOcrText, chatCompletion, testConnection, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
 import { createAgentService } from './agentService'
+import { isZhText } from '../shared/zhPhonemes'
 import { ttsDownloadModels, ttsDownloadVoice, ttsModelStatus, ttsSynthesize, type TtsDownloadEvent } from './ttsService'
 import { type SafeStorageCodec } from './aiSecretCodec'
 import { decodeProfileSecrets, encodeProfileSecrets, sanitizeAws } from './aiProfileStore'
@@ -835,12 +836,18 @@ function registerIpc(): void {
     })
   })
   ipcMain.handle(ipcChannels.ttsExport, async (_event, p: unknown) => {
-    const a = p as { segments?: unknown; voice?: unknown; speed?: unknown }
+    const a = p as { segments?: unknown; voice?: unknown; zhVoice?: unknown; speed?: unknown }
     if (!Array.isArray(a.segments)) return { ok: false, error: 'parse' }
+    // R197: mixed export — zh sentences ride the zh-bridge voice, ONE wav out
+    const zhVoice = typeof a.zhVoice === 'string' && a.zhVoice !== '' ? a.zhVoice : undefined
+    const enVoice = typeof a.voice === 'string' ? a.voice : undefined
     const out = await ttsSynthesize(a.segments as string[], {
-      voice: typeof a.voice === 'string' ? a.voice : undefined,
+      voice: enVoice,
       speed: typeof a.speed === 'number' ? a.speed : undefined,
       cacheDir: join(app.getPath('userData'), 'models'),
+      perSegmentVoices: zhVoice !== undefined
+        ? (a.segments as unknown[]).map((s) => (typeof s === 'string' && isZhText(s) ? zhVoice : enVoice))
+        : undefined,
     })
     if (!out.ok || !out.wav) return { ok: false, error: out.error ?? 'synthesis' }
     const target = await dialog.showSaveDialog({

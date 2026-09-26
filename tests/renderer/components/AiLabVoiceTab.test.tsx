@@ -118,8 +118,8 @@ describe('AiLabVoiceTab (R173-S1)', () => {
       return el
     })
     // engine-supported English catalog (28); on-disk voice carries the ✓ prefix
-    expect(voiceSel.options.length).toBe(28)
-    expect([...voiceSel.options].some((o) => o.value === 'zf_xiaobei')).toBe(false)
+    expect(voiceSel.options.length).toBe(36)
+    expect([...voiceSel.options].some((o) => o.value === 'zf_xiaobei')).toBe(true)
     const heart = [...voiceSel.options].find((o) => o.value === 'af_heart')
     expect(heart?.textContent).toContain('✓')
     // pick a missing voice → inline download row appears and targets the id
@@ -266,13 +266,15 @@ describe('AiLabVoiceTab (R173-S1)', () => {
     // mixed hint appears (text contains Chinese)
     await waitFor(() => expect(container.textContent).toContain('ai.voice.mixedHint'))
     fireEvent.click(container.querySelector('[data-action="vs-kokoro"]')!)
-    await waitFor(() => expect(rgbbox.ttsSynthesize).toHaveBeenCalledTimes(2), { timeout: 4000 })
-    const synthCalls = rgbbox.ttsSynthesize.mock.calls as unknown as [string[]][]
-    for (const c of synthCalls) {
-      expect(c[0].length).toBe(1)
-      expect(c[0][0]).toMatch(/Hello world\.|Another English line!/)
-    }
-    await waitFor(() => expect(spoken).toEqual(['这是中文句。']), { timeout: 4000 })
+    // R197: ALL sentences ride Kokoro — 3 synth calls, zh one carrying the zh voice
+    await waitFor(() => expect(rgbbox.ttsSynthesize).toHaveBeenCalledTimes(3), { timeout: 4000 })
+    const synthCalls = rgbbox.ttsSynthesize.mock.calls as unknown as [string[], { voice?: string }][]
+    const voices = synthCalls.map(([segs, opts]) => `${opts?.voice}:${segs[0]}`)
+    expect(voices).toContain('af_heart:Hello world.')
+    expect(voices).toContain('zf_xiaobei:这是中文句。')
+    expect(voices).toContain('af_heart:Another English line!')
+    // the system engine is no longer used on the kokoro path
+    expect(spoken).toEqual([])
     // queue fully drains and clears progress
     await waitFor(() => expect(container.querySelector('.vs-synth-progress')).toBeNull(), { timeout: 4000 })
   })

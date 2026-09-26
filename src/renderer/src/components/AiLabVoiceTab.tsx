@@ -5,7 +5,7 @@ import {
   applyLexicon, detectLang, formatBytes, LEXICON_CAP, loadLexicon, normalizeText, saveLexicon, splitSentences,
   type LexiconEntry,
 } from '../domain/voiceScribe'
-import { KOKORO_VOICE_CATALOG, voiceLabel } from '../../../shared/kokoroVoices'
+import { isZhVoice, KOKORO_VOICE_CATALOG, voiceLabel } from '../../../shared/kokoroVoices'
 import type { TtsEngineStatus, TtsModelProgress } from '../../../shared/types'
 
 /**
@@ -25,6 +25,10 @@ export function AiLabVoiceTab(): JSX.Element {
   // R187: chosen voice persists; catalog marks what's on disk
   const [voiceId, setVoiceId] = useState(() => {
     try { return localStorage.getItem('rgbbox:voiceVoice') ?? 'af_heart' } catch { return 'af_heart' }
+  })
+  // R197: 中文句的 Kokoro 桥音色(独立持久化;英文句仍用 voiceId)
+  const [zhVoiceId, setZhVoiceId] = useState(() => {
+    try { return localStorage.getItem('rgbbox:voiceZhVoice') ?? 'zf_xiaobei' } catch { return 'zf_xiaobei' }
   })
   const [ttsStatus, setTtsStatus] = useState<TtsEngineStatus | null>(null)
   const [currentIdx, setCurrentIdx] = useState(-1)
@@ -137,20 +141,13 @@ export function AiLabVoiceTab(): JSX.Element {
     setSynth({ done: 0, total: segs.length })
     const isZh = (i: number): boolean => detectLang(segs[i]) === 'zh'
     const makeUrl = async (i: number): Promise<string> => {
-      const out = await window.rgbbox.ttsSynthesize([segs[i]], { voice: voiceId, speed: rate })
+      // R197: 中文句用 zh 桥音色(ttsService 按 zf_/zm_ 前缀路由到拼音→IPA 管线)
+      const out = await window.rgbbox.ttsSynthesize([segs[i]], { voice: isZh(i) ? zhVoiceId : voiceId, speed: rate })
       if (!out.ok || !out.wav) throw new Error(out.error ?? 'synthesis')
       return URL.createObjectURL(new Blob([out.wav], { type: 'audio/wav' }))
     }
     // 单句系统引擎播放(await 完成;stopAll 的 cancel 会触发 onend/onerror 收束)
-    const playSystemSentence = (sentence: string): Promise<void> => new Promise((resolve) => {
-      if (typeof window.speechSynthesis === 'undefined') { resolve(); return }
-      const u = new SpeechSynthesisUtterance(sentence)
-      u.lang = 'zh-CN'
-      u.rate = rate
-      u.onend = () => resolve()
-      u.onerror = () => resolve()
-      window.speechSynthesis.speak(u)
-    })
+    // R197 后仅在系统引擎模式下使用;Kokoro 队列的中文句走桥音色。
     const playKokoroSentence = async (url: string): Promise<void> => {
       await new Promise<void>((resolve) => {
         const el = audioRef.current
@@ -168,18 +165,13 @@ export function AiLabVoiceTab(): JSX.Element {
       for (let i = 0; i < segs.length; i += 1) {
         if (token.cancel) break
         setCurrentIdx(startIdx + i)
-        if (isZh(i)) {
-          // 中文句:系统引擎 zh-CN(kokoro-js 上游无中文 G2P)
-          await playSystemSentence(segs[i])
-        } else {
-          if (nextUrl === null) nextUrl = makeUrl(i)
-          const url = await nextUrl
-          nextUrl = null
-          if (token.cancel) { URL.revokeObjectURL(url); break }
-          // 播放当前英文句的同时,预取下一个英文句(zh 句系统引擎本就即时)
-          if (i + 1 < segs.length && !isZh(i + 1)) nextUrl = makeUrl(i + 1)
-          await playKokoroSentence(url)
-        }
+        // R197: 每句都走 Kokoro——中文句由 makeUrl 换 zh 桥音色,同队列无缝
+        if (nextUrl === null) nextUrl = makeUrl(i)
+        const url = await nextUrl
+        nextUrl = null
+        if (token.cancel) { URL.revokeObjectURL(url); break }
+        if (i + 1 < segs.length) nextUrl = makeUrl(i + 1) // prefetch behind playback
+        await playKokoroSentence(url)
         if (token.cancel) break
         setSynth({ done: i + 1, total: segs.length })
       }
@@ -198,7 +190,8 @@ export function AiLabVoiceTab(): JSX.Element {
     if (busy || sentences.length === 0) return
     setBusy(true)
     try {
-      const out = await window.rgbbox.ttsExport(speechTexts, { voice: voiceId, speed: rate })
+      // R197: 导出带 zhVoice——主进程按句语言分流,中英混排出单个 WAV
+      const out = await window.rgbbox.ttsExport(speechTexts, { voice: voiceId, zhVoice: zhVoiceId, speed: rate })
       if (!out.ok) setVoiceError(out.error ?? 'synthesis')
     } finally { setBusy(false) }
   }
@@ -295,6 +288,19 @@ export function AiLabVoiceTab(): JSX.Element {
               aria-label={t('ai.voice.voice')}
             >
               {KOKORO_VOICE_CATALOG.map((v) => (
+                <option key={v} value={v}>{`${voicesOnDisk.includes(v) ? '✓ ' : ''}${voiceLabel(v)}`}</option>
+              ))}
+            </select>
+          )}
+          {engine === 'kokoro' && (
+            <select
+              data-field="vs-voice-zh"
+              value={zhVoiceId}
+              onChange={(e) => { setZhVoiceId(e.target.value); try { localStorage.setItem('rgbbox:voiceZhVoice', e.target.value) } catch { /* best-effort */ } }}
+              aria-label={t('ai.voice.voiceZh')}
+              title={t('ai.voice.voiceZhHint')}
+            >
+              {KOKORO_VOICE_CATALOG.filter(isZhVoice).map((v) => (
                 <option key={v} value={v}>{`${voicesOnDisk.includes(v) ? '✓ ' : ''}${voiceLabel(v)}`}</option>
               ))}
             </select>

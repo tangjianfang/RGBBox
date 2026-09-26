@@ -355,9 +355,9 @@ const api = {
     ipcRenderer.on(ipcChannels.ttsModelProgress, handler)
     return () => ipcRenderer.off(ipcChannels.ttsModelProgress, handler)
   },
-  ttsSynthesize: (segments: string[], opts?: { voice?: string; speed?: number }): Promise<{ ok: boolean; wav?: ArrayBuffer; sampleRate?: number; error?: string }> =>
+  ttsSynthesize: (segments: string[], opts?: { voice?: string; zhVoice?: string; speed?: number }): Promise<{ ok: boolean; wav?: ArrayBuffer; sampleRate?: number; error?: string }> =>
     ipcRenderer.invoke(ipcChannels.ttsSynthesize, { segments, ...opts }),
-  ttsExport: (segments: string[], opts?: { voice?: string; speed?: number }): Promise<{ ok: boolean; path?: string; error?: string }> =>
+  ttsExport: (segments: string[], opts?: { voice?: string; zhVoice?: string; speed?: number }): Promise<{ ok: boolean; path?: string; error?: string }> =>
     ipcRenderer.invoke(ipcChannels.ttsExport, { segments, ...opts }),
   // R187: on-demand voice bin + lexicon JSON file I/O
   ttsVoiceDownload: (voice: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(ipcChannels.ttsVoiceDownload, voice),
