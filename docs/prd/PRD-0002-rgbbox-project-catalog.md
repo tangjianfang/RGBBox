@@ -3544,3 +3544,11 @@
 **排期顺序**:Q-1 → Q-2 → Q-3(发版) → Q-4 → Q-5 → v0.3.85。P-7(RC-2/RC-3/B-2)继续挂起待产品决策;D3/D8/D10(悬浮胶囊/「关」语义/toast 生命周期)随 Q-5 后另议。
 
 - **R189.1 状态**:🔄(规划条款;按批推进时逐批转独立 R-N 执行)
+
+### R190. Q-1 滚动/杂项快修（R189 首批;P-1 走查入档 D4/D5/D6 销项）
+
+- **R190.1 滚动渐隐统一**:workspace `.fx-sidebar`(「调节」被视口拦腰截断且 thin 滚动条不可见)与 `.diagnostics-view`(「环境」卡裁切)补与 R183 效果库同款底部渐隐 mask,滚动延续信号全视图统一。
+- **R190.2 games 重心平衡**:`.games-hub` 纵向居中(margin auto,溢出安全),消除下半屏空旷失衡;卡面描述 small 与 ghost 占位卡「更多游戏构思中」对比度提档(text-muted→text-secondary)。
+- **R190.3 ai-config 收窄居中**:配置面板 `.ai-config-panel` 限宽居中,右半 300px+ 死白均分。
+- **R190.4 验收**:DOM 断言 **4/4 PASS**(fx-sidebar 1522/812 可滚+mask;games-hub 居中 263/269;diagnostics-view 1052/812 可滚+mask;ai-config 面板 788px 居中 L290/R290)+ 4 视图截图存档;vitest 135 文件/1192 用例全过;`ui:snapshot` 3 视图预期漂移(games 1.86% 居中位移/ai 1.25% 面板居中/diagnostics 0.16% 渐隐)核对后基线重立 af8f5fc,复跑 **9/9 GATE PASS**。
+- **R190.5 状态**:✅

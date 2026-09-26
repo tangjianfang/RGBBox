@@ -1827,6 +1827,10 @@ input:not([type]):focus {
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* R190: vertical centering that stays scroll-safe — auto margins collapse
+     to 0 when the hub outgrows the viewport instead of clipping the top. */
+  margin: auto 0;
+  width: 100%;
 }
 
 .game-tile {
@@ -1871,7 +1875,9 @@ input:not([type]):focus {
 }
 
 .game-tile-copy small {
-  color: var(--text-muted);
+  /* R190: bumped from --text-muted — walkthrough flagged card summaries at
+     the readability floor (same call as the rail labels in R183). */
+  color: var(--text-secondary);
   font-size: 0.6875rem;
   line-height: 1.4;
 }
@@ -1888,8 +1894,8 @@ input:not([type]):focus {
 
 .game-tile.ghost {
   border-style: dashed;
-  color: var(--text-faint);
-  opacity: 0.75;
+  color: var(--text-secondary);
+  opacity: 0.85;
 }
 
 .game-tile.ghost .tower-orb {
@@ -7617,6 +7623,23 @@ input[type='range'].video-player-volume {
 .ai-key-row {
   display: flex;
   gap: 6px;
+}
+
+/* ── R190 (Q-1 快修): 滚动渐隐统一 / ai-config 收窄居中 ────────────────────── */
+
+/* workspace FX 侧栏与诊断页:与 R183 效果库同款底部渐隐——内容被视口切边时
+   有明确的「下方还有」信号(原 thin 滚动条 0.18 透明度近乎不可见)。 */
+.fx-sidebar,
+.diagnostics-view {
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 28px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 28px), transparent 100%);
+}
+
+/* 配置面板限宽居中:右半 300px+ 死白均分为两侧留白(D6) */
+.ai-config-panel {
+  margin-inline: auto;
+  max-width: 788px;
+  width: 100%;
 }
 .ai-key-row input { flex: 1; }
 .ai-privacy-note {
