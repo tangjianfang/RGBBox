@@ -278,6 +278,90 @@ describe('AiLabAgentTab (R172-S2)', () => {
     expect((container.querySelector('.agent-tool-result') as HTMLPreElement).textContent).not.toContain('line-13')
   })
 
+  it('R191: auto-restores the last session on mount; meta line carries events count', async () => {
+    localStorage.setItem('rgbbox:agentPrefs', JSON.stringify({ lastSessionId: 's-last' }))
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.agentSessionsList = vi.fn().mockResolvedValue([
+      { id: 's-last', title: '上次会话', updatedAt: Date.now() - 120_000, events: 7 },
+    ])
+    rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([{ kind: 'user', text: '上次的问题' }])
+    const { container } = render(<AiLabAgentTab />)
+    await waitFor(() => expect(rgbbox.agentSessionLoad).toHaveBeenCalledWith('s-last'))
+    await waitFor(() => expect(container.querySelector('.agent-msg-user')?.textContent).toBe('上次的问题'))
+    // meta: relative time (2 min ago) + event count
+    await waitFor(() => expect(container.querySelector('.agent-session-meta')?.textContent).toContain('7'))
+    localStorage.removeItem('rgbbox:agentPrefs')
+  })
+
+  it('R191: new-session resets the workbench; rename and delete hit the lifecycle IPC', async () => {
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.agentSessionsList = vi.fn().mockResolvedValue([
+      { id: 's-a', title: '会话甲', updatedAt: Date.now(), events: 3 },
+    ])
+    rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([{ kind: 'user', text: '甲的内容' }])
+    const { container } = render(<AiLabAgentTab />)
+    const loadBtn = await waitFor(() => {
+      const el = container.querySelector('[data-action="agent-load"]') as HTMLButtonElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.click(loadBtn)
+    await waitFor(() => expect(rgbbox.agentSessionLoad).toHaveBeenCalledWith('s-a'))
+    await waitFor(() => expect(container.querySelector('.agent-msg-user')).not.toBeNull())
+
+    // rename flow: pencil → inline input → Enter
+    fireEvent.click(container.querySelector('[data-action="agent-rename"]')!)
+    const input = await waitFor(() => {
+      const el = container.querySelector('input[data-field="agent-rename"]') as HTMLInputElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.change(input, { target: { value: '新名字' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(rgbbox.agentSessionRename).toHaveBeenCalledWith('s-a', '新名字'))
+
+    // delete flow (confirm stubbed — happy-dom has no native confirm)
+    const confirmMock = vi.fn().mockReturnValue(true)
+    window.confirm = confirmMock as unknown as typeof window.confirm
+    fireEvent.click(container.querySelector('[data-action="agent-delete"]')!)
+    await waitFor(() => expect(rgbbox.agentSessionDelete).toHaveBeenCalledWith('s-a'))
+    // deleting the OPEN conversation resets to the empty state
+    await waitFor(() => expect(container.querySelector('[data-field="agent-empty"]')).not.toBeNull())
+    expect(confirmMock).toHaveBeenCalled()
+
+    // new-session button lands on the empty state too and clears the pref
+    rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([{ kind: 'user', text: 'again' }])
+    rgbbox.agentSessionsList = vi.fn().mockResolvedValue([{ id: 's-b', title: '乙', updatedAt: Date.now(), events: 1 }])
+    fireEvent.click(container.querySelector('[data-action="agent-load"]')!)
+    await waitFor(() => expect(container.querySelector('.agent-msg-user')).not.toBeNull())
+    fireEvent.click(container.querySelector('[data-action="agent-new"]')!)
+    await waitFor(() => expect(container.querySelector('[data-field="agent-empty"]')).not.toBeNull())
+    expect(JSON.parse(localStorage.getItem('rgbbox:agentPrefs')!).lastSessionId).toBeUndefined()
+  })
+
+  it('R191: while running, load/new/rename are disabled (no stream cross-contamination)', async () => {
+    let subscriber: ((ev: unknown) => void) | undefined
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.agentSessionsList = vi.fn().mockResolvedValue([{ id: 's-x', title: 'X', updatedAt: Date.now(), events: 1 }])
+    rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([])
+    rgbbox.agentSend = vi.fn().mockResolvedValue({ ok: true, sessionId: 's-run' })
+    rgbbox.onAgentEvent = vi.fn().mockImplementation((cb: (ev: unknown) => void) => { subscriber = cb; return () => undefined })
+    const { container } = render(<AiLabAgentTab />)
+    await waitFor(() => expect(rgbbox.aiGetProfiles).toHaveBeenCalled())
+    // workspace + prompt → send puts the workbench into the running state
+    fireEvent.click(container.querySelector('[data-action="agent-pick"]')!)
+    await waitFor(() => expect((container.querySelector('input[data-field="agent-workspace"]') as HTMLInputElement).value).not.toBe(''))
+    fireEvent.change(container.querySelector('textarea[data-field="agent-input"]')!, { target: { value: 'go' } })
+    fireEvent.click(container.querySelector('[data-action="agent-send"]')!)
+    subscriber?.({ kind: 'session-meta', sessionId: 's-run', model: 'm' })
+    await waitFor(() => expect((container.querySelector('[data-action="agent-new"]') as HTMLButtonElement).disabled).toBe(true))
+    expect((container.querySelector('[data-action="agent-load"]') as HTMLButtonElement).disabled).toBe(true)
+    expect((container.querySelector('[data-action="agent-rename"]') as HTMLButtonElement).disabled).toBe(true)
+    // the running session is remembered as the last session
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('rgbbox:agentPrefs')!).lastSessionId).toBe('s-run'))
+    localStorage.removeItem('rgbbox:agentPrefs')
+  })
+
   it('R184: run end closes the streaming bubble (no caret on a dead run); approval card restores', async () => {
     let subscriber: ((ev: unknown) => void) | undefined
     const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>

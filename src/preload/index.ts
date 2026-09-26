@@ -337,6 +337,9 @@ const api = {
     ipcRenderer.invoke(ipcChannels.agentApprovalRespond, { id, decision }),
   agentSessionsList: (): Promise<AgentSessionMeta[]> => ipcRenderer.invoke(ipcChannels.agentSessionsList),
   agentSessionLoad: (id: string): Promise<AgentEvent[]> => ipcRenderer.invoke(ipcChannels.agentSessionLoad, id),
+  // R191: session lifecycle
+  agentSessionRename: (id: string, title: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(ipcChannels.agentSessionRename, { id, title }),
+  agentSessionDelete: (id: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(ipcChannels.agentSessionDelete, id),
   agentPickWorkspace: (): Promise<string | null> => ipcRenderer.invoke(ipcChannels.agentPickWorkspace),
   onAgentEvent: (callback: (ev: AgentEvent) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, ev: AgentEvent): void => callback(ev)

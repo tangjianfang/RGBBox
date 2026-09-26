@@ -792,6 +792,16 @@ function registerIpc(): void {
     const id = typeof p === 'string' ? p : (p as { id?: unknown })?.id
     return agentSvc.sessionLoad(typeof id === 'string' ? id : '')
   })
+  // R191: session lifecycle — rename (index.json) / delete (guarded)
+  ipcMain.handle(ipcChannels.agentSessionRename, (_event, p: unknown) => {
+    const a = p as { id?: unknown; title?: unknown }
+    if (typeof a.id !== 'string' || typeof a.title !== 'string') return { ok: false, error: 'parse' }
+    return agentSvc.sessionRename(a.id, a.title)
+  })
+  ipcMain.handle(ipcChannels.agentSessionDelete, (_event, p: unknown) => {
+    const id = typeof p === 'string' ? p : (p as { id?: unknown })?.id
+    return agentSvc.sessionDelete(typeof id === 'string' ? id : '')
+  })
   ipcMain.handle(ipcChannels.agentPickWorkspace, async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]

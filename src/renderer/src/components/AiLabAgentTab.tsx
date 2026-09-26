@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { Bot, CheckCheck, FolderOpen, History, Play, Send, ShieldCheck, Square, TriangleAlert, X } from 'lucide-react'
+import { Bot, CheckCheck, FolderOpen, History, Pencil, Play, Plus, Send, ShieldCheck, Square, Trash2, TriangleAlert, X } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { MarkdownView } from '../ai8/markdown'
 import { groupModelsByProvider, matchCurated } from '../ai8/localStore'
@@ -79,8 +79,21 @@ function saveHistory(list: string[]): void {
 /** AI8 聊天模型模板(公开、无需 token)——成功后模块级缓存,切页秒开。 */
 let ai8ModelCache: Ai8Model[] | null = null
 
+/** R191: 相对时间(会话列表)——刚刚 / N 分钟前 / 今天 HH:MM / M-D。 */
+function formatRelativeTime(ms: number, t: ReturnType<typeof useI18n>['t']): string {
+  if (!Number.isFinite(ms) || ms <= 0) return ''
+  const diff = Date.now() - ms
+  if (diff < 60_000) return t('ai.agent.timeNow')
+  if (diff < 3_600_000) return t('ai.agent.timeMinAgo').replace('{n}', String(Math.floor(diff / 60_000)))
+  const d = new Date(ms)
+  const now = new Date()
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return d.toDateString() === now.toDateString() ? hm : `${d.getMonth() + 1}-${d.getDate()}`
+}
+
 // R174.9: workbench prefs persist across restarts (profile/workspace/mode/
 // last ai8 model + site-discontinued models marked locally).
+// R191: lastSessionId — the tab auto-restores it on open (cached history).
 const PREFS_KEY = 'rgbbox:agentPrefs'
 interface AgentPrefs {
   profileId?: string
@@ -89,6 +102,7 @@ interface AgentPrefs {
   ai8Model?: string
   disabledModels?: string[]
   agentDraft?: string
+  lastSessionId?: string
 }
 function loadPrefs(): AgentPrefs {
   try {
@@ -123,12 +137,14 @@ export function AiLabAgentTab(): JSX.Element {
   const draftRef = useRef(prefs.agentDraft ?? '')
   const [disabledModels, setDisabledModels] = useState<string[]>(prefs.disabledModels ?? [])
   const [activeSessionId, setActiveSessionId] = useState('')
+  const [lastSessionId, setLastSessionId] = useState(prefs.lastSessionId ?? '')
+  const [renamingId, setRenamingId] = useState<string | null>(null)
   const sessionIdRef = useRef('')
   const logRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    savePrefs({ profileId: profileId || undefined, workspace: workspace || undefined, mode, ai8Model: ai8ModelValue || undefined, disabledModels, agentDraft: input || undefined })
-  }, [profileId, workspace, mode, ai8ModelValue, disabledModels, input])
+    savePrefs({ profileId: profileId || undefined, workspace: workspace || undefined, mode, ai8Model: ai8ModelValue || undefined, disabledModels, agentDraft: input || undefined, lastSessionId: lastSessionId || undefined })
+  }, [profileId, workspace, mode, ai8ModelValue, disabledModels, input, lastSessionId])
 
   const refreshSessions = useCallback(() => {
     void window.rgbbox.agentSessionsList().then(setSessions).catch(() => setSessions([]))
@@ -137,6 +153,8 @@ export function AiLabAgentTab(): JSX.Element {
   // R174.9: profiles may refetch — the prefs restore is a ONE-TIME init and
   // must never clobber a selection the user made in this session.
   const profileInitRef = useRef(false)
+  // R191: session auto-restore runs once per mount.
+  const autoRestoreRef = useRef(false)
   useEffect(() => {
     if (profileInitRef.current) return
     void window.rgbbox.aiGetProfiles().then(async (c) => {
@@ -157,7 +175,15 @@ export function AiLabAgentTab(): JSX.Element {
       setProfileId(prefs.profileId && list.some((p) => p.id === prefs.profileId) ? prefs.profileId : c.activeId)
     }).catch(() => { /* offline */ })
     refreshSessions()
-  }, [refreshSessions, prefs.profileId])
+    // R191: auto-restore the last session — reopening the app lands you back
+    // in your latest conversation (Claude Code --resume feel).
+    if (!autoRestoreRef.current && prefs.lastSessionId !== undefined && prefs.lastSessionId !== '') {
+      autoRestoreRef.current = true
+      void window.rgbbox.agentSessionsList().then((list) => {
+        if (list.some((s) => s.id === prefs.lastSessionId)) loadSession(prefs.lastSessionId as string)
+      }).catch(() => undefined)
+    }
+  }, [refreshSessions, prefs.profileId, prefs.lastSessionId])
 
   const activeProfile = useMemo(() => profiles.find((p) => p.id === profileId) ?? null, [profiles, profileId])
   const isAi8 = activeProfile?.baseUrl.startsWith('ai8://') === true
@@ -228,7 +254,7 @@ export function AiLabAgentTab(): JSX.Element {
         }
         return next
       })
-      if (ev.kind === 'session-meta') { sessionIdRef.current = ev.sessionId; setActiveSessionId(ev.sessionId) }
+      if (ev.kind === 'session-meta') { sessionIdRef.current = ev.sessionId; setActiveSessionId(ev.sessionId); setLastSessionId(ev.sessionId) }
       if (ev.kind === 'done') {
         setRunning(false)
         setPendingApproval(null)
@@ -277,8 +303,12 @@ export function AiLabAgentTab(): JSX.Element {
   }
 
   const loadSession = (id: string): void => {
+    // R191: switching mid-run would cross-contaminate the live event stream
+    // into a restored transcript — the row buttons disable, this is the backstop.
+    if (running) return
     sessionIdRef.current = id
     setActiveSessionId(id)
+    setLastSessionId(id)
     setItems([])
     setError(null)
     void window.rgbbox.agentSessionLoad(id).then((events) => {
@@ -313,6 +343,44 @@ export function AiLabAgentTab(): JSX.Element {
       setItems(restored)
       if (restoredError !== null) setError(restoredError)
     }).catch(() => { /* empty */ })
+  }
+
+  // R191: session lifecycle — explicit new / rename / delete
+  const newSession = (): void => {
+    if (running) return
+    sessionIdRef.current = ''
+    setActiveSessionId('')
+    setLastSessionId('')
+    setItems([])
+    setError(null)
+    setPendingApproval(null)
+    setRenamingId(null)
+  }
+
+  const saveRename = (id: string, title: string): void => {
+    setRenamingId(null)
+    const clean = title.trim()
+    if (clean === '') return
+    void window.rgbbox.agentSessionRename(id, clean).then((out) => {
+      if (!out.ok) setError(out.error ?? 'parse')
+      refreshSessions()
+    }).catch(() => undefined)
+  }
+
+  const deleteSession = (id: string): void => {
+    if (!window.confirm(t('ai.agent.deleteConfirm'))) return
+    void window.rgbbox.agentSessionDelete(id).then((out) => {
+      if (!out.ok) { setError(out.error ?? 'delete'); return }
+      // deleting the open conversation → back to a fresh empty workbench
+      if (sessionIdRef.current === id) {
+        sessionIdRef.current = ''
+        setActiveSessionId('')
+        setLastSessionId('')
+        setItems([])
+        setError(null)
+      }
+      refreshSessions()
+    }).catch(() => undefined)
   }
 
   return (
@@ -393,19 +461,54 @@ export function AiLabAgentTab(): JSX.Element {
           </label>
         )}
         <div className="agent-sessions">
-          <h5><History size={12} /> {t('ai.agent.sessions')}</h5>
+          <div className="agent-sessions-head">
+            <h5><History size={12} /> {t('ai.agent.sessions')}</h5>
+            <button
+              type="button"
+              className="agent-session-icon-btn"
+              data-action="agent-new"
+              onClick={newSession}
+              disabled={running}
+              title={t('ai.agent.newSession')}
+              aria-label={t('ai.agent.newSession')}
+            ><Plus size={12} /></button>
+          </div>
           {sessions.length === 0 ? <p className="ai-hint-line">{t('ai.agent.noSessions')}</p> : (
             <ul>
               {sessions.map((s) => (
-                <li key={s.id}>
-                  <button
-                    type="button"
-                    data-action="agent-load"
-                    className={s.id === activeSessionId ? 'active' : ''}
-                    aria-current={s.id === activeSessionId ? 'true' : undefined}
-                    onClick={() => loadSession(s.id)}
-                    title={s.title}
-                  >{s.title}</button>
+                <li key={s.id} className={s.id === activeSessionId ? 'current' : ''}>
+                  {renamingId === s.id ? (
+                    <input
+                      data-field="agent-rename"
+                      defaultValue={s.title}
+                      autoFocus
+                      aria-label={t('ai.agent.renameSession')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); saveRename(s.id, (e.target as HTMLInputElement).value) }
+                        if (e.key === 'Escape') setRenamingId(null)
+                      }}
+                      onBlur={() => setRenamingId(null)}
+                    />
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        data-action="agent-load"
+                        className={s.id === activeSessionId ? 'active' : ''}
+                        aria-current={s.id === activeSessionId ? 'true' : undefined}
+                        disabled={running}
+                        onClick={() => loadSession(s.id)}
+                        title={s.title}
+                      >
+                        <span className="agent-session-title">{s.title}</span>
+                        <span className="agent-session-meta">{formatRelativeTime(s.updatedAt, t)}{s.events > 0 ? ` · ${s.events}` : ''}</span>
+                      </button>
+                      <span className="agent-session-actions">
+                        <button type="button" className="agent-session-icon-btn" data-action="agent-rename" onClick={() => setRenamingId(s.id)} disabled={running} title={t('ai.agent.renameSession')} aria-label={t('ai.agent.renameSession')}><Pencil size={10} /></button>
+                        <button type="button" className="agent-session-icon-btn" data-action="agent-delete" onClick={() => deleteSession(s.id)} title={t('ai.agent.deleteSession')} aria-label={t('ai.agent.deleteSession')}><Trash2 size={10} /></button>
+                      </span>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>

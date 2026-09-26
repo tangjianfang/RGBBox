@@ -197,6 +197,8 @@ export const ipcChannels = {
   agentApprovalRespond: 'rgbbox:agent:approval-respond',
   agentSessionsList: 'rgbbox:agent:sessions-list',
   agentSessionLoad: 'rgbbox:agent:session-load',
+  agentSessionRename: 'rgbbox:agent:session-rename',
+  agentSessionDelete: 'rgbbox:agent:session-delete',
   agentPickWorkspace: 'rgbbox:agent:pick-workspace',
   agentEvent: 'rgbbox:agent:event', // main -> renderer push
   // R173-S2/R179: offline TTS (Kokoro) — own downloader + WAV export

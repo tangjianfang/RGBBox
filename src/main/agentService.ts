@@ -6,7 +6,7 @@
  * 循环:messages(+tools)→ chat → 若有 tool_calls → 门禁执行 → 结果回填 → 下一轮;
  * 无 tool_calls 即回合结束。审批三档(plan/standard/trust)+ 会话 JSONL + 审计 JSONL。
  */
-import { appendFileSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AgentApprovalRequest, AgentEvent, AgentMode, AgentSendArgs, AgentSessionMeta } from '../shared/types'
 import type { AiChatMessage } from '../shared/types'
@@ -124,6 +124,27 @@ interface AgentRun {
   pending: Map<string, PendingApproval>
   /** R180: aborts the in-flight model request on cancel (Claude-style stop). */
   abort: AbortController
+}
+
+// ── R191: 会话改名索引(sessionsDir/index.json)─────────────────────────────
+// 标题默认取首个用户消息;用户改名后以索引为准。读写均为 best-effort。
+function readRenames(sessionsDir: string): Record<string, string> {
+  try {
+    const raw = readFileSync(join(sessionsDir, 'index.json'), 'utf8')
+    const parsed = JSON.parse(raw) as { renames?: unknown }
+    if (parsed && typeof parsed === 'object' && typeof parsed.renames === 'object' && parsed.renames !== null) {
+      const out: Record<string, string> = {}
+      for (const [k, v] of Object.entries(parsed.renames as Record<string, unknown>)) {
+        if (typeof v === 'string' && v !== '') out[k] = v
+      }
+      return out
+    }
+  } catch { /* missing/corrupt index → empty */ }
+  return {}
+}
+
+function writeRenames(sessionsDir: string, renames: Record<string, string>): void {
+  writeFileSync(join(sessionsDir, 'index.json'), JSON.stringify({ renames }, null, 2), 'utf8')
 }
 
 export function createAgentService(deps: AgentServiceDeps) {
@@ -439,6 +460,7 @@ export function createAgentService(deps: AgentServiceDeps) {
     sessionsList(): AgentSessionMeta[] {
       try {
         mkdirSync(deps.sessionsDir, { recursive: true })
+        const renames = readRenames(deps.sessionsDir)
         return readdirSync(deps.sessionsDir)
           .filter((f) => f.endsWith('.jsonl'))
           .map((f) => {
@@ -451,6 +473,8 @@ export function createAgentService(deps: AgentServiceDeps) {
               const firstUser = lines.map((l) => { try { return JSON.parse(l) as AgentEvent } catch { return null } }).find((ev) => ev?.kind === 'user')
               if (firstUser && firstUser.kind === 'user') title = firstUser.text.slice(0, 48)
             } catch { /* defaults */ }
+            // R191: a user rename overrides the derived title
+            if (renames[id] !== undefined && renames[id] !== '') title = renames[id].slice(0, 48)
             let updatedAt = 0
             try { updatedAt = statSync(join(deps.sessionsDir, f)).mtimeMs } catch { /* ignore */ }
             return { id, title, updatedAt, events }
@@ -459,6 +483,39 @@ export function createAgentService(deps: AgentServiceDeps) {
           .slice(0, 30)
       } catch {
         return []
+      }
+    },
+
+    /** R191: rename persisted in sessionsDir/index.json (id → custom title). */
+    sessionRename(id: string, title: string): { ok: boolean; error?: string } {
+      if (!/^[\w-]+$/.test(id)) return { ok: false, error: 'invalid-id' }
+      const clean = title.trim().slice(0, 48)
+      if (clean === '') return { ok: false, error: 'empty-title' }
+      try {
+        mkdirSync(deps.sessionsDir, { recursive: true })
+        const renames = readRenames(deps.sessionsDir)
+        renames[id] = clean
+        writeRenames(deps.sessionsDir, renames)
+        return { ok: true }
+      } catch {
+        return { ok: false, error: 'write' }
+      }
+    },
+
+    /** R191: delete a stored session; the ACTIVE run's session is protected. */
+    sessionDelete(id: string): { ok: boolean; error?: string } {
+      if (!/^[\w-]+$/.test(id)) return { ok: false, error: 'invalid-id' }
+      if (run?.sessionId === id) return { ok: false, error: 'busy-session' }
+      try {
+        rmSync(join(deps.sessionsDir, `${id}.jsonl`), { force: true })
+        const renames = readRenames(deps.sessionsDir)
+        if (renames[id] !== undefined) {
+          delete renames[id]
+          writeRenames(deps.sessionsDir, renames)
+        }
+        return { ok: true }
+      } catch {
+        return { ok: false, error: 'delete' }
       }
     },
 

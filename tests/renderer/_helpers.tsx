@@ -68,6 +68,8 @@ export function setupRendererMocks() {
     agentApprovalRespond: vi.fn().mockResolvedValue({ ok: true }),
     agentSessionsList: vi.fn().mockResolvedValue([]),
     agentSessionLoad: vi.fn().mockResolvedValue([]),
+    agentSessionRename: vi.fn().mockResolvedValue({ ok: true }),
+    agentSessionDelete: vi.fn().mockResolvedValue({ ok: true }),
     agentPickWorkspace: vi.fn().mockResolvedValue(null),
     onAgentEvent: vi.fn().mockReturnValue(() => undefined),
     // R91.3b: DTLN denoise surface (unmount cleanup calls denoiseStop)

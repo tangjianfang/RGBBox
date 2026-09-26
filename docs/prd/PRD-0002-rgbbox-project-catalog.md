@@ -3552,3 +3552,11 @@
 - **R190.3 ai-config 收窄居中**:配置面板 `.ai-config-panel` 限宽居中,右半 300px+ 死白均分。
 - **R190.4 验收**:DOM 断言 **4/4 PASS**(fx-sidebar 1522/812 可滚+mask;games-hub 居中 263/269;diagnostics-view 1052/812 可滚+mask;ai-config 面板 788px 居中 L290/R290)+ 4 视图截图存档;vitest 135 文件/1192 用例全过;`ui:snapshot` 3 视图预期漂移(games 1.86% 居中位移/ai 1.25% 面板居中/diagnostics 0.16% 渐隐)核对后基线重立 af8f5fc,复跑 **9/9 GATE PASS**。
 - **R190.5 状态**:✅
+
+### R191. Q-2 Agent 会话管理增强（R189 第二批;用户新增需求「智能体和会话功能要方便快速切换、缓存历史记录会话等,按 Claude Code 智能体的执行」）
+
+- **R191.1 会话生命周期**:①「新建会话」显式动作(清 transcript/sessionId,进入全新会话);②会话重命名(`sessionsDir/index.json` 持久化改名,列表标题合并覆盖);③会话删除(rmSync JSONL+索引项);④运行中的会话删除/切换/新建全部禁用(R180 单运行不变式的切换语义补全——防事件交叉污染)。
+- **R191.2 列表信息增密**:每行 标题 + 相对时间(刚刚/N 分钟前/今天 HH:MM/M-D)+ 事件数;悬停行内 重命名/删除 动作。
+- **R191.3 自动恢复**:prefs.lastSessionId 持久化;打开 Agent Tab 自动加载最近会话(Claude Code `--resume` 式缓存历史直达);发新消息产生的 session-meta 同步记录。
+- **R191.4 验收**:typecheck 双绿;vitest **136 文件/1198 用例全过**(+6:改名持久化跨服务实例/删除落盘清索引/busy-session 守卫/非法 id 拒绝;自动恢复/新建重置+改名删除流/运行中禁切换);**真机端到端**:点击会话→prefs.lastSessionId 落盘(活跃态+「刚刚 · 4」meta)→**应用重开自动恢复上次会话**;`ui:snapshot` 9/9 GATE PASS(Agent Tab 默认隐藏,静息零影响)。
+- **R191.5 状态**:✅

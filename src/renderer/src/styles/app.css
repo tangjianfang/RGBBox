@@ -9424,6 +9424,68 @@ input:disabled {
   color: var(--accent, #6ee7a0);
 }
 
+/* ── R191 (Q-2): 会话管理——新建/重命名/删除/相对时间 ──────────────────────── */
+
+.agent-sessions-head { display: flex; align-items: center; justify-content: space-between; }
+.agent-sessions-head h5 { flex: 1; }
+
+.agent-session-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.65));
+  cursor: pointer;
+  padding: 3px;
+}
+.agent-session-icon-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-primary, #fff); }
+.agent-session-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.agent-sessions ul { display: flex; flex-direction: column; gap: 2px; }
+.agent-sessions li { display: flex; align-items: stretch; gap: 2px; border-radius: 6px; }
+.agent-sessions li.current { background: rgba(110, 231, 160, 0.07); }
+.agent-sessions li > button[data-action='agent-load'] {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+  cursor: pointer;
+}
+.agent-session-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.agent-session-meta {
+  font-size: 10.5px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  font-variant-numeric: tabular-nums;
+}
+.agent-session-actions { display: none; align-items: center; gap: 2px; padding-right: 4px; }
+.agent-sessions li:hover .agent-session-actions,
+.agent-sessions li.current .agent-session-actions { display: inline-flex; }
+
+.agent-sessions input[data-field='agent-rename'] {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(110, 231, 160, 0.45);
+  background: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  font-size: 12px;
+}
+
 /* 错误终态横幅:失败运行不再与成功运行长得一样 */
 .agent-error-banner {
   display: flex;
