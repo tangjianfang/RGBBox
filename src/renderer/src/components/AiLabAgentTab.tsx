@@ -18,8 +18,10 @@ interface TranscriptItem { kind: 'user' | 'assistant' | 'assistant-streaming' | 
 
 /** R184: tool results beyond this many lines render folded by default. */
 const TOOL_FOLD_LINES = 12
-/** R184: hard char cap on the rendered excerpt (main process caps raw at 64KB). */
-const TOOL_RESULT_CHAR_CAP = 4000
+/** R184: hard char cap on the rendered excerpt (main process caps raw at 64KB).
+ *  R193.4: raised 4000 → 20000 — "把它设置到最大": what the model received
+ *  (8K live slices) and what the user sees should no longer diverge so hard. */
+const TOOL_RESULT_CHAR_CAP = 20000
 
 function formatDuration(ms: number): string {
   return ms < 1000 ? `${Math.max(0, Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`

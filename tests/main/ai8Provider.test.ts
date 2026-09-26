@@ -47,7 +47,7 @@ describe('main/ai8Provider (R118)', () => {
     expect(calls.some((c) => c.url.includes('/chat/completions'))).toBe(false)
   })
 
-  it('maps prompts to the site protocol and reuses a contextCount:0 session', async () => {
+  it('maps prompts to the site protocol and reuses the session (R193: site-default create body)', async () => {
     const messages = [
       { role: 'system', content: '你是整理助手' },
       { role: 'user', content: '原文' },
@@ -56,7 +56,9 @@ describe('main/ai8Provider (R118)', () => {
     expect(out.ok).toBe(true)
     expect(out.text).toBe('好的') // <think> stripped
     const create = calls.find((c) => c.url.endsWith('/api/chat/session'))
-    expect(JSON.parse(create?.body ?? '{}')).toEqual({ model: 'openai_chat::gpt-5.4', contextCount: 0 })
+    // R193: contextCount:0 dropped — empirically the site keeps session history
+    // either way, and the agent bridge now isolates per conversation instead
+    expect(JSON.parse(create?.body ?? '{}')).toEqual({ model: 'openai_chat::gpt-5.4' })
     const chat = JSON.parse(calls.find((c) => c.url.endsWith('/chat/completions'))?.body ?? '{}')
     expect(chat.sessionId).toBe(909)
     expect(chat.text).toBe('原文')

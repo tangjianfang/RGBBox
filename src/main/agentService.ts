@@ -23,6 +23,11 @@ export const REACT_PROTOCOL_NUDGE = '[protocol] The previous reply contained a t
 /** R186: 重试轮上限——纠正重问最多 2 次,之后仍有工具意图则报错收束。 */
 export const REACT_RETRY_LIMIT = 2
 
+/** R193.2: 工具失明自纠——模型声称"无法访问文件系统"而未调工具时,纠偏重问
+ *  一次(独立计数防循环)。真实会话取证:同一任务两次空谈收尾,换模型即正常。 */
+export const REACT_TOOL_BLIND_NUDGE = '[protocol] 你可以使用工具——见本消息上方的[工具]说明。不要回答"无法访问/无法读取",直接发起一个 tool 块调用(例如列出工作区根目录),或明确说明任务已完成。'
+const TOOL_BLIND_RE = /无法(直接)?(访问|读取|获取)|不能(直接)?(访问|读取)|can'?t (access|read|browse)|unable to (access|read|browse)|no (access|ability) to (your|the|local)/i
+
 // ── ReAct(AI8 桥)纯函数 ────────────────────────────────────────────────────
 
 export interface ReactCall { tool: string; args: Record<string, unknown> }
@@ -265,13 +270,24 @@ export function createAgentService(deps: AgentServiceDeps) {
         const fenced = [...text.matchAll(/```(?:tool|json)?\s*([\s\S]*?)```/g)].map((m) => m[1])
         return fenced.some((b) => /"(tool|name)"\s*:/.test(b))
       }
+      // R193.2: "I can't access your filesystem" style replies with no tool
+      // call get ONE corrective nudge (separate counter — never loops).
+      const isToolBlind = (text: string): boolean => TOOL_BLIND_RE.test(text)
       const callAi8 = async (): Promise<string> => {
-        const out = await ai8ChatCompletion(run!.messages, s)
+        // R193.1: per-agent-session server session — no cross-conversation
+        // contamination; fresh sessions carry a replayed history preamble.
+        const out = await ai8ChatCompletion(run!.messages, s, { sessionKey: run!.sessionId })
         if (!out.ok) throw new Error(`ai8: ${out.hint ?? 'failed'}${out.detail ? ' — ' + out.detail : ''}`)
         return out.text
       }
       content = await callAi8()
       let parsed = parseReactToolCall(content)
+      if (parsed === null && isToolBlind(content)) {
+        run!.messages.push({ role: 'assistant', content })
+        run!.messages.push({ role: 'user', content: REACT_TOOL_BLIND_NUDGE })
+        content = await callAi8()
+        parsed = parseReactToolCall(content)
+      }
       for (let attempt = 1; parsed === null && hasToolIntent(content) && attempt <= REACT_RETRY_LIMIT; attempt += 1) {
         run!.messages.push({ role: 'assistant', content })
         run!.messages.push({ role: 'user', content: REACT_PROTOCOL_NUDGE })
