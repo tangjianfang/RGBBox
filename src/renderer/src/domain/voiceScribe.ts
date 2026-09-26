@@ -55,7 +55,10 @@ export function detectLang(text: string): 'zh' | 'en' {
   return cjk * 1.5 >= letters ? 'zh' : 'en'
 }
 
-/** localStorage 词典读写（损坏/缺失回退空表）。 */
+/** R188: 词典条目上限——localStorage 与渲染列表的硬边界。 */
+export const LEXICON_CAP = 200
+
+/** localStorage 词典读写（损坏/缺失回退空表;超限截断到 LEXICON_CAP）。 */
 export function loadLexicon(storage: Pick<Storage, 'getItem'> | null): LexiconEntry[] {
   if (!storage) return []
   try {
@@ -68,6 +71,7 @@ export function loadLexicon(storage: Pick<Storage, 'getItem'> | null): LexiconEn
         typeof e === 'object' && e !== null &&
         typeof (e as LexiconEntry).word === 'string' && typeof (e as LexiconEntry).respell === 'string')
       .map((e) => ({ word: e.word, respell: e.respell }))
+      .slice(0, LEXICON_CAP)
   } catch {
     return []
   }
@@ -76,7 +80,7 @@ export function loadLexicon(storage: Pick<Storage, 'getItem'> | null): LexiconEn
 export function saveLexicon(entries: LexiconEntry[], storage: Pick<Storage, 'setItem'> | null): void {
   if (!storage) return
   try {
-    storage.setItem('rgbbox:voiceLexicon', JSON.stringify(entries))
+    storage.setItem('rgbbox:voiceLexicon', JSON.stringify(entries.slice(0, LEXICON_CAP)))
   } catch { /* storage unavailable — keep in-memory only */ }
 }
 

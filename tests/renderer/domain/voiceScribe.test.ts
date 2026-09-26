@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyLexicon, detectLang, formatBytes, loadLexicon, normalizeText, saveLexicon, splitSentences,
+  applyLexicon, detectLang, formatBytes, LEXICON_CAP, loadLexicon, normalizeText, saveLexicon, splitSentences,
 } from '../../../src/renderer/src/domain/voiceScribe'
 
 describe('domain/voiceScribe (R173-S1)', () => {
@@ -65,5 +65,20 @@ describe('domain/voiceScribe (R173-S1)', () => {
     // the 291MB model stays narrow so the row's right cluster never clips
     expect(formatBytes(291 * 1048576)).toBe('291 MB')
     expect(formatBytes(Number.NaN)).toBe('0 KB')
+  })
+
+  it('R188: lexicon cap — load and save both clamp to LEXICON_CAP', () => {
+    const store = new Map<string, string>()
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => { store.set(k, v) },
+    }
+    const oversized = Array.from({ length: LEXICON_CAP + 50 }, (_, i) => ({ word: `w${i}`, respell: `r${i}` }))
+    saveLexicon(oversized, storage)
+    expect(JSON.parse(store.get('rgbbox:voiceLexicon')!).length).toBe(LEXICON_CAP)
+    // a hand-persisted oversized blob also clamps on load
+    storage.setItem('rgbbox:voiceLexicon', JSON.stringify(oversized))
+    expect(loadLexicon(storage).length).toBe(LEXICON_CAP)
+    expect(loadLexicon(storage)[0]).toEqual({ word: 'w0', respell: 'r0' })
   })
 })

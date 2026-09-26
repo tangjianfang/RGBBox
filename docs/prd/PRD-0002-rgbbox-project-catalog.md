@@ -3520,3 +3520,11 @@
 - **R187.3 词典 JSON 导入导出**:新 IPC `voice:lexicon-export`(save 对话框写 JSON)/`voice:lexicon-import`(open 对话框读文本,渲染层复用 loadLexicon 校验);词典区头部两个小按钮。
 - **R187.4 验收**:typecheck 双绿;vitest **134 文件/1187 用例全过**(+7:目录形状/盘上 voices 扫描过滤垃圾/单音色下载落盘+未知 id 拒绝;音色下拉 ✓ 标记+缺失音色下载带 id;流式队列逐句调用×3+进度出现并清零;词典导出 JSON 快照+导入合并持久化);`ui:snapshot` 9/9 GATE PASS。**长文本合成不阻塞/可中断续跑待用户实机复验**(本会话无模型权重;队列行为已由组件级测试锁定,真实推理延迟下的观感需真机)。
 - **R187.5 状态**:✅(实机合成复验待用户)
+
+### R188. P-6 测试补齐（R177 方案第六批;2026-09-26「执行这个优化」）
+
+- **R188.1 审批「总是允许」记忆用例**:内核端到端——bash always 记住首词前缀(同前缀后续命令免审)、write/edit always 记住绝对路径(同路径后续写免审);断言全程仅一次 approval 事件。
+- **R188.2 会话恢复边界**:损坏 JSONL——sessionsList 跳坏行取标题/不抛;sessionLoad 全坏行→[]、混合→仅有效事件;send 续跑(continuation)恢复历史跳过坏行不崩。
+- **R188.3 词典上限**:LEXICON_CAP=200(domain 层 load/save 双向截断);组件层超限添加给出 ai.voice.err.lexicon-cap 提示且列表不变。
+- **R188.4 分层覆盖率回归**:vitest **135 文件/1192 用例全过**(+5);`yarn test:coverage` exit 0——全局 **64.35% 行 / 52.51% 分支**(阈值 58/46),分层阈值(engine 90/75、renderer-engine 95/82、workers 95/82、shared 85/72)全部达标不回退;typecheck 双绿;`ui:snapshot` 9/9 GATE PASS。
+- **R188.5 状态**:✅

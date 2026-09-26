@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { Download, FolderOpen, Mic, Play, Square, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import {
-  applyLexicon, detectLang, formatBytes, loadLexicon, normalizeText, saveLexicon, splitSentences,
+  applyLexicon, detectLang, formatBytes, LEXICON_CAP, loadLexicon, normalizeText, saveLexicon, splitSentences,
   type LexiconEntry,
 } from '../domain/voiceScribe'
 import { KOKORO_VOICE_CATALOG, voiceLabel } from '../../../shared/kokoroVoices'
@@ -178,6 +178,11 @@ export function AiLabVoiceTab(): JSX.Element {
     const word = newWord.trim()
     const respell = newRespell.trim()
     if (word === '' || respell === '') return
+    // R188: hard cap — replacing an existing word never counts against it
+    if (lexicon.length >= LEXICON_CAP && !lexicon.some((e) => e.word === word)) {
+      setVoiceError('lexicon-cap')
+      return
+    }
     const next = [...lexicon.filter((e) => e.word !== word), { word, respell }]
     setLexicon(next)
     saveLexicon(next, localStorage)

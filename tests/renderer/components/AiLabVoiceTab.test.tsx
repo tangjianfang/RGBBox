@@ -191,6 +191,28 @@ describe('AiLabVoiceTab (R173-S1)', () => {
     expect(JSON.parse(localStorage.getItem('rgbbox:voiceLexicon')!).length).toBe(2)
   })
 
+  it('R188: adding past the lexicon cap shows the cap error and keeps the list intact', () => {
+    // seed a full lexicon directly in storage
+    const full = Array.from({ length: 200 }, (_, i) => ({ word: `w${i}`, respell: `r${i}` }))
+    localStorage.setItem('rgbbox:voiceLexicon', JSON.stringify(full))
+    const { container } = render(<AiLabVoiceTab />)
+    expect(container.querySelectorAll('.vs-lexicon-list li').length).toBe(200)
+    fireEvent.change(container.querySelector('input[data-field="vs-word"]')!, { target: { value: 'overflow' } })
+    fireEvent.change(container.querySelector('input[data-field="vs-respell"]')!, { target: { value: 'over' } })
+    fireEvent.click(container.querySelector('[data-action="vs-add"]')!)
+    // rejected: hint line + list unchanged + inputs preserved
+    expect(container.textContent).toContain('ai.voice.err.lexicon-cap')
+    expect(container.querySelectorAll('.vs-lexicon-list li').length).toBe(200)
+    expect((container.querySelector('input[data-field="vs-word"]') as HTMLInputElement).value).toBe('overflow')
+    // replacing an EXISTING word still works at cap
+    fireEvent.change(container.querySelector('input[data-field="vs-word"]')!, { target: { value: 'w0' } })
+    fireEvent.change(container.querySelector('input[data-field="vs-respell"]')!, { target: { value: 'zero' } })
+    fireEvent.click(container.querySelector('[data-action="vs-add"]')!)
+    const stored = JSON.parse(localStorage.getItem('rgbbox:voiceLexicon')!) as Array<{ word: string; respell: string }>
+    expect(stored.length).toBe(200)
+    expect(stored.find((e) => e.word === 'w0')?.respell).toBe('zero')
+  })
+
   it('typing text splits into a clickable sentence preview', () => {
     const { container } = render(<AiLabVoiceTab />)
     const area = container.querySelector('textarea[data-field="vs-text"]') as HTMLTextAreaElement
