@@ -17,6 +17,20 @@ describe('domain/voiceScribe (R173-S1)', () => {
     expect(splitSentences('   \n  ')).toEqual([])
   })
 
+  it('R196: English periods split sentences; decimals and versions stay whole', () => {
+    // mixed CJK/latin: the period after "world" now cuts the English sentence
+    expect(splitSentences('Hello world. 这是中文句。 Another English line!')).toEqual([
+      'Hello world.', '这是中文句。', 'Another English line!',
+    ])
+    expect(splitSentences('First sentence. Second sentence! Third one?')).toEqual([
+      'First sentence.', 'Second sentence!', 'Third one?',
+    ])
+    // `.` must be followed by whitespace/end — numbers stay intact
+    expect(splitSentences('pi is 3.14 and version v1.2 rocks.')).toEqual(['pi is 3.14 and version v1.2 rocks.'])
+    // trailing period at end of text
+    expect(splitSentences('one. two.')).toEqual(['one.', 'two.'])
+  })
+
   it('applyLexicon replaces longest-first and skips empty entries', () => {
     const out = applyLexicon('the read command reads data', [
       { word: 'read', respell: 'reed' },

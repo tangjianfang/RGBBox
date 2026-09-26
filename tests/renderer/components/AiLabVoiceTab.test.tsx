@@ -158,7 +158,9 @@ describe('AiLabVoiceTab (R173-S1)', () => {
     window.HTMLMediaElement.prototype.pause = vi.fn()
 
     const { container } = render(<AiLabVoiceTab />)
-    fireEvent.change(container.querySelector('textarea[data-field="vs-text"]')!, { target: { value: '第一句。第二句！第三句？' } })
+    // R196: this test exercises the KOKORO queue — Chinese text would now route
+    // to the system engine, so use English sentences.
+    fireEvent.change(container.querySelector('textarea[data-field="vs-text"]')!, { target: { value: 'First sentence. Second sentence! Third one?' } })
     const engine = container.querySelector('select[data-field="vs-engine"]') as HTMLSelectElement
     await waitFor(() => expect([...engine.options].find((o) => o.value === 'kokoro')!.disabled).toBe(false))
     fireEvent.change(engine, { target: { value: 'kokoro' } })
@@ -216,6 +218,63 @@ describe('AiLabVoiceTab (R173-S1)', () => {
     const stored = JSON.parse(localStorage.getItem('rgbbox:voiceLexicon')!) as Array<{ word: string; respell: string }>
     expect(stored.length).toBe(200)
     expect(stored.find((e) => e.word === 'w0')?.respell).toBe('zero')
+  })
+
+  it('R196: mixed-language queue routes EN sentences to Kokoro and ZH sentences to the system engine, in order', async () => {
+    const rgbbox = setupRendererMocks() as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.ttsEngineStatus = vi.fn().mockResolvedValue({
+      complete: true,
+      kokoroInstalled: true,
+      bundledVoices: ['af_heart'],
+      voices: ['af_heart'],
+      files: [{ path: 'config.json', bytes: 44, present: true, actualBytes: 44 }],
+    })
+    rgbbox.onTtsModelProgress = vi.fn().mockReturnValue(() => undefined)
+    rgbbox.ttsSynthesize = vi.fn().mockImplementation(async (segs: string[]) => ({
+      ok: true,
+      wav: new TextEncoder().encode(`wav:${segs[0]}`).buffer,
+    }))
+    // stub the system engine: record sentences, "play" them synchronously
+    const spoken: string[] = []
+    const speakMock = vi.fn((u: { text: string; onend?: () => void }) => {
+      spoken.push(u.text)
+      queueMicrotask(() => u.onend?.())
+    })
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { cancel: vi.fn(), speak: speakMock } })
+    // happy-dom ships neither speechSynthesis nor the utterance class
+    class FakeUtterance {
+      text: string
+      lang = 'zh-CN'
+      rate = 1
+      onend?: () => void
+      onerror?: () => void
+      constructor(text: string) { this.text = text }
+    }
+    ;(globalThis as unknown as Record<string, unknown>).SpeechSynthesisUtterance = FakeUtterance
+    const playStub = vi.fn().mockImplementation(function (this: HTMLAudioElement) {
+      setTimeout(() => { this.onended?.(new Event('ended') as never) }, 0)
+      return Promise.resolve()
+    })
+    window.HTMLMediaElement.prototype.play = playStub as () => Promise<void>
+    window.HTMLMediaElement.prototype.pause = vi.fn()
+
+    const { container } = render(<AiLabVoiceTab />)
+    fireEvent.change(container.querySelector('textarea[data-field="vs-text"]')!, { target: { value: 'Hello world. 这是中文句。 Another English line!' } })
+    const engine = container.querySelector('select[data-field="vs-engine"]') as HTMLSelectElement
+    await waitFor(() => expect([...engine.options].find((o) => o.value === 'kokoro')!.disabled).toBe(false))
+    fireEvent.change(engine, { target: { value: 'kokoro' } })
+    // mixed hint appears (text contains Chinese)
+    await waitFor(() => expect(container.textContent).toContain('ai.voice.mixedHint'))
+    fireEvent.click(container.querySelector('[data-action="vs-kokoro"]')!)
+    await waitFor(() => expect(rgbbox.ttsSynthesize).toHaveBeenCalledTimes(2), { timeout: 4000 })
+    const synthCalls = rgbbox.ttsSynthesize.mock.calls as unknown as [string[]][]
+    for (const c of synthCalls) {
+      expect(c[0].length).toBe(1)
+      expect(c[0][0]).toMatch(/Hello world\.|Another English line!/)
+    }
+    await waitFor(() => expect(spoken).toEqual(['这是中文句。']), { timeout: 4000 })
+    // queue fully drains and clears progress
+    await waitFor(() => expect(container.querySelector('.vs-synth-progress')).toBeNull(), { timeout: 4000 })
   })
 
   it('typing text splits into a clickable sentence preview', () => {

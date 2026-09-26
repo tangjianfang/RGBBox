@@ -122,6 +122,8 @@ export function AiLabVoiceTab(): JSX.Element {
 
   // R187: 句级流式合成——播第 i 句时预合成第 i+1 句,长文本不再整段等待;
   // 停止即掐断(cancel token),再点任意句子从该句续跑。
+  // R196: 中英混读句级路由——kokoro-js 上游只有英语 G2P,中文句改走系统
+  // 引擎 zh-CN,同一顺序队列无缝衔接(点击跳读/进度/停止语义不变)。
   const speakKokoroFrom = async (startIdx: number): Promise<void> => {
     if (busy || !kokoroReady) return
     const segs = speechTexts.slice(startIdx)
@@ -133,29 +135,51 @@ export function AiLabVoiceTab(): JSX.Element {
     setBusy(true)
     setVoiceError(null)
     setSynth({ done: 0, total: segs.length })
+    const isZh = (i: number): boolean => detectLang(segs[i]) === 'zh'
     const makeUrl = async (i: number): Promise<string> => {
       const out = await window.rgbbox.ttsSynthesize([segs[i]], { voice: voiceId, speed: rate })
       if (!out.ok || !out.wav) throw new Error(out.error ?? 'synthesis')
       return URL.createObjectURL(new Blob([out.wav], { type: 'audio/wav' }))
     }
+    // 单句系统引擎播放(await 完成;stopAll 的 cancel 会触发 onend/onerror 收束)
+    const playSystemSentence = (sentence: string): Promise<void> => new Promise((resolve) => {
+      if (typeof window.speechSynthesis === 'undefined') { resolve(); return }
+      const u = new SpeechSynthesisUtterance(sentence)
+      u.lang = 'zh-CN'
+      u.rate = rate
+      u.onend = () => resolve()
+      u.onerror = () => resolve()
+      window.speechSynthesis.speak(u)
+    })
+    const playKokoroSentence = async (url: string): Promise<void> => {
+      await new Promise<void>((resolve) => {
+        const el = audioRef.current
+        if (!el) { resolve(); return }
+        const finish = (): void => { el.onended = null; el.onpause = null; resolve() }
+        el.onended = finish
+        el.onpause = () => { if (token.cancel) finish() }
+        el.src = url
+        void el.play().catch(() => finish())
+      })
+      URL.revokeObjectURL(url)
+    }
     try {
-      let nextUrl = makeUrl(0)
+      let nextUrl: Promise<string> | null = null
       for (let i = 0; i < segs.length; i += 1) {
         if (token.cancel) break
-        const url = await nextUrl
-        if (token.cancel) { URL.revokeObjectURL(url); break }
-        if (i + 1 < segs.length) nextUrl = makeUrl(i + 1) // prefetch behind playback
         setCurrentIdx(startIdx + i)
-        await new Promise<void>((resolve) => {
-          const el = audioRef.current
-          if (!el) { resolve(); return }
-          const finish = (): void => { el.onended = null; el.onpause = null; resolve() }
-          el.onended = finish
-          el.onpause = () => { if (token.cancel) finish() }
-          el.src = url
-          void el.play().catch(() => finish())
-        })
-        URL.revokeObjectURL(url)
+        if (isZh(i)) {
+          // 中文句:系统引擎 zh-CN(kokoro-js 上游无中文 G2P)
+          await playSystemSentence(segs[i])
+        } else {
+          if (nextUrl === null) nextUrl = makeUrl(i)
+          const url = await nextUrl
+          nextUrl = null
+          if (token.cancel) { URL.revokeObjectURL(url); break }
+          // 播放当前英文句的同时,预取下一个英文句(zh 句系统引擎本就即时)
+          if (i + 1 < segs.length && !isZh(i + 1)) nextUrl = makeUrl(i + 1)
+          await playKokoroSentence(url)
+        }
         if (token.cancel) break
         setSynth({ done: i + 1, total: segs.length })
       }
@@ -297,6 +321,10 @@ export function AiLabVoiceTab(): JSX.Element {
           </button>
           <span className="vs-count">{lang === 'zh' ? '中文' : 'EN'} · {sentences.length} {t('ai.voice.sentences')}</span>
         </div>
+        {/* R196: Kokoro 引擎下含中文文本 → 混读说明(中文句走系统引擎) */}
+        {engine === 'kokoro' && kokoroReady && sentences.some((s) => detectLang(s) === 'zh') && (
+          <p className="ai-hint-line vs-mixed-hint">{t('ai.voice.mixedHint')}</p>
+        )}
         {/* R187: 选中音色未下载 → 行内按需下载(~8MB) */}
         {engine === 'kokoro' && !voicesOnDisk.includes(voiceId) && (
           <div className="vs-voice-missing">

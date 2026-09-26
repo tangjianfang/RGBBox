@@ -23,12 +23,14 @@ export function normalizeText(raw: string): string {
 
 /**
  * 中英混合分句：终结符（。！？；!?;）切分、省略号聚合、换行即边界。
+ * R196: 英文句点参与分句——仅当 `.` 后跟空白或行尾（`3.14`/`v1.2` 不切；
+ * 缩写如 Mr. 会切开,朗读场景无害）。
  * 返回非空句列表（保留原始大小写与标点，便于显示）。
  */
 export function splitSentences(text: string): string[] {
   const normalized = normalizeText(text)
   if (normalized === '') return []
-  const parts = normalized.split(/(?<=[。！？；!?;])|(?<=\.{3,})|(?<=…)|\n/g)
+  const parts = normalized.split(/(?<=[。！？；!?;])|(?<=\.{3,})|(?<=…)|(?<=\.\s)|(?<=\.$)|\n/g)
   return parts.map((p) => p.trim()).filter((p) => p.length > 0)
 }
 
