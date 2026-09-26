@@ -79,3 +79,11 @@ export function saveLexicon(entries: LexiconEntry[], storage: Pick<Storage, 'set
     storage.setItem('rgbbox:voiceLexicon', JSON.stringify(entries))
   } catch { /* storage unavailable — keep in-memory only */ }
 }
+
+/** R183: 模型面板人读字节量——小于 1MB 以 KB 计（5KB 的 config.json 不再
+ *  显示成「0.0 MB / 0」），≥10MB 省小数（291MB 模型不占行宽）。 */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB'
+  if (bytes < 1048576) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0)} MB`
+}

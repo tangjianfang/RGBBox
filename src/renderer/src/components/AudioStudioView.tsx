@@ -2421,6 +2421,9 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             {vizMode === 'waveform' && (
               <div ref={waveformContainerRef} className="audio-waveform-container" />
             )}
+            {/* R183: the viz pane is the biggest region on the tab — idle with
+                zero info read as broken. One hint line fixes the dead-end. */}
+            {!isPlaying && !previewPlaying && <div className="audio-viz-empty">{t('audio.viz.empty')}</div>}
           </div>
 
           {/* EQ drawer (R51.8: full rewrite — mode switch + curve plot + preset library + custom save/delete) */}

@@ -210,4 +210,34 @@ describe('AiLabAgentTab (R172-S2)', () => {
     await waitFor(() => expect(container.querySelector('.agent-msg-assistant')?.textContent).toContain('denied'))
     expect(container.querySelector('.agent-tool .status-denied, .agent-tool.status-denied')).not.toBeNull()
   })
+
+  it('R183: restoring a session marks it active and surfaces the stored error end-state', async () => {
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.agentSessionsList = vi.fn().mockResolvedValue([
+      { id: 's-bad', title: '跑一下测试', updatedAt: 2, events: 5 },
+    ])
+    rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([
+      { kind: 'session-meta', sessionId: 's-bad', model: 'glm-5.3', workspace: 'C:\\tmp\\ws' },
+      { kind: 'user', text: '跑一下测试' },
+      { kind: 'text', text: '我来运行测试。' },
+      { kind: 'tool-start', call: { id: 't1', name: 'bash', args: '{"command":"yarn test"}', result: '', status: 'running' } },
+      { kind: 'tool-result', call: { id: 't1', name: 'bash', args: '{"command":"yarn test"}', result: 'Error: exit 1', status: 'error' } },
+      { kind: 'done', reason: 'error', error: '模型响应解析失败' },
+    ])
+    const { container } = render(<AiLabAgentTab />)
+    const btn = await waitFor(() => {
+      const el = container.querySelector('[data-action="agent-load"]') as HTMLButtonElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    expect(btn.className).not.toContain('active')
+    fireEvent.click(btn)
+    await waitFor(() => expect(rgbbox.agentSessionLoad).toHaveBeenCalledWith('s-bad'))
+    // selected session is highlighted in the sidebar
+    await waitFor(() => expect((container.querySelector('[data-action="agent-load"]') as HTMLButtonElement).className).toContain('active'))
+    // transcript restored + the run's FAILURE is visible as a banner, not silence
+    await waitFor(() => expect(container.querySelectorAll('.agent-tool').length).toBe(1))
+    await waitFor(() => expect(container.querySelector('.agent-error-banner')).not.toBeNull())
+    expect(container.querySelector('.agent-error-banner')?.textContent).toContain('模型响应解析失败')
+  })
 })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyLexicon, detectLang, loadLexicon, normalizeText, saveLexicon, splitSentences,
+  applyLexicon, detectLang, formatBytes, loadLexicon, normalizeText, saveLexicon, splitSentences,
 } from '../../../src/renderer/src/domain/voiceScribe'
 
 describe('domain/voiceScribe (R173-S1)', () => {
@@ -52,5 +52,18 @@ describe('domain/voiceScribe (R173-S1)', () => {
     storage.setItem('rgbbox:voiceLexicon', JSON.stringify([{ word: 1 }, { word: 'a', respell: 'b' }, null]))
     expect(loadLexicon(storage)).toEqual([{ word: 'a', respell: 'b' }])
     expect(loadLexicon(null)).toEqual([])
+  })
+
+  it('R183: formatBytes — sub-MB files show KB, big files drop noise decimals', () => {
+    // the 5KB config.json used to render as "0.0 MB / 0" in the model panel
+    expect(formatBytes(5120)).toBe('5 KB')
+    expect(formatBytes(0)).toBe('0 KB')
+    expect(formatBytes(44)).toBe('1 KB')
+    // 1–10MB keeps one decimal for live progress granularity
+    expect(formatBytes(2.6 * 1048576)).toBe('2.6 MB')
+    expect(formatBytes(8 * 1048576)).toBe('8.0 MB')
+    // the 291MB model stays narrow so the row's right cluster never clips
+    expect(formatBytes(291 * 1048576)).toBe('291 MB')
+    expect(formatBytes(Number.NaN)).toBe('0 KB')
   })
 })

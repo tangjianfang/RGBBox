@@ -80,6 +80,8 @@ vi.mock('lucide-react', () => {
     'AlignLeft','AlignCenter','AlignRight','ArrowUpToLine','ArrowDownToLine','ScanText',
     // R85 tab shell: dashboard tab icon + shutdown chip icon
     'LayoutGrid','Timer','Bot',
+    // R183: agent error banner
+    'TriangleAlert',
 
   ]
   for (const n of NAMES) icons[n] = catchAll

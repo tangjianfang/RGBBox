@@ -1308,6 +1308,10 @@ input:not([type]):focus {
   padding: 24px;
   scrollbar-width: thin;
   scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
+  /* R183: cards hard-cut at the viewport bottom read as broken, not
+     scrollable — fade the last stretch to signal continuation. */
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 28px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 28px), transparent 100%);
 }
 
 .effects-view-header h2 {
@@ -4489,6 +4493,8 @@ input[type='range'].audio-slider {
   gap: 8px;
   flex: 1;
   min-height: 0;
+  /* R183: anchor for the idle-state hint overlay */
+  position: relative;
 }
 
 .audio-viz-mode-bar {
@@ -7248,21 +7254,28 @@ input[type='range'].video-player-volume {
   gap: 12px;
   height: 48px;
   padding: 0 12px;
+  /* R183: the title optically centers on the WINDOW, not on whatever space
+     is left between the (asymmetric) brand and controls groups. */
+  position: relative;
 }
 .topbar-brand h1 { font-size: 0.9375rem; }
 .topbar-title {
   color: var(--text-secondary);
-  flex: 1;
   font-size: 0.8125rem;
   letter-spacing: 0.12em;
-  text-align: center;
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
   text-transform: uppercase;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 .topbar-controls {
   align-items: center;
   display: flex;
   flex-shrink: 0;
   gap: 8px;
+  margin-left: auto;
 }
 .topbar-icon-btn {
   align-items: center;
@@ -7361,7 +7374,7 @@ input[type='range'].video-player-volume {
   background: transparent;
   border: none;
   border-left: 2px solid transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -7374,8 +7387,10 @@ input[type='range'].video-player-volume {
   color: var(--accent);
 }
 .rail-label {
-  font-size: 0.5625rem;
-  letter-spacing: 0.04em;
+  /* R183: 9px was below the readability floor flagged in every walkthrough
+     view; 11px still fits 5-CJK labels in the 72px rail. */
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
   line-height: 1.2;
   text-align: center;
 }
@@ -8996,6 +9011,7 @@ input:disabled {
   align-items: stretch;
   width: 100%;
   min-height: 0;
+  flex: 1; /* R183: fill the keep-alive pane */
 }
 
 .vs-main {
@@ -9030,9 +9046,12 @@ input:disabled {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0; /* R183: never squeeze the label into a vertical wrap */
   font-size: 12px;
   color: var(--text-secondary, rgba(255, 255, 255, 0.65));
 }
+.vs-rate span { white-space: nowrap; }
+.vs-rate input[type='range'] { margin-left: 2px; }
 
 .vs-count { font-size: 12px; color: var(--text-secondary, rgba(255, 255, 255, 0.55)); margin-left: auto; }
 
@@ -9083,6 +9102,7 @@ input:disabled {
   gap: 14px;
   width: 100%;
   min-height: 420px;
+  flex: 1; /* R183: fill the keep-alive pane (input row sinks to bottom) */
 }
 
 .agent-side {
@@ -9132,7 +9152,9 @@ input:disabled {
 .agent-log {
   flex: 1;
   min-height: 260px;
-  max-height: 480px;
+  /* R183: the 480px cap made short transcripts float the input row at 2/3
+     height with ~300px of dead space below — the log now fills the pane and
+     scrolls internally. */
   overflow: auto;
   padding: 10px;
   border-radius: 10px;
@@ -9141,6 +9163,8 @@ input:disabled {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.25) transparent;
 }
 
 .agent-msg { padding: 6px 10px; border-radius: 10px; font-size: 13px; white-space: pre-wrap; }
@@ -9186,7 +9210,8 @@ input:disabled {
   flex: 1;
   min-height: 44px;
   max-height: 140px;
-  resize: vertical;
+  /* R183: native resize handle fought the send button — composer is fixed. */
+  resize: none;
   padding: 8px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -9194,6 +9219,8 @@ input:disabled {
   color: inherit;
   font-size: 13px;
 }
+/* R183: optically center the 26px action buttons on the 44px single-line row */
+.agent-input-row .video-btn { margin-bottom: 4px; }
 .agent-spinner { animation: agent-pulse 1.2s ease-in-out infinite; color: var(--accent, #6ee7a0); }
 @keyframes agent-pulse { 50% { opacity: 0.35; } }
 
@@ -9323,3 +9350,110 @@ input:disabled {
   text-align: left;
 }
 .agent-empty-steps li::before { content: '› '; color: var(--accent, #6ee7a0); }
+
+/* ── R183 (P-1 视觉走查): agent/voice workbench 走查修复 ──────────────────── */
+
+/* keep-alive 包裹层成为 flex 面板,工作台才能撑满视口(输入沉底/空态居中) */
+.ai-keep-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 480px;
+}
+
+/* 会话列表选中态:恢复的会话一目了然 */
+.agent-sessions button.active {
+  background: rgba(110, 231, 160, 0.12);
+  color: var(--accent, #6ee7a0);
+}
+
+/* 错误终态横幅:失败运行不再与成功运行长得一样 */
+.agent-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.1);
+  color: #f87171;
+  font-size: 12.5px;
+}
+.agent-error-banner strong { margin-right: 6px; }
+
+/* 空态三步引导是关键引导文案——对比度/字号提一档 */
+.agent-empty-steps { color: rgba(255, 255, 255, 0.78); font-size: 12.5px; }
+
+/* 深色滚动条:transcript/工具输出/会话列表(原亮色滚动线在暗底上突兀) */
+.agent-tool pre,
+.agent-diff,
+.agent-sessions,
+.vs-lexicon-list,
+.vs-sentence-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 162, 173, 0.25) transparent;
+}
+
+/* 模型行:路径可缩略,尾簇(条/尺寸/百分比)整体钉右不再溢出裁切 */
+.vs-model-list li { min-width: 0; }
+.vs-model-list code {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vs-model-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.vs-model-list .vs-model-inline-bar { width: 44px; }
+
+/* 0% 时总进度轨道与分隔线无法区分——提一档明度 */
+.vs-model-bar { background: rgba(255, 255, 255, 0.14); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
+
+/* 分句列表:序号+行卡片+省略号,点击目标有边界 */
+.vs-sentence-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: default; /* clickable only via the span (system engine) */
+}
+.vs-sentence-list li.current { background: rgba(110, 231, 160, 0.15); }
+.vs-sentence-idx {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent, #6ee7a0);
+  opacity: 0.8;
+  font-size: 11px;
+}
+.vs-sentence-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 对比度补齐:计数/占位/词典空态提示 */
+.vs-count { color: rgba(255, 255, 255, 0.7); }
+.vs-lexicon-add input::placeholder { color: rgba(255, 255, 255, 0.5); }
+.vs-lexicon .ai-hint-line { color: rgba(255, 255, 255, 0.62); }
+
+/* 音频可视化空态:最大区域不再零信息 */
+.audio-viz-empty {
+  position: absolute;
+  inset: 40px 0 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}

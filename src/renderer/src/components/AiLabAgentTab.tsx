@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { Bot, CheckCheck, FolderOpen, History, Play, Send, ShieldCheck, Square, X } from 'lucide-react'
+import { Bot, CheckCheck, FolderOpen, History, Play, Send, ShieldCheck, Square, TriangleAlert, X } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { MarkdownView } from '../ai8/markdown'
 import { groupModelsByProvider, matchCurated } from '../ai8/localStore'
@@ -77,6 +77,7 @@ export function AiLabAgentTab(): JSX.Element {
   const historyIdxRef = useRef<number | null>(null)
   const draftRef = useRef(prefs.agentDraft ?? '')
   const [disabledModels, setDisabledModels] = useState<string[]>(prefs.disabledModels ?? [])
+  const [activeSessionId, setActiveSessionId] = useState('')
   const sessionIdRef = useRef('')
   const logRef = useRef<HTMLDivElement | null>(null)
 
@@ -176,7 +177,7 @@ export function AiLabAgentTab(): JSX.Element {
         }
         return next
       })
-      if (ev.kind === 'session-meta') sessionIdRef.current = ev.sessionId
+      if (ev.kind === 'session-meta') { sessionIdRef.current = ev.sessionId; setActiveSessionId(ev.sessionId) }
       if (ev.kind === 'done') {
         setRunning(false)
         setPendingApproval(null)
@@ -226,11 +227,15 @@ export function AiLabAgentTab(): JSX.Element {
 
   const loadSession = (id: string): void => {
     sessionIdRef.current = id
+    setActiveSessionId(id)
     setItems([])
     setError(null)
     void window.rgbbox.agentSessionLoad(id).then((events) => {
       const restored: TranscriptItem[] = []
       let lastTool: ToolCard | null = null
+      // R183: a restored session must also carry its END state — a run that
+      // died on `error`/`max-turns` looked identical to a healthy one before.
+      let restoredError: string | null = null
       // R174.9: continue with the model + workspace this session last used.
       for (let i = events.length - 1; i >= 0; i -= 1) {
         const ev = events[i]
@@ -249,8 +254,11 @@ export function AiLabAgentTab(): JSX.Element {
           if (idx >= 0) restored[restored.length - 1 - idx] = { kind: 'tool', tool: ev.call }
           lastTool = null
         }
+        if (ev.kind === 'done' && ev.reason === 'error') restoredError = ev.error ?? 'error'
+        if (ev.kind === 'done' && ev.reason === 'max-turns') restoredError = 'max-turns'
       }
       setItems(restored)
+      if (restoredError !== null) setError(restoredError)
     }).catch(() => { /* empty */ })
   }
 
@@ -332,7 +340,14 @@ export function AiLabAgentTab(): JSX.Element {
             <ul>
               {sessions.map((s) => (
                 <li key={s.id}>
-                  <button type="button" data-action="agent-load" onClick={() => loadSession(s.id)} title={s.title}>{s.title}</button>
+                  <button
+                    type="button"
+                    data-action="agent-load"
+                    className={s.id === activeSessionId ? 'active' : ''}
+                    aria-current={s.id === activeSessionId ? 'true' : undefined}
+                    onClick={() => loadSession(s.id)}
+                    title={s.title}
+                  >{s.title}</button>
                 </li>
               ))}
             </ul>
@@ -407,9 +422,16 @@ export function AiLabAgentTab(): JSX.Element {
         {error && (() => {
           // R174.9: known keys translate; raw kernel messages (e.g. "ai8:
           // network — 当前对话选择的模型已停用…") print as-is.
+          // R183: elevated to an error banner — a bare hint line made a failed
+          // run look identical to a completed one.
           const key = `ai.agent.err.${error}` as Parameters<typeof t>[0]
           const label = t(key)
-          return <p className="ai-hint-line">{label === key ? error : label}</p>
+          return (
+            <div className="agent-error-banner" role="alert">
+              <TriangleAlert size={14} />
+              <span><strong>{t('ai.agent.runFailed')}</strong>{` · ${label === key ? error : label}`}</span>
+            </div>
+          )
         })()}
 
         <div className="agent-input-row">

@@ -537,9 +537,11 @@ export function AiLabView(): JSX.Element {
       {tab === 'svg' && <AiLabSvgTab />}
 
       {/* R173: VoiceScribe — offline dual-direction speech workstation (P1).
-          R175: keep-alive — draft text survives tab switches. */}
+          R175: keep-alive — draft text survives tab switches.
+          R183: the wrapper is a flex pane so the workbench fills the viewport
+          (input row sinks to the bottom instead of riding at content height). */}
       {voiceVisited && (
-        <div style={{ display: tab === 'voice' ? undefined : 'none' }}>
+        <div className="ai-keep-pane" style={{ display: tab === 'voice' ? undefined : 'none' }}>
           <AiLabVoiceTab />
         </div>
       )}
@@ -548,7 +550,7 @@ export function AiLabView(): JSX.Element {
           R175: keep-alive — the agent keeps running and the transcript stays
           put while the user browses other tabs (Claude-style background run). */}
       {agentVisited && (
-        <div style={{ display: tab === 'agent' ? undefined : 'none' }}>
+        <div className="ai-keep-pane" style={{ display: tab === 'agent' ? undefined : 'none' }}>
           <AiLabAgentTab />
         </div>
       )}

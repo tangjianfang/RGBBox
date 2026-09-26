@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { Download, FolderOpen, Mic, Play, Square, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import {
-  applyLexicon, detectLang, loadLexicon, normalizeText, saveLexicon, splitSentences,
+  applyLexicon, detectLang, formatBytes, loadLexicon, normalizeText, saveLexicon, splitSentences,
   type LexiconEntry,
 } from '../domain/voiceScribe'
 import type { TtsEngineStatus, TtsModelProgress } from '../../../shared/types'
@@ -212,14 +212,23 @@ export function AiLabVoiceTab(): JSX.Element {
             {(ttsStatus?.files ?? []).map((f) => {
               const prog = dlProgress[f.path]
               const pct = prog ? Math.min(100, Math.round((prog.receivedBytes / Math.max(1, prog.totalBytes)) * 100)) : f.present ? 100 : 0
+              const isDone = f.present || prog?.done === true
+              const isDownloading = prog !== undefined && prog.done !== true
+              // R183: the size column is a nowrap tail cluster pinned right —
+              // the old inline spans overflowed the row and clipped ("/ 29…").
+              const sizeText = isDone
+                ? formatBytes(f.actualBytes ?? f.bytes)
+                : `${formatBytes(isDownloading ? prog.receivedBytes : 0)} / ${formatBytes(prog?.totalBytes ?? f.bytes)}`
               return (
-                <li key={f.path} className={f.present || prog?.done ? 'done-row' : ''} title={`https://hf-mirror.com/onnx-community/kokoro-82M-v1.0-ONNX/resolve/main/${f.path}`}>
-                  <span className={f.present || prog?.done ? 'ok' : ''}>{f.present || prog?.done ? '✓' : prog && !prog.done ? '⇣' : '·'}</span>
+                <li key={f.path} className={isDone ? 'done-row' : ''} title={`https://hf-mirror.com/onnx-community/kokoro-82M-v1.0-ONNX/resolve/main/${f.path}`}>
+                  <span className={isDone ? 'ok' : ''}>{isDone ? '✓' : isDownloading ? '⇣' : '·'}</span>
                   <code>{f.path}</code>
-                  {prog && !prog.done && <span className="vs-model-inline-bar"><span className="vs-model-inline-bar-fill" style={{ width: `${pct}%` }} /></span>}
-                  <span className="vs-model-size">{((prog && !prog.done ? prog.receivedBytes : f.actualBytes ?? f.bytes) / 1048576).toFixed(1)} MB{!prog && !f.present ? ` / ${(f.bytes / 1048576).toFixed(0)}` : ''}</span>
-                  {!f.present && prog && !prog.done && <span className="vs-model-pct">{pct}%</span>}
-                  {prog?.error && <span className="vs-model-err">{prog.error}</span>}
+                  <span className="vs-model-meta">
+                    {isDownloading && <span className="vs-model-inline-bar"><span className="vs-model-inline-bar-fill" style={{ width: `${pct}%` }} /></span>}
+                    <span className="vs-model-size">{sizeText}</span>
+                    {!f.present && isDownloading && <span className="vs-model-pct">{pct}%</span>}
+                    {prog?.error && <span className="vs-model-err">{prog.error}</span>}
+                  </span>
                 </li>
               )
             })}
@@ -257,15 +266,20 @@ export function AiLabVoiceTab(): JSX.Element {
           <div className="vs-sentences">
             <h4><FolderOpen size={13} /> {t('ai.voice.preview')}</h4>
             <ol className="vs-sentence-list">
-              {sentences.map((s, i) => (
-                <li
-                  key={i}
-                  className={i === currentIdx ? 'current' : ''}
-                  onClick={() => { if (engine === 'system') speakFrom(i) }}
-                >
-                  {normalizeText(s).slice(0, 120)}
-                </li>
-              ))}
+              {sentences.map((s, i) => {
+                const display = normalizeText(s).slice(0, 120)
+                return (
+                  <li
+                    key={i}
+                    className={i === currentIdx ? 'current' : ''}
+                    title={normalizeText(s)}
+                    onClick={() => { if (engine === 'system') speakFrom(i) }}
+                  >
+                    <span className="vs-sentence-idx">{i + 1}</span>
+                    <span className="vs-sentence-text" style={{ cursor: engine === 'system' ? 'pointer' : 'default' }}>{display}</span>
+                  </li>
+                )
+              })}
             </ol>
           </div>
         )}
