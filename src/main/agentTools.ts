@@ -7,13 +7,61 @@
  *  - bash 走 denylist + 超时 + 输出截断,exec 的 cwd 固定为工作区;
  *  - 纯函数部分(clamp/denylist/glob 匹配)导出供单测。
  */
-import { exec } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { globSync } from 'node:fs' // Node ≥22 sync glob (patterns subset)
 import { isAbsolute, join, relative, resolve } from 'node:path'
 
 export const AGENT_MAX_OUTPUT = 64 * 1024
 export const AGENT_BASH_TIMEOUT_MS = 120_000
+
+// ── R192.9: bash 工具的 Windows 现实 ─────────────────────────────────────────
+// exec() 在 win32 恒走 cmd.exe——名为 bash 的工具实际跑批处理,cat/grep 全灭且
+// 中文输出 GBK 被按 UTF-8 解成乱码。优先解析 Git Bash;找不到才回落 cmd 并在
+// 结果里注明(模型可据此改写命令风格)。
+
+let cachedBashPath: string | null | undefined
+
+/** 测试 seam:清空 bash 解析缓存。 */
+export function resetBashPathCacheForTest(): void {
+  cachedBashPath = undefined
+}
+
+export function pickBashPath(): string | null {
+  if (process.platform !== 'win32') return null // POSIX 上 spawn shell 路径本就正确
+  if (cachedBashPath !== undefined) return cachedBashPath
+  const programFiles = process.env.ProgramFiles ?? 'C:\\Program Files'
+  const candidates = [
+    process.env.RGBBOX_AGENT_BASH, // 测试注入位
+    join(programFiles, 'Git', 'bin', 'bash.exe'),
+    join(programFiles, 'Git', 'usr\\bin\\bash.exe'),
+    join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'Git', 'bin', 'bash.exe'),
+    join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Git', 'bin', 'bash.exe'),
+  ].filter((c): c is string => typeof c === 'string' && c.trim() !== '')
+  for (const c of candidates) {
+    try {
+      if (existsSync(c)) {
+        cachedBashPath = c
+        return c
+      }
+    } catch { /* unreadable candidate — keep probing */ }
+  }
+  cachedBashPath = null
+  return null
+}
+
+/** 缓冲解码:UTF-8 严格解失败 → GBK 回退(cmd.exe 中文路径的常态)。 */
+export function decodeOutput(buf: Buffer): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf)
+  } catch {
+    try {
+      return new TextDecoder('gbk').decode(buf)
+    } catch {
+      return buf.toString('utf8')
+    }
+  }
+}
 
 /** 规范化并钳制到工作区内;越界/绝对路径逃逸返回 null。 */
 export function clampToWorkspace(workspace: string, p: string): string | null {
@@ -125,15 +173,43 @@ export async function toolEdit(workspace: string, p: string, find: string, repla
 
 export function toolBash(workspace: string, command: string, timeoutMs = AGENT_BASH_TIMEOUT_MS): Promise<ToolOutcome> {
   return new Promise((resolvePromise) => {
-    exec(command, { cwd: resolve(workspace), timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
-      const out = `stdout:\n${stdout}\nstderr:\n${stderr}`
-      if (err && stdout === '' && stderr === '') {
-        resolvePromise({ ok: false, text: `ERR: ${errText(err)}` })
-        return
-      }
-      resolvePromise({ ok: !err, text: truncateOutput(out) + (err ? `\n(exit: ${(err as NodeJS.ErrnoException & { code?: number | string }).code ?? 'nonzero'})` : '') })
+    const bash = pickBashPath()
+    const useBash = bash !== null || process.platform !== 'win32'
+    // R192.9: bash available (or POSIX) → spawn(bash -c). Windows without bash
+    // → cmd.exe via shell:true, plus an explicit note so the model adapts.
+    const child = useBash
+      ? spawn(bash ?? 'bash', ['-c', command], { cwd: resolve(workspace), windowsHide: true })
+      : spawn(command, { cwd: resolve(workspace), windowsHide: true, shell: true })
+    const outBuf: Buffer[] = []
+    const errBuf: Buffer[] = []
+    let killed = false
+    const timer = setTimeout(() => {
+      killed = true
+      child.kill()
+    }, timeoutMs)
+    const MAX = 16 * 1024 * 1024
+    child.stdout?.on('data', (c: Buffer) => { if (sum(outBuf) < MAX) outBuf.push(c) })
+    child.stderr?.on('data', (c: Buffer) => { if (sum(errBuf) < MAX) errBuf.push(c) })
+    child.on('error', (err) => {
+      clearTimeout(timer)
+      resolvePromise({ ok: false, text: `ERR: ${errText(err)}` })
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      const stdout = decodeOutput(Buffer.concat(outBuf))
+      const stderr = decodeOutput(Buffer.concat(errBuf))
+      const note = useBash ? '' : '\nnote: bash.exe not found — ran via cmd.exe (Unix commands unavailable; rewrite in cmd/PowerShell style)'
+      const out = `stdout:\n${stdout}\nstderr:\n${stderr}${note}`
+      resolvePromise({
+        ok: !killed && code === 0,
+        text: truncateOutput(out) + (killed ? '\n(exit: timeout killed)' : code !== 0 ? `\n(exit: ${code ?? 'nonzero'})` : ''),
+      })
     })
   })
+}
+
+function sum(bufs: Buffer[]): number {
+  return bufs.reduce((a, b) => a + b.length, 0)
 }
 
 export function toolList(workspace: string, p: string, recursive = false): ToolOutcome {

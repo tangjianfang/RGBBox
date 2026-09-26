@@ -3573,7 +3573,9 @@
 - **R192.3 发版流程**:用户复验#2(P-4 冒烟)/#3(P-5 合成观感)→`dist:dir` 冷启动验证→`dist:win` 出包→体积核查(R176.3 口径)。
 - **R192.5 复验发现项——Agent 标签「消失」误报**:用户以为 Agent 标签被删(R179 的默认隐藏+🤖 翻转开关设计——藏/显全凭一个小 emoji 按钮,P-1 走查早已标记「功能不明」)。处置:**Agent 标签改为 tab 条常驻成员**(9 tab),移除 🤖 开关及其 i18n/CSS/持久化逻辑(`rgbbox:aiLabAgentTabOpen` 弃用);测试改为常驻断言。验收:1200 用例绿;`ui:snapshot` ai 视图 0.0163% 限内 9/9 PASS(基线零影响)。
 - **R192.7 复验发现项——已缓存文件被误重拉（用户报障「之前全部下载过,又出现 fetch failed;能否哈希校验后直接显示已下载」）**:取证——缓存文件**全部在盘未丢**;根因是 R179 遗留的 `size > 1024` 跳过启发式:config.json 仅 44 字节永远过不了检查,每次点「下载」都重拉它,一次网络抖动即在整个面板上打出「fetch failed」假警报。修复(即用户提议的方案):①manifest 全部 8 文件钉死 **sha256**(LFS 取 tree API `lfs.oid`,小文件镜像标准内容实算);②`downloadOneFile` 跳过守卫改**本地校验**——盘上文件尺寸与哈希都对 → 零网络直接跳过;同尺寸但哈希不符(损坏缓存)→ 重拉自愈;无钉死哈希的 spec 按精确尺寸跳过(其余 51 个音色)。哈希为流式计算(291MB ~1s,仅在点下载时发生)。验收:+2 用例(匹配即跳过零 fetch/错哈希重拉后复检跳过),137 文件 **1206 用例全过**,typecheck 双绿,快照 9/9。
-- **R192.8 状态**:🔄(发版待用户复验)
+- **R192.9 复验发现项——Agent bash 工具在 Windows 落到 cmd.exe + 中文乱码**(用户真机报障:`cat package.json` →「'cat' 不是内部或外部命令」+ stderr GBK 乱码):根因——`exec()` 在 win32 恒用 ComSpec(cmd.exe),名为 bash 的工具实际跑批处理,Unix 命令全不可用;cmd 中文输出为 GBK,被按 UTF-8 解码成乱码。修复:①**优先 Git Bash**——`pickBashPath()` 探测常见安装位(`RGBBOX_AGENT_BASH` 环境变量作测试 seam,带缓存),命中则 `spawn(bash, ['-c', command])`(UTF-8 环境输出);②**缓冲解码**——UTF-8 严格解失败回退 GBK(Electron 全 ICU),两条 shell 路径共用;③**cmd 回落注明**——找不到 bash 时结果尾部加 `note: ran via cmd.exe (Unix commands unavailable)`,让模型自行改写命令风格;④超时改手动计时 kill(spawn 无内建 timeout)。denylist/64KB 截断/审批门禁不变。
+- **R192.10 验收**:vitest **137 文件/1209 用例全过**(+3:RGBBOX_AGENT_BASH 注入 seam+缓存/UTF-8→GBK 解码回退(你好字节级)/真 Git Bash 集成 `cat|tr` 中文管道+exit code 非零即 not-ok);typecheck 双绿;快照 9/9。真机 Agent 冒烟(同一命令重跑)待用户。
+- **R192.11 状态**:🔄(发版待用户复验)
 
 ### R193. AI8 桥上下文记忆连贯（2026-09-26 用户指令「把它设置到最大,保持每个会话的上下文都能连贯起来」;真实会话 JSONL + 站点对照实验取证）
 

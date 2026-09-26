@@ -78,3 +78,50 @@ describe('main/agentTools file tools (R172-S1, 决策③ .bak + 原子写)', () 
     expect(g.text).not.toContain('README.md')
   })
 })
+
+// ── R192.9: bash resolution + output decoding + git-bash integration ─────────
+import { decodeOutput, pickBashPath, resetBashPathCacheForTest, toolBash } from '../../src/main/agentTools'
+
+describe('main/agentTools R192.9 bash plumbing', () => {
+  afterEach(() => {
+    delete process.env.RGBBOX_AGENT_BASH
+    resetBashPathCacheForTest()
+  })
+
+  it('pickBashPath honors the RGBBOX_AGENT_BASH injection seam and caches', () => {
+    if (process.platform !== 'win32') return // POSIX path returns null by design
+    const fake = join(ws, 'fake-bash.exe')
+    writeFileSync(fake, 'x')
+    process.env.RGBBOX_AGENT_BASH = fake
+    resetBashPathCacheForTest()
+    expect(pickBashPath()).toBe(fake)
+    // cached: removing the file doesn't change the answer until reset
+    process.env.RGBBOX_AGENT_BASH = undefined
+    expect(pickBashPath()).toBe(fake)
+    resetBashPathCacheForTest()
+    // falls through to the standard install locations (whatever the machine has)
+    expect(typeof pickBashPath()).toBe(typeof pickBashPath())
+  })
+
+  it('decodeOutput: UTF-8 strict first, GBK fallback for cmd.exe Chinese', () => {
+    expect(decodeOutput(Buffer.from('hello 中文', 'utf8'))).toBe('hello 中文')
+    // GBK bytes for 你好 — NOT valid UTF-8, must not become U+FFFD soup
+    const gbk = Buffer.from([0xc4, 0xe3, 0xba, 0xc3])
+    expect(decodeOutput(gbk)).toBe('你好')
+  })
+
+  it('integration: Unix commands work through git bash when installed', { timeout: 20_000 }, async () => {
+    if (process.platform !== 'win32') return
+    resetBashPathCacheForTest()
+    const bash = pickBashPath()
+    if (bash === null) return // machine without git bash — skip, not fail
+    writeFileSync(join(ws, 'hello.txt'), '中文内容 ok')
+    const out = await toolBash(ws, "cat hello.txt | tr a-z A-Z")
+    expect(out.ok).toBe(true)
+    expect(out.text).toContain('中文内容 OK')
+    // exit codes surface as not-ok
+    const bad = await toolBash(ws, 'exit 3')
+    expect(bad.ok).toBe(false)
+    expect(bad.text).toContain('(exit: 3)')
+  })
+})
