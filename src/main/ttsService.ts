@@ -7,7 +7,8 @@
  * 下载到 userData/models/kokoro-local/...,带逐文件进度事件;完成后以
  * `env.localModelPath + allowRemoteModels=false` 纯本地加载,零网络。
  */
-import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -30,6 +31,26 @@ export interface KokoroFileSpec {
   /** 预期字节数(校验用;GET 无 content-length 时也作进度分母) */
   bytes: number
   required: boolean
+  /** R192.7: 内容哈希(LFS 文件取自 tree API 的 lfs.oid;小文件为镜像标准内容
+   *  实算)。盘上已有文件先本地校验,通过即跳过——不再因启发式误判而重拉。 */
+  sha256?: string
+}
+
+/** 流式计算文件 sha256(291MB 主模型 ~1s,仅在下载按钮触发时执行)。 */
+function sha256File(file: string): string {
+  const h = createHash('sha256')
+  const fd = openSync(file, 'r')
+  try {
+    const buf = Buffer.alloc(1024 * 1024)
+    let n = readSync(fd, buf, 0, buf.length, null)
+    while (n > 0) {
+      h.update(buf.subarray(0, n))
+      n = readSync(fd, buf, 0, buf.length, null)
+    }
+  } finally {
+    closeSync(fd)
+  }
+  return h.digest('hex')
 }
 
 // R192: bytes are the API-reported upstream sizes (hf-mirror tree API,
@@ -38,13 +59,16 @@ export interface KokoroFileSpec {
 // blob), so the exact-accounting check rejected the COMPLETE file on every
 // attempt ("size mismatch 3497/2726298"). Real total ≈ 293 MB.
 export const KOKORO_FILES: KokoroFileSpec[] = [
-  { path: 'config.json', bytes: 44, required: true },
-  { path: 'tokenizer.json', bytes: 3497, required: true },
+  { path: 'config.json', bytes: 44, sha256: 'df34b4f930b23447cd4dc410fabfb42eb3f24e803e6c3f97d618fb359380a36f', required: true },
+  { path: 'tokenizer.json', bytes: 3497, sha256: '77a02c8e164413299b4b4c403b14f8e0e1c1b727db4d46a09d6327b861060a34', required: true },
   // R192.2: AutoTokenizer reads this alongside tokenizer.json — without it the
   // engine load fell through to a remote fetch and died on DNS ("fetch failed").
-  { path: 'tokenizer_config.json', bytes: 113, required: true },
-  { path: 'onnx/model_q4.onnx', bytes: 305_215_966, required: true },
-  ...KOKORO_BUNDLED_VOICES.map((v) => ({ path: `voices/${v}.bin`, bytes: 522_240, required: false })),
+  { path: 'tokenizer_config.json', bytes: 113, sha256: 'be1cb066d6ef6b074b3f15e6a6dd21ac88ff3cdaedf325f0aaed686c70f75d20', required: true },
+  { path: 'onnx/model_q4.onnx', bytes: 305_215_966, sha256: '04cf570cf9c4153694f76347ed4b9a48c1b59ff1de0999e6605d123966b197c7', required: true },
+  { path: 'voices/af_heart.bin', bytes: 522_240, sha256: 'd583ccff3cdca2f7fae535cb998ac07e9fcb90f09737b9a41fa2734ec44a8f0b', required: false },
+  { path: 'voices/af_bella.bin', bytes: 522_240, sha256: 'f69d836209b78eb8c66e75e3cda491e26ea838a3674257e9d4e5703cbaf55c8b', required: false },
+  { path: 'voices/am_fenrir.bin', bytes: 522_240, sha256: 'c27989f741f7ee34d273a39d8a595cc0837d35f5ced9a29b7cc162614616df43', required: false },
+  { path: 'voices/bf_emma.bin', bytes: 522_240, sha256: '669fe0647f9dd04fcab92f1439a40eeb4c8b4ab1f82e4996fe3d918ce4a63b73', required: false },
 ]
 
 export function kokoroFileUrl(path: string, mirror = true): string {
@@ -135,7 +159,15 @@ async function downloadOneFile(
   signal?: AbortSignal,
 ): Promise<string> {
   const target = join(dir, spec.path)
-  if (existsSync(target) && statSync(target).size > 1024) return ''
+  // R192.7: a file already on disk is VERIFIED LOCALLY and skipped — the old
+  // `size > 1024` heuristic re-fetched the 44-byte config.json on every click
+  // (one network hiccup then painted a false "fetch failed" on a healthy
+  // cache). With sha256 pinned: size AND hash must match; without a pinned
+  // hash, exact size suffices.
+  if (existsSync(target)) {
+    const size = statSync(target).size
+    if (size === spec.bytes && (spec.sha256 === undefined || sha256File(target) === spec.sha256)) return ''
+  }
   mkdirSync(join(target, '..'), { recursive: true })
   const partPath = `${target}.part`
   let lastErr = ''

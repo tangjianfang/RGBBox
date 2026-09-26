@@ -141,4 +141,43 @@ describe('main/ttsService ttsDownloadModels R185 pool', () => {
     // the Range attempt happened, then the overwrite succeeded on the retry
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
+
+  // R192.7: cached files are verified LOCALLY (size + pinned sha256) and
+  // skipped with zero network — the old size>1024 heuristic re-fetched the
+  // 44-byte config.json on every click and painted false "fetch failed".
+  it('an on-disk file matching size+sha is skipped with ZERO fetches', async () => {
+    const { ttsDownloadModels } = await import('../../src/main/ttsService')
+    const dir = join(ws, 'kokoro-local', 'onnx-community', 'kokoro-82M-v1.0-ONNX')
+    mkdirSync(dir, { recursive: true })
+    // the canonical 44-byte config.json content (mirror-verified, sha pinned in the manifest)
+    writeFileSync(join(dir, 'config.json'), '{\n  "model_type": "style_text_to_speech_2"\n}')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await ttsDownloadModels(ws, () => {}, undefined, { only: ['config.json'] })
+    expect(out.ok).toBe(true)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('a same-size file with the WRONG hash is re-downloaded (corrupt cache heals)', async () => {
+    const { ttsDownloadModels } = await import('../../src/main/ttsService')
+    const dir = join(ws, 'kokoro-local', 'onnx-community', 'kokoro-82M-v1.0-ONNX')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'config.json'), 'x'.repeat(44)) // right size, wrong bytes
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: (n: string) => (n.toLowerCase() === 'content-length' ? '44' : null) },
+      body: bodyOf(44),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await ttsDownloadModels(ws, () => {}, undefined, { only: ['config.json'] })
+    expect(out.ok).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    // the canonical bytes replaced the corrupt cache — a second pass now skips
+    writeFileSync(join(dir, 'config.json'), '{\n  "model_type": "style_text_to_speech_2"\n}')
+    fetchMock.mockClear()
+    const out2 = await ttsDownloadModels(ws, () => {}, undefined, { only: ['config.json'] })
+    expect(out2.ok).toBe(true)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })
