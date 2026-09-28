@@ -48,7 +48,15 @@ const TONE_MARKS: Record<string, [string, number]> = {
   ḿ: ['m', 2], m̌: ['m', 3], m̀: ['m', 4],
 }
 
-const TONE_SUFFIX: Record<number, string> = { 1: '', 2: '↗', 3: '↓', 4: '↘', 5: '' }
+/**
+ * R197.2 声调映射(F0 实验矩阵选定,区分度 298/300,3/4 命中):
+ * 1 阴平 = 长音ː(高平,不加重音——裸音节会被英语语调带成降调);
+ * 2 阳平 = 箭头↗(无重音,实测稳定上升);
+ * 3 上声 = 前置ˌ + ↓(实测整体 F0 最低,低降调);
+ * 4 去声 = 前置ˈ + ↘(实测强降 -79Hz);5 轻声 = 无标记。
+ */
+const TONE_PREFIX: Record<number, string> = { 1: '', 2: '', 3: 'ˌ', 4: 'ˈ', 5: '' }
+const TONE_SUFFIX: Record<number, string> = { 1: 'ː', 2: '↗', 3: '↓', 4: '↘', 5: '' }
 
 /** 全角标点 → 词表内半角(vocab 有 $ ; : , . ! ? — … " ( ) “ ”)。 */
 const PUNCT: Record<string, string> = {
@@ -97,7 +105,7 @@ export function syllableToIpa(syl: string): string {
   if (['zh', 'ch', 'sh', 'r', 'z', 'c', 's'].includes(initial) && final === 'i') final = 'ɨ'
   const ipaInit = INITIALS[initial] ?? ''
   const ipaFinal = FINALS[final] ?? FINALS[final.replace(/^ü/, 'ue')] ?? ''
-  return `${ipaInit}${ipaFinal}${TONE_SUFFIX[tone] ?? ''}`
+  return `${TONE_PREFIX[tone] ?? ''}${ipaInit}${ipaFinal}${TONE_SUFFIX[tone] ?? ''}`
 }
 
 /** 中文文本 → Kokoro 音素串(音节空格分隔;标点映射;非汉字按原样)。 */

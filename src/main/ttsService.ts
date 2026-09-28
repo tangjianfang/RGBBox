@@ -347,9 +347,17 @@ export async function ttsSynthesize(
       if (/^(zf|zm)_/.test(segVoice)) {
         if (engine.generate_from_ids === undefined || engine.tokenizer === undefined) throw new Error('zh-bridge-unavailable')
         const phonemes = hanziToPhonemes(segments[i])
-        const { input_ids } = engine.tokenizer(phonemes, { truncation: true })
-        const out = await engine.generate_from_ids(input_ids, { voice: segVoice, speed })
-        audio.push(out.audio)
+        // R197.2: the tokenizer caps at 510 tokens (truncation would silently
+        // drop the tail) — long sentences chunk by syllables (~3-6 tokens
+        // each; 60 syllables stays well clear) and concatenate the audio.
+        const syllables = phonemes.split(' ')
+        const chunks: string[] = []
+        for (let s = 0; s < syllables.length; s += 60) chunks.push(syllables.slice(s, s + 60).join(' '))
+        for (const chunk of chunks) {
+          const { input_ids } = engine.tokenizer(chunk, { truncation: true })
+          const out = await engine.generate_from_ids(input_ids, { voice: segVoice, speed })
+          audio.push(out.audio)
+        }
       } else {
         const out = await engine.generate(segments[i], { voice: segVoice, speed })
         audio.push(out.audio)

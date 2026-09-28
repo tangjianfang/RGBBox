@@ -7,24 +7,25 @@ import { KOKORO_VOICE_CATALOG, isZhVoice } from '../../src/shared/kokoroVoices'
 const VOCAB = new Set(' $;:,.!?—…"()“”̃ʣʥʦʨᵝꭧAIOQSTWYᵊabcdefhijklmnopqrstuvwxyzɑɐɒæβɔɕçɖðʤəɚɛɜɟɡɥɨɪʝɯɰŋɳɲɴøɸθœɹɾɻʁɽʂʃʈʧʊʋʌɣɤχʎʒʔˈˌːʰʲ↓→↗↘ᵻ'.split(''))
 
 describe('R197 zhPhonemes (拼音→IPA 桥)', () => {
-  it('syllable table: initials, aspirated pairs, glides, sibilant-i, tones', () => {
-    expect(syllableToIpa('nǐ')).toBe('ni↓')
-    expect(syllableToIpa('hǎo')).toBe('xɑʊ↓')
-    expect(syllableToIpa('shì')).toBe('ʂɨ↘')
-    expect(syllableToIpa('tian')).toBe('tʰiæn') // tone1 unmarked
-    expect(syllableToIpa('yín')).toBe('in↗') // y-glide
-    expect(syllableToIpa('wǒ')).toBe('uɔ↓') // w-glide
-    expect(syllableToIpa('jū')).toBe('tɕy') // j+u → ü
-    expect(syllableToIpa('quē')).toBe('tɕʰɥɛ')
-    expect(syllableToIpa('rì')).toBe('ɻɨ↘')
-    expect(syllableToIpa('er2'.replace('2', ''))).toBe('ɚ')
+  it('syllable table: initials, aspirated pairs, glides, sibilant-i, F0-matrix tones', () => {
+    // R197.2 声调约定(F0 实验矩阵):1=ː高平 2=↗升 3=ˌ前缀+↓低 4=ˈ前缀+↘降 5=无
+    expect(syllableToIpa('nǐ')).toBe('ˌni↓')
+    expect(syllableToIpa('hǎo')).toBe('ˌxɑʊ↓')
+    expect(syllableToIpa('shì')).toBe('ˈʂɨ↘')
+    expect(syllableToIpa('tīan')).toBe('tʰiænː') // tone1 lengthened, no stress
+    expect(syllableToIpa('yín')).toBe('in↗') // y-glide + rising
+    expect(syllableToIpa('wǒ')).toBe('ˌuɔ↓') // w-glide
+    expect(syllableToIpa('jū')).toBe('tɕyː') // j+u → ü
+    expect(syllableToIpa('quē')).toBe('tɕʰɥɛː')
+    expect(syllableToIpa('rì')).toBe('ˈɻɨ↘')
+    expect(syllableToIpa('ma')).toBe('ma') // tone5 neutral — unmarked
   })
 
   it('multi-pronunciation characters resolve via pinyin-pro', () => {
     const out = hanziToPhonemes('银行行长')
     expect(out).toContain('in↗') // yín
     expect(out).toContain('xɑŋ↗') // háng ×2
-    expect(out).toContain('ʈʂɑŋ↓') // zhǎng
+    expect(out).toContain('ˌʈʂɑŋ↓') // zhǎng
   })
 
   it('punctuation maps into the tokenizer vocab', () => {
