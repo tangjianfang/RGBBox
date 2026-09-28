@@ -598,3 +598,20 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, select
     drawOverlay(ctx, title, subtitle, footer)
   }
 }
+
+// ── FR-G01(R198): 策略教练 —— 纯函数,key 制文案(渲染层 t('games.coach.<key>'))──
+import type { CoachHint } from './coach'
+
+export function tdHints(state: GameState): CoachHint[] {
+  const hints: CoachHint[] = []
+  if (state.phase !== 'running') return hints
+  if (state.towers.length === 0) hints.push({ key: 'td.noTower', tone: 'warn', priority: 90 })
+  if (state.lives <= 8) hints.push({ key: 'td.livesLow', tone: 'warn', priority: 80 })
+  if (state.coins >= 220 && state.towers.length < 6) hints.push({ key: 'td.coinsIdle', tone: 'tip', priority: 50 })
+  if (state.balloons.length === 0 && state.waveCooldown > 3) hints.push({ key: 'td.earlyStart', tone: 'tip', priority: 40 })
+  if (state.wave >= MAX_WAVE - 2) hints.push({ key: 'td.finalWaves', tone: 'warn', priority: 60 })
+  if (state.towers.some((t) => t.level < TOWER_MAX_LEVEL && state.coins >= towerUpgradeCost(t))) {
+    hints.push({ key: 'td.upgradeReady', tone: 'tip', priority: 55 })
+  }
+  return hints
+}

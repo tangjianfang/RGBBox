@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Pause, Play } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { PRESET_SNIP_HOTKEYS } from '../../../shared/snipHotkeys'
 import { UI_FONT_SCALE_TIERS } from '../domain/uiFontScale'
+import { clearAllGameData, type GameId } from '../domain/gamesTelemetry'
 
 export interface SettingsViewProps {
   // Runtime
@@ -26,6 +28,7 @@ export interface SettingsViewProps {
 
 export function SettingsView(props: SettingsViewProps) {
   const { t } = useI18n()
+  const [gamesClearedAt, setGamesClearedAt] = useState<number | null>(null)
   return (
     <div className="settings-view">
       <header className="workspace-header">
@@ -121,6 +124,29 @@ export function SettingsView(props: SettingsViewProps) {
               ))}
             </select>
           </div>
+        </section>
+
+        {/* R198(FR-G02.3): games — clear local telemetry (bests kept by default). */}
+        <section className="panel settings-group" data-group="games">
+          <h3>{t('settings.group.games')}</h3>
+          <div className="status-panel" title={t('settings.games.clearHint')}>
+            <span>{t('settings.games.clearLabel')}</span>
+            <button
+              type="button"
+              className="video-btn"
+              data-setting="games-clear-data"
+              onClick={() => {
+                // 两段确认:先清遥测(保留最高分);再问是否连最高分一起清
+                if (!window.confirm(t('settings.games.clearConfirm'))) return
+                clearAllGameData(localStorage, false, (id: GameId) => `rgbbox:gamesBest:${id === 'td' ? 'balloon' : id}`)
+                if (window.confirm(t('settings.games.clearBestConfirm'))) {
+                  clearAllGameData(localStorage, true, (id: GameId) => `rgbbox:gamesBest:${id === 'td' ? 'balloon' : id}`)
+                }
+                setGamesClearedAt(Date.now())
+              }}
+            >{t('settings.games.clearBtn')}</button>
+          </div>
+          {gamesClearedAt !== null && <p className="ai-hint-line" data-field="games-cleared">{t('settings.games.cleared')}</p>}
         </section>
       </div>
     </div>

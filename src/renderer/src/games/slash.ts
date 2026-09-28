@@ -258,3 +258,17 @@ export function drawSlash(ctx: CanvasRenderingContext2D, s: SlashState, time: nu
   }
   ctx.restore()
 }
+
+// ── FR-G01(R198): 策略教练 —— 纯函数,key 制文案 ──
+import type { CoachHint } from './coach'
+
+export function slashHints(state: SlashState): CoachHint[] {
+  const hints: CoachHint[] = []
+  if (state.phase !== 'running') return hints
+  if (state.timeLeft <= 10) hints.push({ key: 'sl.timeLow', tone: 'warn', priority: 80 })
+  if (state.bombCd <= 0) hints.push({ key: 'sl.bombReady', tone: 'tip', priority: 60 })
+  if (state.combo >= 10) hints.push({ key: 'sl.comboPraise', tone: 'praise', priority: 55 })
+  if (state.flash > 0) hints.push({ key: 'sl.wrongCut', tone: 'warn', priority: 45 })
+  if (state.bestCombo < 3 && state.combo < 2) hints.push({ key: 'sl.aim', tone: 'tip', priority: 30 })
+  return hints
+}

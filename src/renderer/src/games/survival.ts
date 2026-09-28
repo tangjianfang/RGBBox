@@ -895,3 +895,17 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
   ctx.restore()
   dimScene(ctx, state.phase)
 }
+
+// ── FR-G01(R198): 策略教练 —— 纯函数,key 制文案 ──
+import type { CoachHint } from './coach'
+
+export function survivalHints(state: SurvivalState): CoachHint[] {
+  const hints: CoachHint[] = []
+  if (state.phase !== 'running') return hints
+  if (state.player.hp / state.player.maxHp <= 0.35) hints.push({ key: 'sw.hpLow', tone: 'warn', priority: 85 })
+  if (state.pendingSpins > 0) hints.push({ key: 'sw.spinReady', tone: 'tip', priority: 75 })
+  if (state.bossTimer > BOSS_INTERVAL - 15) hints.push({ key: 'sw.bossSoon', tone: 'warn', priority: 70 })
+  if (state.portal !== null) hints.push({ key: 'sw.portal', tone: 'praise', priority: 60 })
+  if (state.combo >= 8) hints.push({ key: 'sw.combo', tone: 'praise', priority: 40 })
+  return hints
+}

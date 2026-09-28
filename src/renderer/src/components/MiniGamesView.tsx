@@ -23,6 +23,7 @@ import {
   tickGame,
   towerUpgradeCost,
   upgradeTower,
+  tdHints,
   type GameState,
   type TowerKind,
 } from '../games/td'
@@ -37,6 +38,7 @@ import {
   openRoulette,
   startSurvival,
   tickSurvival,
+  survivalHints,
   type SurvivalState,
   type UpgradeId,
 } from '../games/survival'
@@ -66,12 +68,15 @@ import {
   type SwarmMeta,
 } from '../games/swarmMeta'
 import { isBgmEnabled, isSfxEnabled, playSfx, setBgmEnabled, setSfxEnabled, startBgm, stopBgm } from '../games/sfx'
+import { isOnboarded, markOnboarded, pickHint, type CoachHint } from '../games/coach'
+import { loadRuns, profileStats, type GameId } from '../domain/gamesTelemetry'
 import {
   bomb as slashBomb,
   drawSlash,
   initialSlashState,
   slash as slashCut,
   startSlash,
+  slashHints,
   tickSlash,
   type SlashState,
 } from '../games/slash'
@@ -79,9 +84,35 @@ import {
   drawTetris,
   initialTetrisState,
   startTetris,
+  tetrisHints,
   tickTetris,
   type TetrisState,
 } from '../games/tetris'
+
+
+/** R198(FR-G01.3): 首局引导三步——done 为引擎态纯判定(3s 节流内步进)。 */
+const ONBOARD_STEPS = {
+  td: [
+    { key: 'td.1', done: (s: GameState) => s.towers.length >= 1 },
+    { key: 'td.2', done: (s: GameState) => s.wave >= 1 },
+    { key: 'td.3', done: (s: GameState) => s.towers.some((t) => t.level >= 2) },
+  ],
+  survival: [
+    { key: 'sw.1', done: (s: SurvivalState) => s.clock > 4 },
+    { key: 'sw.2', done: (s: SurvivalState) => Object.keys(s.taken).length >= 1 },
+    { key: 'sw.3', done: (s: SurvivalState) => s.bossKills >= 1 || s.level >= 3 },
+  ],
+  tetris: [
+    { key: 'te.1', done: (s: TetrisState) => s.pieceId >= 2 },
+    { key: 'te.2', done: (s: TetrisState) => s.score > 0 },
+    { key: 'te.3', done: (s: TetrisState) => s.holdKind !== null },
+  ],
+  slash: [
+    { key: 'sl.1', done: (s: SlashState) => s.bestCombo >= 1 },
+    { key: 'sl.2', done: (s: SlashState) => s.bestCombo >= 3 },
+    { key: 'sl.3', done: (s: SlashState) => s.score >= 50 },
+  ],
+} as const
 
 type Screen = 'hub' | 'td' | 'survival' | 'tetris' | 'slash'
 type GameKey = 'td' | 'survival' | 'tetris' | 'slash'
@@ -138,6 +169,24 @@ export function MiniGamesView(): JSX.Element {
   const [selectedTowerId, setSelectedTowerId] = useState<number | null>(null)
   const [tdSpeed, setTdSpeed] = useState<1 | 2>(1)
   const [bests, setBests] = useState<Record<GameKey, number>>({ ...bestRef.current })
+  // ── R198(FR-G01): 教练条 + 首局引导 ──
+  const [coachHint, setCoachHint] = useState<CoachHint | null>(null)
+  const [coachOff, setCoachOff] = useState(() => {
+    try { return localStorage.getItem('rgbbox:gamesCoach') === '0' } catch { return false }
+  })
+  const [onboardStep, setOnboardStep] = useState(0)
+  const coachLastShownRef = useRef<Record<string, number>>({})
+  const coachAccRef = useRef(0)
+
+  // R198: 首局引导——首次进入该作时武装(完成/跳过后永不再现)
+  useEffect(() => {
+    if (screen === 'hub') { setOnboardStep(0); return }
+    setOnboardStep(isOnboarded(localStorage, screen) ? 0 : 1)
+    setCoachHint(null)
+    coachLastShownRef.current = {}
+    coachAccRef.current = 3 // 进入即评估一次
+  }, [screen])
+
   const [tdSnapshot, setTdSnapshot] = useState<GameState>(() => ({ ...tdStateRef.current }))
   const [survivalSnapshot, setSurvivalSnapshot] = useState<SurvivalState>(() => ({ ...survivalRef.current, keys: new Set() }))
   const [tetrisSnapshot, setTetrisSnapshot] = useState<TetrisState>(() => ({ ...tetrisRef.current, keys: new Set() }))
@@ -650,6 +699,32 @@ export function MiniGamesView(): JSX.Element {
         else publishTetris()
         snapshotTimer = 0
       }
+      // R198(FR-G01): 教练 3s 评估 + 首局引导步进(引导期间教练静默)
+      coachAccRef.current += dt
+      if (coachAccRef.current >= 3) {
+        coachAccRef.current = 0
+        if (onboardStep > 0) {
+          const steps = ONBOARD_STEPS[screen as 'td' | 'survival' | 'tetris' | 'slash']
+          const stateObj = screen === 'td' ? tdStateRef.current : screen === 'survival' ? survivalRef.current : screen === 'tetris' ? tetrisRef.current : slashRef.current
+          let step = onboardStep
+          while (step <= steps.length && steps[step - 1].done(stateObj as never)) step += 1
+          if (step > steps.length) {
+            markOnboarded(localStorage, screen)
+            setOnboardStep(0)
+          } else if (step !== onboardStep) {
+            setOnboardStep(step)
+          }
+        } else {
+          const now = Date.now()
+          const hints = screen === 'td' ? tdHints(tdStateRef.current)
+            : screen === 'survival' ? survivalHints(survivalRef.current)
+              : screen === 'tetris' ? tetrisHints(tetrisRef.current)
+                : slashHints(slashRef.current)
+          const hint = pickHint(hints, coachLastShownRef.current, now)
+          if (hint !== null) coachLastShownRef.current[hint.key] = now
+          setCoachHint(hint)
+        }
+      }
       frame = requestAnimationFrame(loop)
     }
     frame = requestAnimationFrame(loop)
@@ -979,6 +1054,25 @@ export function MiniGamesView(): JSX.Element {
             </span>
           </div>
         </div>
+        {/* R198(FR-G02): arcade profile——局数/时长/连续天数(遥测聚合) */}
+        <div className="games-profile" data-field="games-profile">
+          <h3>{t('games.profile.title')}</h3>
+          <div className="games-profile-grid">
+            {(['td', 'swarm', 'tetris', 'slash'] as GameId[]).map((id) => {
+              const key = (id === 'swarm' ? 'survival' : id) as GameKey
+              const stats = profileStats(loadRuns(localStorage, id), bestRef.current[key])
+              const title = id === 'td' ? t('games.tileTdTitle') : id === 'swarm' ? t('games.tileSwarmTitle') : id === 'tetris' ? t('games.tileTetrisTitle') : t('games.tileSlashTitle')
+              return (
+                <div key={id} className="games-profile-cell">
+                  <strong>{title}</strong>
+                  <span>{stats.totalRuns} {t('games.profile.runs')}</span>
+                  <span>{Math.round(stats.totalSeconds / 60)}min {t('games.profile.time')}</span>
+                  {stats.streakDays > 0 ? <span>🔥 {stats.streakDays} {t('games.profile.streak')}</span> : null}
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </div>
     )
   }
@@ -1109,6 +1203,27 @@ export function MiniGamesView(): JSX.Element {
         <span role="listitem" aria-label={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score))} title={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score))}><span aria-hidden="true">★</span> {isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : isSlash ? slashSnapshot.score : tetrisSnapshot.score}</span>
         <span role="listitem" aria-label={t('games.ariaBest').replace('{value}', String(best))} title={t('games.ariaBest').replace('{value}', String(best))}><Trophy aria-hidden="true" size={15} />{best}</span>
       </div>
+
+      {/* R198(FR-G01): 教练条 / 首局引导条(全屏画布化随 R206) */}
+      {!coachOff && onboardStep > 0 ? (
+        <div className="coach-bar onboard" data-field="coach-onboard">
+          <span>{onboardStep}/3 · {t(`games.onboard.${screen}.${onboardStep}` as Parameters<typeof t>[0])}</span>
+          <button
+            type="button"
+            className="coach-off-btn"
+            onClick={() => { markOnboarded(localStorage, screen); setOnboardStep(0) }}
+          >{t('games.onboard.skip')}</button>
+        </div>
+      ) : !coachOff && coachHint !== null && phase === 'running' ? (
+        <div className={`coach-bar ${coachHint.tone}`} data-field="coach" role="status">
+          <span>{t(`games.coach.${coachHint.key}` as Parameters<typeof t>[0])}</span>
+          <button
+            type="button"
+            className="coach-off-btn"
+            onClick={() => { setCoachOff(true); setCoachHint(null); try { localStorage.setItem('rgbbox:gamesCoach', '0') } catch { /* best-effort */ } }}
+          >{t('games.coachBar.off')}</button>
+        </div>
+      ) : null}
 
       <div className="games-layout">
         <section className="games-canvas-panel panel">

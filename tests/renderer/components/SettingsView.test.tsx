@@ -30,7 +30,7 @@ describe('SettingsView', () => {
     const groups = container.querySelectorAll('.settings-group h3')
     const titles = [...groups].map((g) => g.textContent)
     expect(titles).toEqual([
-      'settings.group.run', 'settings.group.screensaver', 'settings.group.hotkey', 'settings.group.appearance'
+      'settings.group.run', 'settings.group.screensaver', 'settings.group.hotkey', 'settings.group.appearance', 'settings.group.games'
     ])
   })
 

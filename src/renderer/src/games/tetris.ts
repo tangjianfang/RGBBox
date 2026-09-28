@@ -647,3 +647,39 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
     drawOverlay(ctx, labels.lostTitle, `Level ${state.level} · ${state.lines} lines`, `Score ★${state.score} · Best ★${best} ${labels.replaySuffix}`)
   }
 }
+
+// ── FR-G01(R198): 策略教练 —— 纯函数,key 制文案 ──
+import type { CoachHint } from './coach'
+
+/** 最高堆高(首个填充行距顶)。 */
+export function stackHeight(state: TetrisState): number {
+  for (let y = 0; y < ROWS; y += 1) {
+    if (state.grid[y].some((cell) => cell !== 0)) return ROWS - y
+  }
+  return 0
+}
+
+/** 盘面洞数(每列首个填充格之下的空格)。 */
+export function boardHoles(state: TetrisState): number {
+  let holes = 0
+  for (let x = 0; x < COLS; x += 1) {
+    let top = -1
+    for (let y = 0; y < ROWS; y += 1) {
+      if (state.grid[y][x] !== 0) { top = y; break }
+    }
+    if (top === -1) continue
+    for (let y = top + 1; y < ROWS; y += 1) if (state.grid[y][x] === 0) holes += 1
+  }
+  return holes
+}
+
+export function tetrisHints(state: TetrisState): CoachHint[] {
+  const hints: CoachHint[] = []
+  if (state.phase !== 'running') return hints
+  if (stackHeight(state) >= 14) hints.push({ key: 'te.stackHigh', tone: 'warn', priority: 85 })
+  if (boardHoles(state) >= 4) hints.push({ key: 'te.holes', tone: 'tip', priority: 40 })
+  if (state.pieceId > 6 && state.holdKind === null) hints.push({ key: 'te.holdUnused', tone: 'tip', priority: 45 })
+  if (state.b2b) hints.push({ key: 'te.b2b', tone: 'praise', priority: 50 })
+  if (state.combo >= 2) hints.push({ key: 'te.combo', tone: 'praise', priority: 55 })
+  return hints
+}
