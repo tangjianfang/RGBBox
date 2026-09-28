@@ -69,7 +69,7 @@ import {
   type RouletteResult,
   type SwarmMeta,
 } from '../games/swarmMeta'
-import { isBgmEnabled, isSfxEnabled, playSfx, setBgmEnabled, setSfxEnabled, startBgm, stopBgm } from '../games/sfx'
+import { isBgmEnabled, isSfxEnabled, playSfx, setBgmEnabled, setBgmPreset, setSfxEnabled, startBgm, stopBgm } from '../games/sfx'
 import { isOnboarded, markOnboarded, pickHint, type CoachHint } from '../games/coach'
 import { loadRuns, profileStats, recordRun, type GameId } from '../domain/gamesTelemetry'
 import { recapCoachKey } from '../games/juice'
@@ -155,6 +155,15 @@ const VISION_PASSTHROUGH_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'ar
 
 // DirectionRing defaults (gesture_engine.js, upstream v2) — the analog path
 // must apply the same transform the sector ring sees. Keep in sync.
+/** R204(FR-G05): 难度二档——休闲/标准,按作持久化 rgbbox:gamesDifficulty:<id>。 */
+export type Difficulty = 'casual' | 'standard'
+function readDifficulty(id: string): Difficulty {
+  try { return localStorage.getItem('rgbbox:gamesDifficulty:' + id) === 'casual' ? 'casual' : 'standard' } catch { return 'standard' }
+}
+function writeDifficulty(id: string, d: Difficulty): void {
+  try { localStorage.setItem('rgbbox:gamesDifficulty:' + id, d) } catch { /* best-effort */ }
+}
+
 /** R207(FR-G04): 手势指示器(vision-pad)全局开关——默认关闭,持久化。 */
 function readVisionPadVisible(): boolean {
   try { return localStorage.getItem('rgbbox:visionPadVisible') === '1' } catch { return false }
@@ -187,6 +196,8 @@ export function MiniGamesView(): JSX.Element {
   // R201: TD 无尽模式 + 放置悬停预览(F6)
   const [tdEndless, setTdEndless] = useState(false)
   const [tdHover, setTdHover] = useState<{ x: number; y: number } | null>(null)
+  // R204: 难度二档(按作)
+  const [difficulty, setDifficulty] = useState<Difficulty>(() => readDifficulty('td'))
   const [bests, setBests] = useState<Record<GameKey, number>>({ ...bestRef.current })
   // ── R198(FR-G01): 教练条 + 首局引导 ──
   const [coachHint, setCoachHint] = useState<CoachHint | null>(null)
@@ -204,6 +215,9 @@ export function MiniGamesView(): JSX.Element {
   // R198: 首局引导——首次进入该作时武装(完成/跳过后永不再现)
   useEffect(() => {
     if (screen === 'hub') { setOnboardStep(0); setRecap(null); return }
+    setDifficulty(readDifficulty(screen))
+    // R205(FR-G07 一期): 进作切分曲(TD 沉稳/Swarm 急促/Tetris 上行/Slash 强拍)
+    setBgmPreset(screen === 'td' ? 'td' : screen === 'survival' ? 'swarm' : screen === 'tetris' ? 'tetris' : 'slash')
     setOnboardStep(isOnboarded(localStorage, screen) ? 0 : 1)
     setCoachHint(null)
     coachLastShownRef.current = {}
@@ -875,6 +889,12 @@ export function MiniGamesView(): JSX.Element {
       tdStateRef.current = initialState()
       setSelectedTowerId(null)
     }
+    // R204: TD 难度二档(休闲 30 命+300 金 / 标准 20+220)
+    if (tdStateRef.current.wave === 0 && tdStateRef.current.towers.length === 0) {
+      const d = readDifficulty('td')
+      tdStateRef.current.lives = d === 'casual' ? 30 : 20
+      tdStateRef.current.coins = d === 'casual' ? 300 : 220
+    }
     const state = tdStateRef.current
     if (state.phase === 'ready') {
       state.phase = 'running'
@@ -965,6 +985,10 @@ export function MiniGamesView(): JSX.Element {
   startRunRef.current = startSurvivalRun
   // R142-E4: slash uses the same unified start entry (pinch/open-palm/chord)
   const startSlashRunCb = useCallback(() => {
+    // R204: Slash 难度二档(休闲 5 心 / 标准 3 心)
+    const d = readDifficulty('slash')
+    slashRef.current.maxHearts = d === 'casual' ? 5 : 3
+    slashRef.current.hearts = slashRef.current.maxHearts
     startSlash(slashRef.current)
     publishSlash()
   }, [publishSlash])
@@ -1361,6 +1385,21 @@ export function MiniGamesView(): JSX.Element {
         <section className="games-canvas-panel panel">
           <div className="games-canvas-wrap" ref={canvasWrapRef}>
             {/* R206(FR-G03.5): fs 暂停浮层(Esc 呼出;继续/重开/退出全屏/返回 hub) */}
+            {/* R204(FR-G05.2): 难度二档——ready 态选择,持久化 */}
+            {phase === 'ready' ? (
+              <div className="difficulty-picker" data-field="difficulty">
+                <span>{t('games.difficulty.label')}</span>
+                {(['casual', 'standard'] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`diff-btn ${difficulty === d ? 'on' : ''}`}
+                    data-diff={d}
+                    onClick={() => { setDifficulty(d); writeDifficulty(screen, d) }}
+                  >{t(`games.difficulty.${d}` as Parameters<typeof t>[0])}</button>
+                ))}
+              </div>
+            ) : null}
             {fsPaused ? (
               <div className="fs-pause-overlay" data-field="fs-pause" role="alertdialog" aria-label={t('games.pause.title')}>
                 <p>{t('games.pause.title')}</p>

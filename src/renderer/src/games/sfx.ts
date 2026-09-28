@@ -108,8 +108,34 @@ export function playSfx(kind: SfxKind): void {
 // ── R108: procedural BGM — zero-asset Am arpeggio loop ──
 
 const BGM_KEY = 'rgbbox:gamesBgm'
-const BGM_STEP_MS = 280
-const BGM_ARPEGGIO = [110, 130.81, 164.81, 220, 261.63, 329.63, 220, 164.81]
+
+/** R205(FR-G07 一期): 四作静态音乐预设——调式/BPM/音色层,零素材。 */
+export interface BgmPreset {
+  /** 琶音频率表(一个循环步进)。 */
+  arp: number[]
+  /** 步进毫秒(BPM 的倒数表达)。 */
+  stepMs: number
+  /** 主音色。 */
+  wave: OscillatorType
+  /** 低音层(每 4 步)八度下探比例。 */
+  bassDiv: number
+  volume: number
+}
+
+export const BGM_PRESETS: Record<string, BgmPreset> = {
+  // 原 Am 琶音(R108 兜底,与旧版一致)
+  default: { arp: [110, 130.81, 164.81, 220, 261.63, 329.63, 220, 164.81], stepMs: 280, wave: 'triangle', bassDiv: 2, volume: 0.018 },
+  // TD 沉稳:Dm 下行,Dotted 节奏
+  td: { arp: [146.83, 130.81, 110, 98, 110, 130.81, 146.83, 110], stepMs: 340, wave: 'triangle', bassDiv: 2, volume: 0.02 },
+  // Swarm 急促:Em 密集半音阶
+  swarm: { arp: [164.81, 196, 220, 246.94, 220, 196, 164.81, 185], stepMs: 190, wave: 'sawtooth', bassDiv: 2, volume: 0.014 },
+  // Tetris 上行:C 大调琶音爬升
+  tetris: { arp: [130.81, 164.81, 196, 261.63, 329.63, 261.63, 196, 164.81], stepMs: 240, wave: 'square', bassDiv: 2, volume: 0.012 },
+  // Slash 强拍:E 小调重拍短句
+  slash: { arp: [82.41, 82.41, 123.47, 164.81, 82.41, 98, 82.41, 61.74], stepMs: 300, wave: 'triangle', bassDiv: 1, volume: 0.022 },
+}
+
+let bgmPreset: BgmPreset = BGM_PRESETS.default
 
 let bgmEnabled = (() => {
   try {
@@ -150,6 +176,15 @@ function playBgmNote(freq: number, duration: number, type: OscillatorType, volum
   osc.stop(at + duration + 0.02)
 }
 
+/** R205: 切换预设并(若正在播)重启循环。 */
+export function setBgmPreset(id: keyof typeof BGM_PRESETS): void {
+  bgmPreset = BGM_PRESETS[id] ?? BGM_PRESETS.default
+  if (bgmTimer !== null) {
+    stopBgm()
+    startBgm()
+  }
+}
+
 export function startBgm(): void {
   if (!bgmEnabled || bgmTimer !== null) return
   try {
@@ -160,12 +195,13 @@ export function startBgm(): void {
     return
   }
   bgmStep = 0
+  const p = bgmPreset
   bgmTimer = setInterval(() => {
     if (!bgmEnabled || !audioCtx) return
-    playBgmNote(BGM_ARPEGGIO[bgmStep % BGM_ARPEGGIO.length], 0.26, 'triangle', 0.018)
-    if (bgmStep % 4 === 0) playBgmNote(BGM_ARPEGGIO[bgmStep % BGM_ARPEGGIO.length] / 2, 0.5, 'sine', 0.026)
+    playBgmNote(p.arp[bgmStep % p.arp.length], p.stepMs / 1000 * 0.9, p.wave, p.volume)
+    if (bgmStep % 4 === 0) playBgmNote(p.arp[bgmStep % p.arp.length] / p.bassDiv, p.stepMs / 1000 * 1.6, 'sine', p.volume * 1.4)
     bgmStep += 1
-  }, BGM_STEP_MS)
+  }, p.stepMs)
 }
 
 export function stopBgm(): void {
