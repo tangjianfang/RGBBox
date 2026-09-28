@@ -59,12 +59,20 @@ export interface SlashState {
   /** R200(FR-G06): hit-stop 与刀光轨迹。 */
   hitStop: number
   trail: TrailPoint[]
+  /** R203(FR-SL01): 三心制(标准 3/休闲 5;漏块 -1,归零失败)。 */
+  hearts: number
+  maxHearts: number
+  /** R203(FR-SL02): 连锁块(击中后触发相邻同向块连爆)。 */
+  chainEnabled: boolean
 }
 
 export function initialSlashState(): SlashState {
   return {
     hitStop: 0,
     trail: [],
+    hearts: 3,
+    maxHearts: 3,
+    chainEnabled: true,
     phase: 'ready', score: 0, combo: 0, bestCombo: 0, timeLeft: RUN_SECONDS,
     blocks: [], streaks: [], spawnTimer: 0.4, nextId: 1, bombCd: 0, flash: 0, shake: 0,
   }
@@ -141,6 +149,16 @@ export function slash(s: SlashState, dir: number): 'hit' | 'wrong' | 'miss' {
   if (hit.bonus || s.combo % 10 === 0) s.hitStop = hit.bonus ? HIT_STOP.medium : HIT_STOP.light
   s.score += Math.round((hit.bonus ? 50 : 10) * mult)
   burst(s, p.x, p.y, hit.hue, hit.bonus ? 26 : 14, hit.bonus ? 320 : 200)
+  // R203(FR-SL02): 连锁块——同向且接近判定圈的块被连带引爆(+5/块,不计连击)
+  if (s.chainEnabled) {
+    const chained = s.blocks.filter((b) => b.dir === dir && Math.abs(b.t - hit!.t) < 0.18)
+    for (const b of chained) {
+      const cp = blockPos(b)
+      burst(s, cp.x, cp.y, b.hue, 10, 220)
+      s.score += 5
+    }
+    if (chained.length > 0) s.blocks = s.blocks.filter((b) => !chained.includes(b))
+  }
   // R200: 刀光轨迹锚点(渐隐光带由绘制层连接)
   s.trail.push({ x: p.x, y: p.y, life: TRAIL_LIFE })
   if (s.trail.length > 8) s.trail.shift()
@@ -197,9 +215,17 @@ export function tickSlash(s: SlashState, dt: number): void {
     if (b.t > 1.12) missed = true
   }
   if (missed) {
+    // R203(FR-SL01): 漏块 -1 心;归零失败
     s.combo = 0
     s.flash = 0.2
+    s.hearts -= 1
+    s.shake = Math.min(8, s.shake + 4)
     s.blocks = s.blocks.filter((b) => b.t <= 1.12)
+    if (s.hearts <= 0) {
+      s.hearts = 0
+      s.phase = 'lost'
+      return
+    }
   }
   s.spawnTimer -= dt
   if (s.spawnTimer <= 0) {
@@ -256,6 +282,18 @@ export function drawSlash(ctx: CanvasRenderingContext2D, s: SlashState, time: nu
 }
 
 function drawSlashBody(ctx: CanvasRenderingContext2D, s: SlashState, time: number): void {
+  // R203(FR-SL01): 心形 HUD(左上)
+  if (s.phase === 'running' || s.phase === 'lost') {
+    ctx.save()
+    ctx.font = '700 18px Inter, sans-serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    for (let i = 0; i < s.maxHearts; i += 1) {
+      ctx.fillStyle = i < s.hearts ? '#fb7185' : 'rgba(251, 113, 133, 0.2)'
+      ctx.fillText('♥', 16 + i * 22, 26)
+    }
+    ctx.restore()
+  }
   ctx.save()
   if (s.shake > 0.2) {
     ctx.translate((Math.random() - 0.5) * s.shake, (Math.random() - 0.5) * s.shake)

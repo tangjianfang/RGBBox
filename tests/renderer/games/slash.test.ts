@@ -86,3 +86,44 @@ describe('games/slash (R142-E4)', () => {
     expect(bomb(s)).toBe(false) // cooldown active
   })
 })
+
+// R203: 三心制 + 连锁块。
+
+describe('slash hearts (FR-SL01)', () => {
+  it('missed block costs a heart; three misses end the run; casual starts at 5', () => {
+    const s = initialSlashState()
+    s.phase = 'running'
+    expect(s.hearts).toBe(3)
+    for (let round = 0; round < 3; round += 1) {
+      s.blocks.push({ id: s.nextId++, dir: 0, t: 1.2, speed: 1, hue: 200, bonus: false }) // 已越圈
+      tickSlash(s, 0.016)
+    }
+    expect(s.hearts).toBe(0)
+    expect(s.phase).toBe('lost')
+    // 休闲档
+    const casual = initialSlashState()
+    casual.hearts = 5
+    casual.maxHearts = 5
+    casual.phase = 'running'
+    casual.blocks.push({ id: casual.nextId++, dir: 0, t: 1.2, speed: 1, hue: 200, bonus: false })
+    tickSlash(casual, 0.016)
+    expect(casual.hearts).toBe(4)
+    expect(casual.phase).toBe('running')
+  })
+})
+
+describe('slash chain blocks (FR-SL02)', () => {
+  it('hitting a block detonates same-dir neighbors near the ring for +5 each', () => {
+    const s = initialSlashState()
+    s.phase = 'running'
+    s.blocks.push({ id: 1, dir: 2, t: 0.9, speed: 1, hue: 200, bonus: false })
+    s.blocks.push({ id: 2, dir: 2, t: 0.8, speed: 1, hue: 210, bonus: false }) // 同向近圈 → 连锁
+    s.blocks.push({ id: 3, dir: 4, t: 0.85, speed: 1, hue: 120, bonus: false }) // 异向 → 保留
+    const before = s.score
+    const out = slashCut(s, 2)
+    expect(out).toBe('hit')
+    expect(s.score).toBeGreaterThan(before)
+    expect(s.blocks.some((b) => b.id === 3)).toBe(true)
+    expect(s.blocks.some((b) => b.id === 2)).toBe(false)
+  })
+})
