@@ -28,6 +28,28 @@ export const UPGRADES: UpgradeDef[] = [
 ]
 
 export const RARITY_WEIGHTS = [60, 25, 10, 5]
+
+// ── R202(FR-SW01): 强化进化合成——纯数据配方(swarmMeta 模式) ─────────────────
+export interface EvolutionRecipe {
+  id: string
+  requires: Array<{ id: UpgradeId; count: number }>
+  effect: 'moonblade' | 'barrage' | 'lightspear' | 'thornAura'
+}
+
+export const EVOLUTIONS: EvolutionRecipe[] = [
+  { id: 'moonblade', requires: [{ id: 'blade', count: 3 }, { id: 'damage', count: 4 }], effect: 'moonblade' },
+  { id: 'barrage', requires: [{ id: 'multishot', count: 3 }, { id: 'pierce', count: 3 }], effect: 'barrage' },
+  { id: 'lightspear', requires: [{ id: 'pierce', count: 3 }, { id: 'bulletSpeed', count: 3 }], effect: 'lightspear' },
+  { id: 'thornAura', requires: [{ id: 'thorns', count: 3 }, { id: 'maxHp', count: 4 }], effect: 'thornAura' },
+]
+
+export function evolutionReady(recipe: EvolutionRecipe, taken: Record<string, number>): boolean {
+  return recipe.requires.every((r) => (taken[r.id] ?? 0) >= r.count)
+}
+
+export function readyEvolutions(taken: Record<string, number>, evolved: string[]): EvolutionRecipe[] {
+  return EVOLUTIONS.filter((e) => !evolved.includes(e.id) && evolutionReady(e, taken))
+}
 export const RARITY_COLORS = ['#9aa5ad', '#60a5fa', '#f472b6', '#fde047']
 export const RARITY_LEVELS = [1, 2, 3, 4]
 export const DISSOLVE_XP = [12, 25, 45, 80]

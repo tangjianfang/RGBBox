@@ -52,6 +52,14 @@ interface Bullet extends Point {
   life: number
 }
 
+/** R202(FR-SW02): boss 弹幕子弹(敌向)。 */
+interface EnemyBullet extends Point {
+  vx: number
+  vy: number
+  size: number
+  life: number
+}
+
 interface Orb extends Point {
   id: number
   value: number
@@ -131,6 +139,8 @@ export interface SurvivalState {
   comboBonus: number
   enemies: Enemy[]
   bullets: Bullet[]
+  /** R202(FR-SW02): boss 弹幕池。 */
+  eBullets: EnemyBullet[]
   orbs: Orb[]
   particles: Particle[]
   texts: FloatText[]
@@ -156,6 +166,10 @@ export interface SurvivalState {
   /** R200(FR-G06): 进化/boss 顿帧与出生预警。 */
   hitStop: number
   warnings: SpawnWarning[]
+  /** R202(FR-SW01): 已触发的进化。 */
+  evolved: string[]
+  /** R202(FR-SW02): boss 弹幕计时(驱动三型循环)。 */
+  bossBulletTimer: number
 }
 
 export function xpToNext(level: number): number {
@@ -258,6 +272,9 @@ export function initialSurvivalState(
     lastMinute: 0,
     hitStop: 0,
     warnings: [],
+    evolved: [],
+    bossBulletTimer: 0,
+    eBullets: [],
   }
   recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses, magnetBonus: state.magnetBonus })
   return state
@@ -406,6 +423,28 @@ function spawnEnemy(state: SurvivalState): void {
   }
 }
 
+/** R202(FR-SW02): boss 弹幕——放射(12 向)/瞄准扇形(5 发)/环形(16 发)循环。 */
+function bossBarrage(state: SurvivalState, boss: Enemy): void {
+  const pattern = Math.floor(state.bossBulletTimer) % 3
+  if (pattern === 0) {
+    for (let i = 0; i < 12; i += 1) {
+      const a = (i / 12) * Math.PI * 2
+      state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120, size: 6, life: 4 })
+    }
+  } else if (pattern === 1) {
+    const base = Math.atan2(state.player.y - boss.y, state.player.x - boss.x)
+    for (let i = -2; i <= 2; i += 1) {
+      const a = base + i * 0.18
+      state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 170, vy: Math.sin(a) * 170, size: 7, life: 4 })
+    }
+  } else {
+    for (let i = 0; i < 16; i += 1) {
+      const a = (i / 16) * Math.PI * 2 + 0.2
+      state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 95, vy: Math.sin(a) * 95, size: 5, life: 5 })
+    }
+  }
+}
+
 function spawnBoss(state: SurvivalState): void {
   const hp = 60 + Math.floor(state.time / 10) * 6
   const side = Math.floor(Math.random() * 4)
@@ -456,6 +495,31 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
 export function tickSurvival(state: SurvivalState, dt: number): void {
   // R200: hit-stop(进化/boss 击杀);预警条目独立于冻结推进
   state.warnings = tickWarnings(state.warnings, dt)
+  // R202(FR-SW02): boss 弹幕三型循环(放射/瞄准扇形/环形,每 1.2s)
+  state.bossBulletTimer += dt
+  for (const enemy of state.enemies) {
+    if (enemy.kind === 'boss' && state.bossBulletTimer >= 1.2) {
+      bossBarrage(state, enemy)
+    }
+  }
+  if (state.bossBulletTimer >= 1.2) state.bossBulletTimer = 0
+  // 弹幕运动/寿命/命中
+  for (const eb of state.eBullets) {
+    eb.x += eb.vx * dt
+    eb.y += eb.vy * dt
+    eb.life -= dt
+  }
+  state.eBullets = state.eBullets.filter((eb) => eb.life > 0 && eb.x > -40 && eb.x < WIDTH + 40 && eb.y > -40 && eb.y < HEIGHT + 40)
+  for (const eb of state.eBullets) {
+    if (state.player.invuln <= 0 && Math.hypot(eb.x - state.player.x, eb.y - state.player.y) < state.player.size + eb.size) {
+      state.player.hp -= 1
+      state.player.invuln = state.invulnWindow
+      state.shake = Math.min(8, state.shake + 4)
+      eb.life = 0
+      playSfx('hurt')
+    }
+  }
+  state.eBullets = state.eBullets.filter((eb) => eb.life > 0)
   if (state.hitStop > 0) {
     const [remain, thaw] = hitStopTick(state.hitStop, dt)
     state.hitStop = remain
@@ -711,6 +775,17 @@ function dimScene(ctx: CanvasRenderingContext2D, phase: SurvivalPhase): void {
 }
 
 export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState): void {
+  // R202: boss 弹幕绘制
+  for (const eb of state.eBullets) {
+    ctx.save()
+    ctx.fillStyle = '#fb7185'
+    ctx.shadowColor = '#fb7185'
+    ctx.shadowBlur = 6
+    ctx.beginPath()
+    ctx.arc(eb.x, eb.y, eb.size, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  }
   drawSurvivalBody(ctx, state)
   // R200(FR-G06.2): 出生预警——边缘红色箭头(0.5s)
   for (const w of state.warnings) {
