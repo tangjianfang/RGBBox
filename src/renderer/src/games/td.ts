@@ -86,6 +86,12 @@ export interface GameState {
   banner: Banner | null
   /** R200(FR-G06): 整波清空顿帧。 */
   hitStop: number
+  /** R201(FR-TD02): 当前词缀波(>12 波后循环;null=普通波)。 */
+  affix: 'swift' | 'tough' | 'phantom' | null
+  /** R201(FR-TD03): 陨石技能(冷却剩余秒;Q 触发)。 */
+  meteorCd: number
+  /** R201(FR-TD02): 无尽模式(>12 波不判胜,词缀循环)。 */
+  endless: boolean
 }
 
 export interface TowerDefinition {
@@ -192,6 +198,9 @@ export function initialState(): GameState {
     particles: [],
     banner: null,
     hitStop: 0,
+    affix: null,
+    meteorCd: 0,
+    endless: false,
   }
 }
 
@@ -219,7 +228,9 @@ export function spawnBurst(state: GameState, x: number, y: number, color: string
 function spawnBalloon(state: GameState): void {
   const wavePower = Math.max(1, state.wave)
   const elite = wavePower > 4 && state.waveQueue % 5 === 0
-  const hp = elite ? 3 + Math.floor(wavePower / 2) : 1 + Math.floor(wavePower / 3)
+  // R201(FR-TD02): 词缀波——坚韧倍血
+  const affixHp = state.affix !== null ? AFFIX_PARAMS[state.affix].hp : 1
+  const hp = Math.round((elite ? 3 + Math.floor(wavePower / 2) : 1 + Math.floor(wavePower / 3)) * affixHp)
   state.balloons.push({
     id: state.nextId++,
     progress: 0,
@@ -232,14 +243,30 @@ function spawnBalloon(state: GameState): void {
   })
 }
 
+export const AFFIXES = ['swift', 'tough', 'phantom'] as const
+export type Affix = (typeof AFFIXES)[number]
+
+/** R201(FR-TD02): 词缀波参数——迅捷(提速)/坚韧(加血)/幻影(阶段隐行)。 */
+export const AFFIX_PARAMS: Record<Affix, { speed: number; hp: number; phase: boolean; label: string }> = {
+  swift: { speed: 1.45, hp: 1, phase: false, label: '迅捷' },
+  tough: { speed: 1, hp: 2.2, phase: false, label: '坚韧' },
+  phantom: { speed: 1.15, hp: 1, phase: true, label: '幻影' },
+}
+
+export function affixForWave(wave: number): Affix | null {
+  if (wave <= MAX_WAVE) return null
+  return AFFIXES[(wave - MAX_WAVE - 1) % AFFIXES.length]
+}
+
 export function launchWave(state: GameState): void {
-  if (state.wave >= MAX_WAVE) return
+  // R201(FR-TD02): 无尽模式——12 波后不封顶,词缀循环
   state.wave += 1
   state.waveQueue = 12 + state.wave * 3
   state.spawnTimer = 0.2
   state.waveCooldown = AUTO_WAVE_SECONDS
   state.phase = 'running'
-  state.banner = { text: `WAVE ${state.wave}`, life: 1.7 }
+  state.affix = affixForWave(state.wave)
+  state.banner = { text: state.affix !== null ? `WAVE ${state.wave} · ${AFFIX_PARAMS[state.affix].label}` : `WAVE ${state.wave}`, life: 1.7 }
   playSfx('wave')
 }
 
@@ -263,6 +290,21 @@ function nearestTarget(tower: Tower, balloons: Balloon[]): Balloon | undefined {
     }
   }
   return target
+}
+
+/** R201(FR-TD03): 陨石——全屏伤害 40,冷却 45s;返回命中数(0=未就绪)。 */
+export function castMeteor(state: GameState): number {
+  if (state.phase !== 'running' || state.meteorCd > 0) return 0
+  const hit = state.balloons.length
+  for (const balloon of state.balloons) {
+    balloon.hp -= 40
+    const pos = pointAtProgress(balloon.progress)
+    spawnBurst(state, pos.x, pos.y, '#fbbf24', 6, 200)
+  }
+  state.meteorCd = 45
+  state.shake = 8
+  state.balloons = state.balloons.filter((b) => b.hp > 0)
+  return hit
 }
 
 export function towerUpgradeCost(tower: Tower): number {
@@ -306,6 +348,7 @@ export function tickGame(state: GameState, dt: number): void {
     if (thaw === 0) return
     dt = thaw
   }
+  if (state.meteorCd > 0) state.meteorCd = Math.max(0, state.meteorCd - dt)
   const waveJustCleared = state.wave >= 1 && state.waveQueue === 0 && state.balloons.length === 0 && state.spawnTimer === 0 && state.phase === 'running'
   if (waveJustCleared && state.waveCooldown > 7.9) state.hitStop = HIT_STOP.light
   state.clock += dt
@@ -337,7 +380,7 @@ export function tickGame(state: GameState, dt: number): void {
   }
   for (const balloon of state.balloons) {
     const slowFactor = balloon.slowUntil > 0 ? 0.56 : 1
-    balloon.progress += balloon.speed * slowFactor * dt
+    balloon.progress += balloon.speed * slowFactor * dt * (state.affix !== null ? AFFIX_PARAMS[state.affix].speed : 1)
     balloon.slowUntil = Math.max(0, balloon.slowUntil - dt)
   }
   const escaped = state.balloons.filter((balloon) => balloon.progress >= 1)
@@ -418,7 +461,7 @@ export function tickGame(state: GameState, dt: number): void {
     playSfx('gameover')
     return
   }
-  if (state.wave >= MAX_WAVE && state.waveQueue === 0 && state.balloons.length === 0) {
+  if (!state.endless && state.wave >= MAX_WAVE && state.waveQueue === 0 && state.balloons.length === 0) {
     state.phase = 'won'
     spawnBurst(state, WIDTH / 2, HEIGHT / 2 - 40, '#67e8f9', 22, 200)
     spawnBurst(state, WIDTH / 2 - 120, HEIGHT / 2 + 40, '#86efac', 16, 160)

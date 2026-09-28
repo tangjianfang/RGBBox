@@ -9787,3 +9787,10 @@ input:disabled {
   letter-spacing: 0.04em;
 }
 .fs-pause-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+/* R201: TD 控制行(无尽/陨石/词缀) */
+.td-ctl-row { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--text-secondary); }
+.td-endless-toggle { display: flex; align-items: center; gap: 6px; }
+.td-meteor-ready { color: var(--accent, #6ee7a0); }
+.td-meteor-cd { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.td-affix-chip { padding: 2px 10px; border-radius: 999px; border: 1px solid rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.1); color: #fbbf24; }

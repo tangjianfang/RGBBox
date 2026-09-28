@@ -10,6 +10,8 @@ import {
   HEIGHT,
   MAX_WAVE,
   SELL_REFUND,
+  castMeteor,
+
   TOWER_DEFINITIONS,
   TOWER_MAX_LEVEL,
   WIDTH,
@@ -182,6 +184,9 @@ export function MiniGamesView(): JSX.Element {
   const [selectedTower, setSelectedTower] = useState<TowerKind>('dart')
   const [selectedTowerId, setSelectedTowerId] = useState<number | null>(null)
   const [tdSpeed, setTdSpeed] = useState<1 | 2>(1)
+  // R201: TD 无尽模式 + 放置悬停预览(F6)
+  const [tdEndless, setTdEndless] = useState(false)
+  const [tdHover, setTdHover] = useState<{ x: number; y: number } | null>(null)
   const [bests, setBests] = useState<Record<GameKey, number>>({ ...bestRef.current })
   // ── R198(FR-G01): 教练条 + 首局引导 ──
   const [coachHint, setCoachHint] = useState<CoachHint | null>(null)
@@ -651,6 +656,7 @@ export function MiniGamesView(): JSX.Element {
         }
         lastPhase = phase
         drawGame(ctx, tdStateRef.current, selectedTowerId, bestRef.current.td, {
+          // R201: 交给 drawGame 之后的覆盖层(悬停射程圈 + 词缀波提示条在 banner 内已带)
           readyTitle: t('games.td.readyTitle'),
           readySubtitle: t('games.td.readySubtitle'),
           wonTitle: t('games.td.won'),
@@ -719,6 +725,26 @@ export function MiniGamesView(): JSX.Element {
           replaySuffix: t('games.replay'),
         })
       }
+      // R201(FR-TD01/F6): 放置悬停预览——射程圈 + 有效性配色
+      if (isTd && tdHover !== null && tdStateRef.current.phase === 'running') {
+        const def = TOWER_DEFINITIONS.find((d) => d.kind === selectedTower)
+        const blocked = distanceToPath(tdHover) < 42 || tdStateRef.current.towers.some((tw) => Math.hypot(tw.x - tdHover.x, tw.y - tdHover.y) < 44)
+        ctx.save()
+        ctx.strokeStyle = blocked ? 'rgba(251, 113, 133, 0.6)' : 'rgba(103, 232, 249, 0.6)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([6, 4])
+        if (def !== undefined && def.range > 0) {
+          ctx.beginPath()
+          ctx.arc(tdHover.x, tdHover.y, def.range, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+        ctx.setLineDash([])
+        ctx.fillStyle = blocked ? 'rgba(251, 113, 133, 0.18)' : 'rgba(103, 232, 249, 0.14)'
+        ctx.beginPath()
+        ctx.arc(tdHover.x, tdHover.y, 14, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+      }
       snapshotTimer += dt
       if (snapshotTimer > 0.18) {
         if (screen === 'td') publishTd()
@@ -783,6 +809,9 @@ export function MiniGamesView(): JSX.Element {
       }
       const normalized = normalizeKey(event)
       if (MOVEMENT_KEYS.has(normalized) && !event.ctrlKey && !event.metaKey && !event.altKey) event.preventDefault()
+      if (screen === 'td' && normalized === 'q') {
+        if (castMeteor(tdStateRef.current) > 0) playSfx('levelup')
+      }
       if (screen === 'survival') {
         survivalRef.current.keys.add(normalized)
       } else if (screen === 'slash') {
@@ -1308,6 +1337,26 @@ export function MiniGamesView(): JSX.Element {
         </div>
       ) : null}
 
+      {isTd ? (
+        <div className="td-ctl-row" data-field="td-ctl">
+          <label className="td-endless-toggle" style={{ cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              data-setting="td-endless"
+              checked={tdEndless}
+              onChange={(e) => { setTdEndless(e.target.checked); tdStateRef.current.endless = e.target.checked }}
+            />
+            <span>{t('games.td.endless')}</span>
+          </label>
+          <span className={tdStateRef.current.meteorCd > 0 ? 'td-meteor-cd' : 'td-meteor-ready'} title={t('games.td.meteorHint')}>
+            ☄ {tdStateRef.current.meteorCd > 0 ? Math.ceil(tdStateRef.current.meteorCd) + 's' : t('games.td.meteorReady')} · Q
+          </span>
+          {tdStateRef.current.affix !== null ? (
+            <span className="td-affix-chip">{t(`games.td.affix.${tdStateRef.current.affix}` as Parameters<typeof t>[0])}</span>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="games-layout">
         <section className="games-canvas-panel panel">
           <div className="games-canvas-wrap" ref={canvasWrapRef}>
@@ -1327,6 +1376,15 @@ export function MiniGamesView(): JSX.Element {
               ref={canvasRef}
               className="games-canvas"
               onClick={isTd ? handleCanvasClick : undefined}
+              onMouseMove={isTd ? (event: MouseEvent<HTMLCanvasElement>) => {
+                const canvas = canvasRef.current
+                if (!canvas) return
+                const rect = canvas.getBoundingClientRect()
+                const sx = canvas.width / rect.width
+                const sy = canvas.height / rect.height
+                setTdHover({ x: (event.clientX - rect.left) * sx, y: (event.clientY - rect.top) * sy })
+              } : undefined}
+              onMouseLeave={isTd ? () => setTdHover(null) : undefined}
               aria-label={`${gameTitle} game board`}
             />
             {!isTd && survivalSnapshot.phase === 'levelup' && survivalSnapshot.offers.length > 0 ? (
