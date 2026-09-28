@@ -153,6 +153,14 @@ const VISION_PASSTHROUGH_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'ar
 
 // DirectionRing defaults (gesture_engine.js, upstream v2) — the analog path
 // must apply the same transform the sector ring sees. Keep in sync.
+/** R207(FR-G04): 手势指示器(vision-pad)全局开关——默认关闭,持久化。 */
+function readVisionPadVisible(): boolean {
+  try { return localStorage.getItem('rgbbox:visionPadVisible') === '1' } catch { return false }
+}
+function writeVisionPadVisible(on: boolean): void {
+  try { localStorage.setItem('rgbbox:visionPadVisible', on ? '1' : '0') } catch { /* best-effort */ }
+}
+
 const VISION_GAIN_X = 1.4
 const VISION_GAIN_Y = 1.6
 
@@ -180,6 +188,8 @@ export function MiniGamesView(): JSX.Element {
   const coachLastShownRef = useRef<Record<string, number>>({})
   const coachAccRef = useRef(0)
   // R200(FR-G06.5): 统一 run recap(结算面板)
+  // R207: 手势指示器开关(默认关;Banner/Cursor 功能组件不受影响)
+  const [visionPadVisible, setVisionPadVisible] = useState(readVisionPadVisible)
   const [recap, setRecap] = useState<{ score: number; deltaPct: number | null; best: number; highlight: string; coach: string } | null>(null)
 
   // R198: 首局引导——首次进入该作时武装(完成/跳过后永不再现)
@@ -1018,6 +1028,17 @@ export function MiniGamesView(): JSX.Element {
             <button className="aspect-lock-btn" type="button" aria-label={t('games.sfxToggle')} title={t('games.sfxToggle')} onClick={toggleSfx}>
               {sfxOn ? <Volume2 aria-hidden="true" size={13} /> : <VolumeX aria-hidden="true" size={13} />}
             </button>
+            {/* R207: 手势指示器临时呼出入口(设置页为主入口) */}
+            <button
+              className="aspect-lock-btn"
+              type="button"
+              data-action="vision-pad-toggle"
+              aria-label={t('games.visionPad.toggle')}
+              title={t('games.visionPad.toggle')}
+              onClick={() => { const next = !visionPadVisible; setVisionPadVisible(next); writeVisionPadVisible(next) }}
+            >
+              {visionPadVisible ? <Eye aria-hidden="true" size={13} /> : <EyeOff aria-hidden="true" size={13} />}
+            </button>
           </div>
         </header>
         <div className="games-hub">
@@ -1134,6 +1155,17 @@ export function MiniGamesView(): JSX.Element {
           </button>
           <button className="aspect-lock-btn" type="button" aria-label={t('games.sfxToggle')} title={t('games.sfxToggle')} onClick={toggleSfx}>
             {sfxOn ? <Volume2 aria-hidden="true" size={13} /> : <VolumeX aria-hidden="true" size={13} />}
+          </button>
+          {/* R207: 手势指示器临时呼出入口(设置页为主入口) */}
+          <button
+            className="aspect-lock-btn"
+            type="button"
+            data-action="vision-pad-toggle"
+            aria-label={t('games.visionPad.toggle')}
+            title={t('games.visionPad.toggle')}
+            onClick={() => { const next = !visionPadVisible; setVisionPadVisible(next); writeVisionPadVisible(next) }}
+          >
+            {visionPadVisible ? <Eye aria-hidden="true" size={13} /> : <EyeOff aria-hidden="true" size={13} />}
           </button>
           {/* R131: vision gesture toggle — off by default; recalibrate while on */}
           <button
@@ -1382,7 +1414,7 @@ export function MiniGamesView(): JSX.Element {
             {/* R136.2: immediate status banner — instant publish, progress via rAF */}
             {vision.enabled ? <VisionBanner vision={vision} /> : null}
             {/* R132.2: joystick + skeleton overlay — own rAF, reads frameRef directly */}
-            {vision.enabled ? <VisionPad vision={vision} /> : null}
+            {vision.enabled && visionPadVisible ? <VisionPad vision={vision} /> : null}
             {/* R142-L3: relative cursor overlay — hover highlight + pinch click */}
             {vision.enabled && vision.state === 'active' ? <VisionCursor vision={vision} wrapRef={canvasWrapRef} stateRef={visionCursorRef} /> : null}
           </div>

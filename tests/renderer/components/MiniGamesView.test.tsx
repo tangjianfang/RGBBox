@@ -174,6 +174,8 @@ describe('renderer/components/MiniGamesView', () => {
     await act(async () => {
       await (window as unknown as { __rgbboxVision: { enableSynthetic(): Promise<void> } }).__rgbboxVision.enableSynthetic()
     })
+    // R207: the pad is gated behind rgbbox:visionPadVisible (default OFF) — flip it on first
+    fireEvent.click(container.querySelector('[data-action="vision-pad-toggle"]')!)
     await waitFor(() => {
       expect(container.querySelector('.vision-pad canvas')).toBeTruthy()
     })
