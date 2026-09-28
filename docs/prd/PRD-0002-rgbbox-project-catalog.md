@@ -3631,7 +3631,7 @@
 
 ### R199. `feat` — M1 Tetris 现代化:Hold/lock-delay/SRS 踢墙/T-spin·B2B·连击/幽灵块(SRS FR-TE01–04)
 
-- **状态**: ⏳
+- **状态**: ✅ — vitest 139 文件/1238 用例全过(tetris 13:踢墙表双向 4 态齐备+墙缝逃生/hold 三段(单块一次/忽略/落锁复位/换回)/lock delay 0.5s+15 次重置预算耗尽强制锁+静置对照/TSD 1200×lv+B2B ×1.5+combo +50×n×lv+四消 B2B 资格+非资格清 B2B+不消归 -1/isTspin 四角判定/提示避高墙落底);快照 9/9;C 键+vision 透传 'c' 已接;真机手感待用户
 - **文件**: `src/renderer/src/games/tetris.ts`、`MiniGamesView.tsx`(键位 C/Hold、Shift→当 Hold 槽位语义冲突按现状)、tests
 - **验收点**(详见 SRS §5.3):
   - [ ] Hold 槽(C 键,一次落锁前限 1 次交换)+ lock delay(0.5s,移动/旋转重置,上限 15 次)

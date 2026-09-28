@@ -116,7 +116,7 @@ const MOVEMENT_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arro
 // R135 (guide §3.6/§3.7): vision passthrough keys — movement + face modifiers
 // (jaw=E, brow=Shift, smile=Enter) + off-hand pinch (KeyF). Games consume
 // keys.has('e') etc. when a skill mapping lands.
-const VISION_PASSTHROUGH_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'space', 'e', 'shift', 'enter', 'f']
+const VISION_PASSTHROUGH_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'space', 'e', 'shift', 'enter', 'f', 'c']
 
 // DirectionRing defaults (gesture_engine.js, upstream v2) — the analog path
 // must apply the same transform the sector ring sees. Keep in sync.
@@ -461,6 +461,7 @@ export function MiniGamesView(): JSX.Element {
         } else if (cmd === 'arrowleft') tetrisRef.current.commands.push('left')
         else if (cmd === 'arrowright') tetrisRef.current.commands.push('right')
         else if (cmd === 'arrowup') tetrisRef.current.commands.push('rotate')
+        else if (cmd === 'c') tetrisRef.current.commands.push('hold')
       }
       // R138: open-palm hold to (re)start (same gesture as Survival)
       const frameT = vision.frameRef.current
@@ -680,6 +681,7 @@ export function MiniGamesView(): JSX.Element {
         else if (normalized === 'arrowright') tetrisRef.current.commands.push('right')
         else if (normalized === 'arrowup') tetrisRef.current.commands.push('rotate')
         else if (normalized === 'space') tetrisRef.current.commands.push('hard')
+        else if (normalized === 'c') tetrisRef.current.commands.push('hold')
         else if (normalized === 'arrowdown') tetrisRef.current.keys.add('arrowdown')
       }
     }
