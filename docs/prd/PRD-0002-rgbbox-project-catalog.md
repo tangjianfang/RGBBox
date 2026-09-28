@@ -3615,6 +3615,66 @@
 - **R197.6 声调映射机器迭代(同日续)**:四声 F0 轮廓探针(自相关基频提取,50ms 窗/20ms 步)证实首版箭头后缀**对模型韵律驱动弱**(四声单字轮廓无区分);跑 **声调映射实验矩阵 9 组**(箭头后置/前置/重音符组合/长音/两轮择优),按「四声期望方向命中数+两两趋势区分度」自动评分——**最优约定**:阴平=`ː`长音(高平不加重音)、阳平=`↗`、上声=`ˌ`前缀+`↓`(实测 F0 最低)、去声=`ˈ`前缀+`↘`(实测 -79Hz 强降),3/4 命中/区分度 298。**长句防截断**:zh 路径按 60 音节分块合成拼接(tokenizer 510 上限此前会静默截尾)。v2 试听文件已生成至桌面 `kokoro-中文试听-v2.wav`(8.47s/397KB)。1223 用例全过;快照 9/9。
 - **R197.7 状态**:✅(最终听感由用户耳朵验收;声调表迭代入口=TONE_PREFIX/TONE_SUFFIX 两张表)
 
+<!-- ═══ 迷你游戏可玩性升级(SRS: docs/prd/PRD-0002-SRS-games-upgrade.md;分支 feat/games-upgrade;用户 2026-09-27 批准实施,OD-01~13 按建议默认方案) ═══ -->
+
+### R198. `feat` — M1 平台层:策略教练引擎 + 本地遥测与 arcade profile(SRS FR-G01/FR-G02)
+
+- **状态**: ⏳
+- **文件**: `src/renderer/src/games/coach.ts`(新)、`src/renderer/src/domain/gamesTelemetry.ts`(新)、`src/renderer/src/games/*/`(hints 导出)、`MiniGamesView.tsx`、设置页
+- **验收点**(详见 SRS §4):
+  - [ ] 每作 `hints(state)` 纯函数 + 渲染层 2–4s 轮询、30s 去重;教练条一键关闭持久化(`rgbbox:gamesCoach`)
+  - [ ] 首局引导 3 步(按作持久化,完成/跳过永不再现);E2E <2s 出现第一步
+  - [ ] 遥测环形缓冲 `rgbbox:gamesRuns:<id>`(20 局/作,仅结算时写入,零网络 E2E 断言)
+  - [ ] hub arcade profile(局数/累计时长/mastery 徽章/streak)+ 设置页一键清空(默认保留最高分)
+  - [ ] 每作 hints ≥5 组单测;ring buffer/聚合单测
+- **证据**: ⏳
+
+### R199. `feat` — M1 Tetris 现代化:Hold/lock-delay/SRS 踢墙/T-spin·B2B·连击/幽灵块(SRS FR-TE01–04)
+
+- **状态**: ⏳
+- **文件**: `src/renderer/src/games/tetris.ts`、`MiniGamesView.tsx`(键位 C/Hold、Shift→当 Hold 槽位语义冲突按现状)、tests
+- **验收点**(详见 SRS §5.3):
+  - [ ] Hold 槽(C 键,一次落锁前限 1 次交换)+ lock delay(0.5s,移动/旋转重置,上限 15 次)
+  - [ ] SRS 标准踢墙表(J/L/S/Z/T: JLSTZ 表; I 独立表)——旋转卡位按表偏移
+  - [ ] T-spin 判定(3 角占用+最后动作旋转)/B2B/连击计分;消行反馈文案
+  - [ ] 幽灵块(落点预览)绘制
+  - [ ] 单测:踢墙表逐项、T-spin 三型、lock delay 重置/上限、Hold 单锁交换、计分矩阵
+- **证据**: ⏳
+
+### R200. `feat` — M1 Juice 补强与统一结算 run recap(SRS FR-G06;依赖 R198 遥测)
+
+- **状态**: ⏳
+- **文件**: 四作引擎 + `src/renderer/src/games/juice.ts`(新,共享 hit-stop/预警/轨迹工具)
+- **验收点**(详见 SRS §4):
+  - [ ] hit-stop 顿帧 40–60ms(高光命中;冻结期 dt 不累积,单测 tick 注入验证)
+  - [ ] Swarm 出生预警 0.5s 画布边缘红箭头(TD 词缀波横幅 M2 随 R201)
+  - [ ] Slash 刀光轨迹(6–8 帧渐隐光带);Tetris 落锁白闪+消行光束
+  - [ ] 统一 run recap(得分/较上局与 best 增量%/高光数据/教练一句)——四作一致,E2E 截图复核
+  - [ ] 遥测 KR:Swarm 贴脸死亡占比 -50%(前后对比,M2 复测)
+- **证据**: ⏳
+
+### R206. `feat` — M1 全屏沉浸纯画布 + 共享 HUD 模块(SRS FR-G03;风险最高,SRS 建议灰度 TD 先行)
+
+- **状态**: ⏳
+- **文件**: `src/renderer/src/games/hud.ts`(新:画布按钮/hit-test/tooltip/底板,消除 td/tetris 重复 drawOverlay)、四作 fs 画布化、`MiniGamesView.tsx` fs 布局
+- **验收点**(详见 SRS §4):
+  - [ ] fs 态 DOM 面板=0(仅 3s 自动隐藏退出角标);画布垂直利用率 ≥95%(现状 76% 取证 F10)
+  - [ ] TD 商店/升级出售、Swarm 三选一/战报、Tetris/Slash 覆盖层全部画布化,热区命中 10/10,全部有键盘等价
+  - [ ] Esc 分层(fs 内→暂停浮层,不直接退全屏);手势可视化画布内绘制
+  - [ ] E2E 五项全过(见 SRS)
+- **证据**: ⏳
+
+### R207. `feat` — M1 手势指示器全局开关(SRS FR-G04,默认关闭)
+
+- **状态**: ⏳
+- **文件**: 设置页游戏节、`MiniGamesView.tsx`、`rgbbox:visionPadVisible`
+- **验收点**(详见 SRS §4):
+  - [ ] 默认关闭:首启 `.vision-pad` 不存在;设置页+游戏顶栏双入口,刷新持久
+  - [ ] Banner/Cursor 功能组件不受开关影响
+- **证据**: ⏳
+
+> M2+ 条款(R201 TD 情报/无尽/技能、R202 Swarm 进化/弹幕、R203 Slash 心跳、R204 暂停+难度、R205 BGM、R208/209 双人与 LAN)按里程碑推进时追加;M4 有 gate(仅 M1+M2 验收通过后启动)。
+
 ### R193. AI8 桥上下文记忆连贯（2026-09-26 用户指令「把它设置到最大,保持每个会话的上下文都能连贯起来」;真实会话 JSONL + 站点对照实验取证）
 
 > **取证结论**:①站点会话有服务端记忆(`contextCount:0` 对照实验两臂均记住暗号——此前对该参数的怀疑排除);②桥的站点会话是**模块级单例**——跨 Agent 会话/跨工作区共享(用户会话里实测串味)+ 崩溃重建(`contextCount:0`)即失忆;③重启续跑恢复的 JSONL 历史**从不回放**给站点——UI 全在、模型失忆;④用户会话前两轮模型无视工具说明答「无法访问文件系统」直接收尾;⑤AI8 整段返回,大回复静默 1-3 分钟,用户误判死机手动取消(「输出中断」现场=`DONE: cancelled`)。
