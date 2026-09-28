@@ -41,6 +41,8 @@ export interface Streak {
   hue: number
 }
 
+import { HIT_STOP, hitStopTick, TrailPoint, tickTrail, TRAIL_LIFE } from './juice'
+
 export interface SlashState {
   phase: SlashPhase
   score: number
@@ -54,10 +56,15 @@ export interface SlashState {
   bombCd: number
   flash: number
   shake: number
+  /** R200(FR-G06): hit-stop 与刀光轨迹。 */
+  hitStop: number
+  trail: TrailPoint[]
 }
 
 export function initialSlashState(): SlashState {
   return {
+    hitStop: 0,
+    trail: [],
     phase: 'ready', score: 0, combo: 0, bestCombo: 0, timeLeft: RUN_SECONDS,
     blocks: [], streaks: [], spawnTimer: 0.4, nextId: 1, bombCd: 0, flash: 0, shake: 0,
   }
@@ -130,8 +137,13 @@ export function slash(s: SlashState, dir: number): 'hit' | 'wrong' | 'miss' {
   s.combo++
   s.bestCombo = Math.max(s.bestCombo, s.combo)
   const mult = 1 + Math.floor(s.combo / 5) * 0.5
+  // R200: 金块/每 10 连击 → 顿帧(轻重两档)
+  if (hit.bonus || s.combo % 10 === 0) s.hitStop = hit.bonus ? HIT_STOP.medium : HIT_STOP.light
   s.score += Math.round((hit.bonus ? 50 : 10) * mult)
   burst(s, p.x, p.y, hit.hue, hit.bonus ? 26 : 14, hit.bonus ? 320 : 200)
+  // R200: 刀光轨迹锚点(渐隐光带由绘制层连接)
+  s.trail.push({ x: p.x, y: p.y, life: TRAIL_LIFE })
+  if (s.trail.length > 8) s.trail.shift()
   s.shake = Math.min(8, s.shake + 3)
   return 'hit'
 }
@@ -151,6 +163,14 @@ export function bomb(s: SlashState): boolean {
 }
 
 export function tickSlash(s: SlashState, dt: number): void {
+  // R200: hit-stop(CHAIN/金块)冻结游戏计时
+  if (s.hitStop > 0) {
+    const [remain, thaw] = hitStopTick(s.hitStop, dt)
+    s.hitStop = remain
+    if (thaw === 0) { s.trail = tickTrail(s.trail, dt); return }
+    dt = thaw
+  }
+  s.trail = tickTrail(s.trail, dt)
   s.flash = Math.max(0, s.flash - dt)
   s.shake = Math.max(0, s.shake - dt * 24)
   s.bombCd = Math.max(0, s.bombCd - dt)
@@ -190,6 +210,52 @@ export function tickSlash(s: SlashState, dt: number): void {
 }
 
 export function drawSlash(ctx: CanvasRenderingContext2D, s: SlashState, time: number): void {
+  drawSlashBody(ctx, s, time)
+  // R200(FR-G06.3): 刀光轨迹——最近 6–8 帧命中点连成渐隐光带
+  if (s.trail.length > 1) {
+    ctx.save()
+    ctx.lineCap = 'round'
+    for (let i = 1; i < s.trail.length; i += 1) {
+      const a = s.trail[i - 1]
+      const b = s.trail[i]
+      ctx.globalAlpha = Math.max(0, b.life / 0.18) * 0.5
+      ctx.strokeStyle = '#e2f8ff'
+      ctx.lineWidth = 2 + 4 * (i / s.trail.length)
+      ctx.beginPath()
+      ctx.moveTo(a.x, a.y)
+      ctx.lineTo(b.x, b.y)
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+  // R200(取证 F5): 炸弹充能环——右上角,bombCd 从 6 递减,环随充能闭合
+  if (s.phase === 'running') {
+    const cx = WIDTH - 36
+    const cy = 36
+    const r = 14
+    const frac = 1 - Math.min(1, s.bombCd / 6)
+    ctx.save()
+    ctx.strokeStyle = 'rgba(251, 113, 133, 0.35)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.stroke()
+    if (frac > 0) {
+      ctx.strokeStyle = s.bombCd <= 0 ? '#4ade80' : '#fb7185'
+      ctx.beginPath()
+      ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac)
+      ctx.stroke()
+    }
+    ctx.fillStyle = '#9fb7c1'
+    ctx.font = '700 9px Inter, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('B', cx, cy)
+    ctx.restore()
+  }
+}
+
+function drawSlashBody(ctx: CanvasRenderingContext2D, s: SlashState, time: number): void {
   ctx.save()
   if (s.shake > 0.2) {
     ctx.translate((Math.random() - 0.5) * s.shake, (Math.random() - 0.5) * s.shake)

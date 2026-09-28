@@ -153,6 +153,9 @@ export interface SurvivalState {
   bladeAngle: number
   bladeTimer: number
   lastMinute: number
+  /** R200(FR-G06): 进化/boss 顿帧与出生预警。 */
+  hitStop: number
+  warnings: SpawnWarning[]
 }
 
 export function xpToNext(level: number): number {
@@ -253,6 +256,8 @@ export function initialSurvivalState(
     bladeAngle: 0,
     bladeTimer: 0,
     lastMinute: 0,
+    hitStop: 0,
+    warnings: [],
   }
   recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses, magnetBonus: state.magnetBonus })
   return state
@@ -381,6 +386,8 @@ export function dissolveRoulette(state: SurvivalState, result: RouletteResult): 
 
 function spawnEnemy(state: SurvivalState): void {
   const side = Math.floor(Math.random() * 4)
+  // R200: 出生预警——下一次入场的敌人先在对应边缘亮 0.5s 红箭头(登记在生成前)
+  state.warnings.push({ edge: side as 0 | 1 | 2 | 3, t: SPAWN_WARN_SECONDS })
   const x = side === 0 ? -30 : side === 1 ? WIDTH + 30 : Math.random() * WIDTH
   const y = side === 2 ? -30 : side === 3 ? HEIGHT + 30 : Math.random() * HEIGHT
   const elite = state.time > 60 && Math.random() < 0.08
@@ -430,6 +437,7 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
     }
     state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
     state.pendingSpins += 1
+    state.hitStop = HIT_STOP.heavy
     state.bossKills += 1
     state.portal = { x: clamp(enemy.x, 60, WIDTH - 60), y: clamp(enemy.y, 60, HEIGHT - 60) }
     state.banner = { text: 'BOSS DOWN — ROULETTE +1', life: 1.8 }
@@ -446,6 +454,14 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
 }
 
 export function tickSurvival(state: SurvivalState, dt: number): void {
+  // R200: hit-stop(进化/boss 击杀);预警条目独立于冻结推进
+  state.warnings = tickWarnings(state.warnings, dt)
+  if (state.hitStop > 0) {
+    const [remain, thaw] = hitStopTick(state.hitStop, dt)
+    state.hitStop = remain
+    if (thaw === 0) return
+    dt = thaw
+  }
   dt *= state.timeScale
   state.clock += dt
   state.shake = Math.max(0, state.shake - dt * 14)
@@ -695,6 +711,25 @@ function dimScene(ctx: CanvasRenderingContext2D, phase: SurvivalPhase): void {
 }
 
 export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState): void {
+  drawSurvivalBody(ctx, state)
+  // R200(FR-G06.2): 出生预警——边缘红色箭头(0.5s)
+  for (const w of state.warnings) {
+    const alpha = Math.min(1, w.t / 0.5)
+    ctx.save()
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = '#fb7185'
+    ctx.font = '800 26px Inter, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const cx = w.edge === 1 ? WIDTH - 46 : w.edge === 3 ? 46 : WIDTH / 2
+    const cy = w.edge === 0 ? 46 : w.edge === 2 ? HEIGHT - 46 : HEIGHT / 2
+    const glyph = w.edge === 0 ? '▲' : w.edge === 1 ? '▶' : w.edge === 2 ? '▼' : '◀'
+    ctx.fillText(glyph, cx, cy)
+    ctx.restore()
+  }
+}
+
+function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): void {
   const player = state.player
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   ctx.save()
@@ -898,6 +933,7 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
 
 // ── FR-G01(R198): 策略教练 —— 纯函数,key 制文案 ──
 import type { CoachHint } from './coach'
+import { HIT_STOP, hitStopTick, SpawnWarning, tickWarnings, SPAWN_WARN_SECONDS } from './juice'
 
 export function survivalHints(state: SurvivalState): CoachHint[] {
   const hints: CoachHint[] = []

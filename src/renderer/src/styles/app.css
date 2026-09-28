@@ -9701,3 +9701,25 @@ input:disabled {
   color: var(--text-secondary);
 }
 .games-profile-cell strong { font-size: 12.5px; color: var(--text-primary); }
+
+/* ── R200 (FR-G06.5): 统一 run recap 结算面板 ──────────────────────────────── */
+
+.run-recap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(103, 232, 249, 0.3);
+  background: rgba(103, 232, 249, 0.06);
+  font-size: 12.5px;
+}
+.run-recap-score { display: flex; align-items: baseline; gap: 8px; }
+.run-recap-score span { color: var(--text-muted); font-size: 11.5px; }
+.run-recap-score strong { font-size: 22px; font-weight: 800; color: var(--text-primary); }
+.run-recap-up { color: var(--accent, #6ee7a0); font-weight: 600; }
+.run-recap-down { color: var(--status-warn, #fbbf24); font-weight: 600; }
+.run-recap-best { color: var(--text-secondary); }
+.run-recap-highlight { color: var(--text-primary); font-weight: 600; }
+.run-recap-coach { color: var(--text-secondary); font-size: 11.5px; margin-left: auto; }

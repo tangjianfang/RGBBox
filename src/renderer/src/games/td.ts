@@ -84,6 +84,8 @@ export interface GameState {
   texts: FloatingText[]
   particles: Particle[]
   banner: Banner | null
+  /** R200(FR-G06): 整波清空顿帧。 */
+  hitStop: number
 }
 
 export interface TowerDefinition {
@@ -189,6 +191,7 @@ export function initialState(): GameState {
     texts: [],
     particles: [],
     banner: null,
+    hitStop: 0,
   }
 }
 
@@ -296,6 +299,15 @@ function makeProjectile(state: GameState, tower: Tower, target: Balloon, def: To
 }
 
 export function tickGame(state: GameState, dt: number): void {
+  // R200: 整波清空 → 轻顿帧;冻结期间不推进
+  if (state.hitStop > 0) {
+    const [remain, thaw] = hitStopTick(state.hitStop, dt)
+    state.hitStop = remain
+    if (thaw === 0) return
+    dt = thaw
+  }
+  const waveJustCleared = state.wave >= 1 && state.waveQueue === 0 && state.balloons.length === 0 && state.spawnTimer === 0 && state.phase === 'running'
+  if (waveJustCleared && state.waveCooldown > 7.9) state.hitStop = HIT_STOP.light
   state.clock += dt
   state.shake = Math.max(0, state.shake - dt * 14)
   for (const text of state.texts) {
@@ -601,6 +613,7 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, select
 
 // ── FR-G01(R198): 策略教练 —— 纯函数,key 制文案(渲染层 t('games.coach.<key>'))──
 import type { CoachHint } from './coach'
+import { HIT_STOP, hitStopTick } from './juice'
 
 export function tdHints(state: GameState): CoachHint[] {
   const hints: CoachHint[] = []

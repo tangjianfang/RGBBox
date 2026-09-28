@@ -69,8 +69,10 @@ import {
 } from '../games/swarmMeta'
 import { isBgmEnabled, isSfxEnabled, playSfx, setBgmEnabled, setSfxEnabled, startBgm, stopBgm } from '../games/sfx'
 import { isOnboarded, markOnboarded, pickHint, type CoachHint } from '../games/coach'
-import { loadRuns, profileStats, type GameId } from '../domain/gamesTelemetry'
+import { loadRuns, profileStats, recordRun, type GameId } from '../domain/gamesTelemetry'
+import { recapCoachKey } from '../games/juice'
 import {
+  RUN_SECONDS,
   bomb as slashBomb,
   drawSlash,
   initialSlashState,
@@ -177,10 +179,12 @@ export function MiniGamesView(): JSX.Element {
   const [onboardStep, setOnboardStep] = useState(0)
   const coachLastShownRef = useRef<Record<string, number>>({})
   const coachAccRef = useRef(0)
+  // R200(FR-G06.5): 统一 run recap(结算面板)
+  const [recap, setRecap] = useState<{ score: number; deltaPct: number | null; best: number; highlight: string; coach: string } | null>(null)
 
   // R198: 首局引导——首次进入该作时武装(完成/跳过后永不再现)
   useEffect(() => {
-    if (screen === 'hub') { setOnboardStep(0); return }
+    if (screen === 'hub') { setOnboardStep(0); setRecap(null); return }
     setOnboardStep(isOnboarded(localStorage, screen) ? 0 : 1)
     setCoachHint(null)
     coachLastShownRef.current = {}
@@ -286,12 +290,19 @@ export function MiniGamesView(): JSX.Element {
     setTetrisSnapshot({ ...tetrisRef.current, keys: new Set(tetrisRef.current.keys), queue: [...tetrisRef.current.queue] })
   }, [])
 
-  const settleBest = useCallback((game: GameKey, score: number): void => {
-    if (score > bestRef.current[game]) {
-      bestRef.current[game] = score
-      writeBest(game, score)
+  const settleBest = useCallback((game: GameKey, score: number, durationSec = 0, highlight = ''): void => {
+    const prev = bestRef.current[game]
+    const best = Math.max(prev, score)
+    if (best > prev) {
+      bestRef.current = { ...bestRef.current, [game]: best }
+      writeBest(game, best)
       setBests({ ...bestRef.current })
     }
+    // R200(FR-G02/G06.5): 结算落遥测 + 弹统一 recap(delta%/高光/教练回顾)
+    const id: GameId = game === 'survival' ? 'swarm' : game
+    const buffer = recordRun(localStorage, id, { date: Date.now(), score: Math.floor(score), duration: Math.round(durationSec), highlight })
+    const stats = profileStats(buffer, best)
+    setRecap({ score: Math.floor(score), deltaPct: stats.deltaPct, best, highlight, coach: recapCoachKey(Math.floor(score), stats.totalRuns >= 2 ? prev : null) })
   }, [])
 
   // R103: poll any connected gamepad each frame — presence detection (no
@@ -618,7 +629,7 @@ export function MiniGamesView(): JSX.Element {
         tickGame(tdStateRef.current, dt * tdSpeed)
         const phase = tdStateRef.current.phase
         if ((phase === 'won' || phase === 'lost') && lastPhase !== phase) {
-          settleBest('td', tdStateRef.current.score)
+          settleBest('td', tdStateRef.current.score, tdStateRef.current.clock, `波次 ${tdStateRef.current.wave}`)
           if (tdStateRef.current.score >= bestRef.current.td) addText(tdStateRef.current, WIDTH / 2, HEIGHT / 2 + 96, 'NEW BEST!', '#fde68a')
         }
         lastPhase = phase
@@ -639,7 +650,7 @@ export function MiniGamesView(): JSX.Element {
         tickSurvival(survivalRef.current, dt)
         const phase = survivalRef.current.phase
         if (phase === 'lost' && lastPhase !== phase) {
-          settleBest('survival', survivalRef.current.score)
+          settleBest('survival', survivalRef.current.score, survivalRef.current.time, `击杀 ${survivalRef.current.kills} · LV${survivalRef.current.level}`)
           const run = survivalRef.current
           const earned = runCoinsFor(run.score, run.coinMult)
           const prevMeta = metaRef.current
@@ -676,13 +687,13 @@ export function MiniGamesView(): JSX.Element {
         const canvasEl = canvasRef.current
         const ctx2 = canvasEl?.getContext('2d')
         if (canvasEl && ctx2) drawSlash(ctx2, slashRef.current, now)
-        if (slashRef.current.phase === 'lost' && slashSnapshot.phase !== 'lost') settleBest('slash', slashRef.current.score)
+        if (slashRef.current.phase === 'lost' && slashSnapshot.phase !== 'lost') settleBest('slash', slashRef.current.score, RUN_SECONDS - slashRef.current.timeLeft, `最高连击 ${slashRef.current.bestCombo}`)
       } else {
         pollVision()
         tickTetris(tetrisRef.current, dt)
         const phase = tetrisRef.current.phase
         if (phase === 'lost' && lastPhase !== phase) {
-          settleBest('tetris', tetrisRef.current.score)
+          settleBest('tetris', tetrisRef.current.score, tetrisRef.current.clock, `消行 ${tetrisRef.current.lines} · T-spin ${tetrisRef.current.tspins}`)
         }
         lastPhase = phase
         drawTetris(ctx, tetrisRef.current, bestRef.current.tetris, {
@@ -1203,6 +1214,29 @@ export function MiniGamesView(): JSX.Element {
         <span role="listitem" aria-label={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score))} title={t('games.ariaScore').replace('{value}', String(isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : tetrisSnapshot.score))}><span aria-hidden="true">★</span> {isTd ? tdSnapshot.score : isSurvival ? survivalSnapshot.score : isSlash ? slashSnapshot.score : tetrisSnapshot.score}</span>
         <span role="listitem" aria-label={t('games.ariaBest').replace('{value}', String(best))} title={t('games.ariaBest').replace('{value}', String(best))}><Trophy aria-hidden="true" size={15} />{best}</span>
       </div>
+
+      {/* R200(FR-G06.5): 统一 run recap(结算面板,任意一局结束) */}
+      {recap !== null ? (
+        <div className="run-recap" data-field="run-recap" role="status">
+          <div className="run-recap-score">
+            <span>{t('games.recap.score')}</span>
+            <strong>{recap.score}</strong>
+          </div>
+          {recap.deltaPct !== null ? (
+            <span className={recap.deltaPct >= 0 ? 'run-recap-up' : 'run-recap-down'}>
+              {recap.deltaPct >= 0 ? '+' : ''}{recap.deltaPct}% {t('games.recap.vsLast')}
+            </span>
+          ) : null}
+          <span className="run-recap-best">★ {t('games.recap.best')} {recap.best}</span>
+          {recap.highlight !== '' ? <span className="run-recap-highlight">{recap.highlight}</span> : null}
+          <span className="run-recap-coach">{t(`games.recap.${recap.coach}` as Parameters<typeof t>[0])}</span>
+          <button
+            type="button"
+            className="coach-off-btn"
+            onClick={() => setRecap(null)}
+          >{t('games.recap.dismiss')}</button>
+        </div>
+      ) : null}
 
       {/* R198(FR-G01): 教练条 / 首局引导条(全屏画布化随 R206) */}
       {!coachOff && onboardStep > 0 ? (

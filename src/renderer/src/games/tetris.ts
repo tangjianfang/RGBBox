@@ -4,6 +4,7 @@
 // deterministic and unit-testable.
 import { playSfx } from './sfx'
 import { WIDTH, HEIGHT } from './td'
+import { HIT_STOP, hitStopTick } from './juice'
 
 export type TetrisPhase = 'ready' | 'running' | 'lost'
 export type TetrisCommand = 'left' | 'right' | 'rotate' | 'hard' | 'hold'
@@ -115,6 +116,8 @@ export interface TetrisState {
   hint: { px: number; rot: number; py: number } | null
   hintPieceId: number
   pieceId: number
+  /** R200(FR-G06): hit-stop 冻结剩余(秒)。 */
+  hitStop: number
 }
 
 function emptyGrid(): number[][] {
@@ -201,6 +204,7 @@ export function initialTetrisState(): TetrisState {
     hint: null,
     hintPieceId: -1,
     pieceId: 0,
+    hitStop: 0,
   }
   refillBag(state.bag)
   for (let i = 0; i < 4; i++) state.queue.push(drawFromBag(state))
@@ -279,6 +283,8 @@ function lockPiece(state: TetrisState): void {
       state.grid.unshift(Array.from({ length: COLS }, () => 0))
     }
     const cleared = fullRows.length
+    // R200: 高光顿帧(四消重/T-spin 轻)
+    if (cleared === 4 || (tspin && cleared > 0)) state.hitStop = cleared === 4 ? HIT_STOP.heavy : HIT_STOP.medium
     // FR-TE03: 计分矩阵——普通消行 / T-spin 分型(TSS/TSD/TST) / B2B ×1.5 / 连击
     let base = LINE_SCORES[cleared] * state.level
     if (tspin) base = TSPIN_SCORES[Math.min(cleared, 3)] * state.level
@@ -439,6 +445,22 @@ function applyCommand(state: TetrisState, command: TetrisCommand): void {
 }
 
 export function tickTetris(state: TetrisState, dt: number): void {
+  // R200: hit-stop 冻结期间只推进特效,游戏计时静止(4 消/T-spin 高光)
+  let gameDt = dt
+  if (state.hitStop > 0) {
+    const [remain, thaw] = hitStopTick(state.hitStop, dt)
+    state.hitStop = remain
+    gameDt = thaw
+  }
+  dt = gameDt
+  if (dt === 0) {
+    // 特效仍以真实时间衰减,但不推进命令/重力
+    for (const particle of state.particles) {
+      particle.x += particle.vx * 0
+      particle.life -= 0
+    }
+    return
+  }
   state.clock += dt
   state.shake = Math.max(0, state.shake - dt * 14)
   for (const particle of state.particles) {
