@@ -1,5 +1,7 @@
 # 2026-09-29 迷你游戏多维升级——调研与头脑风暴
 
+> **⚠️ 本文档为调研与三轮迭代的过程记录**（含取证链、市场调研全文、裁决讨论）。正式需求已重整为需求规格说明：[`docs/prd/PRD-0002-SRS-games-upgrade.md`](../prd/PRD-0002-SRS-games-upgrade.md)（FR/NFR 编号、验收标准、里程碑、待决策事项以 SRS 为准）。
+
 > 触发：用户指令「让迷你小游戏更有可玩性、既有休闲、也能激发有趣、提高游戏审美、提示策略。从多维的角度升级这几个游戏。先出一个方案」。
 > 本文只做调研 + 方案，未动任何代码；拍板后按 §7 建议 R-N 拆分立项实施。
 > 调研范围：`src/renderer/src/games/{td,survival,swarmMeta,tetris,slash,sfx}.ts`、`MiniGamesView.tsx`、PRD-0002 R97–R142 游戏相关条款。
