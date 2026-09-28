@@ -9723,3 +9723,67 @@ input:disabled {
 .run-recap-best { color: var(--text-secondary); }
 .run-recap-highlight { color: var(--text-primary); font-weight: 600; }
 .run-recap-coach { color: var(--text-secondary); font-size: 11.5px; margin-left: auto; }
+
+/* ── R206 (FR-G03): 全屏沉浸纯画布 ────────────────────────────────────────────
+   fs 态隐藏全部 DOM 面板(顶栏/统计条/教练条/控制面板/轮盘浮层),
+   画布等比放大至视口(垂直利用率 ≥95%),仅留画布内 HUD 与退出角标。 */
+.games-screen.fs .workspace-header,
+.games-screen.fs .games-stat-grid,
+.games-screen.fs .coach-bar,
+.games-screen.fs .run-recap,
+.games-screen.fs .games-side-panel,
+.games-screen.fs .vision-pad,
+.games-screen.fs .vision-banner {
+  display: none !important;
+}
+
+.games-screen.fs {
+  padding: 0;
+}
+
+.games-screen.fs .games-layout {
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.games-screen.fs .games-canvas-panel {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.games-screen.fs .games-canvas-wrap {
+  padding: 0;
+}
+
+.games-screen.fs .games-canvas {
+  height: 100vh;
+  max-height: 100vh;
+  width: auto;
+  max-width: 100vw;
+}
+
+/* VisionCursor 在 fs 态保留(功能性光标跟随,画布坐标) */
+
+/* R206: fs 暂停浮层(画布中央) */
+.fs-pause-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(5, 10, 14, 0.72);
+  border-radius: 8px;
+  z-index: 30;
+}
+.fs-pause-overlay p {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #e2f8ff;
+  letter-spacing: 0.04em;
+}
+.fs-pause-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }

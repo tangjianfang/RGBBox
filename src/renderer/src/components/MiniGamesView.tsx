@@ -174,6 +174,10 @@ export function MiniGamesView(): JSX.Element {
   const bestRef = useRef<Record<GameKey, number>>({ td: readBest('td'), survival: readBest('survival'), tetris: readBest('tetris'), slash: readBest('slash') })
   const [screen, setScreen] = useState<Screen>('hub')
   const [fullscreen, setFullscreen] = useState(false)
+  // R206(FR-G03.5): fs 态暂停浮层(Esc 呼出;继续/重开/退出全屏/返回 hub)
+  const [fsPaused, setFsPaused] = useState(false)
+  const fsPausedRef = useRef(false)
+  fsPausedRef.current = fsPaused
   const [sfxOn, setSfxOn] = useState(() => isSfxEnabled())
   const [selectedTower, setSelectedTower] = useState<TowerKind>('dart')
   const [selectedTowerId, setSelectedTowerId] = useState<number | null>(null)
@@ -616,6 +620,7 @@ export function MiniGamesView(): JSX.Element {
       void document.exitFullscreen?.().catch(() => undefined)
       return
     }
+    setFsPaused(false)
     setFullscreen(true)
     void screenRootRef.current?.requestFullscreen?.().catch(() => undefined)
   }, [])
@@ -633,7 +638,9 @@ export function MiniGamesView(): JSX.Element {
     let snapshotTimer = 0
     let lastPhase: string = screen === 'td' ? tdStateRef.current.phase : screen === 'survival' ? survivalRef.current.phase : tetrisRef.current.phase
     const loop = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000)
+      let dt = Math.min(0.05, (now - last) / 1000)
+      // R206: 暂停冻结全部引擎 tick(dt=0;含计时/倒计时/粒子由各引擎特效路径自然停)
+      if (fsPausedRef.current) dt = 0
       last = now
       if (screen === 'td') {
         tickGame(tdStateRef.current, dt * tdSpeed)
@@ -760,6 +767,16 @@ export function MiniGamesView(): JSX.Element {
     const normalizeKey = (event: KeyboardEvent) => event.code === 'Space' ? 'space' : event.key.toLowerCase()
     const down = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        // R206(FR-G03.5): fs 态内 Esc 分层——先出暂停(呼吸),不直接退全屏;
+        // 非 fs 维持原语义(退出全屏)。暂停浮层内提供「退出全屏」。
+        if (fullscreen && !document.fullscreenElement) {
+          setFsPaused((v) => !v)
+          return
+        }
+        if (fullscreen && document.fullscreenElement) {
+          setFsPaused((v) => !v)
+          return
+        }
         setFullscreen(false)
         if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
         return
@@ -1294,6 +1311,18 @@ export function MiniGamesView(): JSX.Element {
       <div className="games-layout">
         <section className="games-canvas-panel panel">
           <div className="games-canvas-wrap" ref={canvasWrapRef}>
+            {/* R206(FR-G03.5): fs 暂停浮层(Esc 呼出;继续/重开/退出全屏/返回 hub) */}
+            {fsPaused ? (
+              <div className="fs-pause-overlay" data-field="fs-pause" role="alertdialog" aria-label={t('games.pause.title')}>
+                <p>{t('games.pause.title')}</p>
+                <div className="fs-pause-actions">
+                  <button type="button" className="video-btn" data-action="fs-resume" onClick={() => setFsPaused(false)}>{t('games.pause.resume')}</button>
+                  <button type="button" className="video-btn" data-action="fs-restart" onClick={() => { if (restartHandler) restartHandler(); setFsPaused(false) }} disabled={!restartHandler}>{t('games.pause.restart')}</button>
+                  <button type="button" className="video-btn" data-action="fs-exit" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined) }}>{t('games.pause.exitFs')}</button>
+                  <button type="button" className="video-btn" data-action="fs-hub" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined); backToHub() }}>{t('games.pause.hub')}</button>
+                </div>
+              </div>
+            ) : null}
             <canvas
               ref={canvasRef}
               className="games-canvas"
