@@ -70,10 +70,12 @@ export interface RunRecap {
   coachKey: string | null
 }
 
-/** recap 文案 key 池(按结果基调选择;coach 条已关时也可用)。 */
+/** recap 文案 key 池(按结果基调选择;coach 条已关时也可用)。
+ *  R211: 返回完整 i18n 键(games.recap.*)——渲染层直接 t(),修复此前
+ *  「games.recap. + recap.firstRun」双前缀拼接导致界面显示键名原文。 */
 export function recapCoachKey(score: number, prevScore: number | null): string {
-  if (prevScore === null || prevScore === 0) return 'recap.firstRun'
-  if (score > prevScore) return 'recap.improved'
-  if (score >= prevScore * 0.8) return 'recap.close'
-  return 'recap.practice'
+  if (prevScore === null || prevScore === 0) return 'games.recap.firstRun'
+  if (score > prevScore) return 'games.recap.improved'
+  if (score >= prevScore * 0.8) return 'games.recap.close'
+  return 'games.recap.practice'
 }

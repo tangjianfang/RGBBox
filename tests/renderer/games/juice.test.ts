@@ -69,10 +69,10 @@ describe('juice warnings & trail (FR-G06.2/6.3)', () => {
 
 describe('juice recap copy (FR-G06.5)', () => {
   it('selects a coach line by run context', () => {
-    expect(recapCoachKey(100, null)).toBe('recap.firstRun')
-    expect(recapCoachKey(100, 0)).toBe('recap.firstRun')
-    expect(recapCoachKey(120, 100)).toBe('recap.improved')
-    expect(recapCoachKey(85, 100)).toBe('recap.close')
-    expect(recapCoachKey(10, 100)).toBe('recap.practice')
+    expect(recapCoachKey(100, null)).toBe('games.recap.firstRun')
+    expect(recapCoachKey(100, 0)).toBe('games.recap.firstRun')
+    expect(recapCoachKey(120, 100)).toBe('games.recap.improved')
+    expect(recapCoachKey(85, 100)).toBe('games.recap.close')
+    expect(recapCoachKey(10, 100)).toBe('games.recap.practice')
   })
 })

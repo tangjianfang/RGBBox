@@ -2,6 +2,7 @@ import { ArrowLeft, Crosshair, Eye, EyeOff, Grid, Heart, Maximize2, Minimize2, M
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
 import { useVisionInput } from '../hooks/useVisionInput'
 import { useI18n } from '../i18n'
+import { drawExitBadge, drawHudButton, drawHudPanel, hitTest, type HudButton } from '../games/hud'
 import { VisionBanner } from './vision/VisionBanner'
 import { VisionCursor } from './vision/VisionCursor'
 import { createCursorState } from '../vision/cursor'
@@ -149,6 +150,24 @@ function writeBest(game: GameKey, score: number): void {
 
 const MOVEMENT_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'space'])
 
+/** R211: 画布内多行文字(按像素宽度断行),fs HUD 的 Swarm 三选一描述用。 */
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, cx: number, y: number, maxW: number, lineH: number): void {
+  const chars = Array.from(text)
+  let line = ''
+  let row = 0
+  for (const ch of chars) {
+    if (ctx.measureText(line + ch).width > maxW) {
+      ctx.fillText(line, cx, y + row * lineH)
+      line = ch
+      row += 1
+      if (row > 3) return
+    } else {
+      line += ch
+    }
+  }
+  if (line) ctx.fillText(line, cx, y + row * lineH)
+}
+
 // R135 (guide §3.6/§3.7): vision passthrough keys — movement + face modifiers
 // (jaw=E, brow=Shift, smile=Enter) + off-hand pinch (KeyF). Games consume
 // keys.has('e') etc. when a skill mapping lands.
@@ -208,6 +227,14 @@ export function MiniGamesView(): JSX.Element {
   const [onboardStep, setOnboardStep] = useState(0)
   const coachLastShownRef = useRef<Record<string, number>>({})
   const coachAccRef = useRef(0)
+  // ── R211: fs 纯画布 HUD(hud.ts 接线)——几何/悬停/动作经 ref 桥接进 rAF 闭包 ──
+  const fsButtonsRef = useRef<HudButton[]>([])
+  const hudHoverRef = useRef<string | null>(null)
+  const lastInputAtRef = useRef(0)
+  const fsActionRef = useRef<Record<string, () => void>>({})
+  const fsDrawRef = useRef<(ctx: CanvasRenderingContext2D, now: number) => void>(() => undefined)
+  const selectedTowerActionRef = useRef<(kind: TowerKind) => void>(() => undefined)
+  const chooseUpgradeRef = useRef<(id: UpgradeId) => void>(() => undefined)
   // R200(FR-G06.5): 统一 run recap(结算面板)
   // R207: 手势指示器开关(默认关;Banner/Cursor 功能组件不受影响)
   const [visionPadVisible, setVisionPadVisible] = useState(readVisionPadVisible)
@@ -761,6 +788,14 @@ export function MiniGamesView(): JSX.Element {
         ctx.fill()
         ctx.restore()
       }
+      // R211: fs 纯画布 HUD——hud.ts 接线(退出角标/状态面板/主按钮条/TD 商店/Swarm 三选一)。
+      // 暂停浮层(DOM)显示时停画,避免双层操作面。
+      if (fullscreen && !fsPausedRef.current) {
+        fsButtonsRef.current = []
+        fsDrawRef.current(ctx, now)
+      } else {
+        fsButtonsRef.current = []
+      }
       snapshotTimer += dt
       if (snapshotTimer > 0.18) {
         if (screen === 'td') publishTd()
@@ -828,6 +863,20 @@ export function MiniGamesView(): JSX.Element {
       if (screen === 'td' && normalized === 'q') {
         if (castMeteor(tdStateRef.current) > 0) playSfx('levelup')
       }
+      // R211: fs 画布 HUD 键盘等价——TD 1-5 选塔 / U 升级 / X 出售 / Enter 主按钮 /
+      // R 重开;Swarm levelup 1-3(与引导文案 games.onboard.survival.2 对齐,补实现)。
+      if (screen === 'td' && /^[1-5]$/.test(normalized)) {
+        const def = TOWER_DEFINITIONS[Number(normalized) - 1]
+        if (def) selectedTowerActionRef.current(def.kind)
+      }
+      if (screen === 'td' && normalized === 'u') fsActionRef.current['fs-upgrade']?.()
+      if (screen === 'td' && normalized === 'x') fsActionRef.current['fs-sell']?.()
+      if (screen === 'survival' && /^[1-3]$/.test(normalized) && survivalRef.current.phase === 'levelup') {
+        const offer = survivalRef.current.offers[Number(normalized) - 1]
+        if (offer) chooseUpgradeRef.current(offer)
+      }
+      if (normalized === 'enter') fsActionRef.current['fs-primary']?.()
+      if (normalized === 'r') fsActionRef.current['fs-restart']?.()
       if (screen === 'survival') {
         survivalRef.current.keys.add(normalized)
       } else if (screen === 'slash') {
@@ -971,6 +1020,36 @@ export function MiniGamesView(): JSX.Element {
     playSfx('build')
     publishTd()
   }, [publishTd, selectedTower, selectedTowerId])
+
+  // ── R211: canvas 统一事件分发——fs 画布按钮 hitTest 优先,未命中落回各作交互 ──
+  const toCanvasPoint = (event: MouseEvent<HTMLCanvasElement>): { x: number; y: number } | null => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const rect = canvas.getBoundingClientRect()
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * WIDTH,
+      y: ((event.clientY - rect.top) / rect.height) * HEIGHT,
+    }
+  }
+  const handleUnifiedCanvasMove = (event: MouseEvent<HTMLCanvasElement>): void => {
+    const point = toCanvasPoint(event)
+    if (!point) return
+    lastInputAtRef.current = performance.now()
+    const hit = hitTest(fsButtonsRef.current, point.x, point.y)
+    hudHoverRef.current = hit?.id ?? null
+    if (isTd) setTdHover(point)
+  }
+  const handleUnifiedCanvasClick = (event: MouseEvent<HTMLCanvasElement>): void => {
+    const point = toCanvasPoint(event)
+    if (!point) return
+    lastInputAtRef.current = performance.now()
+    const hit = hitTest(fsButtonsRef.current, point.x, point.y)
+    if (hit) {
+      fsActionRef.current[hit.id]?.()
+      return
+    }
+    if (isTd) handleCanvasClick(event)
+  }
 
   const enabledArtifacts = useMemo(() => ARTIFACTS
     .filter((artifact) => meta.artifacts[artifact.id] && isArtifactUnlocked(artifact, meta.stats))
@@ -1217,6 +1296,108 @@ export function MiniGamesView(): JSX.Element {
   const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : isTetris ? startTetrisRun : startSlashRunCb
   const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
 
+  // ── R211: fs 纯画布 HUD 绘制(hud.ts 首次接线;DOM 面板已由 CSS 隐藏) ──
+  fsActionRef.current = {
+    'fs-primary': startHandler,
+    'fs-restart': () => { if (restartHandler) restartHandler() },
+    'fs-upgrade': upgradeSelected,
+    'fs-sell': sellSelected,
+    ...Object.fromEntries(TOWER_DEFINITIONS.map((def, i) => [`fs-tower-${i}`, () => setSelectedTower(def.kind)])),
+    ...Object.fromEntries((survivalSnapshot.phase === 'levelup' ? survivalSnapshot.offers : []).map((id, i) => [`fs-offer-${i}`, () => chooseUpgrade(id)])),
+  }
+  selectedTowerActionRef.current = (kind) => setSelectedTower(kind)
+  chooseUpgradeRef.current = chooseUpgrade
+  fsDrawRef.current = (ctx, now) => {
+    const btns = fsButtonsRef.current
+    const push = (b: HudButton): void => {
+      btns.push(b)
+      drawHudButton(ctx, b, hudHoverRef.current === b.id)
+    }
+    // ① 顶部状态面板(各作两行关键数值——fs 态 DOM 统计条已隐藏)
+    drawHudPanel(ctx, 12, 12, 336, 62)
+    ctx.save()
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#e2f8ff'
+    ctx.font = '600 14px Inter, sans-serif'
+    ctx.fillText(fsStatusLine1(), 26, 34)
+    ctx.fillStyle = 'rgba(159, 183, 193, 0.95)'
+    ctx.font = '500 12px Inter, sans-serif'
+    ctx.fillText(fsStatusLine2(), 26, 56)
+    ctx.restore()
+    // ② TD 商店(右侧竖列;数字键 1-5 等价)+ 选中塔升级/出售
+    if (isTd) {
+      TOWER_DEFINITIONS.forEach((def, i) => {
+        push({ id: `fs-tower-${i}`, x: WIDTH - 122, y: 86 + i * 47, w: 108, h: 41, label: `${def.label} ◎${def.cost}`, color: def.color, key: String(i + 1) })
+      })
+      const detail = tdStateRef.current.towers.find((tw) => tw.id === selectedTowerId)
+      if (detail) {
+        const def = TOWER_DEFINITIONS.find((item) => item.kind === detail.kind)
+        drawHudPanel(ctx, WIDTH - 122, 86 + TOWER_DEFINITIONS.length * 47 + 8, 108, 66)
+        ctx.save()
+        ctx.fillStyle = '#e2f8ff'
+        ctx.font = '600 12px Inter, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(`${def?.label ?? ''} Lv${detail.level}`, WIDTH - 68, 86 + TOWER_DEFINITIONS.length * 47 + 28)
+        ctx.restore()
+        push({ id: 'fs-upgrade', x: WIDTH - 118, y: 86 + TOWER_DEFINITIONS.length * 47 + 44, w: 100, h: 26, label: `${t('games.upgrade')} ◎${towerUpgradeCost(detail)}`, key: 'U' })
+        push({ id: 'fs-sell', x: WIDTH - 118, y: 86 + TOWER_DEFINITIONS.length * 47 + 74, w: 100, h: 26, label: t('games.sell'), key: 'X' })
+      }
+    }
+    // ③ Swarm 升级三选一(levelup 时画布化,数字键 1/2/3 等价)
+    if (isSurvival && survivalRef.current.phase === 'levelup' && survivalRef.current.offers.length > 0) {
+      survivalRef.current.offers.forEach((id, i) => {
+        const def = UPGRADES.find((upgrade) => upgrade.id === id)
+        const x = WIDTH / 2 - 292 + i * 196
+        drawHudPanel(ctx, x, HEIGHT / 2 - 86, 184, 150)
+        push({ id: `fs-offer-${i}`, x: x + 8, y: HEIGHT / 2 - 78, w: 168, h: 134, label: '', key: String(i + 1) })
+        ctx.save()
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = '#e2f8ff'
+        ctx.font = '600 14px Inter, sans-serif'
+        ctx.fillText(t(`games.up.${id}`), x + 92, HEIGHT / 2 - 46)
+        ctx.fillStyle = 'rgba(159, 183, 193, 0.95)'
+        ctx.font = '500 11px Inter, sans-serif'
+        wrapCanvasText(ctx, t(`games.up.${id}.desc`), x + 92, HEIGHT / 2 - 16, 160, 16)
+        ctx.fillStyle = def ? RARITY_COLORS[def.rarity] : '#9fb7c1'
+        ctx.font = '600 11px Inter, sans-serif'
+        ctx.fillText(`${t('games.claim')} ${i + 1}`, x + 92, HEIGHT / 2 + 44)
+        ctx.restore()
+      })
+    }
+    // ④ 底部主按钮条(开始/下一波 + 重开)
+    const primaryLabel = isTd && tdStateRef.current.phase === 'running' ? t('games.nextWave') : t('games.start')
+    push({ id: 'fs-primary', x: WIDTH / 2 - 162, y: HEIGHT - 58, w: 152, h: 40, label: primaryLabel, key: 'Enter' })
+    push({ id: 'fs-restart', x: WIDTH / 2 + 10, y: HEIGHT - 58, w: 152, h: 40, label: t('games.restart'), key: 'R' })
+    // ⑤ 退出角标(3s 无操作自动隐藏)
+    if (now - lastInputAtRef.current < 3000) drawExitBadge(ctx, `Esc · ${t('games.pause.title')}`)
+  }
+  const fsStatusLine1 = (): string => {
+    if (isTd) {
+      const state = tdStateRef.current
+      return `${t('games.wave')} ${state.wave}${state.endless ? ' · ∞' : `/${MAX_WAVE}`} · ❤${state.lives} · ◎${state.coins}`
+    }
+    if (isSurvival) {
+      const state = survivalRef.current
+      return `HP ${state.player.hp}/${state.player.maxHp} · LV${state.level} · ${t('games.island').replace('{n}', String(state.island))}`
+    }
+    if (isSlash) {
+      const state = slashRef.current
+      return `${t('games.recap.score')} ${state.score} · ×${state.combo} · ${'♥'.repeat(Math.max(0, state.hearts))}`
+    }
+    const state = tetrisRef.current
+    return `${t('games.recap.score')} ${state.score} · ${state.lines}L · LV${state.level}`
+  }
+  const fsStatusLine2 = (): string => {
+    // R211: 用纯标签键(recap.score/best 等)——games.ariaScore 含 {value} 占位符不适合画布直绘
+    if (isTd) return `${t('games.recap.score')} ${tdStateRef.current.score} · ${t('games.recap.best')} ${bestRef.current.td}`
+    if (isSurvival) return `${t('games.recap.score')} ${survivalRef.current.score} · ${t('games.summaryKills')} ${survivalRef.current.kills}`
+    if (isSlash) return `${t('games.recap.best')} ${bestRef.current.slash} · ${t('games.summaryCombo')} ${slashRef.current.bestCombo}`
+    return `${t('games.recap.best')} ${bestRef.current.tetris}`
+  }
+
   return (
     <div ref={screenRootRef} className={`games-view games-screen ${fullscreen ? 'fs' : ''}`}>
       <header className="workspace-header games-header">
@@ -1341,7 +1522,7 @@ export function MiniGamesView(): JSX.Element {
           ) : null}
           <span className="run-recap-best">★ {t('games.recap.best')} {recap.best}</span>
           {recap.highlight !== '' ? <span className="run-recap-highlight">{recap.highlight}</span> : null}
-          <span className="run-recap-coach">{t(`games.recap.${recap.coach}` as Parameters<typeof t>[0])}</span>
+          <span className="run-recap-coach">{t(recap.coach as Parameters<typeof t>[0])}</span>
           <button
             type="button"
             className="coach-off-btn"
@@ -1424,16 +1605,9 @@ export function MiniGamesView(): JSX.Element {
             <canvas
               ref={canvasRef}
               className="games-canvas"
-              onClick={isTd ? handleCanvasClick : undefined}
-              onMouseMove={isTd ? (event: MouseEvent<HTMLCanvasElement>) => {
-                const canvas = canvasRef.current
-                if (!canvas) return
-                const rect = canvas.getBoundingClientRect()
-                const sx = canvas.width / rect.width
-                const sy = canvas.height / rect.height
-                setTdHover({ x: (event.clientX - rect.left) * sx, y: (event.clientY - rect.top) * sy })
-              } : undefined}
-              onMouseLeave={isTd ? () => setTdHover(null) : undefined}
+              onClick={handleUnifiedCanvasClick}
+              onMouseMove={handleUnifiedCanvasMove}
+              onMouseLeave={() => { hudHoverRef.current = null; if (isTd) setTdHover(null) }}
               aria-label={`${gameTitle} game board`}
             />
             {!isTd && survivalSnapshot.phase === 'levelup' && survivalSnapshot.offers.length > 0 ? (

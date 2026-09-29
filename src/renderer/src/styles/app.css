@@ -9673,7 +9673,8 @@ input:disabled {
 .coach-off-btn {
   border: none;
   background: transparent;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+  /* R211: 两轮视觉走查都点名对比度不足——可交互小字从 secondary 提到 primary。 */
+  color: var(--text-primary, rgba(255, 255, 255, 0.88));
   font-size: 11.5px;
   cursor: pointer;
   padding: 2px 6px;
@@ -9729,12 +9730,15 @@ input:disabled {
 
 /* ── R206 (FR-G03): 全屏沉浸纯画布 ────────────────────────────────────────────
    fs 态隐藏全部 DOM 面板(顶栏/统计条/教练条/控制面板/轮盘浮层),
-   画布等比放大至视口(垂直利用率 ≥95%),仅留画布内 HUD 与退出角标。 */
+   画布等比放大至视口(垂直利用率 ≥95%),仅留画布内 HUD 与退出角标。
+   R211: 侧栏真实类名是 .games-control-panel(R206 误写 .games-side-panel
+   从未命中——fs 态侧栏一直可见);td-ctl-row 同批补进清单。 */
 .games-screen.fs .workspace-header,
 .games-screen.fs .games-stat-grid,
 .games-screen.fs .coach-bar,
 .games-screen.fs .run-recap,
-.games-screen.fs .games-side-panel,
+.games-screen.fs .games-control-panel,
+.games-screen.fs .td-ctl-row,
 .games-screen.fs .vision-pad,
 .games-screen.fs .vision-banner {
   display: none !important;

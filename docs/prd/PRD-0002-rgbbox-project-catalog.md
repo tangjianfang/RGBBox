@@ -3719,6 +3719,21 @@
   - 误报排除:卡片播放箭头基线不齐——实测 arrowCenter==copyCenter==tile0Center,未改。
 - **证据**: 1262 绿;ui:snapshot games diff 2.46%(有意变更)→基线重立→9/9 GATE PASS;修复后 games-1440 截图图像复核「通过,无回归」(探针 rgbbox-p1/probe-games.mjs 实测前后对照)。
 
+
+### R211. `fix` — 分支视觉 review:游戏内走查 4 项 P0 修复(i18n 键名×2 / fs 侧栏类名 / fs 画布 HUD 接线)
+
+- **状态**: ✅
+- **触发**: 用户指令「启动视觉 review 当前分支新增优化功能并完成优化修改」(2026-09-29,feat/games-upgrade 分支 M1-M3 之后)。
+- **过程**: CDP 驱动 10 张游戏内截图(td/swarm/tetris/slash 的 ready/running、slash 挂机→结算、fs 画布、fs 暂停浮层) → 图像模型走查 → DOM/代码实测核实 → 修复 → 复测(探针+截图复核通过)。
+- **修复**(4 项 P0,均「机制存在但用户不可见/不可用」级):
+  1. **onboard 键名暴露**:渲染拼 `games.onboard.${screen}.${n}`(screen=td/survival/tetris/slash),i18n 表却用短名 sw/te/sl——仅 TD 命中,**Swarm/Tetris/Slash 三作首局引导直接显示键名原文**。修:双表 18 行键名统一为 screen 名(survival/tetris/slash)。
+  2. **recap 双前缀**:`recapCoachKey` 返回短键(recap.firstRun),渲染再拼 `games.recap.${...}` → 界面显示 `games.recap.recap.firstRun`。修:juice.ts 返回完整键(games.recap.*),渲染直 `t(recap.coach)`,注释固化契约。
+  3. **fs 侧栏类名不匹配**:R206 CSS 隐藏规则写 `.games-side-panel`,JSX 实际是 `.games-control-panel`——**fs 态侧栏从未隐藏**(视觉走查「半全屏」现场);td-ctl-row 同批漏。修:类名更正+ctl-row 补进清单。
+  4. **fs 画布 HUD 未接线**:R206 阶段一建的 `hud.ts`(drawHudButton/hitTest/drawHudPanel/drawExitBadge)**无任何调用点**——隐藏侧栏后 fs 将不可玩,故先接线后隐藏。新增:顶部状态面板(各作两行)/底部主按钮条(开始/下一波+重开,Enter/R)/TD 商店竖列(1-5)/TD 塔详情升级出售(U/X)/Swarm levelup 三选一画布卡(1/2/3,补齐引导文案 games.onboard.survival.2 声称却缺失的键盘等价)/Esc 退出角标(3s 无操作自动隐藏);hitTest 优先、未命中落回游戏交互;动作表经 ref 桥接进 rAF 闭包(帧数据走 ref 惯例)。
+- **顺手**: coach-off-btn 对比度两轮走查均点名不足,text-secondary→text-primary;fsStatusLine2 弃用含 {value} 占位符的 ariaScore 改纯标签键。
+- **防回归**: tests/renderer/games/gamesI18nKeys.test.ts(+5 用例)——四作 3 步引导键×EN/ZH 存在性、recapCoachKey 完整键存在性+四分支语义、键值不得含键名原文。
+- **证据**: typecheck 双绿;vitest **145 文件/1267 用例全过**(+5);ui:snapshot 9/9 GATE PASS(hub 基线无 diff);CDP 复测:slash 结算中文文案(「本局得分 0 ★最佳 0 … 首局已记录——教练会盯住你的下一局。」)、swarm/slash 引导中文、fs 探针 sidePanel/header/statGrid/ctlRow=hidden+canvas 1440×900 满视口、fs 截图图像复核「通过」。误报排除 1 条(TD 运行态词缀 chip 空态——词缀仅无尽 >12 波出现)。
+
 ### R193. AI8 桥上下文记忆连贯（2026-09-26 用户指令「把它设置到最大,保持每个会话的上下文都能连贯起来」;真实会话 JSONL + 站点对照实验取证）
 
 > **取证结论**:①站点会话有服务端记忆(`contextCount:0` 对照实验两臂均记住暗号——此前对该参数的怀疑排除);②桥的站点会话是**模块级单例**——跨 Agent 会话/跨工作区共享(用户会话里实测串味)+ 崩溃重建(`contextCount:0`)即失忆;③重启续跑恢复的 JSONL 历史**从不回放**给站点——UI 全在、模型失忆;④用户会话前两轮模型无视工具说明答「无法访问文件系统」直接收尾;⑤AI8 整段返回,大回复静默 1-3 分钟,用户误判死机手动取消(「输出中断」现场=`DONE: cancelled`)。
