@@ -220,6 +220,10 @@ export const ipcChannels = {
   lanCmd: 'rgbbox:lan:cmd',
   lanSnapshot: 'rgbbox:lan:snapshot',
   lanSpectate: 'rgbbox:lan:spectate',
+  // R213: 角色头像(P1-P4)——主进程 nativeImage 缩裁 128×128 PNG 落盘,渲染层读 dataURL
+  avatarGet: 'rgbbox:avatar:get',
+  avatarSet: 'rgbbox:avatar:set',
+  avatarClear: 'rgbbox:avatar:clear',
   lanEvent: 'rgbbox:lan:event', // main -> renderer push
 } as const
 

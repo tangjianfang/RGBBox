@@ -926,6 +926,11 @@ const EN = {
   'games.short.race': 'Race · 40 lines',
   'games.short.burst': 'Burst · 30s',
   'games.lan.spectate': 'Spectate',
+  // ── R213: character avatar picker ──
+  'games.avatar.label': 'Avatar',
+  'games.avatar.change': 'Change',
+  'games.avatar.clear': 'Clear',
+  'games.avatar.error': 'Could not set the avatar',
   'games.difficulty.label': 'Difficulty',
   'games.difficulty.casual': 'Casual',
   'games.difficulty.standard': 'Standard',
@@ -2633,6 +2638,11 @@ const ZH: TranslationTable = {
   'games.short.race': '竞速 · 40 行',
   'games.short.burst': '爆发 · 30 秒',
   'games.lan.spectate': '观战',
+  // ── R213: 角色头像选择器 ──
+  'games.avatar.label': '头像',
+  'games.avatar.change': '更换',
+  'games.avatar.clear': '清除',
+  'games.avatar.error': '头像设置失败',
   'games.difficulty.label': '难度',
   'games.difficulty.casual': '休闲',
   'games.difficulty.standard': '标准',
