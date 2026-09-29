@@ -6,11 +6,9 @@ import { playSfx } from './sfx'
 import { WIDTH, HEIGHT } from './td'
 import { HIT_STOP, hitStopTick } from './juice'
 
-export type TetrisPhase = 'ready' | 'running' | 'lost'
-export type TetrisCommand = 'left' | 'right' | 'rotate' | 'hard' | 'hold'
 /** FR-G08 race short-run adds 'won': line goal reached before topping out. */
 export type TetrisPhase = 'ready' | 'running' | 'won' | 'lost'
-export type TetrisCommand = 'left' | 'right' | 'rotate' | 'hard'
+export type TetrisCommand = 'left' | 'right' | 'rotate' | 'hard' | 'hold'
 
 const COLS = 10
 const ROWS = 20

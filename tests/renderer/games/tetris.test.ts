@@ -334,6 +334,9 @@ describe('FR-MP02 garbage lines', () => {
     state.phase = 'lost'
     applyGarbage(state, 4)
     expect(state.grid[19].every((c) => c === 0)).toBe(true)
+  })
+})
+
 describe('renderer/games/tetris FR-G08 short-run matrix (40-line race)', () => {
   function arrangeRace(lines: number, raceLines?: number) {
     const state = initialTetrisState()

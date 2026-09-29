@@ -273,7 +273,8 @@ export function affixForWave(wave: number): Affix | null {
 
 export function launchWave(state: GameState): void {
   // R201(FR-TD02): 无尽模式——12 波后不封顶,词缀循环
-  if (state.wave >= targetWaves(state)) return
+  // (FR-G08: 常规/闪电赛上限统一走 targetWaves)
+  if (!state.endless && state.wave >= targetWaves(state)) return
   state.wave += 1
   state.waveQueue = 12 + state.wave * 3
   state.spawnTimer = 0.2
@@ -475,8 +476,7 @@ export function tickGame(state: GameState, dt: number): void {
     playSfx('gameover')
     return
   }
-  if (!state.endless && state.wave >= MAX_WAVE && state.waveQueue === 0 && state.balloons.length === 0) {
-  if (state.wave >= targetWaves(state) && state.waveQueue === 0 && state.balloons.length === 0) {
+  if (!state.endless && state.wave >= targetWaves(state) && state.waveQueue === 0 && state.balloons.length === 0) {
     state.phase = 'won'
     spawnBurst(state, WIDTH / 2, HEIGHT / 2 - 40, '#67e8f9', 22, 200)
     spawnBurst(state, WIDTH / 2 - 120, HEIGHT / 2 + 40, '#86efac', 16, 160)

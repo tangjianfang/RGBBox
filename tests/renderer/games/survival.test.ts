@@ -241,6 +241,9 @@ describe('FR-MP01 swarm local co-op', () => {
     expect(state.player2!.hp).toBeGreaterThanOrEqual(1)
     expect(state.player2!.invuln).toBeGreaterThan(1.5)
     expect(state.revivesUsed.p2).toBe(before + 1)
+  })
+})
+
 describe('renderer/games/survival FR-G08 short-run matrix (sprint)', () => {
   it('a sprint run settles as lost ("time up") once time passes sprintSeconds, score kept', () => {
     const state = initialSurvivalState()

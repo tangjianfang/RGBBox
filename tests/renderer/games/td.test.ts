@@ -56,6 +56,9 @@ describe('td meteor skill (FR-TD03)', () => {
     // 冷却走完可再放
     s.meteorCd = 0
     expect(castMeteor(s)).toBeGreaterThan(0)
+  })
+})
+
 import { describe, it, expect } from 'vitest'
 import {
   BLITZ_WAVES,
