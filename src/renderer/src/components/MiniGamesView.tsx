@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useVisionInput } from '../hooks/useVisionInput'
 import { useI18n } from '../i18n'
 import { drawExitBadge, drawHudButton, drawHudPanel, hitTest, type HudButton } from '../games/hud'
+import { LanPanel } from './games/LanPanel'
 import { VisionBanner } from './vision/VisionBanner'
 import { VisionCursor } from './vision/VisionCursor'
 import { createCursorState } from '../vision/cursor'
@@ -259,6 +260,15 @@ export function MiniGamesView(): JSX.Element {
   const [tetrisDuelOn, setTetrisDuelOn] = useState(false)
   const tetrisDuelOnRef = useRef(false)
   tetrisDuelOnRef.current = tetrisDuelOn
+  // ── R209 (FR-LN01-05): LAN 联机——TD 合作(房主权威,客端指令+快照渲染) ──
+  const [lanPanelOpen, setLanPanelOpen] = useState(false)
+  const [lanRole, setLanRole] = useState<'idle' | 'host' | 'guest'>('idle')
+  const lanRoleRef = useRef<'idle' | 'host' | 'guest'>('idle')
+  lanRoleRef.current = lanRole
+  const lanSnapRef = useRef<GameState | null>(null)
+  const lanPeersRef = useRef(0)
+  const [lanNotice, setLanNotice] = useState<string | null>(null)
+  const buildTowerAtRef = useRef((_point: { x: number; y: number }) => undefined)
 
   // R198: 首局引导——首次进入该作时武装(完成/跳过后永不再现)
   useEffect(() => {
@@ -706,15 +716,28 @@ export function MiniGamesView(): JSX.Element {
     let snapshotTimer = 0
     let lastPhase: string = screen === 'td' ? tdStateRef.current.phase : screen === 'survival' ? survivalRef.current.phase : tetrisRef.current.phase
     let lastSlashPhase = slashRef.current.phase
+    let lanSnapAcc = 0
     const loop = (now: number) => {
       let dt = Math.min(0.05, (now - last) / 1000)
       // R206: 暂停冻结全部引擎 tick(dt=0;含计时/倒计时/粒子由各引擎特效路径自然停)
       if (fsPausedRef.current) dt = 0
       last = now
       if (screen === 'td') {
-        tickGame(tdStateRef.current, dt * tdSpeed)
+        // R209(FR-LN02): 房主权威——客端不 tick 本地引擎(快照经 onLanEvent
+        // 直接写 tdStateRef,统计条/绘制全复用);房主 15Hz 推快照(hash 供对账)。
+        if (lanRoleRef.current !== 'guest') tickGame(tdStateRef.current, dt * tdSpeed)
+        if (lanRoleRef.current === 'host' && lanPeersRef.current > 0) {
+          lanSnapAcc += dt
+          if (lanSnapAcc >= 0.066) {
+            lanSnapAcc = 0
+            const s = tdStateRef.current
+            try {
+              void window.rgbbox?.lanSnapshot?.(JSON.parse(JSON.stringify(s)) as unknown, `${s.wave}:${s.score}:${s.towers.length}:${s.nextId}`)
+            } catch { /* 序列化失败丢帧 */ }
+          }
+        }
         const phase = tdStateRef.current.phase
-        if ((phase === 'won' || phase === 'lost') && lastPhase !== phase) {
+        if ((phase === 'won' || phase === 'lost') && lastPhase !== phase && lanRoleRef.current !== 'guest') {
           settleBest('td', tdStateRef.current.score, tdStateRef.current.clock, `波次 ${tdStateRef.current.wave}`)
           if (tdStateRef.current.score >= bestRef.current.td) addText(tdStateRef.current, WIDTH / 2, HEIGHT / 2 + 96, 'NEW BEST!', '#fde68a')
         }
@@ -925,7 +948,10 @@ export function MiniGamesView(): JSX.Element {
       const normalized = normalizeKey(event)
       if (MOVEMENT_KEYS.has(normalized) && !event.ctrlKey && !event.metaKey && !event.altKey) event.preventDefault()
       if (screen === 'td' && normalized === 'q') {
-        if (castMeteor(tdStateRef.current) > 0) playSfx('levelup')
+        // R209: LAN 客端技能指令上行;房主本地直接施放
+        if (lanRoleRef.current === 'guest') {
+          void window.rgbbox?.lanCmd?.({ k: 'meteor' })
+        } else if (castMeteor(tdStateRef.current) > 0) playSfx('levelup')
       }
       // R208(FR-MP01): P2 独立输入源 IJKL→keys2(与 P1 keys 分池,零串键)
       if (screen === 'survival' && survivalRef.current.player2 !== null) {
@@ -1091,7 +1117,13 @@ export function MiniGamesView(): JSX.Element {
       setSelectedTowerId(tower.id === selectedTowerId ? null : tower.id)
       return
     }
-    const def = TOWER_DEFINITIONS.find((item) => item.kind === selectedTower) ?? TOWER_DEFINITIONS[0]
+    buildTowerAtRef.current(point)
+  }, [selectedTowerId])
+
+  // R209(FR-LN04): 建塔逻辑独立成可复用函数——本地点击与 LAN 远程指令共用。
+  const buildTowerAt = useCallback((point: { x: number; y: number }) => {
+    const state = tdStateRef.current
+    const def = TOWER_DEFINITIONS.find((item) => item.kind === selectedTowerRef.current) ?? TOWER_DEFINITIONS[0]
     if (state.coins < def.cost) {
       addText(state, point.x, point.y, 'Need coins', '#fca5a5')
       publishTd()
@@ -1109,7 +1141,43 @@ export function MiniGamesView(): JSX.Element {
     spawnBurst(state, point.x, point.y, def.color, 12, 120)
     playSfx('build')
     publishTd()
-  }, [publishTd, selectedTower, selectedTowerId])
+  }, [publishTd])
+  buildTowerAtRef.current = (point) => { buildTowerAt(point) }
+  const selectedTowerRef = useRef(selectedTower)
+  selectedTowerRef.current = selectedTower
+
+  // ── R209 (FR-LN02/03/04): LAN 事件桥——客端指令落地 / 快照入 ref / 断线提示 ──
+  useEffect(() => {
+    const off = window.rgbbox?.onLanEvent?.((e) => {
+      if (e.kind === 'cmd' && lanRoleRef.current === 'host' && e.detail && typeof e.detail === 'object') {
+        const c = e.detail as { k: string; x?: number; y?: number; id?: number }
+        if (c.k === 'build' && typeof c.x === 'number' && typeof c.y === 'number') {
+          buildTowerAtRef.current({ x: c.x, y: c.y })
+        } else if (c.k === 'meteor') {
+          if (castMeteor(tdStateRef.current) > 0) playSfx('levelup')
+        } else if (c.k === 'select' && typeof c.id === 'number') {
+          setSelectedTowerId(c.id)
+        } else if (c.k === 'upgrade') {
+          fsActionRef.current['fs-upgrade']?.()
+        } else if (c.k === 'sell') {
+          fsActionRef.current['fs-sell']?.()
+        }
+      } else if (e.kind === 'snap' && lanRoleRef.current === 'guest') {
+        // 快照直接落引擎 ref——统计条/ctl 行/绘制全部复用既有通路
+        lanSnapRef.current = e.detail as GameState
+        tdStateRef.current = lanSnapRef.current
+        publishTd()
+      } else if (e.kind === 'peer-joined' && e.detail && typeof e.detail === 'object' && 'joined' in e.detail) {
+        lanPeersRef.current += 1
+      } else if (e.kind === 'peer-left') {
+        lanPeersRef.current = Math.max(0, lanPeersRef.current - 1)
+        setLanNotice(t('games.lan.peerLeft'))
+        window.setTimeout(() => setLanNotice(null), 4000)
+      }
+    })
+    return () => { off?.() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── R211: canvas 统一事件分发——fs 画布按钮 hitTest 优先,未命中落回各作交互 ──
   const toCanvasPoint = (event: MouseEvent<HTMLCanvasElement>): { x: number; y: number } | null => {
@@ -1138,7 +1206,14 @@ export function MiniGamesView(): JSX.Element {
       fsActionRef.current[hit.id]?.()
       return
     }
-    if (isTd) handleCanvasClick(event)
+    if (isTd) {
+      // R209(FR-LN04): LAN 客端不本地建塔——指令上行,房主权威结算
+      if (lanRoleRef.current === 'guest') {
+        void window.rgbbox?.lanCmd?.({ k: 'build', kind: selectedTower, x: point.x, y: point.y })
+        return
+      }
+      handleCanvasClick(event)
+    }
   }
 
   const enabledArtifacts = useMemo(() => ARTIFACTS
@@ -1297,8 +1372,27 @@ export function MiniGamesView(): JSX.Element {
             >
               {visionPadVisible ? <Eye aria-hidden="true" size={13} /> : <EyeOff aria-hidden="true" size={13} />}
             </button>
+            {/* R209 (FR-LN01): LAN 联机入口——建房/发现/直连 */}
+            <button
+              className="aspect-lock-btn"
+              type="button"
+              data-action="lan-toggle"
+              aria-label={t('games.lan.title')}
+              title={t('games.lan.title')}
+              onClick={() => setLanPanelOpen((v) => !v)}
+            >
+              <Grid aria-hidden="true" size={13} />
+              {t('games.lan.button')}
+            </button>
           </div>
         </header>
+        {lanPanelOpen ? (
+          <LanPanel
+            onHosted={() => { setLanRole('host'); setLanPanelOpen(false); enterGame('td') }}
+            onJoined={() => { setLanRole('guest'); lanSnapRef.current = null; setLanPanelOpen(false); enterGame('td') }}
+            onClose={() => setLanPanelOpen(false)}
+          />
+        ) : null}
         <div className="games-hub">
           <button className="game-tile" type="button" style={{ '--game-accent': '#67e8f9' } as CSSProperties} onClick={() => enterGame('td')}>
             <span className="tower-orb" style={{ background: '#67e8f9' }}><Shield aria-hidden="true" size={18} /></span>
@@ -1583,11 +1677,12 @@ export function MiniGamesView(): JSX.Element {
               {tdSpeed}×
             </button>
           ) : null}
-          <button className="aspect-lock-btn" type="button" onClick={startHandler}>
+          {/* R209: LAN 客端为远程席位——开波/重开由房主决定,客端控件禁用防死按钮 */}
+          <button className="aspect-lock-btn" type="button" onClick={startHandler} disabled={lanRole === 'guest'}>
             <Play size={13} />
             {isTd && tdSnapshot.wave > 0 ? t('games.nextWave') : t('games.start')}
           </button>
-          <button className="aspect-lock-btn" type="button" onClick={restartHandler}>
+          <button className="aspect-lock-btn" type="button" onClick={restartHandler} disabled={lanRole === 'guest'}>
             <RotateCcw size={13} />
             {t('games.restart')}
           </button>
@@ -1661,11 +1756,12 @@ export function MiniGamesView(): JSX.Element {
 
       {isTd ? (
         <div className="td-ctl-row" data-field="td-ctl">
-          <label className="td-endless-toggle" style={{ cursor: 'pointer' }}>
+          <label className="td-endless-toggle" style={{ cursor: lanRole === 'guest' ? 'not-allowed' : 'pointer' }}>
             <input
               type="checkbox"
               data-setting="td-endless"
               checked={tdEndless}
+              disabled={lanRole === 'guest'}
               onChange={(e) => { setTdEndless(e.target.checked); tdStateRef.current.endless = e.target.checked }}
             />
             <span>{t('games.td.endless')}</span>
@@ -1676,6 +1772,13 @@ export function MiniGamesView(): JSX.Element {
           {tdCoopOn ? (
             /* R208 (FR-MP04): 分工合作——P1 鼠标建塔 / P2 Q 键陨石(输入天然分源,UI 明示) */
             <span className="td-affix-chip">{t('games.td.coop')}</span>
+          ) : null}
+          {lanRole === 'guest' ? (
+            /* R209 (FR-LN04): LAN 远程席位提示 */
+            <span className="td-affix-chip">{lanNotice ?? t('games.lan.cmdHint')}</span>
+          ) : null}
+          {lanRole === 'host' && lanPeersRef.current > 0 ? (
+            <span className="td-affix-chip">LAN · {lanPeersRef.current}P</span>
           ) : null}
           {tdStateRef.current.affix !== null ? (
             <span className="td-affix-chip">{t(`games.td.affix.${tdStateRef.current.affix}` as Parameters<typeof t>[0])}</span>

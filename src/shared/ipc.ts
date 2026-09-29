@@ -211,6 +211,15 @@ export const ipcChannels = {
   ttsVoiceDownload: 'rgbbox:tts:voice-download',
   voiceLexiconExport: 'rgbbox:voice:lexicon-export',
   voiceLexiconImport: 'rgbbox:voice:lexicon-import',
+  // R209: LAN 联机(FR-LN01-05)——传输层在主进程,渲染层经此桥接入
+  lanState: 'rgbbox:lan:state',
+  lanHost: 'rgbbox:lan:host',
+  lanJoin: 'rgbbox:lan:join',
+  lanLeave: 'rgbbox:lan:leave',
+  lanDiscover: 'rgbbox:lan:discover',
+  lanCmd: 'rgbbox:lan:cmd',
+  lanSnapshot: 'rgbbox:lan:snapshot',
+  lanEvent: 'rgbbox:lan:event', // main -> renderer push
 } as const
 
 export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

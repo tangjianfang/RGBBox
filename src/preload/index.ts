@@ -367,6 +367,20 @@ const api = {
   // System display list (for multi-monitor spectrum pop-out)
   getDisplays: (): Promise<Array<{ id: number; label: string; bounds: { x: number; y: number; width: number; height: number }; primary: boolean }>> =>
     ipcRenderer.invoke(ipcChannels.getDisplays),
+
+  // R209 (FR-LN01-05): LAN 联机 —— 传输层在主进程,渲染层只经此白名单桥接入
+  lanState: (): Promise<{ role: 'idle' | 'host' | 'guest'; room: { name: string; game: 'td'; port: number } | null; peers: number }> => ipcRenderer.invoke(ipcChannels.lanState),
+  lanHost: (name: string, game: 'td'): Promise<{ port: number }> => ipcRenderer.invoke(ipcChannels.lanHost, name, game),
+  lanJoin: (ip: string, port: number): Promise<{ ok: true; game: 'td' } | { ok: false; reason: string }> => ipcRenderer.invoke(ipcChannels.lanJoin, ip, port),
+  lanLeave: (): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanLeave),
+  lanDiscover: (on: boolean): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanDiscover, on),
+  lanCmd: (c: unknown): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanCmd, c),
+  lanSnapshot: (s: unknown, h: string): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanSnapshot, s, h),
+  onLanEvent: (callback: (e: { kind: string; detail?: unknown }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, e: { kind: string; detail?: unknown }): void => callback(e)
+    ipcRenderer.on(ipcChannels.lanEvent, handler)
+    return () => ipcRenderer.off(ipcChannels.lanEvent, handler)
+  },
 }
 
 contextBridge.exposeInMainWorld('rgbbox', api)

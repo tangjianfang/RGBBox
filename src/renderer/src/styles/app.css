@@ -9850,6 +9850,28 @@ input:disabled {
 .duel-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-primary); }
 /* R208(FR-MP01): swarm setup 面板内的双人开关行(流式,非 absolute) */
 .swarm-coop-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-secondary); margin: 8px 0 2px; }
+
+/* ── R209 (FR-LN01): LAN 房间面板 ── */
+.lan-panel {
+  position: absolute;
+  top: 86px;
+  right: 28px;
+  z-index: 60;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+}
+.lan-head { display: flex; align-items: center; justify-content: space-between; }
+.lan-row { display: flex; gap: 8px; align-items: center; }
+.lan-row input { flex: 1; min-width: 0; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--surface-raised); background: var(--surface-deep); color: var(--text-primary); font-size: 12px; }
+.lan-sub { margin: 4px 0 0; font-size: 11.5px; color: var(--text-secondary); }
+.lan-empty { margin: 0; font-size: 11.5px; color: var(--text-muted); }
+.lan-rooms { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow: auto; }
+.lan-rooms li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+.lan-status { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.lan-status p { margin: 0; font-size: 12.5px; color: var(--text-primary); }
 .duel-scores { margin: 0; font-size: 17px; font-weight: 700; color: var(--text-primary); letter-spacing: 0.5px; }
 .duel-verdict { margin: 0; font-size: 13px; color: var(--accent, #6ee7a0); }
 /* 对决开启时隐藏 fs 态的 DOM 面板规则同样适用(duel-panel 在 fs 下也隐藏,画布 HUD 承载) */

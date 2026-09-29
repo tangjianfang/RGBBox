@@ -3748,10 +3748,10 @@
 
 ### R209. `feat` — M4 LAN 联机(SRS FR-LN01–05;RA2 式建房;零新增 npm 依赖)
 
-- **状态**: ⏳(R208 完成后启动)
+- **状态**: ✅ 一期(FR-LN01/02/03 核心+FR-LN04 TD 合作;FR-LN05 Tetris 对战、客端插值渲染、断线重连/观战、hash 对账的漂移重同步为二期,随用户真机双机验收反馈再排)
 - **边界**(强制): 仅本网段 UDP 广播 + TCP 直连;无公网/无 NAT 穿透/无账号;Node 原生 dgram/net;渲染层经 window.rgbbox IPC 桥扩展事件接入,不直接触网。
 - **验收点**(SRS §6.2): 房间发现(UDP beacon 1s/版本握手拒绝)/房主权威+10–20Hz 快照/心跳断线恢复+快照 hash 对账/LAN TD 合作首发+Tetris 对战次发。
-- **证据**: ⏳
+- **证据**: ✅ 一期 — ①shared/lanProtocol.ts(纯函数:长度前缀帧+FrameDecoder 粘半包/超限抛错断连、beacon 解析+版本校验、versionsCompatible)+4 用例;②main/lanService.ts(dgram beacon 1s 广播+本机回环、net TCP 会话、hello→welcome/reject 版本握手先行、2s ping/5s 判死、256KB 帧上限、listening 后登记房间——修掉同步 address() 返回 null 的崩溃);③IPC 七通道+preload 白名单 lanHost/lanJoin/lanLeave/lanDiscover/lanCmd/lanSnapshot/onLanEvent(渲染层不触网,NFR-05 零新增依赖);④LanPanel(建房/发现列表 3s 滚出/手输直连兜底/状态回显);⑤TD 合作:房主权威(客端不 tick,快照直接落 tdStateRef 复用统计条/绘制通路),房主 15Hz JSON 快照+hash 附带,客端建塔/升级/出售/选塔/陨石指令上行(建塔逻辑抽 buildTowerAtRef 供本地点击与远程指令共用);guest 死控件禁用(无尽开关/开波/重开);peer-left 提示+房主续局;⑥E2E 本机双实例回环(createRequire 解析 playwright-core,双 --user-data-dir):建房 port 50920→加入 guest→A 开局 B 统计条实时显示「波次 1/1 20♥ 220◎」快照→A 侧 peers=1+「LAN·1P」芯片→B 选塔+点击指令上行。已知限制:beacon 自动发现在本机双实例未命中(手输兜底验证;真双机广播待验)。1282 绿(+4);快照 games 0.028% 阈值内(LAN 按钮)9/9;走查:guest 截图复核通过(死控件问题已修)。
 
 ### R193. AI8 桥上下文记忆连贯（2026-09-26 用户指令「把它设置到最大,保持每个会话的上下文都能连贯起来」;真实会话 JSONL + 站点对照实验取证）
 
