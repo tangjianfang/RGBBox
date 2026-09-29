@@ -127,3 +127,18 @@ describe('slash chain blocks (FR-SL02)', () => {
     expect(s.blocks.some((b) => b.id === 2)).toBe(false)
   })
 })
+
+// M3(FR-SL04): 假动作块。
+describe('slash feint blocks (FR-SL04)', () => {
+  it('a feint block flips its direction once at t≈0.85', () => {
+    const s = initialSlashState()
+    s.phase = 'running'
+    s.timeLeft = 30 // >15s 进度 → 允许 feint
+    s.blocks.push({ id: 1, dir: 0, t: 0.7, speed: 1, hue: 200, bonus: false, feint: true })
+    tickSlash(s, 0.16) // t ≈ 0.86 ≥ 0.85 → flip
+    expect(s.blocks[0].dir).toBe(4) // 0 → 4(翻转)
+    const flippedDir = s.blocks[0].dir
+    tickSlash(s, 0.1)
+    expect(s.blocks[0].dir).toBe(flippedDir) // 只翻一次
+  })
+})

@@ -9818,3 +9818,8 @@ input:disabled {
   cursor: pointer;
 }
 .diff-btn.on { border-color: var(--accent, #6ee7a0); color: var(--accent, #6ee7a0); background: rgba(110, 231, 160, 0.12); }
+
+/* M3(FR-G09): daily 挑战行 */
+.games-daily-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--text-secondary); }
+.daily-chip { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--surface-raised); color: var(--text-muted); }
+.daily-chip.done { border-color: rgba(110, 231, 160, 0.4); color: var(--accent, #6ee7a0); background: rgba(110, 231, 160, 0.08); }

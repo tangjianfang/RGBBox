@@ -73,6 +73,7 @@ import { isBgmEnabled, isSfxEnabled, playSfx, setBgmEnabled, setBgmPreset, setSf
 import { isOnboarded, markOnboarded, pickHint, type CoachHint } from '../games/coach'
 import { loadRuns, profileStats, recordRun, type GameId } from '../domain/gamesTelemetry'
 import { recapCoachKey } from '../games/juice'
+import { loadDaily, recordDaily } from '../games/daily'
 import {
   RUN_SECONDS,
   bomb as slashBomb,
@@ -333,6 +334,7 @@ export function MiniGamesView(): JSX.Element {
     }
     // R200(FR-G02/G06.5): 结算落遥测 + 弹统一 recap(delta%/高光/教练回顾)
     const id: GameId = game === 'survival' ? 'swarm' : game
+    recordDaily(localStorage, id, Math.floor(score))
     const buffer = recordRun(localStorage, id, { date: Date.now(), score: Math.floor(score), duration: Math.round(durationSec), highlight })
     const stats = profileStats(buffer, best)
     setRecap({ score: Math.floor(score), deltaPct: stats.deltaPct, best, highlight, coach: recapCoachKey(Math.floor(score), stats.totalRuns >= 2 ? prev : null) })
@@ -1159,6 +1161,14 @@ export function MiniGamesView(): JSX.Element {
         {/* R198(FR-G02): arcade profile——局数/时长/连续天数(遥测聚合) */}
         <div className="games-profile" data-field="games-profile">
           <h3>{t('games.profile.title')}</h3>
+          <div className="games-daily-row" data-field="games-daily">
+            <span>{t('games.daily.title')}</span>
+            {(['td', 'swarm', 'tetris', 'slash'] as GameId[]).map((id) => {
+              const rec = loadDaily(localStorage, id)
+              const title = id === 'td' ? t('games.tileTdTitle') : id === 'swarm' ? t('games.tileSwarmTitle') : id === 'tetris' ? t('games.tileTetrisTitle') : t('games.tileSlashTitle')
+              return <span key={id} className={rec !== null ? 'daily-chip done' : 'daily-chip'}>{title} {rec !== null ? `★${rec.best}` : '·'}</span>
+            })}
+          </div>
           <div className="games-profile-grid">
             {(['td', 'swarm', 'tetris', 'slash'] as GameId[]).map((id) => {
               const key = (id === 'swarm' ? 'survival' : id) as GameKey

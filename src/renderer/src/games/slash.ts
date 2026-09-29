@@ -22,6 +22,8 @@ export const DIRS: Array<{ x: number; y: number; glyph: string }> = [
 export type SlashPhase = 'ready' | 'running' | 'lost'
 
 export interface Block {
+  /** R203/M3(FR-SL04): 假动作块——临近判定圈时方向标记翻转一次,诱导提前出刀。 */
+  feint?: boolean
   id: number
   dir: number
   /** 0 = spawn edge, 1 = the strike ring */
@@ -96,6 +98,7 @@ function spawnBlock(s: SlashState): void {
     speed: 0.14 + hard * 0.16 + Math.random() * 0.05,
     hue: (dir * 45 + 180) % 360,
     bonus: Math.random() < 0.08,
+  feint: s.timeLeft < RUN_SECONDS - 15 && Math.random() < 0.1,
   })
 }
 
@@ -212,6 +215,11 @@ export function tickSlash(s: SlashState, dt: number): void {
   let missed = false
   for (const b of s.blocks) {
     b.t += b.speed * dt
+    // FR-SL04: 假动作块在 t≈0.85 翻转一次方向标记(绘制层读取 dir 绘箭头)
+    if (b.feint === true && b.t >= 0.85 && (b as Block & { flipped?: boolean }).flipped !== true) {
+      (b as Block & { flipped?: boolean }).flipped = true
+      b.dir = (b.dir + 4) % 8
+    }
     if (b.t > 1.12) missed = true
   }
   if (missed) {
