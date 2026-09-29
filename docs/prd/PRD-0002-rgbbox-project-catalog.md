@@ -3764,6 +3764,18 @@
 - **验收点**: 同一段中文文本,三引擎(现状桥/Piper/Edge)各出一条试听 wav 供用户对比;Piper 探针先跑通再集成;引擎三档 UI(系统/Kokoro/Piper/Edge)+Edge 音色选择;导出链路全档可用。
 - **证据**: ✅ — ①诊断实证:phonemizer 包 espeak 数据为裁剪版(list_voices(\'cmn\')=[])坐实 R197 绕桥原因;R197 三重错配(英文模型 phoneme 空间/自创声调符号/60 音节分块硬拼)写入条款。②Piper 探针:sdk=npm piper-phonemize 1.4.12(纯 wasm,内置完整 espeak-ng cmn,18MB 数据随包,零原生依赖)+onnxruntime-node(已有);模型 zh_CN-huayan-medium 63,201,294B(hf-mirror 可达,sha256 固化);espeak cmn 输出=IPA+调值 1-5(Piper 训练精确格式,ɕ/tɕ 卷舌齐备);ids 规则 BOS+音素×PAD 间隔+EOS;onnx 输入 input/input_lengths[1]/scales[3],逐句(标点分段)推理,实测 120-286ms/句(实时率 ~12x)。③集成:PIPER_FILES 清单+下载管线(repo:\'piper\' 分流)+状态扩展(piper.complete)+ttsSynthesize 三路由(全 piper/混合逐句路由[22k→24k 线性插值重采样]/纯 kokoro)+voice=\'piper-zh\' 选择器;UI:zh 音色下拉 Piper 置顶(旧桥音色保留标「桥」)+独立下载按钮(~63MB)+✓Piper chip;新用户默认 piper-zh(老 localStorage 保留);错误归一 piper-config-missing→model-not-ready;tsconfig.node include types.d.ts;手写 piper-phonemize 类型声明。④Edge 探针(未集成):wss+Sec-MS-GEC 算法(FILETIME 300s round+SHA256)三变体(GEC 版本/UA-Origin/ConnectionId)均 403;查证 2026-01 issue #458 官方 edge-tts 7.2.1 同报 403(微软加仅 Edge 浏览器能过的新校验,中国区额外收紧)——如实记为不可稳定交付,不接。⑤测试:piperTts.test 6 用例(ids 构造/精确对账/kokoro 不受扰)+AiLabVoiceTab R196 用例更新(默认 piper-zh);147 文件/1275 用例全过(agentSessionBoundary 一次并行 flaky 单跑绿);快照 9/9。⑥产品内实测:ttsModelDownload({piper}) 校验秒过→piper.complete=true→ttsSynthesize voice=piper-zh 纯中文 22050Hz/328KB WAV 成功,桌面落「r212-产品内-Piper中文.wav」待用户对比试听(R197 旧文件「kokoro-中文试听-v2.wav」保留对照)。CDP 实例混合路径报 model-not-ready 系该环境 kokoro 状态问题(纯英文同报),用户真机 kokoro 一直可用,不阻塞。
 
+
+### R213. `feat` — 新星蜂群扩展:4P 本地合作 + 角色头像自定义 + 输入配置中心 + 升级自动预选(2026-09-30 用户需求)
+
+- **状态**: ⏳(排在 R205/R209 尾款合并后实施——survival.ts 正被短局矩阵分支修改,同文件避免合并冲突)
+- **需求**(用户原话拆解):
+  1. **最多 4 人游戏**:Swarm 本地合作从 2P 扩到 4P——players 数组化(1-4 实体,独立 HP/无敌帧/索敌/开火);复活珠/敌人 AI/HP HUD/全员倒判负全部数组化;人数在选战机面板选择。
+  2. **角色图片自定义(大头像)**:每玩家可用本地图片作角色贴图(文件选择→userData 持久化,canvas drawImage 替代默认三角飞船,等比缩放+圆形裁切);默认角色保留。
+  3. **控制配置界面**:多手柄+键盘按键自定义——P1-P4 各一套方向映射(默认 P1=WASD/方向键、P2=IJKL、P3/P4 手柄或可改键),配置面板(游戏内或设置页),navigator.getGamepads() 全手柄按 index 分配;持久化。
+  4. **升级 3 选 1 自动预选**:levelup 面板支持「自动选择」模式——用户预设强化优先级清单,面板出现时自动选清单中优先级最高且在场的项(清单外可选随机/跳过提示);一键切回手动。
+- **验收点**: 4P 存活/复活/索敌正确;头像持久化并在画布正确渲染(含圆形裁切/非正方形图片);4 套输入映射零串键,手柄键盘混用;auto-pick 按预设清单命中(清单外策略明确);全部含单测;UI 含 i18n 双语。
+- **证据**: ⏳
+
 ### R193. AI8 桥上下文记忆连贯（2026-09-26 用户指令「把它设置到最大,保持每个会话的上下文都能连贯起来」;真实会话 JSONL + 站点对照实验取证）
 
 > **取证结论**:①站点会话有服务端记忆(`contextCount:0` 对照实验两臂均记住暗号——此前对该参数的怀疑排除);②桥的站点会话是**模块级单例**——跨 Agent 会话/跨工作区共享(用户会话里实测串味)+ 崩溃重建(`contextCount:0`)即失忆;③重启续跑恢复的 JSONL 历史**从不回放**给站点——UI 全在、模型失忆;④用户会话前两轮模型无视工具说明答「无法访问文件系统」直接收尾;⑤AI8 整段返回,大回复静默 1-3 分钟,用户误判死机手动取消(「输出中断」现场=`DONE: cancelled`)。
