@@ -9851,6 +9851,22 @@ input:disabled {
 /* R208(FR-MP01): swarm setup 面板内的双人开关行(流式,非 absolute) */
 .swarm-coop-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-secondary); margin: 8px 0 2px; }
 
+/* ── R213: swarm 4P 人数/场景/自动预选/按键配置/头像 ── */
+.swarm-config-rows { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: center; margin: 8px 0 2px; }
+.swarm-config-rows label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.swarm-config-rows select { padding: 3px 8px; border-radius: 8px; border: 1px solid var(--surface-raised); background: var(--surface-deep); color: var(--text-primary); font-size: 12px; }
+.swarm-avatars { display: flex; gap: 12px; justify-content: center; margin: 6px 0; }
+.input-config-panel { position: absolute; inset: 0; z-index: 65; display: flex; align-items: center; justify-content: center; background: rgba(4, 8, 12, 0.72); }
+.input-config-card { width: min(640px, 92%); max-height: 86%; overflow: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 10px; }
+.input-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.input-cell { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 10px; border: 1px solid var(--surface-raised); background: var(--surface-deep); font-size: 12px; }
+.input-cell.capturing { border-color: var(--accent, #6ee7a0); }
+.input-key-row { display: flex; gap: 4px; }
+.input-key { flex: 1; min-width: 0; padding: 4px 2px; border-radius: 6px; border: 1px solid var(--surface-raised); background: rgba(255, 255, 255, 0.04); color: var(--text-primary); font-size: 11px; text-align: center; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.input-key.capturing { border-color: var(--accent, #6ee7a0); color: var(--accent, #6ee7a0); }
+.input-conflicts { font-size: 11.5px; color: #fca5a5; }
+.input-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
 /* ── R209 (FR-LN01): LAN 房间面板 ── */
 .lan-panel {
   position: absolute;

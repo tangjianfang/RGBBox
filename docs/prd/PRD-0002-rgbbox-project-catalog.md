@@ -3767,7 +3767,7 @@
 
 ### R213. `feat` — 新星蜂群扩展:4P 本地合作 + 角色头像自定义 + 输入配置中心 + 升级自动预选(2026-09-30 用户需求)
 
-- **状态**: ⏳(排在 R205/R209 尾款合并后实施——survival.ts 正被短局矩阵分支修改,同文件避免合并冲突)
+- **状态**: ✅(worktree 三分支并行 TA/TB/TC+主干 TD 接线;手柄 axis 多柄联动为后续小项——P2-P4 手柄绑定 UI 就绪但摇杆轴控二期)
 - **需求**(用户原话拆解):
   1. **最多 4 人游戏**:Swarm 本地合作从 2P 扩到 4P——players 数组化(1-4 实体,独立 HP/无敌帧/索敌/开火);复活珠/敌人 AI/HP HUD/全员倒判负全部数组化;人数在选战机面板选择。
   2. **角色图片自定义(大头像)**:每玩家可用本地图片作角色贴图(文件选择→userData 持久化,canvas drawImage 替代默认三角飞船,等比缩放+圆形裁切);默认角色保留。
@@ -3775,7 +3775,7 @@
   4. **升级 3 选 1 自动预选**:levelup 面板支持「自动选择」模式——用户预设强化优先级清单,面板出现时自动选清单中优先级最高且在场的项(清单外可选随机/跳过提示);一键切回手动。
   5. **场景背景系统(2026-09-30 追加,用户要求「大气美观好玩」)**:内置程序化场景——太空站/沙漠/雪地/草丛/海底/融合(岛屿轮换制,每换岛切换场景);每场景专属元素(如海底=气泡上升+光柱+水草摆动+焦散光斑,雪地=飘雪+极光+冰原,草丛=草浪+萤火虫,沙漠=沙丘层叠+落日+热浪)+玩家位置视差;零素材约束(NFR-05)——全部 canvas 程序绘制,独立 scene 绘制模块(纯函数);另支持用户本地图片作自定义背景(同头像持久化机制,暗化压底保证实体可读性);选战机面板场景选择+随机档。
 - **验收点**: 4P 存活/复活/索敌正确;头像持久化并在画布正确渲染(含圆形裁切/非正方形图片);4 套输入映射零串键,手柄键盘混用;auto-pick 按预设清单命中(清单外策略明确);全部含单测;UI 含 i18n 双语。
-- **证据**: ⏳
+- **证据**: ✅ — ①TA(5407115):survival.ts 4P 数组化(players/inputs 构造期别名引用,legacy player/keys/player2/keys2 零改动兼容;syncRoster 防视图直置 player2=null 破名册;deployPlayers(1-4) 幂等,P3 粉/P4 青;reviveOrbs.target 扩 1-4+revivesUsedN 双写;全员倒判负泛化)+scene.ts 六场景纯绘制(渐变+≤0.05 视差+t 动画,粒子全确定性公式零 Math.random;fusion 按岛屿轮换),+12 用例(既有 R208/sprint 全绿)。②TB(e3a75b7):domain/inputConfig.ts(四玩家键位默认表 P1 wasd/P2 ijkl/P3 tfgh/P4 小键盘,16 键零冲突;normalizeKey/loadSave 损坏回默认/findKeyConflicts/buildKeyToPoolMap(仅 P2-P4)/assignGamepads 显式绑定优先+余柄补位)+games/swarmAutoPick.ts(off/list/best 三档,hp<40% 救急,taken 最少优先),+18 用例。③TC(ee71bed):main/avatarStore.ts(校验→nativeImage 解码→短边 128 等比→BGRA 中心裁 128²→userData/avatars;registerAvatarIpc 一行接线)+IPC 三通道+preload+AvatarPicker(48² 圆形预览/更换清除)+i18n,+9 用例。④TD 主干:survival.ts 场景钩(state.scene undefined=原星空兼容)+startSurvivalRun deployPlayers(scene/sprint 串联)+keydown 4P 通用路由(P1 配置键→箭头标准键恒定手感,P2-P4 池名→inputs[];keyup 对称释放)+swarm-setup 配置行(人数/场景/自动预选/按键配置入口+按人数头像行)+loop 存活玩家 28² 圆形头像贴图(无敌闪烁节奏同步)+InputConfigPanel 挂载。⑤验证:151 文件/1334 用例全过(+39);typecheck 双绿;快照 9/9(games 0.0276% 阈值内);CDP 视觉走查:ready-4P(配置行+四头像+海底场景生效)与运行态(四色实体/四行 HP/海底层次正常/无渲染异常)双截图图像复核均「通过」。
 
 
 ### R214. `fix` — 定时关机失败原因透传(2026-09-30 用户报告「Windows 上提示仅支持 Windows」)

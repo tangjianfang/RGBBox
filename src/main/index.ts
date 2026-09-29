@@ -9,6 +9,7 @@ import { join, basename, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { defaultProfile } from '../shared/defaultProfile'
 import { LanService, registerLanIpc } from './lanService'
+import { registerAvatarIpc } from './avatarStore'
 import { createCaptureStore } from './captureStore'
 import { recognizeImage } from './ocrService'
 import { ipcChannels } from '../shared/ipc'
@@ -1647,6 +1648,8 @@ app.whenReady().then(() => {
   log.info('App', 'Capture providers initialized')
   registerIpc()
   registerLanIpc(ipcMain, lanService)
+  // R213: 头像存取(文件对话框→128² center-crop→userData/avatars)
+  registerAvatarIpc(ipcMain, () => app.getPath('userData'))
   // R91.3b: DTLN denoise — inference in a utility process, IPC surface here
   registerDenoiseService(join(app.getPath('userData'), 'models'), () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null))
 

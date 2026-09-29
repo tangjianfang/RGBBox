@@ -3,7 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useVisionInput } from '../hooks/useVisionInput'
 import { useI18n } from '../i18n'
 import { drawExitBadge, drawHudButton, drawHudPanel, hitTest, type HudButton } from '../games/hud'
+import { autoPick } from '../games/swarmAutoPick'
+import { buildKeyToPoolMap, loadInputConfigs, type InputConfigs } from '../domain/inputConfig'
+import { deployPlayers } from '../games/survival'
 import { LanPanel } from './games/LanPanel'
+import { InputConfigPanel } from './games/InputConfigPanel'
+import { AvatarPicker } from './games/AvatarPicker'
 import { VisionBanner } from './vision/VisionBanner'
 import { VisionCursor } from './vision/VisionCursor'
 import { createCursorState } from '../vision/cursor'
@@ -36,7 +41,6 @@ import {
   applyRouletteResult,
   applyUpgrade,
   debugSpawnBoss,
-  deployPlayer2,
   dissolveRoulette,
   drawSurvival,
   initialSurvivalState,
@@ -258,6 +262,58 @@ export function MiniGamesView(): JSX.Element {
   const [swarmCoopOn, setSwarmCoopOn] = useState(false)
   const swarmCoopOnRef = useRef(false)
   swarmCoopOnRef.current = swarmCoopOn
+  // ── R213: Swarm 4P/场景/自动预选/按键配置 ──
+  const [swarmPlayers, setSwarmPlayers] = useState<1 | 2 | 3 | 4>(1)
+  const swarmPlayersRef = useRef<1 | 2 | 3 | 4>(1)
+  swarmPlayersRef.current = swarmPlayers
+  const [swarmScene, setSwarmScene] = useState<'station' | 'desert' | 'snow' | 'grass' | 'ocean' | 'fusion'>('station')
+  const swarmSceneRef = useRef<'station' | 'desert' | 'snow' | 'grass' | 'ocean' | 'fusion'>('station')
+  swarmSceneRef.current = swarmScene
+  const [autoPickMode, setAutoPickMode] = useState<'off' | 'list' | 'best'>(() => {
+    try { return (JSON.parse(localStorage.getItem('rgbbox:swarmAutoPick') ?? '"off"') as 'off' | 'list' | 'best') ?? 'off' } catch { return 'off' }
+  })
+  const [inputPanelOpen, setInputPanelOpen] = useState(false)
+  const swarmAutoPickRef = useRef<{ mode: 'off' | 'list' | 'best'; prefs: UpgradeId[] }>({ mode: 'off', prefs: ['fireRate', 'damage', 'multishot', 'speed', 'magnet', 'maxHp', 'blade', 'pierce'] })
+  swarmAutoPickRef.current.mode = autoPickMode
+  const [keyMap, setKeyMap] = useState<Record<string, string>>(() => buildKeyToPoolMap(loadInputConfigs(localStorage)))
+  const keyMapRef = useRef<Record<string, string>>({})
+  keyMapRef.current = keyMap
+  /** R213: P1 配置键→引擎标准箭头键(P1 手感恒定;箭头键恒属 P1)。 */
+  const [p1KeyMap, setP1KeyMap] = useState<Record<string, string>>(() => {
+    const p1 = loadInputConfigs(localStorage)[0]
+    return {
+      [p1.up]: 'arrowup', [p1.down]: 'arrowdown', [p1.left]: 'arrowleft', [p1.right]: 'arrowright',
+      arrowup: 'arrowup', arrowdown: 'arrowdown', arrowleft: 'arrowleft', arrowright: 'arrowright',
+    }
+  })
+  const p1KeyMapRef = useRef<Record<string, string>>({})
+  p1KeyMapRef.current = p1KeyMap
+  // R213: 头像画布贴图(128² PNG dataURL → Image;有头像的玩家绘制时贴图替代飞船)
+  const [avatars, setAvatars] = useState<Array<HTMLImageElement | null>>([null, null, null, null])
+  const avatarsRef = useRef<Array<HTMLImageElement | null>>([null, null, null, null])
+  avatarsRef.current = avatars
+  const refreshAvatars = useCallback(async () => {
+    const next: Array<HTMLImageElement | null> = [null, null, null, null]
+    for (let slot = 1; slot <= 4; slot += 1) {
+      const url = await window.rgbbox?.avatarGet?.(slot).catch(() => null) ?? null
+      if (url === null) continue
+      const img = new Image()
+      img.src = url
+      await new Promise<void>((resolve) => { img.onload = () => resolve(); img.onerror = () => resolve() })
+      if (img.width > 0) next[slot - 1] = img
+    }
+    setAvatars(next)
+  }, [])
+  useEffect(() => { void refreshAvatars() }, [refreshAvatars])
+  /** R213: InputConfigPanel 应用——重建 P1/P2-P4 映射。 */
+  const applyInputConfigs = useCallback((configs: InputConfigs) => {
+    setKeyMap(buildKeyToPoolMap(configs))
+    const p1 = configs[0]
+    setP1KeyMap({
+      [p1.up]: 'arrowup', [p1.down]: 'arrowdown', [p1.left]: 'arrowleft', [p1.right]: 'arrowright',
+      arrowup: 'arrowup', arrowdown: 'arrowdown', arrowleft: 'arrowleft', arrowright: 'arrowright',
+    })
+  }, [])
   const [tetrisDuelOn, setTetrisDuelOn] = useState(false)
   const tetrisDuelOnRef = useRef(false)
   tetrisDuelOnRef.current = tetrisDuelOn
@@ -776,6 +832,15 @@ export function MiniGamesView(): JSX.Element {
         if (survivalRef.current.player2 === null) pollVision()
         tickSurvival(survivalRef.current, dt)
         const phase = survivalRef.current.phase
+        // R213: 升级自动预选——levelup 瞬间按模式自动拍板(off=手动三选一不变)
+        if (phase === 'levelup' && lastPhase !== phase && swarmAutoPickRef.current.mode !== 'off') {
+          const s = survivalRef.current
+          const pick = autoPick(s.offers, swarmAutoPickRef.current.prefs, swarmAutoPickRef.current.mode, s.taken, s.player.hp, s.player.maxHp)
+          if (pick !== null) {
+            applyUpgrade(s, pick)
+            publishSurvival()
+          }
+        }
         if (phase === 'lost' && lastPhase !== phase) {
           settleBest('survival', survivalRef.current.score, survivalRef.current.time, `击杀 ${survivalRef.current.kills} · LV${survivalRef.current.level}`)
           const run = survivalRef.current
@@ -808,6 +873,19 @@ export function MiniGamesView(): JSX.Element {
         }
         lastPhase = phase
         drawSurvival(ctx, survivalRef.current)
+        // R213: 头像贴图——有头像的存活玩家在其位置画 28×28 圆形头像(盖在默认飞船上)
+        for (let pi = 0; pi < survivalRef.current.players.length; pi += 1) {
+          const img = avatarsRef.current[pi]
+          const pl = survivalRef.current.players[pi]
+          if (img === null || pl === undefined || pl.hp <= 0) continue
+          if (pl.invuln > 0 && Math.floor(pl.invuln * 12) % 2 === 0) continue // 无敌闪烁节奏与飞船一致
+          ctx.save()
+          ctx.beginPath()
+          ctx.arc(pl.x, pl.y, 14, 0, Math.PI * 2)
+          ctx.clip()
+          ctx.drawImage(img, pl.x - 14, pl.y - 14, 28, 28)
+          ctx.restore()
+        }
       } else if (screen === 'slash') {
         pollVision()
         tickSlash(slashRef.current, dt)
@@ -986,13 +1064,18 @@ export function MiniGamesView(): JSX.Element {
           void window.rgbbox?.lanCmd?.({ k: 'meteor' })
         } else if (castMeteor(tdStateRef.current) > 0) playSfx('levelup')
       }
-      // R208(FR-MP01): P2 独立输入源 IJKL→keys2(与 P1 keys 分池,零串键)
-      if (screen === 'survival' && survivalRef.current.player2 !== null) {
-        const map2: Record<string, string> = { i: 'p2up', j: 'p2left', k: 'p2down', l: 'p2right' }
-        if (map2[normalized] !== undefined) {
-          event.preventDefault()
-          survivalRef.current.keys2.add(map2[normalized])
-          return
+      // R213: 输入配置中心——P2-P4 任意时刻按 keyMap 池名路由(inputs[N-1] 与
+      // keys2 同引用;R208 旧固定 IJKL 映射由默认配置等价覆盖)。
+      if (screen === 'survival') {
+        const pool = keyMapRef.current[normalized]
+        if (pool !== undefined) {
+          const n = Number(pool[1])
+          const set = survivalRef.current.inputs[n - 1]
+          if (set !== undefined) {
+            event.preventDefault()
+            set.add(pool)
+            return
+          }
         }
       }
       // R211: fs 画布 HUD 键盘等价——TD 1-5 选塔 / U 升级 / X 出售 / Enter 主按钮 /
@@ -1010,7 +1093,10 @@ export function MiniGamesView(): JSX.Element {
       if (normalized === 'enter') fsActionRef.current['fs-primary']?.()
       if (normalized === 'r') fsActionRef.current['fs-restart']?.()
       if (screen === 'survival') {
-        survivalRef.current.keys.add(normalized)
+        // R213: P1 键位经配置映射到引擎标准键(箭头);箭头键恒属 P1(手感兼容)
+        const std = p1KeyMapRef.current[normalized]
+        if (std !== undefined) survivalRef.current.keys.add(std)
+        else if (normalized !== 'p2up' && normalized !== 'p2down' && normalized !== 'p2left' && normalized !== 'p2right') survivalRef.current.keys.add(normalized)
       } else if (screen === 'slash') {
         const dir = normalized === 'arrowright' ? 0 : normalized === 'arrowup' ? 2 : normalized === 'arrowleft' ? 4 : normalized === 'arrowdown' ? 6 : -1
         if (dir >= 0) { slashCut(slashRef.current, dir); playSfx('pop') }
@@ -1036,11 +1122,16 @@ export function MiniGamesView(): JSX.Element {
     }
     const up = (event: KeyboardEvent) => {
       const normalized = normalizeKey(event)
-      survivalRef.current.keys.delete(normalized)
+      // R213: P1 经配置映射释放(std 键名),P2-P4 池名释放(inputs 与 keys2 同引用)
+      const std = p1KeyMapRef.current[normalized]
+      if (std !== undefined) survivalRef.current.keys.delete(std)
+      else survivalRef.current.keys.delete(normalized)
+      const pool = keyMapRef.current[normalized]
+      if (pool !== undefined) {
+        const set = survivalRef.current.inputs[Number(pool[1]) - 1]
+        set?.delete(pool)
+      }
       tetrisRef.current.keys.delete(normalized)
-      // R208: P2 键位释放(Swarm keys2 / Tetris B 板软降)
-      const map2: Record<string, string> = { i: 'p2up', j: 'p2left', k: 'p2down', l: 'p2right' }
-      if (map2[normalized] !== undefined) survivalRef.current.keys2.delete(map2[normalized])
       if (normalized === 'k') tetrisBRef.current.keys.delete('arrowdown')
     }
     window.addEventListener('keydown', down)
@@ -1261,9 +1352,10 @@ export function MiniGamesView(): JSX.Element {
     }
     // FR-G08: 90 秒冲刺——时限到走既有 lost 结算(分数保留)
     survivalRef.current.sprintSeconds = swarmSprintOnRef.current ? 90 : undefined
-    // R208(FR-MP01): 双人合作——部署二号位(开局武装,重开保留)
-    if (swarmCoopOnRef.current && survivalRef.current.player2 === null) deployPlayer2(survivalRef.current)
-    if (!swarmCoopOnRef.current && survivalRef.current.player2 !== null) survivalRef.current.player2 = null
+    // R213: 4P 名册部署(人数选择;swarmCoopOn 开关是人数=2 的快捷别名)与场景背景
+    const count = Math.max(1, Math.min(4, swarmPlayersRef.current)) as 1 | 2 | 3 | 4
+    deployPlayers(survivalRef.current, count)
+    survivalRef.current.scene = swarmSceneRef.current
     startSurvival(survivalRef.current)
     publishSurvival()
   }, [enabledArtifacts, meta, publishSurvival, swarmCharacter])
@@ -1904,6 +1996,10 @@ export function MiniGamesView(): JSX.Element {
                 </div>
               </div>
             ) : null}
+            {/* R213: 输入配置中心(P1-P4 键位自定义+手柄绑定) */}
+            {inputPanelOpen ? (
+              <InputConfigPanel onClose={() => setInputPanelOpen(false)} onApply={applyInputConfigs} />
+            ) : null}
             <canvas
               ref={canvasRef}
               className="games-canvas"
@@ -1960,6 +2056,38 @@ export function MiniGamesView(): JSX.Element {
                       </button>
                     )
                   })}
+                </div>
+                {/* R213: 4P 人数 / 场景 / 升级自动预选 / 按键配置入口 */}
+                <div className="swarm-config-rows" data-field="swarm-config">
+                  <label>
+                    <span>{t('games.swarm.players')}</span>
+                    <select data-field="swarm-players" value={swarmPlayers} onChange={(e) => { const n = Number(e.target.value) as 1 | 2 | 3 | 4; setSwarmPlayers(n); setSwarmCoopOn(n >= 2) }}>
+                      {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}P</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>{t('games.swarm.scene')}</span>
+                    <select data-field="swarm-scene" value={swarmScene} onChange={(e) => setSwarmScene(e.target.value as typeof swarmScene)}>
+                      {(['station', 'desert', 'snow', 'grass', 'ocean', 'fusion'] as const).map((s) => (
+                        <option key={s} value={s}>{t(`games.scene.${s}` as Parameters<typeof t>[0])}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>{t('games.swarm.autoPick')}</span>
+                    <select data-field="swarm-autopick" value={autoPickMode} onChange={(e) => { const m = e.target.value as 'off' | 'list' | 'best'; setAutoPickMode(m); try { localStorage.setItem('rgbbox:swarmAutoPick', JSON.stringify(m)) } catch { /* best-effort */ } }}>
+                      <option value="off">{t('games.swarm.autoPick.off')}</option>
+                      <option value="list">{t('games.swarm.autoPick.list')}</option>
+                      <option value="best">{t('games.swarm.autoPick.best')}</option>
+                    </select>
+                  </label>
+                  <button type="button" className="diff-btn" data-field="input-config-open" onClick={() => setInputPanelOpen(true)}>{t('games.input.title')}</button>
+                </div>
+                {/* R213: 头像行(每玩家一张;画布上替代默认飞船贴图) */}
+                <div className="swarm-avatars" data-field="swarm-avatars">
+                  {Array.from({ length: swarmPlayers }, (_, i) => (
+                    <AvatarPicker key={i + 1} slot={i + 1} label={`P${i + 1}`} onSet={() => { void refreshAvatars() }} />
+                  ))}
                 </div>
                 <p className="swarm-setup-hint">{swarmCoopOn ? t('games.swarm.coopHint') : t('games.setupHint')}</p>
               </div>

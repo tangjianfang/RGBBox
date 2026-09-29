@@ -4,6 +4,7 @@
 // based on how well the run is going.
 import { playSfx } from './sfx'
 import { WIDTH, HEIGHT } from './td'
+import { SCENE_IDS, drawScene, type SceneId } from './scene'
 import {
   UPGRADES,
   characterById,
@@ -196,6 +197,8 @@ export interface SurvivalState {
   /** R213: 复活计数(按玩家 0-based 索引,长度 4)。新逻辑读本数组,
    *  缺失时视为全 0(旧状态形状兼容)。 */
   revivesUsedN: number[]
+  /** R213-⑤: 场景背景(view 层写入;undefined=原岛屿主题星空)。 */
+  scene?: SceneId
 }
 
 // ── R213: P2..P4 皮肤(琥珀/粉/青;P1 沿用青白 #e2f8ff/#67e8f9 不变) ──
@@ -1063,6 +1066,12 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   ctx.save()
   if (state.shake > 0.2) ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake)
+  // R213: 场景背景系统——state.scene 指定程序化场景(fusion=按岛屿轮换);
+  // 未设置时保留原岛屿主题星空(单机默认走 view 层写入,引擎侧不预设)。
+  if (state.scene !== undefined) {
+    const id = state.scene === 'fusion' ? SCENE_IDS[(state.island - 1) % (SCENE_IDS.length - 1)] : state.scene
+    drawScene(id, { ctx, w: WIDTH, h: HEIGHT, t: state.clock, px: player.x, py: player.y })
+  } else {
   const theme = ISLAND_THEMES[(state.island - 1) % ISLAND_THEMES.length]
   ctx.fillStyle = theme.bg
   ctx.fillRect(0, 0, WIDTH, HEIGHT)
@@ -1070,6 +1079,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.globalAlpha = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(state.clock * 2 + star.phase))
     ctx.fillStyle = theme.star
     ctx.fillRect(star.x - player.x * 0.02, star.y - player.y * 0.02, star.size, star.size)
+  }
   }
   ctx.globalAlpha = 1
 
