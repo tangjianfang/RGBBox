@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   applyUpgrade,
+  deployPlayer2,
   directorSpawnInterval,
   initialSurvivalState,
   recomputeStats,
@@ -172,5 +173,73 @@ describe('renderer/games/survival engine (R99.3/R99.4)', () => {
     state.axis = { x: 0.1, y: 0 }
     for (let i = 0; i < 10; i++) tickSurvival(state, 0.05)
     expect(state.player.x - x2).toBe(0)
+  })
+})
+
+// ── R208 (FR-MP01): 本地合作——第二实体/独立输入/复活珠/双倒判负 ──
+describe('FR-MP01 swarm local co-op', () => {
+  it('deployPlayer2: 独立实体,位置分侧,继承 maxHp,出生带 2s 无敌', () => {
+    const state = initialSurvivalState()
+    deployPlayer2(state)
+    expect(state.player2).not.toBeNull()
+    expect(state.player2!.hp).toBe(state.player.maxHp)
+    expect(state.player2!.invuln).toBeGreaterThan(0)
+    expect(Math.abs(state.player2!.x - state.player.x)).toBeGreaterThan(30)
+  })
+
+  it('P2 独立键位移动(keys2 分池,不与 P1 keys 串键)', () => {
+    const state = initialSurvivalState()
+    deployPlayer2(state)
+    state.phase = 'running'
+    state.player2!.invuln = 0
+    state.player2!.fireTimer = 99
+    const x0 = state.player2!.x
+    state.keys2.add('p2right')
+    for (let i = 0; i < 30; i++) tickSurvival(state, 1 / 60)
+    expect(state.player2!.x).toBeGreaterThan(x0 + 40)
+    // P1 未按任何键,原地不动
+    expect(state.player.x).toBe(initialSurvivalState().player.x)
+  })
+
+  it('P2 自动索敌开火(共享弹池)', () => {
+    const state = initialSurvivalState()
+    deployPlayer2(state)
+    state.phase = 'running'
+    state.player2!.invuln = 0
+    state.enemies.push({ id: 9001, kind: 'chaser', x: state.player2!.x + 120, y: state.player2!.y, hp: 5, maxHp: 5, size: 10, vx: 0, vy: 0, elite: false, hitFlash: 0 })
+    const bullets = state.bullets.length
+    state.player.fireTimer = 99
+    tickSurvival(state, 1 / 60)
+    expect(state.bullets.length).toBeGreaterThan(bullets)
+  })
+
+  it('单玩家倒下不判负,掉复活珠;全员倒下才 lost', () => {
+    const state = initialSurvivalState()
+    deployPlayer2(state)
+    state.phase = 'running'
+    state.player2!.invuln = 0
+    state.player2!.hp = 1
+    state.player.invuln = 0
+    state.enemies.push({ id: 9002, kind: 'brute', x: state.player2!.x, y: state.player2!.y, hp: 99, maxHp: 99, size: 12, vx: 0, vy: 0, elite: false, hitFlash: 0 })
+    for (let i = 0; i < 240 && state.phase === 'running'; i++) tickSurvival(state, 1 / 60)
+    expect(state.phase).toBe('running')
+    expect(state.player2!.hp).toBeLessThanOrEqual(0)
+    expect(state.reviveOrbs.length).toBe(1)
+    expect(state.reviveOrbs[0].target).toBe(2)
+  })
+
+  it('队友拾取复活珠救回倒下玩家(半血+2s 无敌,每局各 1 次)', () => {
+    const state = initialSurvivalState()
+    deployPlayer2(state)
+    state.phase = 'running'
+    state.player2!.hp = 0
+    state.reviveOrbs.push({ id: 8001, x: state.player.x + 12, y: state.player.y, target: 2 })
+    state.player2!.fireTimer = 99
+    const before = state.revivesUsed.p2
+    tickSurvival(state, 1 / 60)
+    expect(state.reviveOrbs.length).toBe(0)
+    expect(state.player2!.hp).toBeGreaterThanOrEqual(1)
+    expect(state.player2!.invuln).toBeGreaterThan(1.5)
+    expect(state.revivesUsed.p2).toBe(before + 1)
   })
 })

@@ -3734,6 +3734,25 @@
 - **防回归**: tests/renderer/games/gamesI18nKeys.test.ts(+5 用例)——四作 3 步引导键×EN/ZH 存在性、recapCoachKey 完整键存在性+四分支语义、键值不得含键名原文。
 - **证据**: typecheck 双绿;vitest **145 文件/1267 用例全过**(+5);ui:snapshot 9/9 GATE PASS(hub 基线无 diff);CDP 复测:slash 结算中文文案(「本局得分 0 ★最佳 0 … 首局已记录——教练会盯住你的下一局。」)、swarm/slash 引导中文、fs 探针 sidePanel/header/statGrid/ctlRow=hidden+canvas 1440×900 满视口、fs 截图图像复核「通过」。误报排除 1 条(TD 运行态词缀 chip 空态——词缀仅无尽 >12 波出现)。
 
+
+### R208. `feat` — M4 本地双人(SRS FR-MP01–04;gate 经用户指令「开始下阶段的M任务」于 2026-09-29 解除)
+
+- **状态**: ✅(双机真机体验待用户;E2E「双实例双输入 10 分钟零串键」待真机长跑)
+- **文件**: 四作引擎(slash/survival/tetris/td)、MiniGamesView.tsx、i18n、tests
+- **验收点**(SRS §6.1):
+  - FR-MP03 Slash 轮换对决:ready 态 2P 开关;同 60s 各打一遍比分制;双方比分对照结算+胜负判定
+  - FR-MP01 Swarm 本地合作:第二实体(独立 HP/无敌帧/自动索敌);键盘 WASD=P1、第二键位=P2;共享敌人/XP/分数;倒下掉复活珠由队友拾取复活(各 1 次/局);双人局禁手势
+  - FR-MP02 Tetris 双板对战:单画布并排双 10×20 板;P1 方向键 / P2 第二键位;消 2/3/4 行按 guideline 比例送垃圾行;单测:发送比例与入场规则
+  - FR-MP04 TD 分工合作:P1 鼠标建塔 / P2 键盘技能,双源无冲突
+- **证据**: ✅ — ①FR-MP03 Slash 轮换对决:ready 态 2P 开关(difficulty-picker 行)+judgeDuel 纯函数判定+回合浮层/对照面板(P1·P2 比分+胜负+再战);顺手修复 slash 结算守卫(闭包 snapshot 判「首次 lost」失效→lost 后每帧重复 settle,遥测环形缓冲被单局刷满,对齐 lastPhase 模式)。②FR-MP01 Swarm 合作:SurvivalState+player2/keys2/reviveOrbs/revivesUsed;deployPlayer2 工厂;敌人追最近存活玩家;弹幕/碰撞对双实体;XP 珠磁吸最近存活者;复活珠=队友拾取救回倒下方(半血+2s 无敌,各 1 次/局);全员倒下才判负;P2=IJKL 独立键池(keydown/keyup 映射,零串键);双人局跳过 pollVision(NFR-04);P2 琥珀实体+头顶 HP 条+左上第二行空心 HP。③FR-MP02 Tetris 双板:TetrisState+boardX(默认 300 字节级不变);drawTetris 支持 noClear 叠绘+全 HUD 随板偏移;garbageFor(guideline 1/2/4)+applyGarbage(底部带洞行+当前块上推+hint 作废);双实例 tick+消行桥;任一板 top out 整局结束(比分进高光);P2 键位 j/l/i/k// /.。④FR-MP04 TD 分工:ready 态 coop 开关+ctl 行分工明示(P1 鼠标建塔/P2 Q 陨石,输入天然分源)。+11 用例(judgeDuel 2/swarm 合作 5/垃圾行 4);1278 绿;快照 9/9;CDP 实测:四作 2P 开关渲染、swarm 双实体+双 HP 行截图复核通过、tetris 双板并排 HUD 独立截图复核通过、P2 键位驱动无崩溃。
+
+### R209. `feat` — M4 LAN 联机(SRS FR-LN01–05;RA2 式建房;零新增 npm 依赖)
+
+- **状态**: ⏳(R208 完成后启动)
+- **边界**(强制): 仅本网段 UDP 广播 + TCP 直连;无公网/无 NAT 穿透/无账号;Node 原生 dgram/net;渲染层经 window.rgbbox IPC 桥扩展事件接入,不直接触网。
+- **验收点**(SRS §6.2): 房间发现(UDP beacon 1s/版本握手拒绝)/房主权威+10–20Hz 快照/心跳断线恢复+快照 hash 对账/LAN TD 合作首发+Tetris 对战次发。
+- **证据**: ⏳
+
 ### R193. AI8 桥上下文记忆连贯（2026-09-26 用户指令「把它设置到最大,保持每个会话的上下文都能连贯起来」;真实会话 JSONL + 站点对照实验取证）
 
 > **取证结论**:①站点会话有服务端记忆(`contextCount:0` 对照实验两臂均记住暗号——此前对该参数的怀疑排除);②桥的站点会话是**模块级单例**——跨 Agent 会话/跨工作区共享(用户会话里实测串味)+ 崩溃重建(`contextCount:0`)即失忆;③重启续跑恢复的 JSONL 历史**从不回放**给站点——UI 全在、模型失忆;④用户会话前两轮模型无视工具说明答「无法访问文件系统」直接收尾;⑤AI8 整段返回,大回复静默 1-3 分钟,用户误判死机手动取消(「输出中断」现场=`DONE: cancelled`)。

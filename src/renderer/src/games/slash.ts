@@ -384,3 +384,16 @@ export function slashHints(state: SlashState): CoachHint[] {
   if (state.bestCombo < 3 && state.combo < 2) hints.push({ key: 'sl.aim', tone: 'tip', priority: 30 })
   return hints
 }
+
+// ── R208 (FR-MP03): 轮换对决——纯函数判定,view 层编排回合 ──
+
+export type DuelVerdict = 'p1' | 'p2' | 'tie'
+
+/** 双方两回合比分判定（未完成回合按 null 视作未定,返回 null）。 */
+export function judgeDuel(scores: [number | null, number | null]): DuelVerdict | null {
+  const [a, b] = scores
+  if (a === null || b === null) return null
+  if (a > b) return 'p1'
+  if (b > a) return 'p2'
+  return 'tie'
+}

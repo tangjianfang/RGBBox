@@ -9830,3 +9830,27 @@ input:disabled {
 .games-daily-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--text-secondary); }
 .daily-chip { padding: 2px 10px; border-radius: 999px; border: 1px solid rgba(148, 184, 200, 0.28); color: var(--text-secondary); }
 .daily-chip.done { border-color: rgba(110, 231, 160, 0.4); color: var(--accent, #6ee7a0); background: rgba(110, 231, 160, 0.08); }
+
+/* ── R208 (FR-MP03/MP04): Slash 轮换对决面板 + TD 分工提示 ── */
+.duel-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 104px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 30px;
+  border-radius: 14px;
+  border: 1px solid rgba(103, 232, 249, 0.35);
+  background: rgba(5, 10, 14, 0.92);
+  z-index: 60;
+}
+.duel-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+/* R208(FR-MP01): swarm setup 面板内的双人开关行(流式,非 absolute) */
+.swarm-coop-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-secondary); margin: 8px 0 2px; }
+.duel-scores { margin: 0; font-size: 17px; font-weight: 700; color: var(--text-primary); letter-spacing: 0.5px; }
+.duel-verdict { margin: 0; font-size: 13px; color: var(--accent, #6ee7a0); }
+/* 对决开启时隐藏 fs 态的 DOM 面板规则同样适用(duel-panel 在 fs 下也隐藏,画布 HUD 承载) */
+.games-screen.fs .duel-panel { display: none !important; }

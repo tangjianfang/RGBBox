@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  initialSlashState, startSlash, tickSlash, slash as slashCut, bomb, blockPos, RUN_SECONDS,
+  initialSlashState, startSlash, tickSlash, slash as slashCut, bomb, blockPos, RUN_SECONDS, judgeDuel,
 } from  '../../../src/renderer/src/games/slash'
 
 function runToZone(state: { blocks: Array<{ t: number; speed: number }>; timeLeft: number }): void {
@@ -140,5 +140,19 @@ describe('slash feint blocks (FR-SL04)', () => {
     const flippedDir = s.blocks[0].dir
     tickSlash(s, 0.1)
     expect(s.blocks[0].dir).toBe(flippedDir) // 只翻一次
+  })
+})
+
+// ── R208 (FR-MP03): 轮换对决判定 ──
+describe('FR-MP03 judgeDuel', () => {
+  it('未完成回合返回 null', () => {
+    expect(judgeDuel([null, null])).toBeNull()
+    expect(judgeDuel([120, null])).toBeNull()
+    expect(judgeDuel([null, 80])).toBeNull()
+  })
+  it('双方完赛按比分判定 p1/p2/tie', () => {
+    expect(judgeDuel([120, 80])).toBe('p1')
+    expect(judgeDuel([80, 120])).toBe('p2')
+    expect(judgeDuel([0, 0])).toBe('tie')
   })
 })

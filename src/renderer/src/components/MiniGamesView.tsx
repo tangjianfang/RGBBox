@@ -35,6 +35,7 @@ import {
   applyRouletteResult,
   applyUpgrade,
   debugSpawnBoss,
+  deployPlayer2,
   dissolveRoulette,
   drawSurvival,
   initialSurvivalState,
@@ -80,6 +81,7 @@ import {
   bomb as slashBomb,
   drawSlash,
   initialSlashState,
+  judgeDuel,
   slash as slashCut,
   startSlash,
   slashHints,
@@ -87,7 +89,9 @@ import {
   type SlashState,
 } from '../games/slash'
 import {
+  applyGarbage,
   drawTetris,
+  garbageFor,
   initialTetrisState,
   startTetris,
   tetrisHints,
@@ -201,6 +205,8 @@ export function MiniGamesView(): JSX.Element {
   const tdStateRef = useRef<GameState>(initialState())
   const survivalRef = useRef<SurvivalState>(initialSurvivalState())
   const tetrisRef = useRef<TetrisState>(initialTetrisState())
+  /** R208(FR-MP02): 双板对战的 B 板实例(独立 grid/queue/hold/lock-delay)。 */
+  const tetrisBRef = useRef<TetrisState>(initialTetrisState())
   const slashRef = useRef<SlashState>(initialSlashState())
   const bestRef = useRef<Record<GameKey, number>>({ td: readBest('td'), survival: readBest('survival'), tetris: readBest('tetris'), slash: readBest('slash') })
   const [screen, setScreen] = useState<Screen>('hub')
@@ -239,6 +245,20 @@ export function MiniGamesView(): JSX.Element {
   // R207: 手势指示器开关(默认关;Banner/Cursor 功能组件不受影响)
   const [visionPadVisible, setVisionPadVisible] = useState(readVisionPadVisible)
   const [recap, setRecap] = useState<{ score: number; deltaPct: number | null; best: number; highlight: string; coach: string } | null>(null)
+  // ── R208 (FR-MP03/MP04): 本地双人——Slash 轮换对决 / TD 分工合作 ──
+  const [slashDuelOn, setSlashDuelOn] = useState(false)
+  const slashDuelOnRef = useRef(false)
+  slashDuelOnRef.current = slashDuelOn
+  const [duel, setDuel] = useState<{ turn: 1 | 2; scores: [number | null, number | null]; done: boolean } | null>(null)
+  const duelRef = useRef<{ turn: 1 | 2; scores: [number | null, number | null]; done: boolean } | null>(null)
+  duelRef.current = duel
+  const [tdCoopOn, setTdCoopOn] = useState(false)
+  const [swarmCoopOn, setSwarmCoopOn] = useState(false)
+  const swarmCoopOnRef = useRef(false)
+  swarmCoopOnRef.current = swarmCoopOn
+  const [tetrisDuelOn, setTetrisDuelOn] = useState(false)
+  const tetrisDuelOnRef = useRef(false)
+  tetrisDuelOnRef.current = tetrisDuelOn
 
   // R198: 首局引导——首次进入该作时武装(完成/跳过后永不再现)
   useEffect(() => {
@@ -685,6 +705,7 @@ export function MiniGamesView(): JSX.Element {
     let last = performance.now()
     let snapshotTimer = 0
     let lastPhase: string = screen === 'td' ? tdStateRef.current.phase : screen === 'survival' ? survivalRef.current.phase : tetrisRef.current.phase
+    let lastSlashPhase = slashRef.current.phase
     const loop = (now: number) => {
       let dt = Math.min(0.05, (now - last) / 1000)
       // R206: 暂停冻结全部引擎 tick(dt=0;含计时/倒计时/粒子由各引擎特效路径自然停)
@@ -712,7 +733,9 @@ export function MiniGamesView(): JSX.Element {
         // R133: gamepad first (it rewrites the raw axis), vision second (adds
         // its direction vector on top) — see pollVision.
         pollGamepad()
-        pollVision()
+        // R208(FR-MP01): 双人局禁用手势——视觉通道是单用户假设,防输入冲突
+        // (pollGamepad 无手柄时已把 axis 归零,跳过 pollVision 不残留旧轴)。
+        if (survivalRef.current.player2 === null) pollVision()
         tickSurvival(survivalRef.current, dt)
         const phase = survivalRef.current.phase
         if (phase === 'lost' && lastPhase !== phase) {
@@ -753,13 +776,47 @@ export function MiniGamesView(): JSX.Element {
         const canvasEl = canvasRef.current
         const ctx2 = canvasEl?.getContext('2d')
         if (canvasEl && ctx2) drawSlash(ctx2, slashRef.current, now)
-        if (slashRef.current.phase === 'lost' && slashSnapshot.phase !== 'lost') settleBest('slash', slashRef.current.score, RUN_SECONDS - slashRef.current.timeLeft, `最高连击 ${slashRef.current.bestCombo}`)
+        // R208: 局部 phase 变化检测——此前用闭包 snapshot 判「首次 lost」,
+        // effect 不随 snapshot 重建 → lost 后每帧重复 settleBest(遥测环形缓冲
+        // 被同一局刷满 + duel 记分会重复触发)。对齐其他三作的 lastPhase 模式。
+        if (slashRef.current.phase === 'lost' && lastSlashPhase !== 'lost') {
+          settleBest('slash', slashRef.current.score, RUN_SECONDS - slashRef.current.timeLeft, `最高连击 ${slashRef.current.bestCombo}`)
+          // FR-MP03: 轮换对决记分(轮空的一方=null;双方打完由对照面板判胜负)
+          if (duelRef.current !== null && !duelRef.current.done) {
+            const next = { ...duelRef.current, done: true }
+            next.scores[duelRef.current.turn - 1] = Math.floor(slashRef.current.score)
+            duelRef.current = next
+            setDuel(next)
+          }
+        }
+        lastSlashPhase = slashRef.current.phase
       } else {
         pollVision()
+        // R208(FR-MP02): 双板对战——双实例 tick + 消行桥(guideline 垃圾行,
+        // 立即入场;applyGarbage 自带当前块上推,冲突安全)。
+        const duelB = tetrisDuelOnRef.current
+        const linesA0 = tetrisRef.current.lines
         tickTetris(tetrisRef.current, dt)
+        if (duelB) {
+          const linesB0 = tetrisBRef.current.lines
+          tickTetris(tetrisBRef.current, dt)
+          const dA = tetrisRef.current.lines - linesA0
+          const dB = tetrisBRef.current.lines - linesB0
+          if (dA > 0) applyGarbage(tetrisBRef.current, garbageFor(dA))
+          if (dB > 0) applyGarbage(tetrisRef.current, garbageFor(dB))
+        }
         const phase = tetrisRef.current.phase
-        if (phase === 'lost' && lastPhase !== phase) {
+        const duelOver = duelB && (phase === 'lost' || tetrisBRef.current.phase === 'lost')
+        if (phase === 'lost' && lastPhase !== phase && !duelB) {
           settleBest('tetris', tetrisRef.current.score, tetrisRef.current.clock, `消行 ${tetrisRef.current.lines} · T-spin ${tetrisRef.current.tspins}`)
+        }
+        if (duelOver && lastPhase !== phase) {
+          // 任一板 top out 即整局结束(存活方胜);双板同停,best 记双板高分。
+          const aScore = tetrisRef.current.score
+          const bScore = tetrisBRef.current.score
+          tetrisRef.current.phase = 'lost'
+          tetrisBRef.current.phase = 'lost'
+          settleBest('tetris', Math.max(aScore, bScore), tetrisRef.current.clock, `双板 ${aScore}:${bScore}`)
         }
         lastPhase = phase
         drawTetris(ctx, tetrisRef.current, bestRef.current.tetris, {
@@ -767,6 +824,13 @@ export function MiniGamesView(): JSX.Element {
           lostTitle: t('games.tetris.lost'),
           replaySuffix: t('games.replay'),
         })
+        if (duelB) {
+          drawTetris(ctx, tetrisBRef.current, 0, {
+            readySubtitle: t('games.tetrisHint'),
+            lostTitle: t('games.tetris.lost'),
+            replaySuffix: t('games.replay'),
+          }, { noClear: true })
+        }
       }
       // R201(FR-TD01/F6): 放置悬停预览——射程圈 + 有效性配色
       if (isTd && tdHover !== null && tdStateRef.current.phase === 'running') {
@@ -863,6 +927,15 @@ export function MiniGamesView(): JSX.Element {
       if (screen === 'td' && normalized === 'q') {
         if (castMeteor(tdStateRef.current) > 0) playSfx('levelup')
       }
+      // R208(FR-MP01): P2 独立输入源 IJKL→keys2(与 P1 keys 分池,零串键)
+      if (screen === 'survival' && survivalRef.current.player2 !== null) {
+        const map2: Record<string, string> = { i: 'p2up', j: 'p2left', k: 'p2down', l: 'p2right' }
+        if (map2[normalized] !== undefined) {
+          event.preventDefault()
+          survivalRef.current.keys2.add(map2[normalized])
+          return
+        }
+      }
       // R211: fs 画布 HUD 键盘等价——TD 1-5 选塔 / U 升级 / X 出售 / Enter 主按钮 /
       // R 重开;Swarm levelup 1-3(与引导文案 games.onboard.survival.2 对齐,补实现)。
       if (screen === 'td' && /^[1-5]$/.test(normalized)) {
@@ -890,12 +963,26 @@ export function MiniGamesView(): JSX.Element {
         else if (normalized === 'space') tetrisRef.current.commands.push('hard')
         else if (normalized === 'c') tetrisRef.current.commands.push('hold')
         else if (normalized === 'arrowdown') tetrisRef.current.keys.add('arrowdown')
+        // R208(FR-MP02): B 板 P2 键位——j/l 移动 · i 旋转 · k 软降 · / 硬降 · . hold
+        if (tetrisBRef.current.phase === 'running') {
+          const B = tetrisBRef.current
+          if (normalized === 'j') B.commands.push('left')
+          else if (normalized === 'l') B.commands.push('right')
+          else if (normalized === 'i') B.commands.push('rotate')
+          else if (normalized === 'k') B.keys.add('arrowdown')
+          else if (normalized === '/') B.commands.push('hard')
+          else if (normalized === '.') B.commands.push('hold')
+        }
       }
     }
     const up = (event: KeyboardEvent) => {
       const normalized = normalizeKey(event)
       survivalRef.current.keys.delete(normalized)
       tetrisRef.current.keys.delete(normalized)
+      // R208: P2 键位释放(Swarm keys2 / Tetris B 板软降)
+      const map2: Record<string, string> = { i: 'p2up', j: 'p2left', k: 'p2down', l: 'p2right' }
+      if (map2[normalized] !== undefined) survivalRef.current.keys2.delete(map2[normalized])
+      if (normalized === 'k') tetrisBRef.current.keys.delete('arrowdown')
     }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
@@ -908,6 +995,9 @@ export function MiniGamesView(): JSX.Element {
   const enterGame = useCallback((next: Screen) => {
     setFullscreen(false)
     if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
+    // R208: 离开/切换游戏时清轮换对决状态(防止残留回合机污染下一局)
+    duelRef.current = null
+    setDuel(null)
     setScreen(next)
   }, [])
 
@@ -1059,6 +1149,9 @@ export function MiniGamesView(): JSX.Element {
     if (survivalRef.current.phase === 'lost' || survivalRef.current.phase === 'ready') {
       survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts)
     }
+    // R208(FR-MP01): 双人合作——部署二号位(开局武装,重开保留)
+    if (swarmCoopOnRef.current && survivalRef.current.player2 === null) deployPlayer2(survivalRef.current)
+    if (!swarmCoopOnRef.current && survivalRef.current.player2 !== null) survivalRef.current.player2 = null
     startSurvival(survivalRef.current)
     publishSurvival()
   }, [enabledArtifacts, meta, publishSurvival, swarmCharacter])
@@ -1070,6 +1163,12 @@ export function MiniGamesView(): JSX.Element {
     const d = readDifficulty('slash')
     slashRef.current.maxHearts = d === 'casual' ? 5 : 3
     slashRef.current.hearts = slashRef.current.maxHearts
+    // R208 (FR-MP03): 轮换对决——首次开局部署回合机(P1 先手)
+    if (duelRef.current === null && slashDuelOnRef.current) {
+      const fresh = { turn: 1 as const, scores: [null, null] as [number | null, number | null], done: false }
+      duelRef.current = fresh
+      setDuel(fresh)
+    }
     startSlash(slashRef.current)
     publishSlash()
   }, [publishSlash])
@@ -1144,8 +1243,15 @@ export function MiniGamesView(): JSX.Element {
   }, [])
 
   const startTetrisRun = useCallback(() => {
-    if (tetrisRef.current.phase === 'lost') {
+    if (tetrisRef.current.phase === 'lost' || (tetrisDuelOnRef.current && tetrisBRef.current.phase === 'lost')) {
       tetrisRef.current = initialTetrisState()
+      tetrisBRef.current = initialTetrisState()
+    }
+    // R208(FR-MP02): 双板对战——A 左移 B 右移并排;键位 P1 方向键/C,P2 IJKL+/.。
+    tetrisRef.current.boardX = tetrisDuelOnRef.current ? 150 : 300
+    if (tetrisDuelOnRef.current) {
+      tetrisBRef.current.boardX = 560
+      startTetris(tetrisBRef.current)
     }
     startTetris(tetrisRef.current)
     publishTetris()
@@ -1155,6 +1261,7 @@ export function MiniGamesView(): JSX.Element {
 
   const restartTetrisRun = useCallback(() => {
     tetrisRef.current = initialTetrisState()
+    tetrisBRef.current = initialTetrisState()
     publishTetris()
   }, [publishTetris])
 
@@ -1566,6 +1673,10 @@ export function MiniGamesView(): JSX.Element {
           <span className={tdStateRef.current.meteorCd > 0 ? 'td-meteor-cd' : 'td-meteor-ready'} title={t('games.td.meteorHint')}>
             ☄ {tdStateRef.current.meteorCd > 0 ? Math.ceil(tdStateRef.current.meteorCd) + 's' : t('games.td.meteorReady')} · Q
           </span>
+          {tdCoopOn ? (
+            /* R208 (FR-MP04): 分工合作——P1 鼠标建塔 / P2 Q 键陨石(输入天然分源,UI 明示) */
+            <span className="td-affix-chip">{t('games.td.coop')}</span>
+          ) : null}
           {tdStateRef.current.affix !== null ? (
             <span className="td-affix-chip">{t(`games.td.affix.${tdStateRef.current.affix}` as Parameters<typeof t>[0])}</span>
           ) : null}
@@ -1589,6 +1700,40 @@ export function MiniGamesView(): JSX.Element {
                     onClick={() => { setDifficulty(d); writeDifficulty(screen, d) }}
                   >{t(`games.difficulty.${d}` as Parameters<typeof t>[0])}</button>
                 ))}
+                {/* R208: 本地双人开关——Slash 轮换对决 / TD 分工合作(仅这两作) */}
+                {isSlash ? (
+                  <button type="button" className={`diff-btn ${slashDuelOn ? 'on' : ''}`} data-field="duel-toggle" onClick={() => setSlashDuelOn(!slashDuelOn)}>{t('games.duel.toggle')}</button>
+                ) : null}
+                {isTd ? (
+                  <button type="button" className={`diff-btn ${tdCoopOn ? 'on' : ''}`} data-field="coop-toggle" onClick={() => setTdCoopOn(!tdCoopOn)}>{t('games.duel.coopToggle')}</button>
+                ) : null}
+                {isTetris ? (
+                  <button type="button" className={`diff-btn ${tetrisDuelOn ? 'on' : ''}`} data-field="tetris-duel-toggle" onClick={() => setTetrisDuelOn(!tetrisDuelOn)}>{t('games.duel.toggle')}</button>
+                ) : null}
+                {isSurvival ? (
+                  <button type="button" className={`diff-btn ${swarmCoopOn ? 'on' : ''}`} data-field="swarm-coop-toggle" onClick={() => setSwarmCoopOn(!swarmCoopOn)}>{t('games.swarm.coopToggle')}</button>
+                ) : null}
+              </div>
+            ) : null}
+            {/* R208 (FR-MP03): 轮换对决——回合提示 / 对照结算(P2 回合待开始,或双局已完) */}
+            {isSlash && duel !== null && duel.done ? (
+              <div className="duel-panel" data-field="duel-panel">
+                {duel.turn === 1 ? (
+                  <>
+                    <p className="duel-title">{t('games.duel.turnReady').replace('{n}', '2')}</p>
+                    <button type="button" className="video-btn" data-action="duel-next" onClick={() => { const next = { turn: 2 as const, scores: duel.scores, done: false }; duelRef.current = next; setDuel(next); startSlashRunCb() }}>{t('games.start')}</button>
+                  </>
+                ) : (
+                  <>
+                    <p className="duel-title">{t('games.duel.result')}</p>
+                    <p className="duel-scores">P1 {duel.scores[0]} · P2 {duel.scores[1]}</p>
+                    <p className="duel-verdict">{judgeDuel(duel.scores) === 'tie' ? t('games.duel.tie') : t('games.duel.wins').replace('{n}', judgeDuel(duel.scores) === 'p1' ? '1' : '2')}</p>
+                    <div className="fs-pause-actions">
+                      <button type="button" className="video-btn" data-action="duel-again" onClick={() => { const fresh = { turn: 1 as const, scores: [null, null] as [number | null, number | null], done: false }; duelRef.current = fresh; setDuel(fresh); startSlashRunCb() }}>{t('games.duel.again')}</button>
+                      <button type="button" className="video-btn" data-action="duel-close" onClick={() => setDuel(null)}>{t('games.recap.dismiss')}</button>
+                    </div>
+                  </>
+                )}
               </div>
             ) : null}
             {fsPaused ? (
@@ -1659,7 +1804,7 @@ export function MiniGamesView(): JSX.Element {
                     )
                   })}
                 </div>
-                <p className="swarm-setup-hint">{t('games.setupHint')}</p>
+                <p className="swarm-setup-hint">{swarmCoopOn ? t('games.swarm.coopHint') : t('games.setupHint')}</p>
               </div>
             ) : null}
             {isSurvival && survivalSnapshot.phase === 'roulette' ? (

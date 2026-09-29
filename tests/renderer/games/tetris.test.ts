@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
+  applyGarbage,
   dropInterval,
+  garbageFor,
+  GARBAGE_CELL,
   initialTetrisState,
   shapeCells,
   startTetris,
@@ -283,5 +286,53 @@ describe('renderer/games/tetris placement hint (FR-TE04)', () => {
     const fresh = initialTetrisState()
     expect(fresh.hint).not.toBeNull()
     expect(fresh.hintPieceId).toBe(fresh.pieceId)
+  })
+})
+
+// ── R208 (FR-MP02): 双板对战——垃圾行发送比例与入场规则 ──
+describe('FR-MP02 garbage lines', () => {
+  it('guideline 比例:1 消不送,2/3/4 消送 1/2/4 行', () => {
+    expect(garbageFor(0)).toBe(0)
+    expect(garbageFor(1)).toBe(0)
+    expect(garbageFor(2)).toBe(1)
+    expect(garbageFor(3)).toBe(2)
+    expect(garbageFor(4)).toBe(4)
+  })
+
+  it('入场:底部插入带单洞实心行,板整体上移,行数守恒', () => {
+    const state = initialTetrisState()
+    state.phase = 'running'
+    // 顶行放一个标记块,验证上移
+    state.grid[0][5] = 3
+    applyGarbage(state, 2, 4)
+    expect(state.grid.length).toBe(20)
+    // 标记块被顶出(上移 2 行后越界)
+    expect(state.grid[0][5]).toBe(0)
+    // 底两行是垃圾行:洞列 4 为空,其余 GARBAGE_CELL
+    expect(state.grid[19][4]).toBe(0)
+    expect(state.grid[19][0]).toBe(GARBAGE_CELL)
+    expect(state.grid[18][7]).toBe(GARBAGE_CELL)
+    expect(state.grid[17][7]).toBe(0)
+    // 不计分不计消行
+    expect(state.lines).toBe(0)
+    expect(state.score).toBe(0)
+  })
+
+  it('当前块与垃圾行冲突时被上推,不立即判负', () => {
+    const state = initialTetrisState()
+    state.phase = 'running'
+    // 把当前块压到底部行附近,再灌 4 行垃圾
+    state.py = 16
+    const pyBefore = state.py
+    applyGarbage(state, 4, 0)
+    expect(state.phase).toBe('running')
+    expect(state.py).toBeLessThanOrEqual(pyBefore)
+  })
+
+  it('非 running 态不入场(结算后免疫)', () => {
+    const state = initialTetrisState()
+    state.phase = 'lost'
+    applyGarbage(state, 4)
+    expect(state.grid[19].every((c) => c === 0)).toBe(true)
   })
 })

@@ -170,6 +170,14 @@ export interface SurvivalState {
   evolved: string[]
   /** R202(FR-SW02): boss 弹幕计时(驱动三型循环)。 */
   bossBulletTimer: number
+  /** R208(FR-MP01): 二号位玩家(本地合作;null=单人局)。hp≤0 为倒下态。 */
+  player2: PlayerState | null
+  /** P2 独立输入源(IJKL→p2up/p2down/p2left/p2right,防与 P1 keys 串键)。 */
+  keys2: Set<string>
+  /** 倒下玩家掉落的复活珠(target=被救者);由存活队友拾取触发复活。 */
+  reviveOrbs: Array<{ id: number; x: number; y: number; target: 1 | 2 }>
+  /** 各玩家被复活次数(各限 1 次/局,宽恕设计)。 */
+  revivesUsed: { p1: number; p2: number }
 }
 
 export function xpToNext(level: number): number {
@@ -275,13 +283,60 @@ export function initialSurvivalState(
     evolved: [],
     bossBulletTimer: 0,
     eBullets: [],
+    player2: null,
+    keys2: new Set<string>(),
+    reviveOrbs: [],
+    revivesUsed: { p1: 0, p2: 0 },
   }
   recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses, magnetBonus: state.magnetBonus })
   return state
 }
 
+/** R208(FR-MP01): 部署二号位——独立 HP/无敌帧/开火计时,位置与 P1 分侧。
+ *  共享 build(升级/轮盘对两人同时生效),仅实体与输入独立。 */
+export function deployPlayer2(state: SurvivalState): void {
+  state.player2 = {
+    x: WIDTH / 2 - 60, y: HEIGHT / 2 + 40, vx: 0, vy: 0, size: 14,
+    hp: state.player.maxHp, maxHp: state.player.maxHp, invuln: 2,
+    fireTimer: 0, angle: -Math.PI / 2,
+  }
+  state.keys2 = new Set<string>()
+}
+
 function key(state: SurvivalState, value: string): boolean {
   return state.keys.has(value)
+}
+
+// ── R208(FR-MP01): 存活玩家集合/最近存活者(敌人索敌与磁吸以存活者为准) ──
+function alivePlayers(state: SurvivalState): PlayerState[] {
+  const list: PlayerState[] = []
+  if (state.player.hp > 0) list.push(state.player)
+  if (state.player2 !== null && state.player2.hp > 0) list.push(state.player2)
+  return list
+}
+
+function nearestAlive(state: SurvivalState, p: { x: number; y: number }): PlayerState | null {
+  let best: PlayerState | null = null
+  let bestDist = Number.POSITIVE_INFINITY
+  for (const pl of alivePlayers(state)) {
+    const dist = distance(pl, p)
+    if (dist < bestDist) {
+      best = pl
+      bestDist = dist
+    }
+  }
+  return best
+}
+
+/** 玩家倒下:爆散+掉复活珠(该玩家本局未被复活过时);全员倒下由调用方判负。 */
+function playerDown(state: SurvivalState, which: 1 | 2): void {
+  const p = which === 1 ? state.player : state.player2
+  if (p === null || p.hp > 0) return
+  spawnBurst(state, p.x, p.y, '#f87171', 22, 210)
+  addText(state, p.x, p.y - 30, which === 1 ? 'P1 DOWN' : 'P2 DOWN', '#f87171')
+  if (state.revivesUsed[which === 1 ? 'p1' : 'p2'] < 1) {
+    state.reviveOrbs.push({ id: state.nextId++, x: clamp(p.x, 30, WIDTH - 30), y: clamp(p.y, 30, HEIGHT - 30), target: which })
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -511,12 +566,24 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   }
   state.eBullets = state.eBullets.filter((eb) => eb.life > 0 && eb.x > -40 && eb.x < WIDTH + 40 && eb.y > -40 && eb.y < HEIGHT + 40)
   for (const eb of state.eBullets) {
-    if (state.player.invuln <= 0 && Math.hypot(eb.x - state.player.x, eb.y - state.player.y) < state.player.size + eb.size) {
-      state.player.hp -= 1
-      state.player.invuln = state.invulnWindow
-      state.shake = Math.min(8, state.shake + 4)
-      eb.life = 0
-      playSfx('hurt')
+    // R208: 弹幕对任一存活玩家结算(独立无敌帧)
+    for (const pl of alivePlayers(state)) {
+      if (pl.invuln <= 0 && Math.hypot(eb.x - pl.x, eb.y - pl.y) < pl.size + eb.size) {
+        pl.hp -= 1
+        pl.invuln = state.invulnWindow
+        state.shake = Math.min(8, state.shake + 4)
+        eb.life = 0
+        playSfx('hurt')
+        if (pl.hp <= 0) {
+          playerDown(state, pl === state.player ? 1 : 2)
+          if (alivePlayers(state).length === 0) {
+            state.phase = 'lost'
+            playSfx('gameover')
+            return
+          }
+        }
+        break
+      }
     }
   }
   state.eBullets = state.eBullets.filter((eb) => eb.life > 0)
@@ -579,7 +646,8 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     if (state.time > 60 && Math.random() < 0.35) spawnEnemy(state)
     state.spawnTimer = directorSpawnInterval(state)
   }
-  if (state.portal && distance(state.player, state.portal) < 30) advanceIsland(state)
+  // R208: 传送门任一存活玩家踩中即换岛
+  if (state.portal && alivePlayers(state).some((pl) => distance(pl, state.portal as { x: number; y: number }) < 30)) advanceIsland(state)
   state.bossTimer -= dt
   if (state.bossTimer <= 0) {
     spawnBoss(state)
@@ -618,6 +686,45 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       playSfx('shoot')
     }
     player.fireTimer = 1 / stats.fireRate
+  }
+
+  // ── R208(FR-MP01): 二号位——独立移动(IJKL→keys2)/无敌帧/自动索敌开火 ──
+  // 共享弹池与 stats(build 对两人同时生效);P2 开火不叠 sfx(音频预算)。
+  const p2 = state.player2
+  if (p2 !== null && p2.hp > 0) {
+    p2.invuln = Math.max(0, p2.invuln - dt)
+    const d2x = (state.keys2.has('p2right') ? 1 : 0) - (state.keys2.has('p2left') ? 1 : 0)
+    const d2y = (state.keys2.has('p2down') ? 1 : 0) - (state.keys2.has('p2up') ? 1 : 0)
+    const len2 = Math.hypot(d2x, d2y)
+    if (len2 > 0.0001) {
+      p2.x = clamp(p2.x + (d2x / len2) * stats.moveSpeed * dt, 16, WIDTH - 16)
+      p2.y = clamp(p2.y + (d2y / len2) * stats.moveSpeed * dt, 16, HEIGHT - 16)
+      p2.angle = Math.atan2(d2y, d2x)
+      if (Math.random() < dt * 40) state.particles.push({ x: p2.x - Math.cos(p2.angle) * 14, y: p2.y - Math.sin(p2.angle) * 14, vx: -Math.cos(p2.angle) * 60, vy: -Math.sin(p2.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: '#fbbf24' })
+    }
+    p2.fireTimer -= dt
+    if (p2.fireTimer <= 0 && state.enemies.length > 0) {
+      let nearest2: Enemy | undefined
+      let bestDist2 = Number.POSITIVE_INFINITY
+      for (const enemy of state.enemies) {
+        const dist = distance(p2, enemy)
+        if (dist < bestDist2) {
+          nearest2 = enemy
+          bestDist2 = dist
+        }
+      }
+      if (nearest2) {
+        const baseAngle = Math.atan2(nearest2.y - p2.y, nearest2.x - p2.x)
+        const shots = stats.multishot
+        for (let i = 0; i < shots; i++) {
+          const spread = (i - (shots - 1) / 2) * (Math.PI / 14)
+          const angle = baseAngle + spread
+          const crit = Math.random() < stats.crit
+          state.bullets.push({ id: state.nextId++, x: p2.x, y: p2.y, vx: Math.cos(angle) * stats.bulletSpeed, vy: Math.sin(angle) * stats.bulletSpeed, damage: crit ? stats.damage * 2 : stats.damage, pierce: stats.pierce, crit, life: 1.2 })
+        }
+      }
+      p2.fireTimer = 1 / stats.fireRate
+    }
   }
 
   state.bladeAngle += dt * 2.8
@@ -663,28 +770,33 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     return Math.min(112, 64 + state.time * 0.12) * state.enemySpeedMult
   }
   for (const enemy of state.enemies) {
-    const dist = Math.max(1, distance(enemy, player))
+    // R208(FR-MP01): 敌人追最近存活玩家(单人局退化原行为)
+    const target = nearestAlive(state, enemy) ?? player
+    const dist = Math.max(1, distance(enemy, target))
     const speed = speedFor(enemy)
-    enemy.x += ((player.x - enemy.x) / dist) * speed * dt
-    enemy.y += ((player.y - enemy.y) / dist) * speed * dt
+    enemy.x += ((target.x - enemy.x) / dist) * speed * dt
+    enemy.y += ((target.y - enemy.y) / dist) * speed * dt
     enemy.hitFlash = Math.max(0, enemy.hitFlash - dt)
-    if (player.invuln <= 0 && distance(enemy, player) < enemy.size + player.size) {
-      player.hp -= 1
-      player.invuln = state.invulnWindow
+    if (target.invuln <= 0 && distance(enemy, target) < enemy.size + target.size) {
+      target.hp -= 1
+      target.invuln = state.invulnWindow
       state.shake = enemy.kind === 'boss' ? 9 : 6
       playSfx('hurt')
-      spawnBurst(state, player.x, player.y, '#f87171', 12, 150)
-      enemy.x -= (player.x - enemy.x) / dist * 46
-      enemy.y -= (player.y - enemy.y) / dist * 46
+      spawnBurst(state, target.x, target.y, '#f87171', 12, 150)
+      enemy.x -= (target.x - enemy.x) / dist * 46
+      enemy.y -= (target.y - enemy.y) / dist * 46
       if (stats.thorns > 0) {
         enemy.hp -= stats.thorns
         enemy.hitFlash = 0.1
       }
-      if (player.hp <= 0) {
-        state.phase = 'lost'
-        spawnBurst(state, player.x, player.y, '#f87171', 30, 230)
-        playSfx('gameover')
-        return
+      if (target.hp <= 0) {
+        playerDown(state, target === state.player ? 1 : 2)
+        if (alivePlayers(state).length === 0) {
+          state.phase = 'lost'
+          spawnBurst(state, target.x, target.y, '#f87171', 30, 230)
+          playSfx('gameover')
+          return
+        }
       }
     }
   }
@@ -712,15 +824,42 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   state.enemies = state.enemies.filter((enemy) => enemy.hp > 0)
 
   state.orbs = state.orbs.filter((orb) => {
-    const dist = distance(orb, player)
+    // R208: XP 珠被最近存活玩家磁吸/拾取(共享 XP 池)
+    const holder = nearestAlive(state, orb) ?? player
+    const dist = distance(orb, holder)
     if (dist < stats.magnet) {
       const speed = 260
-      orb.x += ((player.x - orb.x) / dist) * speed * dt
-      orb.y += ((player.y - orb.y) / dist) * speed * dt
+      orb.x += ((holder.x - orb.x) / dist) * speed * dt
+      orb.y += ((holder.y - orb.y) / dist) * speed * dt
     }
-    if (dist < player.size + 8) {
+    if (dist < holder.size + 8) {
       state.xp += orb.value * state.xpMult
       playSfx('xp')
+      return false
+    }
+    return true
+  })
+
+  // ── R208(FR-MP01): 复活珠——队友靠近磁吸,拾取复活倒下方(各 1 次/局) ──
+  state.reviveOrbs = state.reviveOrbs.filter((orb) => {
+    const target = orb.target === 1 ? state.player : state.player2
+    const rescuer = orb.target === 1 ? state.player2 : state.player
+    if (target === null || rescuer === null || rescuer.hp <= 0) return true
+    const dist = distance(orb, rescuer)
+    if (dist < stats.magnet) {
+      const speed = 240
+      orb.x += ((rescuer.x - orb.x) / dist) * speed * dt
+      orb.y += ((rescuer.y - orb.y) / dist) * speed * dt
+    }
+    if (dist < rescuer.size + 10) {
+      target.hp = Math.max(1, Math.ceil(target.maxHp / 2))
+      target.invuln = 2
+      target.x = clamp(rescuer.x + (Math.random() - 0.5) * 64, 16, WIDTH - 16)
+      target.y = clamp(rescuer.y + (Math.random() - 0.5) * 64, 16, HEIGHT - 16)
+      state.revivesUsed[orb.target === 1 ? 'p1' : 'p2'] += 1
+      addText(state, rescuer.x, rescuer.y - 34, orb.target === 1 ? 'P1 REVIVED' : 'P2 REVIVED', '#4ade80')
+      spawnBurst(state, rescuer.x, rescuer.y, '#4ade80', 18, 160)
+      playSfx('levelup')
       return false
     }
     return true
@@ -849,6 +988,23 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.shadowBlur = 0
   }
 
+  // R208(FR-MP01): 复活珠——脉动绿光十字,提示「拾取可救回队友」
+  for (const orb of state.reviveOrbs) {
+    const glow = 0.5 + 0.5 * Math.sin(state.clock * 4)
+    ctx.save()
+    ctx.translate(orb.x, orb.y)
+    ctx.rotate(state.clock * 1.6)
+    ctx.strokeStyle = `rgba(74, 222, 128, ${0.5 + glow * 0.4})`
+    ctx.lineWidth = 3
+    ctx.beginPath(); ctx.arc(0, 0, 9 + glow * 3, 0, Math.PI * 2); ctx.stroke()
+    ctx.fillStyle = '#4ade80'
+    ctx.shadowColor = '#4ade80'
+    ctx.shadowBlur = 12
+    ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill()
+    ctx.restore()
+    ctx.shadowBlur = 0
+  }
+
   if (state.stats.blade > 0) {
     for (let i = 0; i < state.stats.blade; i++) {
       const angle = state.bladeAngle + (i * Math.PI * 2) / state.stats.blade
@@ -907,7 +1063,9 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
       }
       ctx.restore()
     } else if (enemy.kind === 'sprinter') {
-      const angle = Math.atan2(state.player.y - enemy.y, state.player.x - enemy.x)
+      // R208: 朝向最近存活玩家(与索敌目标一致)
+      const heading = nearestAlive(state, enemy) ?? state.player
+      const angle = Math.atan2(heading.y - enemy.y, heading.x - enemy.x)
       ctx.save(); ctx.translate(enemy.x, enemy.y); ctx.rotate(angle)
       ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-9, -8); ctx.lineTo(-9, 8); ctx.closePath(); ctx.fill()
       ctx.restore()
@@ -956,6 +1114,23 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.restore()
   }
 
+  // R208(FR-MP01): 二号位实体(琥珀色区别 P1 青白)+头顶 HP 条
+  const p2d = state.player2
+  if (p2d !== null && p2d.hp > 0 && !(p2d.invuln > 0 && Math.floor(p2d.invuln * 12) % 2 === 0)) {
+    ctx.save()
+    ctx.translate(p2d.x, p2d.y)
+    ctx.rotate(p2d.angle)
+    ctx.fillStyle = '#fff7e2'
+    ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-10, -10); ctx.lineTo(-5, 0); ctx.lineTo(-10, 10); ctx.closePath(); ctx.fill()
+    ctx.fillStyle = '#fbbf24'
+    ctx.beginPath(); ctx.arc(2, 0, 4, 0, Math.PI * 2); ctx.fill()
+    ctx.restore()
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+    ctx.fillRect(p2d.x - 16, p2d.y - 26, 32, 3)
+    ctx.fillStyle = '#fbbf24'
+    ctx.fillRect(p2d.x - 16, p2d.y - 26, 32 * clamp(p2d.hp / p2d.maxHp, 0, 1), 3)
+  }
+
   for (const text of state.texts) {
     ctx.globalAlpha = clamp(text.life, 0, 1)
     ctx.fillStyle = text.color
@@ -974,6 +1149,23 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.beginPath()
     ctx.arc(28 + i * 22, 30, 3, 0, Math.PI * 2)
     ctx.fill()
+  }
+
+  // R208(FR-MP01): P2 HP 第二行(琥珀空心圆,P1 行正下方)
+  if (state.player2 !== null) {
+    for (let i = 0; i < state.player2.maxHp; i++) {
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.55)'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.arc(28 + i * 22, 52, 7, 0, Math.PI * 2)
+      ctx.stroke()
+      if (i < state.player2.hp) {
+        ctx.fillStyle = '#fbbf24'
+        ctx.beginPath()
+        ctx.arc(28 + i * 22, 52, 3.5, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
   }
 
   if (state.combo >= 3) {

@@ -114,6 +114,8 @@ export interface TetrisState {
   lastRotate: boolean
   /** FR-TE04(R199): 放置提示(本块已算好的最优落点,spawn/hold 时重算)。 */
   hint: { px: number; rot: number; py: number } | null
+  /** R208(FR-MP02): 板绘制原点(双板并排时 B 板偏移;默认单板位)。 */
+  boardX: number
   hintPieceId: number
   pieceId: number
   /** R200(FR-G06): hit-stop 冻结剩余(秒)。 */
@@ -205,6 +207,7 @@ export function initialTetrisState(): TetrisState {
     hintPieceId: -1,
     pieceId: 0,
     hitStop: 0,
+    boardX: BOARD_X,
   }
   refillBag(state.bag)
   for (let i = 0; i < 4; i++) state.queue.push(drawFromBag(state))
@@ -277,7 +280,7 @@ function lockPiece(state: TetrisState): void {
     for (const row of fullRows) {
       for (let x = 0; x < COLS; x++) {
         const color = KIND_COLORS[(state.grid[row][x] ?? 1) - 1] ?? '#67e8f9'
-        spawnBurst(state, BOARD_X + x * CELL + CELL / 2, BOARD_Y + row * CELL + CELL / 2, color, 3, 150)
+        spawnBurst(state, state.boardX + x * CELL + CELL / 2, BOARD_Y + row * CELL + CELL / 2, color, 3, 150)
       }
       state.grid.splice(row, 1)
       state.grid.unshift(Array.from({ length: COLS }, () => 0))
@@ -503,12 +506,12 @@ export function tickTetris(state: TetrisState, dt: number): void {
   }
 }
 
-function cellRect(x: number, y: number): { x: number; y: number } {
-  return { x: BOARD_X + x * CELL, y: BOARD_Y + y * CELL }
+function cellRect(x: number, y: number, originX = BOARD_X): { x: number; y: number } {
+  return { x: originX + x * CELL, y: BOARD_Y + y * CELL }
 }
 
-function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, alpha = 1): void {
-  const rect = cellRect(x, y)
+function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, alpha = 1, originX = BOARD_X): void {
+  const rect = cellRect(x, y, originX)
   ctx.globalAlpha = alpha
   ctx.fillStyle = color
   ctx.fillRect(rect.x + 1, rect.y + 1, CELL - 2, CELL - 2)
@@ -547,31 +550,36 @@ const TETRIS_LABELS: TetrisLabels = {
   replaySuffix: '— Press Start to play again',
 }
 
-export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, best: number, labels: TetrisLabels = TETRIS_LABELS): void {
-  ctx.clearRect(0, 0, WIDTH, HEIGHT)
+export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, best: number, labels: TetrisLabels = TETRIS_LABELS, opts: { noClear?: boolean } = {}): void {
+  // R208(FR-MP02): 板原点随 state.boardX(双板并排);noClear 供第二板叠加绘制
+  const bx = state.boardX
+  if (!opts.noClear) {
+    ctx.clearRect(0, 0, WIDTH, HEIGHT)
+  }
   ctx.save()
   if (state.shake > 0.2) ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake)
-  ctx.fillStyle = '#05090d'
-  ctx.fillRect(0, 0, WIDTH, HEIGHT)
-  ctx.strokeStyle = 'rgba(103, 232, 249, 0.08)'
-  ctx.lineWidth = 1
-  for (let x = 0; x < WIDTH; x += 45) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, HEIGHT); ctx.stroke() }
-  for (let y = 0; y < HEIGHT; y += 45) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke() }
-
+  if (!opts.noClear) {
+    ctx.fillStyle = '#05090d'
+    ctx.fillRect(0, 0, WIDTH, HEIGHT)
+    ctx.strokeStyle = 'rgba(103, 232, 249, 0.08)'
+    ctx.lineWidth = 1
+    for (let x = 0; x < WIDTH; x += 45) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, HEIGHT); ctx.stroke() }
+    for (let y = 0; y < HEIGHT; y += 45) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke() }
+  }
   ctx.fillStyle = '#070d14'
-  ctx.fillRect(BOARD_X - 6, BOARD_Y - 6, COLS * CELL + 12, ROWS * CELL + 12)
+  ctx.fillRect(bx - 6, BOARD_Y - 6, COLS * CELL + 12, ROWS * CELL + 12)
   ctx.strokeStyle = '#265065'
   ctx.lineWidth = 2
-  ctx.strokeRect(BOARD_X - 6, BOARD_Y - 6, COLS * CELL + 12, ROWS * CELL + 12)
+  ctx.strokeRect(bx - 6, BOARD_Y - 6, COLS * CELL + 12, ROWS * CELL + 12)
   ctx.strokeStyle = 'rgba(103, 232, 249, 0.06)'
   ctx.lineWidth = 1
-  for (let x = 1; x < COLS; x++) { ctx.beginPath(); ctx.moveTo(BOARD_X + x * CELL, BOARD_Y); ctx.lineTo(BOARD_X + x * CELL, BOARD_Y + ROWS * CELL); ctx.stroke() }
-  for (let y = 1; y < ROWS; y++) { ctx.beginPath(); ctx.moveTo(BOARD_X, BOARD_Y + y * CELL); ctx.lineTo(BOARD_X + COLS * CELL, BOARD_Y + y * CELL); ctx.stroke() }
+  for (let x = 1; x < COLS; x++) { ctx.beginPath(); ctx.moveTo(bx + x * CELL, BOARD_Y); ctx.lineTo(bx + x * CELL, BOARD_Y + ROWS * CELL); ctx.stroke() }
+  for (let y = 1; y < ROWS; y++) { ctx.beginPath(); ctx.moveTo(bx, BOARD_Y + y * CELL); ctx.lineTo(bx + COLS * CELL, BOARD_Y + y * CELL); ctx.stroke() }
 
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
       const cell = state.grid[y][x]
-      if (cell !== 0) drawCell(ctx, x, y, KIND_COLORS[cell - 1])
+      if (cell !== 0) drawCell(ctx, x, y, cell === GARBAGE_CELL ? '#9fb7c1' : KIND_COLORS[cell - 1], 1, bx)
     }
   }
 
@@ -579,7 +587,7 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
   for (const cell of shapeCells(state.kind, state.rot)) {
     const gy = ghost + cell.y
     if (gy >= 0) {
-      const rect = cellRect(cell.x + state.px, gy)
+      const rect = cellRect(cell.x + state.px, gy, bx)
       ctx.strokeStyle = 'rgba(226, 248, 255, 0.28)'
       ctx.lineWidth = 1.5
       ctx.strokeRect(rect.x + 2, rect.y + 2, CELL - 4, CELL - 4)
@@ -590,7 +598,7 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
     if (gy >= 0) {
       ctx.shadowColor = KIND_COLORS[state.kind]
       ctx.shadowBlur = 10
-      drawCell(ctx, state.px + cell.x, gy, KIND_COLORS[state.kind])
+      drawCell(ctx, state.px + cell.x, gy, KIND_COLORS[state.kind], 1, bx)
       ctx.shadowBlur = 0
     }
   }
@@ -599,10 +607,10 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
   ctx.font = '700 12px Inter, sans-serif'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
-  ctx.fillText('NEXT', 600, 110)
+  ctx.fillText('NEXT', bx + 300, 110)
   state.queue.slice(0, 3).forEach((kind, index) => {
     for (const cell of shapeCells(kind, 0)) {
-      const rect = { x: 600 + cell.x * 16, y: 124 + index * 66 + cell.y * 16 }
+      const rect = { x: bx + 300 + cell.x * 16, y: 124 + index * 66 + cell.y * 16 }
       ctx.fillStyle = KIND_COLORS[kind]
       ctx.fillRect(rect.x, rect.y, 14, 14)
     }
@@ -611,11 +619,11 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
   // FR-TE01(R199): HOLD 槽(板左;已用则暗显)
   ctx.fillStyle = '#9fb7c1'
   ctx.font = '700 12px Inter, sans-serif'
-  ctx.fillText('HOLD', 220, 110)
+  ctx.fillText('HOLD', bx - 80, 110)
   if (state.holdKind !== null) {
     ctx.globalAlpha = state.holdUsed ? 0.32 : 1
     for (const cell of shapeCells(state.holdKind, 0)) {
-      const rect = { x: 220 + cell.x * 16, y: 124 + cell.y * 16 }
+      const rect = { x: bx - 80 + cell.x * 16, y: 124 + cell.y * 16 }
       ctx.fillStyle = KIND_COLORS[state.holdKind]
       ctx.fillRect(rect.x, rect.y, 14, 14)
     }
@@ -633,7 +641,7 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
       n += 1
     }
     if (n > 0) {
-      const c = cellRect(hx / n, hy / n)
+      const c = cellRect(hx / n, hy / n, bx)
       ctx.fillStyle = 'rgba(226, 248, 255, 0.4)'
       ctx.font = '700 16px Inter, sans-serif'
       ctx.textAlign = 'center'
@@ -646,15 +654,15 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
 
   ctx.fillStyle = '#e2f8ff'
   ctx.font = '800 26px Inter, sans-serif'
-  ctx.fillText(`${state.score}`, 600, 360)
+  ctx.fillText(`${state.score}`, bx + 300, 360)
   ctx.fillStyle = '#9fb7c1'
   ctx.font = '600 13px Inter, sans-serif'
-  ctx.fillText(`LINES ${state.lines}`, 600, 388)
-  ctx.fillText(`LEVEL ${state.level}`, 600, 410)
-  ctx.fillText(`BEST ${best}`, 600, 432)
-  if (state.b2b) ctx.fillText('B2B', 600, 454)
-  if (state.combo >= 1) ctx.fillText(`COMBO ×${state.combo}`, 660, 454)
-  if (state.tspins > 0) ctx.fillText(`T-SPIN ${state.tspins}`, 600, 476)
+  ctx.fillText(`LINES ${state.lines}`, bx + 300, 388)
+  ctx.fillText(`LEVEL ${state.level}`, bx + 300, 410)
+  ctx.fillText(`BEST ${best}`, bx + 300, 432)
+  if (state.b2b) ctx.fillText('B2B', bx + 300, 454)
+  if (state.combo >= 1) ctx.fillText(`COMBO ×${state.combo}`, bx + 360, 454)
+  if (state.tspins > 0) ctx.fillText(`T-SPIN ${state.tspins}`, bx + 300, 476)
 
   for (const particle of state.particles) {
     ctx.globalAlpha = Math.max(0, particle.life / particle.maxLife)
@@ -704,4 +712,34 @@ export function tetrisHints(state: TetrisState): CoachHint[] {
   if (state.b2b) hints.push({ key: 'te.b2b', tone: 'praise', priority: 50 })
   if (state.combo >= 2) hints.push({ key: 'te.combo', tone: 'praise', priority: 55 })
   return hints
+}
+
+// ── R208 (FR-MP02): 双板对战——垃圾行纯函数(guideline 比例) ──
+
+/** 垃圾行格值(KIND_COLORS 之外的灰白色,绘制层单独映射)。 */
+export const GARBAGE_CELL = 8
+
+/** guideline 发送比例:1 消不送;2/3/4 消分别送 1/2/4 行。 */
+export function garbageFor(lines: number): number {
+  if (lines <= 1) return 0
+  if (lines === 2) return 1
+  if (lines === 3) return 2
+  return 4
+}
+
+/** 垃圾行入场:底部插入带单洞实心行,板整体上移;当前块冲突时逐行上推。
+ *  不改 score/lines(垃圾行不计分);hint 作废(布局已变)。 */
+export function applyGarbage(state: TetrisState, lines: number, holeColumn?: number): void {
+  if (lines <= 0 || state.phase !== 'running') return
+  const hole = holeColumn ?? Math.floor(Math.random() * COLS)
+  for (let n = 0; n < lines; n++) {
+    state.grid.shift()
+    state.grid.push(Array.from({ length: COLS }, (_, c) => (c === hole ? 0 : GARBAGE_CELL)))
+  }
+  let guard = 0
+  while (collides(state, state.kind, state.rot, state.px, state.py) && guard < ROWS + 4) {
+    state.py -= 1
+    guard += 1
+  }
+  state.hint = null
 }
