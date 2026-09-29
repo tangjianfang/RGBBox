@@ -72,7 +72,7 @@ import {
   type RouletteResult,
   type SwarmMeta,
 } from '../games/swarmMeta'
-import { isBgmEnabled, isSfxEnabled, playSfx, setBgmEnabled, setBgmPreset, setSfxEnabled, startBgm, stopBgm } from '../games/sfx'
+import { isBgmEnabled, isSfxEnabled, playSfx, setBgmEnabled, setBgmPreset, setBgmTension, setSfxEnabled, startBgm, stopBgm } from '../games/sfx'
 import { isOnboarded, markOnboarded, pickHint, type CoachHint } from '../games/coach'
 import { loadRuns, profileStats, recordRun, type GameId } from '../domain/gamesTelemetry'
 import { recapCoachKey } from '../games/juice'
@@ -94,6 +94,7 @@ import {
   drawTetris,
   garbageFor,
   initialTetrisState,
+  stackHeight,
   startTetris,
   tetrisHints,
   tickTetris,
@@ -260,6 +261,19 @@ export function MiniGamesView(): JSX.Element {
   const [tetrisDuelOn, setTetrisDuelOn] = useState(false)
   const tetrisDuelOnRef = useRef(false)
   tetrisDuelOnRef.current = tetrisDuelOn
+  // ── R205 尾款(FR-G08): 短局矩阵——四作 ready 态开关,起跑时写入引擎 ──
+  const [tdBlitzOn, setTdBlitzOn] = useState(false)
+  const tdBlitzOnRef = useRef(false)
+  tdBlitzOnRef.current = tdBlitzOn
+  const [swarmSprintOn, setSwarmSprintOn] = useState(false)
+  const swarmSprintOnRef = useRef(false)
+  swarmSprintOnRef.current = swarmSprintOn
+  const [tetrisRaceOn, setTetrisRaceOn] = useState(false)
+  const tetrisRaceOnRef = useRef(false)
+  tetrisRaceOnRef.current = tetrisRaceOn
+  const [slashBurstOn, setSlashBurstOn] = useState(false)
+  const slashBurstOnRef = useRef(false)
+  slashBurstOnRef.current = slashBurstOn
   // ── R209 (FR-LN01-05): LAN 联机——TD 合作(房主权威,客端指令+快照渲染) ──
   const [lanPanelOpen, setLanPanelOpen] = useState(false)
   const [lanRole, setLanRole] = useState<'idle' | 'host' | 'guest'>('idle')
@@ -717,6 +731,7 @@ export function MiniGamesView(): JSX.Element {
     let lastPhase: string = screen === 'td' ? tdStateRef.current.phase : screen === 'survival' ? survivalRef.current.phase : tetrisRef.current.phase
     let lastSlashPhase = slashRef.current.phase
     let lanSnapAcc = 0
+    let bgmTensionCur = 0
     const loop = (now: number) => {
       let dt = Math.min(0.05, (now - last) / 1000)
       // R206: 暂停冻结全部引擎 tick(dt=0;含计时/倒计时/粒子由各引擎特效路径自然停)
@@ -883,6 +898,24 @@ export function MiniGamesView(): JSX.Element {
       } else {
         fsButtonsRef.current = []
       }
+      // R205 尾款(FR-G07 二期): BGM 张力变奏——危险态拉起,解除回落。
+      // 去抖:仅等级变化时切(setBgmTension 内部下一拍生效,不重排音频)。
+      if (bgmOn) {
+        const danger = screen === 'td'
+          ? tdStateRef.current.lives <= 8
+          : screen === 'survival'
+            ? survivalRef.current.player.hp <= 2 || survivalRef.current.player2 !== null && survivalRef.current.player2.hp > 0 && survivalRef.current.player2.hp <= 2 || survivalRef.current.enemies.some((e) => e.kind === 'boss')
+            : screen === 'slash'
+              ? slashRef.current.hearts <= 1
+              : stackHeight(tetrisRef.current) >= 13
+        const level = danger ? 1 : 0
+        if (level !== bgmTensionCur) {
+          bgmTensionCur = level
+          setBgmTension(level)
+        }
+      } else if (bgmTensionCur !== 0) {
+        bgmTensionCur = 0
+      }
       snapshotTimer += dt
       if (snapshotTimer > 0.18) {
         if (screen === 'td') publishTd()
@@ -924,7 +957,7 @@ export function MiniGamesView(): JSX.Element {
       cancelAnimationFrame(frame)
       stopBgm()
     }
-  }, [fullscreen, pollGamepad, pollVision, publishTd, publishSurvival, publishTetris, screen, selectedTowerId, settleBest, tdSpeed])
+  }, [bgmOn, fullscreen, pollGamepad, pollVision, publishTd, publishSurvival, publishTetris, screen, selectedTowerId, settleBest, tdSpeed])
 
   useEffect(() => {
     if (screen !== 'survival' && screen !== 'tetris' && screen !== 'slash' && !fullscreen) return
@@ -1056,6 +1089,8 @@ export function MiniGamesView(): JSX.Element {
       tdStateRef.current = initialState()
       setSelectedTowerId(null)
     }
+    // FR-G08: 闪电赛——6 波上限(引擎 targetWaves 读 blitz)
+    tdStateRef.current.blitz = tdBlitzOnRef.current
     // R204: TD 难度二档(休闲 30 命+300 金 / 标准 20+220)
     if (tdStateRef.current.wave === 0 && tdStateRef.current.towers.length === 0) {
       const d = readDifficulty('td')
@@ -1224,6 +1259,8 @@ export function MiniGamesView(): JSX.Element {
     if (survivalRef.current.phase === 'lost' || survivalRef.current.phase === 'ready') {
       survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts)
     }
+    // FR-G08: 90 秒冲刺——时限到走既有 lost 结算(分数保留)
+    survivalRef.current.sprintSeconds = swarmSprintOnRef.current ? 90 : undefined
     // R208(FR-MP01): 双人合作——部署二号位(开局武装,重开保留)
     if (swarmCoopOnRef.current && survivalRef.current.player2 === null) deployPlayer2(survivalRef.current)
     if (!swarmCoopOnRef.current && survivalRef.current.player2 !== null) survivalRef.current.player2 = null
@@ -1238,13 +1275,14 @@ export function MiniGamesView(): JSX.Element {
     const d = readDifficulty('slash')
     slashRef.current.maxHearts = d === 'casual' ? 5 : 3
     slashRef.current.hearts = slashRef.current.maxHearts
+    // FR-G08: 30 秒爆发——startSlash 可选时长(T1 引擎支持)
     // R208 (FR-MP03): 轮换对决——首次开局部署回合机(P1 先手)
     if (duelRef.current === null && slashDuelOnRef.current) {
       const fresh = { turn: 1 as const, scores: [null, null] as [number | null, number | null], done: false }
       duelRef.current = fresh
       setDuel(fresh)
     }
-    startSlash(slashRef.current)
+    startSlash(slashRef.current, slashBurstOnRef.current ? 30 : RUN_SECONDS)
     publishSlash()
   }, [publishSlash])
   slashStartRef.current = startSlashRunCb
@@ -1323,6 +1361,9 @@ export function MiniGamesView(): JSX.Element {
       tetrisBRef.current = initialTetrisState()
     }
     // R208(FR-MP02): 双板对战——A 左移 B 右移并排;键位 P1 方向键/C,P2 IJKL+/.。
+    // FR-G08: 40 行竞速——达标进 'won'(结算面板复用)。
+    tetrisRef.current.raceLines = tetrisRaceOnRef.current ? 40 : undefined
+    tetrisBRef.current.raceLines = tetrisRaceOnRef.current ? 40 : undefined
     tetrisRef.current.boardX = tetrisDuelOnRef.current ? 150 : 300
     if (tetrisDuelOnRef.current) {
       tetrisBRef.current.boardX = 560
@@ -1815,6 +1856,19 @@ export function MiniGamesView(): JSX.Element {
                 ) : null}
                 {isSurvival ? (
                   <button type="button" className={`diff-btn ${swarmCoopOn ? 'on' : ''}`} data-field="swarm-coop-toggle" onClick={() => setSwarmCoopOn(!swarmCoopOn)}>{t('games.swarm.coopToggle')}</button>
+                ) : null}
+                {/* R205 尾款(FR-G08): 短局矩阵——四作模式开关(引擎层已随 T1 合入) */}
+                {isTd ? (
+                  <button type="button" className={`diff-btn ${tdBlitzOn ? 'on' : ''}`} data-field="td-blitz-toggle" onClick={() => setTdBlitzOn(!tdBlitzOn)}>{t('games.short.blitz')}</button>
+                ) : null}
+                {isSurvival ? (
+                  <button type="button" className={`diff-btn ${swarmSprintOn ? 'on' : ''}`} data-field="swarm-sprint-toggle" onClick={() => setSwarmSprintOn(!swarmSprintOn)}>{t('games.short.sprint')}</button>
+                ) : null}
+                {isTetris ? (
+                  <button type="button" className={`diff-btn ${tetrisRaceOn ? 'on' : ''}`} data-field="tetris-race-toggle" onClick={() => setTetrisRaceOn(!tetrisRaceOn)}>{t('games.short.race')}</button>
+                ) : null}
+                {isSlash ? (
+                  <button type="button" className={`diff-btn ${slashBurstOn ? 'on' : ''}`} data-field="slash-burst-toggle" onClick={() => setSlashBurstOn(!slashBurstOn)}>{t('games.short.burst')}</button>
                 ) : null}
               </div>
             ) : null}

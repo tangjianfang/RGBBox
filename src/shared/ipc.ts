@@ -219,6 +219,7 @@ export const ipcChannels = {
   lanDiscover: 'rgbbox:lan:discover',
   lanCmd: 'rgbbox:lan:cmd',
   lanSnapshot: 'rgbbox:lan:snapshot',
+  lanSpectate: 'rgbbox:lan:spectate',
   lanEvent: 'rgbbox:lan:event', // main -> renderer push
 } as const
 

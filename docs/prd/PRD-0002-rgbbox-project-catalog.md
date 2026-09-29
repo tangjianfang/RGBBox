@@ -3701,9 +3701,9 @@
 
 ### R205. `feat` — M2 BGM 分曲一期 + 短局矩阵(SRS FR-G07 一期/FR-G08)
 
-- **状态**: ✅(BGM 二期+短局矩阵部分随 M3+待用户)
+- **状态**: ✅(全交付:BGM 一期 5ff1ec8/二期张力+短局矩阵四作随 R215 批次;真机听感待用户)
 - **验收点**(SRS §4): 四作静态音乐预设(调式/BPM/音色层,进作切换,零素材);短局模式(TD 6 波闪电赛/Swarm 90 秒冲刺/Tetris 40 行竞速(顺延 M3)/Slash 30 秒爆发)。
-- **证据**: ✅ 5ff1ec8 — BgmPreset 五档(default 字节级兼容/td Dm 沉稳/swarm Em 急促/tetris C 上行/slash E 小调强拍)热切换+进作自动切;M3 延续 65dbf1e(daily);短局矩阵中 Tetris 40 行竞速按 SRS 顺延 M3 未做;1258 绿,快照 9/9
+- **证据**: ✅ 5ff1ec8 — BgmPreset 五档(default 字节级兼容/td Dm 沉稳/swarm Em 急促/tetris C 上行/slash E 小调强拍)热切换+进作自动切;M3 延续 65dbf1e(daily);短局矩阵四作(T1 worktree 引擎层+主干 UI 接线)+BGM 二期张力变奏(T2)已随 2026-09-30 批次交付,见 R215;1258 绿,快照 9/9
 
 
 
@@ -3748,7 +3748,7 @@
 
 ### R209. `feat` — M4 LAN 联机(SRS FR-LN01–05;RA2 式建房;零新增 npm 依赖)
 
-- **状态**: ✅ 一期(FR-LN01/02/03 核心+FR-LN04 TD 合作;FR-LN05 Tetris 对战、客端插值渲染、断线重连/观战、hash 对账的漂移重同步为二期,随用户真机双机验收反馈再排)
+- **状态**: ✅ 一期+二期核心(FR-LN03 重连/观战/对账已交付,见 R215;FR-LN05 Tetris 对战与客端插值渲染仍为后续)
 - **边界**(强制): 仅本网段 UDP 广播 + TCP 直连;无公网/无 NAT 穿透/无账号;Node 原生 dgram/net;渲染层经 window.rgbbox IPC 桥扩展事件接入,不直接触网。
 - **验收点**(SRS §6.2): 房间发现(UDP beacon 1s/版本握手拒绝)/房主权威+10–20Hz 快照/心跳断线恢复+快照 hash 对账/LAN TD 合作首发+Tetris 对战次发。
 - **证据**: ✅ 一期 — ①shared/lanProtocol.ts(纯函数:长度前缀帧+FrameDecoder 粘半包/超限抛错断连、beacon 解析+版本校验、versionsCompatible)+4 用例;②main/lanService.ts(dgram beacon 1s 广播+本机回环、net TCP 会话、hello→welcome/reject 版本握手先行、2s ping/5s 判死、256KB 帧上限、listening 后登记房间——修掉同步 address() 返回 null 的崩溃);③IPC 七通道+preload 白名单 lanHost/lanJoin/lanLeave/lanDiscover/lanCmd/lanSnapshot/onLanEvent(渲染层不触网,NFR-05 零新增依赖);④LanPanel(建房/发现列表 3s 滚出/手输直连兜底/状态回显);⑤TD 合作:房主权威(客端不 tick,快照直接落 tdStateRef 复用统计条/绘制通路),房主 15Hz JSON 快照+hash 附带,客端建塔/升级/出售/选塔/陨石指令上行(建塔逻辑抽 buildTowerAtRef 供本地点击与远程指令共用);guest 死控件禁用(无尽开关/开波/重开);peer-left 提示+房主续局;⑥E2E 本机双实例回环(createRequire 解析 playwright-core,双 --user-data-dir):建房 port 50920→加入 guest→A 开局 B 统计条实时显示「波次 1/1 20♥ 220◎」快照→A 侧 peers=1+「LAN·1P」芯片→B 选塔+点击指令上行。已知限制:beacon 自动发现在本机双实例未命中(手输兜底验证;真双机广播待验)。1282 绿(+4);快照 games 0.028% 阈值内(LAN 按钮)9/9;走查:guest 截图复核通过(死控件问题已修)。
@@ -3776,6 +3776,25 @@
   5. **场景背景系统(2026-09-30 追加,用户要求「大气美观好玩」)**:内置程序化场景——太空站/沙漠/雪地/草丛/海底/融合(岛屿轮换制,每换岛切换场景);每场景专属元素(如海底=气泡上升+光柱+水草摆动+焦散光斑,雪地=飘雪+极光+冰原,草丛=草浪+萤火虫,沙漠=沙丘层叠+落日+热浪)+玩家位置视差;零素材约束(NFR-05)——全部 canvas 程序绘制,独立 scene 绘制模块(纯函数);另支持用户本地图片作自定义背景(同头像持久化机制,暗化压底保证实体可读性);选战机面板场景选择+随机档。
 - **验收点**: 4P 存活/复活/索敌正确;头像持久化并在画布正确渲染(含圆形裁切/非正方形图片);4 套输入映射零串键,手柄键盘混用;auto-pick 按预设清单命中(清单外策略明确);全部含单测;UI 含 i18n 双语。
 - **证据**: ⏳
+
+
+### R214. `fix` — 定时关机失败原因透传(2026-09-30 用户报告「Windows 上提示仅支持 Windows」)
+
+- **状态**: ✅
+- **诊断**: IPC/引擎层实测健康(CDP 实机 arm 15m→armed→cancel 全 ok;shutdown.exe spawn 可达——探测还发现真机上存在挂起的 OS 关机计时器,证明用户此前 arm 曾成功)。真因:ShutdownTimerPanel 把 onArm 的**任何失败**统一显示为 `shutdown.unsupported`(仅支持 Windows)文案——校验越界(invalid-seconds)与命令被拦(spawn-failed,如安全软件)全被误标为平台不支持,误导排障。
+- **修复**: armShutdown 既有 error 码(unsupported/invalid-seconds/spawn-failed)经 hook 透传到面板,按码显示独立文案;unsupported 仅在真非 Windows 平台出现。
+- **证据**: ✅ — CDP 实机三步链路 arm 15m→status armed→cancel 全 ok;shutdown.exe spawn 可达(纯 node /a 探测);修复=error 码(invalid-seconds/spawn-failed/unsupported/unknown)经 useShutdownTimer 透传,Panel 按码 t(`shutdown.err.<code>`) 显示,i18n 双语 4 键;unsupported 仅真非 Windows 出现。附:探测发现真机存在挂起的 OS 关机计时器(用户此前 arm 实际成功过),探测 /a 已将其中止——用户需重新定时属预期。1295 绿,typecheck 双绿,快照 9/9。
+
+
+### R215. `feat` — 短局矩阵+BGM 张力+LAN 二期集成批次(T1/T2/T3 worktree 并行→主干合并+UI 接线)
+
+- **状态**: ✅
+- **过程**: 三任务按无交叉文件域切分(worktree 并行)→T2 merge(基点干净)+T1 cherry-pick(旧基点,双保留解冲突:td 双 if 头合一[endless 豁免+targetWaves]、tetris 重复类型去重[保 hold]、四测试文件 describe 闭合/重复 import 修)+T3 merge(r209-lan-phase2 自建 worktree,干净)+主干 UI 接线→集成测试。
+- **交付**:
+  - 短局矩阵(FR-G08):四作 ready 态开关(difficulty-picker 行)——TD 闪电赛 6 波(blitz)/Swarm 冲刺 90 秒(sprintSeconds)/Tetris 竞速 40 行(raceLines,双板同步)/Slash 爆发 30 秒(startSlash 可选时长);i18n games.short.* 4 键×双语。
+  - BGM 二期(FR-G07):BgmPreset.tension 同构覆盖层(arp 八度×2/stepMs 加密/bassDiv 锚回;default 无 tension 保字节级兼容)+setBgmTension(0|1) 热切(下一拍生效);主干接线:loop 内危险态(TD 命≤8/Swarm 任一玩家 hp≤2 或 boss 在场/Slash 心≤1/Tetris 栈高≥13)去抖切换。
+  - LAN 二期(FR-LN03):snap 单调 seq+SnapTracker(跳号→resync 补发缓存全量,不循环;hash 异常 3 帧 streak→error:hash-anomaly)+会话身份保留断线重连(welcome resume:true+当前 seq)+观战态(spectate peer 的 cmd 忽略,IPC lanSpectate 三件套接线);epoch 世代守卫防跨局误记。
+- **证据**: 147 文件/1295 用例全过(短局 10+LAN 6+BGM 4 新增);typecheck 双绿;快照 9/9(games 0.028% 阈值内);worktree 分支与目录已清理。
 
 ### R193. AI8 桥上下文记忆连贯（2026-09-26 用户指令「把它设置到最大,保持每个会话的上下文都能连贯起来」;真实会话 JSONL + 站点对照实验取证）
 

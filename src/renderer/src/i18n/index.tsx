@@ -415,6 +415,11 @@ const EN = {
   'shutdown.cancel': 'Cancel Shutdown',
   'shutdown.hint': 'The system will shut down when the countdown ends. Cancel anytime.',
   'shutdown.unsupported': 'Scheduled shutdown is Windows-only for now.',
+  // R214: per-failure-code messages (only 'unsupported' means the platform)
+  'shutdown.err.unsupported': 'Scheduled shutdown is Windows-only for now.',
+  'shutdown.err.invalid-seconds': 'Invalid duration — pick 1 second to 24 hours.',
+  'shutdown.err.spawn-failed': 'Failed to run the shutdown command — check antivirus/permissions, then retry.',
+  'shutdown.err.unknown': 'Arming failed — retry.',
   // R74: light-effect screensaver
   'screensaver.label': 'Effect Screensaver',
   'screensaver.on': 'On',
@@ -915,6 +920,12 @@ const EN = {
   'games.lan.rejected': 'Join rejected — version mismatch',
   'games.lan.peerLeft': 'Player disconnected — the host keeps running',
   'games.lan.cmdHint': 'Remote seat: pick a tower, then click the board · Q meteor',
+  // ── R205 tail (FR-G08): short-run matrix toggles ──
+  'games.short.blitz': 'Blitz · 6 waves',
+  'games.short.sprint': 'Sprint · 90s',
+  'games.short.race': 'Race · 40 lines',
+  'games.short.burst': 'Burst · 30s',
+  'games.lan.spectate': 'Spectate',
   'games.difficulty.label': 'Difficulty',
   'games.difficulty.casual': 'Casual',
   'games.difficulty.standard': 'Standard',
@@ -2119,6 +2130,11 @@ const ZH: TranslationTable = {
   'shutdown.cancel': '取消关机',
   'shutdown.hint': '倒计时结束后系统将关机，可随时取消。',
   'shutdown.unsupported': '定时关机目前仅支持 Windows。',
+  // R214: 按失败码显示（仅 unsupported 才是平台问题）
+  'shutdown.err.unsupported': '定时关机目前仅支持 Windows。',
+  'shutdown.err.invalid-seconds': '时长无效——请输入 1 秒到 24 小时之间。',
+  'shutdown.err.spawn-failed': '关机命令执行失败——请检查安全软件/权限后重试。',
+  'shutdown.err.unknown': '启动失败——请重试。',
   // R74：灯效屏保
   'screensaver.label': '灯效屏保',
   'screensaver.on': '开',
@@ -2611,6 +2627,12 @@ const ZH: TranslationTable = {
   'games.lan.rejected': '加入被拒——版本不一致',
   'games.lan.peerLeft': '玩家断线——房主继续对局',
   'games.lan.cmdHint': '远程席位：选塔后点击棋盘 · Q 陨石',
+  // ── R205 尾款 (FR-G08): 短局矩阵开关 ──
+  'games.short.blitz': '闪电赛 · 6 波',
+  'games.short.sprint': '冲刺 · 90 秒',
+  'games.short.race': '竞速 · 40 行',
+  'games.short.burst': '爆发 · 30 秒',
+  'games.lan.spectate': '观战',
   'games.difficulty.label': '难度',
   'games.difficulty.casual': '休闲',
   'games.difficulty.standard': '标准',

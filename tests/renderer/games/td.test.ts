@@ -1,6 +1,6 @@
 // R201: TD 无尽/词缀/陨石。
 import { describe, expect, it } from 'vitest'
-import { affixForWave, AFFIX_PARAMS, castMeteor, initialState, launchWave, tickGame } from '../../../src/renderer/src/games/td'
+import { affixForWave, AFFIX_PARAMS, BLITZ_WAVES, castMeteor, initialState, launchWave, MAX_WAVE, targetWaves, tickGame } from '../../../src/renderer/src/games/td'
 
 describe('td endless + affix (FR-TD02)', () => {
   it('affix cycles after wave 12 (swift→tough→phantom→swift…)', () => {
@@ -58,16 +58,6 @@ describe('td meteor skill (FR-TD03)', () => {
     expect(castMeteor(s)).toBeGreaterThan(0)
   })
 })
-
-import { describe, it, expect } from 'vitest'
-import {
-  BLITZ_WAVES,
-  initialState,
-  launchWave,
-  MAX_WAVE,
-  targetWaves,
-  tickGame,
-} from '../../../src/renderer/src/games/td'
 
 describe('renderer/games/td engine (R99.6)', () => {
   it('standard run ceiling is MAX_WAVE; blitz runs cap at BLITZ_WAVES', () => {

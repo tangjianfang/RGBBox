@@ -35,13 +35,15 @@ export function useShutdownTimer() {
     return () => window.clearInterval(timer)
   }, [shutdownInfo?.deadlineMs])
 
-  const armShutdownTimer = useCallback(async (seconds: number): Promise<boolean> => {
+  // R214: 失败时返回主进程 error 码(invalid-seconds/spawn-failed/…)供面板
+  // 按码显示——此前一切失败都被误标为「仅支持 Windows」。
+  const armShutdownTimer = useCallback(async (seconds: number): Promise<string | null> => {
     const res = await window.rgbbox.shutdownArm(seconds)
     if (res.ok && res.deadlineMs != null) {
       setShutdownInfo({ deadlineMs: res.deadlineMs, totalMs: seconds * 1000, remainingMs: seconds * 1000 })
-      return true
+      return null
     }
-    return false
+    return res.error ?? 'unknown'
   }, [])
 
   const cancelShutdownTimer = useCallback(async (): Promise<void> => {

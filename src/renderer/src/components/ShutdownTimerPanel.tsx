@@ -17,7 +17,8 @@ interface Props {
   deadlineMs: number | null
   totalMs: number
   remainingMs: number
-  onArm: (seconds: number) => Promise<boolean>
+  /** R214: 返回 null=成功,否则为失败码(invalid-seconds/spawn-failed/…)按码显示。 */
+  onArm: (seconds: number) => Promise<string | null>
   onCancel: () => Promise<void>
   onClose: () => void
 }
@@ -42,8 +43,9 @@ export function ShutdownTimerPanel({
     if (busy) return
     setBusy(true)
     setError(null)
-    const ok = await onArm(seconds)
-    if (!ok) setError(t('shutdown.unsupported'))
+    // R214: 按失败码显示——只有真非 Windows 才提示「仅支持 Windows」
+    const errCode = await onArm(seconds)
+    if (errCode !== null) setError(t(`shutdown.err.${errCode}` as Parameters<typeof t>[0]) || t('shutdown.err.unknown'))
     setBusy(false)
   }
 

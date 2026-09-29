@@ -378,4 +378,6 @@ export function registerLanIpc(ipcMain: IpcMain, service: LanService): void {
   ipcMain.handle(ipcChannels.lanDiscover, (_e, on: boolean) => { if (on) service.startDiscovery(); else service.stopDiscovery(); return true })
   ipcMain.handle(ipcChannels.lanCmd, (_e, c: unknown) => { service.sendCmd(c); return true })
   ipcMain.handle(ipcChannels.lanSnapshot, (_e, s: unknown, h: string) => { service.pushSnapshot(s, h); return true })
+  // R209 二期: 客端声明观战(只收快照,指令被房主忽略)
+  ipcMain.handle(ipcChannels.lanSpectate, () => { service.sendSpectate(); return true })
 }

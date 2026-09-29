@@ -376,6 +376,7 @@ const api = {
   lanDiscover: (on: boolean): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanDiscover, on),
   lanCmd: (c: unknown): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanCmd, c),
   lanSnapshot: (s: unknown, h: string): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanSnapshot, s, h),
+  lanSpectate: (): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanSpectate),
   onLanEvent: (callback: (e: { kind: string; detail?: unknown }) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, e: { kind: string; detail?: unknown }): void => callback(e)
     ipcRenderer.on(ipcChannels.lanEvent, handler)
