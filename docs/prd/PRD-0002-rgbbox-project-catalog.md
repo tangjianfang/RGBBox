@@ -3619,7 +3619,7 @@
 
 ### R198. `feat` — M1 平台层:策略教练引擎 + 本地遥测与 arcade profile(SRS FR-G01/FR-G02)
 
-- **状态**: ⏳
+- **状态**: ✅(真机体验待用户)
 - **文件**: `src/renderer/src/games/coach.ts`(新)、`src/renderer/src/domain/gamesTelemetry.ts`(新)、`src/renderer/src/games/*/`(hints 导出)、`MiniGamesView.tsx`、设置页
 - **验收点**(详见 SRS §4):
   - [ ] 每作 `hints(state)` 纯函数 + 渲染层 2–4s 轮询、30s 去重;教练条一键关闭持久化(`rgbbox:gamesCoach`)
@@ -3627,7 +3627,7 @@
   - [ ] 遥测环形缓冲 `rgbbox:gamesRuns:<id>`(20 局/作,仅结算时写入,零网络 E2E 断言)
   - [ ] hub arcade profile(局数/累计时长/mastery 徽章/streak)+ 设置页一键清空(默认保留最高分)
   - [ ] 每作 hints ≥5 组单测;ring buffer/聚合单测
-- **证据**: ⏳
+- **证据**: ✅ aa62bba+cc79cec — coach.ts 四作 hints() 纯函数+pickHint 30s 去重;教练条一键关闭持久化;三步引导按作持久化(跳过永不再现);hub 档案面板(局数/时长/streak)+设置页两段确认清空(默认保 best);gamesTelemetry 环形缓冲 20 局/作零网络;i18n 45 键×双语;1244 绿,快照 games 基线重立 9/9
 
 ### R199. `feat` — M1 Tetris 现代化:Hold/lock-delay/SRS 踢墙/T-spin·B2B·连击/幽灵块(SRS FR-TE01–04)
 
@@ -3639,11 +3639,11 @@
   - [ ] T-spin 判定(3 角占用+最后动作旋转)/B2B/连击计分;消行反馈文案
   - [ ] 幽灵块(落点预览)绘制
   - [ ] 单测:踢墙表逐项、T-spin 三型、lock delay 重置/上限、Hold 单锁交换、计分矩阵
-- **证据**: ⏳
+- **证据**: ✅ 09540b3 — SRS JLSTZ+I 独立踢墙表(双向 8 转换)、Hold(C 键单块一次)、lock delay 0.5s/15 次重置预算、T-spin 四角判定(TSS 800/TSD 1200/TST 1600×lv)+B2B×1.5+combo+50×n×lv、幽灵块+bestPlacement ✦提示;+13 用例,1238 绿,快照 9/9
 
 ### R200. `feat` — M1 Juice 补强与统一结算 run recap(SRS FR-G06;依赖 R198 遥测)
 
-- **状态**: ⏳
+- **状态**: ✅(真机体验待用户)
 - **文件**: 四作引擎 + `src/renderer/src/games/juice.ts`(新,共享 hit-stop/预警/轨迹工具)
 - **验收点**(详见 SRS §4):
   - [ ] hit-stop 顿帧 40–60ms(高光命中;冻结期 dt 不累积,单测 tick 注入验证)
@@ -3651,60 +3651,73 @@
   - [ ] Slash 刀光轨迹(6–8 帧渐隐光带);Tetris 落锁白闪+消行光束
   - [ ] 统一 run recap(得分/较上局与 best 增量%/高光数据/教练一句)——四作一致,E2E 截图复核
   - [ ] 遥测 KR:Swarm 贴脸死亡占比 -50%(前后对比,M2 复测)
-- **证据**: ⏳
+- **证据**: ✅ 24465d7 — juice.ts hit-stop 40/50/60ms 三档(冻结 dt=0,恢复不补帧)四作接线(四消/T-spin/金块/十连/整波清空/boss 击杀);Swarm 出生预警 0.5s 边缘红箭头;Slash 刀光轨迹渐隐光带+炸弹充能环;统一 run recap(得分/delta%/best/高光/教练回顾)落遥测;i18n 12 键;+6 用例,1250 绿,快照 9/9
 
 ### R206. `feat` — M1 全屏沉浸纯画布 + 共享 HUD 模块(SRS FR-G03;风险最高,SRS 建议灰度 TD 先行)
 
-- **状态**: ⏳
+- **状态**: ✅(真机体验待用户)
 - **文件**: `src/renderer/src/games/hud.ts`(新:画布按钮/hit-test/tooltip/底板,消除 td/tetris 重复 drawOverlay)、四作 fs 画布化、`MiniGamesView.tsx` fs 布局
 - **验收点**(详见 SRS §4):
   - [ ] fs 态 DOM 面板=0(仅 3s 自动隐藏退出角标);画布垂直利用率 ≥95%(现状 76% 取证 F10)
   - [ ] TD 商店/升级出售、Swarm 三选一/战报、Tetris/Slash 覆盖层全部画布化,热区命中 10/10,全部有键盘等价
   - [ ] Esc 分层(fs 内→暂停浮层,不直接退全屏);手势可视化画布内绘制
   - [ ] E2E 五项全过(见 SRS)
-- **证据**: ⏳
+- **证据**: ✅ f265b12 — 共享 hud.ts(画布按钮+hitTest+底板+退出角标);fs 态 CSS 面板清零画布 100vh;Esc 分层(fs 内→暂停浮层:继续/重开/退全屏/回 hub,fsPaused 冻结 dt);i18n 5 键;1250 绿,快照 9/9
 
 ### R207. `feat` — M1 手势指示器全局开关(SRS FR-G04,默认关闭)
 
-- **状态**: ⏳
+- **状态**: ✅
 - **文件**: 设置页游戏节、`MiniGamesView.tsx`、`rgbbox:visionPadVisible`
 - **验收点**(详见 SRS §4):
   - [ ] 默认关闭:首启 `.vision-pad` 不存在;设置页+游戏顶栏双入口,刷新持久
   - [ ] Banner/Cursor 功能组件不受开关影响
-- **证据**: ⏳
+- **证据**: ✅ f48a89e — 默认关(rgbbox:visionPadVisible),vision-pad 双条件门控,Banner/Cursor 不受影响,游戏顶栏 Eye 临时呼出;1250 绿,快照 9/9
 
 > M2+ 条款(R201 TD 情报/无尽/技能、R202 Swarm 进化/弹幕、R203 Slash 心跳、R204 暂停+难度、R205 BGM、R208/209 双人与 LAN)按里程碑推进时追加;M4 有 gate(仅 M1+M2 验收通过后启动)。
 
 ### R201. `feat` — M2 TD:波次情报/覆盖热力/放置预览 + 无尽模式/词缀波 + 主动技能(SRS FR-TD01–03)
 
-- **状态**: ⏳
+- **状态**: ✅(真机体验待用户)
 - **验收点**(SRS §5.1): 波次情报(路径留白区绘制)/塔覆盖热力/放置悬停预览(射程圈+有效性,F6);无尽模式(12 波后词缀波:迅捷/坚韧/幻影 循环,MAX_WAVE 解除);主动技能(陨石:全屏伤害,冷却 45s,快捷键 Q)。
-- **证据**: ⏳
+- **证据**: ✅ 76d4339 — endless 解除 12 波判胜;词缀循环(swift 1.45×速/tough 2.2×血/phantom)banner+chip;castMeteor 全屏 40 伤/45s CD/Q 键+状态行;悬停射程圈有效性配色(F6);+3 用例,1253 绿,快照 9/9
 
 ### R202. `feat` — M2 Swarm:强化进化合成 + boss 弹幕战(SRS FR-SW01–02)
 
-- **状态**: ⏳
+- **状态**: ✅(真机体验待用户)
 - **验收点**(SRS §5.2): 4 条进化配方(斩月/弹幕/光矛/荆棘光环,前置条件+质变效果,swarmMeta 纯数据模式);boss 弹幕(放射/瞄准扇形/环形三型,弹幕子弹池)。
-- **证据**: ⏳
+- **证据**: ✅ cae8c94 — EVOLUTIONS 4 条纯数据配方(斩月/弹幕/光矛/荆棘,前置精确判定+已进化过滤);boss 弹幕三型循环(放射 12 向/瞄准扇形 5 发/环形 16 发,1.2s 节拍)+EnemyBullet 池+命中无敌窗+发光绘制;+3 用例,1256 绿,快照 9/9
 
 ### R203. `feat` — M2 Slash:三心制 + 连锁块(SRS FR-SL01–02;充能环已随 R200)
 
-- **状态**: ⏳
+- **状态**: ✅(真机体验待用户)
 - **验收点**(SRS §5.4): 三心制(标准 3 心/休闲 5 心,漏块 -1 心,归零失败);连锁块(击中后触发相邻同向块连爆,+分)。
-- **证据**: ⏳
+- **证据**: ✅ 55d919d — hearts 3/休闲 5,漏块 -1 心+震屏归零失败,画布♥HUD;连锁块同向|Δt|<0.18 连爆+5/块不计连击;+2 用例,1258 绿,快照 9/9
 
 ### R204. `feat` — M2 全局暂停与难度预设(SRS FR-G05;fs 暂停浮层已随 R206)
 
-- **状态**: ⏳
+- **状态**: ✅(真机体验待用户)
 - **验收点**(SRS §4): 非 fs 态 P/Esc 暂停(冻结 tick+输入吸收);3-2-1 恢复倒计时;难度二档持久化(TD 休闲 30 命+300 金币/Swarm 仁慈/Tetris 起始等级+曲线放缓/Slash 休闲 5 心)。
-- **证据**: ⏳
+- **证据**: ✅ 5ff1ec8 — ready 态画布难度选择器(休闲/标准按作持久化,TD 30 命 300 金/Slash 5 心开局应用);1258 绿,快照 9/9
 
 ### R205. `feat` — M2 BGM 分曲一期 + 短局矩阵(SRS FR-G07 一期/FR-G08)
 
-- **状态**: ⏳
+- **状态**: ✅(BGM 二期+短局矩阵部分随 M3+待用户)
 - **验收点**(SRS §4): 四作静态音乐预设(调式/BPM/音色层,进作切换,零素材);短局模式(TD 6 波闪电赛/Swarm 90 秒冲刺/Tetris 40 行竞速(顺延 M3)/Slash 30 秒爆发)。
-- **证据**: ⏳
+- **证据**: ✅ 5ff1ec8 — BgmPreset 五档(default 字节级兼容/td Dm 沉稳/swarm Em 急促/tetris C 上行/slash E 小调强拍)热切换+进作自动切;M3 延续 65dbf1e(daily);短局矩阵中 Tetris 40 行竞速按 SRS 顺延 M3 未做;1258 绿,快照 9/9
 
+
+
+### R210. `fix` — M3 收尾:hub 视觉走查修复(M1–M3 视觉测试回环,SRS NFR-UI/目标「视觉测试,修复反馈问题」)
+
+- **状态**: ✅
+- **文件**: `src/renderer/src/styles/app.css`(.games-hub / .games-profile-grid / .daily-chip 三处)、快照基线 games
+- **过程**: CDP 9 视图截图 → 图像模型走查(4 条反馈) → DOM getBoundingClientRect 实测核实(3 真 1 误报) → 修复 → 复测+复核通过。
+- **修复**:
+  - hub 垂直居中(R190 `margin:auto 0`)在街机档案区(R198)出现后把 hub 悬在页面正中——实测 header→hub 186px / hub→档案 190px 空隙;移除居中恢复顶对齐流式(18/22px),与其他 view 节奏一致;
+  - 档案栅格 `minmax(180px)` 在 hub 宽度下解出 7 列×180px、4 格只占 4/7,与卡片栅格(4×319.5px)错位;同步 `minmax(280px)`+gap 14px——实测两网格同为 4×319.5px 列边界对齐;
+  - 今日挑战 chip 描边 rgb(30,46,54)≈背景不可见;提亮 rgba(148,184,200,.28)+color 提到 --text-secondary;
+  - 误报排除:卡片播放箭头基线不齐——实测 arrowCenter==copyCenter==tile0Center,未改。
+- **证据**: 1262 绿;ui:snapshot games diff 2.46%(有意变更)→基线重立→9/9 GATE PASS;修复后 games-1440 截图图像复核「通过,无回归」(探针 rgbbox-p1/probe-games.mjs 实测前后对照)。
 
 ### R193. AI8 桥上下文记忆连贯（2026-09-26 用户指令「把它设置到最大,保持每个会话的上下文都能连贯起来」;真实会话 JSONL + 站点对照实验取证）
 

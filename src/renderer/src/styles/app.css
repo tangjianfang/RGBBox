@@ -1827,9 +1827,9 @@ input:not([type]):focus {
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  /* R190: vertical centering that stays scroll-safe — auto margins collapse
-     to 0 when the hub outgrows the viewport instead of clipping the top. */
-  margin: auto 0;
+  /* R210: R190 的 margin:auto 0 垂直居中在 hub 下方出现街机档案区(R198)后
+     反而把 hub 悬在页面正中——上下各 ~170px 空隙被视觉走查判为布局缺陷。
+     恢复顶对齐流式布局,与其他 view 的节奏一致。 */
   width: 100%;
 }
 
@@ -9686,8 +9686,11 @@ input:disabled {
 .games-profile h3 { margin: 0 0 8px; font-size: 13px; color: var(--text-secondary); }
 .games-profile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 10px;
+  /* R210: minmax(180px) 在 hub 宽度下解出 7 列,4 个格子只占 4/7 且列边界
+     与上方卡片栅格(4×~320px)错位——与 .games-hub 同步 minmax(280px)+14px
+     gap,两套网格共用一套列节奏。 */
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
 }
 .games-profile-cell {
   display: flex;
@@ -9821,5 +9824,5 @@ input:disabled {
 
 /* M3(FR-G09): daily 挑战行 */
 .games-daily-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--text-secondary); }
-.daily-chip { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--surface-raised); color: var(--text-muted); }
+.daily-chip { padding: 2px 10px; border-radius: 999px; border: 1px solid rgba(148, 184, 200, 0.28); color: var(--text-secondary); }
 .daily-chip.done { border-color: rgba(110, 231, 160, 0.4); color: var(--accent, #6ee7a0); background: rgba(110, 231, 160, 0.08); }
