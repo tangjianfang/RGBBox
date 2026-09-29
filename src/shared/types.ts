@@ -617,6 +617,8 @@ export interface TtsEngineStatus {
   bundledVoices: string[]
   /** R187: voice ids with a downloaded .bin (catalog ∩ on-disk). */
   voices: string[]
+  /** R212: Piper 中文引擎(端到端 VITS,整句韵律)。 */
+  piper?: { installed: boolean; complete: boolean; files: TtsModelFileStatus[] }
 }
 export interface TtsModelProgress {
   path: string

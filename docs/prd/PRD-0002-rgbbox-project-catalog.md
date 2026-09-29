@@ -3753,6 +3753,17 @@
 - **验收点**(SRS §6.2): 房间发现(UDP beacon 1s/版本握手拒绝)/房主权威+10–20Hz 快照/心跳断线恢复+快照 hash 对账/LAN TD 合作首发+Tetris 对战次发。
 - **证据**: ✅ 一期 — ①shared/lanProtocol.ts(纯函数:长度前缀帧+FrameDecoder 粘半包/超限抛错断连、beacon 解析+版本校验、versionsCompatible)+4 用例;②main/lanService.ts(dgram beacon 1s 广播+本机回环、net TCP 会话、hello→welcome/reject 版本握手先行、2s ping/5s 判死、256KB 帧上限、listening 后登记房间——修掉同步 address() 返回 null 的崩溃);③IPC 七通道+preload 白名单 lanHost/lanJoin/lanLeave/lanDiscover/lanCmd/lanSnapshot/onLanEvent(渲染层不触网,NFR-05 零新增依赖);④LanPanel(建房/发现列表 3s 滚出/手输直连兜底/状态回显);⑤TD 合作:房主权威(客端不 tick,快照直接落 tdStateRef 复用统计条/绘制通路),房主 15Hz JSON 快照+hash 附带,客端建塔/升级/出售/选塔/陨石指令上行(建塔逻辑抽 buildTowerAtRef 供本地点击与远程指令共用);guest 死控件禁用(无尽开关/开波/重开);peer-left 提示+房主续局;⑥E2E 本机双实例回环(createRequire 解析 playwright-core,双 --user-data-dir):建房 port 50920→加入 guest→A 开局 B 统计条实时显示「波次 1/1 20♥ 220◎」快照→A 侧 peers=1+「LAN·1P」芯片→B 选塔+点击指令上行。已知限制:beacon 自动发现在本机双实例未命中(手输兜底验证;真双机广播待验)。1282 绿(+4);快照 games 0.028% 阈值内(LAN 按钮)9/9;走查:guest 截图复核通过(死控件问题已修)。
 
+
+### R212. `feat` — 中文 TTS 双档:Piper 本地 + Edge 云端(用户试听 R197 反馈「没什么区别,一点情感也没有」)
+
+- **状态**: ✅(Piper 档交付并实测;Edge 档探针结论=2026 起微软收紧不可稳定交付,未集成)
+- **诊断**: R197 链路三重错配——①英文版 Kokoro-82M(phoneme 空间为英文,中文音色仅是声纹向量);②自创声调符号(ˈˌː)而非标准 IPA 声调体系;③60 音节分块独立合成硬拼接,句内韵律断裂。且 phonemizer 包的 espeak 数据是裁剪版(list_voices('cmn')=[]),完整 cmn G2P 不可得。
+- **方案**(用户选定 Piper+Edge 双档):
+  - **Piper zh_CN-huayan-medium**(63.2MB,onnxruntime-node 已装零新增依赖,hf-mirror 可达):整句端到端 VITS,韵律/停顿由模型习得;G2P=汉字→pinyin-pro→拼音音素(带调数字)→phoneme_id_map→ids,无需 espeak;纯离线、可导出,预算内。
+  - **Edge 云端**(微软晓晓等,真情感多音色,免费):主进程 wss 合成,需联网;非官方接口,失效风险在 UI 注明。
+- **验收点**: 同一段中文文本,三引擎(现状桥/Piper/Edge)各出一条试听 wav 供用户对比;Piper 探针先跑通再集成;引擎三档 UI(系统/Kokoro/Piper/Edge)+Edge 音色选择;导出链路全档可用。
+- **证据**: ✅ — ①诊断实证:phonemizer 包 espeak 数据为裁剪版(list_voices(\'cmn\')=[])坐实 R197 绕桥原因;R197 三重错配(英文模型 phoneme 空间/自创声调符号/60 音节分块硬拼)写入条款。②Piper 探针:sdk=npm piper-phonemize 1.4.12(纯 wasm,内置完整 espeak-ng cmn,18MB 数据随包,零原生依赖)+onnxruntime-node(已有);模型 zh_CN-huayan-medium 63,201,294B(hf-mirror 可达,sha256 固化);espeak cmn 输出=IPA+调值 1-5(Piper 训练精确格式,ɕ/tɕ 卷舌齐备);ids 规则 BOS+音素×PAD 间隔+EOS;onnx 输入 input/input_lengths[1]/scales[3],逐句(标点分段)推理,实测 120-286ms/句(实时率 ~12x)。③集成:PIPER_FILES 清单+下载管线(repo:\'piper\' 分流)+状态扩展(piper.complete)+ttsSynthesize 三路由(全 piper/混合逐句路由[22k→24k 线性插值重采样]/纯 kokoro)+voice=\'piper-zh\' 选择器;UI:zh 音色下拉 Piper 置顶(旧桥音色保留标「桥」)+独立下载按钮(~63MB)+✓Piper chip;新用户默认 piper-zh(老 localStorage 保留);错误归一 piper-config-missing→model-not-ready;tsconfig.node include types.d.ts;手写 piper-phonemize 类型声明。④Edge 探针(未集成):wss+Sec-MS-GEC 算法(FILETIME 300s round+SHA256)三变体(GEC 版本/UA-Origin/ConnectionId)均 403;查证 2026-01 issue #458 官方 edge-tts 7.2.1 同报 403(微软加仅 Edge 浏览器能过的新校验,中国区额外收紧)——如实记为不可稳定交付,不接。⑤测试:piperTts.test 6 用例(ids 构造/精确对账/kokoro 不受扰)+AiLabVoiceTab R196 用例更新(默认 piper-zh);147 文件/1275 用例全过(agentSessionBoundary 一次并行 flaky 单跑绿);快照 9/9。⑥产品内实测:ttsModelDownload({piper}) 校验秒过→piper.complete=true→ttsSynthesize voice=piper-zh 纯中文 22050Hz/328KB WAV 成功,桌面落「r212-产品内-Piper中文.wav」待用户对比试听(R197 旧文件「kokoro-中文试听-v2.wav」保留对照)。CDP 实例混合路径报 model-not-ready 系该环境 kokoro 状态问题(纯英文同报),用户真机 kokoro 一直可用,不阻塞。
+
 ### R193. AI8 桥上下文记忆连贯（2026-09-26 用户指令「把它设置到最大,保持每个会话的上下文都能连贯起来」;真实会话 JSONL + 站点对照实验取证）
 
 > **取证结论**:①站点会话有服务端记忆(`contextCount:0` 对照实验两臂均记住暗号——此前对该参数的怀疑排除);②桥的站点会话是**模块级单例**——跨 Agent 会话/跨工作区共享(用户会话里实测串味)+ 崩溃重建(`contextCount:0`)即失忆;③重启续跑恢复的 JSONL 历史**从不回放**给站点——UI 全在、模型失忆;④用户会话前两轮模型无视工具说明答「无法访问文件系统」直接收尾;⑤AI8 整段返回,大回复静默 1-3 分钟,用户误判死机手动取消(「输出中断」现场=`DONE: cancelled`)。

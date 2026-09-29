@@ -818,16 +818,18 @@ function registerIpc(): void {
   const ttsCacheRoot = join(app.getPath('userData'), 'models')
   let ttsDownloading = false
   ipcMain.handle(ipcChannels.ttsEngineStatus, () => ttsModelStatus(ttsCacheRoot))
-  ipcMain.handle(ipcChannels.ttsModelDownload, async (_event, p: unknown) => {
+  ipcMain.handle(ipcChannels.ttsModelDownload, async (_event, p: unknown, opts?: unknown) => {
     if (ttsDownloading) return { ok: false, error: 'already-downloading' }
     // R185: a string[] payload narrows the run to those files (per-file retry)
     const only = Array.isArray(p) && p.every((x) => typeof x === 'string') ? (p as string[]) : undefined
+    // R212: {piper:true} downloads the Chinese VITS engine instead
+    const piper = (opts as { piper?: boolean } | undefined)?.piper === true
     ttsDownloading = true
     const push = (ev: TtsDownloadEvent): void => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ipcChannels.ttsModelProgress, ev)
     }
     try {
-      return await ttsDownloadModels(ttsCacheRoot, push, undefined, { only })
+      return await ttsDownloadModels(ttsCacheRoot, push, undefined, { only, piper })
     } finally {
       ttsDownloading = false
     }

@@ -26,9 +26,10 @@ export function AiLabVoiceTab(): JSX.Element {
   const [voiceId, setVoiceId] = useState(() => {
     try { return localStorage.getItem('rgbbox:voiceVoice') ?? 'af_heart' } catch { return 'af_heart' }
   })
-  // R197: 中文句的 Kokoro 桥音色(独立持久化;英文句仍用 voiceId)
+  // R197: 中文句的音色(独立持久化;英文句仍用 voiceId)。
+  // R212: 新用户默认 Piper 中文引擎(端到端韵律);老 localStorage 值原样保留。
   const [zhVoiceId, setZhVoiceId] = useState(() => {
-    try { return localStorage.getItem('rgbbox:voiceZhVoice') ?? 'zf_xiaobei' } catch { return 'zf_xiaobei' }
+    try { return localStorage.getItem('rgbbox:voiceZhVoice') ?? 'piper-zh' } catch { return 'piper-zh' }
   })
   const [ttsStatus, setTtsStatus] = useState<TtsEngineStatus | null>(null)
   const [currentIdx, setCurrentIdx] = useState(-1)
@@ -76,6 +77,20 @@ export function AiLabVoiceTab(): JSX.Element {
     setDlError(null)
     try {
       const out = await window.rgbbox.ttsModelDownload(paths)
+      if (!out.ok) setDlError(out.error ?? 'network')
+      void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch(() => undefined)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  // R212: Piper 中文引擎下载(独立清单,~63MB)
+  const startPiperDownload = async (): Promise<void> => {
+    if (downloading) return
+    setDownloading(true)
+    setDlError(null)
+    try {
+      const out = await window.rgbbox.ttsModelDownload(undefined, { piper: true })
       if (!out.ok) setDlError(out.error ?? 'network')
       void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch(() => undefined)
     } finally {
@@ -300,8 +315,10 @@ export function AiLabVoiceTab(): JSX.Element {
               aria-label={t('ai.voice.voiceZh')}
               title={t('ai.voice.voiceZhHint')}
             >
+              {/* R212: Piper 中文引擎(端到端 VITS,整句韵律)置顶推荐;旧 zf_/zm_ 桥保留 */}
+              <option value="piper-zh">{`${ttsStatus?.piper?.complete === true ? '✓ ' : ''}${t('ai.voice.piperZh')}`}</option>
               {KOKORO_VOICE_CATALOG.filter(isZhVoice).map((v) => (
-                <option key={v} value={v}>{`${voicesOnDisk.includes(v) ? '✓ ' : ''}${voiceLabel(v)}`}</option>
+                <option key={v} value={v}>{`${voicesOnDisk.includes(v) ? '✓ ' : ''}${voiceLabel(v)} · 桥`}</option>
               ))}
             </select>
           )}
@@ -374,6 +391,21 @@ export function AiLabVoiceTab(): JSX.Element {
               >
                 {downloading ? t('ai.voice.downloading') : t('ai.voice.download')}
               </button>
+            )}
+            {/* R212: Piper 中文引擎独立下载(~63MB;就绪后中文下拉自动可用) */}
+            {modelReady && ttsStatus?.piper !== undefined && !ttsStatus.piper.complete && (
+              <button
+                type="button"
+                className="video-btn"
+                data-action="vs-piper-download"
+                onClick={() => { void startPiperDownload() }}
+                disabled={downloading || !ttsStatus.piper.installed}
+              >
+                {downloading ? t('ai.voice.downloading') : t('ai.voice.piperDownload')}
+              </button>
+            )}
+            {modelReady && ttsStatus?.piper?.complete === true && modelsPanelCollapsed && (
+              <span className="vs-model-chip ok">✓ Piper</span>
             )}
           </div>
           {modelsPanelCollapsed && !modelReady && (

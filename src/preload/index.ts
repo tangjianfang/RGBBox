@@ -349,7 +349,7 @@ const api = {
 
   // ── R173-S2/R179: offline TTS — model panel + downloader + WAV export ───────
   ttsEngineStatus: (): Promise<TtsEngineStatus> => ipcRenderer.invoke(ipcChannels.ttsEngineStatus),
-  ttsModelDownload: (paths?: string[]): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(ipcChannels.ttsModelDownload, paths),
+  ttsModelDownload: (paths?: string[], opts?: { piper?: boolean }): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(ipcChannels.ttsModelDownload, paths, opts),
   onTtsModelProgress: (callback: (ev: TtsModelProgress) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, ev: TtsModelProgress): void => callback(ev)
     ipcRenderer.on(ipcChannels.ttsModelProgress, handler)

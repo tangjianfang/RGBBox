@@ -34,7 +34,8 @@
     "@huggingface/transformers": "^3.8.1",
     "kokoro-js": "^1.2.1",
     "onnxruntime-node": "^1.29.0",
-    "pinyin-pro": "^3.29.4"
+    "pinyin-pro": "^3.29.4",
+    "piper-phonemize": "^1.4.12"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.87.1",

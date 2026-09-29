@@ -4210,6 +4210,11 @@ pinyin-pro@^3.29.4:
   resolved "https://registry.yarnpkg.com/pinyin-pro/-/pinyin-pro-3.29.4.tgz#1ceacdf4b453bbc9c6e92aed35cf1b54bb7f12b0"
   integrity sha512-SPXpDT2cHEy+d26V1RXYMlVzXN42hotFAak1fzyWPi4o2dKXb61UqD4pzxDJHwk6gbv8vQ6EfErd+hYX0Qhzug==
 
+piper-phonemize@^1.4.12:
+  version "1.4.12"
+  resolved "https://registry.yarnpkg.com/piper-phonemize/-/piper-phonemize-1.4.12.tgz#3bb2e4685e925e62aed6bc891fa7bf9e0a99027b"
+  integrity sha512-tPxpQKuzYakn9Gob4ZJBbHmzfYZ/b0ZdmJgimBk/jNIQLhswunz3tkprlwvVGus/Pg+QAJeEmE4bNAeEQ8b46A==
+
 pixelmatch@^7.2.0:
   version "7.2.0"
   resolved "https://registry.npmmirror.com/pixelmatch/-/pixelmatch-7.2.0.tgz#59f4e6faca733f763756d175e2579ed71369fd72"
