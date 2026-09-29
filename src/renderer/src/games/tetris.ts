@@ -8,6 +8,9 @@ import { HIT_STOP, hitStopTick } from './juice'
 
 export type TetrisPhase = 'ready' | 'running' | 'lost'
 export type TetrisCommand = 'left' | 'right' | 'rotate' | 'hard' | 'hold'
+/** FR-G08 race short-run adds 'won': line goal reached before topping out. */
+export type TetrisPhase = 'ready' | 'running' | 'won' | 'lost'
+export type TetrisCommand = 'left' | 'right' | 'rotate' | 'hard'
 
 const COLS = 10
 const ROWS = 20
@@ -86,6 +89,9 @@ export interface TetrisState {
   clock: number
   score: number
   lines: number
+  /** FR-G08 race short-run: clear this many lines to win (undefined = endless
+   *  scoring run). View writes it before start; the engine only reads it. */
+  raceLines?: number
   level: number
   shake: number
   grid: number[][]
@@ -304,6 +310,15 @@ function lockPiece(state: TetrisState): void {
     state.flash = { rows: [], life: 0.25 }
     state.shake = Math.min(7, 2 + cleared * 1.5)
     playSfx(cleared >= 3 || tspin ? 'levelup' : 'pop')
+    playSfx(cleared >= 3 ? 'levelup' : 'pop')
+    // FR-G08 race: line goal reached → win. Settle BEFORE spawning the next
+    // piece so a topped-out board cannot overwrite 'won' with 'lost', and use
+    // the level-up jingle instead of the game-over shake/sfx.
+    if (state.raceLines !== undefined && state.lines >= state.raceLines) {
+      state.phase = 'won'
+      playSfx('levelup')
+      return
+    }
   } else {
     if (tspin) {
       // 零消 T-spin:小分,不计 B2B 也不清 B2B(guideline 惯例)
@@ -541,12 +556,15 @@ function drawOverlay(ctx: CanvasRenderingContext2D, title: string, subtitle: str
 export interface TetrisLabels {
   readySubtitle: string
   lostTitle: string
+  /** FR-G08 race: overlay title for phase 'won' (falls back to an inline default). */
+  wonTitle?: string
   replaySuffix: string
 }
 
 const TETRIS_LABELS: TetrisLabels = {
   readySubtitle: '← → move · ↑ rotate · ↓ soft drop · Space hard drop',
   lostTitle: 'Stack Out',
+  wonTitle: 'Race Clear',
   replaySuffix: '— Press Start to play again',
 }
 
@@ -673,8 +691,10 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
   ctx.restore()
   if (state.phase === 'ready') {
     drawOverlay(ctx, 'Neon Blocks', labels.readySubtitle, best > 0 ? `Best ★${best}` : '')
-  } else if (state.phase === 'lost') {
-    drawOverlay(ctx, labels.lostTitle, `Level ${state.level} · ${state.lines} lines`, `Score ★${state.score} · Best ★${best} ${labels.replaySuffix}`)
+  } else if (state.phase === 'lost' || state.phase === 'won') {
+    // FR-G08 race: 'won' shares the lost overlay (dim + stats) with its own title.
+    const title = state.phase === 'won' ? (labels.wonTitle ?? 'Race Clear') : labels.lostTitle
+    drawOverlay(ctx, title, `Level ${state.level} · ${state.lines} lines`, `Score ★${state.score} · Best ★${best} ${labels.replaySuffix}`)
   }
 }
 

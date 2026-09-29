@@ -56,5 +56,59 @@ describe('td meteor skill (FR-TD03)', () => {
     // 冷却走完可再放
     s.meteorCd = 0
     expect(castMeteor(s)).toBeGreaterThan(0)
+import { describe, it, expect } from 'vitest'
+import {
+  BLITZ_WAVES,
+  initialState,
+  launchWave,
+  MAX_WAVE,
+  targetWaves,
+  tickGame,
+} from '../../../src/renderer/src/games/td'
+
+describe('renderer/games/td engine (R99.6)', () => {
+  it('standard run ceiling is MAX_WAVE; blitz runs cap at BLITZ_WAVES', () => {
+    const standard = initialState()
+    expect(standard.blitz).toBeFalsy()
+    expect(targetWaves(standard)).toBe(MAX_WAVE)
+    const blitz = initialState()
+    blitz.blitz = true
+    expect(targetWaves(blitz)).toBe(BLITZ_WAVES)
+    expect(BLITZ_WAVES).toBe(6)
+  })
+})
+
+describe('renderer/games/td FR-G08 short-run matrix (blitz)', () => {
+  it('a blitz run wins the moment wave 6 is cleared — well before MAX_WAVE', () => {
+    const state = initialState()
+    state.blitz = true
+    state.phase = 'running'
+    state.wave = BLITZ_WAVES
+    state.waveQueue = 0
+    state.balloons = []
+    tickGame(state, 0.016)
+    expect(state.phase).toBe('won')
+  })
+
+  it('a standard run at wave 6 does NOT win — it keeps auto-launching toward MAX_WAVE', () => {
+    const state = initialState()
+    state.phase = 'running'
+    state.wave = 6
+    state.waveQueue = 0
+    state.balloons = []
+    tickGame(state, 0.016)
+    expect(state.phase).toBe('running')
+  })
+
+  it('launchWave refuses to go past the blitz ceiling (no wave 7)', () => {
+    const state = initialState()
+    state.blitz = true
+    state.phase = 'running'
+    state.wave = BLITZ_WAVES
+    launchWave(state)
+    expect(state.wave).toBe(BLITZ_WAVES)
+    state.wave = BLITZ_WAVES - 1
+    launchWave(state)
+    expect(state.wave).toBe(BLITZ_WAVES)
   })
 })

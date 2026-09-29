@@ -51,6 +51,10 @@ export interface SlashState {
   combo: number
   bestCombo: number
   timeLeft: number
+  /** FR-G08 burst short-run: time ceiling of the current run, written by
+   *  startSlash (RUN_SECONDS default). The difficulty curve normalizes
+   *  against this instead of the module constant. */
+  runSeconds?: number
   blocks: Block[]
   streaks: Streak[]
   spawnTimer: number
@@ -80,16 +84,21 @@ export function initialSlashState(): SlashState {
   }
 }
 
-export function startSlash(s: SlashState): void {
+/** FR-G08: startSlash takes an optional run length (burst short-run uses 30s);
+ *  the countdown and difficulty curve scale to whatever ceiling is passed. */
+export function startSlash(s: SlashState, seconds: number = RUN_SECONDS): void {
   const fresh = initialSlashState()
   Object.assign(s, fresh)
+  s.runSeconds = seconds
+  s.timeLeft = seconds
   s.phase = 'running'
 }
 
 /** Spawn a block flying inward from a random edge, marked with a direction. */
 function spawnBlock(s: SlashState): void {
-  // easier early, denser later — the difficulty curve
-  const hard = Math.min(1, (RUN_SECONDS - s.timeLeft) / RUN_SECONDS)
+  // easier early, denser later — the difficulty curve (scaled to this run's ceiling)
+  const run = s.runSeconds ?? RUN_SECONDS
+  const hard = Math.min(1, (run - s.timeLeft) / run)
   const dir = Math.floor(Math.random() * 8)
   s.blocks.push({
     id: s.nextId++,
@@ -238,7 +247,8 @@ export function tickSlash(s: SlashState, dt: number): void {
   s.spawnTimer -= dt
   if (s.spawnTimer <= 0) {
     spawnBlock(s)
-    const hard = Math.min(1, (RUN_SECONDS - s.timeLeft) / RUN_SECONDS)
+    const run = s.runSeconds ?? RUN_SECONDS
+    const hard = Math.min(1, (run - s.timeLeft) / run)
     s.spawnTimer = 0.9 - hard * 0.45 + Math.random() * 0.35
   }
 }

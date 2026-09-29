@@ -154,5 +154,23 @@ describe('FR-MP03 judgeDuel', () => {
     expect(judgeDuel([120, 80])).toBe('p1')
     expect(judgeDuel([80, 120])).toBe('p2')
     expect(judgeDuel([0, 0])).toBe('tie')
+describe('games/slash FR-G08 short-run matrix (30s burst)', () => {
+  it('startSlash(s, 30) arms a 30s run that settles lost when the clock hits zero', () => {
+    const s = initialSlashState()
+    startSlash(s, 30)
+    expect(s.runSeconds).toBe(30)
+    expect(s.timeLeft).toBe(30)
+    tickSlash(s, 30 + 0.1)
+    expect(s.phase).toBe('lost')
+    expect(s.timeLeft).toBe(0)
+  })
+
+  it('default startSlash keeps the standard 60s ceiling', () => {
+    const s = initialSlashState()
+    startSlash(s)
+    expect(s.runSeconds).toBe(RUN_SECONDS)
+    expect(s.timeLeft).toBe(RUN_SECONDS)
+    tickSlash(s, 29)
+    expect(s.phase).toBe('running') // a 30s burst would already be over
   })
 })

@@ -334,5 +334,41 @@ describe('FR-MP02 garbage lines', () => {
     state.phase = 'lost'
     applyGarbage(state, 4)
     expect(state.grid[19].every((c) => c === 0)).toBe(true)
+describe('renderer/games/tetris FR-G08 short-run matrix (40-line race)', () => {
+  function arrangeRace(lines: number, raceLines?: number) {
+    const state = initialTetrisState()
+    startTetris(state)
+    state.raceLines = raceLines
+    state.lines = lines
+    // O piece dropping into the two gaps of rows 18/19 → double clear
+    state.kind = 1
+    state.rot = 0
+    state.px = 4
+    state.py = 18
+    for (let y = 18; y <= 19; y++) {
+      for (let x = 0; x < 10; x++) {
+        state.grid[y][x] = x === 4 || x === 5 ? 0 : 1
+      }
+    }
+    return state
+  }
+
+  it('reaching raceLines wins the run (phase won, not lost)', () => {
+    const state = arrangeRace(39, 40)
+    state.commands = ['hard']
+    tickTetris(state, 0.001)
+    expect(state.lines).toBe(41)
+    expect(state.phase).toBe('won')
+    expect(state.phase).not.toBe('lost')
+    // a won run settles before the next spawn — the queue is untouched
+    expect(state.queue).toHaveLength(3)
+  })
+
+  it('without raceLines the same clear keeps the run going (endless scoring)', () => {
+    const state = arrangeRace(39, undefined)
+    state.commands = ['hard']
+    tickTetris(state, 0.001)
+    expect(state.lines).toBe(41)
+    expect(state.phase).toBe('running')
   })
 })

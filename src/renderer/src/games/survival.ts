@@ -117,6 +117,9 @@ export interface SurvivalState {
   phase: SurvivalPhase
   clock: number
   time: number
+  /** FR-G08 sprint short-run: time cap in seconds (undefined = endless).
+   *  View writes it before start; the engine only reads it. */
+  sprintSeconds?: number
   score: number
   kills: number
   level: number
@@ -618,6 +621,12 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   state.comboTimer = Math.max(0, state.comboTimer - dt)
   if (state.comboTimer === 0 && state.combo > 0) state.combo = 0
   state.score = Math.floor((state.kills * 10 + state.comboBonus + Math.floor(state.time)) * state.scoreMult)
+  // FR-G08 sprint: a time-capped run settles through the existing end path —
+  // 'lost' reads as "time up", and the score earned so far stays on the board.
+  if (state.sprintSeconds !== undefined && state.time >= state.sprintSeconds) {
+    state.phase = 'lost'
+    return
+  }
   const player = state.player
   const stats = state.stats
   player.invuln = Math.max(0, player.invuln - dt)

@@ -92,6 +92,9 @@ export interface GameState {
   meteorCd: number
   /** R201(FR-TD02): 无尽模式(>12 波不判胜,词缀循环)。 */
   endless: boolean
+  /** FR-G08 blitz short-run: 6-wave race. View writes it before start
+   *  (same pattern as other mode flags); the engine only reads it. */
+  blitz?: boolean
 }
 
 export interface TowerDefinition {
@@ -108,6 +111,8 @@ export interface TowerDefinition {
 export const WIDTH = 900
 export const HEIGHT = 520
 export const MAX_WAVE = 12
+/** FR-G08: wave ceiling of a blitz short-run. */
+export const BLITZ_WAVES = 6
 export const AUTO_WAVE_SECONDS = 8
 export const TOWER_MAX_LEVEL = 3
 export const SELL_REFUND = 0.7
@@ -178,6 +183,13 @@ export function distanceToPath(point: Point): number {
   return min
 }
 
+/** FR-G08: wave ceiling of the current run — 6 in a blitz race, MAX_WAVE
+ *  otherwise. All wave-gating logic (launch guard / win / auto next wave)
+ *  reads through this so the two modes share one code path. */
+export function targetWaves(state: GameState): number {
+  return state.blitz ? BLITZ_WAVES : MAX_WAVE
+}
+
 export function initialState(): GameState {
   return {
     phase: 'ready',
@@ -201,6 +213,7 @@ export function initialState(): GameState {
     affix: null,
     meteorCd: 0,
     endless: false,
+    blitz: false,
   }
 }
 
@@ -260,6 +273,7 @@ export function affixForWave(wave: number): Affix | null {
 
 export function launchWave(state: GameState): void {
   // R201(FR-TD02): 无尽模式——12 波后不封顶,词缀循环
+  if (state.wave >= targetWaves(state)) return
   state.wave += 1
   state.waveQueue = 12 + state.wave * 3
   state.spawnTimer = 0.2
@@ -462,6 +476,7 @@ export function tickGame(state: GameState, dt: number): void {
     return
   }
   if (!state.endless && state.wave >= MAX_WAVE && state.waveQueue === 0 && state.balloons.length === 0) {
+  if (state.wave >= targetWaves(state) && state.waveQueue === 0 && state.balloons.length === 0) {
     state.phase = 'won'
     spawnBurst(state, WIDTH / 2, HEIGHT / 2 - 40, '#67e8f9', 22, 200)
     spawnBurst(state, WIDTH / 2 - 120, HEIGHT / 2 + 40, '#86efac', 16, 160)
@@ -469,7 +484,7 @@ export function tickGame(state: GameState, dt: number): void {
     playSfx('levelup')
     return
   }
-  if (state.waveQueue === 0 && state.balloons.length === 0 && state.wave < MAX_WAVE) {
+  if (state.waveQueue === 0 && state.balloons.length === 0 && state.wave < targetWaves(state)) {
     state.waveCooldown -= dt
     if (state.waveCooldown <= 0) launchWave(state)
   }
@@ -637,7 +652,7 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, select
     ctx.fillText(state.banner.text, WIDTH / 2, 116)
     ctx.globalAlpha = 1
   }
-  if (state.phase === 'running' && state.waveQueue === 0 && state.balloons.length === 0 && state.wave < MAX_WAVE) {
+  if (state.phase === 'running' && state.waveQueue === 0 && state.balloons.length === 0 && state.wave < targetWaves(state)) {
     const bonus = Math.max(0, Math.round(state.waveCooldown * 4))
     ctx.fillStyle = '#9fb7c1'
     ctx.font = '600 13px Inter, sans-serif'
