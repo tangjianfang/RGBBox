@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
 import { validateChatMessages } from '../shared/aiChatValidation'
-import type { AgentEvent, AgentSendArgs, AgentSessionMeta, TtsEngineStatus, TtsModelProgress, AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
+import type { AgentEvent, AgentSendArgs, AgentSessionMeta, TtsEngineStatus, TtsModelProgress, AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, AvatarResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -382,6 +382,14 @@ const api = {
     ipcRenderer.on(ipcChannels.lanEvent, handler)
     return () => ipcRenderer.off(ipcChannels.lanEvent, handler)
   },
+
+  // ── R213: 角色头像(P1–P4)——主进程落盘 128×128 PNG,渲染层读 dataURL ──
+  avatarGet: (slot: number): Promise<string | null> =>
+    ipcRenderer.invoke(ipcChannels.avatarGet, slot),
+  avatarSet: (slot: number): Promise<AvatarResult> =>
+    ipcRenderer.invoke(ipcChannels.avatarSet, slot),
+  avatarClear: (slot: number): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.avatarClear, slot),
 }
 
 contextBridge.exposeInMainWorld('rgbbox', api)
