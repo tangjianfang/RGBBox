@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   applyUpgrade,
   deployPlayer2,
+  deployPlayers,
   directorSpawnInterval,
   initialSurvivalState,
   recomputeStats,
@@ -265,6 +266,117 @@ describe('renderer/games/survival FR-G08 short-run matrix (sprint)', () => {
     state.spawnTimer = 10
     state.time = 90
     tickSurvival(state, 0.016)
+    expect(state.phase).toBe('running')
+  })
+})
+
+// ── R213: 4P 引擎数组化——players/inputs 名册 + deployPlayers + 别名兼容 ──
+describe('R213 4P engine roster', () => {
+  it('别名不变量: player===players[0] / keys===inputs[0];deploy 后 player2/keys2 同引用', () => {
+    const state = initialSurvivalState()
+    expect(state.players).toHaveLength(1)
+    expect(state.player).toBe(state.players[0])
+    expect(state.keys).toBe(state.inputs[0])
+    expect(state.revivesUsedN).toEqual([0, 0, 0, 0])
+    deployPlayers(state, 2)
+    expect(state.player2).toBe(state.players[1])
+    expect(state.keys2).toBe(state.inputs[1])
+    deployPlayers(state, 4)
+    expect(state.players).toHaveLength(4)
+    expect(state.inputs).toHaveLength(4)
+    // 扩名册不破坏别名(P1 恒为同一对象)
+    expect(state.player).toBe(state.players[0])
+    expect(state.player2).toBe(state.players[1])
+    expect(state.keys).toBe(state.inputs[0])
+    expect(state.keys2).toBe(state.inputs[1])
+  })
+
+  it('deployPlayers(4): 四实体就位/位置互距>30/HP 继承 maxHp 且出生无敌', () => {
+    const state = initialSurvivalState()
+    state.player.maxHp = 9
+    state.player.hp = 9
+    deployPlayers(state, 4)
+    expect(state.players).toHaveLength(4)
+    for (let i = 0; i < 4; i++) {
+      const pl = state.players[i]
+      expect(pl.hp).toBe(9)
+      expect(pl.maxHp).toBe(9)
+      if (i > 0) expect(pl.invuln).toBeGreaterThan(0)
+      for (let j = i + 1; j < 4; j++) {
+        expect(Math.hypot(pl.x - state.players[j].x, pl.y - state.players[j].y)).toBeGreaterThan(30)
+      }
+    }
+  })
+
+  it('P3 键池 inputs[2] 独立移动(p3right),其余玩家零串键', () => {
+    const state = initialSurvivalState()
+    deployPlayers(state, 4)
+    state.phase = 'running'
+    for (const pl of state.players) {
+      pl.invuln = 0
+      pl.fireTimer = 99
+    }
+    const xs = state.players.map((pl) => pl.x)
+    state.inputs[2].add('p3right')
+    for (let i = 0; i < 30; i++) tickSurvival(state, 1 / 60)
+    expect(state.players[2].x).toBeGreaterThan(xs[2] + 40)
+    expect(state.players[0].x).toBe(xs[0])
+    expect(state.players[1].x).toBe(xs[1])
+    expect(state.players[3].x).toBe(xs[3])
+  })
+
+  it('四人局:三人倒下仍 running,全员倒下才 lost(弹幕结算路径)', () => {
+    const state = initialSurvivalState()
+    deployPlayers(state, 4)
+    state.phase = 'running'
+    state.stats.magnet = 10
+    for (const pl of state.players) {
+      pl.invuln = 0
+      pl.hp = 1
+      pl.fireTimer = 99
+    }
+    const hit = (i: number): void => {
+      state.eBullets.push({ x: state.players[i].x, y: state.players[i].y, vx: 0, vy: 0, size: 20, life: 1 })
+    }
+    hit(1)
+    hit(2)
+    hit(3)
+    tickSurvival(state, 1 / 60)
+    expect(state.phase).toBe('running')
+    expect(state.players.filter((pl) => pl.hp <= 0)).toHaveLength(3)
+    expect(state.reviveOrbs.map((orb) => orb.target).sort()).toEqual([2, 3, 4])
+    // 最后一人倒下 → lost
+    hit(0)
+    tickSurvival(state, 1 / 60)
+    expect(state.phase).toBe('lost')
+  })
+
+  it('复活珠 target 3:队友拾取复活 P3,revivesUsedN 计数且不误写 legacy {p1,p2}', () => {
+    const state = initialSurvivalState()
+    deployPlayers(state, 4)
+    state.phase = 'running'
+    state.stats.magnet = 10
+    state.players[2].hp = 0
+    state.reviveOrbs.push({ id: 7001, x: state.player.x + 10, y: state.player.y, target: 3 })
+    tickSurvival(state, 1 / 60)
+    expect(state.reviveOrbs).toHaveLength(0)
+    expect(state.players[2].hp).toBeGreaterThanOrEqual(1)
+    expect(state.players[2].invuln).toBeGreaterThan(1.5)
+    expect(state.revivesUsedN[2]).toBe(1)
+    expect(state.revivesUsed).toEqual({ p1: 0, p2: 0 })
+  })
+
+  it('legacy 兼容:视图直置 player2=null(合作开关关)后名册截断,P2 不再被处理', () => {
+    const state = initialSurvivalState()
+    deployPlayer2(state)
+    state.phase = 'running'
+    state.player2!.invuln = 0
+    state.player2!.fireTimer = 99
+    state.player2 = null
+    state.keys2.add('p2right') // keys2 仍是有效 Set(视图释放路径会写)
+    tickSurvival(state, 1 / 60)
+    expect(state.players).toHaveLength(1)
+    expect(state.inputs).toHaveLength(1)
     expect(state.phase).toBe('running')
   })
 })

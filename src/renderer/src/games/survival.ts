@@ -173,15 +173,35 @@ export interface SurvivalState {
   evolved: string[]
   /** R202(FR-SW02): boss 弹幕计时(驱动三型循环)。 */
   bossBulletTimer: number
-  /** R208(FR-MP01): 二号位玩家(本地合作;null=单人局)。hp≤0 为倒下态。 */
+  /** R208(FR-MP01): 二号位玩家(本地合作;null=单人局)。hp≤0 为倒下态。
+   *  R213: players[1] 的别名引用(同一对象);视图仍直接读写该字段
+   *  (合作开关关闭时直接置 null),tick/draw 入口 syncRoster 负责回写名册。 */
   player2: PlayerState | null
-  /** P2 独立输入源(IJKL→p2up/p2down/p2left/p2right,防与 P1 keys 串键)。 */
+  /** P2 独立输入源(IJKL→p2up/p2down/p2left/p2right,防与 P1 keys 串键)。
+   *  R213: inputs[1] 的别名引用(同一 Set 对象)。 */
   keys2: Set<string>
-  /** 倒下玩家掉落的复活珠(target=被救者);由存活队友拾取触发复活。 */
-  reviveOrbs: Array<{ id: number; x: number; y: number; target: 1 | 2 }>
-  /** 各玩家被复活次数(各限 1 次/局,宽恕设计)。 */
+  /** 倒下玩家掉落的复活珠(target=被救者);由存活队友拾取触发复活。
+   *  R213: target 扩为 1-4(玩家 1-based 序号,1|2 保持字面量联合更严)。 */
+  reviveOrbs: Array<{ id: number; x: number; y: number; target: 1 | 2 | 3 | 4 }>
+  /** 各玩家被复活次数(各限 1 次/局,宽恕设计)。legacy {p1,p2} 形状保留,
+   *  由 spendRevive 与 revivesUsedN 双写维持一致。 */
   revivesUsed: { p1: number; p2: number }
+  /** R213: 玩家名册(长度 1-4,players[0] 即 P1,与 player 字段同对象引用)。
+   *  引擎内权威数组:移动/开火/索敌/判负遍历它;legacy 字段(player/keys/
+   *  player2/keys2)是它的别名视图,现有单人/双人路径零改动。 */
+  players: PlayerState[]
+  /** R213: 每玩家独立键池(inputs[0] 即 keys 同引用;P2+ 键名规范
+   *  pNup/pNdown/pNleft/pNright,与现有 p2* 一致风格)。 */
+  inputs: Array<Set<string>>
+  /** R213: 复活计数(按玩家 0-based 索引,长度 4)。新逻辑读本数组,
+   *  缺失时视为全 0(旧状态形状兼容)。 */
+  revivesUsedN: number[]
 }
+
+// ── R213: P2..P4 皮肤(琥珀/粉/青;P1 沿用青白 #e2f8ff/#67e8f9 不变) ──
+const ROSTER_ACCENT = ['#fbbf24', '#f472b6', '#4ade80']
+const ROSTER_RING = ['rgba(251, 191, 36, 0.55)', 'rgba(244, 114, 182, 0.55)', 'rgba(74, 222, 128, 0.55)']
+const ROSTER_HULL = ['#fff7e2', '#ffe4f1', '#e4ffee']
 
 export function xpToNext(level: number): number {
   return 5 + level * 3
@@ -233,6 +253,10 @@ export function initialSurvivalState(
   const has = (id: ArtifactId) => artifacts.includes(id)
   let maxHp = Math.max(1, 5 + def.hpMod + perm.maxHp)
   if (has('glass')) maxHp = 1
+  // R213: 先构造 player/keys 再装配 state——players[0]/inputs[0] 与
+  // player/keys 字段从出生起就是同一对象引用(别名不变量由构造保证)。
+  const player: PlayerState = { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 14, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2 }
+  const keys = new Set<string>()
   const state: SurvivalState = {
     phase: 'ready',
     clock: 0,
@@ -245,7 +269,7 @@ export function initialSurvivalState(
     xpMult: def.xpMod * (1 + 0.1 * perm.xpGain) * (has('famine') ? 0.75 : 1),
     shake: 0,
     nextId: 1,
-    player: { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 14, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2 },
+    player,
     stats: baseStats(),
     taken: { fireRate: 0, damage: 0, multishot: 0, pierce: 0, blade: 0, speed: 0, maxHp: 0, magnet: 0, crit: 0, bulletSpeed: 0, thorns: 0, regen: 0 },
     bonuses: {},
@@ -265,7 +289,9 @@ export function initialSurvivalState(
     banner: null,
     island: 1,
     portal: null,
-    keys: new Set<string>(),
+    keys,
+    players: [player],
+    inputs: [keys],
     axis: { x: 0, y: 0 },
     scoreMult: 1 + scoreMultiplier(artifacts),
     coinMult: has('bounty') ? 2 : 1,
@@ -290,32 +316,75 @@ export function initialSurvivalState(
     keys2: new Set<string>(),
     reviveOrbs: [],
     revivesUsed: { p1: 0, p2: 0 },
+    revivesUsedN: [0, 0, 0, 0],
   }
   recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses, magnetBonus: state.magnetBonus })
   return state
 }
 
-/** R208(FR-MP01): 部署二号位——独立 HP/无敌帧/开火计时,位置与 P1 分侧。
- *  共享 build(升级/轮盘对两人同时生效),仅实体与输入独立。 */
-export function deployPlayer2(state: SurvivalState): void {
-  state.player2 = {
-    x: WIDTH / 2 - 60, y: HEIGHT / 2 + 40, vx: 0, vy: 0, size: 14,
-    hp: state.player.maxHp, maxHp: state.player.maxHp, invuln: 2,
-    fireTimer: 0, angle: -Math.PI / 2,
+/** R213: 多人位部署偏移(围绕中心分侧;P1 居中、P2 左下、P3 右下、P4 上方)。
+ *  P2 偏移与 R208 deployPlayer2 逐字节一致(位置/hp 继承/2s 无敌)。 */
+const DEPLOY_OFFSETS: ReadonlyArray<{ dx: number; dy: number }> = [
+  { dx: 0, dy: 0 },
+  { dx: -60, dy: 40 },
+  { dx: 60, dy: 40 },
+  { dx: 0, dy: -70 },
+]
+
+/** R213: 名册同步——players/inputs 是引擎权威名册,但 legacy 字段
+ *  (player2/keys2)仍被视图直接读写(合作开关关闭时直接置 player2 = null)。
+ *  每次 tick/draw 入口调用:把 legacy 字段的突变镜像回数组,维持
+ *  player===players[0] / player2===players[1] / keys2===inputs[1] 的别名
+ *  不变量;player2 被置 null 视为退回单人局(名册截断到 1)。 */
+function syncRoster(state: SurvivalState): void {
+  if (state.player2 === null) {
+    if (state.players.length > 1) state.players.length = 1
+    if (state.inputs.length > 1) state.inputs.length = 1
+    return
   }
-  state.keys2 = new Set<string>()
+  if (state.players[1] !== state.player2) state.players.splice(1, state.players.length - 1, state.player2)
+  if (state.inputs[1] !== state.keys2) state.inputs.splice(1, state.inputs.length - 1, state.keys2)
+}
+
+/** R213: 部署 1-4 人位。count≥2 时 players[1] 即现 player2 逻辑位置
+ *  (legacy player2/keys2 字段同步指向同一对象);count≥3/4 追加 P3/P4,
+ *  键池用 inputs[2]/inputs[3](键名 p3up/p4up... 与 p2* 一致风格)。
+ *  已在位的实体保留(重复调用幂等,仅补齐缺失位);count=1 退回单人。
+ *  共享 build(升级/轮盘对全员同时生效),仅实体与输入独立。 */
+export function deployPlayers(state: SurvivalState, count: 1 | 2 | 3 | 4): void {
+  syncRoster(state)
+  for (let i = state.players.length; i < count; i++) {
+    const off = DEPLOY_OFFSETS[i]
+    state.players.push({
+      x: WIDTH / 2 + off.dx, y: HEIGHT / 2 + off.dy, vx: 0, vy: 0, size: 14,
+      hp: state.player.maxHp, maxHp: state.player.maxHp, invuln: 2,
+      fireTimer: 0, angle: -Math.PI / 2,
+    })
+    state.inputs.push(new Set<string>())
+  }
+  if (state.players.length > count) state.players.length = count
+  if (state.inputs.length > count) state.inputs.length = count
+  if (count < 2) state.player2 = null
+  else {
+    state.player2 = state.players[1]
+    state.keys2 = state.inputs[1]
+  }
+  syncRoster(state)
+}
+
+/** R208(FR-MP01): 部署二号位——R213 起为 deployPlayers(state, 2) 的别名
+ *  (独立 HP/无敌帧/开火计时,位置与 P1 分侧),兼容既有调用点。 */
+export function deployPlayer2(state: SurvivalState): void {
+  deployPlayers(state, 2)
 }
 
 function key(state: SurvivalState, value: string): boolean {
   return state.keys.has(value)
 }
 
-// ── R208(FR-MP01): 存活玩家集合/最近存活者(敌人索敌与磁吸以存活者为准) ──
+// ── R208(FR-MP01)→R213: 存活玩家集合/最近存活者(敌人索敌与磁吸以存活者为准) ──
 function alivePlayers(state: SurvivalState): PlayerState[] {
-  const list: PlayerState[] = []
-  if (state.player.hp > 0) list.push(state.player)
-  if (state.player2 !== null && state.player2.hp > 0) list.push(state.player2)
-  return list
+  return state.players.filter((pl) => pl.hp > 0)
 }
 
 function nearestAlive(state: SurvivalState, p: { x: number; y: number }): PlayerState | null {
@@ -331,13 +400,33 @@ function nearestAlive(state: SurvivalState, p: { x: number; y: number }): Player
   return best
 }
 
+/** R213: 玩家在名册中的 1-based 序号(P1=1..P4=4);不在名册时退化为 P1。 */
+function playerIndexOf(state: SurvivalState, pl: PlayerState): 1 | 2 | 3 | 4 {
+  const idx = state.players.indexOf(pl)
+  const oneBased = (idx === -1 ? 0 : idx) + 1
+  return oneBased === 1 || oneBased === 2 || oneBased === 3 ? oneBased : 4
+}
+
+/** R213: 复活剩余额度(读 revivesUsedN,缺失视为全 0——旧状态形状兼容)。 */
+function reviveQuotaLeft(state: SurvivalState, idx: number): boolean {
+  return (state.revivesUsedN?.[idx] ?? 0) < 1
+}
+
+/** R213: 消耗复活次数——revivesUsedN 按玩家索引计数,legacy {p1,p2} 双写
+ *  (仅 P1/P2 有对应键,P3/P4 只记数组)。 */
+function spendRevive(state: SurvivalState, idx: number): void {
+  state.revivesUsedN[idx] = (state.revivesUsedN?.[idx] ?? 0) + 1
+  if (idx === 0) state.revivesUsed.p1 += 1
+  else if (idx === 1) state.revivesUsed.p2 += 1
+}
+
 /** 玩家倒下:爆散+掉复活珠(该玩家本局未被复活过时);全员倒下由调用方判负。 */
-function playerDown(state: SurvivalState, which: 1 | 2): void {
-  const p = which === 1 ? state.player : state.player2
-  if (p === null || p.hp > 0) return
+function playerDown(state: SurvivalState, which: 1 | 2 | 3 | 4): void {
+  const p = state.players[which - 1]
+  if (p === undefined || p.hp > 0) return
   spawnBurst(state, p.x, p.y, '#f87171', 22, 210)
-  addText(state, p.x, p.y - 30, which === 1 ? 'P1 DOWN' : 'P2 DOWN', '#f87171')
-  if (state.revivesUsed[which === 1 ? 'p1' : 'p2'] < 1) {
+  addText(state, p.x, p.y - 30, `P${which} DOWN`, '#f87171')
+  if (reviveQuotaLeft(state, which - 1)) {
     state.reviveOrbs.push({ id: state.nextId++, x: clamp(p.x, 30, WIDTH - 30), y: clamp(p.y, 30, HEIGHT - 30), target: which })
   }
 }
@@ -551,6 +640,8 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
 }
 
 export function tickSurvival(state: SurvivalState, dt: number): void {
+  // R213: 名册同步(legacy player2/keys2 字段可能被视图直改,先镜像回 players/inputs)
+  syncRoster(state)
   // R200: hit-stop(进化/boss 击杀);预警条目独立于冻结推进
   state.warnings = tickWarnings(state.warnings, dt)
   // R202(FR-SW02): boss 弹幕三型循环(放射/瞄准扇形/环形,每 1.2s)
@@ -578,7 +669,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
         eb.life = 0
         playSfx('hurt')
         if (pl.hp <= 0) {
-          playerDown(state, pl === state.player ? 1 : 2)
+          playerDown(state, playerIndexOf(state, pl))
           if (alivePlayers(state).length === 0) {
             state.phase = 'lost'
             playSfx('gameover')
@@ -697,42 +788,46 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     player.fireTimer = 1 / stats.fireRate
   }
 
-  // ── R208(FR-MP01): 二号位——独立移动(IJKL→keys2)/无敌帧/自动索敌开火 ──
-  // 共享弹池与 stats(build 对两人同时生效);P2 开火不叠 sfx(音频预算)。
-  const p2 = state.player2
-  if (p2 !== null && p2.hp > 0) {
-    p2.invuln = Math.max(0, p2.invuln - dt)
-    const d2x = (state.keys2.has('p2right') ? 1 : 0) - (state.keys2.has('p2left') ? 1 : 0)
-    const d2y = (state.keys2.has('p2down') ? 1 : 0) - (state.keys2.has('p2up') ? 1 : 0)
-    const len2 = Math.hypot(d2x, d2y)
-    if (len2 > 0.0001) {
-      p2.x = clamp(p2.x + (d2x / len2) * stats.moveSpeed * dt, 16, WIDTH - 16)
-      p2.y = clamp(p2.y + (d2y / len2) * stats.moveSpeed * dt, 16, HEIGHT - 16)
-      p2.angle = Math.atan2(d2y, d2x)
-      if (Math.random() < dt * 40) state.particles.push({ x: p2.x - Math.cos(p2.angle) * 14, y: p2.y - Math.sin(p2.angle) * 14, vx: -Math.cos(p2.angle) * 60, vy: -Math.sin(p2.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: '#fbbf24' })
+  // ── R208(FR-MP01)→R213: 玩家 2..n——独立键池(pNup/pNdown/pNleft/pNright)
+  // 移动/无敌帧/自动索敌开火。共享弹池与 stats(build 对全员同时生效);
+  // P2+ 开火不叠 sfx(音频预算);P2 键池即 legacy keys2(syncRoster 保证同引用)。
+  for (let pi = 1; pi < state.players.length; pi++) {
+    const pl = state.players[pi]
+    if (pl.hp <= 0) continue
+    pl.invuln = Math.max(0, pl.invuln - dt)
+    const pool = state.inputs[pi]
+    if (pool === undefined) continue
+    const dpx = (pool.has(`p${pi + 1}right`) ? 1 : 0) - (pool.has(`p${pi + 1}left`) ? 1 : 0)
+    const dpy = (pool.has(`p${pi + 1}down`) ? 1 : 0) - (pool.has(`p${pi + 1}up`) ? 1 : 0)
+    const lenP = Math.hypot(dpx, dpy)
+    if (lenP > 0.0001) {
+      pl.x = clamp(pl.x + (dpx / lenP) * stats.moveSpeed * dt, 16, WIDTH - 16)
+      pl.y = clamp(pl.y + (dpy / lenP) * stats.moveSpeed * dt, 16, HEIGHT - 16)
+      pl.angle = Math.atan2(dpy, dpx)
+      if (Math.random() < dt * 40) state.particles.push({ x: pl.x - Math.cos(pl.angle) * 14, y: pl.y - Math.sin(pl.angle) * 14, vx: -Math.cos(pl.angle) * 60, vy: -Math.sin(pl.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: ROSTER_ACCENT[pi - 1] })
     }
-    p2.fireTimer -= dt
-    if (p2.fireTimer <= 0 && state.enemies.length > 0) {
-      let nearest2: Enemy | undefined
-      let bestDist2 = Number.POSITIVE_INFINITY
+    pl.fireTimer -= dt
+    if (pl.fireTimer <= 0 && state.enemies.length > 0) {
+      let nearestP: Enemy | undefined
+      let bestDistP = Number.POSITIVE_INFINITY
       for (const enemy of state.enemies) {
-        const dist = distance(p2, enemy)
-        if (dist < bestDist2) {
-          nearest2 = enemy
-          bestDist2 = dist
+        const dist = distance(pl, enemy)
+        if (dist < bestDistP) {
+          nearestP = enemy
+          bestDistP = dist
         }
       }
-      if (nearest2) {
-        const baseAngle = Math.atan2(nearest2.y - p2.y, nearest2.x - p2.x)
+      if (nearestP) {
+        const baseAngle = Math.atan2(nearestP.y - pl.y, nearestP.x - pl.x)
         const shots = stats.multishot
         for (let i = 0; i < shots; i++) {
           const spread = (i - (shots - 1) / 2) * (Math.PI / 14)
           const angle = baseAngle + spread
           const crit = Math.random() < stats.crit
-          state.bullets.push({ id: state.nextId++, x: p2.x, y: p2.y, vx: Math.cos(angle) * stats.bulletSpeed, vy: Math.sin(angle) * stats.bulletSpeed, damage: crit ? stats.damage * 2 : stats.damage, pierce: stats.pierce, crit, life: 1.2 })
+          state.bullets.push({ id: state.nextId++, x: pl.x, y: pl.y, vx: Math.cos(angle) * stats.bulletSpeed, vy: Math.sin(angle) * stats.bulletSpeed, damage: crit ? stats.damage * 2 : stats.damage, pierce: stats.pierce, crit, life: 1.2 })
         }
       }
-      p2.fireTimer = 1 / stats.fireRate
+      pl.fireTimer = 1 / stats.fireRate
     }
   }
 
@@ -799,7 +894,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
         enemy.hitFlash = 0.1
       }
       if (target.hp <= 0) {
-        playerDown(state, target === state.player ? 1 : 2)
+        playerDown(state, playerIndexOf(state, target))
         if (alivePlayers(state).length === 0) {
           state.phase = 'lost'
           spawnBurst(state, target.x, target.y, '#f87171', 30, 230)
@@ -849,24 +944,33 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     return true
   })
 
-  // ── R208(FR-MP01): 复活珠——队友靠近磁吸,拾取复活倒下方(各 1 次/局) ──
+  // ── R208(FR-MP01)→R213: 复活珠——最近存活队友靠近磁吸,拾取复活倒下方
+  // (各 1 次/局;target=玩家 1-based 序号,2P 退化原双人逻辑) ──
   state.reviveOrbs = state.reviveOrbs.filter((orb) => {
-    const target = orb.target === 1 ? state.player : state.player2
-    const rescuer = orb.target === 1 ? state.player2 : state.player
-    if (target === null || rescuer === null || rescuer.hp <= 0) return true
-    const dist = distance(orb, rescuer)
-    if (dist < stats.magnet) {
-      const speed = 240
-      orb.x += ((rescuer.x - orb.x) / dist) * speed * dt
-      orb.y += ((rescuer.y - orb.y) / dist) * speed * dt
+    const target = state.players[orb.target - 1]
+    let rescuer: PlayerState | null = null
+    let rescuerDist = Number.POSITIVE_INFINITY
+    for (const pl of state.players) {
+      if (pl === target || pl.hp <= 0) continue
+      const d = distance(orb, pl)
+      if (d < rescuerDist) {
+        rescuer = pl
+        rescuerDist = d
+      }
     }
-    if (dist < rescuer.size + 10) {
+    if (target === undefined || rescuer === null) return true
+    if (rescuerDist < stats.magnet) {
+      const speed = 240
+      orb.x += ((rescuer.x - orb.x) / rescuerDist) * speed * dt
+      orb.y += ((rescuer.y - orb.y) / rescuerDist) * speed * dt
+    }
+    if (rescuerDist < rescuer.size + 10) {
       target.hp = Math.max(1, Math.ceil(target.maxHp / 2))
       target.invuln = 2
       target.x = clamp(rescuer.x + (Math.random() - 0.5) * 64, 16, WIDTH - 16)
       target.y = clamp(rescuer.y + (Math.random() - 0.5) * 64, 16, HEIGHT - 16)
-      state.revivesUsed[orb.target === 1 ? 'p1' : 'p2'] += 1
-      addText(state, rescuer.x, rescuer.y - 34, orb.target === 1 ? 'P1 REVIVED' : 'P2 REVIVED', '#4ade80')
+      spendRevive(state, orb.target - 1)
+      addText(state, rescuer.x, rescuer.y - 34, `P${orb.target} REVIVED`, '#4ade80')
       spawnBurst(state, rescuer.x, rescuer.y, '#4ade80', 18, 160)
       playSfx('levelup')
       return false
@@ -923,6 +1027,8 @@ function dimScene(ctx: CanvasRenderingContext2D, phase: SurvivalPhase): void {
 }
 
 export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState): void {
+  // R213: 名册同步(与 tickSurvival 同口径,视图直改 player2 后立即生效)
+  syncRoster(state)
   // R202: boss 弹幕绘制
   for (const eb of state.eBullets) {
     ctx.save()
@@ -1123,21 +1229,23 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.restore()
   }
 
-  // R208(FR-MP01): 二号位实体(琥珀色区别 P1 青白)+头顶 HP 条
-  const p2d = state.player2
-  if (p2d !== null && p2d.hp > 0 && !(p2d.invuln > 0 && Math.floor(p2d.invuln * 12) % 2 === 0)) {
+  // R208(FR-MP01)→R213: 玩家 2..n 实体(P2 琥珀/P3 粉/P4 青,区别 P1 青白)
+  // + 头顶 HP 条;无敌帧闪烁与 P1 同口径。
+  for (let pi = 1; pi < state.players.length; pi++) {
+    const pl = state.players[pi]
+    if (pl.hp <= 0 || (pl.invuln > 0 && Math.floor(pl.invuln * 12) % 2 === 0)) continue
     ctx.save()
-    ctx.translate(p2d.x, p2d.y)
-    ctx.rotate(p2d.angle)
-    ctx.fillStyle = '#fff7e2'
+    ctx.translate(pl.x, pl.y)
+    ctx.rotate(pl.angle)
+    ctx.fillStyle = ROSTER_HULL[pi - 1]
     ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-10, -10); ctx.lineTo(-5, 0); ctx.lineTo(-10, 10); ctx.closePath(); ctx.fill()
-    ctx.fillStyle = '#fbbf24'
+    ctx.fillStyle = ROSTER_ACCENT[pi - 1]
     ctx.beginPath(); ctx.arc(2, 0, 4, 0, Math.PI * 2); ctx.fill()
     ctx.restore()
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-    ctx.fillRect(p2d.x - 16, p2d.y - 26, 32, 3)
-    ctx.fillStyle = '#fbbf24'
-    ctx.fillRect(p2d.x - 16, p2d.y - 26, 32 * clamp(p2d.hp / p2d.maxHp, 0, 1), 3)
+    ctx.fillRect(pl.x - 16, pl.y - 26, 32, 3)
+    ctx.fillStyle = ROSTER_ACCENT[pi - 1]
+    ctx.fillRect(pl.x - 16, pl.y - 26, 32 * clamp(pl.hp / pl.maxHp, 0, 1), 3)
   }
 
   for (const text of state.texts) {
@@ -1160,18 +1268,20 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.fill()
   }
 
-  // R208(FR-MP01): P2 HP 第二行(琥珀空心圆,P1 行正下方)
-  if (state.player2 !== null) {
-    for (let i = 0; i < state.player2.maxHp; i++) {
-      ctx.strokeStyle = 'rgba(251, 191, 36, 0.55)'
+  // R208(FR-MP01)→R213: P2..Pn HP 行(空心圆,P1 行下方依次;P2 琥珀/P3 粉/P4 青)
+  for (let pi = 1; pi < state.players.length; pi++) {
+    const pl = state.players[pi]
+    const rowY = 30 + pi * 22
+    for (let j = 0; j < pl.maxHp; j++) {
+      ctx.strokeStyle = ROSTER_RING[pi - 1]
       ctx.lineWidth = 2
       ctx.beginPath()
-      ctx.arc(28 + i * 22, 52, 7, 0, Math.PI * 2)
+      ctx.arc(28 + j * 22, rowY, 7, 0, Math.PI * 2)
       ctx.stroke()
-      if (i < state.player2.hp) {
-        ctx.fillStyle = '#fbbf24'
+      if (j < pl.hp) {
+        ctx.fillStyle = ROSTER_ACCENT[pi - 1]
         ctx.beginPath()
-        ctx.arc(28 + i * 22, 52, 3.5, 0, Math.PI * 2)
+        ctx.arc(28 + j * 22, rowY, 3.5, 0, Math.PI * 2)
         ctx.fill()
       }
     }
