@@ -2,6 +2,9 @@
  * R209 (FR-LN01/02/03/04): LAN 联机服务 —— 主进程传输层,零 npm 依赖
  * (node:dgram 广播发现 + node:net TCP 直连)。引擎权威在房主渲染进程:
  * 主进程只搬运(指令上行/快照下行)与看门(心跳/版本握手/载荷上限)。
+ * 二期(FR-LN03 断线恢复与一致性):快照带单调 seq + 跳号 resync 补发、
+ * 会话身份保留(断线重连 welcome 带 resume:true+当前 seq)、观战态、
+ * hash 异常 streak 检测(lan:event error:hash-anomaly)。
  *
  * 边界(强制):仅本网段;无公网、无 NAT 穿透、无账号;渲染层经 IPC 桥接入。
  */
@@ -16,6 +19,7 @@ import {
   LAN_DEAD_AFTER_MS,
   LAN_HEARTBEAT_MS,
   LAN_PROTOCOL_VERSION,
+  SnapTracker,
   encodeFrame,
   parseBeacon,
   versionsCompatible,
@@ -33,6 +37,12 @@ interface Peer {
   socket: net.Socket
   decoder: FrameDecoder
   lastSeen: number
+  /** 所属房主世代(teardown 递增;过期 close 事件据此丢弃,防跨局误记 resumable)。 */
+  epoch: number
+  /** 对端会话身份(hello.id;断线重连识别用)。 */
+  sessionId?: string
+  /** 观战位(FR-LN03 二期:该 peer 的 cmd 直接忽略,只收快照)。 */
+  spectates: boolean
 }
 
 export class LanService {
@@ -46,6 +56,19 @@ export class LanService {
   private guest: { socket: net.Socket; decoder: FrameDecoder; lastSeen: number } | null = null
   private heartbeatTimer: NodeJS.Timeout | null = null
   private appVersion = '0.0.0'
+  // ── 二期(FR-LN03 断线恢复与一致性)状态 ──
+  /** 客端会话身份:TCP 断开不清(重连识别),仅显式 teardown 换新。 */
+  private guestId: string | null = null
+  /** 房主快照序号(单调递增;peer 断开不重置,仅 teardown 归零)。 */
+  private snapSeq = 0
+  /** 房主最近一帧全量快照缓存(resync 时立即补发,不必等下一拍 15Hz)。 */
+  private lastSnap: { s: unknown; h: string; seq: number } | null = null
+  /** 断线可恢复会话(sessionId → 是否观战;房间销毁即清空)。 */
+  private resumable = new Map<string, boolean>()
+  /** 房主世代计数(见 Peer.epoch)。 */
+  private epoch = 0
+  /** 客端快照对账器(seq 跳号→resync;hash 异常 streak→告警)。 */
+  private snapTracker = new SnapTracker()
 
   bind(win: BrowserWindow, appVersion: string): void {
     this.win = win
@@ -115,20 +138,30 @@ export class LanService {
     return { port: 0 }
   }
 
-  /** 客端:直连加入(发现面板与手输 IP 共用此口)。版本不一致被拒(FR-LN01③)。 */
-  join(ip: string, port: number): Promise<{ ok: true; game: LanGame } | { ok: false; reason: string }> {
+  /** 客端:直连加入(发现面板与手输 IP 共用此口)。版本不一致被拒(FR-LN01③)。
+   *  二期:hello 附会话身份 id;TCP 断开后再次 join 同一 host 时,房主在房间
+   *  未销毁的情况下 welcome 带 resume:true + 当前 seq,返回值原样透传渲染层,
+   *  据此区分续传与新局(FR-LN03 重连窗口)。 */
+  join(
+    ip: string,
+    port: number,
+  ): Promise<{ ok: true; game: LanGame; resume?: boolean; seq?: number } | { ok: false; reason: string }> {
+    const sessionId = this.guestId ?? randomUUID() // 断线重连沿用旧身份;显式离开后为 null → 换新
     this.teardown()
+    this.guestId = sessionId
     return new Promise((resolve) => {
       const socket = net.connect({ host: ip, port, timeout: 4000 })
       const decoder = new FrameDecoder()
       let settled = false
-      const finish = (r: { ok: true; game: LanGame } | { ok: false; reason: string }): void => {
+      const finish = (
+        r: { ok: true; game: LanGame; resume?: boolean; seq?: number } | { ok: false; reason: string },
+      ): void => {
         if (settled) return
         settled = true
         resolve(r)
       }
       socket.on('connect', () => {
-        socket.write(encodeFrame({ t: 'hello', v: LAN_PROTOCOL_VERSION, av: this.appVersion }))
+        socket.write(encodeFrame({ t: 'hello', v: LAN_PROTOCOL_VERSION, av: this.appVersion, id: sessionId }))
       })
       socket.on('data', (chunk) => {
         let msgs: LanMessage[]
@@ -143,8 +176,9 @@ export class LanService {
           if (msg.t === 'welcome') {
             this.role = 'guest'
             this.guest = { socket, decoder, lastSeen: Date.now() }
+            if (msg.resume) this.snapTracker.rebase(msg.seq) // 续传基线;非续传保持 reset 态
             this.startHeartbeat()
-            finish({ ok: true, game: msg.g })
+            finish({ ok: true, game: msg.g, resume: msg.resume === true, seq: msg.seq })
           } else if (msg.t === 'reject') {
             this.emit({ kind: 'rejected', detail: msg.reason })
             socket.destroy()
@@ -154,8 +188,12 @@ export class LanService {
         if (this.guest && this.guest.socket === socket) {
           this.guest.lastSeen = Date.now()
           for (const msg of msgs) {
-            if (msg.t === 'snap') this.emit({ kind: 'snap', detail: msg.s })
-            else if (msg.t === 'pong') { /* lastSeen 已刷新 */ }
+            if (msg.t === 'snap') {
+              const verdict = this.snapTracker.push(msg.seq, msg.h)
+              if (verdict.resync) this.sendResync() // 跳号(丢帧)→ 请求全量快照
+              if (verdict.hashAnomaly) this.emit({ kind: 'error', detail: 'hash-anomaly' })
+              this.emit({ kind: 'snap', detail: msg.s })
+            } else if (msg.t === 'pong') { /* lastSeen 已刷新 */ }
           }
         }
       })
@@ -177,7 +215,10 @@ export class LanService {
 
   private onPeerSocket(socket: net.Socket): void {
     const id = randomUUID()
-    const peer: Peer = { socket, decoder: new FrameDecoder(), lastSeen: Date.now() }
+    const peer: Peer = {
+      socket, decoder: new FrameDecoder(), lastSeen: Date.now(),
+      epoch: this.epoch, spectates: false,
+    }
     socket.on('data', (chunk) => {
       let msgs: LanMessage[]
       try {
@@ -194,11 +235,27 @@ export class LanService {
             socket.end()
             return
           }
+          // 二期:同一会话身份重连且房间未销毁 → welcome 带 resume:true + 当前 seq
+          let resume = false
+          if (msg.id !== undefined && this.resumable.has(msg.id)) {
+            peer.spectates = this.resumable.get(msg.id) ?? false // 观战位随会话身份恢复
+            this.resumable.delete(msg.id)
+            resume = true
+          }
+          peer.sessionId = msg.id
           this.peers.set(id, peer)
-          socket.write(encodeFrame({ t: 'welcome', v: LAN_PROTOCOL_VERSION, g: this.room?.game ?? 'td' }))
-          this.emit({ kind: 'peer-joined', detail: { joined: true, id } })
+          socket.write(
+            resume
+              ? encodeFrame({ t: 'welcome', v: LAN_PROTOCOL_VERSION, g: this.room?.game ?? 'td', resume: true, seq: this.snapSeq })
+              : encodeFrame({ t: 'welcome', v: LAN_PROTOCOL_VERSION, g: this.room?.game ?? 'td' }),
+          )
+          this.emit({ kind: 'peer-joined', detail: { joined: true, id, resume } })
+        } else if (msg.t === 'spectate') {
+          peer.spectates = true // welcome 后随时可切观战(FR-LN03)
         } else if (msg.t === 'cmd') {
-          this.emit({ kind: 'cmd', detail: msg.c })
+          if (!peer.spectates) this.emit({ kind: 'cmd', detail: msg.c }) // 观战 peer 指令直接忽略
+        } else if (msg.t === 'resync') {
+          this.replyResync(socket) // 立即补发全量快照(带当前 seq)
         } else if (msg.t === 'ping') {
           socket.write(encodeFrame({ t: 'pong' }))
         }
@@ -207,8 +264,23 @@ export class LanService {
     socket.on('error', () => undefined)
     socket.on('close', () => {
       const was = this.peers.delete(id)
-      if (was) this.emit({ kind: 'peer-left' })
+      if (was) {
+        // 二期:peer 断开不清房间/不重置序号,仅登记会话身份供重连续传
+        if (this.role === 'host' && peer.epoch === this.epoch && peer.sessionId !== undefined) {
+          this.resumable.set(peer.sessionId, peer.spectates)
+        }
+        this.emit({ kind: 'peer-left' })
+      }
     })
+  }
+
+  /** 房主:对 resync 的响应——立即补发缓存的全量快照(带当前 seq);尚未推过
+   *  快照则静默(下一拍 15Hz 广播兜底)。补发不推进 seq,客端不会循环 resync。 */
+  private replyResync(socket: net.Socket): void {
+    if (!this.lastSnap) return
+    try {
+      socket.write(encodeFrame({ t: 'snap', s: this.lastSnap.s, h: this.lastSnap.h, seq: this.lastSnap.seq }))
+    } catch { /* close 兜底 */ }
   }
 
   private startHeartbeat(): void {
@@ -236,15 +308,20 @@ export class LanService {
 
   // ── 渲染层出入口 ───────────────────────────────────────────────────────
 
-  /** 房主:推快照(渲染层节流 15Hz;hash 由渲染层计算附带)。 */
+  /** 房主:推快照(渲染层节流 15Hz;hash 由渲染层计算附带)。
+   *  二期:附单调递增 seq 供客端对账;超限帧丢弃时不推进 seq(不会造成假跳号),
+   *  并缓存本帧供 resync 立即补发。 */
   pushSnapshot(s: unknown, h: string): void {
     if (this.role !== 'host') return
+    const seq = this.snapSeq + 1
     let frame: Buffer
     try {
-      frame = encodeFrame({ t: 'snap', s, h })
+      frame = encodeFrame({ t: 'snap', s, h, seq })
     } catch {
-      return // 超限:丢弃本帧(下一帧再来)
+      return // 超限:丢弃本帧(下一帧再来;seq 未推进)
     }
+    this.snapSeq = seq
+    this.lastSnap = { s, h, seq }
     for (const peer of this.peers.values()) {
       try { peer.socket.write(frame) } catch { /* close 兜底 */ }
     }
@@ -254,6 +331,19 @@ export class LanService {
   sendCmd(c: unknown): void {
     if (this.role !== 'guest' || !this.guest) return
     try { this.guest.socket.write(encodeFrame({ t: 'cmd', c: c as never })) } catch { /* close 兜底 */ }
+  }
+
+  /** 客端:切换观战态(只收快照不发指令;房主将忽略本端后续 cmd)。
+   *  渲染层接线(IPC 通道)由主干统一补齐。 */
+  sendSpectate(): void {
+    if (this.role !== 'guest' || !this.guest) return
+    try { this.guest.socket.write(encodeFrame({ t: 'spectate' })) } catch { /* close 兜底 */ }
+  }
+
+  /** 客端:seq 跳号(丢帧)时请求房主补发全量快照(FR-LN03)。 */
+  private sendResync(): void {
+    if (this.role !== 'guest' || !this.guest) return
+    try { this.guest.socket.write(encodeFrame({ t: 'resync' })) } catch { /* close 兜底 */ }
   }
 
   teardown(): void {
@@ -270,6 +360,13 @@ export class LanService {
     this.server = null
     this.room = null
     this.role = 'idle'
+    // 二期:会话/对账状态全部归零;世代 +1 使在途 close 事件不再登记 resumable
+    this.guestId = null
+    this.snapSeq = 0
+    this.lastSnap = null
+    this.resumable.clear()
+    this.snapTracker.reset()
+    this.epoch++
   }
 }
 

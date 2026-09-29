@@ -1,5 +1,7 @@
 /**
  * R209 (FR-LN01/02/03): LAN 联机共享协议 —— 纯数据与纯函数,主进程/测试共用。
+ * 二期(FR-LN03 断线恢复与一致性):snap 增单调 seq、resync/spectate 新消息、
+ * welcome 续传标记(resume+seq)、SnapTracker 纯对账器(跳号/异常 hash 检测)。
  * 零 npm 依赖;渲染层不 import 本模块(网络全部经 window.rgbbox IPC 桥)。
  *
  * 传输约定(NFR-08 安全世界):
@@ -37,15 +39,18 @@ export interface LanBeacon {
   c: number
 }
 
-/** TCP 会话消息(双向)。 */
+/** TCP 会话消息(双向)。二期只加不改:hello.id / welcome.resume+seq / snap.seq
+ *  与 resync/spectate 均为新增字段/成员,一期旧端忽略未知字段(前向兼容)。 */
 export type LanMessage =
-  | { t: 'hello'; v: number; av: string }
-  | { t: 'welcome'; v: number; g: LanGame }
+  | { t: 'hello'; v: number; av: string; id?: string }
+  | { t: 'welcome'; v: number; g: LanGame; resume?: true; seq?: number }
   | { t: 'reject'; reason: string }
   | { t: 'ping' }
   | { t: 'pong' }
   | { t: 'cmd'; c: LanCommand }
-  | { t: 'snap'; s: unknown; h: string }
+  | { t: 'snap'; s: unknown; h: string; seq: number }
+  | { t: 'resync' }
+  | { t: 'spectate' }
 
 /** 客端→房主的游戏指令(FR-LN04:TD 合作——建塔/升级/出售/技能)。 */
 export type LanCommand =
@@ -58,6 +63,58 @@ export type LanCommand =
 /** 应用版本是否兼容(一期:字符串全等)。 */
 export function versionsCompatible(a: string, b: string): boolean {
   return a === b
+}
+
+// ── 二期(FR-LN03 断线恢复与一致性)──────────────────────────────────────
+
+/** 快照 hash 格式校验(一期简化对账钩子:非空字符串且 ≤128 字符;异常仅告警不断连)。 */
+export function hashWellFormed(h: unknown): boolean {
+  return typeof h === 'string' && h.length > 0 && h.length <= 128
+}
+
+/** SnapTracker 喂入一帧 snap 后的判定结果(纯数据,调用方据此发消息/上报)。 */
+export interface SnapVerdict {
+  /** seq 跳号(丢帧)→ 客端应向房主发 {t:'resync'} 请求补发全量快照。 */
+  resync: boolean
+  /** 连续 3 帧 seq 连续但 hash 异常 → 告警一次(FR-LN03 hash 漂移检测钩子)。 */
+  hashAnomaly: boolean
+}
+
+/** 快照对账器(纯逻辑,客端主进程用):seq 单调性追踪 + hash 异常 streak。
+ *  seq 为 undefined(一期旧端无序号)时不做对账,仅视为无动作。 */
+export class SnapTracker {
+  private lastSeq: number | null = null
+  private badHashStreak = 0
+
+  push(seq: number | undefined, hash: unknown): SnapVerdict {
+    let resync = false
+    let hashAnomaly = false
+    if (typeof seq === 'number') {
+      if (this.lastSeq !== null && seq > this.lastSeq + 1) resync = true
+      const contiguous = this.lastSeq !== null && seq === this.lastSeq + 1
+      if (!hashWellFormed(hash) && contiguous) {
+        if (++this.badHashStreak >= 3) {
+          hashAnomaly = true
+          this.badHashStreak = 0 // 告警一次后重新累计(持续异常可再次告警)
+        }
+      } else {
+        this.badHashStreak = 0 // 好 hash 或 seq 断续都打断"连续 3 帧"streak
+      }
+      this.lastSeq = seq
+    }
+    return { resync, hashAnomaly }
+  }
+
+  /** welcome(resume:true) 时以房主当前 seq 重建基线——续传后的首帧跳号仍可检出。 */
+  rebase(seq: number | undefined): void {
+    if (typeof seq === 'number') this.lastSeq = seq
+  }
+
+  /** 新会话/角色切换时清空基线与 streak。 */
+  reset(): void {
+    this.lastSeq = null
+    this.badHashStreak = 0
+  }
 }
 
 /** 编码一条 TCP 帧(长度前缀)。 */
