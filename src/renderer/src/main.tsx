@@ -6,7 +6,14 @@ import { OverlayCanvas } from './components/OverlayCanvas'
 import { ScreensaverView } from './components/ScreensaverView'
 import { SnipView } from './components/SnipView'
 import { I18nProvider } from './i18n'
+import { bootTheme } from './domain/uiTheme'
 import './styles.css'
+
+// R148 S5: apply the persisted theme before first paint — a light-theme user
+// must not see a dark flash while React boots. Windows that are pure stages
+// (overlay / audioviz / snip / screensaver) are dark in both themes, so the
+// call is harmless there and keeps behavior uniform.
+bootTheme()
 
 const params = new URLSearchParams(window.location.search)
 const isOverlay = params.get('overlay') === 'true'

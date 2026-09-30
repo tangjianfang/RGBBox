@@ -22,12 +22,12 @@ html {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(138, 162, 173, 0.18);
+  background: var(--scrollbar-thumb); /* R148 S5: theme-flippable */
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(138, 162, 173, 0.32);
+  background: var(--scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-corner {

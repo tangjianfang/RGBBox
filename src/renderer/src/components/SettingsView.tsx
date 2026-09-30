@@ -3,6 +3,7 @@ import { Pause, Play } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { PRESET_SNIP_HOTKEYS } from '../../../shared/snipHotkeys'
 import { UI_FONT_SCALE_TIERS } from '../domain/uiFontScale'
+import { UI_THEME_OPTIONS } from '../domain/uiTheme'
 import { clearAllGameData, type GameId } from '../domain/gamesTelemetry'
 
 export interface SettingsViewProps {
@@ -23,6 +24,9 @@ export interface SettingsViewProps {
   // Appearance (R160.4): Dynamic-Type-equivalent font scale
   uiFontScale: string
   onUiFontScale: (id: string) => void
+  // Appearance (R148 S5): UI theme — dark default / light / follow system
+  uiTheme: string
+  onUiTheme: (id: string) => void
   // AI (R83→R88): moved to the AI Lab view
 }
 
@@ -118,6 +122,20 @@ export function SettingsView(props: SettingsViewProps) {
             >
               {UI_FONT_SCALE_TIERS.map((tier) => (
                 <option key={tier.id} value={tier.id}>{t(`uiFontScale.tier.${tier.id}` as Parameters<typeof t>[0])}</option>
+              ))}
+            </select>
+          </div>
+          {/* R148 S5: theme — dark default (stage-first), light flips the chrome
+              token layer, system rides prefers-color-scheme with live re-resolve. */}
+          <div className="status-panel" title={t('uiTheme.hint')}>
+            <span>{t('uiTheme.label')}</span>
+            <select
+              data-setting="ui-theme"
+              value={props.uiTheme}
+              onChange={(e) => props.onUiTheme(e.target.value)}
+            >
+              {UI_THEME_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>{t(`uiTheme.option.${opt.id}` as Parameters<typeof t>[0])}</option>
               ))}
             </select>
           </div>

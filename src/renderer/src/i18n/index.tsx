@@ -380,6 +380,12 @@ const EN = {
   'uiFontScale.tier.md': 'Default (100%)',
   'uiFontScale.tier.lg': 'Large (115%)',
   'uiFontScale.tier.xl': 'Extra large (130%)',
+  // R148 S5: UI theme (dark default / light / follow system)
+  'uiTheme.label': 'Interface theme',
+  'uiTheme.hint': 'Dark is the stage-first default; System follows your OS theme live',
+  'uiTheme.option.dark': 'Dark',
+  'uiTheme.option.light': 'Light',
+  'uiTheme.option.system': 'Follow system',
   // Audio
   'audio.on': 'Audio On',
   'audio.off': 'Audio Off',
@@ -2138,6 +2144,12 @@ const ZH: TranslationTable = {
   'uiFontScale.tier.md': '默认（100%）',
   'uiFontScale.tier.lg': '大（115%）',
   'uiFontScale.tier.xl': '特大（130%）',
+  // R148 S5: 界面主题（深色默认 / 浅色 / 跟随系统）
+  'uiTheme.label': '界面主题',
+  'uiTheme.hint': '深色为舞台优先默认；跟随系统将实时监听系统主题切换',
+  'uiTheme.option.dark': '深色',
+  'uiTheme.option.light': '浅色',
+  'uiTheme.option.system': '跟随系统',
   'audio.on': '音频已开',
   'audio.off': '音频已关',
   'audio.defaultDevice': '默认（麦克风）',

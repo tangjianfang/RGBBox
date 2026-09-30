@@ -9,6 +9,7 @@ import { curatedKinds as curatedKinds$ } from './domain/curatedEffects'
 import type { PreviewOverride } from './domain/previewOverride'
 import { useRecentEffects } from './hooks/useRecentEffects'
 import { UI_FONT_SCALE_DEFAULT, uiFontScalePx } from './domain/uiFontScale'
+import { UI_THEME_DEFAULT, applyTheme } from './domain/uiTheme'
 
 /** R164.1: what a fresh install actually layers — the curated strip's first source. */
 const DEFAULT_PROFILE_LAYER_KINDS = defaultProfile.scenes.flatMap((s) => s.layers.map((l) => l.kind))
@@ -100,6 +101,17 @@ export function App(): JSX.Element {
   useEffect(() => {
     document.documentElement.style.fontSize = `${uiFontScalePx(uiFontScale)}px`
   }, [uiFontScale])
+  // R148 S5: UI theme — dark default; 'system' re-resolves live when the OS
+  // theme flips (prefers-color-scheme listener). main.tsx applied the stored
+  // preference pre-paint; this keeps later changes + persistence wired.
+  const [uiTheme, setUiTheme] = usePersistedState('rgbbox:theme', UI_THEME_DEFAULT, { raw: true })
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const sync = () => { applyTheme(uiTheme, mq.matches) }
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [uiTheme])
   // R86: single-view navigation — left rail direct switching, last view persisted
   // R142-E4b: app root for the vision assistant's full-window cursor overlay
   const appRootRef = useRef<HTMLElement | null>(null)
@@ -622,6 +634,8 @@ export function App(): JSX.Element {
             onSnipHotkey={settingsMirror.applySnipHotkey}
             uiFontScale={uiFontScale}
             onUiFontScale={setUiFontScale}
+            uiTheme={uiTheme}
+            onUiTheme={setUiTheme}
           />
         )}
         {activeView === 'ai' && (
