@@ -10,7 +10,15 @@ import {
   drawAlertVignette,
   drawHealthBar,
   drawHudCapsule,
+  emptyJuice,
+  floatText,
+  applyShake,
+  drawFloats,
+  tickJuice,
+  hitStop as queueHitStop,
+  shake as queueShake,
   type GameDifficulty,
+  type JuiceState,
 } from './hud'
 import {
   UPGRADES,
@@ -474,6 +482,8 @@ export interface SurvivalState {
   bgOffset: BgOffset
   /** R218 U11: 摄像机(视口中心世界坐标 + 缩放;凸包质心跟随 + zoom-to-fit)。 */
   camera: CameraState
+  /** R218 U8: juice(hud.ts 共享四件套:hit-stop/屏震衰减/伤害飘字)。 */
+  juice: JuiceState
   banner: Banner | null
   island: number
   portal: Point | null
@@ -627,6 +637,7 @@ export function initialSurvivalState(
     ripples: [],
     bgOffset: { x: 0, y: 0 },
     camera: { x: WORLD_W / 2, y: WORLD_H / 2, zoom: 1 },
+    juice: emptyJuice(),
     banner: null,
     island: 1,
     portal: null,
@@ -1077,6 +1088,10 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
   // R218 U10: 击杀涟漪(大敌环更大更久)
   const rippleLife = enemy.kind === 'boss' || enemy.kind === 'tank' ? 0.6 : 0.4
   state.ripples.push({ x: enemy.x, y: enemy.y, life: rippleLife, maxLife: rippleLife })
+  // R218 U8: 击杀大敌顿帧——tank/splitter 母体 0.03s(boss 沿用 R200 重档 0.06)
+  if (enemy.kind === 'tank' || (enemy.kind === 'splitter' && (enemy.gen ?? 0) === 0)) {
+    queueHitStop(state.juice, 0.03)
+  }
   state.combo = state.comboTimer > 0 ? state.combo + 1 : 1
   state.comboTimer = 2.5
   state.comboBest = Math.max(state.comboBest, state.combo)
@@ -1093,7 +1108,7 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
     state.bossKills += 1
     state.portal = { x: clamp(enemy.x, 60, WORLD_W - 60), y: clamp(enemy.y, 60, WORLD_H - 60) }
     state.banner = { text: 'BOSS DOWN — ROULETTE +1', life: 1.8 }
-    state.shake = 8
+    queueShake(state.juice, 6)
     playSfx('levelup')
     return
   }
@@ -1119,6 +1134,11 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
 export function tickSurvival(state: SurvivalState, dt: number): void {
   // R213: 名册同步(legacy player2/keys2 字段可能被视图直改,先镜像回 players/inputs)
   syncRoster(state)
+  // R218 U8: juice 顿帧——hitStop>0 时本帧 dt=0(计时/敌人/掉落全静止,渲染继续);
+  // juice 自身(shake 衰减/飘字)按真实 dt 步进。
+  const juiceFrozen = state.juice.hitStop > 0
+  tickJuice(state.juice, dt)
+  if (juiceFrozen) return
   // R200: hit-stop(进化/boss 击杀);预警条目独立于冻结推进
   state.warnings = tickWarnings(state.warnings, dt)
   // R202(FR-SW02): boss 弹幕三型循环(放射/瞄准扇形/环形,每 1.2s)
@@ -1146,7 +1166,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
         pl.invuln = state.invulnWindow
         pl.hitFlash = 0.15
         state.shake = Math.min(8, state.shake + 4)
-        addText(state, pl.x, pl.y - 26, `-${dmg}`, '#f87171')
+        floatText(state.juice, pl.x, pl.y - 26, `-${dmg}`, '#f87171')
         eb.life = 0
         playSfx('hurt')
         if (pl.hp <= 0) {
@@ -1407,7 +1427,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       target.hitFlash = 0.15
       state.shake = enemy.kind === 'boss' ? 9 : 6
       playSfx('hurt')
-      addText(state, target.x, target.y - 26, `-${dmg}`, '#f87171')
+      floatText(state.juice, target.x, target.y - 26, `-${dmg}`, '#f87171')
       spawnBurst(state, target.x, target.y, '#f87171', 12, 150)
       // R218 D: tank 高击退抗——接触后撤仅 8px(其余 46px)
       const recoil = enemy.kind === 'tank' ? 8 : 46
@@ -1576,6 +1596,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   ctx.save()
   if (state.shake > 0.2) ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake)
+  applyShake(ctx, state.juice)
   // R213: 场景背景系统——state.scene 指定程序化场景(fusion=按岛屿轮换);
   // 未设置时保留原岛屿主题星空(单机默认走 view 层写入,引擎侧不预设)。
   // R218 U10: 传视差 offset(质心平滑派生)与 darken(boss 在场压暗)。
@@ -1865,6 +1886,9 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.fillText(text.text, text.x, text.y)
     ctx.globalAlpha = 1
   }
+
+  // R218 U8: juice 伤害飘字(世界坐标层内)
+  drawFloats(ctx, state.juice)
 
   // ── R218 U1/U5: 战斗 HUD 胶囊化 + 心数行 → 连续血条(贴边,不进中央 60%) ──
   // 玩家 HP:左上纵向堆叠(P1 起每人一条,渐变+低血脉冲);倒下玩家画空底保位次。

@@ -535,7 +535,8 @@ describe('R218 survival difficulty tiers (eHP + 血条化)', () => {
     tickSurvival(s, 0.016)
     expect(s.player.hp).toBe(hp0 - 2)
     expect(s.player.hitFlash).toBeGreaterThan(0)
-    expect(s.texts.some((tx) => tx.text === '-2')).toBe(true)
+    // R218 U8: 伤害数字走 juice.floats(hud floatText)
+    expect(s.juice.floats.some((tx) => tx.text === '-2')).toBe(true)
   })
 
   it('敌速乘难度系数: hard 档 chaser 位移 ≈ 标准 ×1.08', () => {
@@ -704,7 +705,8 @@ describe('R218 enemy matrix (8 行为正交 + 威胁值加权投放)', () => {
       expect(c.hp).toBe(2)
     }
     for (const c of children) c.hp = 0
-    tickSurvival(s, 0.016)
+    // 母体击杀的 0.03s 顿帧(R218 U8)占 2 帧,越过冻结窗后再判
+    for (let i = 0; i < 3; i++) tickSurvival(s, 0.016)
     expect(s.enemies.filter((e) => e.kind === 'splitter')).toHaveLength(0)
   })
 
@@ -925,5 +927,67 @@ describe('R218 U11 world + camera follow', () => {
     s.players[1].hp = 0
     for (let i = 0; i < 200; i++) tickSurvival(s, 1 / 60)
     expect(s.camera.zoom).toBeCloseTo(1, 1)
+  })
+})
+
+// ── R218 U8: juice 接入(顿帧/屏震/伤害飘字,走 hud.ts 共享 helper) ───────────
+describe('R218 U8 juice integration', () => {
+  it('击杀大敌触发 hitStop 0.03s: 冻结期间 time 不推进,衰减后恢复', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    s.enemies.push({ id: 1, x: 300, y: 300, vx: 0, vy: 0, size: 22, hp: 0, maxHp: 100, kind: 'tank', elite: false, hitFlash: 0 })
+    tickSurvival(s, 0.016)
+    expect(s.juice.hitStop).toBeGreaterThanOrEqual(0.03)
+    const timeAtFreeze = s.time
+    tickSurvival(s, 0.016)
+    tickSurvival(s, 0.016)
+    expect(s.time).toBe(timeAtFreeze)
+    // 0.03s 衰减完(2 帧 × 0.016)后恢复推进
+    tickSurvival(s, 0.016)
+    expect(s.time).toBeGreaterThan(timeAtFreeze)
+  })
+
+  it('splitter 母体击杀触发 hitStop;小体(gen1)击杀不触发', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    s.juice.hitStop = 0
+    s.enemies.push({ id: 1, x: 300, y: 300, vx: 0, vy: 0, size: 12, hp: 0, maxHp: 9, kind: 'splitter', elite: false, hitFlash: 0, gen: 0 })
+    tickSurvival(s, 0.016)
+    expect(s.juice.hitStop).toBeGreaterThanOrEqual(0.03)
+    // 冻结消退后杀小体:不再触发
+    for (let i = 0; i < 4; i++) tickSurvival(s, 0.016)
+    s.juice.hitStop = 0
+    const children = s.enemies.filter((e) => e.kind === 'splitter')
+    for (const c of children) c.hp = 0
+    tickSurvival(s, 0.016)
+    expect(s.juice.hitStop).toBe(0)
+  })
+
+  it('boss 死亡: juice.shake > 0(hud shake(6)),替代旧 state.shake 单一路径', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.bossTimer = 0.01
+    tickSurvival(s, 0.016)
+    const boss = s.enemies.find((e) => e.kind === 'boss')!
+    boss.hp = 0
+    s.juice.shake = 0
+    tickSurvival(s, 0.016)
+    expect(s.juice.shake).toBeGreaterThan(0)
+    expect(s.enemies.every((e) => e.kind !== 'boss')).toBe(true)
+  })
+
+  it('玩家受击产生 juice 伤害飘字(-N 数字)', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    s.enemies.push({ id: 1, x: s.player.x + 8, y: s.player.y, vx: 0, vy: 0, size: 14, hp: 99, maxHp: 99, kind: 'chaser', elite: false, hitFlash: 0 })
+    tickSurvival(s, 0.016)
+    expect(s.juice.floats.length).toBeGreaterThanOrEqual(1)
+    expect(s.juice.floats.some((f) => f.text === '-1')).toBe(true)
   })
 })
