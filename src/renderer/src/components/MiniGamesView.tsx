@@ -1571,9 +1571,10 @@ export function MiniGamesView(): JSX.Element {
     return (
       <div className="games-view">
         <header className="workspace-header games-header">
+          {/* R189 Q-5: topbar already shows '迷你游戏' — the near-duplicate
+              hub H1 is gone; per-game screens keep their own gameTitle H2. */}
           <div>
             <p className="eyebrow">{t('games.eyebrow')}</p>
-            <h2>{t('games.title')}</h2>
           </div>
           <div className="games-header-actions">
             <button className="aspect-lock-btn" type="button" aria-label={t('games.bgmToggle')} title={t('games.bgmToggle')} onClick={toggleBgm}>

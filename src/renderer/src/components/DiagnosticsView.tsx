@@ -58,9 +58,9 @@ export function DiagnosticsView(props: {
   return (
     <div className="diagnostics-view">
       <header className="workspace-header">
+        {/* R189 Q-5: topbar already shows '诊断' — in-view H1 dedup. */}
         <div>
           <p className="eyebrow">{t('diag.eyebrow')}</p>
-          <h2>{t('diag.title')}</h2>
         </div>
         <Activity size={24} />
       </header>

@@ -1328,9 +1328,9 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
   return (
     <div ref={studioRef} className={`video-studio${fullscreen ? ' video-studio-fullscreen' : ''}`}>
       <header className="workspace-header">
+        {/* R189 Q-5: topbar already shows '视频工作站' — in-view H1 dedup. */}
         <div>
           <p className="eyebrow">{t('video.eyebrow')}</p>
-          <h2>{t('video.title')}</h2>
         </div>
         <div className="video-mode-bar">
           <button type="button" className={`video-mode-btn ${mode === 'camera' ? 'active' : ''}`} onClick={() => setMode('camera')}>

@@ -2099,9 +2099,10 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   return (
     <div className="audio-studio-view" style={{ position: 'relative' }}>
       <header className="workspace-header">
+        {/* R189 Q-5: the topbar already announces this module ('音频工作站') —
+            the in-view H1 duplicate is gone; the eyebrow descriptor stays. */}
         <div>
           <p className="eyebrow">{t('audio.eyebrow')}</p>
-          <h2>{t('audio.title')}</h2>
         </div>
         {/* R29.5: EQ and the audio generator used to be mixed inline with the
             player/visualizer/scenes/export flow, which felt cluttered. They
