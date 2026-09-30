@@ -556,8 +556,10 @@ export function MiniGamesView(): JSX.Element {
         player: { x: survivalRef.current.player.x, y: survivalRef.current.player.y },
         // R219.5: 摄像机 + 飞船视口坐标——E2E 断言「世界层归位后飞船恒在画面
         // 中央 60%」的取证字段(绘制在摄像机层内,shipVp 即屏幕坐标)。
+        // R219.7①: 视口读 state.vp。
         camera: { ...survivalRef.current.camera },
-        shipVp: worldToViewport(survivalRef.current.camera, WIDTH, HEIGHT, survivalRef.current.player.x, survivalRef.current.player.y),
+        vp: { ...survivalRef.current.vp },
+        shipVp: worldToViewport(survivalRef.current.camera, survivalRef.current.vp.w, survivalRef.current.vp.h, survivalRef.current.player.x, survivalRef.current.player.y),
         axis: { ...survivalRef.current.axis },
         keys: [...survivalRef.current.keys],
       }),
@@ -936,7 +938,20 @@ export function MiniGamesView(): JSX.Element {
     }
     setFsPaused(false)
     setFullscreen(true)
-    void screenRootRef.current?.requestFullscreen?.().catch(() => undefined)
+    // R219.7: 失败回落——requestFullscreen 被拒时不再残留 .fs 伪全屏
+    // (画布顶置+底部黑带的错乱形态),改为进入窗口内满幅(专注)保体验。
+    void screenRootRef.current?.requestFullscreen?.().catch(() => {
+      setFullscreen(false)
+      setFocusMode(true)
+    })
+  }, [])
+
+  // R219.7: 原生全屏态经事件同步——Esc/系统退出/调用失败都收敛到真实态
+  // (原先只在按钮回调里 set,系统级退出后 React 态可能残留 true)。
+  useEffect(() => {
+    const onChange = (): void => setFullscreen(document.fullscreenElement !== null)
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
 
   useEffect(() => {
@@ -951,6 +966,16 @@ export function MiniGamesView(): JSX.Element {
     // 900×520 logical coordinate system crisp at any panel/fullscreen size.
     const applyHdSize = () => {
       const rect = canvas.getBoundingClientRect()
+      // R219.7①: survival fs/focus 全铺满——backing 直接随 CSS 盒(撤 900/520
+      // 比例锁;vp 由 loop 高度基准反推,内容等比无拉伸);其余路径维持 R217。
+      // (对抗审查修正:不做逐轴 LOGICAL 下限——单轴触底会破坏 backing/CSS
+      // 同比,800×600 之类小屏全屏会横向压缩变形;小屏只损失清晰度不变形。)
+      if (screen === 'survival' && (fullscreen || focusModeRef.current)) {
+        const dpr = Number.isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0 ? Math.min(window.devicePixelRatio, 2) : 1
+        canvas.width = Math.max(1, Math.round(rect.width * dpr))
+        canvas.height = Math.max(1, Math.round(rect.height * dpr))
+        return
+      }
       const hd = computeHdSize(rect.width, window.devicePixelRatio || 1)
       canvas.width = hd.w
       canvas.height = hd.h
@@ -969,7 +994,16 @@ export function MiniGamesView(): JSX.Element {
       // R217: map the logical 900×520 space onto the HiDPI backing store
       // every frame (also heals transform loss after a ResizeObserver
       // backing re-assignment resets the context state).
-      ctx.setTransform(canvas.width / LOGICAL_W, 0, 0, canvas.height / LOGICAL_H, 0, 0)
+      // R219.7①: survival 恒用「高度基准」uniform scale——窗口态(比例锁盒)与
+      // 900 基准等价;fs/focus 全铺满时 vp.w 随屏比例拉宽(引擎 vp 适配,
+      // 内容零拉伸/零黑边)。其余三作维持宽度基准(锁定比例下两者等价)。
+      if (screen === 'survival') {
+        const s = canvas.height / LOGICAL_H
+        ctx.setTransform(s, 0, 0, s, 0, 0)
+        survivalRef.current.vp = { w: canvas.width / s, h: canvas.height / s }
+      } else {
+        ctx.setTransform(canvas.width / LOGICAL_W, 0, 0, canvas.height / LOGICAL_H, 0, 0)
+      }
       ctx.imageSmoothingEnabled = true
       ctx.imageSmoothingQuality = 'high'
       let dt = Math.min(0.05, (now - last) / 1000)
@@ -1073,8 +1107,10 @@ export function MiniGamesView(): JSX.Element {
           if (img === null || pl === undefined || pl.hp <= 0) continue
           if (pl.invuln > 0 && Math.floor(pl.invuln * 12) % 2 === 0) continue // 无敌闪烁节奏与飞船一致
           // R218-SV 大世界:头像画在视口层,玩家世界坐标须经摄像机变换
+          // R219.7①: 视口尺寸读 state.vp(可变纵横比)
           const cam = survivalRef.current.camera
-          const vp = worldToViewport(cam, WIDTH, HEIGHT, pl.x, pl.y)
+          const vpSize = survivalRef.current.vp
+          const vp = worldToViewport(cam, vpSize.w, vpSize.h, pl.x, pl.y)
           const ar = 14 * cam.zoom
           ctx.save()
           ctx.beginPath()
@@ -1289,8 +1325,17 @@ export function MiniGamesView(): JSX.Element {
         const offer = survivalRef.current.offers[Number(normalized) - 1]
         if (offer) chooseUpgradeRef.current(offer)
       }
-      if (normalized === 'enter') fsActionRef.current['fs-primary']?.()
-      if (normalized === 'r') fsActionRef.current['fs-restart']?.()
+      // R219.7②(对抗审查修正): Enter/R 键盘等价与按钮条同门控——运行中
+      // (含 levelup/roulette)按钮已隐藏,键盘等价也必须停;否则 Slash 局中
+      // 误触 Enter 会无形重开局(TD 的「下一波」保留)。
+      if (normalized === 'enter' || normalized === 'r') {
+        const ph = currentPhaseRef.current()
+        const barVisible = screenRef.current === 'td' || ph === 'ready' || ph === 'lost' || ph === 'won'
+        if (barVisible) {
+          if (normalized === 'enter') fsActionRef.current['fs-primary']?.()
+          else fsActionRef.current['fs-restart']?.()
+        }
+      }
       if (screen === 'survival') {
         // R213: P1 键位经配置映射到引擎标准键(箭头);箭头键恒属 P1(手感兼容)
         const std = p1KeyMapRef.current[normalized]
@@ -1463,9 +1508,12 @@ export function MiniGamesView(): JSX.Element {
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
+    // R219.7①: survival 可变纵横比——点击映射按当前 vp(其余 900×520)
+    const lw = screenRef.current === 'survival' ? survivalRef.current.vp.w : WIDTH
+    const lh = screenRef.current === 'survival' ? survivalRef.current.vp.h : HEIGHT
     const point = {
-      x: ((event.clientX - rect.left) / rect.width) * WIDTH,
-      y: ((event.clientY - rect.top) / rect.height) * HEIGHT,
+      x: ((event.clientX - rect.left) / rect.width) * lw,
+      y: ((event.clientY - rect.top) / rect.height) * lh,
     }
     const state = tdStateRef.current
     const tower = state.towers.find((item) => Math.hypot(item.x - point.x, item.y - point.y) < 22)
@@ -1553,9 +1601,12 @@ export function MiniGamesView(): JSX.Element {
     const canvas = canvasRef.current
     if (!canvas) return null
     const rect = canvas.getBoundingClientRect()
+    // R219.7①: survival 可变纵横比——fs 按钮 hitTest 与悬停按当前 vp 映射
+    const lw = screenRef.current === 'survival' ? survivalRef.current.vp.w : WIDTH
+    const lh = screenRef.current === 'survival' ? survivalRef.current.vp.h : HEIGHT
     return {
-      x: ((event.clientX - rect.left) / rect.width) * WIDTH,
-      y: ((event.clientY - rect.top) / rect.height) * HEIGHT,
+      x: ((event.clientX - rect.left) / rect.width) * lw,
+      y: ((event.clientY - rect.top) / rect.height) * lh,
     }
   }
   const handleUnifiedCanvasMove = (event: MouseEvent<HTMLCanvasElement>): void => {
@@ -2003,6 +2054,9 @@ export function MiniGamesView(): JSX.Element {
       btns.push(b)
       drawHudButton(ctx, b, hudHoverRef.current === b.id)
     }
+    // R219.7①: survival fs 全铺满 → 画布 HUD 锚点读 vp;其余三作恒 900×520
+    const vw = isSurvival ? survivalRef.current.vp.w : WIDTH
+    const vh = isSurvival ? survivalRef.current.vp.h : HEIGHT
     // ① 顶部状态面板(各作两行关键数值——fs 态 DOM 统计条已隐藏)
     drawHudPanel(ctx, 12, 12, 336, 62)
     ctx.save()
@@ -2018,49 +2072,55 @@ export function MiniGamesView(): JSX.Element {
     // ② TD 商店(右侧竖列;数字键 1-5 等价)+ 选中塔升级/出售
     if (isTd) {
       TOWER_DEFINITIONS.forEach((def, i) => {
-        push({ id: `fs-tower-${i}`, x: WIDTH - 122, y: 86 + i * 47, w: 108, h: 41, label: `${def.label} ◎${def.cost}`, color: def.color, key: String(i + 1) })
+        push({ id: `fs-tower-${i}`, x: vw - 122, y: 86 + i * 47, w: 108, h: 41, label: `${def.label} ◎${def.cost}`, color: def.color, key: String(i + 1) })
       })
       const detail = tdStateRef.current.towers.find((tw) => tw.id === selectedTowerId)
       if (detail) {
         const def = TOWER_DEFINITIONS.find((item) => item.kind === detail.kind)
-        drawHudPanel(ctx, WIDTH - 122, 86 + TOWER_DEFINITIONS.length * 47 + 8, 108, 66)
+        drawHudPanel(ctx, vw - 122, 86 + TOWER_DEFINITIONS.length * 47 + 8, 108, 66)
         ctx.save()
         ctx.fillStyle = '#e2f8ff'
         ctx.font = '600 12px Inter, sans-serif'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText(`${def?.label ?? ''} Lv${detail.level}`, WIDTH - 68, 86 + TOWER_DEFINITIONS.length * 47 + 28)
+        ctx.fillText(`${def?.label ?? ''} Lv${detail.level}`, vw - 68, 86 + TOWER_DEFINITIONS.length * 47 + 28)
         ctx.restore()
-        push({ id: 'fs-upgrade', x: WIDTH - 118, y: 86 + TOWER_DEFINITIONS.length * 47 + 44, w: 100, h: 26, label: `${t('games.upgrade')} ◎${towerUpgradeCost(detail)}`, key: 'U' })
-        push({ id: 'fs-sell', x: WIDTH - 118, y: 86 + TOWER_DEFINITIONS.length * 47 + 74, w: 100, h: 26, label: t('games.sell'), key: 'X' })
+        push({ id: 'fs-upgrade', x: vw - 118, y: 86 + TOWER_DEFINITIONS.length * 47 + 44, w: 100, h: 26, label: `${t('games.upgrade')} ◎${towerUpgradeCost(detail)}`, key: 'U' })
+        push({ id: 'fs-sell', x: vw - 118, y: 86 + TOWER_DEFINITIONS.length * 47 + 74, w: 100, h: 26, label: t('games.sell'), key: 'X' })
       }
     }
     // ③ Swarm 升级三选一(levelup 时画布化,数字键 1/2/3 等价)
     if (isSurvival && survivalRef.current.phase === 'levelup' && survivalRef.current.offers.length > 0) {
       survivalRef.current.offers.forEach((id, i) => {
         const def = UPGRADES.find((upgrade) => upgrade.id === id)
-        const x = WIDTH / 2 - 292 + i * 196
-        drawHudPanel(ctx, x, HEIGHT / 2 - 86, 184, 150)
-        push({ id: `fs-offer-${i}`, x: x + 8, y: HEIGHT / 2 - 78, w: 168, h: 134, label: '', key: String(i + 1) })
+        const x = vw / 2 - 292 + i * 196
+        drawHudPanel(ctx, x, vh / 2 - 86, 184, 150)
+        push({ id: `fs-offer-${i}`, x: x + 8, y: vh / 2 - 78, w: 168, h: 134, label: '', key: String(i + 1) })
         ctx.save()
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillStyle = '#e2f8ff'
         ctx.font = '600 14px Inter, sans-serif'
-        ctx.fillText(t(`games.up.${id}`), x + 92, HEIGHT / 2 - 46)
+        ctx.fillText(t(`games.up.${id}`), x + 92, vh / 2 - 46)
         ctx.fillStyle = 'rgba(159, 183, 193, 0.95)'
         ctx.font = '500 11px Inter, sans-serif'
-        wrapCanvasText(ctx, t(`games.up.${id}.desc`), x + 92, HEIGHT / 2 - 16, 160, 16)
+        wrapCanvasText(ctx, t(`games.up.${id}.desc`), x + 92, vh / 2 - 16, 160, 16)
         ctx.fillStyle = def ? RARITY_COLORS[def.rarity] : '#9fb7c1'
         ctx.font = '600 11px Inter, sans-serif'
-        ctx.fillText(`${t('games.claim')} ${i + 1}`, x + 92, HEIGHT / 2 + 44)
+        ctx.fillText(`${t('games.claim')} ${i + 1}`, x + 92, vh / 2 + 44)
         ctx.restore()
       })
     }
     // ④ 底部主按钮条(开始/下一波 + 重开)
-    const primaryLabel = isTd && tdStateRef.current.phase === 'running' ? t('games.nextWave') : t('games.start')
-    push({ id: 'fs-primary', x: WIDTH / 2 - 162, y: HEIGHT - 58, w: 152, h: 40, label: primaryLabel, key: 'Enter' })
-    push({ id: 'fs-restart', x: WIDTH / 2 + 10, y: HEIGHT - 58, w: 152, h: 40, label: t('games.restart'), key: 'R' })
+    // R219.7②: 运行中(含 levelup/roulette 选择态)隐藏——用户:「游戏开始
+    // 之后可以隐藏,游戏结束才能显示」;TD 的「下一波」是局中玩法按钮,保留。
+    const phaseNow = currentPhaseRef.current()
+    const showPrimaryBar = isTd || phaseNow === 'ready' || phaseNow === 'lost' || phaseNow === 'won'
+    if (showPrimaryBar) {
+      const primaryLabel = isTd && tdStateRef.current.phase === 'running' ? t('games.nextWave') : t('games.start')
+      push({ id: 'fs-primary', x: vw / 2 - 162, y: vh - 58, w: 152, h: 40, label: primaryLabel, key: 'Enter' })
+      push({ id: 'fs-restart', x: vw / 2 + 10, y: vh - 58, w: 152, h: 40, label: t('games.restart'), key: 'R' })
+    }
     // ⑤ 退出角标(3s 无操作自动隐藏)
     if (now - lastInputAtRef.current < 3000) drawExitBadge(ctx, `Esc · ${t('games.pause.title')}`)
   }
@@ -2089,7 +2149,7 @@ export function MiniGamesView(): JSX.Element {
   }
 
   return (
-    <div ref={screenRootRef} className={`games-view games-screen ${fullscreen ? 'fs' : ''}${focusMode ? ' focus' : ''}${screenScale === 'large' ? ' size-large' : ''}${runActive ? ' running' : ''}`}>
+    <div ref={screenRootRef} data-game={screen} className={`games-view games-screen ${fullscreen ? 'fs' : ''}${focusMode ? ' focus' : ''}${screenScale === 'large' ? ' size-large' : ''}${runActive ? ' running' : ''}`}>
       <header className="workspace-header games-header">
         <div>
           <p className="eyebrow">{t('games.eyebrow')}</p>

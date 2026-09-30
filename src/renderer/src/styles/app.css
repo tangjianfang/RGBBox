@@ -9813,7 +9813,12 @@ input:disabled {
 .games-screen.fs .games-canvas-status,
 .games-screen.fs .td-ctl-row,
 .games-screen.fs .vision-pad,
-.games-screen.fs .vision-banner {
+.games-screen.fs .vision-banner,
+/* R219.7: fs 由 R211 画布 HUD 承载的两个 DOM 浮层让位(升级三选一/结算与
+   画布卡片双层叠影)。注意 .swarm-roulette 不在列——轮盘没有画布 HUD 等价物,
+   fs 态必须保留 DOM 面板,否则轮盘相位无 UI 可操作。 */
+.games-screen.fs .levelup-overlay,
+.games-screen.fs .swarm-summary {
   display: none !important;
 }
 
@@ -9856,6 +9861,19 @@ input:disabled {
   height: min(100vh, calc(100vw * 520 / 900));
   /* 压掉 running 档 max-height(该规则在前文,不覆盖会把 fs 高度截到 100vh-158) */
   max-height: 100vh;
+}
+
+/* R219.7①: survival fs/focus 真铺满——可变纵横比(引擎 state.vp 适配:高度锁
+   ~520 逻辑、宽度随屏比例拉宽,loop 用高度基准 uniform scale,内容零拉伸)。
+   覆盖上方 contain-fit 细边(用户否决:「全屏还是有黑色边框」)。
+   TD/Tetris/Slash 为固定 900×520 棋盘,维持 contain 细边(行业惯例)。 */
+.games-screen.fs[data-game='survival'] .games-canvas,
+.games-screen.focus[data-game='survival'] .games-canvas {
+  width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  max-width: 100%;
+  border-radius: 0;
 }
 
 /* VisionCursor 在 fs 态保留(功能性光标跟随,画布坐标) */
@@ -10106,11 +10124,22 @@ input:disabled {
 .games-screen.running .games-canvas-status { opacity: 0.7; }
 .games-screen.running .games-stat-grid:hover,
 .games-screen.running .games-canvas-status:hover { opacity: 1; }
+/* R219.7: fs 态对 .running 的 padding 覆盖已并入下方「fs/focus 终局覆盖」块
+   (须位于全部档位规则之后,见该处注释)。 */
 
 .games-screen.size-large { padding: 12px 14px; gap: 12px; }
 .games-screen.size-large .games-layout { grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; }
 .games-screen.size-large.running .games-layout { grid-template-columns: minmax(0, 1fr); }
 .games-screen.size-large.running .games-control-panel { display: none; }
+
+/* R219.7(对抗审查修正): fs/focus 的 padding/单列覆盖必须放在 .running/.size-large
+   档位规则**之后**——等特异性下源码序决胜,此前 .size-large 的 12px 14px 与
+   280px 侧栏轨会在 fs+画面占比=大 时复活,全铺满被内缩 14/12px(审查 4 镜头
+   一致命中)。此处为终局覆盖,后文勿再加同属性档位规则。 */
+.games-screen.fs,
+.games-screen.focus { padding: 0; gap: 0; }
+.games-screen.fs .games-layout,
+.games-screen.focus .games-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 
 /* 专注模式:最小侵入——games 区域 fixed 满窗口,其余 chrome 全隐 */
 .games-screen.focus .workspace-header,

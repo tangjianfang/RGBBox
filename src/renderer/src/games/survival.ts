@@ -41,6 +41,21 @@ export type SurvivalPhase = 'ready' | 'running' | 'levelup' | 'roulette' | 'lost
 
 export const BOSS_INTERVAL = 90
 
+/** R219.7③: 动态背景总开关——用户指令「先停止动态背景的功能」(移动时卡顿观感)。
+ *  false = 视差 offset 不传(parallaxShift 恒 0)、场景时间 t 冻结为按岛定值
+ *  (星空漂移/闪烁/舱段全静止)、legacy 星空同冻结、bgOffset 平滑停走。
+ *  恢复路径:翻回 true 并同步改「bgOffset 恒 0」测试锁。 */
+export const DYNAMIC_BG_ENABLED = false
+
+/** R219.7①: 视口逻辑尺寸(可变纵横比)。默认 900×520;fs/focus 全铺满时由
+ *  view 层按「高度基准 uniform scale」反推——vp.h 恒 ≈520,vp.w 随屏幕比例
+ *  拉宽(如 16:9 ≈ 924)。引擎内一切「视口尺寸」语义(摄像机/生成环/预警
+ *  箭点/HUD 锚点/暗罩/vignette)一律读 state.vp,不再读 WIDTH/HEIGHT 常量。 */
+export interface ViewportSize {
+  w: number
+  h: number
+}
+
 // ── R218 U4/E: 难度四档 eHP 参数(spec §二 Survival) ──────────────────────────
 // 休闲 10HP×0.65 / 标准 7×1.0 / 困难 5×1.35 / 炼狱 3×1.6(敌伤系数);
 // 敌速沿用既有 enemySpeedMult 体系乘法微调 1/1/1.08/1.15;
@@ -490,6 +505,8 @@ export interface SurvivalState {
   portal: Point | null
   keys: Set<string>
   axis: { x: number; y: number }
+  /** R219.7①: 当前视口逻辑尺寸(view 层每帧按 canvas/scale 反推写入)。 */
+  vp: ViewportSize
   /** R213 二期: 每玩家手柄摇杆轴(长度随 deployPlayers 人数,对齐 players)。
    *  axes[pi] 与 P1 legacy axis 同语义:>0.18 死区时模拟向量覆盖键池向量,
    *  幅度缩放移速;axes[0] 不驱动 P1(P1 移动仍读 axis,vision 叠加路径不变)。 */
@@ -645,6 +662,7 @@ export function initialSurvivalState(
     players: [player],
     inputs: [keys],
     axis: { x: 0, y: 0 },
+    vp: { w: WIDTH, h: HEIGHT },
     axes: [{ x: 0, y: 0 }],
     scoreMult: 1 + scoreMultiplier(artifacts),
     coinMult: has('bounty') ? 2 : 1,
@@ -912,10 +930,11 @@ export function dissolveRoulette(state: SurvivalState, result: RouletteResult): 
   state.phase = 'running'
 }
 
-/** R218 U11: 摄像机视口外环生成点(世界坐标;再钳回世界 ±60 边界)。 */
+/** R218 U11: 摄像机视口外环生成点(世界坐标;再钳回世界 ±60 边界)。
+ *  R219.7①: 视口尺寸读 state.vp(可变纵横比)。 */
 function spawnRingPoint(state: SurvivalState, ring: number): { x: number; y: number; side: number } {
-  const vw = WIDTH / state.camera.zoom
-  const vh = HEIGHT / state.camera.zoom
+  const vw = state.vp.w / state.camera.zoom
+  const vh = state.vp.h / state.camera.zoom
   const side = Math.floor(Math.random() * 4)
   let x: number
   let y: number
@@ -1360,16 +1379,19 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   // R218 U11: 摄像机——存活玩家凸包(包围盒)跟随(死区+平滑+世界钳制),
   // zoom-to-fit 2-4P;玩家出屏软约束(向心 120px/s);背景 offset 由摄像机派生
   // (与 U10 质心视差合一:摄像机即平滑后的质心)。
-  updateCamera(state.camera, playersBBox(state.players), WIDTH, HEIGHT, dt)
+  // R219.7①: 视口读 vp;③ 动态背景停用时 bgOffset 不再随摄像机漂移(恒 0)。
+  updateCamera(state.camera, playersBBox(state.players), state.vp.w, state.vp.h, dt)
   for (const pl of alivePlayers(state)) {
-    const push = softPushForce(state.camera, WIDTH, HEIGHT, pl)
+    const push = softPushForce(state.camera, state.vp.w, state.vp.h, pl)
     pl.x += push.x * dt
     pl.y += push.y * dt
   }
-  state.bgOffset = smoothOffsetTo(state.bgOffset, {
-    x: clamp((state.camera.x - WORLD_W / 2) / (WORLD_W / 2), -1, 1),
-    y: clamp((state.camera.y - WORLD_H / 2) / (WORLD_H / 2), -1, 1),
-  })
+  if (DYNAMIC_BG_ENABLED) {
+    state.bgOffset = smoothOffsetTo(state.bgOffset, {
+      x: clamp((state.camera.x - WORLD_W / 2) / (WORLD_W / 2), -1, 1),
+      y: clamp((state.camera.y - WORLD_H / 2) / (WORLD_H / 2), -1, 1),
+    })
+  }
 
   state.bladeAngle += dt * 2.8
   state.bladeTimer += dt
@@ -1551,9 +1573,10 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   }
 }
 
+// R219.7①: 星位存 0..1 分数——按 vp 尺寸解析(可变纵横比下不再只覆盖左 900px)
 const STARS = Array.from({ length: 42 }, (_, i) => ({
-  x: (Math.sin(i * 127.3) * 0.5 + 0.5) * WIDTH,
-  y: (Math.sin(i * 311.7) * 0.5 + 0.5) * HEIGHT,
+  fx: Math.sin(i * 127.3) * 0.5 + 0.5,
+  fy: Math.sin(i * 311.7) * 0.5 + 0.5,
   size: (Math.sin(i * 73.1) * 0.5 + 0.5) * 1.6 + 0.6,
   phase: (Math.sin(i * 45.7) * 0.5 + 0.5) * Math.PI * 2,
 }))
@@ -1567,15 +1590,15 @@ const ISLAND_THEMES = [
   { bg: '#050f12', star: '#b7cdd1' },
 ]
 
-function dimScene(ctx: CanvasRenderingContext2D, phase: SurvivalPhase): void {
+function dimScene(ctx: CanvasRenderingContext2D, phase: SurvivalPhase, vw: number, vh: number): void {
   if (phase === 'ready' || phase === 'lost') {
     // R219.3: ready 态菜单已移出画布(下方独立面板),压暗只为场景预览分层,
     // 幅度 0.68→0.35;lost 结算覆盖层仍在画布中央,维持压暗。
     ctx.fillStyle = phase === 'ready' ? 'rgba(5, 10, 14, 0.35)' : 'rgba(5, 10, 14, 0.68)'
-    ctx.fillRect(0, 0, WIDTH, HEIGHT)
+    ctx.fillRect(0, 0, vw, vh)
   } else if (phase === 'roulette') {
     ctx.fillStyle = 'rgba(5, 10, 14, 0.55)'
-    ctx.fillRect(0, 0, WIDTH, HEIGHT)
+    ctx.fillRect(0, 0, vw, vh)
   }
 }
 
@@ -1641,7 +1664,7 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
   // R213: 名册同步(与 tickSurvival 同口径,视图直改 player2 后立即生效)
   syncRoster(state)
   drawSurvivalBody(ctx, state)
-  // R200(FR-G06.2): 出生预警——边缘红色箭头(0.5s)
+  // R200(FR-G06.2): 出生预警——边缘红色箭头(0.5s);R219.7①: 锚点读 vp
   for (const w of state.warnings) {
     const alpha = Math.min(1, w.t / 0.5)
     ctx.save()
@@ -1650,8 +1673,8 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
     ctx.font = '800 26px Inter, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    const cx = w.edge === 1 ? WIDTH - 46 : w.edge === 3 ? 46 : WIDTH / 2
-    const cy = w.edge === 0 ? 46 : w.edge === 2 ? HEIGHT - 46 : HEIGHT / 2
+    const cx = w.edge === 1 ? state.vp.w - 46 : w.edge === 3 ? 46 : state.vp.w / 2
+    const cy = w.edge === 0 ? 46 : w.edge === 2 ? state.vp.h - 46 : state.vp.h / 2
     const glyph = w.edge === 0 ? '▲' : w.edge === 1 ? '▶' : w.edge === 2 ? '▼' : '◀'
     ctx.fillText(glyph, cx, cy)
     ctx.restore()
@@ -1660,7 +1683,14 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
 
 function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): void {
   const player = state.player
-  ctx.clearRect(0, 0, WIDTH, HEIGHT)
+  // R219.7①: 视口尺寸统一入口——引擎不再直读 900×520 常量。
+  const vp = state.vp
+  // R219.7③: 动态背景停用——场景时间冻结为按岛定值(星空/漂移/闪烁全静止),
+  // 视差与玩家位移动输入恒定;恢复开关见 DYNAMIC_BG_ENABLED。
+  const sceneT = DYNAMIC_BG_ENABLED ? state.clock : (state.island - 1) * 97.3
+  const bgPx = DYNAMIC_BG_ENABLED ? player.x : vp.w / 2
+  const bgPy = DYNAMIC_BG_ENABLED ? player.y : vp.h / 2
+  ctx.clearRect(0, 0, vp.w, vp.h)
   ctx.save()
   // R219.1: 震屏单一路径——legacy state.shake 平移已删,统一走 juice.shake
   // (applyShake;受击/换岛/boss 击杀全部经 queueShake 入队)。
@@ -1671,18 +1701,18 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   if (state.scene !== undefined) {
     const id = state.scene === 'fusion' ? SCENE_IDS[(state.island - 1) % (SCENE_IDS.length - 1)] : state.scene
     drawScene(id, {
-      ctx, w: WIDTH, h: HEIGHT, t: state.clock, px: player.x, py: player.y,
-      offset: state.bgOffset,
+      ctx, w: vp.w, h: vp.h, t: sceneT, px: bgPx, py: bgPy,
+      offset: DYNAMIC_BG_ENABLED ? state.bgOffset : undefined,
       darken: state.enemies.some((enemy) => enemy.kind === 'boss') ? 0.32 : 0,
     })
   } else {
   const theme = ISLAND_THEMES[(state.island - 1) % ISLAND_THEMES.length]
   ctx.fillStyle = theme.bg
-  ctx.fillRect(0, 0, WIDTH, HEIGHT)
+  ctx.fillRect(0, 0, vp.w, vp.h)
   for (const star of STARS) {
-    ctx.globalAlpha = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(state.clock * 2 + star.phase))
+    ctx.globalAlpha = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(sceneT * 2 + star.phase))
     ctx.fillStyle = theme.star
-    ctx.fillRect(star.x - player.x * 0.02 - state.bgOffset.x * 8, star.y - player.y * 0.02 - state.bgOffset.y * 8, star.size, star.size)
+    ctx.fillRect(star.fx * vp.w - bgPx * 0.02, star.fy * vp.h - bgPy * 0.02, star.size, star.size)
   }
   }
   ctx.globalAlpha = 1
@@ -1691,7 +1721,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   //    世界实体(弹幕/门/珠/刀光/子弹/敌/粒子/涟漪/玩家/飘字)在此层绘制,
   //    restore 后再画 HUD(恒在视口坐标,不随摄像机动)。 ──
   ctx.save()
-  ctx.translate(WIDTH / 2, HEIGHT / 2)
+  ctx.translate(vp.w / 2, vp.h / 2)
   ctx.scale(state.camera.zoom, state.camera.zoom)
   ctx.translate(-state.camera.x, -state.camera.y)
 
@@ -1951,12 +1981,12 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   const boss = state.enemies.find((enemy) => enemy.kind === 'boss')
   if (boss) {
     // R218 U1/U5: boss 血条走共享胶囊+连续血条(顶边居中,不进中央 60%)
-    drawHealthBar(ctx, WIDTH / 2 - 160, 52, 320, 10, clamp(boss.hp / boss.maxHp, 0, 1), state.clock, { segments: false })
+    drawHealthBar(ctx, vp.w / 2 - 160, 52, 320, 10, clamp(boss.hp / boss.maxHp, 0, 1), state.clock, { segments: false })
     ctx.fillStyle = '#f9a8d4'
     ctx.font = '800 12px Inter, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'alphabetic'
-    ctx.fillText('BOSS', WIDTH / 2, 46)
+    ctx.fillText('BOSS', vp.w / 2, 46)
   }
 
   // ── R218 U1/U5: 战斗 HUD 胶囊化 + 心数行 → 连续血条(贴边,不进中央 60%) ──
@@ -1985,34 +2015,34 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   // 右上信息胶囊(波次=岛屿/时间/分数——spec U1 三要素的 Survival 语义)
   const mins = Math.floor(state.time / 60)
   const secs = String(Math.floor(state.time % 60)).padStart(2, '0')
-  drawHudCapsule(ctx, WIDTH - 216, 14, 200, 20)
+  drawHudCapsule(ctx, vp.w - 216, 14, 200, 20)
   ctx.fillStyle = '#e2e8f0'
   ctx.font = '700 11px Inter, sans-serif'
   ctx.textAlign = 'right'
   ctx.textBaseline = 'middle'
-  ctx.fillText(`ISLAND ${state.island}  ${mins}:${secs}  ${state.score}`, WIDTH - 24, 24)
+  ctx.fillText(`ISLAND ${state.island}  ${mins}:${secs}  ${state.score}`, vp.w - 24, 24)
 
-  drawHealthBar(ctx, 76, HEIGHT - 24, WIDTH - 112, 8, clamp(state.xp / state.xpNext, 0, 1), state.clock, { segments: false })
-  drawHudCapsule(ctx, 16, HEIGHT - 30, 54, 20)
+  drawHealthBar(ctx, 76, vp.h - 24, vp.w - 112, 8, clamp(state.xp / state.xpNext, 0, 1), state.clock, { segments: false })
+  drawHudCapsule(ctx, 16, vp.h - 30, 54, 20)
   ctx.fillStyle = '#9fb7c1'
   ctx.font = '700 12px Inter, sans-serif'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
-  ctx.fillText(`LV ${state.level}`, 24, HEIGHT - 20)
+  ctx.fillText(`LV ${state.level}`, 24, vp.h - 20)
 
   if (state.banner) {
     ctx.globalAlpha = clamp(state.banner.life / 0.5, 0, 1)
     ctx.fillStyle = '#e2f8ff'
     ctx.font = '800 44px Inter, sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText(state.banner.text, WIDTH / 2, 110)
+    ctx.fillText(state.banner.text, vp.w / 2, 110)
     ctx.globalAlpha = 1
   }
   ctx.restore()
   // R218 U1/U5: 低血(≤25%)呼吸警示 vignette——任一存活玩家触发即亮
   const lowRatio = state.players.reduce((acc, pl) => (pl.hp > 0 ? Math.min(acc, pl.hp / pl.maxHp) : acc), 1)
-  if (lowRatio <= 0.25) drawAlertVignette(ctx, WIDTH, HEIGHT, 0.45, state.clock)
-  dimScene(ctx, state.phase)
+  if (lowRatio <= 0.25) drawAlertVignette(ctx, vp.w, vp.h, 0.45, state.clock)
+  dimScene(ctx, state.phase, vp.w, vp.h)
 }
 
 // ── FR-G01(R198): 策略教练 —— 纯函数,key 制文案 ──

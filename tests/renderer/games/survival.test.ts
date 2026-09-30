@@ -811,15 +811,17 @@ describe('R218 U10 background offset (质心 → 归一化 → 平滑)', () => {
     expect(cur.y).toBeCloseTo(-1, 2)
   })
 
-  it('tick 集成: 玩家持续右移 → bgOffset.x 平滑为正;击杀产生涟漪环', () => {
+  it('tick 集成(R219.7③ 动态背景停用): 玩家持续右移 → bgOffset 恒 0(不再随摄像机漂移);击杀仍产生涟漪环', () => {
     const s = initialSurvivalState()
     s.phase = 'running'
     s.spawnTimer = 99
     s.bossTimer = 99
     s.keys.add('d')
     for (let i = 0; i < 60; i++) tickSurvival(s, 1 / 60)
-    expect(s.bgOffset.x).toBeGreaterThan(0.05)
-    expect(Math.abs(s.bgOffset.y)).toBeLessThan(0.05)
+    // 停用锁:DYNAMIC_BG_ENABLED=false 期间 bgOffset 不推进(移动时背景静止——
+    // 用户指令「先停止动态背景」;恢复开关时本断言与 smoothOffsetTo 单测同步改回)。
+    expect(s.bgOffset).toEqual({ x: 0, y: 0 })
+    expect(s.camera.x).toBeGreaterThan(900) // 摄像机确实跟随了(停的是背景,不是镜头)
     s.enemies.push({ id: 9, x: s.player.x + 5, y: s.player.y, vx: 0, vy: 0, size: 11, hp: 0, maxHp: 5, kind: 'chaser', elite: false, hitFlash: 0 })
     tickSurvival(s, 1 / 60)
     expect(s.ripples.length).toBe(1)
@@ -1103,5 +1105,22 @@ describe('renderer/games/survival R219 绘制层与机制修正', () => {
     tickSurvival(s, 0.1)
     expect(s.warnings.length).toBe(1)
     expect(s.warnings[0].t).toBeCloseTo(0.4, 5)
+  })
+
+  it('R219.7①: vp 默认 900×520;宽视口(fs 全铺满)下飞船仍绘制在 vp 中心', () => {
+    const s = initialSurvivalState()
+    expect(s.vp).toEqual({ w: 900, h: 520 })
+    s.phase = 'running'
+    s.scene = 'station'
+    s.vp = { w: 1100, h: 520 } // 16:9 全铺满反推的宽视口
+    s.player.x = 700
+    s.player.y = 400
+    s.camera = { x: 700, y: 400, zoom: 1 }
+    const rec = trackCtx()
+    drawSurvival(rec.ctx, s)
+    const ship = rec.translates.find((t) => t.ix === 700 && t.iy === 400)
+    expect(ship).toBeDefined()
+    expect(ship!.dx).toBeCloseTo(550, 1) // vp.w/2,不是 900/2
+    expect(ship!.dy).toBeCloseTo(260, 1)
   })
 })

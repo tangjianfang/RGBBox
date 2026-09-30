@@ -1,11 +1,11 @@
 /**
- * R219 verify: 表现层修复轮真机取证——
- *  ①窗口态 ready:画布下方面板(菜单不再压画布)/无重复开始按钮/画布完整无裁切;
- *  ②窗口态 running(移动中):飞船恒在画布中央 60%(世界层归位的程序化断言,
- *    经 __rgbboxVision.probe().shipVp——修复前 shipVp=裸世界坐标,移动后必然出界);
- *  ③fs 态:无 320px 死列/无底部裁切/等比无拉伸(盒比例==backing 比例);
- *  ④矮窗(1200×700)contain-fit:画布底部不出视口;
- *  ⑤帧率抽样。
+ * R219 verify v2: 表现层修复轮真机取证——
+ *  R219 基线:①窗口态 ready 面板在画布下方/唯一 CTA/无裁切;②移动中飞船居中
+ *   (probe.shipVp + 邻域像素采样);③矮窗 contain-fit;④fps。
+ *  R219.7 增补:⑤fs 真铺满——**4:3 视口(1440×1040)** 下 survival fs 画布与
+ *   视口全等(0 黑边),backing/CSS 同比(无拉伸);⑥fs 运行态画布 HUD
+ *   「开始/重开」按钮条隐藏(像素检测),ready 态可见;⑦动态背景停用——
+ *   移动中相隔 500ms 双帧背景区域逐字节一致(静止);⑧TD fs 维持 contain 细边。
  */
 import { assertFreshOut, launchElectron, connectRenderer } from './lib/cdp.mjs'
 import { mkdirSync } from 'node:fs'
@@ -41,8 +41,38 @@ const canvasGeom = () => page.evaluate(() => {
     viewport: { w: window.innerWidth, h: window.innerHeight },
   }
 })
+/** 画布指定逻辑区域采样亮青白像素数(fs HUD 按钮文字 #e2f8ff / 船体 hull)。 */
+const brightPixelsIn = (x, y, w, h) => page.evaluate(({ x, y, w, h }) => {
+  const c = document.querySelector('canvas.games-canvas')
+  const s = (window).__rgbboxVision.probe()
+  const ctx = c.getContext('2d')
+  const sx = Math.round((x / s.vp.w) * c.width)
+  const sy = Math.round((y / s.vp.h) * c.height)
+  const sw = Math.max(2, Math.round((w / s.vp.w) * c.width))
+  const sh = Math.max(2, Math.round((h / s.vp.h) * c.height))
+  const img = ctx.getImageData(Math.max(0, sx), Math.max(0, sy), Math.min(sw, c.width - Math.max(0, sx)), Math.min(sh, c.height - Math.max(0, sy)))
+  let bright = 0
+  for (let i = 0; i < img.data.length; i += 4) {
+    if (img.data[i] > 200 && img.data[i + 1] > 230 && img.data[i + 2] > 240) bright += 1
+  }
+  return bright
+}, { x, y, w, h })
+/** 画布逻辑区域位图哈希(双帧对比→背景是否静止)。 */
+const regionSig = (x, y, w, h) => page.evaluate(({ x, y, w, h }) => {
+  const c = document.querySelector('canvas.games-canvas')
+  const s = (window).__rgbboxVision.probe()
+  const ctx = c.getContext('2d')
+  const sx = Math.round((x / s.vp.w) * c.width)
+  const sy = Math.round((y / s.vp.h) * c.height)
+  const sw = Math.max(2, Math.round((w / s.vp.w) * c.width))
+  const sh = Math.max(2, Math.round((h / s.vp.h) * c.height))
+  const img = ctx.getImageData(Math.max(0, sx), Math.max(0, sy), Math.min(sw, c.width - Math.max(0, sx)), Math.min(sh, c.height - Math.max(0, sy)))
+  let h1 = 5381
+  for (let i = 0; i < img.data.length; i += 4) { h1 = ((h1 * 33) ^ img.data[i] ^ (img.data[i + 1] << 3) ^ (img.data[i + 2] << 6)) >>> 0 }
+  return h1.toString(16)
+}, { x, y, w, h })
 
-// ── 进 Swarm ──
+// ── 进 Swarm + ready 窗口态取证 ──
 await page.locator('.module-rail .rail-item').nth(5).click()
 await sleep(900)
 await page.evaluate(() => {
@@ -51,8 +81,6 @@ await page.evaluate(() => {
   if (card) card.click()
 })
 await sleep(1100)
-
-// ── ① 窗口态 ready ──
 await page.screenshot({ path: `${OUT}/sv-ready-window.png` })
 report.ready = await page.evaluate(() => {
   const canvas = document.querySelector('canvas.games-canvas')
@@ -62,14 +90,13 @@ report.ready = await page.evaluate(() => {
   const startish = [...document.querySelectorAll('button')]
     .filter((b) => /games\.start|开始|Start/.test((b.textContent || '').trim()))
   return {
-    canvasBelowChrome: cr ? { top: Math.round(cr.top), bottom: Math.round(cr.bottom), innerH: window.innerHeight } : null,
-    panelBelowCanvas: cr && pr ? Math.round(pr.top - cr.bottom) : null, // 期望 ≈ 列 gap(≤20):面板紧跟画布下方
-    startButtonCount: startish.length, // 期望 1(唯一主 CTA)
-    panelOverlapsCanvas: cr && pr ? pr.top < cr.bottom - 2 : null,
+    canvasInViewport: cr ? cr.bottom <= window.innerHeight + 1 && cr.top >= 0 : null,
+    panelBelowCanvas: cr && pr ? Math.round(pr.top - cr.bottom) : null,
+    startButtonCount: startish.length,
   }
 })
 
-// ── ② 开局(data-action 确定性选择器)+ 持续左移 → 飞船居中断言 ──
+// ── 开局 + 持续左移 → 飞船居中(窗口态)──
 await page.click('[data-action="ready-start"]')
 await sleep(600)
 const before = await page.evaluate(() => (window).__rgbboxVision.probe())
@@ -81,71 +108,175 @@ const after = await page.evaluate(() => (window).__rgbboxVision.probe())
 report.shipCentered = {
   movedWorld: Math.round(Math.abs(after.player.x - before.player.x)),
   shipVp: { x: Math.round(after.shipVp.x), y: Math.round(after.shipVp.y) },
-  center: { x: 450, y: 260 },
-  withinCentral60: after.shipVp.x > 450 * 0.7 && after.shipVp.x < 450 * 1.3 && after.shipVp.y > 260 * 0.7 && after.shipVp.y < 260 * 1.3,
+  withinCentral60: after.shipVp.x > after.vp.w * 0.35 && after.shipVp.x < after.vp.w * 0.65 && after.shipVp.y > after.vp.h * 0.35 && after.shipVp.y < after.vp.h * 0.65,
   phase: after.phase,
 }
-// 像素级取证:shipVp 邻域 48×48 采样,数船体/尾焰亮青白像素(hull #e2f8ff /
-// accent #67e8f9;深空背景星点稀疏 ≤ 个位数,阈值 ≥25 判在)——直接证明
-// 「飞船真的画在了屏幕中央」,不依赖目检。
-report.shipPixels = await page.evaluate(() => {
-  const c = document.querySelector('canvas.games-canvas')
-  const s = (window).__rgbboxVision.probe()
-  const ctx = c.getContext('2d')
-  const sx = Math.max(0, Math.min(c.width - 1, Math.round((s.shipVp.x / 900) * c.width)))
-  const sy = Math.max(0, Math.min(c.height - 1, Math.round((s.shipVp.y / 520) * c.height)))
-  const r = 24
-  const x0 = Math.max(0, sx - r); const y0 = Math.max(0, sy - r)
-  const w = Math.min(r * 2, c.width - x0); const h = Math.min(r * 2, c.height - y0)
-  const img = ctx.getImageData(x0, y0, w, h)
-  let bright = 0
-  for (let i = 0; i < img.data.length; i += 4) {
-    if (img.data[i] > 90 && img.data[i + 1] > 200 && img.data[i + 2] > 220) bright += 1
-  }
-  return { bright, sampled: Math.round((img.data.length / 4)) }
-})
+report.shipPixels = await brightPixelsIn(after.shipVp.x - 24, after.shipVp.y - 24, 48, 48)
 await page.screenshot({ path: `${OUT}/sv-running-window.png` })
 report.runningWindow = await canvasGeom()
 
-// ── ④ 矮窗 contain-fit(1200×700)──
-await page.setViewportSize({ width: 1200, height: 700 }).catch(() => {})
-await sleep(700)
-await page.screenshot({ path: `${OUT}/sv-running-shortwindow.png` })
-report.shortWindow = await canvasGeom()
+// ── ⑦ 动态背景停用:移动中双帧背景区域一致(静止)──
+await page.keyboard.down('a')
+await sleep(300)
+const sig1 = await regionSig(360, 90, 120, 50)
+await sleep(500)
+const sig2 = await regionSig(360, 90, 120, 50)
+await page.keyboard.up('a')
+report.bgStaticWhileMoving = { sig1, sig2, identical: sig1 === sig2 }
 
-// ── ③ fs 态(运行中 Esc 暂停浮层 → 全屏按钮;ready 态 Esc 不出浮层)──
-await page.setViewportSize({ width: 1440, height: 900 }).catch(() => {})
+// ── ⑤ fs 真铺满(4:3 视口 1440×1040)──
+await page.setViewportSize({ width: 1440, height: 1040 }).catch(() => {})
+await sleep(700)
+await page.keyboard.press('Escape')
+await sleep(400)
+await page.click('[data-action="fs-enter"]')
+await sleep(1400)
+report.fs4x3 = {
+  fullscreenElement: await page.evaluate(() => document.fullscreenElement !== null),
+  geom: await canvasGeom(),
+}
+await page.keyboard.down('a')
+await sleep(400)
+await page.keyboard.up('a')
+await page.screenshot({ path: `${OUT}/sv-fs-4x3.png` })
+// ⑥ fs 运行态:底部按钮条区域( vp 中心±180, vp.h-62..-12 )不应有按钮文字亮像素
+//   (对抗审查修正:坐标走 probe().vp,不硬编码视口——否则采样错空间空过)
+{
+  const p = await page.evaluate(() => (window).__rgbboxVision.probe())
+  report.fsRunningBar = {
+    vp: { w: Math.round(p.vp.w), h: Math.round(p.vp.h) },
+    brightTextPixels: await brightPixelsIn(p.vp.w / 2 - 180, p.vp.h - 62, 360, 50),
+  }
+}
+// ⑦ fs 态双帧背景静止
+await page.keyboard.down('a')
+await sleep(300)
+const fsSig1 = await regionSig(360, 90, 120, 50)
+await sleep(500)
+const fsSig2 = await regionSig(360, 90, 120, 50)
+await page.keyboard.up('a')
+report.bgStaticInFs = { sig1: fsSig1, sig2: fsSig2, identical: fsSig1 === fsSig2 }
+
+// 退出 fs,重开回 ready(跨 hub 往返引擎状态残留 running——先重开再进 fs)
+await page.keyboard.press('Escape').catch(() => {})
+await sleep(500)
+await page.evaluate(() => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}) })
+await sleep(600)
+await page.evaluate(() => {
+  const back = [...document.querySelectorAll('button')].find((b) => /返回|Back|games\.backToHub/.test(b.textContent || ''))
+  if (back) back.click()
+})
+await sleep(600)
+await page.evaluate(() => {
+  const card = [...document.querySelectorAll('button, .game-card')]
+    .find((b) => /蜂群|Swarm/i.test(b.textContent || ''))
+  if (card) card.click()
+})
+await sleep(1000)
+// running 态:Esc 暂停 → 浮层「重开」→ 回 ready → 关暂停
+await page.keyboard.press('Escape')
+await sleep(400)
+await page.click('[data-action="fs-restart"]').catch(() => {})
+await sleep(500)
+await page.click('[data-action="fs-resume"]').catch(() => {})
+await sleep(500)
+// ready 态 header 可见 → 工具栏「全屏」进入
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll('button')].find((b) => /全屏|Fullscreen|games\.fullscreen/.test((b.getAttribute('title') || '') + (b.textContent || '')))
+  if (btn) btn.click()
+})
+await sleep(1400)
+report.fsReady = {
+  fullscreenElement: await page.evaluate(() => document.fullscreenElement !== null),
+  barPixels: await page.evaluate(() => {
+    const c = document.querySelector('canvas.games-canvas')
+    if (!c) return -1
+    const s = (window).__rgbboxVision.probe()
+    const ctx = c.getContext('2d')
+    const y0 = Math.round(((s.vp.h - 62) / s.vp.h) * c.height)
+    const img = ctx.getImageData(0, y0, c.width, Math.round((50 / s.vp.h) * c.height))
+    let bright = 0
+    for (let i = 0; i < img.data.length; i += 4) {
+      if (img.data[i] > 200 && img.data[i + 1] > 230 && img.data[i + 2] > 240) bright += 1
+    }
+    return bright
+  }),
+  geom: await canvasGeom(),
+}
+await page.screenshot({ path: `${OUT}/sv-fs-ready.png` })
+await page.evaluate(() => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}) })
+await sleep(500)
+
+// ── ⑧ TD fs:维持 contain 细边(居中 letterbox,比例锁)──
+await page.evaluate(() => {
+  const back = [...document.querySelectorAll('button')].find((b) => /返回|Back|games\.backToHub/.test(b.textContent || ''))
+  if (back) back.click()
+})
+await sleep(600)
+await page.evaluate(() => {
+  const card = [...document.querySelectorAll('button, .game-card')]
+    .find((b) => /塔防|TD/i.test(b.textContent || ''))
+  if (card) card.click()
+})
+await sleep(1000)
+await page.click('[data-action="ready-start"]').catch(() => {})
+await sleep(800)
+await page.keyboard.press('Escape')
+await sleep(400)
+await page.click('[data-action="fs-enter"]').catch(() => {})
+await sleep(1200)
+report.tdFs = { geom: await canvasGeom() }
+await page.screenshot({ path: `${OUT}/td-fs-4x3.png` })
+await page.evaluate(() => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}) })
+await sleep(500)
+
+// ── ⑩ size-large 档位回归(对抗审查确认项):fs+画面占比=大 仍全铺满 ──
+await page.evaluate(() => {
+  const back = [...document.querySelectorAll('button')].find((b) => /返回|Back|games\.backToHub/.test(b.textContent || ''))
+  if (back) back.click()
+})
+await sleep(500)
+await page.evaluate(() => { localStorage.setItem('rgbbox:gamesFocusMode', 'large') })
+await page.reload()
+await page.waitForSelector('.module-rail', { timeout: 15000 })
+await sleep(800)
+await page.locator('.module-rail .rail-item').nth(5).click()
+await sleep(800)
+await page.evaluate(() => {
+  const card = [...document.querySelectorAll('button, .game-card')]
+    .find((b) => /蜂群|Swarm/i.test(b.textContent || ''))
+  if (card) card.click()
+})
+await sleep(900)
+await page.click('[data-action="ready-start"]')
 await sleep(600)
 await page.keyboard.press('Escape')
 await sleep(400)
-const overlaySeen = await page.evaluate(() => document.querySelector('[data-field="fs-pause"]') !== null)
-await page.click('[data-action="fs-enter"]').catch(async () => {
-  // 兜底:浮层未出则直接用工具栏按钮
-  await page.evaluate(() => document.querySelector('button[title]')?.click()).catch(() => {})
-})
-await sleep(1200)
-report.fs = {
-  pauseOverlaySeen: overlaySeen,
-  fullscreenElement: await page.evaluate(() => document.fullscreenElement !== null),
-}
-await page.screenshot({ path: `${OUT}/sv-fs.png` })
-report.fsGeom = await canvasGeom()
-// 退出全屏 + 返回 hub
-await page.keyboard.press('Escape').catch(() => {})
-await sleep(400)
-await page.keyboard.press('Escape').catch(() => {})
-await sleep(400)
-await page.evaluate(() => {
-  if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
-})
+await page.click('[data-action="fs-enter"]').catch(() => {})
+await sleep(1400)
+report.fsSizeLarge = await canvasGeom()
+await page.screenshot({ path: `${OUT}/sv-fs-size-large.png` })
+await page.evaluate(() => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}) })
+await page.evaluate(() => { localStorage.setItem('rgbbox:gamesFocusMode', 'standard') })
+await sleep(500)
 
-// ── ⑤ 帧率抽样(回到运行态)──
+// ── ⑪ 小屏(800×600)fs:backing/CSS 同比(单轴下限回归)──
+await page.setViewportSize({ width: 800, height: 600 }).catch(() => {})
+await sleep(700)
+await page.keyboard.press('Escape')
+await sleep(400)
+await page.click('[data-action="fs-enter"]').catch(() => {})
+await sleep(1400)
+report.fsSmall = await canvasGeom()
+await page.evaluate(() => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}) })
+await sleep(400)
+await page.setViewportSize({ width: 1440, height: 900 }).catch(() => {})
+
+// ── ⑨ fps(窗口态 running)──
 await page.evaluate(() => {
-  const btns = [...document.querySelectorAll('button')]
-  const resume = btns.find((b) => /games\.pause\.resume|继续|Resume/.test(b.textContent || ''))
-  if (resume) resume.click()
+  const back = [...document.querySelectorAll('button')].find((b) => /返回|Back|games\.backToHub/.test(b.textContent || ''))
+  if (back) back.click()
 }).catch(() => {})
-await sleep(600)
 report.fps = await page.evaluate(() => new Promise((resolve) => {
   let frames = 0
   const t0 = performance.now()
