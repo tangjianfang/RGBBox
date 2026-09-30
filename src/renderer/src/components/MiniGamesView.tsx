@@ -37,6 +37,7 @@ import {
   type GameState,
   type TowerKind,
 } from '../games/td'
+import { LOGICAL_H, LOGICAL_W, computeHdSize } from '../games/hdCanvas'
 import {
   UPGRADES,
   applyRouletteResult,
@@ -825,8 +826,19 @@ export function MiniGamesView(): JSX.Element {
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
     startBgm()
-    canvas.width = WIDTH
-    canvas.height = HEIGHT
+    // R217: DPR-aware backing store (games/hdCanvas.ts) — was a fixed 900×520
+    // raster stretched by CSS, which reads as jaggies on HiDPI displays.
+    // Sizing the backing to the CSS box × clamped dpr keeps the shared
+    // 900×520 logical coordinate system crisp at any panel/fullscreen size.
+    const applyHdSize = () => {
+      const rect = canvas.getBoundingClientRect()
+      const hd = computeHdSize(rect.width, window.devicePixelRatio || 1)
+      canvas.width = hd.w
+      canvas.height = hd.h
+    }
+    applyHdSize()
+    const ro = new ResizeObserver(applyHdSize)
+    ro.observe(canvas)
     let frame = 0
     let last = performance.now()
     let snapshotTimer = 0
@@ -835,6 +847,12 @@ export function MiniGamesView(): JSX.Element {
     let lanSnapAcc = 0
     let bgmTensionCur = 0
     const loop = (now: number) => {
+      // R217: map the logical 900×520 space onto the HiDPI backing store
+      // every frame (also heals transform loss after a ResizeObserver
+      // backing re-assignment resets the context state).
+      ctx.setTransform(canvas.width / LOGICAL_W, 0, 0, canvas.height / LOGICAL_H, 0, 0)
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
       let dt = Math.min(0.05, (now - last) / 1000)
       // R206: 暂停冻结全部引擎 tick(dt=0;含计时/倒计时/粒子由各引擎特效路径自然停)
       if (fsPausedRef.current) dt = 0
@@ -1098,6 +1116,7 @@ export function MiniGamesView(): JSX.Element {
     frame = requestAnimationFrame(loop)
     return () => {
       cancelAnimationFrame(frame)
+      ro.disconnect()
       stopBgm()
     }
   }, [bgmOn, fullscreen, pollGamepad, pollVision, publishTd, publishSurvival, publishTetris, screen, selectedTowerId, settleBest, tdSpeed])
