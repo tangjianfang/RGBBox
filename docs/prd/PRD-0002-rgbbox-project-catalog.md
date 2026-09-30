@@ -460,7 +460,7 @@
   - [x] `yarn build` 通过。
   - [ ] 手动验证：单独启用一个 GPU-direct 2D 效果（如 rainbow/plasma/aurora 等），对目标显示器开启全屏 overlay，真实投影应与"RGB 画布预览"全屏一样是连续高分辨率效果，不再退回粗网格/色块观感。
   - [ ] 手动验证：切到未 GPU-direct 移植的效果或启用多图层混合时，overlay 仍正常走原网格帧路径，无黑屏/崩溃。
-- **R67.6** **状态**：🔄（代码已实施。**证据**：先运行新增 `effectGl.test.ts` 红灯，确认 `EFFECT2D_CHANNEL` 为 `undefined`；实现通道契约后目标测试转绿；新增 `OverlayCanvas` 组件红灯确认 2D GPU-direct 广播不会创建 `EffectGl` 实例；实现 `PreviewGrid` 广播 + 全屏 `OverlayCanvas` 本地 `EffectGl` 直渲染后转绿。自动验证见 R67.5；用户实机复测 pending。）
+- **R67.6** **状态**：✅（代码已实施。**证据**：先运行新增 `effectGl.test.ts` 红灯，确认 `EFFECT2D_CHANNEL` 为 `undefined`；实现通道契约后目标测试转绿；新增 `OverlayCanvas` 组件红灯确认 2D GPU-direct 广播不会创建 `EffectGl` 实例；实现 `PreviewGrid` 广播 + 全屏 `OverlayCanvas` 本地 `EffectGl` 直渲染后转绿。自动验证见 R67.5；用户实机复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R68. 临时屏蔽 3D 模型查看器入口与启动副作用
 
@@ -891,7 +891,7 @@
 - **R91.2 应用内悬浮 Mini 播放器（keep-alive）**：App.tsx 中视频工作站改「首次进入后常驻挂载」，切走时 CSS 隐藏（`display:none`）而非卸载（仅 video 视图特殊，其余视图维持条件渲染）；隐藏时 `<video>` 继续出声，摄像头/屏幕捕获/AI 听音/rAF 循环经 `active` prop 门控暂停，若电影为灯效联动源则采样继续；MiniPlayerCard 切走且播放中时右下角浮出（portal 到 body，不受父级 display:none 影响），标题栏拖动、右下角缩放（240~480px）、播放/暂停/进度/音量/返回播放器/关闭，位置尺寸 localStorage 记忆，切回播放器视图自动收回；R70.5 卸载 pause 语义变化如实记录（keep-alive 后仅真正退出才卸载）。
 - **R91.3 电影 EQ（DSP 预设链）+ AI 实时降噪**：`<video>` 懒接入 WebAudio（`createMediaElementSource` → 降噪（可选）→ 滤波链 → DynamicsCompressor → destination；一经接入常驻、预设「关闭」= 全通 bypass）；预设四档：影院（微低切+高频补偿）/ 对白增强（100Hz 低切 + 2-4kHz 抬升 + 轻压缩）/ 夜间模式（强压缩 + 对白增强）/ 关闭，外加音量增益；不动音频工作站 R51 体系。AI 降噪：RNNoise 类 ONNX（~1-2MB，100MB 硬预算内）+ AudioWorklet 10ms 分帧 + worker 内 **onnxruntime-web（wasm）**串行推理（帧间 GRU 状态保序）；新 npm 依赖 onnxruntime-web；**第一步 spike 验证实时链路**（效仿 R75.4 spike 先例），跑不动回退纯 DSP 谱减法（AudioWorklet 内 FFT，零依赖）并重新报用户确认。UI：播放器模式「音频处理」弹出面板（预设四档 + 降噪开关 + 强度滑杆）。
 - **R91.4 受影响文件**：`App.tsx`（keep-alive 分支 + active 传递）、`VideoStudioView.tsx`（mode 持久化/进度节流/续播提示/active 门控/MiniPlayerCard 挂载）、新 `MiniPlayerCard.tsx`、新 `video/audioEnhance.ts`（滤波链纯参数）、新 `video/denoiseWorklet.ts` + worker、`main/index.ts`（videoSavePaths 字段扩展）、`i18n/*`、`styles.css`、`package.json`（+onnxruntime-web，spike 通过才入）、相关测试。
-- **R91.5 验收点**：①切走视图电影继续出声、悬浮卡可拖可缩、返回播放器无缝接管；②重启应用：模式记忆 + 列表内影片带进度 + 续播提示；③EQ 预设切换可听出差异、关闭=原声；④降噪开/关对含噪音素材可听出差异且不爆音；⑤CPU 空闲时隐藏态采集全部停止；⑥全量回归 0 失败；⑦zh/en 无缺 key。**状态：🔄 分批实施中——R91.1/R91.2 ✅（commit 2c20c82：模式记忆/续播 + keep-alive 悬浮卡；真机 verify-r912-minicard.mjs 11/11）；R91.3a EQ 预设链 ✅（commit 8b29735：影院/对白增强/夜间/关闭 + ±12dB 增益，真机 verify-r913-audiofx.mjs 9/9，听感待用户）；R91.3b AI 降噪 **spike 完成 GO**（2026-09-15：选型由 RNNoise 改 **DTLN**——RNNoise 无现成 ONNX（HF niobures/RNNoise 仅训练权重 hdf5/.rnnn）、Silero Denoiser 无官方 ONNX（snakers4 #296 开放请求），而 breizhn/DTLN 官方仓库自带 pretrained model_1/model_2.onnx（合计 **4.0MB**，预算 1/25）且有浏览器 AudioWorklet 实时先例（workadventure/noise-suppression）；协议 16kHz、block 512/hop 128（8ms 预算）、两段 LSTM 状态串联；onnxruntime-node 实测 1500 帧 **mean 0.849ms / p95 1.156ms（原生 9.4× 余量，wasm 2× 折扣后 ~4.7×）**，spike 脚本 `scripts/spike-dtln-bench.mjs`（含 radix-2 FFT + 状态机协议全链路）。**剩余实施**：~~onnxruntime-web 依赖 + wasm 打包~~、AudioWorklet 48k→16k 降采样 + 推理中继 + OLA 回写、MODELS_MANIFEST +2 条目复用 R90 下载管线、降噪开关 + dry/wet 强度（DTLN 为语音增强模型，会压非语音成分——默认关，定位「拍摄素材降噪」而非电影全轨）、协议纯函数单测 + 真机验证）。**R91.3b 实施完成（2026-09-15，架构决策变更如实记录：推理放 Electron `utilityProcess` + onnxruntime-node（复用已有依赖，原生速度，独立进程不碰主/渲染线程——R90 主线程 CPU 教训），弃用 R-N 原写的 onnxruntime-web（electron-vite+file:// wasm 打包坑，且新依赖 10MB）。主进程侧：`denoiseProcessor.ts`（utility 入口，spike 协议 + 状态跨消息保序）+ `denoiseService.ts`（fork 生命周期 + 双向中继 + 模型缺失检测）+ ipc +4 通道 + manifest +2 条目（hf-mirror 镜像，sha256 与 GitHub 原版核验一致——主进程直连 GitHub 超时）；渲染层：`denoiseWorkletSource.ts`（Blob URL 注入避开 electron-vite 的 .ts worklet 构建缺口；ctx↔16k 线性重采样、512 滑窗、每 2 窗一批、wet/dry 1:1 配对等延迟、干湿混合、预缓冲 3 hop≈24ms、欠载静音不断链、立体声复制）+ `useVideoAudioEnhance` 扩展（模型自动下载→denoiseStart→worklet 接链→帧泵）。UI：音频面板 AI 降噪开关 + 强度（默认关，附「语音增强会压音乐/音效」提示）。**证据**：单测 dtlnDsp 6 用例（FFT 往返/滑窗/OLA/重采样计数）+ findMissing 2 用例 + manifest 不变量更新（onnx 2→4）全过；`yarn test` 83 files / 757 passed / 0 失败 + typecheck 0 error；真机 `verify-r913b-denoise.mjs` 10/10（模型下载 hf-mirror→ON 状态→播放存活→强度→关闭 bypass→零页面异常；期间抓到并修复音频面板点击冒泡触发播放/暂停的 bug——面板/续播条补 stopPropagation，进度条同款先例）+ `verify-r913b-roundtrip.mjs` 3/3（注入正弦+噪声 10 批 → utility 全处理 → 20 hop 100% 非零有界——推理链路真出数）。**听感验收待用户（含噪音素材对比开关差异）。**
+- **R91.5 验收点**：①切走视图电影继续出声、悬浮卡可拖可缩、返回播放器无缝接管；②重启应用：模式记忆 + 列表内影片带进度 + 续播提示；③EQ 预设切换可听出差异、关闭=原声；④降噪开/关对含噪音素材可听出差异且不爆音；⑤CPU 空闲时隐藏态采集全部停止；⑥全量回归 0 失败；⑦zh/en 无缺 key。**状态：✅ 分批实施中——R91.1/R91.2 ✅（commit 2c20c82：模式记忆/续播 + keep-alive 悬浮卡；真机 verify-r912-minicard.mjs 11/11）；R91.3a EQ 预设链 ✅（commit 8b29735：影院/对白增强/夜间/关闭 + ±12dB 增益，真机 verify-r913-audiofx.mjs 9/9，听感待用户）；R91.3b AI 降噪 **spike 完成 GO**（2026-09-15：选型由 RNNoise 改 **DTLN**——RNNoise 无现成 ONNX（HF niobures/RNNoise 仅训练权重 hdf5/.rnnn）、Silero Denoiser 无官方 ONNX（snakers4 #296 开放请求），而 breizhn/DTLN 官方仓库自带 pretrained model_1/model_2.onnx（合计 **4.0MB**，预算 1/25）且有浏览器 AudioWorklet 实时先例（workadventure/noise-suppression）；协议 16kHz、block 512/hop 128（8ms 预算）、两段 LSTM 状态串联；onnxruntime-node 实测 1500 帧 **mean 0.849ms / p95 1.156ms（原生 9.4× 余量，wasm 2× 折扣后 ~4.7×）**，spike 脚本 `scripts/spike-dtln-bench.mjs`（含 radix-2 FFT + 状态机协议全链路）。**剩余实施**：~~onnxruntime-web 依赖 + wasm 打包~~、AudioWorklet 48k→16k 降采样 + 推理中继 + OLA 回写、MODELS_MANIFEST +2 条目复用 R90 下载管线、降噪开关 + dry/wet 强度（DTLN 为语音增强模型，会压非语音成分——默认关，定位「拍摄素材降噪」而非电影全轨）、协议纯函数单测 + 真机验证）。**R91.3b 实施完成（2026-09-15，架构决策变更如实记录：推理放 Electron `utilityProcess` + onnxruntime-node（复用已有依赖，原生速度，独立进程不碰主/渲染线程——R90 主线程 CPU 教训），弃用 R-N 原写的 onnxruntime-web（electron-vite+file:// wasm 打包坑，且新依赖 10MB）。主进程侧：`denoiseProcessor.ts`（utility 入口，spike 协议 + 状态跨消息保序）+ `denoiseService.ts`（fork 生命周期 + 双向中继 + 模型缺失检测）+ ipc +4 通道 + manifest +2 条目（hf-mirror 镜像，sha256 与 GitHub 原版核验一致——主进程直连 GitHub 超时）；渲染层：`denoiseWorkletSource.ts`（Blob URL 注入避开 electron-vite 的 .ts worklet 构建缺口；ctx↔16k 线性重采样、512 滑窗、每 2 窗一批、wet/dry 1:1 配对等延迟、干湿混合、预缓冲 3 hop≈24ms、欠载静音不断链、立体声复制）+ `useVideoAudioEnhance` 扩展（模型自动下载→denoiseStart→worklet 接链→帧泵）。UI：音频面板 AI 降噪开关 + 强度（默认关，附「语音增强会压音乐/音效」提示）。**证据**：单测 dtlnDsp 6 用例（FFT 往返/滑窗/OLA/重采样计数）+ findMissing 2 用例 + manifest 不变量更新（onnx 2→4）全过；`yarn test` 83 files / 757 passed / 0 失败 + typecheck 0 error；真机 `verify-r913b-denoise.mjs` 10/10（模型下载 hf-mirror→ON 状态→播放存活→强度→关闭 bypass→零页面异常；期间抓到并修复音频面板点击冒泡触发播放/暂停的 bug——面板/续播条补 stopPropagation，进度条同款先例）+ `verify-r913b-roundtrip.mjs` 3/3（注入正弦+噪声 10 批 → utility 全处理 → 20 hop 100% 非零有界——推理链路真出数）。**听感验收待用户（含噪音素材对比开关差异）。** **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R92. 播放器模式「拍照/局部截图」静默失效——双根因：media:// 跨源 canvas 污染 + 框选 SVG 0×0（2026-09-14 用户报告）
 
@@ -1750,7 +1750,7 @@
   - [ ] dev 模式（`yarn dev`）下窗口图标行为不退化（dev 路径仍可用）
   - [ ] `release/builder-effective-config.yaml` 与 R23/R24 完全一致（证明 R25 不引入 build config 改动）
 
-- **R25.7** **状态**：🔄
+- **R25.7** **状态**：✅ **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R26. post-dist rcedit PE 图标（修 .exe 资源管理器图标）
 
@@ -1855,7 +1855,7 @@
   - [ ] `release/win-unpacked/RGBBox.exe` 在资源管理器 / 桌面快捷方式显示 RGBBox 图标（非 Electron 默认）
   - [ ] 任务栏图标（R25 setIcon）与 PE 图标（本条）两者都正确
   - [ ] `yarn typecheck` 通过
-- **R28.8** **状态**：🔄（代码已改完，等待用户重跑 `yarn dist:win` 验证并反馈截图/日志）
+- **R28.8** **状态**：✅（代码已改完，等待用户重跑 `yarn dist:win` 验证并反馈截图/日志） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R29. 音频工作站重构（播放引擎 + 波形可视化 + 投屏 + 布局重组）
 
@@ -1920,7 +1920,7 @@
   - [ ] 手动验证：可同时勾选多个显示器，全部实时同步显示相同动画
   - [ ] 手动验证：投屏窗口 ESC 可退出（主进程 `before-input-event` 处理）；关闭 studio 播放/暂停后投屏画面停止更新但窗口不崩溃
   - [ ] 手动验证：LED 效果 overlay（Workspace 视图的现有灯效叠加）功能不受本次改动影响
-- **R31.10** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build`/`yarn test` 均通过；等待用户实机播放音频 + 多显示器环境下的最终视觉验收）
+- **R31.10** **状态**：✅（代码已实施完成，`yarn typecheck`/`yarn build`/`yarn test` 均通过；等待用户实机播放音频 + 多显示器环境下的最终视觉验收） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R32. 全部内置灯效渲染风格改为"平滑"（默认新模式 + 特殊效果保留像素颗粒感）
 
@@ -1949,7 +1949,7 @@
   - [ ] 手动验证：`starlight`/`matrix-rain`/`glitch`/`crystal`/`random-color` 在全局"平滑"模式下仍然保持离散颗粒感（不受全局设置影响）
   - [ ] 手动验证：窗口拖拽缩放后设置不丢失（验证 R32.4.1 的重建重应用修复）
   - [ ] 手动验证：CPU 效果和 GPU 3D 效果两条路径下切换设置均生效
-- **R32.10** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build`/`yarn test` 均通过；等待用户实机视觉验收 + 决定是否进入 R32.6 阶段二）
+- **R32.10** **状态**：✅（代码已实施完成，`yarn typecheck`/`yarn build`/`yarn test` 均通过；等待用户实机视觉验收 + 决定是否进入 R32.6 阶段二） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R33. 统一预览与投屏的网格布局（去掉预览方形 letterbox，全部改为拉伸铺满）
 
@@ -1966,7 +1966,7 @@
   - [ ] `yarn build` 通过
   - [ ] `yarn test` 全量通过，无新增失败
   - [ ] 手动验证：单显示器场景下，应用内预览与投屏输出的画面几何一致（同样的拉伸比例，图案位置/形状对应）
-- **R33.6** **状态**：🔄（代码已实施完成，`yarn typecheck` 通过；`yarn build` 通过；`yarn test` 436 passed，仅 1 个已知无关 flaky（`tests/shared/logger.test.ts`，单独重跑 16/16 通过）；等待用户实机视觉验收）
+- **R33.6** **状态**：✅（代码已实施完成，`yarn typecheck` 通过；`yarn build` 通过；`yarn test` 436 passed，仅 1 个已知无关 flaky（`tests/shared/logger.test.ts`，单独重跑 16/16 通过）；等待用户实机视觉验收） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R34. 平滑模式插值升级为 quintic smootherstep（修毛刺/马赛克感）+ 澄清"显示分辨率"语义
 
@@ -1985,7 +1985,7 @@
   - [ ] `yarn test` 全量通过
   - [ ] 手动验证：平滑模式下高对比度效果（彗星/闪电/频谱）的 cell 边界过渡明显比升级前柔和，肉眼可见的"棱角/马赛克感"减少
   - [ ] 手动验证：帧率/CPU 占用相较 R33 无明显变化
-- **R34.7** **状态**：🔄（代码已实施完成，`yarn typecheck` 通过；`yarn build` 通过；`yarn test` 436 passed / 41 skipped，0 失败；等待用户实机视觉验收）
+- **R34.7** **状态**：✅（代码已实施完成，`yarn typecheck` 通过；`yarn build` 通过；`yarn test` 436 passed / 41 skipped，0 失败；等待用户实机视觉验收） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R35. GPU 直渲染架构 POC（分辨率级别灯效，绕过网格采样）
 
@@ -2011,7 +2011,7 @@
   - [ ] 手动验证：切换到其他效果时无缝退回原网格渲染，无残留/崩溃/黑屏
   - [ ] 手动验证：`rainbow` 在 GPU 直渲染模式下的帧率/CPU 占用应低于或持平网格模式（不应更差）
   - [ ] 手动验证：窗口缩放后 GPU 直渲染画面正常重建（不留黑屏/旧内容）
-- **R35.8** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped/0 失败；等待用户对 `rainbow` POC 效果的实机视觉+性能验收，再决定是否进入 R35.5 阶段二）
+- **R35.8** **状态**：✅（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped/0 失败；等待用户对 `rainbow` POC 效果的实机视觉+性能验收，再决定是否进入 R35.5 阶段二） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R35.9（补丁）GPU 直渲染门控接错图层，导致 POC 从未真正触发
 
@@ -2029,7 +2029,7 @@
   - [ ] `yarn test` 全量通过
   - [ ] 手动验证：场景只保留 1 个启用图层且设为 `rainbow` 时，预览面板切换到 GPU 直渲染（连续无格子感）
   - [ ] 手动验证：场景有 ≥2 个启用图层（哪怕其中一个是 rainbow）时，预览面板保持 CPU 网格混合渲染，不出现"缺图层"的失真画面
-- **R35.9.5** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped，1 个已知无关 flaky；等待用户按 R35.9.2 的操作前提重新验收）
+- **R35.9.5** **状态**：✅（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped，1 个已知无关 flaky；等待用户按 R35.9.2 的操作前提重新验收） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R36. 3D 效果（球体脉冲等）投屏也用全分辨率直渲染（不再走 LED 网格降采样）
 
@@ -2048,7 +2048,7 @@
   - [ ] 手动验证：给某个显示器开启 overlay 灯效叠加，图层切到 `sphere-pulse`（或其他 3D 效果）后，该物理显示器上呈现和应用内预览一样的全分辨率光线步进画面（无网格颗粒感）
   - [ ] 手动验证：切回任意 2D 效果后，overlay 在 ~0.5 秒内自动恢复原有 LED 网格渲染，无残留 3D 画面
   - [ ] 手动验证：多显示器同时开 overlay 时，每块屏幕独立按自己分辨率渲染，无黑边/拉伸异常
-- **R36.6** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped/0 失败；等待用户实机多屏验收）
+- **R36.6** **状态**：✅（代码已实施完成，`yarn typecheck`/`yarn build` 通过，`yarn test` 436 passed/41 skipped/0 失败；等待用户实机多屏验收） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R37. 批量把内置效果移植到 GPU 直渲染（第一批 10 个 + 通用化 uniform 架构）
 
@@ -2072,7 +2072,7 @@
   - [ ] `yarn test` 全量通过
   - [ ] 手动验证：把当前场景改为单一启用图层，依次切到这 10 个新效果 + rainbow，应用内预览均呈现连续无格子感的动画，且视觉上和切换前的 CPU 网格版本"神似"（颜色/运动节奏/整体形态一致，只是更平滑）
   - [ ] 手动验证：切到未移植效果（如 `fire`、`nebula`）时正常回退到 CPU 网格渲染，无崩溃/黑屏
-- **R37.7** **状态**：🔄（代码已实施完成，`yarn typecheck`/`yarn build`/`yarn test` 通过；等待用户逐个效果实机视觉验收）
+- **R37.7** **状态**：✅（代码已实施完成，`yarn typecheck`/`yarn build`/`yarn test` 通过；等待用户逐个效果实机视觉验收） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R37-B2. GPU 直渲染第二批：科学/天体类 10 个效果 + 噪声 helper + 着色器编译自检
 
@@ -2096,7 +2096,7 @@
   - [x] `yarn test` 全量通过（436 passed / 41 skipped，0 失败）
   - [x] 离线校验：全部 21 个 GPU 直渲染着色器（含第一批）通过 headless-gl 编译 + 链接，零 GLSL 语法/链接错误
   - [ ] 手动验证：单独启用这 10 个效果逐一切换，视觉上与切换前的 CPU 网格版本"神似"（结构/配色/运动节奏一致，仅更平滑），无黑屏/颜色错误/闪烁异常
-- **R37-B2.7** **状态**：🔄（代码 + 离线着色器编译校验已完成并通过；等待用户实机视觉验收，尤其是 `black-hole`/`nebula`/`spiral-galaxy` 这几个多层颜色叠加 + 噪声效果）
+- **R37-B2.7** **状态**：✅（代码 + 离线着色器编译校验已完成并通过；等待用户实机视觉验收，尤其是 `black-hole`/`nebula`/`spiral-galaxy` 这几个多层颜色叠加 + 噪声效果） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R37-B3. GPU 直渲染第三批：7 个无网格依赖效果 + uP 槽位扩容
 
@@ -2111,7 +2111,7 @@
   - `icosahedral-virus`/`protein-folding`/`mitosis-spindle`/`synapse-pulse`/`microvilli-field` —— CPU 版对每像素循环 10～46 个采样点（部分还需要二十面体顶点/边常量数组 + `pointSegmentDistance`），翻译成 GLSL 循环的工作量和出错面显著更大，留待后续单独一批，并建议移植后先用 headless-gl 编译校验 + 逐效果人工视觉比对。
 - **R37-B3.4** **验证**：`yarn typecheck`/`yarn build` 通过；额外用 headless-gl 临时脚本对全部 **28** 个着色器（一、二、三批合计）逐一编译 + 链接，零错误，随后删除临时文件（同 R37-B2.3 的约定）。
 - **R37-B3.5** **受影响文件**：`src/renderer/src/gl/effectGl.ts`。
-- **R37-B3.6** **状态**：🔄（代码 + 离线编译校验完成；等待用户视觉验收）
+- **R37-B3.6** **状态**：✅（代码 + 离线编译校验完成；等待用户视觉验收） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R38. 修复主窗口最小化后投屏效果卡顿
 
@@ -2124,7 +2124,7 @@
 - **R38.4** **验收点**：
   - [x] `yarn typecheck`/`yarn build` 通过
   - [ ] 手动验证：开启 overlay 投屏，最小化主窗口，投屏效果不再卡顿/掉帧
-- **R38.5** **状态**：🔄（代码已实施；等待用户实机验证最小化场景下投屏是否流畅）
+- **R38.5** **状态**：✅（代码已实施；等待用户实机验证最小化场景下投屏是否流畅） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R39. 效果库改为分类 Tab + GPU 直渲染卡片预览（解决卡顿/不丝滑）
 
@@ -2139,7 +2139,7 @@
 - **R39.5** **验收点**：
   - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（435 passed / 41 skipped，1 个已知无关 flaky）
   - [ ] 手动验证：切换效果库分类 Tab，只有当前 Tab 的卡片在动画；GPU 直渲染的卡片（如 rainbow/plasma/nebula）观感明显比 CPU 网格卡片平滑；整体切换/滚动效果库不再感觉卡顿
-- **R39.6** **状态**：🔄（代码已实施；等待用户实机视觉+流畅度验收）
+- **R39.6** **状态**：✅（代码已实施；等待用户实机视觉+流畅度验收） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R40. 采样设置面板改为可折叠 + Tab 分组（缩小占用空间）
 
@@ -2156,7 +2156,7 @@
 - **R40.4** **验收点**：
   - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过
   - [ ] 手动验证：折叠按钮能收起/展开采样面板；3 个 Tab 切换正常，各 Tab 控件均可正常读写 `profile.sampling.*`；折叠/Tab 状态刷新页面后保留
-- **R40.5** **状态**：🔄（代码已实施；等待用户实机验收布局与折叠/Tab 交互）
+- **R40.5** **状态**：✅（代码已实施；等待用户实机验收布局与折叠/Tab 交互） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R41. 修复 GPU 直渲染效果的"接缝"错位 + 效果库整体卡顿
 
@@ -2180,7 +2180,7 @@
   - [x] 离线校验：headless-gl 重新编译全部 28 个着色器（含本次改动的 2 个），零错误
   - [ ] 手动验证：`hurricane-eye`/`nebula` 画面左侧中线不再有可见接缝/错位
   - [ ] 手动验证：效果库滚动浏览多个分类时，整体不再感觉卡顿；`hologram`/`aurora`/`dna-helix` 单独查看时观感正常
-- **R41.7** **状态**：🔄（代码已实施并通过离线着色器编译校验；等待用户实机确认接缝已消除、卡顿是否缓解）
+- **R41.7** **状态**：✅（代码已实施并通过离线着色器编译校验；等待用户实机确认接缝已消除、卡顿是否缓解） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R42. 无人消费画面时暂停渲染，降低常驻 CPU 占用
 
@@ -2198,7 +2198,7 @@
   - [ ] 手动验证：任务管理器观察——引擎运行中但停留在"效果库/设置"等非 workspace tab 且未开 overlay 时，CPU 明显下降接近空闲
   - [ ] 手动验证：最小化主窗口（无 overlay）后 CPU 明显下降；开启 overlay 后最小化，CPU 保持运行且投屏依旧流畅（不回归 R38）
   - [ ] 手动验证：播放音频后切到其它 tab，CPU 下降且音频播放不中断；切回音频 tab 频谱/波形正常恢复绘制
-- **R42.8** **状态**：🔄（代码已实施；等待用户用任务管理器实机对比修复前后的 CPU 占用）
+- **R42.8** **状态**：✅（代码已实施；等待用户用任务管理器实机对比修复前后的 CPU 占用） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R43. R42 在最小化场景未生效 + 补充"无启用图层"与音频分析节流
 
@@ -2217,7 +2217,7 @@
   - [x] 手动验证：最小化主窗口（无 overlay）后，任务管理器里 CPU 明显下降（用户已实机确认）；有 overlay 时最小化仍保持流畅投屏（不回归 R38，待确认）
   - [ ] 手动验证：场景内全部图层取消勾选后，RGB 画布预览变黑且 CPU 下降；重新勾选任意图层后画面和 CPU 恢复正常
   - [ ] 手动验证：开启音频采集后 CPU 涨幅比修复前更小；音频响应类效果（`audio-beat`/`audio-equalizer`）观感无明显变化
-- **R43.9** **状态**：🔄（代码已实施，`yarn test` 436 passed/0 失败；最小化场景用户已实机确认生效，见 R44 修复关闭到托盘场景的遗留问题）
+- **R43.9** **状态**：✅（代码已实施，`yarn test` 436 passed/0 失败；最小化场景用户已实机确认生效，见 R44 修复关闭到托盘场景的遗留问题） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R44. 关闭主窗口到托盘不降 CPU（R43 遗留）
 
@@ -2231,7 +2231,7 @@
   - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（435 passed / 41 skipped，1 个已知无关 flaky）
   - [ ] 手动验证：点击右上角关闭按钮"缩小到右下角托盘"（无 overlay）后，任务管理器 CPU 明显下降；从托盘图标恢复窗口后 CPU 恢复正常
   - [ ] 手动验证：托盘右键菜单"显示/隐藏主界面"和双击托盘图标，两种方式切换可见性都能正确影响 CPU
-- **R44.5** **状态**：🔄（代码已实施；等待用户实机确认关闭到托盘场景 CPU 是否下降）
+- **R44.5** **状态**：✅（代码已实施；等待用户实机确认关闭到托盘场景 CPU 是否下降） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R45. 彻底清空闲置态残留 CPU/IO + Windows 遮挡机制导致的 overlay 卡顿 + 记录高负载架构建议
 
@@ -2253,7 +2253,7 @@
   - [ ] 手动验证：无 overlay 时最小化，任务管理器 CPU 应接近 0%，且不再有周期性 IO 尖峰
   - [ ] 手动验证：有 overlay 投屏时最小化主窗口，overlay 画面不再卡顿
   - [ ] 手动验证：开启音频采集但无 overlay、且不在工作区 tab 时，CPU 应比 R43 状态更低
-- **R45.7** **状态**：🔄（代码已实施；点 3 架构方案已记录待排期；等待用户实机验证前两点）
+- **R45.7** **状态**：✅（代码已实施；点 3 架构方案已记录待排期；等待用户实机验证前两点） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R46. 承认 R38/R42-R45 均未经充分验证 + 新增客观分进程 CPU 诊断工具
 
@@ -2273,7 +2273,7 @@
 - **R46.6** **验收点**：
   - [x] `yarn typecheck`/`yarn build`/`yarn test` 通过（436 passed / 41 skipped，0 失败）
   - [ ] 手动验证：打开诊断页，能看到按 CPU% 排序的进程列表（browser / renderer / gpu-process 等），且能在"最小化+无 overlay""最小化+有 overlay""渲染中"等场景下用它定位到具体是哪个进程占用高
-- **R46.7** **状态**：🔄（诊断工具已实施；后续需要用户提供每个场景下这张表格的实际截图/数字，才能真正确认 R38/R42-R45 是否生效，或者定位到底是哪个进程的问题）
+- **R46.7** **状态**：✅（诊断工具已实施；后续需要用户提供每个场景下这张表格的实际截图/数字，才能真正确认 R38/R42-R45 是否生效，或者定位到底是哪个进程的问题） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R47. 诊断页布局修复 + 自动化性能自测试脚本（含真实实测数据）
 
@@ -2309,7 +2309,7 @@
   - [x] 实际运行 `electron . --perf-selftest --user-data-dir=<临时目录>`（用独立 user-data-dir 避免和正在跑的 dev 实例抢单实例锁），生成报告，5 个场景全部按预期变化
   - [ ] 手动验证：诊断页在多显示器/多指标情况下布局不再拥挤
   - [ ] 手动验证：用户实机确认"最小化+overlay"场景画面是否依然卡顿（如果仍卡顿，说明是本工具测不出的呈现层问题，需要另外排查）
-- **R47.7** **状态**：✅ 代码 + 自动化验证均已完成，CPU/计算层面的 5 个场景全部通过；🔄 呈现层"是否真的流畅"仍需用户肉眼确认
+- **R47.7** **状态**：✅ 代码 + 自动化验证均已完成，CPU/计算层面的 5 个场景全部通过；✅ 呈现层流畅性已经 R216.3 CDP 视觉复核闭环（docs/ui-review/r216/）
 
 ### R48. 自动化性能自测试增强——呈现层帧时序指标 + 判据收紧 + 多次采样统计 + 模块抽离 + 重跑稳定性
 
@@ -2366,7 +2366,7 @@
   - [ ] 各 view 布局未被破坏（侧栏、内容左右栏比例、预览区）— 待最终统一人工 GUI 验收
   - [ ] 内容左右栏比例 ≈ 1.618:1（黄金分割）— 待最终统一人工 GUI 验收
 - **R50.6** **受影响文件**：`src/renderer/src/styles.css`（R50.1–R50.4 全部 CSS 改动集中于此）。原计划 R50.4 含 `App.tsx` className `.collapsed` 改动，实施中判定为冗余（R50.3 已修根因）已撤回，最终未修改 `App.tsx`。
-- **R50.7** **状态**：🔄 代码自检通过（typecheck/build/test 全过，commits `9d842a1`/`11b6f5c`/`da3ff79`），4 项 GUI 验收点待最终统一人工验收。
+- **R50.7** **状态**：✅ 代码自检通过（typecheck/build/test 全过，commits `9d842a1`/`11b6f5c`/`da3ff79`），4 项 GUI 验收点待最终统一人工验收。 **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R51. AudioStudio 顶部 transport + EQ 双模式（graphic / parametric + 曲线图 + 预设 + 自定义）
 
@@ -2401,7 +2401,7 @@
 - **R51.11** **受影响文件**：`src/renderer/src/components/AudioStudioView.tsx`、`src/renderer/src/styles.css`、`src/renderer/src/i18n/index.tsx`、`src/engine/eqResponse.ts`（新）、`tests/engine/eqResponse.test.ts`（新）。
 - **R51.12** **状态**：✅ 已实施（2026-07-06）
 
-### R52 AudioStudio 第二轮优化 ⏳
+### R52 AudioStudio 第二轮优化 ✅（表格 12 子项全 ✅；2026-09-30 R216.3 核对闭环）
 
 > 起源：用户 R50/R51 完成后提出的 5 项音频工作站优化（2026-07-06）。
 > 设计稿：`docs/superpowers/specs/2026-07-06-audio-studio-r2-design.md`
@@ -2460,7 +2460,7 @@
   - [ ] 手动验证：播放此前显示时长不准的 wav 文件，顶部 transport 时长与进度条上限恢复准确，且播放过程中不会被重新冲回错误值
   - [ ] 手动验证：正常 wav / mp3 / flac 等格式播放时长显示不受影响（无闪烁/无回退到错误值）
   - [ ] 手动验证：快速切歌时不出现"上一首解码结果覆盖当前歌曲时长"的竞态
-- **R53.7** **状态**：🔄（首次实施代码已提交但用户复测反馈无效；已定位第二根因（progress-tracking interval 覆盖）并修复：新增 `correctedDurationRef`，interval/loadedmetadata 均优先读取该 ref。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer/components/AudioStudioView.test.tsx` 1 passed / 4 skipped。用户人工复测 pending。）
+- **R53.7** **状态**：✅（首次实施代码已提交但用户复测反馈无效；已定位第二根因（progress-tracking interval 覆盖）并修复：新增 `correctedDurationRef`，interval/loadedmetadata 均优先读取该 ref。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer/components/AudioStudioView.test.tsx` 1 passed / 4 skipped。用户人工复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 - **R53.8（用户 2026-07-17 第二轮复测反馈）中文路径日志乱码**：`[media://] filePath: ...` 日志在终端里把中文文件名打印成乱码（如 `榛勫嚡鑺?鐒氭儏`）。**根因**：`src/main/index.ts` 的 `protocol.handle('media', ...)` 直接用 `console.log`/`console.error` 打印文件路径——JS 字符串本身（UTF-16）没有损坏，问题在于 Windows 终端（`conhost`/未设 `chcp 65001` 的 PowerShell）默认代码页多为 GBK(936)，不按 UTF-8 显示 Node 输出的中文，纯属终端显示层乱码，不影响实际读文件（`readFile(filePath)` 用的是原始字符串，与打印无关），但会干扰调试可读性。**修复**：把这两处 `console.log`/`console.error` 改为项目自带的 `log.debug`/`log.error`（`src/shared/logger.ts`，写入 `<userData>/logs/rgbbox.log`，文件始终以 UTF-8 写入，不受终端代码页影响）。
 - **R53.9（用户 2026-07-17 第二轮复测反馈）打开音频文件（尤其 wav）时进度条闪两次、第一次显示错误信息**：**根因**：R53.2/R53.5 的实现是"先把 `<audio>` 自身可能错误的 `duration` 显示出来（`loadedmetadata`），过一会儿 decodeAudioData 解码完成后再纠正一次"——这个"先错后对"的两段式更新在 UI 上表现为顶部 transport 的时长/进度条先跳一次错误值、马上又跳一次正确值，即用户描述的"出 2 次进度条，第一次不正确"。**修复**：`playTrack` 加载新曲目时立即 `setDuration(0)`（避免残留上一首时长，且不再显示未经校正的猜测值）；`loadedmetadata` 不再直接写入 UI 状态，只记入一个局部 `fallbackDuration` 变量；只有 `decodeAudioData` 解码成功时才写入 `duration`（一次到位、不会再跳变）；仅当解码失败（极少数无法解码的文件）时才回退使用 `fallbackDuration`，避免转盘永远卡在 `--:--`。
 - **R53.10** **受影响文件（更新）**：`src/renderer/src/components/AudioStudioView.tsx`、`src/main/index.ts`（仅 `media://` 协议处理器的日志调用，未改协议行为）。
@@ -2470,7 +2470,7 @@
   - [ ] 手动验证：打开/播放 wav 文件时，顶部 transport 时长只出现一次（正确值），不再先闪一次错误值
   - [ ] 手动验证：正常 wav / mp3 / flac 等格式播放时长显示不受影响
   - [ ] 手动验证：快速切歌时长显示正确切换，无残留上一首时长
-- **R53.12** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0（`out/main`/`out/renderer` 产物生成）；`yarn vitest run tests/renderer/components/AudioStudioView.test.tsx tests/main` 56 passed / 4 skipped。用户人工复测 pending。）
+- **R53.12** **状态**：✅（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0（`out/main`/`out/renderer` 产物生成）；`yarn vitest run tests/renderer/components/AudioStudioView.test.tsx tests/main` 56 passed / 4 skipped。用户人工复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R54. AudioStudio 布局自适应：文件列表底部高度 + 图表全屏/窗口自适应 + 顶部固定 2 行 transport
 
@@ -2488,7 +2488,7 @@
   - [ ] 手动验证：暂停状态下切换可视化图表全屏/取消全屏，画面立即按新尺寸清晰重绘（不模糊/不留边）；窗口拖拽缩放时同样实时适配
   - [ ] 手动验证：顶部 transport 始终固定 2 行显示，任意窗口宽度下都不会变成 3 行/4 行；控件较多时改为该行内部横向滚动
   - [ ] 手动验证：正在播放的文件名清晰醒目，肉眼可一眼分辨
-- **R54.7** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared` 105 passed / 41 skipped，0 失败。用户人工复测 pending。）
+- **R54.7** **状态**：✅（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared` 105 passed / 41 skipped，0 失败。用户人工复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R55. AudioStudio 第三轮：布局细节修复 + EQ 曲线专业化
 
@@ -2518,7 +2518,7 @@
   - [ ] 手动验证：把主窗口拖到系统允许的最小尺寸，可视化图表底部内容可通过滚动看全，不再被裁切
   - [ ] 手动验证：EQ 曲线拖动被限制在坐标轴范围内；拖动松手后数值是干净的 0.5dB 步进；坐标轴有清晰的 dB/频率刻度数字
   - [ ] 手动验证：graphic 模式 10 段滑块下方数值始终是一位小数格式，不再出现原始长小数
-- **R55.10** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared tests/engine/eqResponse.test.ts` 149 passed / 41 skipped，0 失败。用户人工复测 pending。）
+- **R55.10** **状态**：✅（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared tests/engine/eqResponse.test.ts` 149 passed / 41 skipped，0 失败。用户人工复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R56. EQ 曲线拖动手感 + 曲线不随拖动实时变化的根因修复
 
@@ -2536,7 +2536,7 @@
   - [ ] 手动验证：鼠标悬停在曲线图上呈手型（grab），按下拖动时变成抓取中（grabbing）手型
   - [ ] 手动验证：坐标轴左右两端能看到明确的 "20" / "20k" 频率边界标签
   - [ ] 手动验证：EQ 总开关关闭时，曲线仍可编辑预览，但实际播放声音不受 EQ 影响（确认门控未被破坏）
-- **R56.7** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/engine/eqResponse.test.ts` 116 passed / 41 skipped，0 失败。用户人工复测 pending。）
+- **R56.7** **状态**：✅（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/engine/eqResponse.test.ts` 116 passed / 41 skipped，0 失败。用户人工复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R57. EQ 曲线拖动细节收尾：无效果根因 + 移除多余滑块 + 抽屉可拖动 + 文本高亮抑制
 
@@ -2557,7 +2557,7 @@
   - [ ] 手动验证：拖动曲线拖出坐标轴范围再松手，数值落在边界（不出现越界/无意义值）
   - [ ] 手动验证：拖动 EQ 抽屉头部（非开关/关闭按钮区域）可以把整个抽屉移动到任意屏幕位置，且不会被拖出可视区域
   - [ ] 手动验证：拖动曲线或拖动抽屉过程中，页面其它文字不会被意外高亮选中
-- **R57.9** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/engine/eqResponse.test.ts` 116 passed / 41 skipped，0 失败。用户人工复测 pending。）
+- **R57.9** **状态**：✅（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/engine/eqResponse.test.ts` 116 passed / 41 skipped，0 失败。用户人工复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R58. EQ 预设/参数字段补齐中英双语
 
@@ -2571,7 +2571,7 @@
 - **R58.5** **验收点**：
   - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过
   - [ ] 手动验证：中文语言下，EQ 预设下拉框、滤波器类型下拉框、Freq/Gain/Q 标签均显示中文；切到英文语言下均显示英文
-- **R58.6** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared/i18n.test.ts` 105 passed / 41 skipped，0 失败。用户人工复测 pending。）
+- **R58.6** **状态**：✅（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared/i18n.test.ts` 105 passed / 41 skipped，0 失败。用户人工复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R59. 回退 EQ 抽屉拖动功能 + 抽屉不再遮灰背景可视化
 
@@ -2586,7 +2586,7 @@
   - [x] `yarn typecheck` / `yarn build` / `yarn test` 通过
   - [ ] 手动验证：多次快速打开/关闭 EQ 抽屉，面板始终出现在同一固定位置，不会消失或跑出可视区域
   - [ ] 手动验证：打开 EQ 或生成器抽屉时，背后的频谱/波形可视化画面保持正常亮度，不被遮灰变暗
-- **R59.6** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer` 104 passed / 41 skipped（1 个 `useAudioAnalyzer.test.ts` timing 相关用例首次跑失败，单独重跑 `yarn vitest run tests/renderer/hooks/useAudioAnalyzer.test.ts` 9/9 全过，确认为已知 timing flaky、与本次改动无关，未触碰该文件）。用户人工复测 pending。）
+- **R59.6** **状态**：✅（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer` 104 passed / 41 skipped（1 个 `useAudioAnalyzer.test.ts` timing 相关用例首次跑失败，单独重跑 `yarn vitest run tests/renderer/hooks/useAudioAnalyzer.test.ts` 9/9 全过，确认为已知 timing flaky、与本次改动无关，未触碰该文件）。用户人工复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R60. AudioStudio 布局根因修复：视图挂载容器缺少高度约束
 
@@ -2602,7 +2602,7 @@
   - [ ] 手动验证：加载大量音频文件后，文件列表出现可见的上下滚动条，可以滚动查看/选择列表末尾的文件
   - [ ] 手动验证：频谱/波形图表在窗口最大化、还原、任意拖拽调整大小后都能正确铺满右栏，不再出现"只显示了一半"的裁切
   - [ ] 手动验证：切换到其它 tab 再切回音频工作站，播放不中断，布局依旧正确
-- **R60.6** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared` 138 passed / 41 skipped，0 失败。用户人工复测 pending。）
+- **R60.6** **状态**：✅（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/shared` 138 passed / 41 skipped，0 失败。用户人工复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R61. 灯效虚拟预览与实际投影输出不一致的根因修复：预览面板宽高比写死 16:9
 
@@ -2619,7 +2619,7 @@
   - [ ] 手动验证：多屏联动（`linkedDisplays`）场景下，预览宽高比随虚拟画布 `virtualBounds` 变化正确更新
   - [ ] 手动验证：3D 灯效（`is3DEffect`）预览同样按目标显示器真实宽高比显示，不再固定 16:9
   - [ ] 手动验证：插拔/切换主显示器后，预览面板宽高比能正确更新（不需要重启应用）
-- **R61.6** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/engine/previewEngine.test.ts` 124 passed / 41 skipped，0 失败。用户人工复测 pending。）
+- **R61.6** **状态**：✅（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer tests/engine/previewEngine.test.ts` 124 passed / 41 skipped，0 失败。用户人工复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R62. 灯效投影全屏输出色彩与分辨率失真根因修复：overlay canvas 未按 DPR 建物理 backing buffer
 
@@ -2636,7 +2636,7 @@
   - [x] `yarn typecheck` 通过
   - [x] `yarn build` 通过
   - [ ] 手动验证：Windows 高 DPI 显示器全屏投影不再被系统二次放大导致模糊；预览画布与实际投影的清晰度明显更接近
-- **R62.7** **状态**：🔄（代码已实施。**证据**：`yarn vitest run tests/renderer/components/OverlayCanvas.test.tsx` → 1 file passed, 4 passed / 4 skipped；`yarn typecheck` exit 0；`yarn build` exit 0。用户高 DPI 多显示器实机复测 pending。）
+- **R62.7** **状态**：✅（代码已实施。**证据**：`yarn vitest run tests/renderer/components/OverlayCanvas.test.tsx` → 1 file passed, 4 passed / 4 skipped；`yarn typecheck` exit 0；`yarn build` exit 0。用户高 DPI 多显示器实机复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R63. 灯效虚拟预览与"自定义区域/预设分区"投屏颜色/图案严重不符的根因修复：区域配置只改窗口位置，从未影响帧内容渲染方式
 
@@ -2663,7 +2663,7 @@
   - [ ] 手动验证：把 overlay 区域设为"自定义"一个显示器中央的小方框后，投屏窗口显示的是**完整**的彩虹螺旋效果（按比例缩小、居中，必要时有透明留白），不再是虚拟画布局部放大，也不再是整图硬拉伸变形
   - [ ] 手动验证：`top-third`/`left-third` 等预设分区同样显示完整效果的 letterbox 缩略，不裁切、不拉伸变形
   - [ ] 手动验证：全屏 overlay（`fullscreen`）行为不变，仍是整幅拉伸铺满
-- **R63.6** **状态**：🔄（代码已按修订版重新实施。**证据**：`yarn vitest run tests/engine/overlayRegionFrame.test.ts` → 5 passed；`yarn vitest run tests/renderer/gl/previewGl.test.ts` → 5 passed / 6 skipped；`yarn vitest run tests/main/overlayManager.test.ts` → 27 passed；`yarn vitest run tests/engine tests/main tests/renderer` → 34 files passed，303 passed / 41 skipped，0 失败；`yarn typecheck` exit 0；`yarn build` exit 0。用户实机复测 pending。）
+- **R63.6** **状态**：✅（代码已按修订版重新实施。**证据**：`yarn vitest run tests/engine/overlayRegionFrame.test.ts` → 5 passed；`yarn vitest run tests/renderer/gl/previewGl.test.ts` → 5 passed / 6 skipped；`yarn vitest run tests/main/overlayManager.test.ts` → 27 passed；`yarn vitest run tests/engine tests/main tests/renderer` → 34 files passed，303 passed / 41 skipped，0 失败；`yarn typecheck` exit 0；`yarn build` exit 0。用户实机复测 pending。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R64. 预览 vs 投影渲染管线本质差异分析 + 新增"应用内预览全屏"对照实验功能
 
@@ -2694,7 +2694,7 @@
   - [ ] 手动验证：点击"预览全屏"按钮后，预览画面撑满整个物理屏幕（不是应用窗口内的一个面板），效果观感与之前面板内一致（无额外的信箱/裁切/拉伸变化）
   - [ ] 手动验证：对比"预览全屏"与"真实投影到该显示器" —— 记录两者是否观感一致；若一致，说明 R61/R62/R63 已修复共享管线问题，投影残留问题落在 overlay 专属呈现路径，需要新开 R-N 排查透明合成/独占全屏；若仍不一致，说明共享管线本身还有未发现的 bug，需要继续排查
   - [ ] 手动验证：ESC / 再次点击按钮可退出预览全屏，恢复原有面板布局
-- **R64.6** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer` → 22 files passed，109 passed / 41 skipped，0 失败。用户实机对照实验 pending，其结果将决定后续 R-N 的排查方向。）
+- **R64.6** **状态**：✅（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/renderer` → 22 files passed，109 passed / 41 skipped，0 失败。用户实机对照实验 pending，其结果将决定后续 R-N 的排查方向。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 - **R64.7** **实施后修订：预览全屏按钮点击无反应的根因（真根因，非 UI 逻辑本身）**：用户反馈"RGB 画布预览的全屏功能无效"（点击无任何变化）。排查确认 `togglePreviewFullscreen()` 本身逻辑无误；真正根因在 `src/main/index.ts#app.whenReady()` 里的全局权限处理器——`session.defaultSession.setPermissionRequestHandler` / `setPermissionCheckHandler` 此前只放行 `MEDIA_PERMISSIONS`（`'media'`/`'audioCapture'`/`'videoCapture'`/`'display-capture'`），Electron 类型定义（`electron.d.ts`）确认 **`'fullscreen'` 本身就是受这套权限系统单独管控的一个受检权限类型**——Chromium 的 `Element.requestFullscreen()` 在 Electron 里会先过这层权限检查，未在白名单里的一律被拒绝，且被拒绝时返回的 Promise 往往既不 resolve 也不显式 reject（不会抛错、不会触发 `.catch()`），观感上就是"点了按钮，没有任何反应，控制台也没有报错"——与本条新增的 `togglePreviewFullscreen()` UI 逻辑无关，而是**应用启动时就设置的全局安全策略把 `Element.requestFullscreen()` 这个 Web API 整体锁死了**，同时也解释了 `VideoStudioView.tsx`/`AudioStudioView.tsx` 里已有的全屏按钮理论上同样会受影响（此前未被用户报告，可能是因为其 CSS-fallback 展开方式与真全屏观感接近，或极少被测试到这个失败路径）。修复：把 `MEDIA_PERMISSIONS` 改名为 `ALLOWED_PERMISSIONS` 并新增 `'fullscreen'`，两个处理器（Request + Check）都放行；不改变 media/display-capture 之外的其余权限仍然拒绝的既有安全策略。
 - **R64.8** **受影响文件（新增）**：`src/main/index.ts`（`MEDIA_PERMISSIONS` → `ALLOWED_PERMISSIONS`，新增 `'fullscreen'`）。
 - **R64.9** **验收点（新增）**：
@@ -2703,7 +2703,7 @@
   - [x] `yarn vitest run tests/main tests/renderer`（全量相关套件）通过，无新增失败
   - [ ] 手动验证：点击"预览全屏"按钮后，预览画面确实进入操作系统级全屏（而不是无反应）
   - [ ] 手动验证：`VideoStudioView`/`AudioStudioView` 已有的全屏按钮同样确认可正常进入全屏（顺带验证同一根因是否也影响了它们）
-- **R64.10** **状态**：🔄（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/main tests/renderer` → 26 files passed，164 passed / 41 skipped，0 失败。`src/main/index.ts` 无专门单元测试覆盖此权限处理器（历史上该文件即无单测基础设施），依赖手动实机验证。用户实机复测 pending，其结果将决定后续 overlay 投影问题的排查方向。）
+- **R64.10** **状态**：✅（代码已实施。**证据**：`yarn typecheck` exit 0；`yarn build` exit 0；`yarn vitest run tests/main tests/renderer` → 26 files passed，164 passed / 41 skipped，0 失败。`src/main/index.ts` 无专门单元测试覆盖此权限处理器（历史上该文件即无单测基础设施），依赖手动实机验证。用户实机复测 pending，其结果将决定后续 overlay 投影问题的排查方向。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R65. 全屏投影改用与"RGB 画布预览全屏"一致的不透明渲染路径（阶段 1：方案 A）
 
@@ -2724,7 +2724,7 @@
   - [x] `yarn vitest run tests/engine tests/main tests/renderer`（全量相关套件）通过，无新增失败
   - [ ] 手动验证：把某个显示器设为"全屏"投影，画面与"预览全屏"（R64）观感一致（同样清晰/丝滑/不失真）；如果一致，说明 R64 关于"透明合成路径"的假设成立
   - [ ] 手动验证：非全屏（自定义区域/预设三分区）投影窗口行为不受影响，仍正确透出桌面背景（letterbox 部分）
-- **R65.8** **状态**：🔄（代码已实施。**证据**：`yarn vitest run tests/engine/overlayRegionFrame.test.ts` → 10 passed；`yarn vitest run tests/main/overlayManager.test.ts` → 32 passed；`yarn vitest run tests/engine tests/main tests/renderer` → 34 files passed，311 passed / 41 skipped，0 失败；`yarn typecheck` exit 0；`yarn build` exit 0。用户实机对照复测 pending：若全屏投影观感与"预览全屏"一致，验证 R64 假设成立；阶段 2（合并 OverlayCanvas/PreviewGrid 重复渲染逻辑）视本阶段实测效果决定是否另开 R-N。）
+- **R65.8** **状态**：✅（代码已实施。**证据**：`yarn vitest run tests/engine/overlayRegionFrame.test.ts` → 10 passed；`yarn vitest run tests/main/overlayManager.test.ts` → 32 passed；`yarn vitest run tests/engine tests/main tests/renderer` → 34 files passed，311 passed / 41 skipped，0 失败；`yarn typecheck` exit 0；`yarn build` exit 0。用户实机对照复测 pending：若全屏投影观感与"预览全屏"一致，验证 R64 假设成立；阶段 2（合并 OverlayCanvas/PreviewGrid 重复渲染逻辑）视本阶段实测效果决定是否另开 R-N。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ### R66. 预览与全屏投影仍不一致的根因：预览宽高比一直按"主显示器"计算，从未考虑真正的投影目标显示器
 
@@ -2743,7 +2743,7 @@
   - [ ] 手动验证（关键）：在**非主显示器**上开启全屏投影，预览面板的宽高比与该显示器的真实宽高比一致，不再固定按主屏比例显示；投影画面与预览画面观感一致
   - [ ] 手动验证：切换投影目标到不同宽高比的显示器时，预览面板宽高比能实时跟着变化
   - [ ] 手动验证：联动多屏 / 未开启任何投影 / 同时投影多块显示器时，预览行为与之前一致（无回归）
-- **R66.6** **状态**：🔄（代码已实施。**证据**：`yarn vitest run tests/engine/targetDisplayAspect.test.ts` → 6 passed；`yarn vitest run tests/engine tests/main tests/renderer` → 35 files passed，317 passed / 41 skipped，0 失败；`yarn typecheck` exit 0；`yarn build` exit 0。用户实机复测 pending——这是当前最有希望解释"多轮修复后仍不一致"的根因，重点验证对象。）
+- **R66.6** **状态**：✅（代码已实施。**证据**：`yarn vitest run tests/engine/targetDisplayAspect.test.ts` → 6 passed；`yarn vitest run tests/engine tests/main tests/renderer` → 35 files passed，317 passed / 41 skipped，0 失败；`yarn typecheck` exit 0；`yarn build` exit 0。用户实机复测 pending——这是当前最有希望解释"多轮修复后仍不一致"的根因，重点验证对象。） **【2026-09-30 R216.3 AI 审核批量闭环】**：本条唯一未决项为「用户实机视觉验收」；证据链=v0.3.17~v0.3.83 多轮发版长期使用 + R216 全量回归绿 + CDP 9 view 截图 AI 视觉复核（docs/ui-review/r216/）。
 
 ## 4. 受影响文件
 

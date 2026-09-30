@@ -1,0 +1,20 @@
+{
+  "views": {
+    "dashboard": "ok",
+    "workspace": "ok",
+    "effects": "ok",
+    "video": "ok",
+    "audio": "ok",
+    "games": "ok",
+    "diagnostics": "ok",
+    "architecture": "ok",
+    "ai": "ok"
+  },
+  "gamesReady": {
+    "hasPlayerCount": false,
+    "hasScenePicker": false,
+    "hasInputConfig": false,
+    "hasAvatar": false
+  },
+  "diagnosticsText": "RB\nRGBBox\n诊断\n关\n首页\n工作区\n效果库\n视频工作站\n音频工作站\n迷你游戏\n诊断\n3D 可视化\nAI 实验室\n系统设置\n\n运行时\n\n诊断\n\n运行时\n\n帧与时延\n帧延迟\n空闲——无消费方（不在工作台且无浮窗）\n平均帧耗时\n0.0 ms\nP95 帧耗时\n0.0 ms\nWorker 渲染\n0.0 ms\n捕获耗时\n0.0 ms\n输出耗时\n0.0 ms\n丢帧 tick\n0\n\n运行时\n\n渲染管线\n虚拟画布\n1920×1010\n网格大小\n24×14 (336 pixels)\n活跃图层\n5\n目标帧率\n30\n亮度增益\n100%\n音频\n关闭\n\n运行时\n\n环境\n平台\nwindows\n捕获后端\ndesktop-capturer\nWuying （主屏）\n1920×1010 @1×\n\n按进程拆分\n\n各进程 CPU 占用\n进程\tPID\tCPU %\n等待中\n\n仅本地记录\n\n崩溃记录\n\n无崩溃记录——历史干净\n\n👁 手势助手"
+}
