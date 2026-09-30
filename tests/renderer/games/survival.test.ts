@@ -4,11 +4,15 @@ import {
   deployPlayer2,
   deployPlayers,
   directorSpawnInterval,
+  enemyContactDamage,
   initialSurvivalState,
   recomputeStats,
+  setSurvivalDifficulty,
+  SURVIVAL_DIFFICULTY_PARAMS,
   tickSurvival,
   xpToNext,
 } from '../../../src/renderer/src/games/survival'
+import { DIFFICULTY_SCORE_MULT, GAME_DIFFICULTIES, type GameDifficulty } from '../../../src/renderer/src/games/hud'
 import { WIDTH } from '../../../src/renderer/src/games/td'
 
 describe('renderer/games/survival engine (R99.3/R99.4)', () => {
@@ -440,5 +444,111 @@ describe('R213 二期 P2-P4 手柄摇杆轴控', () => {
     const half = p2.x - (WIDTH / 2 - 60)
     expect(half).toBeGreaterThan(0)
     expect(half).toBeCloseTo(full / 2, 5)
+  })
+})
+
+// ── R218 E: 难度四档 eHP(休闲 10×0.65 / 标准 7×1.0 / 困难 5×1.35 / 炼狱 3×1.6) ──
+describe('R218 survival difficulty tiers (eHP + 血条化)', () => {
+  it('四档 maxHp 计算矩阵: 难度基数 + 角色 hpMod + 永久成长叠加;玻璃=1', () => {
+    expect(initialSurvivalState('wisp', undefined, [], 'casual').player.maxHp).toBe(10)
+    expect(initialSurvivalState('wisp', undefined, [], 'standard').player.maxHp).toBe(7)
+    expect(initialSurvivalState('wisp', undefined, [], 'hard').player.maxHp).toBe(5)
+    expect(initialSurvivalState('wisp', undefined, [], 'insane').player.maxHp).toBe(3)
+    // bulwark hpMod+3 / volt hpMod-1 / 永久成长 maxHp+2 仍按原式叠加
+    expect(initialSurvivalState('bulwark', undefined, [], 'standard').player.maxHp).toBe(10)
+    expect(initialSurvivalState('volt', undefined, [], 'hard').player.maxHp).toBe(4)
+    expect(initialSurvivalState('wisp', { damage: 0, fireRate: 0, moveSpeed: 0, maxHp: 2, xpGain: 0, luck: 0 }, [], 'hard').player.maxHp).toBe(7)
+    expect(initialSurvivalState('wisp', undefined, ['glass'], 'casual').player.maxHp).toBe(1)
+    // 缺省档为 standard(旧调用点零改动)
+    expect(initialSurvivalState().player.maxHp).toBe(7)
+    expect(initialSurvivalState().difficulty).toBe('standard')
+  })
+
+  it('敌伤乘难度系数后取整 ≥1: 休闲/标准/困难=1,炼狱=2', () => {
+    const expected: Record<GameDifficulty, number> = { casual: 1, standard: 1, hard: 1, insane: 2 }
+    for (const d of GAME_DIFFICULTIES) {
+      expect(enemyContactDamage(initialSurvivalState('wisp', undefined, [], d))).toBe(expected[d])
+    }
+  })
+
+  it('容错次数反推(受击 1.2 次/min × 10min ≈ 12 次口径): 单调递减 10>7>5>2', () => {
+    const tolerance = (d: GameDifficulty): number =>
+      Math.ceil(SURVIVAL_DIFFICULTY_PARAMS[d].hp / Math.max(1, Math.round(SURVIVAL_DIFFICULTY_PARAMS[d].enemyDmgMult)))
+    expect(tolerance('casual')).toBe(10)
+    expect(tolerance('standard')).toBe(7)
+    expect(tolerance('hard')).toBe(5)
+    expect(tolerance('insane')).toBe(2)
+    // 休闲档裸容错 ≥ 平均局(12 次受击)的八成——升级/换岛/boss 击杀的 +1HP
+    // 治疗流补足余量;炼狱档显著低于平均(硬核定位)
+    expect(tolerance('casual')).toBeGreaterThanOrEqual(Math.ceil(12 * 0.8))
+    expect(tolerance('insane')).toBeLessThan(12)
+    expect(tolerance('casual')).toBeGreaterThan(tolerance('standard'))
+    expect(tolerance('standard')).toBeGreaterThan(tolerance('hard'))
+    expect(tolerance('hard')).toBeGreaterThan(tolerance('insane'))
+  })
+
+  it('scoreMult 与共享 hud.DIFFICULTY_SCORE_MULT 同表;分数按难度倍率放大', () => {
+    for (const d of GAME_DIFFICULTIES) {
+      expect(SURVIVAL_DIFFICULTY_PARAMS[d].scoreMult).toBe(DIFFICULTY_SCORE_MULT[d])
+    }
+    const casual = initialSurvivalState('wisp', undefined, [], 'casual')
+    const insane = initialSurvivalState('wisp', undefined, [], 'insane')
+    for (const s of [casual, insane]) {
+      s.phase = 'running'
+      s.spawnTimer = 99
+      s.bossTimer = 99
+      s.kills = 100
+      s.time = 60
+      s.comboBonus = 0
+      tickSurvival(s, 0.016)
+    }
+    expect(insane.score).toBeGreaterThan(casual.score * 2)
+  })
+
+  it('受击走难度伤害: 炼狱档接触伤害 2,飘出 -2 数字并触发闪白', () => {
+    const s = initialSurvivalState('wisp', undefined, [], 'insane')
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.enemies.push({ id: 1, x: s.player.x + 5, y: s.player.y, vx: 0, vy: 0, size: 14, hp: 99, maxHp: 99, kind: 'chaser', elite: false, hitFlash: 0 })
+    const hp0 = s.player.hp
+    tickSurvival(s, 0.016)
+    expect(s.player.hp).toBe(hp0 - 2)
+    expect(s.player.hitFlash).toBeGreaterThan(0)
+    expect(s.texts.some((tx) => tx.text === '-2')).toBe(true)
+  })
+
+  it('敌速乘难度系数: hard 档 chaser 位移 ≈ 标准 ×1.08', () => {
+    const std = initialSurvivalState('wisp', undefined, [], 'standard')
+    const hard = initialSurvivalState('wisp', undefined, [], 'hard')
+    for (const s of [std, hard]) {
+      s.phase = 'running'
+      s.spawnTimer = 99
+      s.bossTimer = 99
+      s.enemies.push({ id: 1, x: s.player.x, y: s.player.y - 300, vx: 0, vy: 0, size: 14, hp: 999, maxHp: 999, kind: 'chaser', elite: false, hitFlash: 0 })
+    }
+    tickSurvival(std, 1)
+    tickSurvival(hard, 1)
+    const movedStd = Math.abs(std.enemies[0].y - (std.player.y - 300))
+    const movedHard = Math.abs(hard.enemies[0].y - (hard.player.y - 300))
+    expect(movedHard).toBeGreaterThan(movedStd)
+    expect(movedHard / movedStd).toBeCloseTo(1.08, 1)
+  })
+
+  it('setSurvivalDifficulty: ready 态改档全员 maxHp/hp 随基数差平移;玻璃局跳过', () => {
+    const s = initialSurvivalState('wisp', undefined, [], 'standard')
+    deployPlayers(s, 2)
+    setSurvivalDifficulty(s, 'casual')
+    for (const pl of s.players) {
+      expect(pl.maxHp).toBe(10)
+      expect(pl.hp).toBe(10)
+    }
+    setSurvivalDifficulty(s, 'insane')
+    for (const pl of s.players) {
+      expect(pl.maxHp).toBe(3)
+      expect(pl.hp).toBe(3)
+    }
+    const glass = initialSurvivalState('wisp', undefined, ['glass'], 'standard')
+    setSurvivalDifficulty(glass, 'casual')
+    expect(glass.player.maxHp).toBe(1)
   })
 })

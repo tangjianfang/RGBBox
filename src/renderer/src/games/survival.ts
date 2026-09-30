@@ -6,6 +6,13 @@ import { playSfx } from './sfx'
 import { WIDTH, HEIGHT } from './td'
 import { SCENE_IDS, drawScene, type SceneId } from './scene'
 import {
+  DIFFICULTY_SCORE_MULT,
+  drawAlertVignette,
+  drawHealthBar,
+  drawHudCapsule,
+  type GameDifficulty,
+} from './hud'
+import {
   UPGRADES,
   characterById,
   pickOffers as pickWeightedOffers,
@@ -25,6 +32,51 @@ export type { UpgradeDef, UpgradeId }
 export type SurvivalPhase = 'ready' | 'running' | 'levelup' | 'roulette' | 'lost'
 
 export const BOSS_INTERVAL = 90
+
+// ── R218 U4/E: 难度四档 eHP 参数(spec §二 Survival) ──────────────────────────
+// 休闲 10HP×0.65 / 标准 7×1.0 / 困难 5×1.35 / 炼狱 3×1.6(敌伤系数);
+// 敌速沿用既有 enemySpeedMult 体系乘法微调 1/1/1.08/1.15;
+// scoreMult 与共享 hud.DIFFICULTY_SCORE_MULT 同表(挂街机档案)。
+export interface SurvivalDifficultyParams {
+  /** 该档玩家 maxHp 基数(角色 hpMod/永久成长仍叠加)。 */
+  hp: number
+  /** 敌方单次接触/弹幕伤害系数(乘 1 后取整 ≥1)。 */
+  enemyDmgMult: number
+  /** 敌移速乘法系数(叠加 artifact swift 的 enemySpeedMult)。 */
+  enemySpeedMult: number
+  /** 分数倍率(= DIFFICULTY_SCORE_MULT)。 */
+  scoreMult: number
+}
+
+export const SURVIVAL_DIFFICULTY_PARAMS: Record<GameDifficulty, SurvivalDifficultyParams> = {
+  casual: { hp: 10, enemyDmgMult: 0.65, enemySpeedMult: 1, scoreMult: DIFFICULTY_SCORE_MULT.casual },
+  standard: { hp: 7, enemyDmgMult: 1, enemySpeedMult: 1, scoreMult: DIFFICULTY_SCORE_MULT.standard },
+  hard: { hp: 5, enemyDmgMult: 1.35, enemySpeedMult: 1.08, scoreMult: DIFFICULTY_SCORE_MULT.hard },
+  insane: { hp: 3, enemyDmgMult: 1.6, enemySpeedMult: 1.15, scoreMult: DIFFICULTY_SCORE_MULT.insane },
+}
+
+/** 读当前难度参数(旧状态缺 difficulty 字段时退 standard)。 */
+export function survivalDifficultyParams(state: SurvivalState): SurvivalDifficultyParams {
+  return SURVIVAL_DIFFICULTY_PARAMS[state.difficulty ?? 'standard']
+}
+
+/** 敌方单次伤害(接触/弹幕同口径):×难度系数取整且 ≥1(休闲/标准/困难=1,炼狱=2)。 */
+export function enemyContactDamage(state: SurvivalState): number {
+  return Math.max(1, Math.round(survivalDifficultyParams(state).enemyDmgMult))
+}
+
+/** ready 态改档:按两档基数差重算全员 maxHp(玻璃 artifact maxHp=1 时跳过),
+ *  hp 随正向差值补满、负向钳到上限。运行中调用只影响后续伤害系数。 */
+export function setSurvivalDifficulty(state: SurvivalState, difficulty: GameDifficulty): void {
+  if (state.difficulty === difficulty) return
+  const delta = SURVIVAL_DIFFICULTY_PARAMS[difficulty].hp - SURVIVAL_DIFFICULTY_PARAMS[state.difficulty ?? 'standard'].hp
+  state.difficulty = difficulty
+  for (const pl of state.players) {
+    if (pl.maxHp <= 1) continue // 玻璃局:恒 1 HP
+    pl.maxHp = Math.max(1, pl.maxHp + delta)
+    pl.hp = clamp(pl.hp + Math.max(0, delta), 0, pl.maxHp)
+  }
+}
 
 interface Point {
   x: number
@@ -98,6 +150,8 @@ export interface PlayerState {
   invuln: number
   fireTimer: number
   angle: number
+  /** R218 U5: 受击闪白剩余秒数(>0 时船体画纯白)。 */
+  hitFlash: number
 }
 
 export interface PlayerStats {
@@ -134,6 +188,9 @@ export interface SurvivalState {
   taken: Record<UpgradeId, number>
   bonuses: Partial<Record<RouletteStat, number>>
   character: CharacterId
+  /** R218 U4/E: 难度四档(view 在 start 前写入;默认 standard)。
+   *  挂 SURVIVAL_DIFFICULTY_PARAMS:maxHp 基数/敌伤/敌速/分数倍率。 */
+  difficulty: GameDifficulty
   perm: PermMap
   offers: UpgradeId[]
   pendingSpins: number
@@ -207,7 +264,6 @@ export interface SurvivalState {
 
 // ── R213: P2..P4 皮肤(琥珀/粉/青;P1 沿用青白 #e2f8ff/#67e8f9 不变) ──
 const ROSTER_ACCENT = ['#fbbf24', '#f472b6', '#4ade80']
-const ROSTER_RING = ['rgba(251, 191, 36, 0.55)', 'rgba(244, 114, 182, 0.55)', 'rgba(74, 222, 128, 0.55)']
 const ROSTER_HULL = ['#fff7e2', '#ffe4f1', '#e4ffee']
 
 export function xpToNext(level: number): number {
@@ -255,14 +311,17 @@ export function initialSurvivalState(
   character: CharacterId = 'wisp',
   perm: PermMap = { damage: 0, fireRate: 0, moveSpeed: 0, maxHp: 0, xpGain: 0, luck: 0 },
   artifacts: ArtifactId[] = [],
+  difficulty: GameDifficulty = 'standard',
 ): SurvivalState {
   const def = characterById(character)
   const has = (id: ArtifactId) => artifacts.includes(id)
-  let maxHp = Math.max(1, 5 + def.hpMod + perm.maxHp)
+  // R218 E: maxHp 基数走难度表(休闲 10/标准 7/困难 5/炼狱 3);
+  // 角色 hpMod 与永久成长 maxHp 仍按原式叠加。
+  let maxHp = Math.max(1, SURVIVAL_DIFFICULTY_PARAMS[difficulty].hp + def.hpMod + perm.maxHp)
   if (has('glass')) maxHp = 1
   // R213: 先构造 player/keys 再装配 state——players[0]/inputs[0] 与
   // player/keys 字段从出生起就是同一对象引用(别名不变量由构造保证)。
-  const player: PlayerState = { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 14, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2 }
+  const player: PlayerState = { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 14, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2, hitFlash: 0 }
   const keys = new Set<string>()
   const state: SurvivalState = {
     phase: 'ready',
@@ -281,6 +340,7 @@ export function initialSurvivalState(
     taken: { fireRate: 0, damage: 0, multishot: 0, pierce: 0, blade: 0, speed: 0, maxHp: 0, magnet: 0, crit: 0, bulletSpeed: 0, thorns: 0, regen: 0 },
     bonuses: {},
     character,
+    difficulty,
     perm: { ...perm },
     offers: [],
     pendingSpins: 0,
@@ -369,7 +429,7 @@ export function deployPlayers(state: SurvivalState, count: 1 | 2 | 3 | 4): void 
     state.players.push({
       x: WIDTH / 2 + off.dx, y: HEIGHT / 2 + off.dy, vx: 0, vy: 0, size: 14,
       hp: state.player.maxHp, maxHp: state.player.maxHp, invuln: 2,
-      fireTimer: 0, angle: -Math.PI / 2,
+      fireTimer: 0, angle: -Math.PI / 2, hitFlash: 0,
     })
     state.inputs.push(new Set<string>())
   }
@@ -676,9 +736,12 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     // R208: 弹幕对任一存活玩家结算(独立无敌帧)
     for (const pl of alivePlayers(state)) {
       if (pl.invuln <= 0 && Math.hypot(eb.x - pl.x, eb.y - pl.y) < pl.size + eb.size) {
-        pl.hp -= 1
+        const dmg = enemyContactDamage(state)
+        pl.hp -= dmg
         pl.invuln = state.invulnWindow
+        pl.hitFlash = 0.15
         state.shake = Math.min(8, state.shake + 4)
+        addText(state, pl.x, pl.y - 26, `-${dmg}`, '#f87171')
         eb.life = 0
         playSfx('hurt')
         if (pl.hp <= 0) {
@@ -724,7 +787,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   state.time += dt
   state.comboTimer = Math.max(0, state.comboTimer - dt)
   if (state.comboTimer === 0 && state.combo > 0) state.combo = 0
-  state.score = Math.floor((state.kills * 10 + state.comboBonus + Math.floor(state.time)) * state.scoreMult)
+  state.score = Math.floor((state.kills * 10 + state.comboBonus + Math.floor(state.time)) * state.scoreMult * survivalDifficultyParams(state).scoreMult)
   // FR-G08 sprint: a time-capped run settles through the existing end path —
   // 'lost' reads as "time up", and the score earned so far stays on the board.
   if (state.sprintSeconds !== undefined && state.time >= state.sprintSeconds) {
@@ -734,6 +797,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   const player = state.player
   const stats = state.stats
   player.invuln = Math.max(0, player.invuln - dt)
+  player.hitFlash = Math.max(0, player.hitFlash - dt)
 
   const dx = (key(state, 'arrowright') || key(state, 'd') ? 1 : 0) - (key(state, 'arrowleft') || key(state, 'a') ? 1 : 0)
   const dy = (key(state, 'arrowdown') || key(state, 's') ? 1 : 0) - (key(state, 'arrowup') || key(state, 'w') ? 1 : 0)
@@ -808,6 +872,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     const pl = state.players[pi]
     if (pl.hp <= 0) continue
     pl.invuln = Math.max(0, pl.invuln - dt)
+    pl.hitFlash = Math.max(0, pl.hitFlash - dt)
     const pool = state.inputs[pi]
     if (pool === undefined) continue
     const dpx = (pool.has(`p${pi + 1}right`) ? 1 : 0) - (pool.has(`p${pi + 1}left`) ? 1 : 0)
@@ -894,10 +959,12 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   state.bullets = state.bullets.filter((bullet) => bullet.life > 0 && bullet.pierce >= 0 && bullet.x > -20 && bullet.x < WIDTH + 20 && bullet.y > -20 && bullet.y < HEIGHT + 20)
 
   const speedFor = (enemy: Enemy): number => {
-    if (enemy.kind === 'sprinter') return 132 * state.enemySpeedMult
-    if (enemy.kind === 'brute') return 40 * state.enemySpeedMult
-    if (enemy.kind === 'boss') return 34 * state.enemySpeedMult
-    return Math.min(112, 64 + state.time * 0.12) * state.enemySpeedMult
+    // R218 E: 难度敌速乘法(1/1/1.08/1.15)叠加 artifact swift 的 enemySpeedMult
+    const mult = state.enemySpeedMult * survivalDifficultyParams(state).enemySpeedMult
+    if (enemy.kind === 'sprinter') return 132 * mult
+    if (enemy.kind === 'brute') return 40 * mult
+    if (enemy.kind === 'boss') return 34 * mult
+    return Math.min(112, 64 + state.time * 0.12) * mult
   }
   for (const enemy of state.enemies) {
     // R208(FR-MP01): 敌人追最近存活玩家(单人局退化原行为)
@@ -908,10 +975,13 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     enemy.y += ((target.y - enemy.y) / dist) * speed * dt
     enemy.hitFlash = Math.max(0, enemy.hitFlash - dt)
     if (target.invuln <= 0 && distance(enemy, target) < enemy.size + target.size) {
-      target.hp -= 1
+      const dmg = enemyContactDamage(state)
+      target.hp -= dmg
       target.invuln = state.invulnWindow
+      target.hitFlash = 0.15
       state.shake = enemy.kind === 'boss' ? 9 : 6
       playSfx('hurt')
+      addText(state, target.x, target.y - 26, `-${dmg}`, '#f87171')
       spawnBurst(state, target.x, target.y, '#f87171', 12, 150)
       enemy.x -= (target.x - enemy.x) / dist * 46
       enemy.y -= (target.y - enemy.y) / dist * 46
@@ -1233,15 +1303,13 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
 
   const boss = state.enemies.find((enemy) => enemy.kind === 'boss')
   if (boss) {
-    ctx.fillStyle = 'rgba(219, 39, 119, 0.25)'
-    ctx.fillRect(WIDTH / 2 - 160, 64, 320, 10)
-    ctx.fillStyle = '#f472b6'
-    ctx.fillRect(WIDTH / 2 - 160, 64, 320 * clamp(boss.hp / boss.maxHp, 0, 1), 10)
+    // R218 U1/U5: boss 血条走共享胶囊+连续血条(顶边居中,不进中央 60%)
+    drawHealthBar(ctx, WIDTH / 2 - 160, 52, 320, 10, clamp(boss.hp / boss.maxHp, 0, 1), state.clock, { segments: false })
     ctx.fillStyle = '#f9a8d4'
     ctx.font = '800 12px Inter, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'alphabetic'
-    ctx.fillText('BOSS', WIDTH / 2, 58)
+    ctx.fillText('BOSS', WIDTH / 2, 46)
   }
 
   for (const particle of state.particles) {
@@ -1255,7 +1323,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.save()
     ctx.translate(player.x, player.y)
     ctx.rotate(player.angle)
-    ctx.fillStyle = '#e2f8ff'
+    ctx.fillStyle = player.hitFlash > 0 ? '#ffffff' : '#e2f8ff'
     ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-10, -10); ctx.lineTo(-5, 0); ctx.lineTo(-10, 10); ctx.closePath(); ctx.fill()
     ctx.fillStyle = '#67e8f9'
     ctx.beginPath(); ctx.arc(2, 0, 4, 0, Math.PI * 2); ctx.fill()
@@ -1270,7 +1338,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.save()
     ctx.translate(pl.x, pl.y)
     ctx.rotate(pl.angle)
-    ctx.fillStyle = ROSTER_HULL[pi - 1]
+    ctx.fillStyle = pl.hitFlash > 0 ? '#ffffff' : ROSTER_HULL[pi - 1]
     ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-10, -10); ctx.lineTo(-5, 0); ctx.lineTo(-10, 10); ctx.closePath(); ctx.fill()
     ctx.fillStyle = ROSTER_ACCENT[pi - 1]
     ctx.beginPath(); ctx.arc(2, 0, 4, 0, Math.PI * 2); ctx.fill()
@@ -1290,53 +1358,46 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.globalAlpha = 1
   }
 
-  for (let i = 0; i < player.hp; i++) {
-    ctx.fillStyle = '#f87171'
-    ctx.beginPath()
-    ctx.arc(28 + i * 22, 30, 7, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = '#050a12'
-    ctx.beginPath()
-    ctx.arc(28 + i * 22, 30, 3, 0, Math.PI * 2)
-    ctx.fill()
-  }
-
-  // R208(FR-MP01)→R213: P2..Pn HP 行(空心圆,P1 行下方依次;P2 琥珀/P3 粉/P4 青)
-  for (let pi = 1; pi < state.players.length; pi++) {
+  // ── R218 U1/U5: 战斗 HUD 胶囊化 + 心数行 → 连续血条(贴边,不进中央 60%) ──
+  // 玩家 HP:左上纵向堆叠(P1 起每人一条,渐变+低血脉冲);倒下玩家画空底保位次。
+  for (let pi = 0; pi < state.players.length; pi++) {
     const pl = state.players[pi]
-    const rowY = 30 + pi * 22
-    for (let j = 0; j < pl.maxHp; j++) {
-      ctx.strokeStyle = ROSTER_RING[pi - 1]
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.arc(28 + j * 22, rowY, 7, 0, Math.PI * 2)
-      ctx.stroke()
-      if (j < pl.hp) {
-        ctx.fillStyle = ROSTER_ACCENT[pi - 1]
-        ctx.beginPath()
-        ctx.arc(28 + j * 22, rowY, 3.5, 0, Math.PI * 2)
-        ctx.fill()
-      }
-    }
-  }
-
-  if (state.combo >= 3) {
-    ctx.fillStyle = state.combo >= 10 ? '#fde68a' : '#e2f8ff'
-    ctx.font = `800 ${14 + Math.min(6, Math.floor(state.combo / 4))}px Inter, sans-serif`
+    const y = 14 + pi * 18
+    drawHealthBar(ctx, 34, y, 132, 11, pl.hp > 0 ? clamp(pl.hp / pl.maxHp, 0, 1) : 0, state.clock)
+    ctx.fillStyle = pl.hp > 0 ? (pi === 0 ? '#e2f8ff' : ROSTER_ACCENT[pi - 1]) : 'rgba(159,183,193,0.55)'
+    ctx.font = '700 10px Inter, sans-serif'
     ctx.textAlign = 'left'
-    ctx.textBaseline = 'alphabetic'
-    ctx.fillText(`COMBO ×${state.combo}`, 26, 62)
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`P${pi + 1}`, 16, y + 5.5)
   }
 
-  ctx.fillStyle = 'rgba(74, 222, 128, 0.18)'
-  ctx.fillRect(40, HEIGHT - 22, WIDTH - 80, 8)
-  ctx.fillStyle = '#4ade80'
-  ctx.fillRect(40, HEIGHT - 22, (WIDTH - 80) * clamp(state.xp / state.xpNext, 0, 1), 8)
+  const comboTop = 14 + state.players.length * 18 + 4
+  if (state.combo >= 3) {
+    drawHudCapsule(ctx, 16, comboTop, 118, 18)
+    ctx.fillStyle = state.combo >= 10 ? '#fde68a' : '#e2f8ff'
+    ctx.font = `800 ${13 + Math.min(5, Math.floor(state.combo / 4))}px Inter, sans-serif`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`COMBO ×${state.combo}`, 24, comboTop + 9)
+  }
+
+  // 右上信息胶囊(波次=岛屿/时间/分数——spec U1 三要素的 Survival 语义)
+  const mins = Math.floor(state.time / 60)
+  const secs = String(Math.floor(state.time % 60)).padStart(2, '0')
+  drawHudCapsule(ctx, WIDTH - 216, 14, 200, 20)
+  ctx.fillStyle = '#e2e8f0'
+  ctx.font = '700 11px Inter, sans-serif'
+  ctx.textAlign = 'right'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(`ISLAND ${state.island}  ${mins}:${secs}  ${state.score}`, WIDTH - 24, 24)
+
+  drawHealthBar(ctx, 76, HEIGHT - 24, WIDTH - 112, 8, clamp(state.xp / state.xpNext, 0, 1), state.clock, { segments: false })
+  drawHudCapsule(ctx, 16, HEIGHT - 30, 54, 20)
   ctx.fillStyle = '#9fb7c1'
   ctx.font = '700 12px Inter, sans-serif'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
-  ctx.fillText(`LV ${state.level}`, 40, HEIGHT - 34)
+  ctx.fillText(`LV ${state.level}`, 24, HEIGHT - 20)
 
   if (state.banner) {
     ctx.globalAlpha = clamp(state.banner.life / 0.5, 0, 1)
@@ -1347,6 +1408,9 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.globalAlpha = 1
   }
   ctx.restore()
+  // R218 U1/U5: 低血(≤25%)呼吸警示 vignette——任一存活玩家触发即亮
+  const lowRatio = state.players.reduce((acc, pl) => (pl.hp > 0 ? Math.min(acc, pl.hp / pl.maxHp) : acc), 1)
+  if (lowRatio <= 0.25) drawAlertVignette(ctx, WIDTH, HEIGHT, 0.45, state.clock)
   dimScene(ctx, state.phase)
 }
 
