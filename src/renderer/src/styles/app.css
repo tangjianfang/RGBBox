@@ -9240,14 +9240,23 @@ input:disabled {
 }
 .agent-tool-fold:hover { text-decoration: underline; }
 .agent-tool-truncated { font-size: 11px; color: var(--text-secondary, rgba(255, 255, 255, 0.5)); }
-/* R184: unified diff palette — red removal / green addition */
+/* R184: unified diff palette — red removal / green addition.
+   R177 P-2: tints derive from the STATUS SEMANTIC TOKENS (error/success) via
+   color-mix — no bare hex/rgba, and the "after" tint tracks the token instead
+   of the retired pre-R148 accent green. */
 .agent-diff-block { margin-top: 4px; }
 .agent-diff-label { display: block; font-size: 11px; margin-bottom: 2px; }
-.agent-diff-label.before { color: #f87171; }
-.agent-diff-label.after { color: var(--accent, #6ee7a0); }
+.agent-diff-label.before { color: var(--status-error, #f87171); }
+.agent-diff-label.after { color: var(--status-success, #86efac); }
 .agent-diff { max-height: 180px; }
-.agent-diff.before { background: rgba(248, 113, 113, 0.08); border-left: 2px solid rgba(248, 113, 113, 0.55); }
-.agent-diff.after { background: rgba(110, 231, 160, 0.08); border-left: 2px solid rgba(110, 231, 160, 0.55); }
+.agent-diff.before {
+  background: color-mix(in srgb, var(--status-error, #f87171) 9%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--status-error, #f87171) 55%, transparent);
+}
+.agent-diff.after {
+  background: color-mix(in srgb, var(--status-success, #86efac) 9%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--status-success, #86efac) 55%, transparent);
+}
 
 .agent-approval { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--status-warn, #fbbf24); font-size: 12px; }
 .agent-approval.resolved { opacity: 0.55; border-style: dashed; }

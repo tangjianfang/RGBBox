@@ -18,6 +18,10 @@ interface TranscriptItem { kind: 'user' | 'assistant' | 'assistant-streaming' | 
 
 /** R184: tool results beyond this many lines render folded by default. */
 const TOOL_FOLD_LINES = 12
+/** R177 P-2: char threshold — a few-lines result can still be a wall of text
+ *  (minified JSON, one-line stack traces); fold past this many characters too.
+ *  Either threshold tripping folds the card (取更严). */
+const TOOL_FOLD_CHARS = 600
 /** R184: hard char cap on the rendered excerpt (main process caps raw at 64KB).
  *  R193.4: raised 4000 → 20000 — "把它设置到最大": what the model received
  *  (8K live slices) and what the user sees should no longer diverge so hard. */
@@ -28,12 +32,18 @@ function formatDuration(ms: number): string {
 }
 
 /** R184: a tool call as a card — name + status glyph + duration header, args,
- *  result folded past TOOL_FOLD_LINES with an explicit expand/collapse toggle. */
+ *  result folded past TOOL_FOLD_LINES/TOOL_FOLD_CHARS with an explicit toggle.
+ *  R177 P-2: the fold state is per-card (each card owns its useState) and the
+ *  collapsed window is the stricter of the two thresholds. */
 function AgentToolCard({ tool, t }: { tool: ToolCard; t: ReturnType<typeof useI18n>['t'] }): JSX.Element {
   const [expanded, setExpanded] = useState(false)
   const resultLines = useMemo(() => tool.result.split('\n'), [tool.result])
-  const foldable = resultLines.length > TOOL_FOLD_LINES
-  const shown = foldable && !expanded ? resultLines.slice(0, TOOL_FOLD_LINES).join('\n') : tool.result
+  const overLines = resultLines.length > TOOL_FOLD_LINES
+  const foldable = overLines || tool.result.length > TOOL_FOLD_CHARS
+  const shown = foldable && !expanded
+    // line-tripped → first 12 lines; chars-only-tripped → first 600 chars
+    ? (overLines ? resultLines.slice(0, TOOL_FOLD_LINES).join('\n') : tool.result.slice(0, TOOL_FOLD_CHARS))
+    : tool.result
   const truncated = tool.result.length > TOOL_RESULT_CHAR_CAP
   const excerpt = shown.slice(0, TOOL_RESULT_CHAR_CAP)
   const duration = tool.startedAt !== undefined && tool.endedAt !== undefined ? tool.endedAt - tool.startedAt : null
@@ -362,6 +372,9 @@ export function AiLabAgentTab(): JSX.Element {
           const idx = [...restored].reverse().findIndex((it) => it.kind === 'tool' && it.tool?.id === ev.call.id)
           const tool: ToolCard = { ...ev.call, startedAt: idx >= 0 ? restored[restored.length - 1 - idx].tool?.startedAt : ev.ts, endedAt: ev.ts }
           if (idx >= 0) restored[restored.length - 1 - idx] = { kind: 'tool', tool }
+          // R177 P-2: a lone tool-result (its tool-start line damaged/skipped,
+          // R188.2) still restores a card — same as the live event path.
+          else restored.push({ kind: 'tool', tool })
           lastTool = null
         }
         if (ev.kind === 'done' && ev.reason === 'error') restoredError = ev.error ?? 'error'
