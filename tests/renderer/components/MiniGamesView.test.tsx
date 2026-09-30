@@ -586,3 +586,83 @@ describe('renderer/components/MiniGamesView · gamepad Start (R218 U2)', () => {
     ctxSpy.mockRestore()
   })
 })
+
+// ── R218 U4: difficulty four tiers, persistence, per-game wiring ──────────────
+describe('renderer/components/MiniGamesView · difficulty four tiers (R218 U4)', () => {
+  const noopCtx = new Proxy({}, {
+    get: (_t, prop) => {
+      if (prop === 'canvas') return undefined
+      if (prop === 'measureText') return () => ({ width: 10 })
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+        return () => ({ addColorStop: () => undefined })
+      }
+      return () => undefined
+    },
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D
+
+  const frames = (ms = 260) => new Promise((r) => setTimeout(r, ms))
+
+  const enterTd = (container: HTMLElement) => {
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[0])
+  }
+
+  it('renders four tiers with score multipliers and persists the pick', () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    enterTd(container)
+    const btns = container.querySelectorAll('[data-field="difficulty"] [data-diff]')
+    expect([...btns].map((b) => b.getAttribute('data-diff'))).toEqual(['casual', 'standard', 'hard', 'insane'])
+    expect([...btns].map((b) => b.querySelector('.diff-mult')?.textContent)).toEqual(['1×', '1.5×', '2×', '3×'])
+    expect(btns[1].className).toContain('on') // default standard
+    fireEvent.click(btns[2]) // hard
+    expect(localStorage.getItem('rgbbox:gamesDifficulty:td')).toBe('hard')
+    expect(btns[2].className).toContain('on')
+    ctxSpy.mockRestore()
+  })
+
+  it('legacy two-tier values map through; invalid falls back to standard', () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    localStorage.setItem('rgbbox:gamesDifficulty:td', 'casual')
+    const { container } = render(<MiniGamesView />)
+    enterTd(container)
+    expect(container.querySelector('[data-diff="casual"]')?.className).toContain('on')
+    ctxSpy.mockRestore()
+    cleanup()
+
+    localStorage.setItem('rgbbox:gamesDifficulty:td', 'bogus')
+    const second = render(<MiniGamesView />)
+    enterTd(second.container)
+    expect(second.container.querySelector('[data-diff="standard"]')?.className).toContain('on')
+    ctxSpy.mockRestore()
+  })
+
+  it('TD hard start applies the four-tier table (lives 14 / coins 187)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    enterTd(container)
+    fireEvent.click(container.querySelector('[data-diff="hard"]')!)
+    // header start button (text is the raw key — tests render without I18nProvider)
+    const start = [...container.querySelectorAll('.games-header-actions button')].find((b) => b.textContent === 'games.start') as HTMLButtonElement
+    fireEvent.click(start)
+    await frames() // loop publishes the snapshot every 0.18s
+    const lives = [...container.querySelectorAll('.games-stat-grid span')].find((s) => s.getAttribute('aria-label')?.includes('games.ariaLives'))
+    expect(lives?.textContent).toContain('14')
+    const coins = [...container.querySelectorAll('.games-stat-grid span')].find((s) => s.getAttribute('aria-label')?.includes('games.ariaCoins'))
+    expect(coins?.textContent).toContain('187')
+    ctxSpy.mockRestore()
+  })
+
+  it('tetris difficulty maps to the start level (insane → LV13)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[2]) // Tetris
+    fireEvent.click(container.querySelector('[data-diff="insane"]')!)
+    const start = [...container.querySelectorAll('.games-header-actions button')].find((b) => b.textContent === 'games.start') as HTMLButtonElement
+    fireEvent.click(start)
+    await frames()
+    const lv = [...container.querySelectorAll('.games-stat-grid span')].find((s) => s.getAttribute('aria-label')?.includes('games.ariaWave'))
+    expect(lv?.textContent).toContain('LV 13')
+    ctxSpy.mockRestore()
+  })
+})

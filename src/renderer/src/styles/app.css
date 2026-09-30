@@ -9877,6 +9877,15 @@ input:disabled {
   cursor: pointer;
 }
 .diff-btn.on { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb), 0.12); }
+/* R218 U4: 难度四档胶囊的分数倍率角标 */
+.diff-btn .diff-mult {
+  color: var(--status-warn-strong);
+  font-style: normal;
+  font-size: 10px;
+  margin-left: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.diff-btn.on .diff-mult { color: var(--accent); }
 
 /* R218 U2: ready 态手柄在场提示行(难度行下方;id 截断列表) */
 .pad-hint-row {

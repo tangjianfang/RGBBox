@@ -2,7 +2,7 @@ import { ArrowLeft, Crosshair, Eye, EyeOff, Grid, Heart, Maximize2, Minimize2, M
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
 import { useVisionInput } from '../hooks/useVisionInput'
 import { useI18n } from '../i18n'
-import { drawExitBadge, drawHudButton, drawHudPanel, hitTest, type HudButton } from '../games/hud'
+import { DIFFICULTY_SCORE_MULT, GAME_DIFFICULTIES, drawExitBadge, drawHudButton, drawHudPanel, hitTest, isGameDifficulty, type GameDifficulty, type HudButton } from '../games/hud'
 import { autoPick } from '../games/swarmAutoPick'
 import { assignGamepads, buildKeyToPoolMap, loadInputConfigs, type InputConfigs } from '../domain/inputConfig'
 import { deployPlayers } from '../games/survival'
@@ -187,14 +187,47 @@ const VISION_PASSTHROUGH_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'ar
 
 // DirectionRing defaults (gesture_engine.js, upstream v2) — the analog path
 // must apply the same transform the sector ring sees. Keep in sync.
-/** R204(FR-G05): 难度二档——休闲/标准,按作持久化 rgbbox:gamesDifficulty:<id>。 */
-export type Difficulty = 'casual' | 'standard'
-function readDifficulty(id: string): Difficulty {
-  try { return localStorage.getItem('rgbbox:gamesDifficulty:' + id) === 'casual' ? 'casual' : 'standard' } catch { return 'standard' }
+/** R204(FR-G05)→R218 U4: 难度四档(休闲/标准/困难/炼狱),按作持久化
+ * rgbbox:gamesDifficulty:<id>;旧二档值 'casual'/'standard' 直接映射,
+ * 非法/缺失回落 'standard'。类型统一到 games/hud.ts 的 GameDifficulty。 */
+export type Difficulty = GameDifficulty
+function readDifficulty(id: string): GameDifficulty {
+  try {
+    const raw = localStorage.getItem('rgbbox:gamesDifficulty:' + id)
+    return isGameDifficulty(raw) ? raw : 'standard'
+  } catch { return 'standard' }
 }
-function writeDifficulty(id: string, d: Difficulty): void {
+function writeDifficulty(id: string, d: GameDifficulty): void {
   try { localStorage.setItem('rgbbox:gamesDifficulty:' + id, d) } catch { /* best-effort */ }
 }
+
+// ── TODO(r218-merge): 临时 shim(集中一处,merge 各作分支后整块删除) ──────────
+// 契约:四作引擎分支(wt-r218-tdsl / wt-r218-tet / wt-r218-sv)新增下列导出与
+// state.difficulty 字段;本分支按契约先行接线,merge 后改 import 真实导出:
+//   ① TD_DIFFICULTY_PARAMS        ← wt-r218-tdsl(src/renderer/src/games/td.ts)
+//      Record<GameDifficulty, { lives: number; startCoins: number; hpMult: number }>
+//   ② TETRIS_DIFFICULTY_START_LEVEL ← wt-r218-tet(src/renderer/src/games/tetris.ts)
+//      Record<GameDifficulty, number>(起始等级 1/5/9/13,guideline 重力曲线已有)
+//   ③ 各作 state.difficulty?: GameDifficulty 字段 ← sv/tdsl/tet 三分支
+//      (SurvivalState / GameState / SlashState / TetrisState;shell 在开局时
+//      写入,引擎 tick 内读各自参数表)——在字段落地前用 setEngineDifficulty
+//      宽类型写入,字段存在后可直接赋值并删该 helper。
+const TD_DIFFICULTY_PARAMS: Record<GameDifficulty, { lives: number; startCoins: number; hpMult: number }> = {
+  // spec §三 TD:lives 30/20/14/10 ×起始金 +50%/0/-15%/-25%(基线 220);
+  // casual/standard 与 R204 现值逐字对齐(30+300 / 20+220)。
+  casual: { lives: 30, startCoins: 300, hpMult: 0.8 },
+  standard: { lives: 20, startCoins: 220, hpMult: 1 },
+  hard: { lives: 14, startCoins: 187, hpMult: 1.25 },
+  insane: { lives: 10, startCoins: 165, hpMult: 1.5 },
+}
+const TETRIS_DIFFICULTY_START_LEVEL: Record<GameDifficulty, number> = {
+  casual: 1, standard: 5, hard: 9, insane: 13,
+}
+/** 宽类型写入引擎 difficulty 字段(字段由各作分支落地;交集类型可赋值)。 */
+function setEngineDifficulty(state: object, d: GameDifficulty): void {
+  ;(state as { difficulty?: GameDifficulty }).difficulty = d
+}
+// ── TODO(r218-merge) shim 块结束 ──────────────────────────────────────────────
 
 /** R207(FR-G04): 手势指示器(vision-pad)全局开关——默认关闭,持久化。 */
 function readVisionPadVisible(): boolean {
@@ -230,9 +263,11 @@ export function MiniGamesView(): JSX.Element {
   // R201: TD 无尽模式 + 放置悬停预览(F6)
   const [tdEndless, setTdEndless] = useState(false)
   const [tdHover, setTdHover] = useState<{ x: number; y: number } | null>(null)
-  // R204: 难度二档(按作)
+  // R204: 难度二档(按作) → R218 U4: 四档
   const [difficulty, setDifficulty] = useState<Difficulty>(() => readDifficulty('td'))
   const [bests, setBests] = useState<Record<GameKey, number>>({ ...bestRef.current })
+  /** R218 U4: 本局难度(开局时定格)——结算分数 ×DIFFICULTY_SCORE_MULT 挂街机档案。 */
+  const runDifficultyRef = useRef<GameDifficulty>('standard')
   // ── R198(FR-G01): 教练条 + 首局引导 ──
   const [coachHint, setCoachHint] = useState<CoachHint | null>(null)
   const [coachOff, setCoachOff] = useState(() => {
@@ -484,7 +519,10 @@ export function MiniGamesView(): JSX.Element {
     setTetrisSnapshot({ ...tetrisRef.current, keys: new Set(tetrisRef.current.keys), queue: [...tetrisRef.current.queue] })
   }, [])
 
-  const settleBest = useCallback((game: GameKey, score: number, durationSec = 0, highlight = ''): void => {
+  const settleBest = useCallback((game: GameKey, rawScore: number, durationSec = 0, highlight = ''): void => {
+    // R218 U4: 街机档案按难度倍率记账(1×/1.5×/2×/3×)——best/daily/遥测/
+    // recap 全部一致地以乘后分呈现(引擎内局中显示保持原始分)。
+    const score = Math.floor(rawScore * DIFFICULTY_SCORE_MULT[runDifficultyRef.current])
     const prev = bestRef.current[game]
     const best = Math.max(prev, score)
     if (best > prev) {
@@ -1303,11 +1341,15 @@ export function MiniGamesView(): JSX.Element {
     }
     // FR-G08: 闪电赛——6 波上限(引擎 targetWaves 读 blitz)
     tdStateRef.current.blitz = tdBlitzOnRef.current
-    // R204: TD 难度二档(休闲 30 命+300 金 / 标准 20+220)
+    // R204→R218 U4: TD 难度四档开局参数(lives/起始金;敌 HP 系数由引擎读
+    // difficulty 字段自算——TODO(r218-merge) 后走 td.ts 真实参数表)。
     if (tdStateRef.current.wave === 0 && tdStateRef.current.towers.length === 0) {
       const d = readDifficulty('td')
-      tdStateRef.current.lives = d === 'casual' ? 30 : 20
-      tdStateRef.current.coins = d === 'casual' ? 300 : 220
+      runDifficultyRef.current = d
+      const params = TD_DIFFICULTY_PARAMS[d]
+      tdStateRef.current.lives = params.lives
+      tdStateRef.current.coins = params.startCoins
+      setEngineDifficulty(tdStateRef.current, d)
     }
     const state = tdStateRef.current
     if (state.phase === 'ready') {
@@ -1486,6 +1528,10 @@ export function MiniGamesView(): JSX.Element {
     }
     // FR-G08: 90 秒冲刺——时限到走既有 lost 结算(分数保留)
     survivalRef.current.sprintSeconds = swarmSprintOnRef.current ? 90 : undefined
+    // R218 U4: 难度写入引擎(eHP 四档参数由 sv 分支在 tick 内生效)
+    const difficulty = readDifficulty('survival')
+    runDifficultyRef.current = difficulty
+    setEngineDifficulty(survivalRef.current, difficulty)
     // R213: 4P 名册部署(人数选择;swarmCoopOn 开关是人数=2 的快捷别名)与场景背景
     const count = Math.max(1, Math.min(4, swarmPlayersRef.current)) as 1 | 2 | 3 | 4
     deployPlayers(survivalRef.current, count)
@@ -1497,10 +1543,12 @@ export function MiniGamesView(): JSX.Element {
   startRunRef.current = startSurvivalRun
   // R142-E4: slash uses the same unified start entry (pinch/open-palm/chord)
   const startSlashRunCb = useCallback(() => {
-    // R204: Slash 难度二档(休闲 5 心 / 标准 3 心)
+    // R204: Slash 难度二档 → R218 U4 四档。R204 的「开局前写 maxHearts/
+    // hearts」实为死代码——startSlash 内 Object.assign(s, initialSlashState())
+    // 会把两字段重置回 3(本分支删除该写入,难度语义整体移交引擎侧:
+    // tdsl 分支的 SLASH_DIFFICULTY_PARAMS/血条化在读 difficulty 字段生效)。
     const d = readDifficulty('slash')
-    slashRef.current.maxHearts = d === 'casual' ? 5 : 3
-    slashRef.current.hearts = slashRef.current.maxHearts
+    runDifficultyRef.current = d
     // FR-G08: 30 秒爆发——startSlash 可选时长(T1 引擎支持)
     // R208 (FR-MP03): 轮换对决——首次开局部署回合机(P1 先手)
     if (duelRef.current === null && slashDuelOnRef.current) {
@@ -1509,6 +1557,8 @@ export function MiniGamesView(): JSX.Element {
       setDuel(fresh)
     }
     startSlash(slashRef.current, slashBurstOnRef.current ? 30 : RUN_SECONDS)
+    // R218 U4: difficulty 必须在 startSlash 之后写(Object.assign 会覆盖先前字段)
+    setEngineDifficulty(slashRef.current, d)
     publishSlash()
   }, [publishSlash])
   slashStartRef.current = startSlashRunCb
@@ -1582,12 +1632,17 @@ export function MiniGamesView(): JSX.Element {
   }, [])
 
   const startTetrisRun = useCallback(() => {
+    // R218 U4: Tetris 难度=起始等级(1/5/9/13,重力曲线 0.8×0.85^(lv-1) 已有)。
+    const d = readDifficulty('tetris')
+    runDifficultyRef.current = d
+    const startLevel = TETRIS_DIFFICULTY_START_LEVEL[d]
     // R209 三期(FR-LN05): LAN Tetris 对战——双方各跑本地引擎(事件同步),
     // 种子开局(host 建房生成/guest 经 welcome 收取)保证 piece 序列一致;
     // 本地双板开关在该模式下不参与(对手即远端板);断线不恢复,重开即新局。
     if (lanRoleRef.current !== 'idle' && lanGameRef.current === 'tetris') {
       tetrisRef.current = initialTetrisState(lanSeedRef.current ?? undefined)
       tetrisBRef.current = initialTetrisState()
+      tetrisRef.current.level = startLevel
       setLanTetrisScore(null)
       startTetris(tetrisRef.current)
       publishTetris()
@@ -1602,8 +1657,10 @@ export function MiniGamesView(): JSX.Element {
     tetrisRef.current.raceLines = tetrisRaceOnRef.current ? 40 : undefined
     tetrisBRef.current.raceLines = tetrisRaceOnRef.current ? 40 : undefined
     tetrisRef.current.boardX = tetrisDuelOnRef.current ? 150 : 300
+    tetrisRef.current.level = startLevel
     if (tetrisDuelOnRef.current) {
       tetrisBRef.current.boardX = 560
+      tetrisBRef.current.level = startLevel
       startTetris(tetrisBRef.current)
     }
     startTetris(tetrisRef.current)
@@ -2114,18 +2171,18 @@ export function MiniGamesView(): JSX.Element {
         <section className="games-canvas-panel panel">
           <div className="games-canvas-wrap" ref={canvasWrapRef}>
             {/* R206(FR-G03.5): fs 暂停浮层(Esc 呼出;继续/重开/退出全屏/返回 hub) */}
-            {/* R204(FR-G05.2): 难度二档——ready 态选择,持久化 */}
+            {/* R204(FR-G05.2)→R218 U4: 难度四档——ready 态选择,分数倍率 1×/1.5×/2×/3×,持久化 */}
             {phase === 'ready' ? (
               <div className="difficulty-picker" data-field="difficulty">
                 <span>{t('games.difficulty.label')}</span>
-                {(['casual', 'standard'] as const).map((d) => (
+                {GAME_DIFFICULTIES.map((d) => (
                   <button
                     key={d}
                     type="button"
                     className={`diff-btn ${difficulty === d ? 'on' : ''}`}
                     data-diff={d}
                     onClick={() => { setDifficulty(d); writeDifficulty(screen, d) }}
-                  >{t(`games.difficulty.${d}` as Parameters<typeof t>[0])}</button>
+                  >{t(`games.difficulty.${d}`)}<em className="diff-mult">{DIFFICULTY_SCORE_MULT[d]}×</em></button>
                 ))}
                 {/* R208: 本地双人开关——Slash 轮换对决 / TD 分工合作(仅这两作) */}
                 {isSlash ? (
