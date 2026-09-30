@@ -3833,3 +3833,12 @@
 - **R217.3 性能护栏（「不影响游戏体验」硬约束）**：DPR 钳制 ≤2（最坏 1800×1040 backing，像素 4×、绘制调用数不变，canvas 2D 矢量光栅化 GPU 加速可承受）；不加 per-frame shadowBlur 类昂贵后处理（现有少量 glow 保留）；帧率以诊断口径验证。
 - **R217.4 验收点**：①hdCanvas 纯函数单测（dpr 钳制/900 下限/比例恒定/输入容错）；②typecheck+games 域测试+全量 0 失败；③`ui:snapshot` games 基线重立（有意视觉变更）9/9；④CDP 放大截图对比锯齿改善 + 游戏运行帧率正常（rAF 稳定 60）；⑤四作（survival/td/tetris/slash）+fs 态视觉复核。
 - **R217.5 状态**：✅（2026-09-30 同日实施闭环）——`games/hdCanvas.ts`（computeHdSize：dpr 钳制 ≤2/900 逻辑下限/900:520 比例锁定/退化输入回退）+ MiniGamesView 进游戏 effect 改造（applyHdSize 初始化 + ResizeObserver 跟踪 CSS 盒寸与 dpr 变化，每帧 loop 头 `setTransform(scale)` 映射逻辑 900×520→物理 backing + `imageSmoothingQuality='high'`）；绘制函数/输入映射/LAN 插值零改动。**证据**：①hdCanvas 6 用例（钳制/下限/比例/容错/整数化）；②typecheck 双绿 + 全量 **154 files/1393 passed 0 失败**（连续两次，首次跑的 1 failed 为已知并发 timing flaky 单独复跑全绿）；③`ui:snapshot` 重立后 9/9 GATE PASS；④CDP 实测（scripts/r217-verify.mjs 入库）：cssW 950→backing 950（≥900 下限生效，本机 dpr=1；dpr 2/1.25 路径由单测覆盖）、rAF **fps ~64**（游戏体验无影响）、放大截图 AI 视觉复核「实体边缘干净锐利无阶梯锯齿/渐变自然/HUD 清晰」（docs/ui-review/r217/）；⑤四作共画布同管线一次修复。用户高 DPI 屏将获 cssW×2 backing（最坏 1800×1040，像素 4× 调用数不变）。
+
+### R218. `feat`（规划） — 蜂群生存战「质感与可玩性」升级轮（2026-09-30 用户实机反馈 8 项；方案文档待用户 review 批准后实施）
+
+> 用户原文要点：HUD 半透明不占画面/角色圆形过大拥挤/背景单调按商业游戏加强策略与角色/所有手柄支持开始重开（PS5 柄无法启动）/敌对势力更多角色有层次感/生命值改血条按难度挂钩要有科学算法依据/多人角色信息按屏幕居中实时更新/开始界面选择项太多优化布局——用户明确要求「优化我的需求并扩展之后让我 review 之后再实施」。
+
+- **R218.0 方案文档**：[`docs/superpowers/specs/2026-09-30-swarm-playability-upgrade-design.md`](../superpowers/specs/2026-09-30-swarm-playability-upgrade-design.md)——现状代码盘点（8 维度差距表）+ A-H 八模块设计（HUD 半透明层/实体尺寸重校+宽容判定≤80%/背景三层景深+战斗响应/敌人 8 种行为正交矩阵+tank·swarm·shooter·splitter·healer 新种/血条化+四档难度 eHP 数值表(休闲10HP×0.65→炼狱3HP×1.6,容错16/10/6/3 次依据)/手柄 Start 四作通用化(修 pi===0 限制+非 standard mapping 兜底)/多人 HUD 自适应分列居中/ready 态 Hick≤5+抽屉折叠+选择记忆）+ 扩展 juice 三项 + 分期 S1(手柄+ready+血条)→S2(视觉)→S3(敌人内容)。
+- **R218.1 边界**：不改核心循环语义；不动 LAN 与其它三作数值（手柄层除外）；零新依赖。
+- **R218.2 验收**（实施轮细化）：各期 typecheck/单测/全量/ui:snapshot/CDP 视觉+帧率；S3 加威胁值数值模拟单测；PS5 DualSense 实机手柄验收。
+- **R218.3 状态**：⏳（待用户 review 方案文档并批准；批准后转 🔄 按分期实施）
