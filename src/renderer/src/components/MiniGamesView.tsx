@@ -18,6 +18,7 @@ import {
   MAX_WAVE,
   SELL_REFUND,
   castMeteor,
+  extrapolateBalloons,
 
   TOWER_DEFINITIONS,
   TOWER_MAX_LEVEL,
@@ -340,6 +341,11 @@ export function MiniGamesView(): JSX.Element {
   const lanRoleRef = useRef<'idle' | 'host' | 'guest'>('idle')
   lanRoleRef.current = lanRole
   const lanSnapRef = useRef<GameState | null>(null)
+  /** R209 三期: 客端插值基——最近一帧快照的 balloons 深拷贝+词缀与到达
+   *  时间戳(逐帧外推的只读基准;tdStateRef.current 与快照同对象,直接改
+   *  它的 balloons 会污染基准,故存副本)。 */
+  const lanSnapExRef = useRef<{ balloons: GameState['balloons']; affix: GameState['affix'] } | null>(null)
+  const lanSnapAtRef = useRef(0)
   const lanPeersRef = useRef(0)
   const [lanNotice, setLanNotice] = useState<string | null>(null)
   const buildTowerAtRef = useRef((_point: { x: number; y: number }) => undefined)
@@ -838,6 +844,12 @@ export function MiniGamesView(): JSX.Element {
             } catch { /* 序列化失败丢帧 */ }
           }
         }
+        // R209 三期: 客端插值渲染——气球按 now-snapAt 恒速外推(progress 线性,
+        // 每帧从快照基准重算不叠加;dt 钳 0.3s 防挂起后整段跳跃;逃逸/扣命
+        // 仍由房主权威快照裁决,外推只管视觉平滑)。
+        if (lanRoleRef.current === 'guest' && lanSnapExRef.current !== null) {
+          tdStateRef.current.balloons = extrapolateBalloons(lanSnapExRef.current, Math.min(0.3, (now - lanSnapAtRef.current) / 1000))
+        }
         const phase = tdStateRef.current.phase
         if ((phase === 'won' || phase === 'lost') && lastPhase !== phase && lanRoleRef.current !== 'guest') {
           settleBest('td', tdStateRef.current.score, tdStateRef.current.clock, `波次 ${tdStateRef.current.wave}`)
@@ -1323,6 +1335,9 @@ export function MiniGamesView(): JSX.Element {
         // 快照直接落引擎 ref——统计条/ctl 行/绘制全部复用既有通路
         lanSnapRef.current = e.detail as GameState
         tdStateRef.current = lanSnapRef.current
+        // R209 三期: 插值基准换新(深拷贝 balloons,防逐帧外推污染快照)
+        lanSnapExRef.current = { balloons: tdStateRef.current.balloons.map((b) => ({ ...b })), affix: tdStateRef.current.affix }
+        lanSnapAtRef.current = performance.now()
         publishTd()
       } else if (e.kind === 'peer-joined' && e.detail && typeof e.detail === 'object' && 'joined' in e.detail) {
         lanPeersRef.current += 1
