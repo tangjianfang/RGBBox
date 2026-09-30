@@ -34,18 +34,20 @@ function maxedTaken(): Record<UpgradeId, number> {
 describe('renderer/games/swarmMeta (R101)', () => {
   it('characters inject passives into initial stats', () => {
     const bulwark = initialSurvivalState('bulwark')
-    expect(bulwark.player.maxHp).toBe(8)
+    // R218 E: maxHp 基数 5→7(standard 档),角色 hpMod 仍叠加
+    expect(bulwark.player.maxHp).toBe(10)
     expect(bulwark.stats.thorns).toBe(1)
     const volt = initialSurvivalState('volt')
     expect(volt.stats.blade).toBe(1)
     expect(volt.stats.fireRate).toBeGreaterThan(2)
-    expect(volt.player.maxHp).toBe(4)
+    expect(volt.player.maxHp).toBe(6)
     expect(initialSurvivalState('wisp').xpMult).toBeGreaterThan(1.1)
   })
 
   it('permanent upgrades compound stats and max HP at run start', () => {
     const state = initialSurvivalState('wisp', { ...EMPTY_PERM, damage: 3, maxHp: 2, fireRate: 2 })
-    expect(state.player.maxHp).toBe(7)
+    // R218 E: standard 基数 7 + perm 2
+    expect(state.player.maxHp).toBe(9)
     expect(state.stats.damage).toBeCloseTo(1.3, 5)
     expect(state.stats.fireRate).toBeGreaterThan(2)
   })
@@ -147,7 +149,7 @@ describe('renderer/games/swarmMeta (R101)', () => {
     expect(initialSurvivalState('wisp', EMPTY_PERM, ['chrono']).timeScale).toBe(1.25)
     expect(initialSurvivalState('wisp', EMPTY_PERM, ['famine']).xpMult).toBeLessThan(initialSurvivalState('wisp', EMPTY_PERM, []).xpMult)
     expect(initialSurvivalState('wisp', EMPTY_PERM, ['bounty']).coinMult).toBe(2)
-    expect(initialSurvivalState('wisp', EMPTY_PERM, ['magnetWell']).stats.magnet).toBeCloseTo(130, 5)
+    expect(initialSurvivalState('wisp', EMPTY_PERM, ['magnetWell']).stats.magnet).toBeCloseTo(116, 5) // R218 B: 基础磁吸 70→56
     expect(initialSurvivalState('wisp', EMPTY_PERM, ['pain']).invulnWindow).toBe(0.5)
   })
 
@@ -158,7 +160,8 @@ describe('renderer/games/swarmMeta (R101)', () => {
     state.enemies.push({ id: 9, x: state.player.x + 300, y: state.player.y, vx: 0, vy: 0, size: 12, hp: 0, maxHp: 1, kind: 'chaser', elite: false, hitFlash: 0 })
     tickSurvival(state, 0.016)
     tickSurvival(state, 0.016)
-    expect(state.score).toBe(Math.floor((10 + 1) * 1.15))
+    // R218 E: 分数再乘 standard 档难度倍率 1.5(DIFFICULTY_SCORE_MULT)
+    expect(state.score).toBe(Math.floor((10 + 1) * 1.15 * 1.5))
   })
 
   it('runCoinsFor applies the bounty multiplier', () => {

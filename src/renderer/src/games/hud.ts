@@ -78,11 +78,17 @@ export function drawHealthBar (
   ctx.save()
   ctx.beginPath()
   ctx.roundRect(x + 1.5, y + 1.5, Math.max(0, (w - 3) * r), h - 3, 6)
+  // R218: 测试环境(happy-dom noop ctx)的 createLinearGradient 可能返回
+  // undefined——退回首 stop 纯色(与 games/scene.ts vgrad 同一防御模式)。
   const g = ctx.createLinearGradient(x, y, x + w, y)
-  if (r > 0.5) { g.addColorStop(0, '#34d399'); g.addColorStop(1, '#6ee7a9') }
-  else if (r > 0.25) { g.addColorStop(0, '#fbbf24'); g.addColorStop(1, '#fcd34d') }
-  else { g.addColorStop(0, '#f87171'); g.addColorStop(1, '#fca5a5') }
-  ctx.fillStyle = g
+  if (g) {
+    if (r > 0.5) { g.addColorStop(0, '#34d399'); g.addColorStop(1, '#6ee7a9') }
+    else if (r > 0.25) { g.addColorStop(0, '#fbbf24'); g.addColorStop(1, '#fcd34d') }
+    else { g.addColorStop(0, '#f87171'); g.addColorStop(1, '#fca5a5') }
+    ctx.fillStyle = g
+  } else {
+    ctx.fillStyle = r > 0.5 ? '#34d399' : r > 0.25 ? '#fbbf24' : '#f87171'
+  }
   if (r <= pulseThreshold) {
     ctx.globalAlpha = 0.72 + 0.28 * Math.abs(Math.sin(t * Math.PI * 2 * 1.2))
   }
@@ -110,10 +116,15 @@ export function drawAlertVignette (
   if (intensity <= 0) return
   const a = Math.min(0.5, intensity) * (0.6 + 0.4 * Math.abs(Math.sin(t * Math.PI * 2 * 0.8)))
   const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.42, w / 2, h / 2, Math.max(w, h) * 0.72)
-  g.addColorStop(0, 'rgba(248,113,113,0)')
-  g.addColorStop(1, `rgba(248,113,113,${a})`)
   ctx.save()
-  ctx.fillStyle = g
+  if (g) {
+    g.addColorStop(0, 'rgba(248,113,113,0)')
+    g.addColorStop(1, `rgba(248,113,113,${a})`)
+    ctx.fillStyle = g
+  } else {
+    // R218: noop ctx(测试环境)退化为低透明度平涂(防御,同 scene.ts vgrad 模式)
+    ctx.fillStyle = `rgba(248,113,113,${a * 0.25})`
+  }
   ctx.fillRect(0, 0, w, h)
   ctx.restore()
 }

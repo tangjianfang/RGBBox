@@ -1,7 +1,7 @@
 // R213: 六场景程序化背景模块测试——node 环境 + 最小记录式 ctx stub
 // (canvas 2d 在 node 无实现,用记录调用的 mock 验证:可绘制/调用充足/确定性/视差/未知 id)。
 import { describe, it, expect } from 'vitest'
-import { SCENE_IDS, drawScene, type SceneId } from '../../../src/renderer/src/games/scene'
+import { SCENE_IDS, drawScene, parallaxShift, PARALLAX_AMP, PARALLAX_LAYERS, type SceneId } from '../../../src/renderer/src/games/scene'
 
 interface Recorder {
   ctx: CanvasRenderingContext2D
@@ -120,5 +120,44 @@ describe('R213 scenes (games/scene 六场景程序化背景)', () => {
   it('未知场景 id 显式抛错(不静默 no-op)', () => {
     const r = makeCtx()
     expect(() => drawScene('volcano' as SceneId, { ctx: r.ctx, ...base })).toThrow(/unknown scene id/)
+  })
+})
+
+// ── R218 U10: offset 视差 + darken 天色压暗(动态背景) ────────────────────────
+describe('R218 U10 scenes offset/darken (视差动态背景)', () => {
+  it('parallaxShift: offset 缺省为 0;位移 = -offset × 系数 × 振幅;三档系数在舒适区', () => {
+    expect(parallaxShift(undefined, PARALLAX_LAYERS.near)).toEqual({ x: 0, y: 0 })
+    const farShift = parallaxShift({ x: 1, y: 0 }, PARALLAX_LAYERS.far)
+    expect(farShift.x).toBeCloseTo(-PARALLAX_LAYERS.far * PARALLAX_AMP, 5)
+    expect(farShift.y).toBeCloseTo(0, 5)
+    const midShift = parallaxShift({ x: -0.5, y: 0.25 }, PARALLAX_LAYERS.mid)
+    expect(midShift.x).toBeCloseTo(0.5 * PARALLAX_LAYERS.mid * PARALLAX_AMP, 5)
+    expect(midShift.y).toBeCloseTo(-0.25 * PARALLAX_LAYERS.mid * PARALLAX_AMP, 5)
+    expect(PARALLAX_LAYERS.far).toBe(0.05)
+    expect(PARALLAX_LAYERS.mid).toBe(0.1)
+    expect(PARALLAX_LAYERS.near).toBe(0.15)
+  })
+
+  it('六场景带 offset 可调用,且视差层真的移动(调用序列变化)', () => {
+    for (const id of SCENE_IDS) {
+      const a = makeCtx()
+      const b = makeCtx()
+      drawScene(id, { ctx: a.ctx, ...base })
+      drawScene(id, { ctx: b.ctx, ...base, offset: { x: 0.8, y: -0.6 } })
+      expect(() => drawScene(id, { ctx: b.ctx, ...base, offset: { x: 0, y: 0 } }), `scene ${id} offset 绘制`).not.toThrow()
+      expect(a.ops, `scene ${id} offset 响应`).not.toEqual(b.ops)
+    }
+  })
+
+  it('darken: 整幅叠暗罩(收尾多一次全画布 fillRect)', () => {
+    const a = makeCtx()
+    const b = makeCtx()
+    drawScene('station', { ctx: a.ctx, ...base })
+    const before = a.fillRectOps.length
+    drawScene('station', { ctx: b.ctx, ...base, darken: 0.4 })
+    expect(b.fillRectOps.length).toBeGreaterThanOrEqual(before + 1)
+    const last = b.fillRectOps[b.fillRectOps.length - 1]
+    expect(last[2]).toBe(base.w)
+    expect(last[3]).toBe(base.h)
   })
 })

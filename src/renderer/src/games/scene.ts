@@ -19,6 +19,23 @@ export interface SceneCtx {
   /** 玩家位置(视差微偏移用,系数 ≤0.05)。 */
   px: number
   py: number
+  /** R218 U10: 视差偏移(归一化 ±1,玩家质心/摄像机派生)。视差层按各自深度
+   *  系数 0.05/0.10/0.15 反向偏移(近层强远层弱),远景不动。可选,缺省 0。 */
+  offset?: { x: number; y: number }
+  /** R218 U10: 天色压暗(0-1;boss 登场等事件,整幅叠暗罩)。可选。 */
+  darken?: number
+}
+
+/** R218 U10: 视差三档深度系数(远/中/近;2D 舒适区 0.05-0.15)。 */
+export const PARALLAX_LAYERS = { far: 0.05, mid: 0.1, near: 0.15 } as const
+
+/** R218 U10: offset=±1 时近层最大位移(px)。 */
+export const PARALLAX_AMP = 80
+
+/** R218 U10: 视差层位移 = -offset × 深度系数 × 振幅(反向;offset 缺省为 0)。 */
+export function parallaxShift(offset: { x: number; y: number } | undefined, coef: number): { x: number; y: number } {
+  if (offset === undefined) return { x: 0, y: 0 }
+  return { x: -offset.x * coef * PARALLAX_AMP, y: -offset.y * coef * PARALLAX_AMP }
 }
 
 export const SCENE_IDS: SceneId[] = ['station', 'desert', 'snow', 'grass', 'ocean', 'fusion']
@@ -50,11 +67,14 @@ function drawStation(s: SceneCtx): void {
   const { ctx, w, h, t } = s
   ctx.fillStyle = vgrad(ctx, 0, 0, 0, h, [[0, '#070514'], [0.55, '#150e33'], [1, '#0b1c3a']])
   ctx.fillRect(0, 0, w, h)
-  const ox = (s.px - w / 2) * 0.02
-  const oy = (s.py - h / 2) * 0.015
-  // 静态星场(seed 数组,闪烁走 t,位置不动)
-  for (let i = 0; i < 70; i++) {
-    const x = hash(i * 1.37) * w
+  // R218 U10: 视差偏移(远层星场/行星,近层舱段)
+  const far = parallaxShift(s.offset, PARALLAX_LAYERS.far)
+  const near = parallaxShift(s.offset, PARALLAX_LAYERS.near)
+  const ox = (s.px - w / 2) * 0.02 + far.x
+  const oy = (s.py - h / 2) * 0.015 + far.y
+  // 星场(seed 数组,闪烁走 t;R218 U10: 加密 70→96 并叠加缓慢星尘漂移)
+  for (let i = 0; i < 96; i++) {
+    const x = wrap(hash(i * 1.37) * w - t * (2 + hash(i * 2.13) * 5), w + 4) - 2
     const y = hash(i * 2.71 + 5) * h * 0.8
     const size = 0.6 + hash(i * 3.3 + 9) * 1.7
     ctx.globalAlpha = 0.25 + 0.55 * (0.5 + 0.5 * Math.sin(t * 1.6 + hash(i * 4.4) * 6.28))
@@ -80,7 +100,7 @@ function drawStation(s: SceneCtx): void {
     const len = 70 + m * 26
     const speed = 12 + m * 7
     const period = w + len * 2
-    const x = wrap(hash(m * 9.1 + 3) * period - t * speed, period) - len
+    const x = wrap(hash(m * 9.1 + 3) * period - t * speed, period) - len + near.x
     const y = h * (0.16 + 0.17 * m) + oy * (1 + m)
     ctx.save()
     ctx.translate(x, y)
@@ -101,8 +121,9 @@ function drawDesert(s: SceneCtx): void {
   const { ctx, w, h, t } = s
   ctx.fillStyle = vgrad(ctx, 0, 0, 0, h, [[0, '#8a4a20'], [0.5, '#c4763a'], [1, '#eec27f']])
   ctx.fillRect(0, 0, w, h)
-  // 大落日(柔光两圈 + 实心盘)
-  const sunX = w * 0.68 + (s.px - w / 2) * 0.012
+  // 大落日(柔光两圈 + 实心盘;R218 U10 远层视差)
+  const farD = parallaxShift(s.offset, PARALLAX_LAYERS.far)
+  const sunX = w * 0.68 + (s.px - w / 2) * 0.012 + farD.x
   const sunY = h * 0.42
   ctx.fillStyle = 'rgba(255, 214, 153, 0.16)'
   ctx.beginPath(); ctx.arc(sunX, sunY, 88, 0, Math.PI * 2); ctx.fill()
@@ -116,13 +137,16 @@ function drawDesert(s: SceneCtx): void {
     [0.74, 34, 2.1, 2.2, '#b97f45'],
     [0.88, 42, 2.7, 4.1, '#8f5a2c'],
   ]
+  // R218 U10: 三层沙丘按远/中/近三档系数视差(x 移相位,y 移层高)
+  const duneTiers = [PARALLAX_LAYERS.far, PARALLAX_LAYERS.mid, PARALLAX_LAYERS.near]
   dunes.forEach(([yr, amp, freq, phase, color], i) => {
-    const offY = (s.py - h / 2) * 0.01 * (i + 1)
+    const tier = parallaxShift(s.offset, duneTiers[i])
+    const offY = (s.py - h / 2) * 0.01 * (i + 1) + tier.y
     ctx.fillStyle = color
     ctx.beginPath()
     ctx.moveTo(0, h * yr)
     for (let x = 0; x <= w; x += 16) {
-      ctx.lineTo(x, h * yr + Math.sin((x / w) * Math.PI * freq + phase) * amp + offY)
+      ctx.lineTo(x, h * yr + Math.sin(((x + tier.x) / w) * Math.PI * freq + phase) * amp + offY)
     }
     ctx.lineTo(w, h)
     ctx.lineTo(0, h)
@@ -156,8 +180,9 @@ function drawSnow(s: SceneCtx): void {
   for (const a of auroras) {
     ctx.globalAlpha = a.alpha
     ctx.fillStyle = a.color
+    const auroraFar = parallaxShift(s.offset, PARALLAX_LAYERS.far)
     const top = (x: number): number =>
-      h * 0.18 + Math.sin((x / w) * Math.PI * 2.2 + a.phase + t * a.speed) * h * 0.06 + (s.px - w / 2) * 0.008
+      h * 0.18 + Math.sin((x / w) * Math.PI * 2.2 + a.phase + t * a.speed) * h * 0.06 + (s.px - w / 2) * 0.008 + auroraFar.y * 0.5
     ctx.beginPath()
     ctx.moveTo(0, top(0))
     for (let x = 0; x <= w; x += 18) ctx.lineTo(x, top(x))
@@ -168,8 +193,8 @@ function drawSnow(s: SceneCtx): void {
     ctx.fill()
   }
   ctx.globalAlpha = 1
-  // 远山剪影(确定性锯齿天际线,轻视差)
-  const ox = (s.px - w / 2) * 0.015
+  // 远山剪影(确定性锯齿天际线,轻视差 + R218 U10 中层)
+  const ox = (s.px - w / 2) * 0.015 + parallaxShift(s.offset, PARALLAX_LAYERS.mid).x
   ctx.fillStyle = '#16324a'
   ctx.beginPath()
   ctx.moveTo(-40 + ox, h * 0.66)
@@ -188,11 +213,12 @@ function drawSnow(s: SceneCtx): void {
   ctx.fillStyle = vgrad(ctx, 0, h * 0.66, 0, h, [[0, '#c8dcea'], [1, '#eef6fb']])
   ctx.fillRect(0, h * 0.66, w, h * 0.34)
   // 两层飘雪(后层小而慢、前层大而快;纯 t 公式,帧间不存状态)
+  const snowNear = parallaxShift(s.offset, PARALLAX_LAYERS.near)
   const snowLayer = (count: number, sizeMin: number, sizeMax: number, speedMin: number, speedMax: number, alpha: number): void => {
     for (let i = 0; i < count; i++) {
       const speed = speedMin + hash(i * 8.3) * (speedMax - speedMin)
       const y = wrap(hash(i * 6.1) * h + t * speed, h + 8) - 4
-      const x = wrap(hash(i * 12.7 + 1) * w + Math.sin(t * 0.8 + i) * 18, w + 8) - 4
+      const x = wrap(hash(i * 12.7 + 1) * w + Math.sin(t * 0.8 + i) * 18 + snowNear.x * (0.5 + alpha), w + 8) - 4
       const size = sizeMin + hash(i * 2.3) * (sizeMax - sizeMin)
       ctx.globalAlpha = alpha
       ctx.fillStyle = '#f4fbff'
@@ -209,8 +235,8 @@ function drawGrass(s: SceneCtx): void {
   const { ctx, w, h, t } = s
   ctx.fillStyle = vgrad(ctx, 0, 0, 0, h, [[0, '#152a17'], [0.5, '#37551f'], [1, '#8a8c3c']])
   ctx.fillRect(0, 0, w, h)
-  // 远树线剪影(半圆拱组成的树冠带,轻视差)
-  const ox = (s.px - w / 2) * 0.012
+  // 远树线剪影(半圆拱组成的树冠带,轻视差 + R218 U10 远层)
+  const ox = (s.px - w / 2) * 0.012 + parallaxShift(s.offset, PARALLAX_LAYERS.far).x
   ctx.fillStyle = '#1d351f'
   ctx.beginPath()
   ctx.moveTo(-20 + ox, h * 0.62)
@@ -228,11 +254,13 @@ function drawGrass(s: SceneCtx): void {
     { baseY: 0.78, color: '#3a5a20', sway: 0.8, step: 22, hgt: 0.14 },
     { baseY: 0.9, color: '#2c481b', sway: 1.15, step: 18, hgt: 0.19 },
   ]
+  const rowTiers = [PARALLAX_LAYERS.mid, PARALLAX_LAYERS.near, PARALLAX_LAYERS.near]
   rows.forEach((row, ri) => {
     ctx.strokeStyle = row.color
     ctx.lineWidth = 2
-    const y0 = h * row.baseY + (s.py - h / 2) * 0.008 * (ri + 1)
-    const shift = ox * (ri + 1)
+    const tier = parallaxShift(s.offset, rowTiers[ri])
+    const y0 = h * row.baseY + (s.py - h / 2) * 0.008 * (ri + 1) + tier.y
+    const shift = ox * (ri + 1) + tier.x
     for (let x = -10; x <= w + 10; x += row.step) {
       const xx = x + shift
       const phase = xx * 0.02 + ri * 1.3
@@ -264,8 +292,10 @@ function drawOcean(s: SceneCtx): void {
   ctx.fillStyle = vgrad(ctx, 0, 0, 0, h, [[0, '#0d5e6e'], [0.5, '#074652'], [1, '#03232c']])
   ctx.fillRect(0, 0, w, h)
   // 顶部光柱(3-4 条缓慢摇摆的半透明白梯形,顶端亮根渐隐)
+  const oceanFar = parallaxShift(s.offset, PARALLAX_LAYERS.far)
+  const oceanNear = parallaxShift(s.offset, PARALLAX_LAYERS.near)
   for (let i = 0; i < 4; i++) {
-    const baseX = w * (0.14 + i * 0.24) + (s.px - w / 2) * 0.01
+    const baseX = w * (0.14 + i * 0.24) + (s.px - w / 2) * 0.01 + oceanFar.x
     ctx.save()
     ctx.translate(baseX, -20)
     ctx.rotate(Math.sin(t * 0.35 + i * 1.7) * 0.12)
@@ -281,7 +311,7 @@ function drawOcean(s: SceneCtx): void {
   }
   // 焦散光斑(几个大的低透明度椭圆,随 t 缓慢变形位移)
   for (let i = 0; i < 5; i++) {
-    const ex = w * (0.1 + hash(i * 3.3) * 0.8) + Math.sin(t * 0.25 + i * 2.2) * 40
+    const ex = w * (0.1 + hash(i * 3.3) * 0.8) + Math.sin(t * 0.25 + i * 2.2) * 40 + oceanFar.y
     const ey = h * (0.12 + hash(i * 7.1) * 0.35) + Math.cos(t * 0.2 + i) * 24
     const rx = Math.max(10, 60 + hash(i * 9.7) * 70 + Math.sin(t * 0.4 + i * 1.3) * 14)
     const ry = Math.max(6, rx * (0.32 + Math.sin(t * 0.3 + i) * 0.08))
@@ -295,7 +325,7 @@ function drawOcean(s: SceneCtx): void {
   ctx.fillRect(0, h * 0.88, w, h * 0.12)
   // 底部水草(贝塞尔,相位差摆动)
   for (let i = 0; i < 9; i++) {
-    const baseX = w * (0.04 + i * 0.115) + (s.px - w / 2) * 0.03
+    const baseX = w * (0.04 + i * 0.115) + (s.px - w / 2) * 0.03 + oceanNear.x
     for (let c = 0; c < 3; c++) {
       const bx = baseX + c * 7 - 7
       const height = h * (0.12 + hash(i * 8.8 + c) * 0.16)
@@ -310,7 +340,7 @@ function drawOcean(s: SceneCtx): void {
   }
   // 上升气泡(确定性列,横向微摆)
   for (let col = 0; col < 7; col++) {
-    const colX = w * (0.07 + col * 0.14) + Math.sin(col * 2.1) * 18 + (s.px - w / 2) * 0.02
+    const colX = w * (0.07 + col * 0.14) + Math.sin(col * 2.1) * 18 + (s.px - w / 2) * 0.02 + oceanNear.x * 0.7
     for (let j = 0; j < 4; j++) {
       const speed = 26 + hash(col * 3.1 + j) * 34
       const y = wrap(hash(col * 5.3 + j * 2.7) * (h + 30) + h - t * speed, h + 30) - 15
@@ -330,10 +360,10 @@ function drawFusion(s: SceneCtx): void {
   const { ctx, w, h, t } = s
   ctx.fillStyle = vgrad(ctx, 0, 0, 0, h, [[0, '#0b0721'], [0.5, '#101c33'], [1, '#071e26']])
   ctx.fillRect(0, 0, w, h)
-  // 星空(压低)
-  const ox = (s.px - w / 2) * 0.015
-  for (let i = 0; i < 50; i++) {
-    const x = hash(i * 1.37) * w + ox
+  // 星空(压低;R218 U10 加密 50→72 + 星尘漂移 + 远层视差)
+  const ox = (s.px - w / 2) * 0.015 + parallaxShift(s.offset, PARALLAX_LAYERS.far).x
+  for (let i = 0; i < 72; i++) {
+    const x = wrap(hash(i * 1.37) * w + ox - t * (1.5 + hash(i * 2.13) * 4), w + 4) - 2
     const y = hash(i * 2.71 + 5) * h * 0.7
     ctx.globalAlpha = 0.12 + 0.2 * (0.5 + 0.5 * Math.sin(t * 1.3 + hash(i * 4.4) * 6.28))
     ctx.fillStyle = '#b9c8e8'
@@ -344,10 +374,11 @@ function drawFusion(s: SceneCtx): void {
     { color: '#34d399', phase: 0, speed: 0.6, alpha: 0.07 },
     { color: '#a78bfa', phase: 2.6, speed: 0.45, alpha: 0.06 },
   ]
+  const fusionMid = parallaxShift(s.offset, PARALLAX_LAYERS.mid)
   for (const a of auroras) {
     ctx.globalAlpha = a.alpha
     ctx.fillStyle = a.color
-    const top = (x: number): number => h * 0.16 + Math.sin((x / w) * Math.PI * 2 + a.phase + t * a.speed) * h * 0.05
+    const top = (x: number): number => h * 0.16 + Math.sin((x / w) * Math.PI * 2 + a.phase + t * a.speed) * h * 0.05 + fusionMid.y * 0.5
     ctx.beginPath()
     ctx.moveTo(0, top(0))
     for (let x = 0; x <= w; x += 18) ctx.lineTo(x, top(x))
@@ -358,8 +389,9 @@ function drawFusion(s: SceneCtx): void {
     ctx.fill()
   }
   // 上升气泡(压低:4 列,更淡)
+  const fusionNear = parallaxShift(s.offset, PARALLAX_LAYERS.near)
   for (let col = 0; col < 4; col++) {
-    const colX = w * (0.15 + col * 0.22) + (s.px - w / 2) * 0.02
+    const colX = w * (0.15 + col * 0.22) + (s.px - w / 2) * 0.02 + fusionNear.x
     for (let j = 0; j < 3; j++) {
       const speed = 22 + hash(col * 3.1 + j) * 26
       const y = wrap(hash(col * 5.3 + j * 2.7) * (h + 30) + h - t * speed, h + 30) - 15
@@ -385,9 +417,18 @@ const PAINTERS: Partial<Record<SceneId, ScenePainter>> = {
   fusion: drawFusion,
 }
 
-/** 绘制指定场景背景。未知 id 显式抛错(不静默 no-op,便于接线层尽早发现)。 */
+/** 绘制指定场景背景。未知 id 显式抛错(不静默 no-op,便于接线层尽早发现)。
+ *  R218 U10: darken>0 时整幅叠暗罩(boss 登场天色压暗,中心一处统一处理)。 */
 export function drawScene(id: SceneId, s: SceneCtx): void {
   const paint = PAINTERS[id]
   if (paint === undefined) throw new Error(`[games/scene] unknown scene id: ${String(id)}`)
   paint(s)
+  if (s.darken !== undefined && s.darken > 0) {
+    const { ctx, w, h } = s
+    ctx.save()
+    ctx.globalAlpha = Math.min(0.75, Math.max(0, s.darken))
+    ctx.fillStyle = '#02040a'
+    ctx.fillRect(0, 0, w, h)
+    ctx.restore()
+  }
 }
