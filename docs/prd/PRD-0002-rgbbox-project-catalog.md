@@ -3823,3 +3823,13 @@
 - **R216.4 发版里程碑（AI 审核 gate 替代用户验收 gate）**：全分支 merge 回 feat/games-upgrade → 全量验证链绿 → C 清单 AI 审核（游戏四作 CDP 视觉 review/R130 截图提速脚本取证/TTS 客观指标/R214 关机复验）→ merge main → `dist:dir` 冷启动冒烟 → `dist:win` 出包 → 体积核查（R176.3 口径）。
 - **R216.5 验收点**：①四分支各自 typecheck 双绿 + 域内测试绿 + 提交规范；②merge 后全量 `yarn test` 0 失败 + `yarn build` + `yarn ui:snapshot` 9/9（视觉域变更后按规则重立基线一次）；③各子任务映射条款（R93/R148/R177/R189/R209/R213）状态按证据回写；④E 段批量闭环证据链完整；⑤发版产物 + 体积报告。
 - **R216.6 状态**：✅（2026-09-30 全轮收官）——**开发段**：五分支 g/ai/v/u/u2 全部实施完成并 merge；E 段 42 条批量闭环；最终验证链 typecheck 双绿/全量 **153 files/1387 passed 0 失败**/build/ui-snapshot **9/9 GATE PASS 0.0000%**/hex 0/双主题 contrast 0/0；UI 交互探针三处命中；R93/R148/R177/R189/R209/R213 全部回写 ✅。**发版段**：①dist:dir 冷启动冒烟 ✅（打包产物启动+CDP 9223 连通+日志「capture stack warmed/pool rebuilt」在案；本机 electron zip 缓存残缺致 unpack-electron 缺 electron.exe 的环境坑以 `-c.electronDist=node_modules/electron/dist` 绕过，已记 memory）；②R130 口径：预热机制 ✅、≤500ms 热键 5 轮取证**待用户真机**（SendKeys 键盘注入无人值守会话不可达，环境限制如实保留）；③merge main ✅（ad657a9，tree 与 feat 零差异；未 push origin）；④dist:win ✅ `release/RGBBox-0.3.84-win.zip` **280.7MB**（version 0.3.84 原位未 bump——该号从未发布；体积核查：较 v0.3.17 ~145MB 增量 ~136MB 逐项有条款背书——R95 剪枝后 onnxruntime win-x64 + R90/R172/R212 kokoro/transformers/piper 声文离线栈 + 本轮 R93 ort vendor wasm 28.3MB）；⑤C 清单 AI 审核 6 项真机保留清单见 docs/TODO-pending-tasks.md §C。
+
+### R217. `feat` — 游戏画布高清渲染轮：DPR 级 backing store 消锯齿（2026-09-30 用户反馈「游戏画面的像素太低了，锯齿感很强，请增加高清游戏，要非常有质感。但不能影响游戏体验」）
+
+> 根因：四作共用画布 backing store 固定 **900×520**（`MiniGamesView` 进游戏 effect 一次性赋值），CSS `width:100% + aspect-ratio:900/520` 拉伸到面板/全屏尺寸——高分屏（DPR 1.25-2×）物理像素放大 1.5-3×，矢量边缘光栅化后模糊+锯齿。
+
+- **R217.1 方案（绘制层零改动）**：新增 `src/renderer/src/games/hdCanvas.ts` 纯函数——`computeHdSize(cssW, dpr, maxScale=2)`：backing 宽 = cssW×min(dpr,2)，且**不低于逻辑 900**（防面板小于逻辑分辨率时的缩小模糊）；高按 900/520 比例派生；返回 `{w,h,scale}`（scale=w/900 供 setTransform）。`MiniGamesView` 进游戏 effect 改：按 computeHdSize 设 backing + 每帧 loop 开头 `ctx.setTransform(scale,0,0,scale,0,0)`（逻辑 900×520 坐标系不变，全部 draw 函数零改动）+ `imageSmoothingEnabled=true/quality='high'`（头像/位图放大细腻）。ResizeObserver 监听画布 CSS 尺寸（面板 resize/fs 切换/窗口变化/dpr 变化时重读）更新 backing。
+- **R217.2 不动**：游戏逻辑/输入坐标映射（rect 归一已 CSS 级）/fs HUD hitTest/vision overlay/LAN 快照与插值——全部在逻辑坐标系，与 backing 无关。
+- **R217.3 性能护栏（「不影响游戏体验」硬约束）**：DPR 钳制 ≤2（最坏 1800×1040 backing，像素 4×、绘制调用数不变，canvas 2D 矢量光栅化 GPU 加速可承受）；不加 per-frame shadowBlur 类昂贵后处理（现有少量 glow 保留）；帧率以诊断口径验证。
+- **R217.4 验收点**：①hdCanvas 纯函数单测（dpr 钳制/900 下限/比例恒定/输入容错）；②typecheck+games 域测试+全量 0 失败；③`ui:snapshot` games 基线重立（有意视觉变更）9/9；④CDP 放大截图对比锯齿改善 + 游戏运行帧率正常（rAF 稳定 60）；⑤四作（survival/td/tetris/slash）+fs 态视觉复核。
+- **R217.5 状态**：🔄（2026-09-30 开工）
