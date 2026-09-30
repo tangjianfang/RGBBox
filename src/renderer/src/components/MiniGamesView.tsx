@@ -4,7 +4,7 @@ import { useVisionInput } from '../hooks/useVisionInput'
 import { useI18n } from '../i18n'
 import { drawExitBadge, drawHudButton, drawHudPanel, hitTest, type HudButton } from '../games/hud'
 import { autoPick } from '../games/swarmAutoPick'
-import { buildKeyToPoolMap, loadInputConfigs, type InputConfigs } from '../domain/inputConfig'
+import { assignGamepads, buildKeyToPoolMap, loadInputConfigs, type InputConfigs } from '../domain/inputConfig'
 import { deployPlayers } from '../games/survival'
 import { LanPanel } from './games/LanPanel'
 import { InputConfigPanel } from './games/InputConfigPanel'
@@ -278,6 +278,9 @@ export function MiniGamesView(): JSX.Element {
   const [keyMap, setKeyMap] = useState<Record<string, string>>(() => buildKeyToPoolMap(loadInputConfigs(localStorage)))
   const keyMapRef = useRef<Record<string, string>>({})
   keyMapRef.current = keyMap
+  /** R213 二期: 原始四玩家配置(pollGamepad 的 assignGamepads 映射用;
+   *  InputConfigPanel 应用时同步更新)。 */
+  const inputConfigsRef = useRef<InputConfigs>(loadInputConfigs(localStorage))
   /** R213: P1 配置键→引擎标准箭头键(P1 手感恒定;箭头键恒属 P1)。 */
   const [p1KeyMap, setP1KeyMap] = useState<Record<string, string>>(() => {
     const p1 = loadInputConfigs(localStorage)[0]
@@ -307,6 +310,7 @@ export function MiniGamesView(): JSX.Element {
   useEffect(() => { void refreshAvatars() }, [refreshAvatars])
   /** R213: InputConfigPanel 应用——重建 P1/P2-P4 映射。 */
   const applyInputConfigs = useCallback((configs: InputConfigs) => {
+    inputConfigsRef.current = configs
     setKeyMap(buildKeyToPoolMap(configs))
     const p1 = configs[0]
     setP1KeyMap({
@@ -467,30 +471,57 @@ export function MiniGamesView(): JSX.Element {
     setRecap({ score: Math.floor(score), deltaPct: stats.deltaPct, best, highlight, coach: recapCoachKey(Math.floor(score), stats.totalRuns >= 2 ? prev : null) })
   }, [])
 
-  // R103: poll any connected gamepad each frame — presence detection (no
-  // pairing-event dependency), left stick as analog movement, Start to run.
+  // R103→R213 二期: poll every connected gamepad each frame — presence
+  // detection (no pairing-event dependency) + assignGamepads 玩家→手柄映射
+  // (显式绑定优先+余柄补位,与 InputConfigPanel 绑定 UI 同源);每玩家左
+  // 摇杆写入 axes[pi](P1 仍写 legacy axis——vision 叠加路径不变,axes[0]
+  // 同步双写保数组不变量)。Start 仍限 P1 手柄触发开局。
   const pollGamepad = useCallback(() => {
     if (typeof navigator.getGamepads !== 'function') return
     const pads = navigator.getGamepads()
-    const pad = Array.from(pads).find((item) => item && item.connected) ?? null
-    if (pad) {
-      survivalRef.current.axis = { x: pad.axes[0] ?? 0, y: pad.axes[1] ?? 0 }
-      if (gamepadNameRef.current !== pad.id) {
-        gamepadNameRef.current = pad.id
-        setGamepadName(pad.id)
-      }
-      const startPressed = pad.buttons[9]?.pressed === true
-      if (startPressed && !prevStartRef.current) {
-        const phase = survivalRef.current.phase
-        if (phase === 'ready' || phase === 'lost') startRunRef.current()
-      }
-      prevStartRef.current = startPressed
-    } else {
-      survivalRef.current.axis = { x: 0, y: 0 }
+    const connected = Array.from(pads).filter((item): item is Gamepad => item !== null && item.connected)
+    const axes = survivalRef.current.axes
+    for (let i = 0; i < axes.length; i += 1) axes[i] = { x: 0, y: 0 }
+    survivalRef.current.axis = { x: 0, y: 0 }
+    if (connected.length === 0) {
       prevStartRef.current = false
       if (gamepadNameRef.current !== null) {
         gamepadNameRef.current = null
         setGamepadName(null)
+      }
+      return
+    }
+    const assign = assignGamepads(connected.map((item) => item.index), inputConfigsRef.current)
+    let p1PadSeen = false
+    for (const key of Object.keys(assign)) {
+      const pi = Number(key)
+      const pad = connected.find((item) => item.index === assign[pi])
+      if (pad === undefined) continue
+      const ax = { x: pad.axes[0] ?? 0, y: pad.axes[1] ?? 0 }
+      if (pi === 0) {
+        p1PadSeen = true
+        survivalRef.current.axis = ax
+        if (gamepadNameRef.current !== pad.id) {
+          gamepadNameRef.current = pad.id
+          setGamepadName(pad.id)
+        }
+        const startPressed = pad.buttons[9]?.pressed === true
+        if (startPressed && !prevStartRef.current) {
+          const phase = survivalRef.current.phase
+          if (phase === 'ready' || phase === 'lost') startRunRef.current()
+        }
+        prevStartRef.current = startPressed
+      }
+      if (pi < axes.length) axes[pi] = ax
+    }
+    if (!p1PadSeen) {
+      prevStartRef.current = false
+      // P1 未分得手柄(如仅有 index≠0 的柄被补位给 P2+)——在场提示回落到
+      // 第一只已连接手柄,保持「检测到手柄」的可见性。
+      const first = connected[0]
+      if (first !== undefined && gamepadNameRef.current !== first.id) {
+        gamepadNameRef.current = first.id
+        setGamepadName(first.id)
       }
     }
   }, [])

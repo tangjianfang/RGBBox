@@ -153,6 +153,10 @@ export interface SurvivalState {
   portal: Point | null
   keys: Set<string>
   axis: { x: number; y: number }
+  /** R213 二期: 每玩家手柄摇杆轴(长度随 deployPlayers 人数,对齐 players)。
+   *  axes[pi] 与 P1 legacy axis 同语义:>0.18 死区时模拟向量覆盖键池向量,
+   *  幅度缩放移速;axes[0] 不驱动 P1(P1 移动仍读 axis,vision 叠加路径不变)。 */
+  axes: Array<{ x: number; y: number }>
   scoreMult: number
   coinMult: number
   timeScale: number
@@ -296,6 +300,7 @@ export function initialSurvivalState(
     players: [player],
     inputs: [keys],
     axis: { x: 0, y: 0 },
+    axes: [{ x: 0, y: 0 }],
     scoreMult: 1 + scoreMultiplier(artifacts),
     coinMult: has('bounty') ? 2 : 1,
     timeScale: has('chrono') ? 1.25 : 1,
@@ -338,15 +343,18 @@ const DEPLOY_OFFSETS: ReadonlyArray<{ dx: number; dy: number }> = [
  *  (player2/keys2)仍被视图直接读写(合作开关关闭时直接置 player2 = null)。
  *  每次 tick/draw 入口调用:把 legacy 字段的突变镜像回数组,维持
  *  player===players[0] / player2===players[1] / keys2===inputs[1] 的别名
- *  不变量;player2 被置 null 视为退回单人局(名册截断到 1)。 */
+ *  不变量;player2 被置 null 视为退回单人局(名册截断到 1)。
+ *  R213 二期: axes 长度一并对齐 players(手柄轴槽随人数伸缩)。 */
 function syncRoster(state: SurvivalState): void {
   if (state.player2 === null) {
     if (state.players.length > 1) state.players.length = 1
     if (state.inputs.length > 1) state.inputs.length = 1
-    return
+  } else {
+    if (state.players[1] !== state.player2) state.players.splice(1, state.players.length - 1, state.player2)
+    if (state.inputs[1] !== state.keys2) state.inputs.splice(1, state.inputs.length - 1, state.keys2)
   }
-  if (state.players[1] !== state.player2) state.players.splice(1, state.players.length - 1, state.player2)
-  if (state.inputs[1] !== state.keys2) state.inputs.splice(1, state.inputs.length - 1, state.keys2)
+  if (state.axes.length > state.players.length) state.axes.length = state.players.length
+  while (state.axes.length < state.players.length) state.axes.push({ x: 0, y: 0 })
 }
 
 /** R213: 部署 1-4 人位。count≥2 时 players[1] 即现 player2 逻辑位置
@@ -367,6 +375,8 @@ export function deployPlayers(state: SurvivalState, count: 1 | 2 | 3 | 4): void 
   }
   if (state.players.length > count) state.players.length = count
   if (state.inputs.length > count) state.inputs.length = count
+  if (state.axes.length > count) state.axes.length = count
+  while (state.axes.length < count) state.axes.push({ x: 0, y: 0 })
   if (count < 2) state.player2 = null
   else {
     state.player2 = state.players[1]
@@ -802,11 +812,24 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     if (pool === undefined) continue
     const dpx = (pool.has(`p${pi + 1}right`) ? 1 : 0) - (pool.has(`p${pi + 1}left`) ? 1 : 0)
     const dpy = (pool.has(`p${pi + 1}down`) ? 1 : 0) - (pool.has(`p${pi + 1}up`) ? 1 : 0)
-    const lenP = Math.hypot(dpx, dpy)
+    let movePx = dpx
+    let movePy = dpy
+    // R213 二期: 手柄摇杆轴——与 P1 axis 同语义(死区 0.18,过阈值时模拟
+    // 向量覆盖键池向量,幅度缩放移速)。
+    const axP = state.axes[pi]
+    if (axP !== undefined) {
+      const axLen = Math.hypot(axP.x, axP.y)
+      if (axLen > 0.18) {
+        movePx = axP.x
+        movePy = axP.y
+      }
+    }
+    const lenP = Math.hypot(movePx, movePy)
+    const scaleP = Math.min(1, lenP)
     if (lenP > 0.0001) {
-      pl.x = clamp(pl.x + (dpx / lenP) * stats.moveSpeed * dt, 16, WIDTH - 16)
-      pl.y = clamp(pl.y + (dpy / lenP) * stats.moveSpeed * dt, 16, HEIGHT - 16)
-      pl.angle = Math.atan2(dpy, dpx)
+      pl.x = clamp(pl.x + (movePx / lenP) * scaleP * stats.moveSpeed * dt, 16, WIDTH - 16)
+      pl.y = clamp(pl.y + (movePy / lenP) * scaleP * stats.moveSpeed * dt, 16, HEIGHT - 16)
+      pl.angle = Math.atan2(movePy, movePx)
       if (Math.random() < dt * 40) state.particles.push({ x: pl.x - Math.cos(pl.angle) * 14, y: pl.y - Math.sin(pl.angle) * 14, vx: -Math.cos(pl.angle) * 60, vy: -Math.sin(pl.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: ROSTER_ACCENT[pi - 1] })
     }
     pl.fireTimer -= dt

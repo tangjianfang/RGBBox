@@ -9,6 +9,7 @@ import {
   tickSurvival,
   xpToNext,
 } from '../../../src/renderer/src/games/survival'
+import { WIDTH } from '../../../src/renderer/src/games/td'
 
 describe('renderer/games/survival engine (R99.3/R99.4)', () => {
   it('xp curve grows with level', () => {
@@ -378,5 +379,66 @@ describe('R213 4P engine roster', () => {
     expect(state.players).toHaveLength(1)
     expect(state.inputs).toHaveLength(1)
     expect(state.phase).toBe('running')
+  })
+})
+
+describe('R213 二期 P2-P4 手柄摇杆轴控', () => {
+  it('axes 槽随 deployPlayers 人数伸缩(1→4→1),初始为 1 槽', () => {
+    const state = initialSurvivalState()
+    expect(state.axes).toHaveLength(1)
+    deployPlayers(state, 4)
+    expect(state.axes).toHaveLength(4)
+    deployPlayers(state, 1)
+    expect(state.axes).toHaveLength(1)
+    // 视图直置 player2=null(截断名册)后 tick 入口 syncRoster 同步收 axes
+    deployPlayers(state, 3)
+    state.player2 = null
+    tickSurvival(state, 1 / 60)
+    expect(state.axes).toHaveLength(1)
+  })
+
+  it('axes[1].x>0.5 → P2 右移,P1/P3 零串轴(无键池输入)', () => {
+    const state = initialSurvivalState()
+    deployPlayers(state, 3)
+    state.phase = 'running'
+    const [p1, p2, p3] = state.players
+    state.axes[1] = { x: 0.9, y: 0 }
+    tickSurvival(state, 0.5)
+    expect(p2.x).toBeGreaterThan(WIDTH / 2 - 60 + 20)
+    expect(p2.angle).toBeCloseTo(0, 5)
+    expect(p1.x).toBe(WIDTH / 2)
+    expect(p3.x).toBe(WIDTH / 2 + 60)
+  })
+
+  it('axes[2].y<-0.5 → P3 上移(y 减小);死区内(<0.18)不动', () => {
+    const state = initialSurvivalState()
+    deployPlayers(state, 3)
+    state.phase = 'running'
+    const p3 = state.players[2]
+    const y0 = p3.y
+    state.axes[2] = { x: 0, y: -0.8 }
+    tickSurvival(state, 0.5)
+    expect(p3.y).toBeLessThan(y0 - 20)
+    const p2 = state.players[1]
+    const y2 = p2.y
+    state.axes[1] = { x: 0.1, y: 0 } // 死区内:不产生移动
+    tickSurvival(state, 0.5)
+    expect(p2.y).toBe(y2)
+  })
+
+  it('轴幅度缩放移速(与 P1 axis 同语义):半倾位移约为满倾一半', () => {
+    const state = initialSurvivalState()
+    deployPlayers(state, 2)
+    state.phase = 'running'
+    const p2 = state.players[1]
+    state.axes[1] = { x: 1, y: 0 }
+    tickSurvival(state, 0.3)
+    const full = p2.x - (WIDTH / 2 - 60)
+    p2.x = WIDTH / 2 - 60
+    state.axes[1] = { x: 0.5, y: 0 }
+    tickSurvival(state, 0.3)
+    const half = p2.x - (WIDTH / 2 - 60)
+    expect(half).toBeGreaterThan(0)
+    expect(half).toBeCloseTo(full / 2, 5)
   })
 })
