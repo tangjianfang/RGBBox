@@ -50,7 +50,7 @@ export class LanService {
   private role: 'idle' | 'host' | 'guest' = 'idle'
   private beacon: dgram.Socket | null = null
   private beaconTimer: NodeJS.Timeout | null = null
-  private room: { name: string; game: LanGame; port: number } | null = null
+  private room: { name: string; game: LanGame; port: number; seed?: number } | null = null
   private server: net.Server | null = null
   private peers = new Map<string, Peer>()
   private guest: { socket: net.Socket; decoder: FrameDecoder; lastSeen: number } | null = null
@@ -79,7 +79,7 @@ export class LanService {
     if (this.win && !this.win.isDestroyed()) this.win.webContents.send(ipcChannels.lanEvent, event)
   }
 
-  get state(): { role: 'idle' | 'host' | 'guest'; room: { name: string; game: LanGame; port: number } | null; peers: number } {
+  get state(): { role: 'idle' | 'host' | 'guest'; room: { name: string; game: LanGame; port: number; seed?: number } | null; peers: number } {
     return { role: this.role, room: this.room, peers: this.peers.size }
   }
 
@@ -110,14 +110,14 @@ export class LanService {
   /** 房主:建房 —— TCP server(端口系统分配)+ 1s beacon 广播 + 心跳看门。
    *  端口在 'listening' 后才可知(异步),beacon/房间登记随之启动;返回值
    *  的 port 恒为 0,真实端口经 lanState().room.port 暴露。 */
-  host(name: string, game: LanGame): { port: number } {
+  host(name: string, game: LanGame, seed?: number): { port: number } {
     this.teardown()
     const server = net.createServer((socket) => this.onPeerSocket(socket))
     this.role = 'host'
     this.server = server
     server.listen(0, '0.0.0.0', () => {
       const port = (server.address() as net.AddressInfo).port
-      this.room = { name, game, port }
+      this.room = { name, game, port, seed }
       const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true })
       sock.on('error', () => undefined)
       sock.bind(() => {
@@ -145,7 +145,7 @@ export class LanService {
   join(
     ip: string,
     port: number,
-  ): Promise<{ ok: true; game: LanGame; resume?: boolean; seq?: number } | { ok: false; reason: string }> {
+  ): Promise<{ ok: true; game: LanGame; resume?: boolean; seq?: number; seed?: number } | { ok: false; reason: string }> {
     const sessionId = this.guestId ?? randomUUID() // 断线重连沿用旧身份;显式离开后为 null → 换新
     this.teardown()
     this.guestId = sessionId
@@ -154,7 +154,7 @@ export class LanService {
       const decoder = new FrameDecoder()
       let settled = false
       const finish = (
-        r: { ok: true; game: LanGame; resume?: boolean; seq?: number } | { ok: false; reason: string },
+        r: { ok: true; game: LanGame; resume?: boolean; seq?: number; seed?: number } | { ok: false; reason: string },
       ): void => {
         if (settled) return
         settled = true
@@ -178,7 +178,7 @@ export class LanService {
             this.guest = { socket, decoder, lastSeen: Date.now() }
             if (msg.resume) this.snapTracker.rebase(msg.seq) // 续传基线;非续传保持 reset 态
             this.startHeartbeat()
-            finish({ ok: true, game: msg.g, resume: msg.resume === true, seq: msg.seq })
+            finish({ ok: true, game: msg.g, resume: msg.resume === true, seq: msg.seq, seed: msg.seed })
           } else if (msg.t === 'reject') {
             this.emit({ kind: 'rejected', detail: msg.reason })
             socket.destroy()
@@ -193,6 +193,9 @@ export class LanService {
               if (verdict.resync) this.sendResync() // 跳号(丢帧)→ 请求全量快照
               if (verdict.hashAnomaly) this.emit({ kind: 'error', detail: 'hash-anomaly' })
               this.emit({ kind: 'snap', detail: msg.s })
+            } else if (msg.t === 'cmd') {
+              // 三期(FR-LN05): 房主→客端下行事件(tetris garbage/result 等)
+              this.emit({ kind: 'cmd', detail: msg.c })
             } else if (msg.t === 'pong') { /* lastSeen 已刷新 */ }
           }
         }
@@ -244,10 +247,11 @@ export class LanService {
           }
           peer.sessionId = msg.id
           this.peers.set(id, peer)
+          // 三期(FR-LN05): tetris 房间随 welcome 下发开局种子(双方 piece 序列一致)
           socket.write(
             resume
-              ? encodeFrame({ t: 'welcome', v: LAN_PROTOCOL_VERSION, g: this.room?.game ?? 'td', resume: true, seq: this.snapSeq })
-              : encodeFrame({ t: 'welcome', v: LAN_PROTOCOL_VERSION, g: this.room?.game ?? 'td' }),
+              ? encodeFrame({ t: 'welcome', v: LAN_PROTOCOL_VERSION, g: this.room?.game ?? 'td', resume: true, seq: this.snapSeq, seed: this.room?.seed })
+              : encodeFrame({ t: 'welcome', v: LAN_PROTOCOL_VERSION, g: this.room?.game ?? 'td', seed: this.room?.seed }),
           )
           this.emit({ kind: 'peer-joined', detail: { joined: true, id, resume } })
         } else if (msg.t === 'spectate') {
@@ -327,10 +331,16 @@ export class LanService {
     }
   }
 
-  /** 客端:上行指令。 */
+  /** 发送游戏指令(双向):客端→房主上行;三期(FR-LN05)起房主也可向全部
+   *  peer 下行(tetris garbage/result 事件同步)。观战 peer 由渲染层不发。 */
   sendCmd(c: unknown): void {
-    if (this.role !== 'guest' || !this.guest) return
-    try { this.guest.socket.write(encodeFrame({ t: 'cmd', c: c as never })) } catch { /* close 兜底 */ }
+    try {
+      if (this.role === 'guest' && this.guest) {
+        this.guest.socket.write(encodeFrame({ t: 'cmd', c: c as never }))
+      } else if (this.role === 'host') {
+        for (const peer of this.peers.values()) peer.socket.write(encodeFrame({ t: 'cmd', c: c as never }))
+      }
+    } catch { /* close 兜底 */ }
   }
 
   /** 客端:切换观战态(只收快照不发指令;房主将忽略本端后续 cmd)。
@@ -372,7 +382,8 @@ export class LanService {
 
 export function registerLanIpc(ipcMain: IpcMain, service: LanService): void {
   ipcMain.handle(ipcChannels.lanState, () => service.state)
-  ipcMain.handle(ipcChannels.lanHost, (_e, name: string, _game: LanGame) => service.host(String(name ?? 'Room').slice(0, 32), 'td')) // 一期仅 TD 合作(tetris 次发)
+  ipcMain.handle(ipcChannels.lanHost, (_e, name: string, game: LanGame, seed?: number) =>
+    service.host(String(name ?? 'Room').slice(0, 32), game === 'tetris' ? 'tetris' : 'td', typeof seed === 'number' ? seed : undefined)) // 三期起透传房间类型与 tetris 种子
   ipcMain.handle(ipcChannels.lanJoin, (_e, ip: string, port: number) => service.join(String(ip), Number(port) || 0))
   ipcMain.handle(ipcChannels.lanLeave, () => { service.teardown(); return true })
   ipcMain.handle(ipcChannels.lanDiscover, (_e, on: boolean) => { if (on) service.startDiscovery(); else service.stopDiscovery(); return true })

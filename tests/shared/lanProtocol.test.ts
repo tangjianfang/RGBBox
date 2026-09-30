@@ -120,3 +120,23 @@ describe('R209 二期 lanProtocol(seq 对账/resync/spectate/续传标记)', () 
     expect(hashWellFormed(42)).toBe(false)
   })
 })
+
+describe('R209 三期 lanProtocol(FR-LN05 Tetris 对战事件)', () => {
+  it('garbage/result 命令帧编解码往返(双向事件)', () => {
+    const msgs: LanMessage[] = [
+      { t: 'cmd', c: { k: 'garbage', lines: 2 } },
+      { t: 'cmd', c: { k: 'result', score: 54321 } },
+    ]
+    const wire = Buffer.concat(msgs.map(encodeFrame))
+    expect(new FrameDecoder().push(wire)).toEqual(msgs)
+  })
+
+  it('welcome 携带 tetris 开局种子编解码往返;td 房间不带 seed 字段(一期形状不变)', () => {
+    const w: LanMessage = { t: 'welcome', v: 1, g: 'tetris', seed: 20260930 }
+    expect(new FrameDecoder().push(encodeFrame(w))).toEqual([w])
+    // seed 为 undefined 时 JSON 序列化丢弃该键——一期 TD welcome 字节形状兼容
+    const td = new FrameDecoder().push(encodeFrame({ t: 'welcome', v: 1, g: 'td', seed: undefined }))[0]
+    expect(td).toEqual({ t: 'welcome', v: 1, g: 'td' })
+    expect('seed' in td).toBe(false)
+  })
+})

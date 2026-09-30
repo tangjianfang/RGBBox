@@ -20,7 +20,8 @@ export const LAN_MAX_FRAME_BYTES = 256 * 1024
 export const LAN_HEARTBEAT_MS = 2000
 export const LAN_DEAD_AFTER_MS = 5000
 
-export type LanGame = 'td'
+/** 会话游戏。一期 TD 合作;三期(FR-LN05)加 tetris 对战(事件同步)。 */
+export type LanGame = 'td' | 'tetris'
 
 /** UDP beacon 载荷(1s 一发)。 */
 export interface LanBeacon {
@@ -40,10 +41,11 @@ export interface LanBeacon {
 }
 
 /** TCP 会话消息(双向)。二期只加不改:hello.id / welcome.resume+seq / snap.seq
- *  与 resync/spectate 均为新增字段/成员,一期旧端忽略未知字段(前向兼容)。 */
+ *  与 resync/spectate 均为新增字段/成员,一期旧端忽略未知字段(前向兼容)。
+ *  三期:welcome.seed(tetris 对战开局种子,房主→客端)。 */
 export type LanMessage =
   | { t: 'hello'; v: number; av: string; id?: string }
-  | { t: 'welcome'; v: number; g: LanGame; resume?: true; seq?: number }
+  | { t: 'welcome'; v: number; g: LanGame; resume?: true; seq?: number; seed?: number }
   | { t: 'reject'; reason: string }
   | { t: 'ping' }
   | { t: 'pong' }
@@ -52,13 +54,16 @@ export type LanMessage =
   | { t: 'resync' }
   | { t: 'spectate' }
 
-/** 客端→房主的游戏指令(FR-LN04:TD 合作——建塔/升级/出售/技能)。 */
+/** 游戏指令(双向事件)。FR-LN04:TD 合作——客端→房主(建塔/升级/出售/技能);
+ *  三期(FR-LN05):Tetris 对战——双方互发(消行攻击 garbage / 结算 result)。 */
 export type LanCommand =
   | { k: 'build'; kind: string; x: number; y: number }
   | { k: 'select'; id: number }
   | { k: 'upgrade' }
   | { k: 'sell' }
   | { k: 'meteor' }
+  | { k: 'garbage'; lines: number }
+  | { k: 'result'; score: number }
 
 /** 应用版本是否兼容(一期:字符串全等)。 */
 export function versionsCompatible(a: string, b: string): boolean {
