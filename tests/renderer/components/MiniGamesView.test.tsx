@@ -449,3 +449,140 @@ describe('renderer/components/MiniGamesView', () => {
   })
 })
 
+
+// ── R218 U2: gamepad Start/Options — any ASSIGNED pad, all four games ─────────
+describe('renderer/components/MiniGamesView · gamepad Start (R218 U2)', () => {
+  const noopCtx = new Proxy({}, {
+    get: (_t, prop) => {
+      if (prop === 'canvas') return undefined
+      if (prop === 'measureText') return () => ({ width: 10 })
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+        return () => ({ addColorStop: () => undefined })
+      }
+      return () => undefined
+    },
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D
+
+  function makePad(index: number, id: string, mapping = 'standard'): Gamepad {
+    const buttons = Array.from({ length: 18 }, () => ({ pressed: false, value: 0, touched: false }))
+    return { index, id, mapping, connected: true, axes: [0, 0, 0, 0], buttons, timestamp: 0 } as unknown as Gamepad
+  }
+
+  function mockGamepads(pads: Gamepad[]): void {
+    Object.defineProperty(navigator, 'getGamepads', {
+      value: () => pads,
+      configurable: true,
+    })
+  }
+
+  const frames = (ms = 90) => new Promise((r) => setTimeout(r, ms))
+
+  beforeEach(() => {
+    localStorage.clear()
+    Object.defineProperty(navigator, 'getGamepads', { value: () => [], configurable: true })
+  })
+
+  it('any assigned pad (not just P1) starts the run; hint row lists the count', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const pad0 = makePad(0, 'Xbox Wireless Controller')
+    const pad1 = makePad(1, 'DualSense Wireless Controller') // lands on P2 via assignGamepads fill
+    mockGamepads([pad0, pad1])
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm
+    await frames()
+    const probe = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
+    expect(probe()).toBe('ready')
+    // ready-state presence hint (tests render without I18nProvider → raw key) + ids
+    const hint = container.querySelector('[data-field="pad-hint"]')
+    expect(hint?.textContent).toContain('games.pad.hint')
+    expect(hint?.textContent).toContain('Xbox Wireless')
+    expect(hint?.textContent).toContain('DualSense')
+    // press Start on the P2 pad (index 1) — the pi!==0 pad that never worked before
+    pad1.buttons[9].pressed = true
+    await frames()
+    expect(probe()).toBe('running')
+    ctxSpy.mockRestore()
+  })
+
+  it('held Start does not re-trigger (edge detect) nor pause mid-press', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const pad0 = makePad(0, 'Pad A')
+    mockGamepads([pad0])
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    await frames()
+    pad0.buttons[9].pressed = true
+    await frames()
+    const probe = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
+    expect(probe()).toBe('running')
+    // keep holding: no new edge → no pause overlay, still running
+    await frames(150)
+    expect(container.querySelector('[data-field="fs-pause"]')).toBeNull()
+    expect(probe()).toBe('running')
+    ctxSpy.mockRestore()
+  })
+
+  it('Start while running toggles the pause overlay (non-fs state too)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const pad0 = makePad(0, 'Pad A')
+    mockGamepads([pad0])
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    await frames()
+    const probe = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
+    pad0.buttons[9].pressed = true
+    await frames()
+    expect(probe()).toBe('running')
+    pad0.buttons[9].pressed = false
+    await frames()
+    expect(container.querySelector('[data-field="fs-pause"]')).toBeNull()
+    // fresh press while running → pause overlay (resume/restart/hub; no exit-fs button outside fs)
+    pad0.buttons[9].pressed = true
+    await frames()
+    const overlay = container.querySelector('[data-field="fs-pause"]')
+    expect(overlay).toBeTruthy()
+    expect(overlay?.querySelector('[data-action="fs-resume"]')).toBeTruthy()
+    expect(overlay?.querySelector('[data-action="fs-exit"]')).toBeNull() // hidden outside fullscreen
+    // release + press again → resume
+    pad0.buttons[9].pressed = false
+    await frames()
+    pad0.buttons[9].pressed = true
+    await frames()
+    expect(container.querySelector('[data-field="fs-pause"]')).toBeNull()
+    expect(probe()).toBe('running')
+    ctxSpy.mockRestore()
+  })
+
+  it('non-standard mapping pad falls back to buttons[16]', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const pad0 = makePad(0, 'Generic HID', '')
+    mockGamepads([pad0])
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    await frames()
+    const probe = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
+    expect(probe()).toBe('ready')
+    pad0.buttons[16].pressed = true
+    await frames()
+    expect(probe()).toBe('running')
+    ctxSpy.mockRestore()
+  })
+
+  it('Start also starts TD (all four games share the poll path)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const pad0 = makePad(0, 'Pad A')
+    mockGamepads([pad0])
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[0]) // TD
+    await frames()
+    expect(container.querySelector('[data-field="td-ctl"]')).toBeTruthy()
+    pad0.buttons[9].pressed = true
+    await waitFor(() => {
+      // canvas-status second span shows the phase label once the snapshot publishes
+      const spans = container.querySelectorAll('.games-canvas-status span')
+      expect(spans[1]?.textContent).toContain('games.statusRunning')
+    }, { timeout: 1500 })
+    ctxSpy.mockRestore()
+  })
+})

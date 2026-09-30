@@ -9878,6 +9878,26 @@ input:disabled {
 }
 .diff-btn.on { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb), 0.12); }
 
+/* R218 U2: ready 态手柄在场提示行(难度行下方;id 截断列表) */
+.pad-hint-row {
+  position: absolute;
+  left: 50%;
+  top: 76%;
+  transform: translateX(-50%);
+  z-index: 20;
+  font-size: var(--text-caption-size);
+  color: var(--text-secondary);
+  background: rgba(4, 8, 12, 0.55);
+  border: 1px solid var(--surface-raised);
+  border-radius: var(--radius-l);
+  padding: 3px 14px;
+  max-width: min(92%, 720px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pad-hint-row small { color: var(--text-muted); margin-left: 4px; }
+
 /* M3(FR-G09): daily 挑战行 */
 .games-daily-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-bottom: 8px; font-size: var(--text-caption-size); color: var(--text-secondary); }
 .daily-chip { padding: 2px 10px; border-radius: var(--radius-l); border: 1px solid rgba(148, 184, 200, 0.28); color: var(--text-secondary); }

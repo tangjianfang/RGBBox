@@ -964,6 +964,9 @@ const EN = {
   'games.difficulty.label': 'Difficulty',
   'games.difficulty.casual': 'Casual',
   'games.difficulty.standard': 'Standard',
+  // ── R218 U2/U4: 手柄 Start 四作 + 难度四档 ──
+  'games.pad.hint': 'gamepads connected — press Start to play',
+  'games.pad.none': 'No gamepad — keyboard / mouse ready',
   'games.td.endless': 'Endless mode',
   'games.td.meteorReady': 'Meteor ready',
   'games.td.meteorHint': 'Q — Meteor: 40 damage to all balloons (45s cooldown)',
@@ -2716,6 +2719,9 @@ const ZH: TranslationTable = {
   'games.difficulty.label': '难度',
   'games.difficulty.casual': '休闲',
   'games.difficulty.standard': '标准',
+  // ── R218 U2/U4: 手柄 Start 四作 + 难度四档 ──
+  'games.pad.hint': '已连接手柄 {n} 只（Start 开局）',
+  'games.pad.none': '未连接手柄 · 键盘/鼠标可玩',
   'games.td.endless': '无尽模式',
   'games.td.meteorReady': '陨石就绪',
   'games.td.meteorHint': 'Q——陨石:全屏气球 40 伤害(冷却 45 秒)',

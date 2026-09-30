@@ -391,6 +391,19 @@ export function MiniGamesView(): JSX.Element {
   const gamepadNameRef = useRef<string | null>(null)
   const prevStartRef = useRef(false)
   const startRunRef = useRef<() => void>(() => undefined)
+  // ── R218 U2: 手柄 Start 四作通用 ──
+  /** 在场手柄摘要(ready 态提示行);gamepadInfoKeyRef 去抖,逐帧不重渲。 */
+  const [gamepadInfo, setGamepadInfo] = useState<{ count: number; ids: string[] }>({ count: 0, ids: [] })
+  const gamepadInfoKeyRef = useRef('')
+  /** Start 边沿触发的统一入口(按 screen 分发开局/重开/暂停;渲染期赋值)。 */
+  const padStartRef = useRef<() => void>(() => undefined)
+  /** 当前游戏画面(hub|td|survival|tetris|slash)——rAF/Esc 闭包读的活值。 */
+  const screenRef = useRef<Screen>('hub')
+  screenRef.current = screen
+  /** 各作当前 phase(ref 读取,供 Esc/Start 暂停判定;hub 恒 'ready')。 */
+  const currentPhaseRef = useRef<() => 'ready' | 'running' | 'won' | 'lost' | 'levelup' | 'roulette'>(() => 'ready')
+  /** 当前画面的开局/重开入口(startHandler 的活引用;渲染期赋值)。 */
+  const startAnyRef = useRef<() => void>(() => undefined)
   // R131: vision gesture input (third source beside keyboard/gamepad) + a
   // late-binding ref so pollVision (declared above startTetrisRun) can start
   // a Tetris run on pinch without a TDZ-prone dependency.
@@ -491,7 +504,10 @@ export function MiniGamesView(): JSX.Element {
   // detection (no pairing-event dependency) + assignGamepads 玩家→手柄映射
   // (显式绑定优先+余柄补位,与 InputConfigPanel 绑定 UI 同源);每玩家左
   // 摇杆写入 axes[pi](P1 仍写 legacy axis——vision 叠加路径不变,axes[0]
-  // 同步双写保数组不变量)。Start 仍限 P1 手柄触发开局。
+  // 同步双写保数组不变量)。
+  // R218 U2: Start/Options 检测改为「任何已分配手柄」边沿触发(P5 卡点:
+  // 原来仅 pi===0 分支检测;PS5 Options=buttons[9] standard mapping 一致);
+  // 非 standard mapping 兜底扫 buttons[16];运行态 Start=暂停/恢复切换。
   const pollGamepad = useCallback(() => {
     if (typeof navigator.getGamepads !== 'function') return
     const pads = navigator.getGamepads()
@@ -499,6 +515,13 @@ export function MiniGamesView(): JSX.Element {
     const axes = survivalRef.current.axes
     for (let i = 0; i < axes.length; i += 1) axes[i] = { x: 0, y: 0 }
     survivalRef.current.axis = { x: 0, y: 0 }
+    // R218 U2: 在场手柄摘要(count+id 列表)供 ready 态提示行——逐帧比较后
+    // 才 setState,避免每帧渲染。
+    const infoKey = `${connected.length}|${connected.map((item) => item.id).join(',')}`
+    if (gamepadInfoKeyRef.current !== infoKey) {
+      gamepadInfoKeyRef.current = infoKey
+      setGamepadInfo({ count: connected.length, ids: connected.map((item) => item.id) })
+    }
     if (connected.length === 0) {
       prevStartRef.current = false
       if (gamepadNameRef.current !== null) {
@@ -509,6 +532,7 @@ export function MiniGamesView(): JSX.Element {
     }
     const assign = assignGamepads(connected.map((item) => item.index), inputConfigsRef.current)
     let p1PadSeen = false
+    let anyStart = false
     for (const key of Object.keys(assign)) {
       const pi = Number(key)
       const pad = connected.find((item) => item.index === assign[pi])
@@ -521,17 +545,17 @@ export function MiniGamesView(): JSX.Element {
           gamepadNameRef.current = pad.id
           setGamepadName(pad.id)
         }
-        const startPressed = pad.buttons[9]?.pressed === true
-        if (startPressed && !prevStartRef.current) {
-          const phase = survivalRef.current.phase
-          if (phase === 'ready' || phase === 'lost') startRunRef.current()
-        }
-        prevStartRef.current = startPressed
+      }
+      // R218 U2: Start/Options —— Xbox Start 与 PS5 Options 在 standard
+      // mapping 下同为 buttons[9];非 standard 柄 9 号位失效时兜底 16。
+      if (pad.buttons[9]?.pressed === true || (pad.mapping !== 'standard' && pad.buttons[16]?.pressed === true)) {
+        anyStart = true
       }
       if (pi < axes.length) axes[pi] = ax
     }
+    if (anyStart && !prevStartRef.current) padStartRef.current()
+    prevStartRef.current = anyStart
     if (!p1PadSeen) {
-      prevStartRef.current = false
       // P1 未分得手柄(如仅有 index≠0 的柄被补位给 P2+)——在场提示回落到
       // 第一只已连接手柄,保持「检测到手柄」的可见性。
       const first = connected[0]
@@ -857,6 +881,10 @@ export function MiniGamesView(): JSX.Element {
       // R206: 暂停冻结全部引擎 tick(dt=0;含计时/倒计时/粒子由各引擎特效路径自然停)
       if (fsPausedRef.current) dt = 0
       last = now
+      // R218 U2: 手柄轮询提升到四作共用——Start/Options 检测与摇杆轴写入
+      // 不再只在 Survival 分支执行(survival 分支内原先的调用同步移除;
+      // pollVision 仍在其后,轴叠加顺序不变)。
+      pollGamepad()
       if (screen === 'td') {
         // R209(FR-LN02): 房主权威——客端不 tick 本地引擎(快照经 onLanEvent
         // 直接写 tdStateRef,统计条/绘制全复用);房主 15Hz 推快照(hash 供对账)。
@@ -895,8 +923,8 @@ export function MiniGamesView(): JSX.Element {
         })
       } else if (screen === 'survival') {
         // R133: gamepad first (it rewrites the raw axis), vision second (adds
-        // its direction vector on top) — see pollVision.
-        pollGamepad()
+        // its direction vector on top) — see pollVision. (R218 U2: pollGamepad
+        // 已提升到四作共用的循环顶部,顺序不变。)
         // R208(FR-MP01): 双人局禁用手势——视觉通道是单用户假设,防输入冲突
         // (pollGamepad 无手柄时已把 axis 归零,跳过 pollVision 不残留旧轴)。
         if (survivalRef.current.player2 === null) pollVision()
@@ -1125,21 +1153,9 @@ export function MiniGamesView(): JSX.Element {
     if (screen !== 'survival' && screen !== 'tetris' && screen !== 'slash' && !fullscreen) return
     const normalizeKey = (event: KeyboardEvent) => event.code === 'Space' ? 'space' : event.key.toLowerCase()
     const down = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        // R206(FR-G03.5): fs 态内 Esc 分层——先出暂停(呼吸),不直接退全屏;
-        // 非 fs 维持原语义(退出全屏)。暂停浮层内提供「退出全屏」。
-        if (fullscreen && !document.fullscreenElement) {
-          setFsPaused((v) => !v)
-          return
-        }
-        if (fullscreen && document.fullscreenElement) {
-          setFsPaused((v) => !v)
-          return
-        }
-        setFullscreen(false)
-        if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
-        return
-      }
+      // R218 U2: Escape 分层迁至下方独立 effect(四作非 fs 态也要响应暂停/
+      // 专注退出;本 effect 的早退门会挡掉非 fs TD 的 Esc)。
+      if (event.key === 'Escape') return
       const normalized = normalizeKey(event)
       if (MOVEMENT_KEYS.has(normalized) && !event.ctrlKey && !event.metaKey && !event.altKey) event.preventDefault()
       if (screen === 'td' && normalized === 'q') {
@@ -1225,6 +1241,27 @@ export function MiniGamesView(): JSX.Element {
       window.removeEventListener('keyup', up)
     }
   }, [fullscreen, screen])
+
+  // ── R218 U2/U9: Escape 统一分层(独立 effect,不受上方「非 fs TD 早退门」
+  // 影响):专注模式退出 > fs 暂停切换(R206 语义) > 非 fs 运行态暂停切换 >
+  // 兜底退出全屏。与手柄 Start 共用同一 fsPaused 冻结通路(loop 顶部 dt=0)。──
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || screenRef.current === 'hub') return
+      if (fullscreen) {
+        setFsPaused((v) => !v)
+        return
+      }
+      if (currentPhaseRef.current() === 'running') {
+        setFsPaused((v) => !v)
+        return
+      }
+      setFullscreen(false)
+      if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
 
   const enterGame = useCallback((next: Screen) => {
     setFullscreen(false)
@@ -1755,6 +1792,33 @@ export function MiniGamesView(): JSX.Element {
       : vision.label ? ` · 👁 ${t('games.vision.error')}: ${vision.label}` : ''
   const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : isTetris ? startTetrisRun : startSlashRunCb
   const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
+  // ── R218 U2: 手柄 Start 统一入口的活引用(渲染期刷新,rAF/Esc 闭包免重建)──
+  startAnyRef.current = startHandler
+  currentPhaseRef.current = () => {
+    const scr = screenRef.current
+    if (scr === 'td') return tdStateRef.current.phase
+    if (scr === 'survival') return survivalRef.current.phase
+    if (scr === 'tetris') return tetrisRef.current.phase
+    if (scr === 'slash') return slashRef.current.phase
+    return 'ready'
+  }
+  padStartRef.current = () => {
+    const scr = screenRef.current
+    if (scr === 'hub') return
+    // LAN TD 客端为远程席位——开局/下一波由房主决定(与 DOM 按钮同禁用)。
+    if (scr === 'td' && lanRoleRef.current === 'guest' && lanGameRef.current === 'td') return
+    const phase = currentPhaseRef.current()
+    if (phase === 'running') {
+      // U2: 运行态 Start=暂停/恢复(复用 R206 fsPaused 冻结,非 fs 态同样生效)
+      setFsPaused((v) => !v)
+      return
+    }
+    if (phase === 'ready' || phase === 'lost' || phase === 'won') {
+      playSfx('confirm')
+      startAnyRef.current()
+    }
+    // levelup/roulette:升级选择走数字键/手势,Start 不抢焦点。
+  }
 
   // ── R211: fs 纯画布 HUD 绘制(hud.ts 首次接线;DOM 面板已由 CSS 隐藏) ──
   fsActionRef.current = {
@@ -2091,6 +2155,19 @@ export function MiniGamesView(): JSX.Element {
                 ) : null}
               </div>
             ) : null}
+            {/* R218 U2: 手柄在场提示(ready 态)——任意已分配手柄 Start 开局/运行态暂停 */}
+            {phase === 'ready' ? (
+              <div className="pad-hint-row" data-field="pad-hint">
+                {gamepadInfo.count > 0 ? (
+                  <span>
+                    🎮 {t('games.pad.hint').replace('{n}', String(gamepadInfo.count))}
+                    {gamepadInfo.ids.length > 0 ? <small> · {gamepadInfo.ids.map((id) => id.length > 22 ? `${id.slice(0, 22)}…` : id).join(' · ')}</small> : null}
+                  </span>
+                ) : (
+                  <span>{t('games.pad.none')}</span>
+                )}
+              </div>
+            ) : null}
             {/* R209 三期(FR-LN05): LAN Tetris 对战——比分互显面板(任一方结算
                 即出现,双方分齐后可比对;断线提示复用同一面板) */}
             {isTetris && lanTetrisScore !== null ? (
@@ -2131,7 +2208,10 @@ export function MiniGamesView(): JSX.Element {
                 <div className="fs-pause-actions">
                   <button type="button" className="video-btn" data-action="fs-resume" onClick={() => setFsPaused(false)}>{t('games.pause.resume')}</button>
                   <button type="button" className="video-btn" data-action="fs-restart" onClick={() => { if (restartHandler) restartHandler(); setFsPaused(false) }} disabled={!restartHandler}>{t('games.pause.restart')}</button>
-                  <button type="button" className="video-btn" data-action="fs-exit" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined) }}>{t('games.pause.exitFs')}</button>
+                  {/* R218 U2: 非 fs 态也可暂停(手柄 Start/Esc)——「退出全屏」仅 fs 态显示 */}
+                  {fullscreen ? (
+                    <button type="button" className="video-btn" data-action="fs-exit" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined) }}>{t('games.pause.exitFs')}</button>
+                  ) : null}
                   <button type="button" className="video-btn" data-action="fs-hub" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined); backToHub() }}>{t('games.pause.hub')}</button>
                 </div>
               </div>
