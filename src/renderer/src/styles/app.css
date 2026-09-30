@@ -5726,14 +5726,14 @@ input[type='range'].audio-slider {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.25);
+  border: 2px solid var(--overlay-strong); /* R148 S5: swatch ring flips (toolbar chrome) */
   cursor: pointer;
   padding: 0;
   transition: transform 0.12s;
 }
 
 .video-annotate-swatch:hover { transform: scale(1.2); }
-.video-annotate-swatch.active { border-color: var(--white); transform: scale(1.15); }
+.video-annotate-swatch.active { border-color: var(--text-primary); transform: scale(1.15); }
 
 .video-annotate-stroke {
   display: flex;
