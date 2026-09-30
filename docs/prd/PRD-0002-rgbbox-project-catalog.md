@@ -3806,3 +3806,18 @@
 - **R193.4 显示上限**:工具卡渲染上限 4000→20000 字符(「输出已截断」提示保留)。
 - **R193.5 验收**:vitest **137 文件/1204 用例全过**(+5:双 key 双会话隔离+同 key 复用/新会话带回放前缀+缓存会话裸消息/未闭合 think 剥离/回放截断保首尾);typecheck 双绿;`ui:snapshot` 9/9 GATE PASS。附:AI8 真网络对照实验 4 条短消息(contextCount 记忆两臂验证)已留档。
 - **R193.6 状态**:✅(真机 AI8 长任务连贯性待用户复验)
+
+### R216. `feat` — TODO v2 全任务批量实施轮：worktree 四分支并行 + 人工审核改 AI 审核/视觉 review（2026-09-30 用户 goal 指令）
+
+> 来源：2026-09-30 用户 goal——「规划 docs/TODO-pending-tasks.md v2 任务，按 worktree 的方式拆分成不同分支同步执行；需要人工审核改成 AI 自动审核或视觉 review；最佳实现完成所有任务」。本条为总控条款（R215 集成批次同模式），子任务全部映射既有在册条款，不重复展开验收点；实施以 worktree 文件域互不相交切分，PRD 只在主干回写。
+
+- **R216.1 分支与任务映射**（基点 `feat/games-upgrade@1116920`）：
+  - `worktree-agent-g`（游戏域）：A1=R213 二期 P2-P4 手柄轴控（survival.ts axes 数组化 + pollGamepad 遍历 assignGamepads）；A3=R209 三期客端插值（guest 侧气球 progress 线性外推）；A2=R209 三期 LAN Tetris 对战（FR-LN05：garbage/result 命令 + 种子同步 + guest Tetris 循环）。文件域：`MiniGamesView.tsx`、`games/survival.ts`、`domain/inputConfig.ts`、`shared/lanProtocol.ts`、`main/lanService.ts`、games 测试。
+  - `worktree-agent-u`（视觉域）：A5=R189 Q-5 设计系统统一轮（token 方案一页 + 模块卡中性化 + ≥3 绿收敛单 token + dashboard 状态卡右缘对齐 + 顶栏与 H1 去重）。文件域：`styles/*`、shell/Dashboard 相关组件、`shellModules.ts`。A4=R148 S3 逐 view 批次 + S5 亮色主题在 A5 merge 后由后续 agent 接力（styles.css 强冲突，串行）。
+  - `worktree-agent-ai`（Agent 域）：A7=R177 P-2 Agent 工具卡折叠（>N 行默认折叠/diff 配色统一/done 移除流式光标）+ P-4 提示词工程（KERNEL/REACT 系统提示词迭代）。文件域：`AiLabAgentTab.tsx`、`main/agentService.ts`、ai8 provider 纯函数层、相关测试。
+  - `worktree-agent-v`（视频域）：A6=R93 AI 画质增强 MVP——档位①动画实时超分（RealESRGAN-AnimeVideo-v3 xs，WebGPU 首选 onnxruntime-web，WebGL/CPU 回退；≤100MB 硬预算），暂停/开关 UI 落视频工作站音频处理同款面板模式；档位②③记后续。文件域：`VideoStudioView.tsx`、新 `gl/superres*` 或 `video/superres*`、`shared/modelsManifest.ts`、preload/main 下载管线复用、测试。
+- **R216.2 AI 审核授权与方式**（用户 goal 明确指示，替代各条款「待用户实机验收」中可自动化部分）：①代码交付审核=code review agent + 全量验证链（typecheck→test→build→ui:snapshot）；②视觉验收=CDP 截图 + AI 视觉 review（scripts/ui-snapshot.mjs 与 verify-*.mjs 既有模式）；③听感类（R91.3b）以程序化指标（roundtrip/频谱）替代主观听感并如实标注局限；④不可自动化项（Bedrock AK/SK 真机、真双机 UDP beacon、AI8 账密）保留「待用户」并注明理由。
+- **R216.3 E 段历史积压批量闭环**：~45 条 2026-06~07 🔄「代码已实施待用户实机验收」条款，以「已随 v0.3.17~v0.3.83 多轮发版使用 + 本轮全量回归绿 + CDP 关键路径截图 AI 视觉 review」为证据批量回写 ✅（注明「AI 审核批量闭环（R216.2 授权），历史积压 2026-09-30」）；R52 标题 ⏳ 滞后一并闭环。
+- **R216.4 发版里程碑（AI 审核 gate 替代用户验收 gate）**：全分支 merge 回 feat/games-upgrade → 全量验证链绿 → C 清单 AI 审核（游戏四作 CDP 视觉 review/R130 截图提速脚本取证/TTS 客观指标/R214 关机复验）→ merge main → `dist:dir` 冷启动冒烟 → `dist:win` 出包 → 体积核查（R176.3 口径）。
+- **R216.5 验收点**：①四分支各自 typecheck 双绿 + 域内测试绿 + 提交规范；②merge 后全量 `yarn test` 0 失败 + `yarn build` + `yarn ui:snapshot` 9/9（视觉域变更后按规则重立基线一次）；③各子任务映射条款（R93/R148/R177/R189/R209/R213）状态按证据回写；④E 段批量闭环证据链完整；⑤发版产物 + 体积报告。
+- **R216.6 状态**：🔄（2026-09-30 开工；worktree 四分支并行实施中）
