@@ -1,9 +1,12 @@
 /**
  * R209 (FR-LN01): LAN 房间面板 —— 建房/发现/直连加入。
+ * 三期(FR-LN05):建房前选房间类型(TD 合作 / Tetris 对战);tetris 房间由
+ * 本端生成开局种子随建房下发(经 welcome 送到客端,双方 piece 序列一致)。
  * 纯 DOM 浮层;网络一律经 window.rgbbox LAN 白名单桥(不直接触网)。
  */
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { useI18n } from '../../i18n'
+import type { LanGame } from '../../../../shared/lanProtocol'
 
 interface FoundRoom {
   key: string
@@ -15,8 +18,8 @@ interface FoundRoom {
 }
 
 interface Props {
-  onHosted: () => void
-  onJoined: () => void
+  onHosted: (game: LanGame, seed: number) => void
+  onJoined: (game: LanGame, seed?: number) => void
   onClose: () => void
 }
 
@@ -26,6 +29,8 @@ export function LanPanel({ onHosted, onJoined, onClose }: Props): JSX.Element {
   const [rooms, setRooms] = useState<FoundRoom[]>([])
   const [manual, setManual] = useState('')
   const [status, setStatus] = useState<'idle' | 'hosting' | 'guest-wait'>('idle')
+  /** 三期:房间类型(td=快照合作 / tetris=事件同步对战)。 */
+  const [gameKind, setGameKind] = useState<LanGame>('td')
   const roomsRef = useRef<Map<string, FoundRoom>>(new Map())
 
   useEffect(() => {
@@ -64,16 +69,19 @@ export function LanPanel({ onHosted, onJoined, onClose }: Props): JSX.Element {
   }, [t])
 
   const host = useCallback(async () => {
-    await window.rgbbox?.lanHost?.(roomName.trim() || 'RGBBox', 'td')
+    // 三期(FR-LN05): tetris 房间生成开局种子(31 位内非负整数),随建房
+    // 下发、经 welcome 回送到客端;td 房间忽略种子。
+    const seed = Math.floor(Math.random() * 0x7fffffff)
+    await window.rgbbox?.lanHost?.(roomName.trim() || 'RGBBox', gameKind, seed)
     setStatus('hosting')
-    onHosted()
-  }, [roomName, onHosted])
+    onHosted(gameKind, seed)
+  }, [roomName, gameKind, onHosted])
 
   const join = useCallback(async (ip: string, port: number) => {
     const res = await window.rgbbox?.lanJoin?.(ip, port)
     if (res && res.ok) {
       setStatus('guest-wait')
-      onJoined()
+      onJoined(res.game, res.seed)
     } else if (res && !res.ok) {
       setStatus('idle')
     }
@@ -88,6 +96,14 @@ export function LanPanel({ onHosted, onJoined, onClose }: Props): JSX.Element {
 
       {status === 'idle' ? (
         <>
+          {/* 三期(FR-LN05): 房间类型选择——TD 快照合作 / Tetris 事件对战 */}
+          <div className="lan-row" data-field="lan-game-kind">
+            {(['td', 'tetris'] as const).map((g) => (
+              <button key={g} type="button" className={`diff-btn ${gameKind === g ? 'on' : ''}`} data-lan-game={g} onClick={() => setGameKind(g)}>
+                {t(g === 'td' ? 'games.lan.gameTd' : 'games.lan.gameTetris')}
+              </button>
+            ))}
+          </div>
           <div className="lan-row">
             <input value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder={t('games.lan.roomName')} aria-label={t('games.lan.roomName')} />
             <button type="button" className="video-btn" data-action="lan-host" onClick={() => { void host() }}>{t('games.lan.host')}</button>

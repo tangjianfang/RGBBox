@@ -5,6 +5,7 @@
 import { playSfx } from './sfx'
 import { WIDTH, HEIGHT } from './td'
 import { HIT_STOP, hitStopTick } from './juice'
+import { mulberry32 } from './daily'
 
 /** FR-G08 race short-run adds 'won': line goal reached before topping out. */
 export type TetrisPhase = 'ready' | 'running' | 'won' | 'lost'
@@ -124,23 +125,27 @@ export interface TetrisState {
   pieceId: number
   /** R200(FR-G06): hit-stop 冻结剩余(秒)。 */
   hitStop: number
+  /** R209 三期(FR-LN05): 种子 RNG(7-bag 洗牌用;undefined=Math.random)。
+   *  LAN 对战双方以同一种子开局 → piece 序列一致;纯闭包不序列化。 */
+  rng?: () => number
 }
 
 function emptyGrid(): number[][] {
   return Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0))
 }
 
-function refillBag(bag: number[]): void {
+function refillBag(state: TetrisState): void {
+  const rand = state.rng ?? Math.random
   const fresh = [0, 1, 2, 3, 4, 5, 6]
   for (let i = fresh.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
+    const j = Math.floor(rand() * (i + 1))
     ;[fresh[i], fresh[j]] = [fresh[j], fresh[i]]
   }
-  bag.push(...fresh)
+  state.bag.push(...fresh)
 }
 
 function drawFromBag(state: TetrisState): number {
-  if (state.bag.length === 0) refillBag(state.bag)
+  if (state.bag.length === 0) refillBag(state)
   return state.bag.shift() as number
 }
 
@@ -179,7 +184,9 @@ export function dropInterval(level: number): number {
   return Math.max(0.08, 0.8 * Math.pow(0.85, level - 1))
 }
 
-export function initialTetrisState(): TetrisState {
+/** R209 三期(FR-LN05): 种子开局——seed 注入 rng(7-bag 洗牌确定性),
+ *  LAN 对战双方同 seed → 双方 piece 序列一致。 */
+export function initialTetrisState(seed?: number): TetrisState {
   const state: TetrisState = {
     phase: 'ready',
     clock: 0,
@@ -213,7 +220,8 @@ export function initialTetrisState(): TetrisState {
     hitStop: 0,
     boardX: BOARD_X,
   }
-  refillBag(state.bag)
+  if (seed !== undefined) state.rng = mulberry32(seed)
+  refillBag(state)
   for (let i = 0; i < 4; i++) state.queue.push(drawFromBag(state))
   state.kind = state.queue.shift() as number
   refreshHint(state)

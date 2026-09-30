@@ -908,7 +908,7 @@ const EN = {
   'games.lan.button': 'LAN',
   'games.lan.title': 'LAN play',
   'games.lan.roomName': 'Room name',
-  'games.lan.host': 'Host (TD co-op)',
+  'games.lan.host': 'Host',
   'games.lan.rooms': 'Rooms on this network',
   'games.lan.roomsEmpty': 'Scanning… no rooms yet',
   'games.lan.join': 'Join',
@@ -920,6 +920,12 @@ const EN = {
   'games.lan.rejected': 'Join rejected — version mismatch',
   'games.lan.peerLeft': 'Player disconnected — the host keeps running',
   'games.lan.cmdHint': 'Remote seat: pick a tower, then click the board · Q meteor',
+  // ── R209 三期 (FR-LN05): Tetris 对战房间 + 结算互显 ──
+  'games.lan.gameTd': 'TD co-op',
+  'games.lan.gameTetris': 'Tetris versus',
+  'games.lan.resultTitle': 'Versus result',
+  'games.lan.me': 'You',
+  'games.lan.peer': 'Peer',
   // ── R205 tail (FR-G08): short-run matrix toggles ──
   'games.short.blitz': 'Blitz · 6 waves',
   'games.short.sprint': 'Sprint · 90s',
@@ -2648,7 +2654,7 @@ const ZH: TranslationTable = {
   'games.lan.button': '局域网',
   'games.lan.title': 'LAN 联机',
   'games.lan.roomName': '房名',
-  'games.lan.host': '建房（TD 合作）',
+  'games.lan.host': '建房',
   'games.lan.rooms': '本网段房间',
   'games.lan.roomsEmpty': '扫描中……暂无房间',
   'games.lan.join': '加入',
@@ -2660,6 +2666,12 @@ const ZH: TranslationTable = {
   'games.lan.rejected': '加入被拒——版本不一致',
   'games.lan.peerLeft': '玩家断线——房主继续对局',
   'games.lan.cmdHint': '远程席位：选塔后点击棋盘 · Q 陨石',
+  // ── R209 三期 (FR-LN05): Tetris 对战房间 + 结算互显 ──
+  'games.lan.gameTd': 'TD 合作',
+  'games.lan.gameTetris': 'Tetris 对战',
+  'games.lan.resultTitle': '对战结果',
+  'games.lan.me': '本机',
+  'games.lan.peer': '对方',
   // ── R205 尾款 (FR-G08): 短局矩阵开关 ──
   'games.short.blitz': '闪电赛 · 6 波',
   'games.short.sprint': '冲刺 · 90 秒',

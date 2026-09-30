@@ -34,9 +34,13 @@ function wrap(v: number, m: number): number {
   return ((v % m) + m) % m
 }
 
-/** 两三个 stop 的线性渐变(底色基调用)。 */
-function vgrad(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number, stops: Array<[number, string]>): CanvasGradient {
+/** 两三个 stop 的线性渐变(底色基调用)。
+ *  防御:测试环境(happy-dom)的 createLinearGradient 可能返回 undefined,
+ *  此时退回首 stop 纯色(渐变缺失只损失层次不中断绘制;真机 canvas 恒有
+ *  渐变对象,行为零影响)。 */
+function vgrad(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number, stops: Array<[number, string]>): CanvasGradient | string {
   const g = ctx.createLinearGradient(x0, y0, x1, y1)
+  if (!g) return stops[0][1]
   for (const [at, color] of stops) g.addColorStop(at, color)
   return g
 }

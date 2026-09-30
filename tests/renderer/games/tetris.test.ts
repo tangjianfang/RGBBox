@@ -8,6 +8,7 @@ import {
   shapeCells,
   startTetris,
   tickTetris,
+  type TetrisState,
 } from '../../../src/renderer/src/games/tetris'
 
 describe('renderer/games/tetris engine (R100.3)', () => {
@@ -373,5 +374,62 @@ describe('renderer/games/tetris FR-G08 short-run matrix (40-line race)', () => {
     tickTetris(state, 0.001)
     expect(state.lines).toBe(41)
     expect(state.phase).toBe('running')
+  })
+})
+
+// ── R209 三期(FR-LN05): LAN Tetris 对战——种子序列一致 + garbage 事件往返 ──
+describe('R209 LAN tetris: seeded bag + garbage roundtrip', () => {
+  /** 硬降连打抽干 piece 序列(top out 停),返回落子 kind 序列与剩余队列。 */
+  const drain = (state: TetrisState, drops: number): { seq: number[]; queue: number[] } => {
+    startTetris(state)
+    const seq: number[] = [state.kind]
+    for (let i = 0; i < drops && state.phase === 'running'; i += 1) {
+      state.commands.push('hard')
+      tickTetris(state, 0.016)
+      if (state.phase === 'running') seq.push(state.kind)
+    }
+    return { seq, queue: [...state.queue] }
+  }
+
+  it('同种子双方 piece 序列一致(初始队列+持续落子);异种子序列不同', () => {
+    const a = initialTetrisState(20260930)
+    const b = initialTetrisState(20260930)
+    expect(b.queue).toEqual(a.queue)
+    expect(b.kind).toBe(a.kind)
+    const outA = drain(a, 30)
+    const outB = drain(b, 30)
+    expect(outB.seq).toEqual(outA.seq)
+    expect(outB.queue).toEqual(outA.queue)
+    const c = initialTetrisState(1999)
+    const outC = drain(c, 30)
+    // 不同种子几乎不可能产出同一段 30 落子序列(7-bag 洗牌空间 5040^5)
+    expect(outC.seq).not.toEqual(outA.seq)
+  })
+
+  it('无种子(单机)走 Math.random 开局不受影响(rng 槽保持 undefined)', () => {
+    const s = initialTetrisState()
+    expect(s.rng).toBeUndefined()
+    startTetris(s)
+    expect(s.phase).toBe('running')
+    expect(s.queue).toHaveLength(3) // 初始队列形状不变(4 抽 1 为当前块;7-bag 均匀性另有既有用例)
+  })
+
+  it('garbage 事件往返:A 消 2 行折 1 行 → 对方 applyGarbage 入场(固定洞列,确定性)', () => {
+    const linesCleared = 2
+    const sent = garbageFor(linesCleared) // A 侧折算(=R208 guideline 比例)
+    expect(sent).toBe(1)
+    const b = initialTetrisState()
+    b.phase = 'running'
+    const rowsBefore = b.grid.length
+    applyGarbage(b, sent, 4) // B 侧入场(洞列 4 固定,排除 Math.random)
+    expect(b.grid.length).toBe(rowsBefore) // 行数守恒(底插顶删)
+    const lastRow = b.grid[rowsBefore - 1]
+    expect(lastRow.filter((cell) => cell === GARBAGE_CELL)).toHaveLength(9)
+    expect(lastRow[4]).toBe(0)
+    // 二次往返(对方回敬 4 消=4 行)仍守恒且新行同样带单洞
+    applyGarbage(b, garbageFor(4), 6)
+    expect(b.grid.length).toBe(rowsBefore)
+    expect(b.grid[rowsBefore - 1].filter((cell) => cell === GARBAGE_CELL)).toHaveLength(9)
+    expect(b.grid[rowsBefore - 1][6]).toBe(0)
   })
 })

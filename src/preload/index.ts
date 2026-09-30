@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
 import { validateChatMessages } from '../shared/aiChatValidation'
+import type { LanGame } from '../shared/lanProtocol'
 import type { AgentEvent, AgentSendArgs, AgentSessionMeta, TtsEngineStatus, TtsModelProgress, AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, AvatarResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
 
 export interface AudioInput {
@@ -369,9 +370,10 @@ const api = {
     ipcRenderer.invoke(ipcChannels.getDisplays),
 
   // R209 (FR-LN01-05): LAN 联机 —— 传输层在主进程,渲染层只经此白名单桥接入
-  lanState: (): Promise<{ role: 'idle' | 'host' | 'guest'; room: { name: string; game: 'td'; port: number } | null; peers: number }> => ipcRenderer.invoke(ipcChannels.lanState),
-  lanHost: (name: string, game: 'td'): Promise<{ port: number }> => ipcRenderer.invoke(ipcChannels.lanHost, name, game),
-  lanJoin: (ip: string, port: number): Promise<{ ok: true; game: 'td' } | { ok: false; reason: string }> => ipcRenderer.invoke(ipcChannels.lanJoin, ip, port),
+  // 三期(FR-LN05): lanHost 透传房间类型+tetris 开局种子;welcome 回带 seed
+  lanState: (): Promise<{ role: 'idle' | 'host' | 'guest'; room: { name: string; game: LanGame; port: number; seed?: number } | null; peers: number }> => ipcRenderer.invoke(ipcChannels.lanState),
+  lanHost: (name: string, game: LanGame, seed?: number): Promise<{ port: number }> => ipcRenderer.invoke(ipcChannels.lanHost, name, game, seed),
+  lanJoin: (ip: string, port: number): Promise<{ ok: true; game: LanGame; resume?: boolean; seq?: number; seed?: number } | { ok: false; reason: string }> => ipcRenderer.invoke(ipcChannels.lanJoin, ip, port),
   lanLeave: (): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanLeave),
   lanDiscover: (on: boolean): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanDiscover, on),
   lanCmd: (c: unknown): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanCmd, c),

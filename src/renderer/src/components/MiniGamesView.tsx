@@ -4,7 +4,7 @@ import { useVisionInput } from '../hooks/useVisionInput'
 import { useI18n } from '../i18n'
 import { drawExitBadge, drawHudButton, drawHudPanel, hitTest, type HudButton } from '../games/hud'
 import { autoPick } from '../games/swarmAutoPick'
-import { buildKeyToPoolMap, loadInputConfigs, type InputConfigs } from '../domain/inputConfig'
+import { assignGamepads, buildKeyToPoolMap, loadInputConfigs, type InputConfigs } from '../domain/inputConfig'
 import { deployPlayers } from '../games/survival'
 import { LanPanel } from './games/LanPanel'
 import { InputConfigPanel } from './games/InputConfigPanel'
@@ -18,6 +18,7 @@ import {
   MAX_WAVE,
   SELL_REFUND,
   castMeteor,
+  extrapolateBalloons,
 
   TOWER_DEFINITIONS,
   TOWER_MAX_LEVEL,
@@ -278,6 +279,9 @@ export function MiniGamesView(): JSX.Element {
   const [keyMap, setKeyMap] = useState<Record<string, string>>(() => buildKeyToPoolMap(loadInputConfigs(localStorage)))
   const keyMapRef = useRef<Record<string, string>>({})
   keyMapRef.current = keyMap
+  /** R213 二期: 原始四玩家配置(pollGamepad 的 assignGamepads 映射用;
+   *  InputConfigPanel 应用时同步更新)。 */
+  const inputConfigsRef = useRef<InputConfigs>(loadInputConfigs(localStorage))
   /** R213: P1 配置键→引擎标准箭头键(P1 手感恒定;箭头键恒属 P1)。 */
   const [p1KeyMap, setP1KeyMap] = useState<Record<string, string>>(() => {
     const p1 = loadInputConfigs(localStorage)[0]
@@ -307,6 +311,7 @@ export function MiniGamesView(): JSX.Element {
   useEffect(() => { void refreshAvatars() }, [refreshAvatars])
   /** R213: InputConfigPanel 应用——重建 P1/P2-P4 映射。 */
   const applyInputConfigs = useCallback((configs: InputConfigs) => {
+    inputConfigsRef.current = configs
     setKeyMap(buildKeyToPoolMap(configs))
     const p1 = configs[0]
     setP1KeyMap({
@@ -336,7 +341,21 @@ export function MiniGamesView(): JSX.Element {
   const lanRoleRef = useRef<'idle' | 'host' | 'guest'>('idle')
   lanRoleRef.current = lanRole
   const lanSnapRef = useRef<GameState | null>(null)
+  /** R209 三期: 客端插值基——最近一帧快照的 balloons 深拷贝+词缀与到达
+   *  时间戳(逐帧外推的只读基准;tdStateRef.current 与快照同对象,直接改
+   *  它的 balloons 会污染基准,故存副本)。 */
+  const lanSnapExRef = useRef<{ balloons: GameState['balloons']; affix: GameState['affix'] } | null>(null)
+  const lanSnapAtRef = useRef(0)
   const lanPeersRef = useRef(0)
+  // ── R209 三期(FR-LN05): LAN Tetris 对战——事件同步(双方各跑本地引擎) ──
+  /** 房间类型(td=快照合作 / tetris=事件对战)。 */
+  const [lanGame, setLanGame] = useState<'td' | 'tetris'>('td')
+  const lanGameRef = useRef<'td' | 'tetris'>('td')
+  lanGameRef.current = lanGame
+  /** tetris 开局种子(host 建房生成随 welcome 下发 / guest 从 welcome 收取)。 */
+  const lanSeedRef = useRef<number | null>(null)
+  /** 对战比分互显(mine=本局本端结算分,theirs=对方 result 事件;null=未开局)。 */
+  const [lanTetrisScore, setLanTetrisScore] = useState<{ mine: number | null; theirs: number | null } | null>(null)
   const [lanNotice, setLanNotice] = useState<string | null>(null)
   const buildTowerAtRef = useRef((_point: { x: number; y: number }) => undefined)
 
@@ -467,30 +486,57 @@ export function MiniGamesView(): JSX.Element {
     setRecap({ score: Math.floor(score), deltaPct: stats.deltaPct, best, highlight, coach: recapCoachKey(Math.floor(score), stats.totalRuns >= 2 ? prev : null) })
   }, [])
 
-  // R103: poll any connected gamepad each frame — presence detection (no
-  // pairing-event dependency), left stick as analog movement, Start to run.
+  // R103→R213 二期: poll every connected gamepad each frame — presence
+  // detection (no pairing-event dependency) + assignGamepads 玩家→手柄映射
+  // (显式绑定优先+余柄补位,与 InputConfigPanel 绑定 UI 同源);每玩家左
+  // 摇杆写入 axes[pi](P1 仍写 legacy axis——vision 叠加路径不变,axes[0]
+  // 同步双写保数组不变量)。Start 仍限 P1 手柄触发开局。
   const pollGamepad = useCallback(() => {
     if (typeof navigator.getGamepads !== 'function') return
     const pads = navigator.getGamepads()
-    const pad = Array.from(pads).find((item) => item && item.connected) ?? null
-    if (pad) {
-      survivalRef.current.axis = { x: pad.axes[0] ?? 0, y: pad.axes[1] ?? 0 }
-      if (gamepadNameRef.current !== pad.id) {
-        gamepadNameRef.current = pad.id
-        setGamepadName(pad.id)
-      }
-      const startPressed = pad.buttons[9]?.pressed === true
-      if (startPressed && !prevStartRef.current) {
-        const phase = survivalRef.current.phase
-        if (phase === 'ready' || phase === 'lost') startRunRef.current()
-      }
-      prevStartRef.current = startPressed
-    } else {
-      survivalRef.current.axis = { x: 0, y: 0 }
+    const connected = Array.from(pads).filter((item): item is Gamepad => item !== null && item.connected)
+    const axes = survivalRef.current.axes
+    for (let i = 0; i < axes.length; i += 1) axes[i] = { x: 0, y: 0 }
+    survivalRef.current.axis = { x: 0, y: 0 }
+    if (connected.length === 0) {
       prevStartRef.current = false
       if (gamepadNameRef.current !== null) {
         gamepadNameRef.current = null
         setGamepadName(null)
+      }
+      return
+    }
+    const assign = assignGamepads(connected.map((item) => item.index), inputConfigsRef.current)
+    let p1PadSeen = false
+    for (const key of Object.keys(assign)) {
+      const pi = Number(key)
+      const pad = connected.find((item) => item.index === assign[pi])
+      if (pad === undefined) continue
+      const ax = { x: pad.axes[0] ?? 0, y: pad.axes[1] ?? 0 }
+      if (pi === 0) {
+        p1PadSeen = true
+        survivalRef.current.axis = ax
+        if (gamepadNameRef.current !== pad.id) {
+          gamepadNameRef.current = pad.id
+          setGamepadName(pad.id)
+        }
+        const startPressed = pad.buttons[9]?.pressed === true
+        if (startPressed && !prevStartRef.current) {
+          const phase = survivalRef.current.phase
+          if (phase === 'ready' || phase === 'lost') startRunRef.current()
+        }
+        prevStartRef.current = startPressed
+      }
+      if (pi < axes.length) axes[pi] = ax
+    }
+    if (!p1PadSeen) {
+      prevStartRef.current = false
+      // P1 未分得手柄(如仅有 index≠0 的柄被补位给 P2+)——在场提示回落到
+      // 第一只已连接手柄,保持「检测到手柄」的可见性。
+      const first = connected[0]
+      if (first !== undefined && gamepadNameRef.current !== first.id) {
+        gamepadNameRef.current = first.id
+        setGamepadName(first.id)
       }
     }
   }, [])
@@ -807,6 +853,12 @@ export function MiniGamesView(): JSX.Element {
             } catch { /* 序列化失败丢帧 */ }
           }
         }
+        // R209 三期: 客端插值渲染——气球按 now-snapAt 恒速外推(progress 线性,
+        // 每帧从快照基准重算不叠加;dt 钳 0.3s 防挂起后整段跳跃;逃逸/扣命
+        // 仍由房主权威快照裁决,外推只管视觉平滑)。
+        if (lanRoleRef.current === 'guest' && lanSnapExRef.current !== null) {
+          tdStateRef.current.balloons = extrapolateBalloons(lanSnapExRef.current, Math.min(0.3, (now - lanSnapAtRef.current) / 1000))
+        }
         const phase = tdStateRef.current.phase
         if ((phase === 'won' || phase === 'lost') && lastPhase !== phase && lanRoleRef.current !== 'guest') {
           settleBest('td', tdStateRef.current.score, tdStateRef.current.clock, `波次 ${tdStateRef.current.wave}`)
@@ -908,9 +960,11 @@ export function MiniGamesView(): JSX.Element {
         lastSlashPhase = slashRef.current.phase
       } else {
         pollVision()
-        // R208(FR-MP02): 双板对战——双实例 tick + 消行桥(guideline 垃圾行,
-        // 立即入场;applyGarbage 自带当前块上推,冲突安全)。
-        const duelB = tetrisDuelOnRef.current
+        // R209 三期(FR-LN05): LAN Tetris 对战——事件同步:双方各跑本地引擎,
+        // 消行折算垃圾行发对方(对方 applyGarbage),结算互发 result;本地双板
+        // 开关在该模式下不参与。
+        const lanTetris = lanRoleRef.current !== 'idle' && lanGameRef.current === 'tetris'
+        const duelB = tetrisDuelOnRef.current && !lanTetris
         const linesA0 = tetrisRef.current.lines
         tickTetris(tetrisRef.current, dt)
         if (duelB) {
@@ -921,10 +975,21 @@ export function MiniGamesView(): JSX.Element {
           if (dA > 0) applyGarbage(tetrisBRef.current, garbageFor(dA))
           if (dB > 0) applyGarbage(tetrisRef.current, garbageFor(dB))
         }
+        if (lanTetris) {
+          const dA = tetrisRef.current.lines - linesA0
+          const sent = garbageFor(dA)
+          if (sent > 0) void window.rgbbox?.lanCmd?.({ k: 'garbage', lines: sent })
+        }
         const phase = tetrisRef.current.phase
         const duelOver = duelB && (phase === 'lost' || tetrisBRef.current.phase === 'lost')
         if (phase === 'lost' && lastPhase !== phase && !duelB) {
           settleBest('tetris', tetrisRef.current.score, tetrisRef.current.clock, `消行 ${tetrisRef.current.lines} · T-spin ${tetrisRef.current.tspins}`)
+        }
+        if (lanTetris && (phase === 'lost' || phase === 'won') && lastPhase !== phase) {
+          // 结算上报:本端终局分发对方,互显比对(对方分经 cmd result 事件回填)
+          const finalScore = tetrisRef.current.score
+          void window.rgbbox?.lanCmd?.({ k: 'result', score: finalScore })
+          setLanTetrisScore((cur) => ({ mine: finalScore, theirs: cur?.theirs ?? null }))
         }
         if (duelOver && lastPhase !== phase) {
           // 任一板 top out 即整局结束(存活方胜);双板同停,best 记双板高分。
@@ -1272,26 +1337,39 @@ export function MiniGamesView(): JSX.Element {
   const selectedTowerRef = useRef(selectedTower)
   selectedTowerRef.current = selectedTower
 
-  // ── R209 (FR-LN02/03/04): LAN 事件桥——客端指令落地 / 快照入 ref / 断线提示 ──
+  // ── R209 (FR-LN02/03/04 + 三期 LN05): LAN 事件桥——客端指令落地 / 快照入
+  // ref / Tetris 对战事件双向(消行攻击入场+结算互显,不分 host/guest) / 断线提示 ──
   useEffect(() => {
     const off = window.rgbbox?.onLanEvent?.((e) => {
-      if (e.kind === 'cmd' && lanRoleRef.current === 'host' && e.detail && typeof e.detail === 'object') {
-        const c = e.detail as { k: string; x?: number; y?: number; id?: number }
-        if (c.k === 'build' && typeof c.x === 'number' && typeof c.y === 'number') {
-          buildTowerAtRef.current({ x: c.x, y: c.y })
-        } else if (c.k === 'meteor') {
-          if (castMeteor(tdStateRef.current) > 0) playSfx('levelup')
-        } else if (c.k === 'select' && typeof c.id === 'number') {
-          setSelectedTowerId(c.id)
-        } else if (c.k === 'upgrade') {
-          fsActionRef.current['fs-upgrade']?.()
-        } else if (c.k === 'sell') {
-          fsActionRef.current['fs-sell']?.()
+      if (e.kind === 'cmd' && e.detail && typeof e.detail === 'object') {
+        const c = e.detail as { k: string; x?: number; y?: number; id?: number; lines?: number; score?: number }
+        if (c.k === 'garbage' && typeof c.lines === 'number' && lanGameRef.current === 'tetris') {
+          // 对方消行攻击:垃圾行入场(引擎自带冲突上推/非 running 免疫)
+          applyGarbage(tetrisRef.current, Math.max(0, Math.min(8, Math.floor(c.lines))))
+          playSfx('hit')
+        } else if (c.k === 'result' && typeof c.score === 'number' && lanGameRef.current === 'tetris') {
+          const theirs = Math.max(0, Math.floor(c.score))
+          setLanTetrisScore((cur) => ({ mine: cur?.mine ?? null, theirs }))
+        } else if (lanRoleRef.current === 'host') {
+          if (c.k === 'build' && typeof c.x === 'number' && typeof c.y === 'number') {
+            buildTowerAtRef.current({ x: c.x, y: c.y })
+          } else if (c.k === 'meteor') {
+            if (castMeteor(tdStateRef.current) > 0) playSfx('levelup')
+          } else if (c.k === 'select' && typeof c.id === 'number') {
+            setSelectedTowerId(c.id)
+          } else if (c.k === 'upgrade') {
+            fsActionRef.current['fs-upgrade']?.()
+          } else if (c.k === 'sell') {
+            fsActionRef.current['fs-sell']?.()
+          }
         }
       } else if (e.kind === 'snap' && lanRoleRef.current === 'guest') {
         // 快照直接落引擎 ref——统计条/ctl 行/绘制全部复用既有通路
         lanSnapRef.current = e.detail as GameState
         tdStateRef.current = lanSnapRef.current
+        // R209 三期: 插值基准换新(深拷贝 balloons,防逐帧外推污染快照)
+        lanSnapExRef.current = { balloons: tdStateRef.current.balloons.map((b) => ({ ...b })), affix: tdStateRef.current.affix }
+        lanSnapAtRef.current = performance.now()
         publishTd()
       } else if (e.kind === 'peer-joined' && e.detail && typeof e.detail === 'object' && 'joined' in e.detail) {
         lanPeersRef.current += 1
@@ -1448,6 +1526,17 @@ export function MiniGamesView(): JSX.Element {
   }, [])
 
   const startTetrisRun = useCallback(() => {
+    // R209 三期(FR-LN05): LAN Tetris 对战——双方各跑本地引擎(事件同步),
+    // 种子开局(host 建房生成/guest 经 welcome 收取)保证 piece 序列一致;
+    // 本地双板开关在该模式下不参与(对手即远端板);断线不恢复,重开即新局。
+    if (lanRoleRef.current !== 'idle' && lanGameRef.current === 'tetris') {
+      tetrisRef.current = initialTetrisState(lanSeedRef.current ?? undefined)
+      tetrisBRef.current = initialTetrisState()
+      setLanTetrisScore(null)
+      startTetris(tetrisRef.current)
+      publishTetris()
+      return
+    }
     if (tetrisRef.current.phase === 'lost' || (tetrisDuelOnRef.current && tetrisBRef.current.phase === 'lost')) {
       tetrisRef.current = initialTetrisState()
       tetrisBRef.current = initialTetrisState()
@@ -1521,8 +1610,25 @@ export function MiniGamesView(): JSX.Element {
         </header>
         {lanPanelOpen ? (
           <LanPanel
-            onHosted={() => { setLanRole('host'); setLanPanelOpen(false); enterGame('td') }}
-            onJoined={() => { setLanRole('guest'); lanSnapRef.current = null; setLanPanelOpen(false); enterGame('td') }}
+            onHosted={(game, seed) => {
+              setLanRole('host')
+              setLanGame(game)
+              lanSeedRef.current = seed
+              lanPeersRef.current = 0
+              setLanTetrisScore(null)
+              setLanPanelOpen(false)
+              enterGame(game)
+            }}
+            onJoined={(game, seed) => {
+              setLanRole('guest')
+              setLanGame(game)
+              lanSeedRef.current = seed ?? null
+              lanSnapRef.current = null
+              lanSnapExRef.current = null
+              setLanTetrisScore(null)
+              setLanPanelOpen(false)
+              enterGame(game)
+            }}
             onClose={() => setLanPanelOpen(false)}
           />
         ) : null}
@@ -1810,12 +1916,13 @@ export function MiniGamesView(): JSX.Element {
               {tdSpeed}×
             </button>
           ) : null}
-          {/* R209: LAN 客端为远程席位——开波/重开由房主决定,客端控件禁用防死按钮 */}
-          <button className="aspect-lock-btn" type="button" onClick={startHandler} disabled={lanRole === 'guest'}>
+          {/* R209: LAN 客端为远程席位——开波/重开由房主决定,客端控件禁用防死按钮
+              (三期起仅 TD 快照合作禁用;tetris 对战双方跑本地引擎,客端可自行开局) */}
+          <button className="aspect-lock-btn" type="button" onClick={startHandler} disabled={lanRole === 'guest' && lanGame === 'td'}>
             <Play size={13} />
             {isTd && tdSnapshot.wave > 0 ? t('games.nextWave') : t('games.start')}
           </button>
-          <button className="aspect-lock-btn" type="button" onClick={restartHandler} disabled={lanRole === 'guest'}>
+          <button className="aspect-lock-btn" type="button" onClick={restartHandler} disabled={lanRole === 'guest' && lanGame === 'td'}>
             <RotateCcw size={13} />
             {t('games.restart')}
           </button>
@@ -1962,6 +2069,19 @@ export function MiniGamesView(): JSX.Element {
                 {isSlash ? (
                   <button type="button" className={`diff-btn ${slashBurstOn ? 'on' : ''}`} data-field="slash-burst-toggle" onClick={() => setSlashBurstOn(!slashBurstOn)}>{t('games.short.burst')}</button>
                 ) : null}
+              </div>
+            ) : null}
+            {/* R209 三期(FR-LN05): LAN Tetris 对战——比分互显面板(任一方结算
+                即出现,双方分齐后可比对;断线提示复用同一面板) */}
+            {isTetris && lanTetrisScore !== null ? (
+              <div className="duel-panel" data-field="lan-tetris-result">
+                <p className="duel-title">{t('games.lan.resultTitle')}</p>
+                <p className="duel-scores">{t('games.lan.me')} {lanTetrisScore.mine ?? '…'} · {t('games.lan.peer')} {lanTetrisScore.theirs ?? '…'}</p>
+                {lanNotice !== null ? <p className="duel-title">{lanNotice}</p> : null}
+              </div>
+            ) : isTetris && lanNotice !== null ? (
+              <div className="duel-panel" data-field="lan-tetris-result">
+                <p className="duel-title">{lanNotice}</p>
               </div>
             ) : null}
             {/* R208 (FR-MP03): 轮换对决——回合提示 / 对照结算(P2 回合待开始,或双局已完) */}

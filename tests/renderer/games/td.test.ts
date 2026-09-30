@@ -1,6 +1,6 @@
 // R201: TD 无尽/词缀/陨石。
 import { describe, expect, it } from 'vitest'
-import { affixForWave, AFFIX_PARAMS, BLITZ_WAVES, castMeteor, initialState, launchWave, MAX_WAVE, targetWaves, tickGame } from '../../../src/renderer/src/games/td'
+import { affixForWave, AFFIX_PARAMS, BLITZ_WAVES, castMeteor, extrapolateBalloons, initialState, launchWave, MAX_WAVE, targetWaves, tickGame } from '../../../src/renderer/src/games/td'
 
 describe('td endless + affix (FR-TD02)', () => {
   it('affix cycles after wave 12 (swift→tough→phantom→swift…)', () => {
@@ -103,5 +103,46 @@ describe('renderer/games/td FR-G08 short-run matrix (blitz)', () => {
     state.wave = BLITZ_WAVES - 1
     launchWave(state)
     expect(state.wave).toBe(BLITZ_WAVES)
+  })
+})
+
+// ── R209 三期: 客端插值渲染 —— extrapolateBalloons 纯函数 ──
+describe('R209 guest balloon extrapolation', () => {
+  const balloon = (over: Partial<Parameters<typeof extrapolateBalloons>[0]['balloons'][number]> = {}) => ({
+    id: 1, progress: 0.5, speed: 0.1, hp: 3, maxHp: 3, reward: 5, slowUntil: 0, color: '#f00', ...over,
+  })
+
+  it('恒速线性外推:progress 按 speed·dt 前进;输入快照不被改动(纯函数)', () => {
+    const snap = { affix: null as null, balloons: [balloon()] }
+    const out = extrapolateBalloons(snap, 0.1)
+    expect(out[0].progress).toBeCloseTo(0.5 + 0.1 * 0.1, 10)
+    expect(snap.balloons[0].progress).toBe(0.5) // 基准未被污染(逐帧重算不叠加)
+    // 再次以同基准外推同 dt 结果一致(无状态)
+    expect(extrapolateBalloons(snap, 0.1)[0].progress).toBeCloseTo(0.51, 10)
+  })
+
+  it('dt=0/负值返回等值副本;dt 越大推进越多(时间单调)', () => {
+    const snap = { affix: null as null, balloons: [balloon({ speed: 0.2 })] }
+    expect(extrapolateBalloons(snap, 0)[0].progress).toBe(0.5)
+    const a = extrapolateBalloons(snap, 0.05)[0].progress
+    const b = extrapolateBalloons(snap, 0.1)[0].progress
+    expect(b).toBeGreaterThan(a)
+  })
+
+  it('减速气球按 0.56 因子外推,slowUntil 同步衰减', () => {
+    const snap = { affix: null as null, balloons: [balloon({ slowUntil: 2 })] }
+    const out = extrapolateBalloons(snap, 0.5)
+    expect(out[0].progress).toBeCloseTo(0.5 + 0.1 * 0.56 * 0.5, 10)
+    expect(out[0].slowUntil).toBeCloseTo(1.5, 10)
+  })
+
+  it('词缀波按 AFFIX_PARAMS.speed 放大;progress 钳在 1 之下(逃逸由房主裁决)', () => {
+    const snap = { affix: 'swift' as const, balloons: [balloon({ progress: 0.95, speed: 0.5 })] }
+    const out = extrapolateBalloons(snap, 1)
+    expect(out[0].progress).toBeLessThan(1)
+    expect(out[0].progress).toBeGreaterThanOrEqual(0.9999)
+    // 无词缀同参数也已钳制
+    const plain = extrapolateBalloons({ affix: null, balloons: [balloon({ progress: 0.95, speed: 0.5 })] }, 1)
+    expect(plain[0].progress).toBeLessThan(1)
   })
 })

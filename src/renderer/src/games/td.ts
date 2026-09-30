@@ -10,7 +10,7 @@ export interface Point {
   y: number
 }
 
-interface Balloon {
+export interface Balloon {
   id: number
   progress: number
   speed: number
@@ -685,4 +685,25 @@ export function tdHints(state: GameState): CoachHint[] {
     hints.push({ key: 'td.upgradeReady', tone: 'tip', priority: 55 })
   }
   return hints
+}
+
+// ── R209 三期(FR-LN05 前置): 客端插值渲染 —— 气球 progress 线性外推 ──
+// 纯函数:LAN guest 收 15Hz 快照后,绘制帧按 now-snapAt 对 balloons 的
+// progress 做恒速外推(TD 气球恒速天然可外推;塔/弹等复杂实体不做)。
+// 不改输入(快照副本供逐帧重算,避免外推量叠加);progress 钳在 1 之下
+// (是否逃逸/扣命由房主权威快照裁决,客端不制造越界事件)。
+/**
+ * Extrapolate balloon positions for the guest renderer.
+ * @param state snapshot source — only balloons/affix are read, never mutated
+ * @param dt seconds since the snapshot arrived (caller clamps to ~0.3s)
+ * @returns a fresh balloons array with advanced progress (input untouched)
+ */
+export function extrapolateBalloons(state: Pick<GameState, 'balloons' | 'affix'>, dt: number): Balloon[] {
+  if (dt <= 0) return state.balloons.map((balloon) => ({ ...balloon }))
+  const affixSpeed = state.affix !== null ? AFFIX_PARAMS[state.affix].speed : 1
+  return state.balloons.map((balloon) => ({
+    ...balloon,
+    progress: Math.min(0.9999, balloon.progress + balloon.speed * (balloon.slowUntil > 0 ? 0.56 : 1) * dt * affixSpeed),
+    slowUntil: Math.max(0, balloon.slowUntil - dt),
+  }))
 }
