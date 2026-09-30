@@ -5391,6 +5391,46 @@ input[type='range'].audio-slider {
   line-height: 1.4;
 }
 
+/* R93: AI 画质增强弹出面板（与音频面板同款浮层，二者互斥弹出） */
+.video-superres-panel {
+  position: absolute;
+  right: 12px;
+  bottom: 56px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(10, 16, 20, 0.92);
+  border: 1px solid rgba(70, 198, 168, 0.3);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+}
+
+.video-superres-panel select {
+  width: 84px;
+  font-size: 0.75rem;
+}
+
+.video-superres-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(200, 220, 229, 0.85);
+  letter-spacing: 0.4px;
+}
+
+/* R93: 超分输出 canvas——覆盖在原 video 上（.video-preview-rect 已给定位），
+   点击穿透给 wrap（播放/暂停），snip 冻结帧在其后渲染故仍压在其上 */
+.video-superres-canvas {
+  z-index: 1;
+  pointer-events: none;
+}
+
 .video-badges {
   position: absolute;
   top: 12px;

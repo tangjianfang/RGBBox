@@ -103,4 +103,20 @@ export const MODELS_MANIFEST: ModelManifestEntry[] = [
     bytes: 2510010,
     description: 'DTLN stage 2 (separation LSTM, ~2.5MB)',
   },
+  // ── R93 tier-1: anime video realtime super-resolution (RealESRGAN-AnimeVideo-v3
+  // xs, SRVGGNetCompact). Single fp32 ×4 ONNX export with dynamic H×W from the
+  // reproducible skillsafe-ai conversion of the official realesr-animevideov3.pth
+  // (upstream pth sha256 pinned in the repo manifest; ort-CPU vs PyTorch verified
+  // max_abs 3.6e-06; contract: input "input" NCHW RGB 0-1 float32 → output ×4).
+  // hf-mirror URL + sha256 verified 2026-09-30. The UI's ×2/×3 scales are produced
+  // by pre-scaling the model input (input = native × scale/4) — no verified public
+  // ×2/×3 ONNX exists (official releases ship .pth/ncnn only). ──
+  {
+    name: 'realesr_animevideov3',
+    kind: 'onnx',
+    file: 'realesr_animevideov3_x4.onnx',
+    url: 'https://hf-mirror.com/skillsafe-ai/realesr-animevideov3/resolve/main/model.onnx',
+    bytes: 2492908,
+    description: 'RealESRGAN-AnimeVideo-v3 xs ×4 super-resolution ONNX (fp32, ~2.4MB)',
+  },
 ]
