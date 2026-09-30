@@ -50,6 +50,37 @@ describe('R186 prompts', () => {
     // turn prompt carries the read-before-write nudge for system-ignoring models
     expect(mod.buildAi8TurnPrompt('C:/ws', 'task')).toContain('先读后写')
   })
+
+  it('R177 P-4: planning / tool-selection staging / one-call / no-fabrication guidance, length stays lean', async () => {
+    const mod = await import('../../src/main/agentService')
+    for (const p of [mod.KERNEL_SYSTEM_PROMPT, mod.REACT_SYSTEM_PROMPT]) {
+      // multi-turn planning: short plan first, execute stepwise against it
+      expect(p).toMatch(/plan \(2-4 steps\)/i)
+      expect(p).toMatch(/one step per (turn|reply)/i)
+      // tool selection: glob vs list vs read + the locate→confirm→edit staging
+      expect(p).toMatch(/glob\(pattern\) locates files by name/i)
+      expect(p).toMatch(/list\(path\) shows a directory/i)
+      expect(p).toMatch(/Locate with glob\/list, confirm with read, then edit/i)
+      // never invent what tools returned
+      expect(p).toMatch(/never fabricate tool output/i)
+    }
+    // one-at-a-time discipline, in each protocol's idiom
+    expect(mod.KERNEL_SYSTEM_PROMPT).toMatch(/One tool call at a time — wait for its result/i)
+    expect(mod.REACT_SYSTEM_PROMPT).toMatch(/One tool call per reply/i)
+    // R177 P-4 budget: ±30% of the R186 baselines (881 / 1362 chars)
+    expect(mod.KERNEL_SYSTEM_PROMPT.length).toBeGreaterThan(617)
+    expect(mod.KERNEL_SYSTEM_PROMPT.length).toBeLessThan(1146)
+    expect(mod.REACT_SYSTEM_PROMPT.length).toBeGreaterThan(953)
+    expect(mod.REACT_SYSTEM_PROMPT.length).toBeLessThan(1772)
+    // per-turn legend (R178: some models ignore the system message) mirrors
+    // the same discipline compactly
+    const legend = mod.buildAi8TurnPrompt('C:/ws', 'task')
+    expect(legend).toContain('先读后写')
+    expect(legend).toContain('glob/list 定位文件')
+    expect(legend).toContain('一次只调一个工具')
+    expect(legend).toContain('2-4 步计划')
+    expect(legend).toContain('不要编造工具输出')
+  })
 })
 
 describe('R186 AI8 retry rounds', () => {
