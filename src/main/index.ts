@@ -8,6 +8,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join, basename, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { defaultProfile } from '../shared/defaultProfile'
+import { LanService, registerLanIpc } from './lanService'
+import { registerAvatarIpc } from './avatarStore'
 import { createCaptureStore } from './captureStore'
 import { recognizeImage } from './ocrService'
 import { ipcChannels } from '../shared/ipc'
@@ -108,6 +110,8 @@ initCrashLogging()
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL)
 
 let mainWindow: BrowserWindow | null = null
+// R209 (FR-LN01-05): LAN 联机传输层 —— 生命周期跟随主窗口,quit 时 teardown
+const lanService = new LanService()
 let tray: Tray | null = null
 // R136: hidden vision pipeline host window (see registerIpc visionHostOpen)
 let visionHostWindow: BrowserWindow | null = null
@@ -167,6 +171,9 @@ function createMainWindow(): void {
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
   })
+
+  // R209: LAN 事件推流目标(窗口重建时重新绑定)
+  lanService.bind(mainWindow, app.getVersion())
 
   // R43: tell the renderer definitively when the window stops/starts being
   // visible to the user, so it can pause the effect-computation tick loop
@@ -812,16 +819,18 @@ function registerIpc(): void {
   const ttsCacheRoot = join(app.getPath('userData'), 'models')
   let ttsDownloading = false
   ipcMain.handle(ipcChannels.ttsEngineStatus, () => ttsModelStatus(ttsCacheRoot))
-  ipcMain.handle(ipcChannels.ttsModelDownload, async (_event, p: unknown) => {
+  ipcMain.handle(ipcChannels.ttsModelDownload, async (_event, p: unknown, opts?: unknown) => {
     if (ttsDownloading) return { ok: false, error: 'already-downloading' }
     // R185: a string[] payload narrows the run to those files (per-file retry)
     const only = Array.isArray(p) && p.every((x) => typeof x === 'string') ? (p as string[]) : undefined
+    // R212: {piper:true} downloads the Chinese VITS engine instead
+    const piper = (opts as { piper?: boolean } | undefined)?.piper === true
     ttsDownloading = true
     const push = (ev: TtsDownloadEvent): void => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ipcChannels.ttsModelProgress, ev)
     }
     try {
-      return await ttsDownloadModels(ttsCacheRoot, push, undefined, { only })
+      return await ttsDownloadModels(ttsCacheRoot, push, undefined, { only, piper })
     } finally {
       ttsDownloading = false
     }
@@ -1638,6 +1647,9 @@ app.whenReady().then(() => {
   void initializeCaptureProviders()
   log.info('App', 'Capture providers initialized')
   registerIpc()
+  registerLanIpc(ipcMain, lanService)
+  // R213: 头像存取(文件对话框→128² center-crop→userData/avatars)
+  registerAvatarIpc(ipcMain, () => app.getPath('userData'))
   // R91.3b: DTLN denoise — inference in a utility process, IPC surface here
   registerDenoiseService(join(app.getPath('userData'), 'models'), () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null))
 
@@ -1725,6 +1737,7 @@ app.on('second-instance', () => {
 app.on('before-quit', () => {
   log.info('App', 'Application quitting')
   void disposeAudioAi() // R90 P1: release onnx sessions
+  lanService.teardown() // R209: 关闭 LAN beacon/会话/看门
   log.flushSync()
   isQuitting = true
   // R74: stop idle polling + close effect windows. The R73 OS shutdown timer

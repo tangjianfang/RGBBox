@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { Pause, Play } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { PRESET_SNIP_HOTKEYS } from '../../../shared/snipHotkeys'
 import { UI_FONT_SCALE_TIERS } from '../domain/uiFontScale'
+import { UI_THEME_OPTIONS } from '../domain/uiTheme'
+import { clearAllGameData, type GameId } from '../domain/gamesTelemetry'
 
 export interface SettingsViewProps {
   // Runtime
@@ -21,18 +24,19 @@ export interface SettingsViewProps {
   // Appearance (R160.4): Dynamic-Type-equivalent font scale
   uiFontScale: string
   onUiFontScale: (id: string) => void
+  // Appearance (R148 S5): UI theme — dark default / light / follow system
+  uiTheme: string
+  onUiTheme: (id: string) => void
   // AI (R83→R88): moved to the AI Lab view
 }
 
 export function SettingsView(props: SettingsViewProps) {
   const { t } = useI18n()
+  const [gamesClearedAt, setGamesClearedAt] = useState<number | null>(null)
   return (
     <div className="settings-view">
-      <header className="workspace-header">
-        <div>
-          <h2>{t('menu.settings')}</h2>
-        </div>
-      </header>
+      {/* R189 Q-5: topbar already shows '设置' — the duplicate in-view header
+          is removed; the groups grid starts directly. */}
       <div className="settings-groups">
         <section className="panel settings-group" data-group="run">
           <h3>{t('settings.group.run')}</h3>
@@ -121,6 +125,43 @@ export function SettingsView(props: SettingsViewProps) {
               ))}
             </select>
           </div>
+          {/* R148 S5: theme — dark default (stage-first), light flips the chrome
+              token layer, system rides prefers-color-scheme with live re-resolve. */}
+          <div className="status-panel" title={t('uiTheme.hint')}>
+            <span>{t('uiTheme.label')}</span>
+            <select
+              data-setting="ui-theme"
+              value={props.uiTheme}
+              onChange={(e) => props.onUiTheme(e.target.value)}
+            >
+              {UI_THEME_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>{t(`uiTheme.option.${opt.id}` as Parameters<typeof t>[0])}</option>
+              ))}
+            </select>
+          </div>
+        </section>
+
+        {/* R198(FR-G02.3): games — clear local telemetry (bests kept by default). */}
+        <section className="panel settings-group" data-group="games">
+          <h3>{t('settings.group.games')}</h3>
+          <div className="status-panel" title={t('settings.games.clearHint')}>
+            <span>{t('settings.games.clearLabel')}</span>
+            <button
+              type="button"
+              className="video-btn"
+              data-setting="games-clear-data"
+              onClick={() => {
+                // 两段确认:先清遥测(保留最高分);再问是否连最高分一起清
+                if (!window.confirm(t('settings.games.clearConfirm'))) return
+                clearAllGameData(localStorage, false, (id: GameId) => `rgbbox:gamesBest:${id === 'td' ? 'balloon' : id}`)
+                if (window.confirm(t('settings.games.clearBestConfirm'))) {
+                  clearAllGameData(localStorage, true, (id: GameId) => `rgbbox:gamesBest:${id === 'td' ? 'balloon' : id}`)
+                }
+                setGamesClearedAt(Date.now())
+              }}
+            >{t('settings.games.clearBtn')}</button>
+          </div>
+          {gamesClearedAt !== null && <p className="ai-hint-line" data-field="games-cleared">{t('settings.games.cleared')}</p>}
         </section>
       </div>
     </div>

@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
 import { validateChatMessages } from '../shared/aiChatValidation'
-import type { AgentEvent, AgentSendArgs, AgentSessionMeta, TtsEngineStatus, TtsModelProgress, AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
+import type { LanGame } from '../shared/lanProtocol'
+import type { AgentEvent, AgentSendArgs, AgentSessionMeta, TtsEngineStatus, TtsModelProgress, AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, AvatarResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -349,7 +350,7 @@ const api = {
 
   // ── R173-S2/R179: offline TTS — model panel + downloader + WAV export ───────
   ttsEngineStatus: (): Promise<TtsEngineStatus> => ipcRenderer.invoke(ipcChannels.ttsEngineStatus),
-  ttsModelDownload: (paths?: string[]): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(ipcChannels.ttsModelDownload, paths),
+  ttsModelDownload: (paths?: string[], opts?: { piper?: boolean }): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(ipcChannels.ttsModelDownload, paths, opts),
   onTtsModelProgress: (callback: (ev: TtsModelProgress) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, ev: TtsModelProgress): void => callback(ev)
     ipcRenderer.on(ipcChannels.ttsModelProgress, handler)
@@ -367,6 +368,30 @@ const api = {
   // System display list (for multi-monitor spectrum pop-out)
   getDisplays: (): Promise<Array<{ id: number; label: string; bounds: { x: number; y: number; width: number; height: number }; primary: boolean }>> =>
     ipcRenderer.invoke(ipcChannels.getDisplays),
+
+  // R209 (FR-LN01-05): LAN 联机 —— 传输层在主进程,渲染层只经此白名单桥接入
+  // 三期(FR-LN05): lanHost 透传房间类型+tetris 开局种子;welcome 回带 seed
+  lanState: (): Promise<{ role: 'idle' | 'host' | 'guest'; room: { name: string; game: LanGame; port: number; seed?: number } | null; peers: number }> => ipcRenderer.invoke(ipcChannels.lanState),
+  lanHost: (name: string, game: LanGame, seed?: number): Promise<{ port: number }> => ipcRenderer.invoke(ipcChannels.lanHost, name, game, seed),
+  lanJoin: (ip: string, port: number): Promise<{ ok: true; game: LanGame; resume?: boolean; seq?: number; seed?: number } | { ok: false; reason: string }> => ipcRenderer.invoke(ipcChannels.lanJoin, ip, port),
+  lanLeave: (): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanLeave),
+  lanDiscover: (on: boolean): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanDiscover, on),
+  lanCmd: (c: unknown): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanCmd, c),
+  lanSnapshot: (s: unknown, h: string): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanSnapshot, s, h),
+  lanSpectate: (): Promise<boolean> => ipcRenderer.invoke(ipcChannels.lanSpectate),
+  onLanEvent: (callback: (e: { kind: string; detail?: unknown }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, e: { kind: string; detail?: unknown }): void => callback(e)
+    ipcRenderer.on(ipcChannels.lanEvent, handler)
+    return () => ipcRenderer.off(ipcChannels.lanEvent, handler)
+  },
+
+  // ── R213: 角色头像(P1–P4)——主进程落盘 128×128 PNG,渲染层读 dataURL ──
+  avatarGet: (slot: number): Promise<string | null> =>
+    ipcRenderer.invoke(ipcChannels.avatarGet, slot),
+  avatarSet: (slot: number): Promise<AvatarResult> =>
+    ipcRenderer.invoke(ipcChannels.avatarSet, slot),
+  avatarClear: (slot: number): Promise<boolean> =>
+    ipcRenderer.invoke(ipcChannels.avatarClear, slot),
 }
 
 contextBridge.exposeInMainWorld('rgbbox', api)

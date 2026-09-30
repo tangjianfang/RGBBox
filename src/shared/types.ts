@@ -617,6 +617,8 @@ export interface TtsEngineStatus {
   bundledVoices: string[]
   /** R187: voice ids with a downloaded .bin (catalog ∩ on-disk). */
   voices: string[]
+  /** R212: Piper 中文引擎(端到端 VITS,整句韵律)。 */
+  piper?: { installed: boolean; complete: boolean; files: TtsModelFileStatus[] }
 }
 export interface TtsModelProgress {
   path: string
@@ -625,3 +627,19 @@ export interface TtsModelProgress {
   done: boolean
   error?: string
 }
+
+// ── R213: 角色头像(P1–P4 本地图片 → 128×128 PNG)────────────────────────
+
+/**
+ * 头像写盘结果。error 为稳定错误码(不透传底层异常文本),取值见
+ * src/main/avatarStore.ts:invalid-slot / invalid-path / unsupported-format /
+ * file-not-found / file-too-large / decode-failed / crop-failed /
+ * write-failed / cancelled / not-initialized。
+ */
+export interface AvatarResult {
+  ok: boolean
+  error?: string
+}
+
+/** 可用头像席位(P1–P4,与本地双人/双人 LAN 席位口径一致)。 */
+export type AvatarSlot = 1 | 2 | 3 | 4

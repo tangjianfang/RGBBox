@@ -18,7 +18,7 @@ import {
   AppWindow, Camera, CameraOff, ChevronDown, ChevronRight, Circle, Download, FileText,
   Film, FlipHorizontal, FolderOpen, Frame, Image as ImageIcon, Link as LinkIcon, Maximize2,
   Minimize2, Monitor, MonitorPlay, Pause, Play, Plus, RefreshCw, Scissors, SkipBack,
-  SkipForward, SlidersHorizontal, Square, Trash2, Video, Volume2, VolumeX,
+  SkipForward, SlidersHorizontal, Sparkles, Square, Trash2, Video, Volume2, VolumeX,
 } from 'lucide-react'
 import Hls from 'hls.js'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
@@ -34,6 +34,8 @@ import { describeMediaError, formatMediaFailure } from '../domain/mediaError'
 import { MiniPlayerCard } from './video/MiniPlayerCard'
 import { ENHANCE_PRESETS, type EnhancePresetId } from './video/audioEnhance'
 import { useVideoAudioEnhance } from './video/useVideoAudioEnhance'
+import { useSuperres } from './video/useSuperres'
+import { backendLabel } from './video/superres'
 import { AnnotateOverlay } from './video/AnnotateOverlay'
 import { CaptureFilmstrip } from './CaptureFilmstrip'
 import type { CaptureEntry } from '../../../shared/types'
@@ -314,6 +316,10 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
   // R91.3: 电影 EQ 链（懒建图；关闭=bypass）+ 面板开关
   const audioFx = useVideoAudioEnhance(playerRef)
   const [audioPanelOpen, setAudioPanelOpen] = useState(false)
+  // R93: AI 画质增强（RealESRGAN 动画超分档位①）。active 门控：非 player 模式或
+  // keep-alive 隐藏时帧泵停转（hidden 态不出画面也不烧 GPU）。
+  const superres = useSuperres(playerRef, { active: mode === 'player' && visible })
+  const [superresPanelOpen, setSuperresPanelOpen] = useState(false)
 
   // ── Subtitles ─────────────────────────────────────────────────────────────
   const [subCues, setSubCues] = useState<SubCue[]>([])
@@ -1322,9 +1328,9 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
   return (
     <div ref={studioRef} className={`video-studio${fullscreen ? ' video-studio-fullscreen' : ''}`}>
       <header className="workspace-header">
+        {/* R189 Q-5: topbar already shows '视频工作站' — in-view H1 dedup. */}
         <div>
           <p className="eyebrow">{t('video.eyebrow')}</p>
-          <h2>{t('video.title')}</h2>
         </div>
         <div className="video-mode-bar">
           <button type="button" className={`video-mode-btn ${mode === 'camera' ? 'active' : ''}`} onClick={() => setMode('camera')}>
@@ -1378,6 +1384,20 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                     clearPlayerSource()
                   }}
                 />
+                {/* R93: 超分输出层——覆盖原 video 画面显示增强帧；播放/音频/灯效
+                    采样仍走下面的原 video 元素（采样链路不动）。 */}
+                {superres.status === 'on' && (
+                  <canvas
+                    ref={superres.outputCanvasRef}
+                    className="video-preview-rect video-superres-canvas"
+                    style={{
+                      left: playerZoom.contentRect.w > 0 ? playerZoom.contentRect.x : undefined,
+                      top: playerZoom.contentRect.w > 0 ? playerZoom.contentRect.y : undefined,
+                      width: playerZoom.contentRect.w > 0 ? playerZoom.contentRect.w : '100%',
+                      height: playerZoom.contentRect.h > 0 ? playerZoom.contentRect.h : '100%',
+                    }}
+                  />
+                )}
                 {/* R75.3: 冻结帧（框选期间画面静止） */}
                 {snipActive && snipFrame && (
                   <canvas
@@ -1464,6 +1484,59 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                       <span className="video-hint video-denoise-hint">{t('video.denoise.hint')}</span>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* R93: AI 画质增强弹出面板（同音频面板先例：点击不冒泡） */}
+              {mode === 'player' && superresPanelOpen && mediaLoaded && (
+                <div className="video-superres-panel" onClick={(e) => e.stopPropagation()}>
+                  <label className="video-audio-toggle">
+                    <input
+                      type="checkbox"
+                      checked={superres.status === 'on'}
+                      disabled={superres.status === 'downloading' || superres.status === 'starting'}
+                      onChange={(e) => superres.toggle(e.target.checked)}
+                    />
+                    <span>{t('video.superres.title')}</span>
+                  </label>
+                  <div className="video-audio-gain">
+                    <span className="video-label">{t('video.superres.scale')}</span>
+                    <select
+                      className="profile-select"
+                      value={superres.scale}
+                      aria-label={t('video.superres.scale')}
+                      onChange={(e) => superres.setScale(Number(e.target.value) as 2 | 3 | 4)}
+                    >
+                      {[2, 3, 4].map((s) => <option key={s} value={s}>{s}×</option>)}
+                    </select>
+                  </div>
+                  {superres.status === 'on' && (
+                    <div className="video-superres-stats">
+                      <span>{backendLabel(superres.backend ?? 'wasm')}</span>
+                      <span>{superres.fps} fps</span>
+                      {superres.backend === 'wasm' && (
+                        <span className="video-audio-warn">{t('video.superres.cpuLimited')}</span>
+                      )}
+                    </div>
+                  )}
+                  {superres.status === 'downloading' && (
+                    <span className="video-hint">
+                      {t('video.superres.downloading')}{superres.progress != null ? ` ${superres.progress}%` : ''}
+                    </span>
+                  )}
+                  {superres.status === 'starting' && (
+                    <span className="video-hint">{t('video.superres.starting')}</span>
+                  )}
+                  {superres.status === 'error' && (
+                    <span className="video-hint video-audio-warn">
+                      {superres.message === 'ERR_REMOTE'
+                        ? t('video.superres.remote')
+                        : `${t('video.superres.error')}${superres.message ? ` (${superres.message})` : ''}`}
+                    </span>
+                  )}
+                  {superres.status === 'idle' && (
+                    <span className="video-hint video-denoise-hint">{t('video.superres.hint')}</span>
+                  )}
                 </div>
               )}
 
@@ -1756,13 +1829,20 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
             {mode === 'player' && (
               <>
                 <button type="button" className="video-btn video-btn-primary" onClick={() => playerFileInputRef.current?.click()}><Video size={15} /> {t('video.player.open')}</button>
-                {/* R91.3: 电影 EQ 弹出面板 */}
+                {/* R91.3: 电影 EQ 弹出面板（与 R93 超分面板互斥——同位置弹出层） */}
                 <button
                   type="button"
                   className={`video-btn ${audioPanelOpen ? 'active' : ''}`}
                   disabled={!mediaLoaded}
-                  onClick={() => setAudioPanelOpen((v) => !v)}
+                  onClick={() => { setAudioPanelOpen((v) => !v); setSuperresPanelOpen(false) }}
                 ><SlidersHorizontal size={15} /> {t('video.audio.button')}</button>
+                {/* R93: AI 画质增强弹出面板 */}
+                <button
+                  type="button"
+                  className={`video-btn ${superresPanelOpen ? 'active' : ''}`}
+                  disabled={!mediaLoaded}
+                  onClick={() => { setSuperresPanelOpen((v) => !v); setAudioPanelOpen(false) }}
+                ><Sparkles size={15} /> {t('video.superres.button')}</button>
                 <input ref={playerFileInputRef} type="file" accept="video/*,.mkv,.mov,.avi,.flv,.ts" style={{ display: 'none' }} onChange={onPlayerFile} />
                 <input ref={videoFileInputRef} type="file" style={{ display: 'none' }} />
                 <input ref={videoFolderInputRef} type="file" style={{ display: 'none' }} />

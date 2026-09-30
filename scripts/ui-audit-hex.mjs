@@ -11,8 +11,13 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+// R148 S1 split the old aggregate styles.css into three layers; the aggregate
+// entry is now just @import lines (the audit ran against it "successfully"
+// while checking nothing). Default targets are the three real layers.
 const DEFAULT_FILES = [
-  'src/renderer/src/styles.css',
+  'src/renderer/src/styles/tokens.css',
+  'src/renderer/src/styles/base.css',
+  'src/renderer/src/styles/app.css',
 ]
 
 /** Files (relative) whose content legitimately DEFINES the primitives. */

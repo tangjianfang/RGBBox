@@ -278,6 +278,95 @@ describe('AiLabAgentTab (R172-S2)', () => {
     expect((container.querySelector('.agent-tool-result') as HTMLPreElement).textContent).not.toContain('line-13')
   })
 
+  it('R177 P-2: short results (≤12 lines AND ≤600 chars) do not fold', async () => {
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    const shortResult = Array.from({ length: 5 }, (_, i) => `short-${i + 1}`).join('\n')
+    rgbbox.agentSessionsList = vi.fn().mockResolvedValue([{ id: 's-short', title: '短输出', updatedAt: 4, events: 3 }])
+    rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([
+      { kind: 'session-meta', sessionId: 's-short', model: 'glm-5.3', workspace: 'C:\\tmp\\ws' },
+      { kind: 'user', text: '读小文件' },
+      { kind: 'tool-result', call: { id: 't1', name: 'read', args: '{"path":"small.txt"}', result: shortResult, status: 'done' }, ts: 2000 },
+      { kind: 'done', reason: 'completed' },
+    ])
+    const { container } = render(<AiLabAgentTab />)
+    const btn = await waitFor(() => {
+      const el = container.querySelector('[data-action="agent-load"]') as HTMLButtonElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.click(btn)
+    await waitFor(() => expect(rgbbox.agentSessionLoad).toHaveBeenCalledWith('s-short'))
+    // under BOTH thresholds → no fold toggle, everything visible
+    await waitFor(() => expect(container.querySelector('.agent-tool-result')?.textContent).toContain('short-5'))
+    expect(container.querySelector('.agent-tool-fold')).toBeNull()
+  })
+
+  it('R177 P-2: few-lines-but-long results fold at the 600-char threshold', async () => {
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    // 3 lines only — the LINE threshold never trips; 3 lines totaling 623 chars does
+    const wideResult = [`${'x'.repeat(300)}HEAD-A`, `${'y'.repeat(300)}HEAD-B`, 'tail-line'].join('\n')
+    rgbbox.agentSessionsList = vi.fn().mockResolvedValue([{ id: 's-wide', title: '长行输出', updatedAt: 5, events: 3 }])
+    rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([
+      { kind: 'session-meta', sessionId: 's-wide', model: 'glm-5.3', workspace: 'C:\\tmp\\ws' },
+      { kind: 'user', text: '读长行' },
+      { kind: 'tool-result', call: { id: 't1', name: 'read', args: '{"path":"wide.json"}', result: wideResult, status: 'done' }, ts: 2000 },
+      { kind: 'done', reason: 'completed' },
+    ])
+    const { container } = render(<AiLabAgentTab />)
+    const btn = await waitFor(() => {
+      const el = container.querySelector('[data-action="agent-load"]') as HTMLButtonElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.click(btn)
+    await waitFor(() => expect(rgbbox.agentSessionLoad).toHaveBeenCalledWith('s-wide'))
+    await waitFor(() => expect(container.querySelector('.agent-tool-fold')).not.toBeNull())
+    const pre = container.querySelector('.agent-tool-result') as HTMLPreElement
+    // collapsed window = first 600 chars only — the tail is hidden
+    expect(pre.textContent).toContain('HEAD-A')
+    expect(pre.textContent).not.toContain('tail-line')
+    expect(pre.textContent?.length).toBe(600)
+    // expand → the full 902 chars; collapse → back to the window
+    fireEvent.click(container.querySelector('.agent-tool-fold')!)
+    expect((container.querySelector('.agent-tool-result') as HTMLPreElement).textContent).toContain('tail-line')
+    expect((container.querySelector('.agent-tool-result') as HTMLPreElement).textContent?.length).toBe(wideResult.length)
+    fireEvent.click(container.querySelector('.agent-tool-fold')!)
+    expect((container.querySelector('.agent-tool-result') as HTMLPreElement).textContent?.length).toBe(600)
+  })
+
+  it('R177 P-2: fold state is independent per card (expand one, the other stays folded)', async () => {
+    const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>
+    const mk = (tag: string): string => Array.from({ length: 14 }, (_, i) => `${tag}-line-${i + 1}`).join('\n')
+    rgbbox.agentSessionsList = vi.fn().mockResolvedValue([{ id: 's-two', title: '两卡', updatedAt: 6, events: 5 }])
+    rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([
+      { kind: 'session-meta', sessionId: 's-two', model: 'glm-5.3', workspace: 'C:\\tmp\\ws' },
+      { kind: 'user', text: '两次读' },
+      { kind: 'tool-result', call: { id: 't1', name: 'read', args: '{"path":"a.txt"}', result: mk('a'), status: 'done' }, ts: 1000 },
+      { kind: 'tool-result', call: { id: 't2', name: 'read', args: '{"path":"b.txt"}', result: mk('b'), status: 'done' }, ts: 2000 },
+      { kind: 'done', reason: 'completed' },
+    ])
+    const { container } = render(<AiLabAgentTab />)
+    const btn = await waitFor(() => {
+      const el = container.querySelector('[data-action="agent-load"]') as HTMLButtonElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.click(btn)
+    await waitFor(() => expect(container.querySelectorAll('.agent-tool').length).toBe(2))
+    const pres = () => container.querySelectorAll('.agent-tool-result')
+    // both folded by default (14 lines > 12)
+    expect(pres()[0].textContent).not.toContain('a-line-13')
+    expect(pres()[1].textContent).not.toContain('b-line-13')
+    // expand ONLY the first card
+    fireEvent.click(container.querySelectorAll('.agent-tool-fold')[0])
+    expect(pres()[0].textContent).toContain('a-line-14')
+    // the second card keeps its own folded state
+    expect(pres()[1].textContent).not.toContain('b-line-13')
+    const foldLabels = container.querySelectorAll('.agent-tool-fold')
+    expect(foldLabels[0].textContent).toContain('ai.agent.collapse')
+    expect(foldLabels[1].textContent).toContain('ai.agent.expandLines')
+  })
+
   it('R191: auto-restores the last session on mount; meta line carries events count', async () => {
     localStorage.setItem('rgbbox:agentPrefs', JSON.stringify({ lastSessionId: 's-last' }))
     const rgbbox = window.rgbbox as unknown as Record<string, ReturnType<typeof vi.fn>>

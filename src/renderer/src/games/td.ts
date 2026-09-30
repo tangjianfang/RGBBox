@@ -10,7 +10,7 @@ export interface Point {
   y: number
 }
 
-interface Balloon {
+export interface Balloon {
   id: number
   progress: number
   speed: number
@@ -84,6 +84,17 @@ export interface GameState {
   texts: FloatingText[]
   particles: Particle[]
   banner: Banner | null
+  /** R200(FR-G06): 整波清空顿帧。 */
+  hitStop: number
+  /** R201(FR-TD02): 当前词缀波(>12 波后循环;null=普通波)。 */
+  affix: 'swift' | 'tough' | 'phantom' | null
+  /** R201(FR-TD03): 陨石技能(冷却剩余秒;Q 触发)。 */
+  meteorCd: number
+  /** R201(FR-TD02): 无尽模式(>12 波不判胜,词缀循环)。 */
+  endless: boolean
+  /** FR-G08 blitz short-run: 6-wave race. View writes it before start
+   *  (same pattern as other mode flags); the engine only reads it. */
+  blitz?: boolean
 }
 
 export interface TowerDefinition {
@@ -100,6 +111,8 @@ export interface TowerDefinition {
 export const WIDTH = 900
 export const HEIGHT = 520
 export const MAX_WAVE = 12
+/** FR-G08: wave ceiling of a blitz short-run. */
+export const BLITZ_WAVES = 6
 export const AUTO_WAVE_SECONDS = 8
 export const TOWER_MAX_LEVEL = 3
 export const SELL_REFUND = 0.7
@@ -170,6 +183,13 @@ export function distanceToPath(point: Point): number {
   return min
 }
 
+/** FR-G08: wave ceiling of the current run — 6 in a blitz race, MAX_WAVE
+ *  otherwise. All wave-gating logic (launch guard / win / auto next wave)
+ *  reads through this so the two modes share one code path. */
+export function targetWaves(state: GameState): number {
+  return state.blitz ? BLITZ_WAVES : MAX_WAVE
+}
+
 export function initialState(): GameState {
   return {
     phase: 'ready',
@@ -189,6 +209,11 @@ export function initialState(): GameState {
     texts: [],
     particles: [],
     banner: null,
+    hitStop: 0,
+    affix: null,
+    meteorCd: 0,
+    endless: false,
+    blitz: false,
   }
 }
 
@@ -216,7 +241,9 @@ export function spawnBurst(state: GameState, x: number, y: number, color: string
 function spawnBalloon(state: GameState): void {
   const wavePower = Math.max(1, state.wave)
   const elite = wavePower > 4 && state.waveQueue % 5 === 0
-  const hp = elite ? 3 + Math.floor(wavePower / 2) : 1 + Math.floor(wavePower / 3)
+  // R201(FR-TD02): 词缀波——坚韧倍血
+  const affixHp = state.affix !== null ? AFFIX_PARAMS[state.affix].hp : 1
+  const hp = Math.round((elite ? 3 + Math.floor(wavePower / 2) : 1 + Math.floor(wavePower / 3)) * affixHp)
   state.balloons.push({
     id: state.nextId++,
     progress: 0,
@@ -229,14 +256,32 @@ function spawnBalloon(state: GameState): void {
   })
 }
 
+export const AFFIXES = ['swift', 'tough', 'phantom'] as const
+export type Affix = (typeof AFFIXES)[number]
+
+/** R201(FR-TD02): 词缀波参数——迅捷(提速)/坚韧(加血)/幻影(阶段隐行)。 */
+export const AFFIX_PARAMS: Record<Affix, { speed: number; hp: number; phase: boolean; label: string }> = {
+  swift: { speed: 1.45, hp: 1, phase: false, label: '迅捷' },
+  tough: { speed: 1, hp: 2.2, phase: false, label: '坚韧' },
+  phantom: { speed: 1.15, hp: 1, phase: true, label: '幻影' },
+}
+
+export function affixForWave(wave: number): Affix | null {
+  if (wave <= MAX_WAVE) return null
+  return AFFIXES[(wave - MAX_WAVE - 1) % AFFIXES.length]
+}
+
 export function launchWave(state: GameState): void {
-  if (state.wave >= MAX_WAVE) return
+  // R201(FR-TD02): 无尽模式——12 波后不封顶,词缀循环
+  // (FR-G08: 常规/闪电赛上限统一走 targetWaves)
+  if (!state.endless && state.wave >= targetWaves(state)) return
   state.wave += 1
   state.waveQueue = 12 + state.wave * 3
   state.spawnTimer = 0.2
   state.waveCooldown = AUTO_WAVE_SECONDS
   state.phase = 'running'
-  state.banner = { text: `WAVE ${state.wave}`, life: 1.7 }
+  state.affix = affixForWave(state.wave)
+  state.banner = { text: state.affix !== null ? `WAVE ${state.wave} · ${AFFIX_PARAMS[state.affix].label}` : `WAVE ${state.wave}`, life: 1.7 }
   playSfx('wave')
 }
 
@@ -260,6 +305,21 @@ function nearestTarget(tower: Tower, balloons: Balloon[]): Balloon | undefined {
     }
   }
   return target
+}
+
+/** R201(FR-TD03): 陨石——全屏伤害 40,冷却 45s;返回命中数(0=未就绪)。 */
+export function castMeteor(state: GameState): number {
+  if (state.phase !== 'running' || state.meteorCd > 0) return 0
+  const hit = state.balloons.length
+  for (const balloon of state.balloons) {
+    balloon.hp -= 40
+    const pos = pointAtProgress(balloon.progress)
+    spawnBurst(state, pos.x, pos.y, '#fbbf24', 6, 200)
+  }
+  state.meteorCd = 45
+  state.shake = 8
+  state.balloons = state.balloons.filter((b) => b.hp > 0)
+  return hit
 }
 
 export function towerUpgradeCost(tower: Tower): number {
@@ -296,6 +356,16 @@ function makeProjectile(state: GameState, tower: Tower, target: Balloon, def: To
 }
 
 export function tickGame(state: GameState, dt: number): void {
+  // R200: 整波清空 → 轻顿帧;冻结期间不推进
+  if (state.hitStop > 0) {
+    const [remain, thaw] = hitStopTick(state.hitStop, dt)
+    state.hitStop = remain
+    if (thaw === 0) return
+    dt = thaw
+  }
+  if (state.meteorCd > 0) state.meteorCd = Math.max(0, state.meteorCd - dt)
+  const waveJustCleared = state.wave >= 1 && state.waveQueue === 0 && state.balloons.length === 0 && state.spawnTimer === 0 && state.phase === 'running'
+  if (waveJustCleared && state.waveCooldown > 7.9) state.hitStop = HIT_STOP.light
   state.clock += dt
   state.shake = Math.max(0, state.shake - dt * 14)
   for (const text of state.texts) {
@@ -325,7 +395,7 @@ export function tickGame(state: GameState, dt: number): void {
   }
   for (const balloon of state.balloons) {
     const slowFactor = balloon.slowUntil > 0 ? 0.56 : 1
-    balloon.progress += balloon.speed * slowFactor * dt
+    balloon.progress += balloon.speed * slowFactor * dt * (state.affix !== null ? AFFIX_PARAMS[state.affix].speed : 1)
     balloon.slowUntil = Math.max(0, balloon.slowUntil - dt)
   }
   const escaped = state.balloons.filter((balloon) => balloon.progress >= 1)
@@ -406,7 +476,7 @@ export function tickGame(state: GameState, dt: number): void {
     playSfx('gameover')
     return
   }
-  if (state.wave >= MAX_WAVE && state.waveQueue === 0 && state.balloons.length === 0) {
+  if (!state.endless && state.wave >= targetWaves(state) && state.waveQueue === 0 && state.balloons.length === 0) {
     state.phase = 'won'
     spawnBurst(state, WIDTH / 2, HEIGHT / 2 - 40, '#67e8f9', 22, 200)
     spawnBurst(state, WIDTH / 2 - 120, HEIGHT / 2 + 40, '#86efac', 16, 160)
@@ -414,7 +484,7 @@ export function tickGame(state: GameState, dt: number): void {
     playSfx('levelup')
     return
   }
-  if (state.waveQueue === 0 && state.balloons.length === 0 && state.wave < MAX_WAVE) {
+  if (state.waveQueue === 0 && state.balloons.length === 0 && state.wave < targetWaves(state)) {
     state.waveCooldown -= dt
     if (state.waveCooldown <= 0) launchWave(state)
   }
@@ -582,7 +652,7 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, select
     ctx.fillText(state.banner.text, WIDTH / 2, 116)
     ctx.globalAlpha = 1
   }
-  if (state.phase === 'running' && state.waveQueue === 0 && state.balloons.length === 0 && state.wave < MAX_WAVE) {
+  if (state.phase === 'running' && state.waveQueue === 0 && state.balloons.length === 0 && state.wave < targetWaves(state)) {
     const bonus = Math.max(0, Math.round(state.waveCooldown * 4))
     ctx.fillStyle = '#9fb7c1'
     ctx.font = '600 13px Inter, sans-serif'
@@ -597,4 +667,43 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, select
     const footer = state.phase === 'ready' ? (best > 0 ? `Best ★${best}` : '') : `Score ★${state.score} · Best ★${best} ${labels.replaySuffix}`
     drawOverlay(ctx, title, subtitle, footer)
   }
+}
+
+// ── FR-G01(R198): 策略教练 —— 纯函数,key 制文案(渲染层 t('games.coach.<key>'))──
+import type { CoachHint } from './coach'
+import { HIT_STOP, hitStopTick } from './juice'
+
+export function tdHints(state: GameState): CoachHint[] {
+  const hints: CoachHint[] = []
+  if (state.phase !== 'running') return hints
+  if (state.towers.length === 0) hints.push({ key: 'td.noTower', tone: 'warn', priority: 90 })
+  if (state.lives <= 8) hints.push({ key: 'td.livesLow', tone: 'warn', priority: 80 })
+  if (state.coins >= 220 && state.towers.length < 6) hints.push({ key: 'td.coinsIdle', tone: 'tip', priority: 50 })
+  if (state.balloons.length === 0 && state.waveCooldown > 3) hints.push({ key: 'td.earlyStart', tone: 'tip', priority: 40 })
+  if (state.wave >= MAX_WAVE - 2) hints.push({ key: 'td.finalWaves', tone: 'warn', priority: 60 })
+  if (state.towers.some((t) => t.level < TOWER_MAX_LEVEL && state.coins >= towerUpgradeCost(t))) {
+    hints.push({ key: 'td.upgradeReady', tone: 'tip', priority: 55 })
+  }
+  return hints
+}
+
+// ── R209 三期(FR-LN05 前置): 客端插值渲染 —— 气球 progress 线性外推 ──
+// 纯函数:LAN guest 收 15Hz 快照后,绘制帧按 now-snapAt 对 balloons 的
+// progress 做恒速外推(TD 气球恒速天然可外推;塔/弹等复杂实体不做)。
+// 不改输入(快照副本供逐帧重算,避免外推量叠加);progress 钳在 1 之下
+// (是否逃逸/扣命由房主权威快照裁决,客端不制造越界事件)。
+/**
+ * Extrapolate balloon positions for the guest renderer.
+ * @param state snapshot source — only balloons/affix are read, never mutated
+ * @param dt seconds since the snapshot arrived (caller clamps to ~0.3s)
+ * @returns a fresh balloons array with advanced progress (input untouched)
+ */
+export function extrapolateBalloons(state: Pick<GameState, 'balloons' | 'affix'>, dt: number): Balloon[] {
+  if (dt <= 0) return state.balloons.map((balloon) => ({ ...balloon }))
+  const affixSpeed = state.affix !== null ? AFFIX_PARAMS[state.affix].speed : 1
+  return state.balloons.map((balloon) => ({
+    ...balloon,
+    progress: Math.min(0.9999, balloon.progress + balloon.speed * (balloon.slowUntil > 0 ? 0.56 : 1) * dt * affixSpeed),
+    slowUntil: Math.max(0, balloon.slowUntil - dt),
+  }))
 }

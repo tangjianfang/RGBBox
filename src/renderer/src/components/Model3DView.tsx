@@ -42,8 +42,9 @@ export function Model3DView(props: {
   return (
     <div className="model3d-view">
       <header className="workspace-header">
+        {/* R189 Q-5: the eyebrow '3D 模型查看器' duplicated the topbar module
+            name — dropped; the H2 tech title (高斯泼溅) is unique info, kept. */}
         <div>
-          <p className="eyebrow">{t('model3d.eyebrow')}</p>
           <h2>{t('model3d.title')}</h2>
         </div>
         <div className="metric-row">

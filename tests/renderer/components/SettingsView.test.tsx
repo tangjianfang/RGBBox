@@ -20,6 +20,8 @@ function makeProps(over: Partial<SettingsViewProps> = {}): SettingsViewProps {
     onSnipHotkey: vi.fn(),
     uiFontScale: 'md',
     onUiFontScale: vi.fn(),
+    uiTheme: 'dark',
+    onUiTheme: vi.fn(),
     ...over
   }
 }
@@ -30,7 +32,7 @@ describe('SettingsView', () => {
     const groups = container.querySelectorAll('.settings-group h3')
     const titles = [...groups].map((g) => g.textContent)
     expect(titles).toEqual([
-      'settings.group.run', 'settings.group.screensaver', 'settings.group.hotkey', 'settings.group.appearance'
+      'settings.group.run', 'settings.group.screensaver', 'settings.group.hotkey', 'settings.group.appearance', 'settings.group.games'
     ])
   })
 
@@ -77,5 +79,14 @@ describe('SettingsView', () => {
     expect([...select.querySelectorAll('option')].map((o) => o.value)).toEqual(['xs', 'sm', 'md', 'lg', 'xl'])
     fireEvent.change(select, { target: { value: 'lg' } })
     expect(props.onUiFontScale).toHaveBeenCalledWith('lg')
+  })
+
+  it('R148 S5: theme select offers dark/light/system and fires onUiTheme', () => {
+    const props = makeProps()
+    const { container } = render(<SettingsView {...props} />)
+    const select = container.querySelector('select[data-setting="ui-theme"]') as HTMLSelectElement
+    expect([...select.querySelectorAll('option')].map((o) => o.value)).toEqual(['dark', 'light', 'system'])
+    fireEvent.change(select, { target: { value: 'light' } })
+    expect(props.onUiTheme).toHaveBeenCalledWith('light')
   })
 })

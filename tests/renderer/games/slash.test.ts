@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  initialSlashState, startSlash, tickSlash, slash as slashCut, bomb, blockPos, RUN_SECONDS,
+  initialSlashState, startSlash, tickSlash, slash as slashCut, bomb, blockPos, RUN_SECONDS, judgeDuel,
 } from  '../../../src/renderer/src/games/slash'
 
 function runToZone(state: { blocks: Array<{ t: number; speed: number }>; timeLeft: number }): void {
@@ -84,5 +84,96 @@ describe('games/slash (R142-E4)', () => {
     expect(s.blocks.length).toBe(0)
     for (let i = 0; i < 120; i++) tickSlash(s, 1 / 60) // refill a little
     expect(bomb(s)).toBe(false) // cooldown active
+  })
+})
+
+// R203: 三心制 + 连锁块。
+
+describe('slash hearts (FR-SL01)', () => {
+  it('missed block costs a heart; three misses end the run; casual starts at 5', () => {
+    const s = initialSlashState()
+    s.phase = 'running'
+    expect(s.hearts).toBe(3)
+    for (let round = 0; round < 3; round += 1) {
+      s.blocks.push({ id: s.nextId++, dir: 0, t: 1.2, speed: 1, hue: 200, bonus: false }) // 已越圈
+      tickSlash(s, 0.016)
+    }
+    expect(s.hearts).toBe(0)
+    expect(s.phase).toBe('lost')
+    // 休闲档
+    const casual = initialSlashState()
+    casual.hearts = 5
+    casual.maxHearts = 5
+    casual.phase = 'running'
+    casual.blocks.push({ id: casual.nextId++, dir: 0, t: 1.2, speed: 1, hue: 200, bonus: false })
+    tickSlash(casual, 0.016)
+    expect(casual.hearts).toBe(4)
+    expect(casual.phase).toBe('running')
+  })
+})
+
+describe('slash chain blocks (FR-SL02)', () => {
+  it('hitting a block detonates same-dir neighbors near the ring for +5 each', () => {
+    const s = initialSlashState()
+    s.phase = 'running'
+    s.blocks.push({ id: 1, dir: 2, t: 0.9, speed: 1, hue: 200, bonus: false })
+    s.blocks.push({ id: 2, dir: 2, t: 0.8, speed: 1, hue: 210, bonus: false }) // 同向近圈 → 连锁
+    s.blocks.push({ id: 3, dir: 4, t: 0.85, speed: 1, hue: 120, bonus: false }) // 异向 → 保留
+    const before = s.score
+    const out = slashCut(s, 2)
+    expect(out).toBe('hit')
+    expect(s.score).toBeGreaterThan(before)
+    expect(s.blocks.some((b) => b.id === 3)).toBe(true)
+    expect(s.blocks.some((b) => b.id === 2)).toBe(false)
+  })
+})
+
+// M3(FR-SL04): 假动作块。
+describe('slash feint blocks (FR-SL04)', () => {
+  it('a feint block flips its direction once at t≈0.85', () => {
+    const s = initialSlashState()
+    s.phase = 'running'
+    s.timeLeft = 30 // >15s 进度 → 允许 feint
+    s.blocks.push({ id: 1, dir: 0, t: 0.7, speed: 1, hue: 200, bonus: false, feint: true })
+    tickSlash(s, 0.16) // t ≈ 0.86 ≥ 0.85 → flip
+    expect(s.blocks[0].dir).toBe(4) // 0 → 4(翻转)
+    const flippedDir = s.blocks[0].dir
+    tickSlash(s, 0.1)
+    expect(s.blocks[0].dir).toBe(flippedDir) // 只翻一次
+  })
+})
+
+// ── R208 (FR-MP03): 轮换对决判定 ──
+describe('FR-MP03 judgeDuel', () => {
+  it('未完成回合返回 null', () => {
+    expect(judgeDuel([null, null])).toBeNull()
+    expect(judgeDuel([120, null])).toBeNull()
+    expect(judgeDuel([null, 80])).toBeNull()
+  })
+  it('双方完赛按比分判定 p1/p2/tie', () => {
+    expect(judgeDuel([120, 80])).toBe('p1')
+    expect(judgeDuel([80, 120])).toBe('p2')
+    expect(judgeDuel([0, 0])).toBe('tie')
+  })
+})
+
+describe('games/slash FR-G08 short-run matrix (30s burst)', () => {
+  it('startSlash(s, 30) arms a 30s run that settles lost when the clock hits zero', () => {
+    const s = initialSlashState()
+    startSlash(s, 30)
+    expect(s.runSeconds).toBe(30)
+    expect(s.timeLeft).toBe(30)
+    tickSlash(s, 30 + 0.1)
+    expect(s.phase).toBe('lost')
+    expect(s.timeLeft).toBe(0)
+  })
+
+  it('default startSlash keeps the standard 60s ceiling', () => {
+    const s = initialSlashState()
+    startSlash(s)
+    expect(s.runSeconds).toBe(RUN_SECONDS)
+    expect(s.timeLeft).toBe(RUN_SECONDS)
+    tickSlash(s, 29)
+    expect(s.phase).toBe('running') // a 30s burst would already be over
   })
 })

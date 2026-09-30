@@ -26,8 +26,8 @@ describe('MODELS_MANIFEST invariants (restored, R90 review fix)', () => {
     const splats = MODELS_MANIFEST.filter((m) => m.kind === 'splat')
     const onnx = MODELS_MANIFEST.filter((m) => m.kind === 'onnx')
     expect(splats.length).toBe(5)
-    // 2 (R90 audio AI) + 2 (R91.3b DTLN denoise)
-    expect(onnx.length).toBe(4)
+    // 2 (R90 audio AI) + 2 (R91.3b DTLN denoise) + 1 (R93 anime super-resolution)
+    expect(onnx.length).toBe(5)
     for (const m of splats) {
       expect(m.file.endsWith('.splat')).toBe(true)
       expect(m.file.startsWith(`${m.name}.`)).toBe(true)
@@ -36,6 +36,19 @@ describe('MODELS_MANIFEST invariants (restored, R90 review fix)', () => {
     expect(splats.map((m) => m.name)).toEqual(
       expect.arrayContaining(['keyboard_rgb', 'mouse_rgb', 'train', 'garden', 'bicycle'])
     )
+  })
+
+  it('R93 super-resolution entry: hf-mirror source, verified size within the ≤100MB budget', () => {
+    const sr = MODELS_MANIFEST.find((m) => m.name === 'realesr_animevideov3')!
+    expect(sr).toBeDefined()
+    expect(sr.kind).toBe('onnx')
+    expect(sr.file).toBe('realesr_animevideov3_x4.onnx')
+    // hf-mirror mirror (GitHub direct times out from the main process — same
+    // constraint as every onnx entry since R90)
+    expect(sr.url).toContain('hf-mirror.com/skillsafe-ai/realesr-animevideov3')
+    // byte size pinned from the verified download (sha256 match, 2026-09-30)
+    expect(sr.bytes).toBe(2492908)
+    expect(sr.bytes!).toBeLessThanOrEqual(100 * 1024 * 1024)
   })
 
   it('audio entries use the verified int8 sources within the ≤100MB budget (R90.2)', () => {

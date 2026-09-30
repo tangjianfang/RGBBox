@@ -7,7 +7,7 @@
  * 下载到 userData/models/kokoro-local/...,带逐文件进度事件;完成后以
  * `env.localModelPath + allowRemoteModels=false` 纯本地加载,零网络。
  */
-import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -32,6 +32,8 @@ export interface KokoroFileSpec {
   /** 预期字节数(校验用;GET 无 content-length 时也作进度分母) */
   bytes: number
   required: boolean
+  /** R212: 下载源(默认 kokoro 仓;piper 走 rhasspy/piper-voices zh 路径)。 */
+  repo?: 'kokoro' | 'piper'
   /** R192.7: 内容哈希(LFS 文件取自 tree API 的 lfs.oid;小文件为镜像标准内容
    *  实算)。盘上已有文件先本地校验,通过即跳过——不再因启发式误判而重拉。 */
   sha256?: string
@@ -80,6 +82,29 @@ export function kokoroFileUrl(path: string, mirror = true): string {
   return `${host}/${KOKORO_REPO}/resolve/main/${path}?download=true`
 }
 
+// ── R212: Piper 中文本地引擎(zh_CN-huayan-medium,整句端到端 VITS) ──────────
+// 选型:R197 桥(英文版 Kokoro+自创声调符号+60 音节分块硬拼)被用户试听判
+// 「没什么区别,一点情感也没有」;Piper 为中文训练的端到端模型,韵律/停顿由
+// 模型习得。G2P 用 piper-phonemize(纯 wasm,内置完整 espeak-ng cmn 数据),
+// 拼音调值 1-5 直接在 phoneme 表内。模型 63.2MB(总预算 kokoro 之外新增)。
+export const PIPER_REPO = 'rhasspy/piper-voices'
+export const PIPER_ZH_VOICE = 'piper-zh' // 引擎选择器(voice 取此值走 Piper)
+const PIPER_FILES: KokoroFileSpec[] = [
+  { path: 'zh_CN-huayan-medium.onnx', bytes: 63_201_294, sha256: '9929917bf8cabb26fd528ea44d3a6699c11e87317a14765312420be230be0f3d', required: true, repo: 'piper' },
+  { path: 'zh_CN-huayan-medium.onnx.json', bytes: 4822, sha256: 'd521dc45504a8ccc99e325822b35946dd701840bfb07e3dbb31a40929ed6a82b', required: true, repo: 'piper' },
+]
+export const PIPER_SAMPLE_RATE = 22050
+
+export function piperFileUrl(file: string, mirror = true): string {
+  const host = mirror ? 'https://hf-mirror.com' : 'https://huggingface.co'
+  return `${host}/${PIPER_REPO}/resolve/main/zh/zh_CN/huayan/medium/${file}?download=true`
+}
+
+/** 布局:cacheRoot/piper-zh/<file> */
+export function piperModelDir(cacheRoot: string): string {
+  return join(cacheRoot, 'piper-zh')
+}
+
 /** 布局:cacheRoot/onnx-community/kokoro-82M-v1.0-ONNX/<path>(transformers localModelPath 兼容) */
 export function kokoroModelDir(cacheRoot: string): string {
   return join(cacheRoot, 'kokoro-local', 'onnx-community', 'kokoro-82M-v1.0-ONNX')
@@ -94,6 +119,8 @@ export interface TtsModelStatus {
   bundledVoices: string[]
   /** R187: 音色 .bin 已在盘上的 id(含按需下载的目录外音色)。 */
   voices: string[]
+  /** R212: Piper 中文引擎(模型文件齐备 + 包可用)。 */
+  piper: { installed: boolean; complete: boolean; files: TtsModelFileStatus[] }
 }
 
 export function ttsModelStatus(cacheRoot: string): TtsModelStatus {
@@ -114,12 +141,25 @@ export function ttsModelStatus(cacheRoot: string): TtsModelStatus {
       .filter((f) => f.endsWith('.bin') && KOKORO_VOICE_CATALOG.includes(f.replace(/\.bin$/, '')))
       .map((f) => f.replace(/\.bin$/, ''))
   } catch { /* no voices dir yet */ }
+  // R212: piper zh engine status
+  const piperDir = piperModelDir(cacheRoot)
+  const piperFiles: TtsModelFileStatus[] = PIPER_FILES.map((f) => {
+    const full = join(piperDir, f.path)
+    if (!existsSync(full)) return { path: f.path, bytes: f.bytes, present: false }
+    const size = statSync(full).size
+    return { path: f.path, bytes: f.bytes, present: size === f.bytes, actualBytes: size }
+  })
   return {
     complete: files.filter((f) => KOKORO_FILES.find((k) => k.path === f.path)?.required).every((f) => f.present),
     files,
     kokoroInstalled: (() => { try { require.resolve('kokoro-js'); return true } catch { return false } })(),
     bundledVoices: KOKORO_BUNDLED_VOICES,
     voices,
+    piper: {
+      installed: (() => { try { require.resolve('piper-phonemize'); return true } catch { return false } })(),
+      complete: piperFiles.every((f) => f.present),
+      files: piperFiles,
+    },
   }
 }
 
@@ -179,7 +219,7 @@ async function downloadOneFile(
         // resume: continue from an existing .part when the server honors Range
         let have = existsSync(partPath) ? statSync(partPath).size : 0
         const useRange = have > 0
-        const res = await xfetch(kokoroFileUrl(spec.path, mirror), {
+        const res = await xfetch(spec.repo === 'piper' ? piperFileUrl(spec.path, mirror) : kokoroFileUrl(spec.path, mirror), {
           signal,
           headers: useRange ? { Range: `bytes=${have}-` } : undefined,
         })
@@ -250,8 +290,19 @@ export async function ttsDownloadModels(
   cacheRoot: string,
   onEvent: (ev: TtsDownloadEvent) => void,
   signal?: AbortSignal,
-  opts?: { only?: string[] },
+  opts?: { only?: string[]; piper?: boolean },
 ): Promise<{ ok: boolean; error?: string }> {
+  // R212: piper=true 时下载中文引擎文件(独立目录);默认维持 kokoro 全量。
+  if (opts?.piper === true) {
+    const piperDir = piperModelDir(cacheRoot)
+    let failure = ''
+    for (const spec of PIPER_FILES) {
+      if (signal?.aborted) return { ok: false, error: 'cancelled' }
+      const err = await downloadOneFile(spec, piperDir, onEvent, signal)
+      if (err !== '') failure = err
+    }
+    return failure === '' ? { ok: true } : { ok: false, error: failure }
+  }
   const dir = kokoroModelDir(cacheRoot)
   const specs = KOKORO_FILES.filter((f) => opts?.only === undefined || opts.only.includes(f.path))
   const queue = [...specs]
@@ -329,12 +380,156 @@ async function getEngine(cacheRoot: string): Promise<KokoroTtsInstance> {
   return enginePromise
 }
 
+// ── R212: Piper 中文引擎运行时(懒加载;onnxruntime-node 与 piper-phonemize
+// 都是产品依赖,纯本地)。ids 规则 = BOS ^ + (每音素 id + PAD _) … + EOS $,
+// 与探针(2026-09-29)实测的 Piper 惯例一致。───────────────────────────────
+type OrtTensorLike = { data: Float32Array | BigUint64Array; dims: readonly number[] }
+interface PiperSession {
+  run: (feeds: Record<string, unknown>) => Promise<Record<string, OrtTensorLike>>
+  inputNames: readonly string[]
+  outputNames: readonly string[]
+}
+let piperSessionCache: { dir: string; session: PiperSession; idMap: Record<string, number[]>; scales: { noise_scale: number; length_scale: number; noise_w: number } } | null = null
+
+/** 线性插值重采样(混合导出时把 Piper 22k 对齐 Kokoro 24k)。 */
+function resampleTo(input: Float32Array, from: number, to: number): Float32Array {
+  if (from === to || input.length === 0) return input
+  const ratio = to / from
+  const out = new Float32Array(Math.round(input.length * ratio))
+  for (let i = 0; i < out.length; i++) {
+    const pos = i / ratio
+    const i0 = Math.floor(pos)
+    const i1 = Math.min(input.length - 1, i0 + 1)
+    const t = pos - i0
+    out[i] = input[i0] * (1 - t) + input[i1] * t
+  }
+  return out
+}
+
+/** 音素串→Piper ids(BOS+音素×PAD 间隔+EOS);表外字符跳过。纯函数,单测覆盖。 */
+export function piperPhonemesToIds(phonemes: string, idMap: Record<string, number[]>): number[] {
+  const bos = idMap['^']?.[0]
+  const eos = idMap['$']?.[0]
+  const pad = idMap['_']?.[0]
+  const ids: number[] = []
+  if (bos !== undefined) ids.push(bos)
+  for (const ch of phonemes) {
+    const id = idMap[ch]?.[0]
+    if (id === undefined) continue
+    ids.push(id)
+    if (pad !== undefined) ids.push(pad)
+  }
+  if (eos !== undefined) ids.push(eos)
+  return ids
+}
+
+async function getPiperEngine(cacheRoot: string): Promise<NonNullable<typeof piperSessionCache>> {
+  if (piperSessionCache !== null && piperSessionCache.dir === piperModelDir(cacheRoot)) return piperSessionCache
+  const dir = piperModelDir(cacheRoot)
+  let cfgJson: string
+  try {
+    cfgJson = readFileSync(join(dir, 'zh_CN-huayan-medium.onnx.json'), 'utf8')
+  } catch {
+    throw new Error('piper-config-missing')
+  }
+  const cfg = JSON.parse(cfgJson) as {
+    phoneme_id_map?: Record<string, number[]>
+    inference?: { noise_scale: number; length_scale: number; noise_w: number }
+  }
+  if (cfg.phoneme_id_map === undefined) throw new Error('piper-config-missing')
+  const ort = (await import('onnxruntime-node')) as unknown as {
+    InferenceSession: { create: (path: string, opts?: unknown) => Promise<PiperSession> }
+    Tensor: new (type: string, data: unknown, dims: readonly number[]) => unknown
+  }
+  const session = await ort.InferenceSession.create(join(dir, 'zh_CN-huayan-medium.onnx'), { graphOptimizationLevel: 'all' })
+  piperSessionCache = {
+    dir,
+    session,
+    idMap: cfg.phoneme_id_map,
+    scales: cfg.inference ?? { noise_scale: 0.667, length_scale: 1, noise_w: 0.8 },
+  }
+  return piperSessionCache
+}
+
+/** Piper 中文合成:逐句(espeak cmn 按标点分段)→ids→VITS→拼接。 */
+async function piperSynthesize(
+  segments: string[],
+  opts: { speed?: number },
+): Promise<{ audio: Float32Array; sampleRate: number }> {
+  const pp = (await import('piper-phonemize')) as unknown as { phonemizeToString: (text: string, voice: string) => string[] }
+  const all: number[] = []
+  for (const seg of segments) {
+    if (seg.trim() === '') continue
+    // 引擎实例在 ttsSynthesize 侧已就绪(cacheRoot 传入)
+    const eng = piperSessionCache
+    if (eng === null) throw new Error('piper-not-ready')
+    const chunks = pp.phonemizeToString(seg, 'cmn')
+    for (const ph of chunks) {
+      const ids = piperPhonemesToIds(ph, eng.idMap)
+      if (ids.length <= 2) continue
+      const ort = (await import('onnxruntime-node')) as unknown as { Tensor: new (type: string, data: unknown, dims: readonly number[]) => unknown }
+      const feeds: Record<string, unknown> = {
+        input: new ort.Tensor('int64', new BigInt64Array(ids.map((v) => BigInt(v))), [1, ids.length]),
+        input_lengths: new ort.Tensor('int64', new BigInt64Array([BigInt(ids.length)]), [1]),
+        // speed>1 = 说快 → length_scale 反比(Piper 惯例)
+        scales: new ort.Tensor('float32', Float32Array.from([eng.scales.noise_scale, eng.scales.length_scale / (opts.speed ?? 1), eng.scales.noise_w]), [3]),
+      }
+      const out = await eng.session.run(feeds)
+      const audio = out[eng.session.outputNames[0]].data as Float32Array
+      for (const v of audio) all.push(v)
+    }
+  }
+  return { audio: Float32Array.from(all), sampleRate: PIPER_SAMPLE_RATE }
+}
+
 export async function ttsSynthesize(
   segments: string[],
   opts: { voice?: string; speed?: number; cacheDir: string; perSegmentVoices?: Array<string | undefined> },
 ): Promise<{ ok: boolean; wav?: Buffer; sampleRate?: number; error?: string }> {
   if (segments.length === 0) return { ok: false, error: 'empty' }
   try {
+    // R212: voice=PIPER_ZH_VOICE(或混合导出中 zh 句路由到它)走 Piper 中文引擎;
+    // 其余声部不变。整批全是 piper 时无需加载 kokoro 引擎。
+    const piperSegments: Array<number | null> = segments.map((_, i) => {
+      const segVoice = opts.perSegmentVoices?.[i] ?? opts.voice
+      return segVoice === PIPER_ZH_VOICE ? i : null
+    }).filter((v): v is number => v !== null)
+    if (piperSegments.length === segments.length) {
+      await getPiperEngine(opts.cacheDir)
+      const out = await piperSynthesize(segments, { speed: opts.speed })
+      return { ok: true, wav: segmentsToWav([out.audio], out.sampleRate), sampleRate: out.sampleRate }
+    }
+    if (piperSegments.length > 0) {
+      // 混合:逐段路由(中文句 Piper,英文句 Kokoro),拼单个 WAV——采样率不同
+      // 时以 Kokoro 24k 为主,把 Piper 22k 线性插值到 24k。
+      await getPiperEngine(opts.cacheDir)
+      const engine = await getEngine(opts.cacheDir)
+      const parts: Float32Array[] = []
+      for (let i = 0; i < segments.length; i += 1) {
+        if (piperSegments.includes(i)) {
+          const out = await piperSynthesize([segments[i]], { speed: opts.speed })
+          parts.push(resampleTo(out.audio, out.sampleRate, KOKORO_SAMPLE_RATE))
+        } else {
+          const segVoice = opts.perSegmentVoices?.[i] ?? opts.voice ?? DEFAULT_VOICE
+          if (/^(zf|zm)_/.test(segVoice)) {
+            if (engine.generate_from_ids === undefined || engine.tokenizer === undefined) throw new Error('zh-bridge-unavailable')
+            const phonemes = hanziToPhonemes(segments[i])
+            const syllables = phonemes.split(' ')
+            const chunks: string[] = []
+            for (let s = 0; s < syllables.length; s += 60) chunks.push(syllables.slice(s, s + 60).join(' '))
+            for (const chunk of chunks) {
+              const { input_ids } = engine.tokenizer(chunk, { truncation: true })
+              const out = await engine.generate_from_ids(input_ids, { voice: segVoice, speed: opts.speed ?? 1 })
+              parts.push(out.audio)
+            }
+          } else {
+            const out = await engine.generate(segments[i], { voice: segVoice, speed: opts.speed ?? 1 })
+            parts.push(out.audio)
+          }
+        }
+      }
+      return { ok: true, wav: segmentsToWav(parts, KOKORO_SAMPLE_RATE), sampleRate: KOKORO_SAMPLE_RATE }
+    }
     const engine = await getEngine(opts.cacheDir)
     const voice = opts.voice && opts.voice.trim() !== '' ? opts.voice.trim() : DEFAULT_VOICE
     const speed = typeof opts.speed === 'number' && opts.speed > 0 ? opts.speed : 1
@@ -365,6 +560,8 @@ export async function ttsSynthesize(
     }
     return { ok: true, wav: segmentsToWav(audio, KOKORO_SAMPLE_RATE), sampleRate: KOKORO_SAMPLE_RATE }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    // R212: 'piper-config-missing' 对用户语义就是「模型未就绪」——归一成既有错误码
+    const raw = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: raw === 'piper-config-missing' ? 'model-not-ready' : raw }
   }
 }

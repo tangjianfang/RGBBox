@@ -22,6 +22,8 @@ export const DIRS: Array<{ x: number; y: number; glyph: string }> = [
 export type SlashPhase = 'ready' | 'running' | 'lost'
 
 export interface Block {
+  /** R203/M3(FR-SL04): 假动作块——临近判定圈时方向标记翻转一次,诱导提前出刀。 */
+  feint?: boolean
   id: number
   dir: number
   /** 0 = spawn edge, 1 = the strike ring */
@@ -41,12 +43,18 @@ export interface Streak {
   hue: number
 }
 
+import { HIT_STOP, hitStopTick, TrailPoint, tickTrail, TRAIL_LIFE } from './juice'
+
 export interface SlashState {
   phase: SlashPhase
   score: number
   combo: number
   bestCombo: number
   timeLeft: number
+  /** FR-G08 burst short-run: time ceiling of the current run, written by
+   *  startSlash (RUN_SECONDS default). The difficulty curve normalizes
+   *  against this instead of the module constant. */
+  runSeconds?: number
   blocks: Block[]
   streaks: Streak[]
   spawnTimer: number
@@ -54,25 +62,43 @@ export interface SlashState {
   bombCd: number
   flash: number
   shake: number
+  /** R200(FR-G06): hit-stop 与刀光轨迹。 */
+  hitStop: number
+  trail: TrailPoint[]
+  /** R203(FR-SL01): 三心制(标准 3/休闲 5;漏块 -1,归零失败)。 */
+  hearts: number
+  maxHearts: number
+  /** R203(FR-SL02): 连锁块(击中后触发相邻同向块连爆)。 */
+  chainEnabled: boolean
 }
 
 export function initialSlashState(): SlashState {
   return {
+    hitStop: 0,
+    trail: [],
+    hearts: 3,
+    maxHearts: 3,
+    chainEnabled: true,
     phase: 'ready', score: 0, combo: 0, bestCombo: 0, timeLeft: RUN_SECONDS,
     blocks: [], streaks: [], spawnTimer: 0.4, nextId: 1, bombCd: 0, flash: 0, shake: 0,
   }
 }
 
-export function startSlash(s: SlashState): void {
+/** FR-G08: startSlash takes an optional run length (burst short-run uses 30s);
+ *  the countdown and difficulty curve scale to whatever ceiling is passed. */
+export function startSlash(s: SlashState, seconds: number = RUN_SECONDS): void {
   const fresh = initialSlashState()
   Object.assign(s, fresh)
+  s.runSeconds = seconds
+  s.timeLeft = seconds
   s.phase = 'running'
 }
 
 /** Spawn a block flying inward from a random edge, marked with a direction. */
 function spawnBlock(s: SlashState): void {
-  // easier early, denser later — the difficulty curve
-  const hard = Math.min(1, (RUN_SECONDS - s.timeLeft) / RUN_SECONDS)
+  // easier early, denser later — the difficulty curve (scaled to this run's ceiling)
+  const run = s.runSeconds ?? RUN_SECONDS
+  const hard = Math.min(1, (run - s.timeLeft) / run)
   const dir = Math.floor(Math.random() * 8)
   s.blocks.push({
     id: s.nextId++,
@@ -81,6 +107,7 @@ function spawnBlock(s: SlashState): void {
     speed: 0.14 + hard * 0.16 + Math.random() * 0.05,
     hue: (dir * 45 + 180) % 360,
     bonus: Math.random() < 0.08,
+  feint: s.timeLeft < RUN_SECONDS - 15 && Math.random() < 0.1,
   })
 }
 
@@ -130,8 +157,23 @@ export function slash(s: SlashState, dir: number): 'hit' | 'wrong' | 'miss' {
   s.combo++
   s.bestCombo = Math.max(s.bestCombo, s.combo)
   const mult = 1 + Math.floor(s.combo / 5) * 0.5
+  // R200: 金块/每 10 连击 → 顿帧(轻重两档)
+  if (hit.bonus || s.combo % 10 === 0) s.hitStop = hit.bonus ? HIT_STOP.medium : HIT_STOP.light
   s.score += Math.round((hit.bonus ? 50 : 10) * mult)
   burst(s, p.x, p.y, hit.hue, hit.bonus ? 26 : 14, hit.bonus ? 320 : 200)
+  // R203(FR-SL02): 连锁块——同向且接近判定圈的块被连带引爆(+5/块,不计连击)
+  if (s.chainEnabled) {
+    const chained = s.blocks.filter((b) => b.dir === dir && Math.abs(b.t - hit!.t) < 0.18)
+    for (const b of chained) {
+      const cp = blockPos(b)
+      burst(s, cp.x, cp.y, b.hue, 10, 220)
+      s.score += 5
+    }
+    if (chained.length > 0) s.blocks = s.blocks.filter((b) => !chained.includes(b))
+  }
+  // R200: 刀光轨迹锚点(渐隐光带由绘制层连接)
+  s.trail.push({ x: p.x, y: p.y, life: TRAIL_LIFE })
+  if (s.trail.length > 8) s.trail.shift()
   s.shake = Math.min(8, s.shake + 3)
   return 'hit'
 }
@@ -151,6 +193,14 @@ export function bomb(s: SlashState): boolean {
 }
 
 export function tickSlash(s: SlashState, dt: number): void {
+  // R200: hit-stop(CHAIN/金块)冻结游戏计时
+  if (s.hitStop > 0) {
+    const [remain, thaw] = hitStopTick(s.hitStop, dt)
+    s.hitStop = remain
+    if (thaw === 0) { s.trail = tickTrail(s.trail, dt); return }
+    dt = thaw
+  }
+  s.trail = tickTrail(s.trail, dt)
   s.flash = Math.max(0, s.flash - dt)
   s.shake = Math.max(0, s.shake - dt * 24)
   s.bombCd = Math.max(0, s.bombCd - dt)
@@ -174,22 +224,94 @@ export function tickSlash(s: SlashState, dt: number): void {
   let missed = false
   for (const b of s.blocks) {
     b.t += b.speed * dt
+    // FR-SL04: 假动作块在 t≈0.85 翻转一次方向标记(绘制层读取 dir 绘箭头)
+    if (b.feint === true && b.t >= 0.85 && (b as Block & { flipped?: boolean }).flipped !== true) {
+      (b as Block & { flipped?: boolean }).flipped = true
+      b.dir = (b.dir + 4) % 8
+    }
     if (b.t > 1.12) missed = true
   }
   if (missed) {
+    // R203(FR-SL01): 漏块 -1 心;归零失败
     s.combo = 0
     s.flash = 0.2
+    s.hearts -= 1
+    s.shake = Math.min(8, s.shake + 4)
     s.blocks = s.blocks.filter((b) => b.t <= 1.12)
+    if (s.hearts <= 0) {
+      s.hearts = 0
+      s.phase = 'lost'
+      return
+    }
   }
   s.spawnTimer -= dt
   if (s.spawnTimer <= 0) {
     spawnBlock(s)
-    const hard = Math.min(1, (RUN_SECONDS - s.timeLeft) / RUN_SECONDS)
+    const run = s.runSeconds ?? RUN_SECONDS
+    const hard = Math.min(1, (run - s.timeLeft) / run)
     s.spawnTimer = 0.9 - hard * 0.45 + Math.random() * 0.35
   }
 }
 
 export function drawSlash(ctx: CanvasRenderingContext2D, s: SlashState, time: number): void {
+  drawSlashBody(ctx, s, time)
+  // R200(FR-G06.3): 刀光轨迹——最近 6–8 帧命中点连成渐隐光带
+  if (s.trail.length > 1) {
+    ctx.save()
+    ctx.lineCap = 'round'
+    for (let i = 1; i < s.trail.length; i += 1) {
+      const a = s.trail[i - 1]
+      const b = s.trail[i]
+      ctx.globalAlpha = Math.max(0, b.life / 0.18) * 0.5
+      ctx.strokeStyle = '#e2f8ff'
+      ctx.lineWidth = 2 + 4 * (i / s.trail.length)
+      ctx.beginPath()
+      ctx.moveTo(a.x, a.y)
+      ctx.lineTo(b.x, b.y)
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+  // R200(取证 F5): 炸弹充能环——右上角,bombCd 从 6 递减,环随充能闭合
+  if (s.phase === 'running') {
+    const cx = WIDTH - 36
+    const cy = 36
+    const r = 14
+    const frac = 1 - Math.min(1, s.bombCd / 6)
+    ctx.save()
+    ctx.strokeStyle = 'rgba(251, 113, 133, 0.35)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.stroke()
+    if (frac > 0) {
+      ctx.strokeStyle = s.bombCd <= 0 ? '#4ade80' : '#fb7185'
+      ctx.beginPath()
+      ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac)
+      ctx.stroke()
+    }
+    ctx.fillStyle = '#9fb7c1'
+    ctx.font = '700 9px Inter, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('B', cx, cy)
+    ctx.restore()
+  }
+}
+
+function drawSlashBody(ctx: CanvasRenderingContext2D, s: SlashState, time: number): void {
+  // R203(FR-SL01): 心形 HUD(左上)
+  if (s.phase === 'running' || s.phase === 'lost') {
+    ctx.save()
+    ctx.font = '700 18px Inter, sans-serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    for (let i = 0; i < s.maxHearts; i += 1) {
+      ctx.fillStyle = i < s.hearts ? '#fb7185' : 'rgba(251, 113, 133, 0.2)'
+      ctx.fillText('♥', 16 + i * 22, 26)
+    }
+    ctx.restore()
+  }
   ctx.save()
   if (s.shake > 0.2) {
     ctx.translate((Math.random() - 0.5) * s.shake, (Math.random() - 0.5) * s.shake)
@@ -257,4 +379,31 @@ export function drawSlash(ctx: CanvasRenderingContext2D, s: SlashState, time: nu
     ctx.fillRect(-12, -12, WIDTH + 24, HEIGHT + 24)
   }
   ctx.restore()
+}
+
+// ── FR-G01(R198): 策略教练 —— 纯函数,key 制文案 ──
+import type { CoachHint } from './coach'
+
+export function slashHints(state: SlashState): CoachHint[] {
+  const hints: CoachHint[] = []
+  if (state.phase !== 'running') return hints
+  if (state.timeLeft <= 10) hints.push({ key: 'sl.timeLow', tone: 'warn', priority: 80 })
+  if (state.bombCd <= 0) hints.push({ key: 'sl.bombReady', tone: 'tip', priority: 60 })
+  if (state.combo >= 10) hints.push({ key: 'sl.comboPraise', tone: 'praise', priority: 55 })
+  if (state.flash > 0) hints.push({ key: 'sl.wrongCut', tone: 'warn', priority: 45 })
+  if (state.bestCombo < 3 && state.combo < 2) hints.push({ key: 'sl.aim', tone: 'tip', priority: 30 })
+  return hints
+}
+
+// ── R208 (FR-MP03): 轮换对决——纯函数判定,view 层编排回合 ──
+
+export type DuelVerdict = 'p1' | 'p2' | 'tie'
+
+/** 双方两回合比分判定（未完成回合按 null 视作未定,返回 null）。 */
+export function judgeDuel(scores: [number | null, number | null]): DuelVerdict | null {
+  const [a, b] = scores
+  if (a === null || b === null) return null
+  if (a > b) return 'p1'
+  if (b > a) return 'p2'
+  return 'tie'
 }

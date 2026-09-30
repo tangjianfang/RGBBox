@@ -271,7 +271,8 @@ describe('AiLabVoiceTab (R173-S1)', () => {
     const synthCalls = rgbbox.ttsSynthesize.mock.calls as unknown as [string[], { voice?: string }][]
     const voices = synthCalls.map(([segs, opts]) => `${opts?.voice}:${segs[0]}`)
     expect(voices).toContain('af_heart:Hello world.')
-    expect(voices).toContain('zf_xiaobei:这是中文句。')
+    // R212: zh 句默认走 Piper 引擎(voice=piper-zh);旧 zf_/zm_ 桥改为可选
+    expect(voices).toContain('piper-zh:这是中文句。')
     expect(voices).toContain('af_heart:Another English line!')
     // the system engine is no longer used on the kokoro path
     expect(spoken).toEqual([])
