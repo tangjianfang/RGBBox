@@ -6,6 +6,16 @@ import { playSfx } from './sfx'
 import { WIDTH, HEIGHT } from './td'
 import { HIT_STOP, hitStopTick } from './juice'
 import { mulberry32 } from './daily'
+import {
+  DIFFICULTY_SCORE_MULT,
+  drawAlertVignette,
+  drawHudCapsule,
+  drawToasts,
+  pushToast,
+  tickToasts,
+  type GameDifficulty,
+  type HudToast
+} from './hud'
 
 /** FR-G08 race short-run adds 'won': line goal reached before topping out. */
 export type TetrisPhase = 'ready' | 'running' | 'won' | 'lost'
@@ -16,6 +26,18 @@ const ROWS = 20
 const CELL = 24
 const BOARD_X = 300
 const BOARD_Y = (HEIGHT - ROWS * CELL) / 2
+
+/**
+ * R218 U4: Tetris 难度=起始等级(guideline 重力曲线已有 dropInterval)+
+ * 对战垃圾行系数(接收方按自身难度缩放,LAN/本地双板对称)。
+ * casual 1/0.7 · standard 5/1.0 · hard 9/1.3 · insane 13/1.6。
+ */
+export const TETRIS_DIFFICULTY_PARAMS: Record<GameDifficulty, { startLevel: number; garbageMult: number }> = {
+  casual: { startLevel: 1, garbageMult: 0.7 },
+  standard: { startLevel: 5, garbageMult: 1.0 },
+  hard: { startLevel: 9, garbageMult: 1.3 },
+  insane: { startLevel: 13, garbageMult: 1.6 }
+}
 
 const BASE_SHAPES: number[][][] = [
   [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]],
@@ -128,6 +150,12 @@ export interface TetrisState {
   /** R209 三期(FR-LN05): 种子 RNG(7-bag 洗牌用;undefined=Math.random)。
    *  LAN 对战双方以同一种子开局 → piece 序列一致;纯闭包不序列化。 */
   rng?: () => number
+  /** R218 U4: 难度档(起始等级/垃圾行系数来源;分数倍率在结算点按此档挂接)。
+   *  LAN 线协议只发 garbage/result 小事件,不序列化整 state → 新字段不上线。 */
+  difficulty: GameDifficulty
+  /** R218 U4: 起始等级(level 基线:升级 = startLevel + floor(lines/10),
+   *  避免高起始档消行后 level 回落到 1+x 的旧公式)。 */
+  startLevel: number
 }
 
 function emptyGrid(): number[][] {
@@ -185,14 +213,17 @@ export function dropInterval(level: number): number {
 }
 
 /** R209 三期(FR-LN05): 种子开局——seed 注入 rng(7-bag 洗牌确定性),
- *  LAN 对战双方同 seed → 双方 piece 序列一致。 */
-export function initialTetrisState(seed?: number): TetrisState {
+ *  LAN 对战双方同 seed → 双方 piece 序列一致。
+ *  R218 U4: 追加可选 difficulty(默认 'standard')→ level 初始化为起始等级;
+ *  参数向后兼容追加(seed 仍第一位)。 */
+export function initialTetrisState(seed?: number, difficulty: GameDifficulty = 'standard'): TetrisState {
+  const params = TETRIS_DIFFICULTY_PARAMS[difficulty]
   const state: TetrisState = {
     phase: 'ready',
     clock: 0,
     score: 0,
     lines: 0,
-    level: 1,
+    level: params.startLevel,
     shake: 0,
     grid: emptyGrid(),
     kind: 0,
@@ -219,6 +250,8 @@ export function initialTetrisState(seed?: number): TetrisState {
     pieceId: 0,
     hitStop: 0,
     boardX: BOARD_X,
+    difficulty,
+    startLevel: params.startLevel,
   }
   if (seed !== undefined) state.rng = mulberry32(seed)
   refillBag(state)
@@ -312,7 +345,8 @@ function lockPiece(state: TetrisState): void {
     if (tspin) state.tspins += 1
     state.b2b = qualifying
     state.lines += cleared
-    state.level = 1 + Math.floor(state.lines / 10)
+    // R218 U4: 升级基线=起始等级(高起始档消行不回落;casual 档与旧公式等价)
+    state.level = state.startLevel + Math.floor(state.lines / 10)
     state.flash = { rows: [], life: 0.25 }
     state.shake = Math.min(7, 2 + cleared * 1.5)
     playSfx(cleared >= 3 || tspin ? 'levelup' : 'pop')
@@ -531,14 +565,50 @@ function cellRect(x: number, y: number, originX = BOARD_X): { x: number; y: numb
   return { x: originX + x * CELL, y: BOARD_Y + y * CELL }
 }
 
+/**
+ * R218 S2: 圆角矩形路径(方块/压力条共用)。
+ * 防御:无 roundRect 的环境(测试 ctx stub)退回 rect,绘制不中断
+ * (scene.ts vgrad 同款先例;真机 canvas 恒有 roundRect)。
+ */
+function cellPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.beginPath()
+  if (typeof ctx.roundRect === 'function') ctx.roundRect(x, y, w, h, r)
+  else ctx.rect(x, y, w, h)
+}
+
+/** 线性渐变(防御:stub 环境 createLinearGradient 缺失时退回首 stop 纯色)。 */
+function lgrad(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number, stops: Array<[number, string]>): CanvasGradient | string {
+  const make = ctx.createLinearGradient?.bind(ctx)
+  if (!make) return stops[0][1]
+  const g = make(x0, y0, x1, y1)
+  for (const [at, color] of stops) g.addColorStop(at, color)
+  return g
+}
+
+/**
+ * R218 S2: 方块 2.5D 质感——圆角主体 + 顶部内发光高光 + 底部暗边厚度
+ * (纯绘制层,判定/逻辑零改动)。
+ */
 function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, alpha = 1, originX = BOARD_X): void {
   const rect = cellRect(x, y, originX)
+  const pad = 1.5
+  const w = CELL - pad * 2
+  const h = CELL - pad * 2
+  ctx.save()
   ctx.globalAlpha = alpha
+  // 底部暗边(厚度感)
+  cellPath(ctx, rect.x + pad, rect.y + pad + 2, w, h, 5)
+  ctx.fillStyle = 'rgba(3, 8, 14, 0.5)'
+  ctx.fill()
+  // 圆角主体
+  cellPath(ctx, rect.x + pad, rect.y + pad, w, h, 5)
   ctx.fillStyle = color
-  ctx.fillRect(rect.x + 1, rect.y + 1, CELL - 2, CELL - 2)
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.18)'
-  ctx.fillRect(rect.x + 1, rect.y + 1, CELL - 2, 5)
-  ctx.globalAlpha = 1
+  ctx.fill()
+  // 顶部内发光高光
+  cellPath(ctx, rect.x + pad + 2, rect.y + pad + 2, w - 4, Math.max(4, h * 0.42), 4)
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
+  ctx.fill()
+  ctx.restore()
 }
 
 function drawOverlay(ctx: CanvasRenderingContext2D, title: string, subtitle: string, footer = ''): void {
@@ -574,9 +644,88 @@ const TETRIS_LABELS: TetrisLabels = {
   replaySuffix: '— Press Start to play again',
 }
 
+// ── R218 U1: B2B/连击/高光 toast——绘制层局部状态(WeakMap 按 state 对象隔离,
+//    双板各自的 toast 互不串扰)。刻意不放 TetrisState:LAN 线协议只发
+//    garbage/result 小事件,但 publish 快照/未来序列化点不该带上展示态;
+//    生命周期=引擎时钟(state.clock),hit-stop 冻结期间 toast 同步暂停。 ──
+interface TetrisFx {
+  toasts: HudToast[]
+  clock: number
+  lines: number
+  combo: number
+  b2b: boolean
+  tspins: number
+}
+
+const TETRIS_FX = new WeakMap<TetrisState, TetrisFx>()
+
+function fxFor(state: TetrisState): TetrisFx {
+  let fx = TETRIS_FX.get(state)
+  if (fx === undefined) {
+    fx = { toasts: [], clock: state.clock, lines: state.lines, combo: state.combo, b2b: state.b2b, tspins: state.tspins }
+    TETRIS_FX.set(state, fx)
+  }
+  return fx
+}
+
+/** 帧间差分引擎事件 → toast(仅 running 态;基线取自上一绘制帧)。 */
+function tickFx(state: TetrisState, fx: TetrisFx): void {
+  tickToasts(fx.toasts, Math.max(0, state.clock - fx.clock))
+  fx.clock = state.clock
+  if (state.phase === 'running') {
+    const cleared = state.lines - fx.lines
+    if (cleared >= 4) pushToast(fx.toasts, 'TETRIS!', 2.2, '#67e8f9')
+    else if (cleared >= 2) pushToast(fx.toasts, `${cleared} LINES`, 1.8, '#e2f8ff')
+    if (state.tspins > fx.tspins) pushToast(fx.toasts, 'T-SPIN!', 2.2, '#f0abfc')
+    if (state.combo > fx.combo && state.combo >= 2) pushToast(fx.toasts, `COMBO ×${state.combo}`, 1.8, '#fde68a')
+    if (state.b2b && !fx.b2b && cleared > 0) pushToast(fx.toasts, 'B2B ×1.5', 1.8, '#93c5fd')
+  }
+  fx.lines = state.lines
+  fx.combo = state.combo
+  fx.b2b = state.b2b
+  fx.tspins = state.tspins
+}
+
+/** R218 U5: 危险压力条(竖置,板右侧)——绿→黄→红随 danger,底端起涨。
+ *  drawHealthBar 是横条且属共享骨架不可竖排,这里用 drawHudCapsule 轨道 +
+ *  自绘竖向填充(同款配色/分段语义)。 */
+function drawDangerBar(ctx: CanvasRenderingContext2D, state: TetrisState, danger: number): void {
+  const barX = state.boardX + COLS * CELL + 12
+  const barW = 14
+  const barH = ROWS * CELL
+  drawHudCapsule(ctx, barX, BOARD_Y, barW, barH, { alpha: 0.12, radius: 7 })
+  const d = Math.max(0, Math.min(1, danger))
+  const fillH = (barH - 3) * d
+  if (fillH >= 1) {
+    const top = BOARD_Y + barH - 1.5 - fillH
+    const color = d > 0.75 ? '#f87171' : d > 0.5 ? '#fbbf24' : '#34d399'
+    cellPath(ctx, barX + 1.5, top, barW - 3, fillH, 5)
+    ctx.fillStyle = lgrad(ctx, barX, BOARD_Y + barH, barX, BOARD_Y, [[0, color], [1, d > 0.75 ? '#fca5a5' : d > 0.5 ? '#fcd34d' : '#6ee7a9']])
+    ctx.fill()
+  }
+  // 分段刻度(0.25/0.5/0.75,同血条语义)
+  ctx.save()
+  ctx.globalAlpha = 0.35
+  ctx.strokeStyle = 'rgba(8,12,20,0.9)'
+  ctx.lineWidth = 1
+  for (let s = 1; s <= 3; s += 1) {
+    const sy = Math.round(BOARD_Y + barH - (barH * s) / 4)
+    ctx.beginPath()
+    ctx.moveTo(barX + 1.5, sy)
+    ctx.lineTo(barX + barW - 1.5, sy)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
 export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, best: number, labels: TetrisLabels = TETRIS_LABELS, opts: { noClear?: boolean } = {}): void {
   // R208(FR-MP02): 板原点随 state.boardX(双板并排);noClear 供第二板叠加绘制
   const bx = state.boardX
+  // R218 U1: toast 事件差分 + 生命周期推进(每绘制帧一次;hit-stop 时钟冻结则 toast 同步暂停)
+  const fx = fxFor(state)
+  tickFx(state, fx)
+  // R218 U5: 危险压力条数据源(纯视觉预警)
+  const danger = stackDanger(state)
   if (!opts.noClear) {
     ctx.clearRect(0, 0, WIDTH, HEIGHT)
   }
@@ -607,14 +756,22 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
     }
   }
 
+  // R218 U5: 危险压力条(板右侧竖置,随板震动)
+  drawDangerBar(ctx, state, danger)
+
+  // R218 S2: 幽灵块半透明描边化(圆角虚线框,不再实心填充)
   const ghost = ghostY(state)
   for (const cell of shapeCells(state.kind, state.rot)) {
     const gy = ghost + cell.y
     if (gy >= 0) {
       const rect = cellRect(cell.x + state.px, gy, bx)
-      ctx.strokeStyle = 'rgba(226, 248, 255, 0.28)'
+      ctx.save()
+      ctx.strokeStyle = 'rgba(226, 248, 255, 0.32)'
       ctx.lineWidth = 1.5
-      ctx.strokeRect(rect.x + 2, rect.y + 2, CELL - 4, CELL - 4)
+      if (typeof ctx.setLineDash === 'function') ctx.setLineDash([4, 3])
+      cellPath(ctx, rect.x + 2, rect.y + 2, CELL - 4, CELL - 4, 4)
+      ctx.stroke()
+      ctx.restore()
     }
   }
   for (const cell of shapeCells(state.kind, state.rot)) {
@@ -627,6 +784,8 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
     }
   }
 
+  // R218 U1: 侧栏走半透明胶囊(hud.ts 共享骨架,贴边不进中央注意区)
+  drawHudCapsule(ctx, bx + 288, 94, 132, 224)
   ctx.fillStyle = '#9fb7c1'
   ctx.font = '700 12px Inter, sans-serif'
   ctx.textAlign = 'left'
@@ -636,11 +795,13 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
     for (const cell of shapeCells(kind, 0)) {
       const rect = { x: bx + 300 + cell.x * 16, y: 124 + index * 66 + cell.y * 16 }
       ctx.fillStyle = KIND_COLORS[kind]
-      ctx.fillRect(rect.x, rect.y, 14, 14)
+      cellPath(ctx, rect.x, rect.y, 14, 14, 3)
+      ctx.fill()
     }
   })
 
   // FR-TE01(R199): HOLD 槽(板左;已用则暗显)
+  drawHudCapsule(ctx, bx - 92, 94, 84, 96)
   ctx.fillStyle = '#9fb7c1'
   ctx.font = '700 12px Inter, sans-serif'
   ctx.fillText('HOLD', bx - 80, 110)
@@ -649,7 +810,8 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
     for (const cell of shapeCells(state.holdKind, 0)) {
       const rect = { x: bx - 80 + cell.x * 16, y: 124 + cell.y * 16 }
       ctx.fillStyle = KIND_COLORS[state.holdKind]
-      ctx.fillRect(rect.x, rect.y, 14, 14)
+      cellPath(ctx, rect.x, rect.y, 14, 14, 3)
+      ctx.fill()
     }
     ctx.globalAlpha = 1
   }
@@ -676,6 +838,8 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
     }
   }
 
+  // R218 U1: 计分/等级/战绩胶囊(B2B/连击/T-spin 高光行内保留,事件 toast 另发)
+  drawHudCapsule(ctx, bx + 288, 338, 150, 152)
   ctx.fillStyle = '#e2f8ff'
   ctx.font = '800 26px Inter, sans-serif'
   ctx.fillText(`${state.score}`, bx + 300, 360)
@@ -695,6 +859,19 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
     ctx.globalAlpha = 1
   }
   ctx.restore()
+
+  // R218 U1/U5: 贴顶高压 → 警示 vignette 呼吸(>0.75 起坡,满压全强;
+  // 双板叠加绘制(noClear)不重复画全幅 vignette)
+  if (!opts.noClear && state.phase === 'running' && danger > 0.75) {
+    drawAlertVignette(ctx, WIDTH, HEIGHT, (danger - 0.75) / 0.25, state.clock)
+  }
+  // R218 U1: B2B/连击/T-spin/四消 toast(绘制层局部,随板水平平移)
+  if (fx.toasts.length > 0) {
+    ctx.save()
+    ctx.translate(state.boardX - BOARD_X, 0)
+    drawToasts(ctx, WIDTH, HEIGHT, fx.toasts)
+    ctx.restore()
+  }
   if (state.phase === 'ready') {
     drawOverlay(ctx, 'Neon Blocks', labels.readySubtitle, best > 0 ? `Best ★${best}` : '')
   } else if (state.phase === 'lost' || state.phase === 'won') {
@@ -713,6 +890,14 @@ export function stackHeight(state: TetrisState): number {
     if (state.grid[y].some((cell) => cell !== 0)) return ROWS - y
   }
   return 0
+}
+
+/**
+ * R218 U5: 堆高危险度 [0,1]——最高堆高占板比例(堆高贴近顶=1)。
+ * 危险压力条与警示 vignette 的数据源,纯视觉预警不改任何机制。
+ */
+export function stackDanger(state: TetrisState): number {
+  return stackHeight(state) / ROWS
 }
 
 /** 盘面洞数(每列首个填充格之下的空格)。 */
@@ -754,11 +939,15 @@ export function garbageFor(lines: number): number {
 }
 
 /** 垃圾行入场:底部插入带单洞实心行,板整体上移;当前块冲突时逐行上推。
- *  不改 score/lines(垃圾行不计分);hint 作废(布局已变)。 */
+ *  不改 score/lines(垃圾行不计分);hint 作废(布局已变)。
+ *  R218 U4: 接收方按自身难度档乘 garbageMult(向上取整)——LAN 双端与本地
+ *  双板对称:每方难度只放大自己收到的压力,不改变对方发送量。 */
 export function applyGarbage(state: TetrisState, lines: number, holeColumn?: number): void {
   if (lines <= 0 || state.phase !== 'running') return
+  const scaled = Math.ceil(lines * TETRIS_DIFFICULTY_PARAMS[state.difficulty].garbageMult)
+  if (scaled <= 0) return
   const hole = holeColumn ?? Math.floor(Math.random() * COLS)
-  for (let n = 0; n < lines; n++) {
+  for (let n = 0; n < scaled; n++) {
     state.grid.shift()
     state.grid.push(Array.from({ length: COLS }, (_, c) => (c === hole ? 0 : GARBAGE_CELL)))
   }
@@ -768,4 +957,13 @@ export function applyGarbage(state: TetrisState, lines: number, holeColumn?: num
     guard += 1
   }
   state.hint = null
+}
+
+/**
+ * R218 U4: 结算分 = 引擎原始分 × 难度倍率(1×/1.5×/2×/3×)。
+ * 引擎内 score 保持原始值(计分矩阵/连击算式不变);shell 结算点
+ * (settleBest / LAN result)用本函数换算后挂街机档案。
+ */
+export function settledTetrisScore(state: TetrisState): number {
+  return Math.round(state.score * DIFFICULTY_SCORE_MULT[state.difficulty])
 }
