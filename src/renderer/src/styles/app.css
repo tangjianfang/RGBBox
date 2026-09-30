@@ -48,7 +48,9 @@
 
 .brand-block p,
 .eyebrow {
-  color: var(--text-muted);
+  /* R148 S3 (r216 review): post-Q-5 the eyebrow IS the view header line —
+     muted read too dim (video breadcrumb note); secondary keeps hierarchy. */
+  color: var(--text-secondary);
   font-size: 0.75rem;
 }
 
@@ -129,7 +131,7 @@
 
 .metric-row {
   display: flex;
-  gap: 10px;
+  gap: var(--space-3); /* R148 S3: was 10px — off-grid, uneven vs pill paddings */
 }
 
 .metric {
@@ -2977,7 +2979,9 @@ input:not([type]):focus {
 .automation-toolbar {
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(0, 1fr) 86px;
+  /* R148 S3 (r216 review): 86px crowded the mode select (CJK option labels
+     + native caret); 112px lets the longest label breathe. */
+  grid-template-columns: minmax(0, 1fr) 112px;
 }
 
 .automation-mode-select {
