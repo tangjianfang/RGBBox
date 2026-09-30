@@ -208,6 +208,97 @@ export function smoothOffsetTo(cur: BgOffset, target: BgOffset, alpha = 0.1): Bg
   return { x: cur.x + (target.x - cur.x) * alpha, y: cur.y + (target.y - cur.y) * alpha }
 }
 
+// ── R218 U11: 大世界 + 摄像机跟随(纯函数;世界 2× 视口) ──────────────────────
+export const WORLD_W = 1800
+export const WORLD_H = 1040
+/** zoom-to-fit 的凸包边距(单侧 80px,双侧 160)。 */
+export const CAMERA_MARGIN = 80
+export const CAMERA_ZOOM_MIN = 0.7
+export const CAMERA_ZOOM_MAX = 1.0
+/** 死区:视口短边的 20%(质心在死区内摄像机不动)。 */
+export const CAMERA_DEADZONE = 0.2
+/** 位置/缩放的指数平滑系数(0.08-0.12 取 0.1,按 60fps 归一)。 */
+export const CAMERA_SMOOTHING = 0.1
+
+export interface CameraState {
+  /** 视口中心的世界坐标。 */
+  x: number
+  y: number
+  /** 缩放(1P=1;2-4P zoom-to-fit,钳 0.7-1.0)。 */
+  zoom: number
+}
+
+/** 存活玩家轴对齐包围盒(凸包的外接盒;无人存活 → null)。 */
+export interface PlayerBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export function playersBBox(players: Array<{ x: number; y: number; hp: number }>): PlayerBox | null {
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const pl of players) {
+    if (pl.hp <= 0) continue
+    minX = Math.min(minX, pl.x)
+    minY = Math.min(minY, pl.y)
+    maxX = Math.max(maxX, pl.x)
+    maxY = Math.max(maxY, pl.y)
+  }
+  if (!Number.isFinite(minX)) return null
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+}
+
+/** zoom-to-fit:zoom = clamp(min(vw/(w+边距×2), vh/(h+边距×2)), 0.7, 1.0);
+ *  单人 bbox 为点 → 被 1.0 上限钳住(1P 恒 1)。 */
+export function cameraZoomFor(bbox: PlayerBox | null, vw: number, vh: number): number {
+  if (bbox === null) return 1
+  const zx = vw / (bbox.w + CAMERA_MARGIN * 2)
+  const zy = vh / (bbox.h + CAMERA_MARGIN * 2)
+  return clamp(Math.min(zx, zy), CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX)
+}
+
+/** 摄像机步进:目标=存活玩家凸包(包围盒)中心;死区内不动;0.1 指数平滑
+ *  (dt 按 60fps 归一);最后钳制到世界边界(视口不出世界)。 */
+export function updateCamera(cam: CameraState, bbox: PlayerBox | null, vw: number, vh: number, dt: number): void {
+  if (bbox === null) return
+  const alpha = Math.min(1, CAMERA_SMOOTHING * Math.max(1, dt * 60))
+  const targetZoom = cameraZoomFor(bbox, vw, vh)
+  cam.zoom += (targetZoom - cam.zoom) * alpha
+  const deadX = (vw / cam.zoom) * CAMERA_DEADZONE * 0.5
+  const deadY = (vh / cam.zoom) * CAMERA_DEADZONE * 0.5
+  const dx = bbox.x + bbox.w / 2 - cam.x
+  const dy = bbox.y + bbox.h / 2 - cam.y
+  if (Math.abs(dx) > deadX) cam.x += dx * alpha
+  if (Math.abs(dy) > deadY) cam.y += dy * alpha
+  // 世界边界钳制(视口半宽/半高按 zoom 折算;世界小于视口时退到世界中心)
+  const halfW = vw / 2 / cam.zoom
+  const halfH = vh / 2 / cam.zoom
+  cam.x = clamp(cam.x, Math.min(halfW, WORLD_W / 2), Math.max(WORLD_W - halfW, WORLD_W / 2))
+  cam.y = clamp(cam.y, Math.min(halfH, WORLD_H / 2), Math.max(WORLD_H - halfH, WORLD_H / 2))
+}
+
+/** 世界坐标 → 视口坐标(摄像机变换的代数形式;HUD/外部叠加层绘制用)。 */
+export function worldToViewport(cam: CameraState, vw: number, vh: number, x: number, y: number): { x: number; y: number } {
+  return { x: (x - cam.x) * cam.zoom + vw / 2, y: (y - cam.y) * cam.zoom + vh / 2 }
+}
+
+/** 玩家出屏软约束:距摄像机中心超 (视口半宽-40)/zoom 时向心推力(120px/s)。 */
+export function softPushForce(cam: CameraState, vw: number, vh: number, pl: { x: number; y: number }): { x: number; y: number } {
+  const limitX = (vw / 2 - 40) / cam.zoom
+  const limitY = (vh / 2 - 40) / cam.zoom
+  const dx = cam.x - pl.x
+  const dy = cam.y - pl.y
+  const overX = Math.abs(dx) > limitX ? Math.abs(dx) - limitX : 0
+  const overY = Math.abs(dy) > limitY ? Math.abs(dy) - limitY : 0
+  if (overX === 0 && overY === 0) return { x: 0, y: 0 }
+  const len = Math.max(1e-6, Math.hypot(dx, dy))
+  return { x: (dx / len) * 120, y: (dy / len) * 120 }
+}
+
 /** 各敌种基础移速(不含难度/artifact 乘法)——tank 下界即 22。 */
 export function enemyBaseSpeed(enemy: Enemy): number {
   switch (enemy.kind) {
@@ -379,8 +470,10 @@ export interface SurvivalState {
   texts: FloatText[]
   /** R218 U10: 击杀涟漪环池。 */
   ripples: Ripple[]
-  /** R218 U10: 背景视差偏移(平滑后的归一化 ±1;存活玩家质心驱动)。 */
+  /** R218 U10: 背景视差偏移(平滑后的归一化 ±1;R218 U11 起由摄像机位置派生)。 */
   bgOffset: BgOffset
+  /** R218 U11: 摄像机(视口中心世界坐标 + 缩放;凸包质心跟随 + zoom-to-fit)。 */
+  camera: CameraState
   banner: Banner | null
   island: number
   portal: Point | null
@@ -499,7 +592,7 @@ export function initialSurvivalState(
   if (has('glass')) maxHp = 1
   // R213: 先构造 player/keys 再装配 state——players[0]/inputs[0] 与
   // player/keys 字段从出生起就是同一对象引用(别名不变量由构造保证)。
-  const player: PlayerState = { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 11, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2, hitFlash: 0 }
+  const player: PlayerState = { x: WORLD_W / 2, y: WORLD_H / 2, vx: 0, vy: 0, size: 11, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2, hitFlash: 0 }
   const keys = new Set<string>()
   const state: SurvivalState = {
     phase: 'ready',
@@ -533,6 +626,7 @@ export function initialSurvivalState(
     texts: [],
     ripples: [],
     bgOffset: { x: 0, y: 0 },
+    camera: { x: WORLD_W / 2, y: WORLD_H / 2, zoom: 1 },
     banner: null,
     island: 1,
     portal: null,
@@ -608,7 +702,7 @@ export function deployPlayers(state: SurvivalState, count: 1 | 2 | 3 | 4): void 
   for (let i = state.players.length; i < count; i++) {
     const off = DEPLOY_OFFSETS[i]
     state.players.push({
-      x: WIDTH / 2 + off.dx, y: HEIGHT / 2 + off.dy, vx: 0, vy: 0, size: 11,
+      x: WORLD_W / 2 + off.dx, y: WORLD_H / 2 + off.dy, vx: 0, vy: 0, size: 11,
       hp: state.player.maxHp, maxHp: state.player.maxHp, invuln: 2,
       fireTimer: 0, angle: -Math.PI / 2, hitFlash: 0,
     })
@@ -681,7 +775,7 @@ function playerDown(state: SurvivalState, which: 1 | 2 | 3 | 4): void {
   spawnBurst(state, p.x, p.y, '#f87171', 22, 210)
   addText(state, p.x, p.y - 30, `P${which} DOWN`, '#f87171')
   if (reviveQuotaLeft(state, which - 1)) {
-    state.reviveOrbs.push({ id: state.nextId++, x: clamp(p.x, 30, WIDTH - 30), y: clamp(p.y, 30, HEIGHT - 30), target: which })
+    state.reviveOrbs.push({ id: state.nextId++, x: clamp(p.x, 30, WORLD_W - 30), y: clamp(p.y, 30, WORLD_H - 30), target: which })
   }
 }
 
@@ -802,15 +896,37 @@ export function dissolveRoulette(state: SurvivalState, result: RouletteResult): 
   state.phase = 'running'
 }
 
-function spawnEnemy(state: SurvivalState): void {
+/** R218 U11: 摄像机视口外环生成点(世界坐标;再钳回世界 ±60 边界)。 */
+function spawnRingPoint(state: SurvivalState, ring: number): { x: number; y: number; side: number } {
+  const vw = WIDTH / state.camera.zoom
+  const vh = HEIGHT / state.camera.zoom
   const side = Math.floor(Math.random() * 4)
-  // R200: 出生预警——下一次入场的敌人先在对应边缘亮 0.5s 红箭头(登记在生成前)
-  state.warnings.push({ edge: side as 0 | 1 | 2 | 3, t: SPAWN_WARN_SECONDS })
-  const x = side === 0 ? -30 : side === 1 ? WIDTH + 30 : Math.random() * WIDTH
-  const y = side === 2 ? -30 : side === 3 ? HEIGHT + 30 : Math.random() * HEIGHT
+  let x: number
+  let y: number
+  if (side === 0) {
+    x = state.camera.x + (Math.random() - 0.5) * vw
+    y = state.camera.y - vh / 2 - ring
+  } else if (side === 1) {
+    x = state.camera.x + vw / 2 + ring
+    y = state.camera.y + (Math.random() - 0.5) * vh
+  } else if (side === 2) {
+    x = state.camera.x + (Math.random() - 0.5) * vw
+    y = state.camera.y + vh / 2 + ring
+  } else {
+    x = state.camera.x - vw / 2 - ring
+    y = state.camera.y + (Math.random() - 0.5) * vh
+  }
+  return { x: clamp(x, -60, WORLD_W + 60), y: clamp(y, -60, WORLD_H + 60), side }
+}
+
+function spawnEnemy(state: SurvivalState): void {
+  // R218 U11: 大世界——敌人在摄像机视口外环生成(warning 边沿即相对视口方位);
+  // R200: 出生预警——下一次入场的敌人先在对应边缘亮 0.5s 红箭头(登记在生成前)。
+  const spot = spawnRingPoint(state, 30 + Math.random() * 50)
+  state.warnings.push({ edge: spot.side as 0 | 1 | 2 | 3, t: SPAWN_WARN_SECONDS })
   const elite = state.time > 60 && Math.random() < 0.08
   // R218 D: 种类按「威胁值加权」投放(已解锁池内归一化逆威胁权重)
-  spawnEnemyKind(state, pickSpawnKindFrom(state.time, Math.random()), x, y, elite)
+  spawnEnemyKind(state, pickSpawnKindFrom(state.time, Math.random()), spot.x, spot.y, elite)
 }
 
 /** R218 D: 按种类生成敌人(可导出供测试/脚本直接投放)。swarm 一次生成整包。 */
@@ -940,9 +1056,10 @@ function bossBarrage(state: SurvivalState, boss: Enemy): void {
 
 function spawnBoss(state: SurvivalState): void {
   const hp = 60 + Math.floor(state.time / 10) * 6
-  const side = Math.floor(Math.random() * 4)
-  const x = side === 0 ? -50 : side === 1 ? WIDTH + 50 : Math.random() * WIDTH
-  const y = side === 2 ? -50 : side === 3 ? HEIGHT + 50 : Math.random() * HEIGHT
+  // R218 U11: boss 同样在摄像机视口外环登场(50-100px)
+  const spot = spawnRingPoint(state, 50 + Math.random() * 50)
+  const x = spot.x
+  const y = spot.y
   state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 28, hp, maxHp: hp, kind: 'boss', elite: false, hitFlash: 0 })
   state.banner = { text: 'BOSS INBOUND', life: 1.6 }
   playSfx('wave')
@@ -974,7 +1091,7 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
     state.pendingSpins += 1
     state.hitStop = HIT_STOP.heavy
     state.bossKills += 1
-    state.portal = { x: clamp(enemy.x, 60, WIDTH - 60), y: clamp(enemy.y, 60, HEIGHT - 60) }
+    state.portal = { x: clamp(enemy.x, 60, WORLD_W - 60), y: clamp(enemy.y, 60, WORLD_H - 60) }
     state.banner = { text: 'BOSS DOWN — ROULETTE +1', life: 1.8 }
     state.shake = 8
     playSfx('levelup')
@@ -1019,7 +1136,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     eb.y += eb.vy * dt
     eb.life -= dt
   }
-  state.eBullets = state.eBullets.filter((eb) => eb.life > 0 && eb.x > -40 && eb.x < WIDTH + 40 && eb.y > -40 && eb.y < HEIGHT + 40)
+  state.eBullets = state.eBullets.filter((eb) => eb.life > 0 && eb.x > -40 && eb.x < WORLD_W + 40 && eb.y > -40 && eb.y < WORLD_H + 40)
   for (const eb of state.eBullets) {
     // R208: 弹幕对任一存活玩家结算(独立无敌帧)
     for (const pl of alivePlayers(state)) {
@@ -1102,8 +1219,8 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   const moveLen = Math.hypot(moveX, moveY)
   const moveScale = Math.min(1, moveLen)
   if (moveLen > 0.0001) {
-    player.x = clamp(player.x + (moveX / moveLen) * moveScale * stats.moveSpeed * dt, 16, WIDTH - 16)
-    player.y = clamp(player.y + (moveY / moveLen) * moveScale * stats.moveSpeed * dt, 16, HEIGHT - 16)
+    player.x = clamp(player.x + (moveX / moveLen) * moveScale * stats.moveSpeed * dt, 16, WORLD_W - 16)
+    player.y = clamp(player.y + (moveY / moveLen) * moveScale * stats.moveSpeed * dt, 16, WORLD_H - 16)
     player.angle = Math.atan2(moveY, moveX)
     if (Math.random() < dt * 40) state.particles.push({ x: player.x - Math.cos(player.angle) * 14, y: player.y - Math.sin(player.angle) * 14, vx: -Math.cos(player.angle) * 60, vy: -Math.sin(player.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: '#67e8f9' })
   }
@@ -1183,8 +1300,8 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     const lenP = Math.hypot(movePx, movePy)
     const scaleP = Math.min(1, lenP)
     if (lenP > 0.0001) {
-      pl.x = clamp(pl.x + (movePx / lenP) * scaleP * stats.moveSpeed * dt, 16, WIDTH - 16)
-      pl.y = clamp(pl.y + (movePy / lenP) * scaleP * stats.moveSpeed * dt, 16, HEIGHT - 16)
+      pl.x = clamp(pl.x + (movePx / lenP) * scaleP * stats.moveSpeed * dt, 16, WORLD_W - 16)
+      pl.y = clamp(pl.y + (movePy / lenP) * scaleP * stats.moveSpeed * dt, 16, WORLD_H - 16)
       pl.angle = Math.atan2(movePy, movePx)
       if (Math.random() < dt * 40) state.particles.push({ x: pl.x - Math.cos(pl.angle) * 14, y: pl.y - Math.sin(pl.angle) * 14, vx: -Math.cos(pl.angle) * 60, vy: -Math.sin(pl.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: ROSTER_ACCENT[pi - 1] })
     }
@@ -1213,9 +1330,19 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     }
   }
 
-  // R218 U10: 背景视差偏移——存活玩家质心 → 归一化 ±1 → 0.1 指数平滑
-  // (任务 5 起由摄像机位置派生,二者合一;此处为平滑收敛的驱动点)
-  state.bgOffset = smoothOffsetTo(state.bgOffset, centroidToOffset(playersCentroid(state.players), WIDTH, HEIGHT))
+  // R218 U11: 摄像机——存活玩家凸包(包围盒)跟随(死区+平滑+世界钳制),
+  // zoom-to-fit 2-4P;玩家出屏软约束(向心 120px/s);背景 offset 由摄像机派生
+  // (与 U10 质心视差合一:摄像机即平滑后的质心)。
+  updateCamera(state.camera, playersBBox(state.players), WIDTH, HEIGHT, dt)
+  for (const pl of alivePlayers(state)) {
+    const push = softPushForce(state.camera, WIDTH, HEIGHT, pl)
+    pl.x += push.x * dt
+    pl.y += push.y * dt
+  }
+  state.bgOffset = smoothOffsetTo(state.bgOffset, {
+    x: clamp((state.camera.x - WORLD_W / 2) / (WORLD_W / 2), -1, 1),
+    y: clamp((state.camera.y - WORLD_H / 2) / (WORLD_H / 2), -1, 1),
+  })
 
   state.bladeAngle += dt * 2.8
   state.bladeTimer += dt
@@ -1253,7 +1380,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       }
     }
   }
-  state.bullets = state.bullets.filter((bullet) => bullet.life > 0 && bullet.pierce >= 0 && bullet.x > -20 && bullet.x < WIDTH + 20 && bullet.y > -20 && bullet.y < HEIGHT + 20)
+  state.bullets = state.bullets.filter((bullet) => bullet.life > 0 && bullet.pierce >= 0 && bullet.x > -20 && bullet.x < WORLD_W + 20 && bullet.y > -20 && bullet.y < WORLD_H + 20)
 
   for (const enemy of state.enemies) {
     // R208(FR-MP01): 敌人追最近存活玩家(单人局退化原行为);
@@ -1364,8 +1491,8 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     if (rescuerDist < rescuer.size + 8) {
       target.hp = Math.max(1, Math.ceil(target.maxHp / 2))
       target.invuln = 2
-      target.x = clamp(rescuer.x + (Math.random() - 0.5) * 64, 16, WIDTH - 16)
-      target.y = clamp(rescuer.y + (Math.random() - 0.5) * 64, 16, HEIGHT - 16)
+      target.x = clamp(rescuer.x + (Math.random() - 0.5) * 64, 16, WORLD_W - 16)
+      target.y = clamp(rescuer.y + (Math.random() - 0.5) * 64, 16, WORLD_H - 16)
       spendRevive(state, orb.target - 1)
       addText(state, rescuer.x, rescuer.y - 34, `P${orb.target} REVIVED`, '#4ade80')
       spawnBurst(state, rescuer.x, rescuer.y, '#4ade80', 18, 160)
@@ -1426,17 +1553,6 @@ function dimScene(ctx: CanvasRenderingContext2D, phase: SurvivalPhase): void {
 export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState): void {
   // R213: 名册同步(与 tickSurvival 同口径,视图直改 player2 后立即生效)
   syncRoster(state)
-  // R202: boss 弹幕绘制
-  for (const eb of state.eBullets) {
-    ctx.save()
-    ctx.fillStyle = '#fb7185'
-    ctx.shadowColor = '#fb7185'
-    ctx.shadowBlur = 6
-    ctx.beginPath()
-    ctx.arc(eb.x, eb.y, eb.size, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.restore()
-  }
   drawSurvivalBody(ctx, state)
   // R200(FR-G06.2): 出生预警——边缘红色箭头(0.5s)
   for (const w of state.warnings) {
@@ -1477,10 +1593,30 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   for (const star of STARS) {
     ctx.globalAlpha = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(state.clock * 2 + star.phase))
     ctx.fillStyle = theme.star
-    ctx.fillRect(star.x - player.x * 0.02, star.y - player.y * 0.02, star.size, star.size)
+    ctx.fillRect(star.x - player.x * 0.02 - state.bgOffset.x * 8, star.y - player.y * 0.02 - state.bgOffset.y * 8, star.size, star.size)
   }
   }
   ctx.globalAlpha = 1
+
+  // ── R218 U11: 世界层——摄像机变换(视口中心 → zoom → 负摄像机平移);
+  //    世界实体(弹幕/门/珠/刀光/子弹/敌/粒子/涟漪/玩家/飘字)在此层绘制,
+  //    restore 后再画 HUD(恒在视口坐标,不随摄像机动)。 ──
+  ctx.save()
+  ctx.translate(WIDTH / 2, HEIGHT / 2)
+  ctx.scale(state.camera.zoom, state.camera.zoom)
+  ctx.translate(-state.camera.x, -state.camera.y)
+
+  // R202: boss/shooter 弹幕绘制(世界坐标)
+  for (const eb of state.eBullets) {
+    ctx.save()
+    ctx.fillStyle = '#fb7185'
+    ctx.shadowColor = '#fb7185'
+    ctx.shadowBlur = 6
+    ctx.beginPath()
+    ctx.arc(eb.x, eb.y, eb.size, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  }
 
   if (state.portal) {
     const p = state.portal
@@ -1660,6 +1796,8 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
       ctx.fillRect(enemy.x - 14, enemy.y - enemy.size - 10, 28 * (enemy.hp / enemy.maxHp), 3)
     }
   }
+
+  ctx.restore() // ── R218 U11: 世界层结束,以下 HUD 恒在视口坐标 ──
 
   const boss = state.enemies.find((enemy) => enemy.kind === 'boss')
   if (boss) {

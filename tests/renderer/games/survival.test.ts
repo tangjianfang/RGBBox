@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   applyUpgrade,
+  cameraZoomFor,
   centroidToOffset,
   debugSpawnBoss,
   hitRadiusOf,
@@ -17,12 +18,18 @@ import {
   recomputeStats,
   setSurvivalDifficulty,
   smoothOffsetTo,
+  softPushForce,
   SPAWNABLE_KINDS,
   spawnEnemyKind,
   startSurvival,
   SURVIVAL_DIFFICULTY_PARAMS,
   threatOf,
   tickSurvival,
+  updateCamera,
+  worldToViewport,
+  WORLD_W,
+  WORLD_H,
+  playersBBox,
   xpToNext,
 } from '../../../src/renderer/src/games/survival'
 import { DIFFICULTY_SCORE_MULT, GAME_DIFFICULTIES, type GameDifficulty } from '../../../src/renderer/src/games/hud'
@@ -421,10 +428,11 @@ describe('R213 二期 P2-P4 手柄摇杆轴控', () => {
     const [p1, p2, p3] = state.players
     state.axes[1] = { x: 0.9, y: 0 }
     tickSurvival(state, 0.5)
-    expect(p2.x).toBeGreaterThan(WIDTH / 2 - 60 + 20)
+    // R218 U11: 初始位置改世界中心(WORLD_W/2 基准)
+    expect(p2.x).toBeGreaterThan(WORLD_W / 2 - 60 + 20)
     expect(p2.angle).toBeCloseTo(0, 5)
-    expect(p1.x).toBe(WIDTH / 2)
-    expect(p3.x).toBe(WIDTH / 2 + 60)
+    expect(p1.x).toBe(WORLD_W / 2)
+    expect(p3.x).toBe(WORLD_W / 2 + 60)
   })
 
   it('axes[2].y<-0.5 → P3 上移(y 减小);死区内(<0.18)不动', () => {
@@ -450,11 +458,11 @@ describe('R213 二期 P2-P4 手柄摇杆轴控', () => {
     const p2 = state.players[1]
     state.axes[1] = { x: 1, y: 0 }
     tickSurvival(state, 0.3)
-    const full = p2.x - (WIDTH / 2 - 60)
-    p2.x = WIDTH / 2 - 60
+    const full = p2.x - (WORLD_W / 2 - 60)
+    p2.x = WORLD_W / 2 - 60
     state.axes[1] = { x: 0.5, y: 0 }
     tickSurvival(state, 0.3)
-    const half = p2.x - (WIDTH / 2 - 60)
+    const half = p2.x - (WORLD_W / 2 - 60)
     expect(half).toBeGreaterThan(0)
     expect(half).toBeCloseTo(full / 2, 5)
   })
@@ -813,5 +821,109 @@ describe('R218 U10 background offset (质心 → 归一化 → 平滑)', () => {
     tickSurvival(s, 1 / 60)
     expect(s.ripples.length).toBe(1)
     expect(s.ripples[0].life).toBeGreaterThan(0)
+  })
+})
+
+// ── R218 U11: 大世界(2× 视口)+ 摄像机跟随(死区/平滑/zoom-to-fit/软推回) ─────
+describe('R218 U11 world + camera follow', () => {
+  it('playersBBox: 存活玩家包围盒;排除倒下;全倒为 null', () => {
+    const mk = (x: number, y: number, hp: number): { x: number; y: number; hp: number } => ({ x, y, hp })
+    expect(playersBBox([mk(0, 0, 1), mk(100, 50, 1)])).toEqual({ x: 0, y: 0, w: 100, h: 50 })
+    expect(playersBBox([mk(0, 0, 0), mk(100, 50, 1)])).toEqual({ x: 100, y: 50, w: 0, h: 0 })
+    expect(playersBBox([mk(0, 0, 0)])).toBeNull()
+  })
+
+  it('zoom-to-fit: 1P/聚拢 → 1.0;凸包拉远 → zoom 下降;极远钳 0.7 下限', () => {
+    expect(cameraZoomFor({ x: 0, y: 0, w: 0, h: 0 }, 900, 520)).toBe(1)
+    expect(cameraZoomFor({ x: 0, y: 0, w: 200, h: 100 }, 900, 520)).toBe(1)
+    const spread = cameraZoomFor({ x: 0, y: 0, w: 1000, h: 300 }, 900, 520)
+    expect(spread).toBeLessThan(1)
+    expect(spread).toBeGreaterThanOrEqual(0.7)
+    expect(cameraZoomFor({ x: 0, y: 0, w: 4000, h: 2000 }, 900, 520)).toBe(0.7)
+  })
+
+  it('死区内静止: 目标偏移小于视口 20%(±90/±52)时摄像机不动', () => {
+    const cam = { x: WORLD_W / 2, y: WORLD_H / 2, zoom: 1 }
+    updateCamera(cam, { x: 950, y: 550, w: 0, h: 0 }, 900, 520, 1 / 60)
+    expect(cam.x).toBe(WORLD_W / 2)
+    expect(cam.y).toBe(WORLD_H / 2)
+    // 出死区才追,且单步只收敛 10%
+    updateCamera(cam, { x: 1000, y: 550, w: 0, h: 0 }, 900, 520, 1 / 60)
+    expect(cam.x).toBeCloseTo(WORLD_W / 2 + 10, 5)
+  })
+
+  it('平滑收敛: 死区外目标经迭代逼近(0.1 指数平滑/帧,收敛进死区带即停)', () => {
+    const cam = { x: 900, y: 520, zoom: 1 }
+    for (let i = 0; i < 100; i++) updateCamera(cam, { x: 1200, y: 700, w: 0, h: 0 }, 900, 520, 1 / 60)
+    // 死区带(±90/±52)内即为收敛终点
+    expect(Math.abs(cam.x - 1200)).toBeLessThanOrEqual(95)
+    expect(Math.abs(cam.y - 700)).toBeLessThanOrEqual(60)
+    expect(cam.x).toBeGreaterThan(1100)
+    expect(cam.y).toBeGreaterThan(640)
+  })
+
+  it('世界边界钳制: 目标在世界角落 → 摄像机钳在 [450,1350]×[260,780]', () => {
+    const cam = { x: 900, y: 520, zoom: 1 }
+    for (let i = 0; i < 200; i++) updateCamera(cam, { x: 0, y: 0, w: 0, h: 0 }, 900, 520, 1 / 60)
+    expect(cam.x).toBe(450)
+    expect(cam.y).toBe(260)
+  })
+
+  it('软推回力: 屏内玩家受力 0;出屏(超 (视口/2-40)/zoom)受向心 120px/s', () => {
+    const cam = { x: 900, y: 520, zoom: 1 }
+    expect(softPushForce(cam, 900, 520, { x: 1000, y: 520 })).toEqual({ x: 0, y: 0 })
+    const f = softPushForce(cam, 900, 520, { x: 1500, y: 520 })
+    expect(f.x).toBeCloseTo(-120, 0)
+    expect(Math.abs(f.y)).toBeLessThan(1e-6)
+    // 缩放越远推力方向仍指向摄像机中心
+    const diag = softPushForce(cam, 900, 520, { x: 1500, y: 900 })
+    expect(diag.x).toBeLessThan(0)
+    expect(diag.y).toBeLessThan(0)
+    expect(Math.hypot(diag.x, diag.y)).toBeCloseTo(120, 0)
+  })
+
+  it('worldToViewport: 世界中心 → 视口中心;平移/缩放代数正确', () => {
+    expect(worldToViewport({ x: 900, y: 520, zoom: 1 }, 900, 520, 900, 520)).toEqual({ x: 450, y: 260 })
+    expect(worldToViewport({ x: 900, y: 520, zoom: 1 }, 900, 520, 1000, 620)).toEqual({ x: 550, y: 360 })
+    expect(worldToViewport({ x: 900, y: 520, zoom: 0.7 }, 900, 520, 990, 590)).toEqual({ x: 450 + 90 * 0.7, y: 260 + 70 * 0.7 })
+  })
+
+  it('deployPlayers 初始位置改世界中心分侧;camera 初始对准世界中心', () => {
+    const s = initialSurvivalState()
+    expect(s.player.x).toBe(WORLD_W / 2)
+    expect(s.player.y).toBe(WORLD_H / 2)
+    expect(s.camera).toEqual({ x: WORLD_W / 2, y: WORLD_H / 2, zoom: 1 })
+    deployPlayers(s, 2)
+    expect(s.player2!.x).toBe(WORLD_W / 2 - 60)
+    expect(s.player2!.y).toBe(WORLD_H / 2 + 40)
+  })
+
+  it('spawn 在摄像机视口外环生成(世界坐标,钳 ±60)', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = -1
+    s.time = 30
+    tickSurvival(s, 0.016)
+    expect(s.enemies.length).toBeGreaterThanOrEqual(1)
+    for (const e of s.enemies) {
+      expect(e.x).toBeGreaterThanOrEqual(-60)
+      expect(e.x).toBeLessThanOrEqual(WORLD_W + 60)
+      expect(Math.hypot(e.x - s.camera.x, e.y - s.camera.y)).toBeGreaterThan(280)
+    }
+  })
+
+  it('tick 集成: 两玩家拉远 → zoom-to-fit 下降并 ≥0.7;P2 倒下后 zoom 回 1', () => {
+    const s = initialSurvivalState()
+    deployPlayers(s, 2)
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    s.players[1].x = s.players[0].x + 1000
+    for (let i = 0; i < 60; i++) tickSurvival(s, 1 / 60)
+    expect(s.camera.zoom).toBeLessThan(0.99)
+    expect(s.camera.zoom).toBeGreaterThanOrEqual(0.7)
+    s.players[1].hp = 0
+    for (let i = 0; i < 200; i++) tickSurvival(s, 1 / 60)
+    expect(s.camera.zoom).toBeCloseTo(1, 1)
   })
 })
