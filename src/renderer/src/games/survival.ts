@@ -1192,6 +1192,41 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   const juiceFrozen = state.juice.hitStop > 0
   tickJuice(state.juice, dt)
   if (juiceFrozen) return
+  // (R220.1①: boss 弹幕循环/弹幕运动与命中已移至 phase gate 之后——原位置在
+  //  gate 之前,导致选卡/轮盘冻结期间弹幕继续飞行并伤害玩家,与文件头
+  //  「level-ups freeze the run」承诺矛盾;顺带修正 juice hit-stop 冻结期间
+  //  弹幕同样移动的旧不一致。)
+  if (state.hitStop > 0) {
+    const [remain, thaw] = hitStopTick(state.hitStop, dt)
+    state.hitStop = remain
+    if (thaw === 0) return
+    dt = thaw
+  }
+  dt *= state.timeScale
+  state.clock += dt
+  for (const text of state.texts) {
+    text.y -= 28 * dt
+    text.life -= dt
+  }
+  state.texts = state.texts.filter((text) => text.life > 0)
+  // R218 U10: 涟漪寿命衰减
+  for (const rp of state.ripples) rp.life -= dt
+  state.ripples = state.ripples.filter((rp) => rp.life > 0)
+  for (const particle of state.particles) {
+    particle.x += particle.vx * dt
+    particle.y += particle.vy * dt
+    particle.vy += 200 * dt
+    particle.life -= dt
+  }
+  state.particles = state.particles.filter((particle) => particle.life > 0)
+  if (state.banner) {
+    state.banner.life -= dt
+    if (state.banner.life <= 0) state.banner = null
+  }
+  if (state.phase !== 'running') return
+
+  // ── R220.1①: 弹幕结算(running 专属)——原在文件头部 phase gate 之前执行,
+  //    选卡/轮盘/结算冻结期间照飞照伤;现移到 gate 后,冻结即真冻结。──
   // R202(FR-SW02): boss 弹幕三型循环(放射/瞄准扇形/环形,每 1.2s)
   state.bossBulletTimer += dt
   for (const enemy of state.enemies) {
@@ -1233,34 +1268,6 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     }
   }
   state.eBullets = state.eBullets.filter((eb) => eb.life > 0)
-  if (state.hitStop > 0) {
-    const [remain, thaw] = hitStopTick(state.hitStop, dt)
-    state.hitStop = remain
-    if (thaw === 0) return
-    dt = thaw
-  }
-  dt *= state.timeScale
-  state.clock += dt
-  for (const text of state.texts) {
-    text.y -= 28 * dt
-    text.life -= dt
-  }
-  state.texts = state.texts.filter((text) => text.life > 0)
-  // R218 U10: 涟漪寿命衰减
-  for (const rp of state.ripples) rp.life -= dt
-  state.ripples = state.ripples.filter((rp) => rp.life > 0)
-  for (const particle of state.particles) {
-    particle.x += particle.vx * dt
-    particle.y += particle.vy * dt
-    particle.vy += 200 * dt
-    particle.life -= dt
-  }
-  state.particles = state.particles.filter((particle) => particle.life > 0)
-  if (state.banner) {
-    state.banner.life -= dt
-    if (state.banner.life <= 0) state.banner = null
-  }
-  if (state.phase !== 'running') return
 
   state.time += dt
   state.comboTimer = Math.max(0, state.comboTimer - dt)

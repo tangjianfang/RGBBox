@@ -1059,6 +1059,29 @@ function trackCtx(): { ctx: CanvasRenderingContext2D; translates: Array<{ ix: nu
   return { ctx: ctx as unknown as CanvasRenderingContext2D, translates }
 }
 
+describe('renderer/games/survival R220 冻结语义修复', () => {
+  it('R220.1①: levelup/roulette 冻结期间 boss 不开火、弹幕不移动不伤害(恢复 running 后正常)', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    s.player.invuln = 0
+    s.eBullets.push({ x: s.player.x - 60, y: s.player.y, vx: 100, vy: 0, size: 5, life: 4 })
+    s.bossBulletTimer = 1.3
+    s.phase = 'levelup'
+    const hp0 = s.player.hp
+    const bx0 = s.eBullets[0].x
+    const timer0 = s.bossBulletTimer
+    tickSurvival(s, 0.1)
+    expect(s.player.hp).toBe(hp0)
+    expect(s.eBullets[0].x).toBe(bx0)
+    expect(s.bossBulletTimer).toBe(timer0)
+    s.phase = 'running'
+    tickSurvival(s, 0.016)
+    expect(s.eBullets[0].x).toBeGreaterThan(bx0)
+  })
+})
+
 describe('renderer/games/survival R219 绘制层与机制修正', () => {
   it('R219.1: P1 飞船画在摄像机层内——世界任意位置恒映射画布中心(修复开局飞船出画布)', () => {
     const s = initialSurvivalState()

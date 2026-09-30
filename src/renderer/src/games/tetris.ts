@@ -350,7 +350,6 @@ function lockPiece(state: TetrisState): void {
     state.flash = { rows: [], life: 0.25 }
     state.shake = Math.min(7, 2 + cleared * 1.5)
     playSfx(cleared >= 3 || tspin ? 'levelup' : 'pop')
-    playSfx(cleared >= 3 ? 'levelup' : 'pop')
     // FR-G08 race: line goal reached → win. Settle BEFORE spawning the next
     // piece so a topped-out board cannot overwrite 'won' with 'lost', and use
     // the level-up jingle instead of the game-over shake/sfx.
