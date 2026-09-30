@@ -28,6 +28,8 @@ import {
   drawGame,
   initialState,
   launchWave,
+  TD_BASE_COINS,
+  TD_DIFFICULTY_PARAMS,
   sellTower,
   spawnBurst,
   tickGame,
@@ -45,6 +47,8 @@ import {
   debugSpawnBoss,
   dissolveRoulette,
   drawSurvival,
+  setSurvivalDifficulty,
+  worldToViewport,
   initialSurvivalState,
   openRoulette,
   startSurvival,
@@ -249,33 +253,9 @@ function writeReadyPrefs(game: string, prefs: ReadyPrefs): void {
   try { localStorage.setItem('rgbbox:gamesReady:' + game, JSON.stringify(prefs)) } catch { /* best-effort */ }
 }
 
-// ── TODO(r218-merge): 临时 shim(集中一处,merge 各作分支后整块删除) ──────────
-// 契约:四作引擎分支(wt-r218-tdsl / wt-r218-tet / wt-r218-sv)新增下列导出与
-// state.difficulty 字段;本分支按契约先行接线,merge 后改 import 真实导出:
-//   ① TD_DIFFICULTY_PARAMS        ← wt-r218-tdsl(src/renderer/src/games/td.ts)
-//      Record<GameDifficulty, { lives: number; startCoins: number; hpMult: number }>
-//   ② TETRIS_DIFFICULTY_START_LEVEL ← wt-r218-tet(src/renderer/src/games/tetris.ts)
-//      Record<GameDifficulty, number>(起始等级 1/5/9/13,guideline 重力曲线已有)
-//   ③ 各作 state.difficulty?: GameDifficulty 字段 ← sv/tdsl/tet 三分支
-//      (SurvivalState / GameState / SlashState / TetrisState;shell 在开局时
-//      写入,引擎 tick 内读各自参数表)——在字段落地前用 setEngineDifficulty
-//      宽类型写入,字段存在后可直接赋值并删该 helper。
-const TD_DIFFICULTY_PARAMS: Record<GameDifficulty, { lives: number; startCoins: number; hpMult: number }> = {
-  // spec §三 TD:lives 30/20/14/10 ×起始金 +50%/0/-15%/-25%(基线 220);
-  // casual/standard 与 R204 现值逐字对齐(30+300 / 20+220)。
-  casual: { lives: 30, startCoins: 300, hpMult: 0.8 },
-  standard: { lives: 20, startCoins: 220, hpMult: 1 },
-  hard: { lives: 14, startCoins: 187, hpMult: 1.25 },
-  insane: { lives: 10, startCoins: 165, hpMult: 1.5 },
-}
-const TETRIS_DIFFICULTY_START_LEVEL: Record<GameDifficulty, number> = {
-  casual: 1, standard: 5, hard: 9, insane: 13,
-}
-/** 宽类型写入引擎 difficulty 字段(字段由各作分支落地;交集类型可赋值)。 */
-function setEngineDifficulty(state: object, d: GameDifficulty): void {
-  ;(state as { difficulty?: GameDifficulty }).difficulty = d
-}
-// ── TODO(r218-merge) shim 块结束 ──────────────────────────────────────────────
+// ── R218 merge 适配:shim 已移除,四作难度经各引擎真实参数表生效 ─────────────
+// TD/Tetris/Slash/Survival 开局一律走 initialState(difficulty)/第 4/3 参
+// 传参(引擎内 lives/起始金/起始等级/敌系数/血量基数为权威来源)。
 
 /** R207(FR-G04): 手势指示器(vision-pad)全局开关——默认关闭,持久化。 */
 function readVisionPadVisible(): boolean {
@@ -291,11 +271,11 @@ const VISION_GAIN_Y = 1.6
 export function MiniGamesView(): JSX.Element {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const tdStateRef = useRef<GameState>(initialState())
+  const tdStateRef = useRef<GameState>(initialState(readDifficulty('td')))
   const survivalRef = useRef<SurvivalState>(initialSurvivalState())
-  const tetrisRef = useRef<TetrisState>(initialTetrisState())
+  const tetrisRef = useRef<TetrisState>(initialTetrisState(undefined, readDifficulty('tetris')))
   /** R208(FR-MP02): 双板对战的 B 板实例(独立 grid/queue/hold/lock-delay)。 */
-  const tetrisBRef = useRef<TetrisState>(initialTetrisState())
+  const tetrisBRef = useRef<TetrisState>(initialTetrisState(undefined, readDifficulty('tetris')))
   const slashRef = useRef<SlashState>(initialSlashState())
   const bestRef = useRef<Record<GameKey, number>>({ td: readBest('td'), survival: readBest('survival'), tetris: readBest('tetris'), slash: readBest('slash') })
   const [screen, setScreen] = useState<Screen>('hub')
@@ -1088,11 +1068,15 @@ export function MiniGamesView(): JSX.Element {
           const pl = survivalRef.current.players[pi]
           if (img === null || pl === undefined || pl.hp <= 0) continue
           if (pl.invuln > 0 && Math.floor(pl.invuln * 12) % 2 === 0) continue // 无敌闪烁节奏与飞船一致
+          // R218-SV 大世界:头像画在视口层,玩家世界坐标须经摄像机变换
+          const cam = survivalRef.current.camera
+          const vp = worldToViewport(cam, WIDTH, HEIGHT, pl.x, pl.y)
+          const ar = 14 * cam.zoom
           ctx.save()
           ctx.beginPath()
-          ctx.arc(pl.x, pl.y, 14, 0, Math.PI * 2)
+          ctx.arc(vp.x, vp.y, ar, 0, Math.PI * 2)
           ctx.clip()
-          ctx.drawImage(img, pl.x - 14, pl.y - 14, 28, 28)
+          ctx.drawImage(img, vp.x - ar, vp.y - ar, ar * 2, ar * 2)
           ctx.restore()
         }
       } else if (screen === 'slash') {
@@ -1414,20 +1398,21 @@ export function MiniGamesView(): JSX.Element {
 
   const startOrNextWave = useCallback(() => {
     if (tdStateRef.current.phase === 'won' || tdStateRef.current.phase === 'lost') {
-      tdStateRef.current = initialState()
+      tdStateRef.current = initialState(readDifficulty('td'))
       setSelectedTowerId(null)
     }
     // FR-G08: 闪电赛——6 波上限(引擎 targetWaves 读 blitz)
     tdStateRef.current.blitz = tdBlitzOnRef.current
-    // R204→R218 U4: TD 难度四档开局参数(lives/起始金;敌 HP 系数由引擎读
-    // difficulty 字段自算——TODO(r218-merge) 后走 td.ts 真实参数表)。
+    // R204→R218 U4: TD 难度四档——首波开局(ready 态 state 早在挂载时以默认档
+    // 初始化)按 td.ts 真实参数表覆写 lives/起始金/difficulty;重开路径走
+    // initialState(difficulty) 重建。敌 HP 系数由引擎读 difficulty 自算。
+    const tdDifficulty = readDifficulty('td')
+    runDifficultyRef.current = tdDifficulty
     if (tdStateRef.current.wave === 0 && tdStateRef.current.towers.length === 0) {
-      const d = readDifficulty('td')
-      runDifficultyRef.current = d
-      const params = TD_DIFFICULTY_PARAMS[d]
-      tdStateRef.current.lives = params.lives
-      tdStateRef.current.coins = params.startCoins
-      setEngineDifficulty(tdStateRef.current, d)
+      const p = TD_DIFFICULTY_PARAMS[tdDifficulty]
+      tdStateRef.current.lives = p.lives
+      tdStateRef.current.coins = TD_BASE_COINS + p.startGoldDelta
+      tdStateRef.current.difficulty = tdDifficulty
     }
     const state = tdStateRef.current
     if (state.phase === 'ready') {
@@ -1445,7 +1430,7 @@ export function MiniGamesView(): JSX.Element {
   }, [publishTd])
 
   const restartTd = useCallback(() => {
-    tdStateRef.current = initialState()
+    tdStateRef.current = initialState(readDifficulty('td'))
     setSelectedTowerId(null)
     publishTd()
   }, [publishTd])
@@ -1601,15 +1586,16 @@ export function MiniGamesView(): JSX.Element {
     .map((artifact) => artifact.id), [meta])
 
   const startSurvivalRun = useCallback(() => {
+    // R218 U4: 难度经 initialSurvivalState 第 4 参进引擎(eHP 四档权威来源)
+    const difficulty = readDifficulty('survival')
+    runDifficultyRef.current = difficulty
     if (survivalRef.current.phase === 'lost' || survivalRef.current.phase === 'ready') {
-      survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts)
+      survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts, difficulty)
+    } else {
+      setSurvivalDifficulty(survivalRef.current, difficulty)
     }
     // FR-G08: 90 秒冲刺——时限到走既有 lost 结算(分数保留)
     survivalRef.current.sprintSeconds = swarmSprintOnRef.current ? 90 : undefined
-    // R218 U4: 难度写入引擎(eHP 四档参数由 sv 分支在 tick 内生效)
-    const difficulty = readDifficulty('survival')
-    runDifficultyRef.current = difficulty
-    setEngineDifficulty(survivalRef.current, difficulty)
     // R213: 4P 名册部署(人数选择;swarmCoopOn 开关是人数=2 的快捷别名)与场景背景
     const count = Math.max(1, Math.min(4, swarmPlayersRef.current)) as 1 | 2 | 3 | 4
     deployPlayers(survivalRef.current, count)
@@ -1634,15 +1620,13 @@ export function MiniGamesView(): JSX.Element {
       duelRef.current = fresh
       setDuel(fresh)
     }
-    startSlash(slashRef.current, slashBurstOnRef.current ? 30 : RUN_SECONDS)
-    // R218 U4: difficulty 必须在 startSlash 之后写(Object.assign 会覆盖先前字段)
-    setEngineDifficulty(slashRef.current, d)
+    startSlash(slashRef.current, slashBurstOnRef.current ? 30 : RUN_SECONDS, d)
     publishSlash()
   }, [publishSlash])
   slashStartRef.current = startSlashRunCb
 
   const restartSurvivalRun = useCallback(() => {
-    survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts)
+    survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts, readDifficulty('survival'))
     publishSurvival()
   }, [enabledArtifacts, meta, publishSurvival, swarmCharacter])
 
@@ -1710,35 +1694,32 @@ export function MiniGamesView(): JSX.Element {
   }, [])
 
   const startTetrisRun = useCallback(() => {
-    // R218 U4: Tetris 难度=起始等级(1/5/9/13,重力曲线 0.8×0.85^(lv-1) 已有)。
+    // R218 U4: Tetris 难度=起始等级(TETRIS_DIFFICULTY_PARAMS,initialTetrisState
+    // 第 2 参生效——重力曲线 0.8×0.85^(lv-1) 已有;level 由引擎初始化,勿重复赋)。
     const d = readDifficulty('tetris')
     runDifficultyRef.current = d
-    const startLevel = TETRIS_DIFFICULTY_START_LEVEL[d]
     // R209 三期(FR-LN05): LAN Tetris 对战——双方各跑本地引擎(事件同步),
     // 种子开局(host 建房生成/guest 经 welcome 收取)保证 piece 序列一致;
     // 本地双板开关在该模式下不参与(对手即远端板);断线不恢复,重开即新局。
     if (lanRoleRef.current !== 'idle' && lanGameRef.current === 'tetris') {
-      tetrisRef.current = initialTetrisState(lanSeedRef.current ?? undefined)
-      tetrisBRef.current = initialTetrisState()
-      tetrisRef.current.level = startLevel
+      tetrisRef.current = initialTetrisState(lanSeedRef.current ?? undefined, d)
+      tetrisBRef.current = initialTetrisState(undefined, d)
       setLanTetrisScore(null)
       startTetris(tetrisRef.current)
       publishTetris()
       return
     }
-    if (tetrisRef.current.phase === 'lost' || (tetrisDuelOnRef.current && tetrisBRef.current.phase === 'lost')) {
-      tetrisRef.current = initialTetrisState()
-      tetrisBRef.current = initialTetrisState()
+    if (tetrisRef.current.phase === 'ready' || tetrisRef.current.phase === 'lost' || (tetrisDuelOnRef.current && tetrisBRef.current.phase === 'lost')) {
+      tetrisRef.current = initialTetrisState(undefined, d)
+      tetrisBRef.current = initialTetrisState(undefined, d)
     }
     // R208(FR-MP02): 双板对战——A 左移 B 右移并排;键位 P1 方向键/C,P2 IJKL+/.。
     // FR-G08: 40 行竞速——达标进 'won'(结算面板复用)。
     tetrisRef.current.raceLines = tetrisRaceOnRef.current ? 40 : undefined
     tetrisBRef.current.raceLines = tetrisRaceOnRef.current ? 40 : undefined
     tetrisRef.current.boardX = tetrisDuelOnRef.current ? 150 : 300
-    tetrisRef.current.level = startLevel
     if (tetrisDuelOnRef.current) {
       tetrisBRef.current.boardX = 560
-      tetrisBRef.current.level = startLevel
       startTetris(tetrisBRef.current)
     }
     startTetris(tetrisRef.current)

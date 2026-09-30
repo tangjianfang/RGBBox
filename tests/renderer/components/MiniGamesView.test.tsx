@@ -649,7 +649,7 @@ describe('renderer/components/MiniGamesView · difficulty four tiers (R218 U4)',
     const lives = [...container.querySelectorAll('.games-stat-grid span')].find((s) => s.getAttribute('aria-label')?.includes('games.ariaLives'))
     expect(lives?.textContent).toContain('14')
     const coins = [...container.querySelectorAll('.games-stat-grid span')].find((s) => s.getAttribute('aria-label')?.includes('games.ariaCoins'))
-    expect(coins?.textContent).toContain('187')
+    expect(coins?.textContent).toContain('180')
     ctxSpy.mockRestore()
   })
 
