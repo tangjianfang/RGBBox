@@ -764,3 +764,73 @@ describe('renderer/components/MiniGamesView · ready panel (R218 U3)', () => {
     ctxSpy.mockRestore()
   })
 })
+
+// ── R218 U9: 画面占比三档 + 专注模式 ──────────────────────────────────────────
+describe('renderer/components/MiniGamesView · screen size & focus mode (R218 U9)', () => {
+  const noopCtx = new Proxy({}, {
+    get: (_t, prop) => {
+      if (prop === 'canvas') return undefined
+      if (prop === 'measureText') return () => ({ width: 10 })
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+        return () => ({ addColorStop: () => undefined })
+      }
+      return () => undefined
+    },
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D
+
+  const frames = (ms = 320) => new Promise((r) => setTimeout(r, ms))
+  const root = (container: HTMLElement) => container.querySelector('.games-screen') as HTMLElement
+
+  it('focus toggle button enters/exits; Esc exits; badge shown while active', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    expect(root(container).className).not.toContain('focus')
+    fireEvent.click(container.querySelector('[data-action="focus-toggle"]')!)
+    expect(root(container).className).toContain('focus')
+    expect(container.querySelector('[data-action="focus-exit"]')).toBeTruthy()
+    // Esc exits focus
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(root(container).className).not.toContain('focus')
+    expect(container.querySelector('[data-action="focus-exit"]')).toBeNull()
+    // badge click also exits
+    fireEvent.click(container.querySelector('[data-action="focus-toggle"]')!)
+    fireEvent.click(container.querySelector('[data-action="focus-exit"]')!)
+    expect(root(container).className).not.toContain('focus')
+    ctxSpy.mockRestore()
+  })
+
+  it('screen-size preference persists and restores (focus → auto-enter on run start)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    // drawer holds the three-tier screen size setting
+    fireEvent.click(container.querySelector('[data-field="ready-drawer"] summary')!)
+    fireEvent.click(container.querySelector('[data-scale="large"]')!)
+    expect(localStorage.getItem('rgbbox:gamesFocusMode')).toBe('large')
+    expect(root(container).className).toContain('size-large')
+    fireEvent.click(container.querySelector('[data-scale="focus"]')!)
+    expect(localStorage.getItem('rgbbox:gamesFocusMode')).toBe('focus')
+    // starting the run auto-enters focus (pref = focus)
+    fireEvent.click(container.querySelector('[data-action="ready-start"]') as HTMLButtonElement)
+    await frames() // phase snapshot publish (~0.18s) flips runActive
+    expect(root(container).className).toContain('focus')
+    expect(root(container).className).toContain('running')
+    // run ends → focus auto-exits is covered by the runActive effect; here verify
+    // the class is bound to run state at least via presence while running
+    ctxSpy.mockRestore()
+  })
+
+  it('double-click on the canvas enters focus while running (non-TD)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    fireEvent.click(container.querySelector('[data-action="ready-start"]') as HTMLButtonElement)
+    await frames()
+    expect(root(container).className).toContain('running')
+    fireEvent.dblClick(container.querySelector('canvas.games-canvas')!)
+    expect(root(container).className).toContain('focus')
+    ctxSpy.mockRestore()
+  })
+})

@@ -10058,6 +10058,80 @@ input:disabled {
   max-width: 92%;
 }
 
+/* ── R218 U9: 画面占比 65%→85%+ 与专注模式 ──────────────────────────────────
+   三档:standard(默认,进行态收窄 chrome)/ large(侧栏收窄+进行态隐藏侧栏
+   ≈95% 画幅)/ focus(瞬时态:画布面板 position fixed 满窗口,与 OS 级 fs 正交)。 */
+.games-screen.running {
+  gap: 10px;
+  padding: 12px 16px;
+}
+/* 进行态隐藏标题行(HUD 内信息替代;hub 返回/重开走 Esc 暂停浮层) */
+.games-screen.running .workspace-header { display: none; }
+/* U7: 进行态画布外框信息半透明化,视线让位画布 */
+.games-screen.running .games-stat-grid { opacity: 0.6; }
+.games-screen.running .games-canvas-status { opacity: 0.7; }
+.games-screen.running .games-stat-grid:hover,
+.games-screen.running .games-canvas-status:hover { opacity: 1; }
+
+.games-screen.size-large { padding: 12px 14px; gap: 12px; }
+.games-screen.size-large .games-layout { grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; }
+.games-screen.size-large.running .games-layout { grid-template-columns: minmax(0, 1fr); }
+.games-screen.size-large.running .games-control-panel { display: none; }
+
+/* 专注模式:最小侵入——games 区域 fixed 满窗口,其余 chrome 全隐 */
+.games-screen.focus .workspace-header,
+.games-screen.focus .games-stat-grid,
+.games-screen.focus .coach-bar,
+.games-screen.focus .run-recap,
+.games-screen.focus .games-control-panel,
+.games-screen.focus .td-ctl-row,
+.games-screen.focus .vision-pad,
+.games-screen.focus .vision-banner,
+.games-screen.focus .games-canvas-status {
+  display: none !important;
+}
+.games-screen.focus { padding: 0; overflow: hidden; }
+.games-screen.focus .games-layout { align-items: center; justify-content: center; padding: 0; }
+.games-screen.focus .games-canvas-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--surface-deep);
+}
+.games-screen.focus .games-canvas-wrap {
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+.games-screen.focus .games-canvas {
+  height: 100vh;
+  max-height: 100vh;
+  width: auto;
+  max-width: 100vw;
+  border-radius: 0;
+}
+/* 专注模式半透明退出角标(顶部居中,点击或 Esc 退出) */
+.focus-exit-badge {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 4px 16px;
+  border-radius: var(--radius-l);
+  border: 1px solid rgba(103, 232, 249, 0.3);
+  background: rgba(5, 10, 14, 0.55);
+  color: var(--text-secondary);
+  font-size: var(--text-caption-size);
+  cursor: pointer;
+}
+.focus-exit-badge:hover { color: var(--info-text); border-color: var(--accent); }
+.focus-toggle-btn { padding: 2px 8px; }
+
 /* M3(FR-G09): daily 挑战行 */
 .games-daily-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-bottom: 8px; font-size: var(--text-caption-size); color: var(--text-secondary); }
 .daily-chip { padding: 2px 10px; border-radius: var(--radius-l); border: 1px solid rgba(148, 184, 200, 0.28); color: var(--text-secondary); }

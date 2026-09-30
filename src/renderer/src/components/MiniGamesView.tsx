@@ -209,6 +209,19 @@ function writeDrawerOpen(open: boolean): void {
   try { localStorage.setItem('rgbbox:gamesReady:drawer', open ? '1' : '0') } catch { /* best-effort */ }
 }
 
+/** R218 U9: 「画面大小」三档偏好(标准/大/专注)——rgbbox:gamesFocusMode;
+ * 'focus' = 每次开局自动进入专注模式(窗口内满幅,与 OS 级 fs 全屏正交)。 */
+type ScreenScale = 'standard' | 'large' | 'focus'
+function readScreenScale(): ScreenScale {
+  try {
+    const raw = localStorage.getItem('rgbbox:gamesFocusMode')
+    return raw === 'large' || raw === 'focus' ? raw : 'standard'
+  } catch { return 'standard' }
+}
+function writeScreenScale(scale: ScreenScale): void {
+  try { localStorage.setItem('rgbbox:gamesFocusMode', scale) } catch { /* best-effort */ }
+}
+
 /** R218 U3: 上次选择全记忆——按作 JSON(rgbbox:gamesReady:<game>),坏值整体忽略。 */
 type SwarmSceneId = 'station' | 'desert' | 'snow' | 'grass' | 'ocean' | 'fusion'
 interface ReadyPrefs {
@@ -345,6 +358,13 @@ export function MiniGamesView(): JSX.Element {
   const [inputPanelOpen, setInputPanelOpen] = useState(false)
   /** R218 U3: 「更多设置」抽屉展开态(localStorage 记忆,默认折叠)。 */
   const [drawerOpen, setDrawerOpen] = useState(readDrawerOpen)
+  // ── R218 U9: 画面占比三档偏好 + 专注模式(窗口内满幅,瞬时态) ──
+  const [screenScale, setScreenScale] = useState<ScreenScale>(readScreenScale)
+  const screenScaleRef = useRef<ScreenScale>('standard')
+  screenScaleRef.current = screenScale
+  const [focusMode, setFocusMode] = useState(false)
+  const focusModeRef = useRef(false)
+  focusModeRef.current = focusMode
   const swarmAutoPickRef = useRef<{ mode: 'off' | 'list' | 'best'; prefs: UpgradeId[] }>({ mode: 'off', prefs: ['fireRate', 'damage', 'multishot', 'speed', 'magnet', 'maxHp', 'blade', 'pierce'] })
   swarmAutoPickRef.current.mode = autoPickMode
   const [keyMap, setKeyMap] = useState<Record<string, string>>(() => buildKeyToPoolMap(loadInputConfigs(localStorage)))
@@ -1339,6 +1359,11 @@ export function MiniGamesView(): JSX.Element {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || screenRef.current === 'hub') return
+      if (focusModeRef.current && !fullscreen) {
+        // U9: 退出专注模式(窗口内满幅 → 常规布局)
+        setFocusMode(false)
+        return
+      }
       if (fullscreen) {
         setFsPaused((v) => !v)
         return
@@ -1733,6 +1758,23 @@ export function MiniGamesView(): JSX.Element {
     publishSurvival()
   }, [publishSurvival])
 
+  // ── R218 U9: 一局进行中(含 survival levelup/roulette 中场)——「进行态」
+  // 布局门:隐藏标题行/收窄边距/专注模式随开局进入。──
+  const runActive = screen === 'td' ? tdSnapshot.phase === 'running'
+    : screen === 'survival' ? (survivalSnapshot.phase === 'running' || survivalSnapshot.phase === 'levelup' || survivalSnapshot.phase === 'roulette')
+      : screen === 'slash' ? slashSnapshot.phase === 'running'
+        : screen === 'tetris' ? tetrisSnapshot.phase === 'running'
+          : false
+  const runActivePrevRef = useRef(false)
+  useEffect(() => {
+    if (runActive && !runActivePrevRef.current) {
+      if (screenScaleRef.current === 'focus') setFocusMode(true) // 偏好=专注:开局自动满幅
+    } else if (!runActive && runActivePrevRef.current) {
+      setFocusMode(false) // 终局/回 ready 自动退出专注
+    }
+    runActivePrevRef.current = runActive
+  }, [runActive])
+
   if (screen === 'hub') {
     return (
       <div className="games-view">
@@ -2055,7 +2097,7 @@ export function MiniGamesView(): JSX.Element {
   }
 
   return (
-    <div ref={screenRootRef} className={`games-view games-screen ${fullscreen ? 'fs' : ''}`}>
+    <div ref={screenRootRef} className={`games-view games-screen ${fullscreen ? 'fs' : ''}${focusMode ? ' focus' : ''}${screenScale === 'large' ? ' size-large' : ''}${runActive ? ' running' : ''}`}>
       <header className="workspace-header games-header">
         <div>
           <p className="eyebrow">{t('games.eyebrow')}</p>
@@ -2222,6 +2264,13 @@ export function MiniGamesView(): JSX.Element {
             />
             <span>{t('games.td.endless')}</span>
           </label>
+          {/* R218 U9: 进行态标题行隐藏——提前开波的入口从 header 按钮移到这里 */}
+          {tdSnapshot.phase === 'running' && tdSnapshot.waveQueue === 0 && tdSnapshot.balloons.length === 0 && tdSnapshot.wave < MAX_WAVE ? (
+            <button type="button" className="aspect-lock-btn" data-action="td-next-wave" onClick={startOrNextWave} disabled={lanRole === 'guest' && lanGame === 'td'}>
+              <Play aria-hidden="true" size={12} />
+              {t('games.nextWave')}
+            </button>
+          ) : null}
           <span className={tdStateRef.current.meteorCd > 0 ? 'td-meteor-cd' : 'td-meteor-ready'} title={t('games.td.meteorHint')}>
             ☄ {tdStateRef.current.meteorCd > 0 ? Math.ceil(tdStateRef.current.meteorCd) + 's' : t('games.td.meteorReady')} · Q
           </span>
@@ -2332,6 +2381,13 @@ export function MiniGamesView(): JSX.Element {
                   <summary>{t('games.ready.more')}</summary>
                   <div className="ready-drawer-body">
                     <div className="ready-drawer-grid">
+                      {/* R218 U9: 「画面大小」三档——标准/大(隐藏侧栏占比 ~95%)/专注(开局自动满幅) */}
+                      <div className="ready-group" data-field="screen-scale">
+                        <span className="ready-group-label">{t('games.screenSize.label')}</span>
+                        {(['standard', 'large', 'focus'] as const).map((scale) => (
+                          <button key={scale} type="button" className={`ready-chip ${screenScale === scale ? 'on' : ''}`} data-scale={scale} onClick={() => { setScreenScale(scale); writeScreenScale(scale) }}>{t(`games.screenSize.${scale}`)}</button>
+                        ))}
+                      </div>
                       <button type="button" className={`ready-chip ${bgmOn ? 'on' : ''}`} data-field="bgm-toggle" onClick={toggleBgm}>{t('games.bgmToggle')}</button>
                       {/* R205 尾款(FR-G08): 短局矩阵开关(引擎层已随 T1 合入) */}
                       {isTd ? (
@@ -2458,10 +2514,20 @@ export function MiniGamesView(): JSX.Element {
               ref={canvasRef}
               className="games-canvas"
               onClick={handleUnifiedCanvasClick}
+              onDoubleClick={() => {
+                // R218 U9: 双击画布进入专注(TD 除外——双击会先落两座塔)
+                if (!isTd && currentPhaseRef.current() === 'running') setFocusMode(true)
+              }}
               onMouseMove={handleUnifiedCanvasMove}
               onMouseLeave={() => { hudHoverRef.current = null; if (isTd) setTdHover(null) }}
               aria-label={`${gameTitle} game board`}
             />
+            {/* R218 U9: 专注模式半透明退出角标(Esc / 点击退出) */}
+            {focusMode ? (
+              <button type="button" className="focus-exit-badge" data-action="focus-exit" onClick={() => setFocusMode(false)}>
+                Esc · {t('games.focus.exit')}
+              </button>
+            ) : null}
             {!isTd && survivalSnapshot.phase === 'levelup' && survivalSnapshot.offers.length > 0 ? (
               <div className="levelup-overlay">
                 <p>{t('games.levelupTitle')}</p>
@@ -2549,6 +2615,17 @@ export function MiniGamesView(): JSX.Element {
             {vision.enabled && vision.state === 'active' ? <VisionCursor vision={vision} wrapRef={canvasWrapRef} stateRef={visionCursorRef} /> : null}
           </div>
           <div className="games-canvas-status">
+            {/* R218 U9: 专注模式开关(窗口内满幅;与 OS 级 fs 全屏正交) */}
+            <button
+              type="button"
+              className="aspect-lock-btn focus-toggle-btn"
+              data-action="focus-toggle"
+              aria-label={t('games.focus.toggle')}
+              title={t('games.focus.toggle')}
+              onClick={() => setFocusMode((v) => !v)}
+            >
+              {focusMode ? <Minimize2 aria-hidden="true" size={12} /> : <Maximize2 aria-hidden="true" size={12} />}
+            </button>
             <span>
               {isTd
                 ? `${t('games.wave')} ${tdSnapshot.wave}/${MAX_WAVE}${tdSnapshot.phase === 'running' && tdSnapshot.waveQueue + tdSnapshot.balloons.length > 0 ? ` · ${t('games.balloonsLeft').replace('{value}', String(tdSnapshot.waveQueue + tdSnapshot.balloons.length))}` : ''}`

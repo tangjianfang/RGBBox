@@ -971,6 +971,13 @@ const EN = {
   'games.difficulty.insane': 'Insane',
   // ── R218 U3: ready 态统一信息架构 ──
   'games.ready.more': 'More settings',
+  // ── R218 U9: 画面占比三档 + 专注模式 ──
+  'games.screenSize.label': 'Screen size',
+  'games.screenSize.standard': 'Standard',
+  'games.screenSize.large': 'Large',
+  'games.screenSize.focus': 'Focus',
+  'games.focus.toggle': 'Focus mode (fill window, Esc to exit)',
+  'games.focus.exit': 'exit focus',
   'games.td.endless': 'Endless mode',
   'games.td.meteorReady': 'Meteor ready',
   'games.td.meteorHint': 'Q — Meteor: 40 damage to all balloons (45s cooldown)',
@@ -2730,6 +2737,13 @@ const ZH: TranslationTable = {
   'games.difficulty.insane': '炼狱',
   // ── R218 U3: ready 态统一信息架构 ──
   'games.ready.more': '更多设置',
+  // ── R218 U9: 画面占比三档 + 专注模式 ──
+  'games.screenSize.label': '画面大小',
+  'games.screenSize.standard': '标准',
+  'games.screenSize.large': '大',
+  'games.screenSize.focus': '专注',
+  'games.focus.toggle': '专注模式（窗口内满幅，Esc 退出）',
+  'games.focus.exit': '退出专注',
   'games.td.endless': '无尽模式',
   'games.td.meteorReady': '陨石就绪',
   'games.td.meteorHint': 'Q——陨石:全屏气球 40 伤害(冷却 45 秒)',
