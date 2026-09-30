@@ -1745,8 +1745,13 @@ input:not([type]):focus {
 }
 
 .games-layout {
+  /* R219.2 修正:保持 start——grid stretch 会让画布面板被更高的侧栏列
+     (图鉴/商店 ~1200px)撑高,叠加画布 margin:auto 把画布顶到页面中部
+     (CDP 实测 ready 态 canvas top=497/底部超视口)。画布的自适应改由
+     .games-canvas 自身的 contain-fit 双 max 约束承担,不依赖列拉伸。 */
   align-items: start;
   display: grid;
+  flex: 1 0 auto;
   gap: 18px;
   grid-template-columns: minmax(0, 1fr) 320px;
 }
@@ -1925,16 +1930,20 @@ input:not([type]):focus {
   min-height: 0;
 }
 
-/* Viewport-unit height keeps the replaced-element ratio algorithm free of the
-   grid/flex parent chain (align-items:start breaks height:100% resolution). */
-.games-screen.fs .games-canvas {
-  height: calc(100vh - 210px);
-  max-width: 100%;
-  width: auto;
-}
+/* R219.2: 原 height:calc(100vh-210px) 死规则删除——被文件尾 fs 专用块覆盖,
+   且 210px 预留在 stat-grid 已隐藏的 fs 态毫无对应物。fs 画布统一 contain-fit
+   见文件尾 `.games-screen.fs .games-canvas` 块。 */
 
 .games-canvas-wrap {
   display: flex;
+  /* R219.2: 纵列 + contain-fit(画布自身双 max 约束);R219.3: canvas 首位,
+     ready 面板(静态化后)自然落在画布下方。列内水平居中即可——垂直方向
+     面板高度=内容高,无剩余空间可分配(不与更高的侧栏列耦合)。
+     其余浮层(levelup/roulette/summary/pause/duel/toast 等)均为 absolute 不受影响。 */
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  align-items: center;
   position: relative;
 }
 
@@ -2591,14 +2600,25 @@ input:not([type]):focus {
 }
 
 .games-canvas {
+  /* R219.2: contain-fit——replaced element 在「max-width×max-height」双约束下
+     取宽高都放得下的最大等比盒(替代原 width:100% 单约束:矮窗不再裁掉底部
+     HUD,高窗不再留大片死区)。ready/running 两档 chrome 预留(ready 态画布
+     下方还有开局面板,预留更大)。 */
   aspect-ratio: 900 / 520;
   background: var(--surface-deep);
   border: 1px solid var(--surface-raised);
   border-radius: var(--radius-l);
   cursor: crosshair;
   display: block;
-  width: 100%;
+  height: auto;
+  margin: auto;
+  max-height: calc(100vh - 430px);
+  max-width: 100%;
+  width: auto;
   box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.3);
+}
+.games-screen.running .games-canvas {
+  max-height: calc(100vh - 158px);
 }
 
 .games-control-panel {
@@ -9790,6 +9810,7 @@ input:disabled {
 .games-screen.fs .coach-bar,
 .games-screen.fs .run-recap,
 .games-screen.fs .games-control-panel,
+.games-screen.fs .games-canvas-status,
 .games-screen.fs .td-ctl-row,
 .games-screen.fs .vision-pad,
 .games-screen.fs .vision-banner {
@@ -9801,8 +9822,17 @@ input:disabled {
 }
 
 .games-screen.fs .games-layout {
-  align-items: center;
-  justify-content: center;
+  /* R219.2: 侧栏已 display:none,grid 第二条 320px track 必须一并撤掉——
+     原来空 track 仍占位,fs 右侧常驻一条 320px 暗带(用户报的「全屏黑边」
+     主因之一)。align 必须 stretch:面板吃满屏高 → wrap(flex:1)才有高度,
+     画布 contain-fit 才能放大到 max-height 100vh(center 会把面板缩到
+     内容高,CDP 实测画布被压到 660/900)。 */
+  grid-template-columns: minmax(0, 1fr);
+  /* 行也必须 1fr:隐式行=auto(内容高)时 stretch 只把 item 拉到行高,行本身
+     不吃满 900 —— 画布随之被压扁(实测 645/900)。行 1fr + item stretch 面板
+     才有满屏高,wrap(flex:1)/画布(max-height 100vh)逐级放大。 */
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
   padding: 0;
 }
 
@@ -9816,11 +9846,16 @@ input:disabled {
   padding: 0;
 }
 
+/* R219.2: fs 画布 contain-fit——用视口单位直接解出等比最大盒:
+   width = min(100vw, 100vh×900/520),height = min(100vh, 100vw×520/900)。
+   原方案(auto+max-*)依赖 replaced element 的本征尺寸(=backing 位图),
+   ResizeObserver 每拍改 backing → 本征变 → 盒再变,尺寸逐拍爬升不收敛
+   (CDP 三测 1142/1116/1080 三种结果);定值解析无反馈环。 */
 .games-screen.fs .games-canvas {
-  height: 100vh;
+  width: min(100vw, calc(100vh * 900 / 520));
+  height: min(100vh, calc(100vw * 520 / 900));
+  /* 压掉 running 档 max-height(该规则在前文,不覆盖会把 fs 高度截到 100vh-158) */
   max-height: 100vh;
-  width: auto;
-  max-width: 100vw;
 }
 
 /* VisionCursor 在 fs 态保留(功能性光标跟随,画布坐标) */
@@ -9907,20 +9942,19 @@ input:disabled {
 }
 .pad-hint-row small { color: var(--text-muted); margin-left: 4px; }
 
-/* ── R218 U3: ready 态统一信息架构(四作)——开局主按钮+核心胶囊行+更多设置抽屉 ── */
+/* ── R218 U3: ready 态统一信息架构(四作)——开局主按钮+核心胶囊行+更多设置抽屉
+   R219.3: 从「压在画布上的全幅覆盖层」改为画布下方独立面板(画布只留干净的
+   场景预览,菜单不与游戏画面混排——用户反馈「开始界面混乱」的解)。── */
 .ready-panel {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 12px;
-  padding: 18px 14px;
-  background: rgba(4, 8, 12, 0.55);
+  padding: 14px 16px;
+  background: var(--surface-deep);
+  border: 1px solid var(--surface-raised);
   border-radius: var(--radius-l);
-  overflow: auto;
 }
 /* fs 态由 R211 纯画布 HUD 承载(画布内主按钮/数字键等价),DOM 面板让位 */
 .games-screen.fs .ready-panel { display: none !important; }
@@ -10091,7 +10125,8 @@ input:disabled {
   display: none !important;
 }
 .games-screen.focus { padding: 0; overflow: hidden; }
-.games-screen.focus .games-layout { align-items: center; justify-content: center; padding: 0; }
+/* R219.2: focus 同 fs——行 1fr + stretch 让画布面板吃满窗口高(同上因果)。 */
+.games-screen.focus .games-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; padding: 0; }
 .games-screen.focus .games-canvas-panel {
   position: fixed;
   inset: 0;
@@ -10108,10 +10143,10 @@ input:disabled {
   min-height: 0;
 }
 .games-screen.focus .games-canvas {
-  height: 100vh;
+  /* R219.2: 与 fs 同口径——视口单位直解等比盒(防本征反馈,见 fs 处说明) */
+  width: min(100vw, calc(100vh * 900 / 520));
+  height: min(100vh, calc(100vw * 520 / 900));
   max-height: 100vh;
-  width: auto;
-  max-width: 100vw;
   border-radius: 0;
 }
 /* 专注模式半透明退出角标(顶部居中,点击或 Esc 退出) */

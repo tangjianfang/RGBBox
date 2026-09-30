@@ -4,6 +4,7 @@ import {
   cameraZoomFor,
   centroidToOffset,
   debugSpawnBoss,
+  drawSurvival,
   hitRadiusOf,
   playersCentroid,
   deployPlayer2,
@@ -33,7 +34,7 @@ import {
   xpToNext,
 } from '../../../src/renderer/src/games/survival'
 import { DIFFICULTY_SCORE_MULT, GAME_DIFFICULTIES, type GameDifficulty } from '../../../src/renderer/src/games/hud'
-import { WIDTH } from '../../../src/renderer/src/games/td'
+import { WIDTH, HEIGHT } from '../../../src/renderer/src/games/td'
 
 describe('renderer/games/survival engine (R99.3/R99.4)', () => {
   it('xp curve grows with level', () => {
@@ -989,5 +990,118 @@ describe('R218 U8 juice integration', () => {
     tickSurvival(s, 0.016)
     expect(s.juice.floats.length).toBeGreaterThanOrEqual(1)
     expect(s.juice.floats.some((f) => f.text === '-1')).toBe(true)
+  })
+})
+
+// ── R219.1 回归锁:绘制层归位(世界实体必须在摄像机层内)+ 机制修正 ──────────
+/** 变换跟踪 ctx——只维护 CTM(translate/scale/rotate/setTransform/save/restore),
+ *  记录每次 translate 的输入坐标与当时的设备空间原点;其余绘制调用 no-op。 */
+function trackCtx(): { ctx: CanvasRenderingContext2D; translates: Array<{ ix: number; iy: number; dx: number; dy: number }> } {
+  const translates: Array<{ ix: number; iy: number; dx: number; dy: number }> = []
+  let cur = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }
+  const stack: Array<{ a: number; b: number; c: number; d: number; e: number; f: number }> = []
+  const noop = (): void => undefined
+  const grad = { addColorStop: noop }
+  const ctx = {
+    clearRect: noop, beginPath: noop, closePath: noop, fill: noop, stroke: noop,
+    fillRect: noop, strokeRect: noop, arc: noop, ellipse: noop, moveTo: noop, lineTo: noop,
+    quadraticCurveTo: noop, bezierCurveTo: noop, fillText: noop, clip: noop, drawImage: noop, roundRect: noop,
+    setLineDash: noop, measureText: () => ({ width: 0 }),
+    createLinearGradient: () => grad, createRadialGradient: () => grad,
+    save: () => { stack.push({ ...cur }) },
+    restore: () => { const p = stack.pop(); if (p !== undefined) cur = p },
+    translate: (x: number, y: number) => {
+      cur = { ...cur, e: cur.a * x + cur.c * y + cur.e, f: cur.b * x + cur.d * y + cur.f }
+      translates.push({ ix: x, iy: y, dx: cur.e, dy: cur.f })
+    },
+    scale: (sx: number, sy: number) => { cur = { ...cur, a: cur.a * sx, b: cur.b * sx, c: cur.c * sy, d: cur.d * sy } },
+    rotate: (r: number) => {
+      const cos = Math.cos(r); const sin = Math.sin(r)
+      const { a, b, c, d } = cur
+      cur = { ...cur, a: a * cos + c * sin, b: b * cos + d * sin, c: -a * sin + c * cos, d: -b * sin + d * cos }
+    },
+    setTransform: (a: number, b: number, c: number, d: number, e: number, f: number) => { cur = { a, b, c, d, e, f } },
+  }
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, translates }
+}
+
+describe('renderer/games/survival R219 绘制层与机制修正', () => {
+  it('R219.1: P1 飞船画在摄像机层内——世界任意位置恒映射画布中心(修复开局飞船出画布)', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.scene = 'station'
+    s.player.x = 420
+    s.player.y = 310
+    s.camera = { x: 420, y: 310, zoom: 1 } // 摄像机锁定玩家
+    const rec = trackCtx()
+    drawSurvival(rec.ctx, s)
+    const ship = rec.translates.find((t) => t.ix === 420 && t.iy === 310)
+    // 修复前:飞船在世界层 restore 之后按视口坐标直画 → 原点 (420,310) 偏离中心;
+    // 修复后:经摄像机变换 → 原点 = worldToViewport = 画布中心。
+    expect(ship).toBeDefined()
+    expect(ship!.dx).toBeCloseTo(WIDTH / 2, 1)
+    expect(ship!.dy).toBeCloseTo(HEIGHT / 2, 1)
+  })
+
+  it('R219.1: 多 P zoom<1 时飞船随镜头缩放(仍在摄像机层内)', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.scene = 'station'
+    s.player.x = 700
+    s.player.y = 400
+    s.camera = { x: 700, y: 400, zoom: 0.7 }
+    const rec = trackCtx()
+    drawSurvival(rec.ctx, s)
+    const ship = rec.translates.find((t) => t.ix === 700 && t.iy === 400)
+    expect(ship).toBeDefined()
+    const vp = worldToViewport(s.camera, WIDTH, HEIGHT, 700, 400)
+    expect(ship!.dx).toBeCloseTo(vp.x, 1)
+    expect(ship!.dy).toBeCloseTo(vp.y, 1)
+  })
+
+  it('R219.1: boss 扇形弹幕瞄最近存活玩家(P1 倒下不打尸体)', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    deployPlayers(s, 2)
+    s.player.hp = 0 // P1 倒下
+    s.player2!.hp = 7
+    s.player2!.x = 500
+    s.player2!.y = 520
+    s.enemies.push({ id: 1, x: 400, y: 520, vx: 0, vy: 0, size: 28, hp: 999, maxHp: 999, kind: 'boss', elite: false, hitFlash: 0 })
+    s.bossBulletTimer = 1.3
+    s.bossBulletPattern = 1 // 扇形
+    tickSurvival(s, 0.016)
+    expect(s.eBullets.length).toBe(5)
+    // boss(400,520) → P2(500,520) 为正右方:扇心弹 vx>0、|vy| 远小于 |vx|
+    const mid = s.eBullets[2]
+    expect(mid.vx).toBeGreaterThan(0)
+    expect(Math.abs(mid.vy)).toBeLessThan(Math.abs(mid.vx) * 0.2)
+  })
+
+  it('R219.1: director 多人因子按存活集合——P1 险血但 P2 满血=收紧,只剩 P2 满血仍收紧', () => {
+    const s = initialSurvivalState()
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    deployPlayers(s, 2)
+    s.player.hp = 1
+    s.player2!.hp = s.player2!.maxHp
+    const eased = directorSpawnInterval(s) // 任一存活险血 → 1.25 放松
+    s.player.hp = 0 // P1 倒下,仅 P2 满血 → 0.85 收紧
+    const tightened = directorSpawnInterval(s)
+    expect(tightened).toBeLessThan(eased)
+  })
+
+  it('R219.1: juice hit-stop 冻结期间出生预警照常倒计时', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    s.juice.hitStop = 0.5
+    s.warnings.push({ edge: 0, t: 0.5 })
+    tickSurvival(s, 0.1)
+    expect(s.warnings.length).toBe(1)
+    expect(s.warnings[0].t).toBeCloseTo(0.4, 5)
   })
 })

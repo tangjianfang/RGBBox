@@ -187,7 +187,9 @@ export interface BgOffset {
   y: number
 }
 
-/** 存活玩家质心(全倒下 → null)。 */
+/** 存活玩家质心(全倒下 → null)。
+ *  R219 注:U11 大世界后引擎内偏移改由摄像机位置派生,本函数及 centroidToOffset
+ *  保留导出仅供单测/外部工具复核质心语义,引擎不再调用。 */
 export function playersCentroid(players: Array<{ x: number; y: number; hp: number }>): { x: number; y: number } | null {
   let sx = 0
   let sy = 0
@@ -452,7 +454,6 @@ export interface SurvivalState {
   xp: number
   xpNext: number
   xpMult: number
-  shake: number
   nextId: number
   player: PlayerState
   stats: PlayerStats
@@ -614,7 +615,6 @@ export function initialSurvivalState(
     xp: 0,
     xpNext: xpToNext(1),
     xpMult: def.xpMod * (1 + 0.1 * perm.xpGain) * (has('famine') ? 0.75 : 1),
-    shake: 0,
     nextId: 1,
     player,
     stats: baseStats(),
@@ -826,7 +826,12 @@ export function restartSurvival(): SurvivalState {
 export function directorSpawnInterval(state: SurvivalState): number {
   const minutes = state.time / 60
   const base = clamp(1.5 - minutes * 0.28 - state.level * 0.05, 0.32, 1.5)
-  const factor = state.player.hp <= 1 ? 1.25 : state.player.hp >= state.player.maxHp ? 0.85 : 1
+  // R219.1: 低血/满血因子按存活玩家集合判定(单人局与旧语义逐值一致;
+  // 多人局不再只看 P1——P1 倒下但队友满血时应收紧而非放松)。
+  const alive = alivePlayers(state)
+  const factor = alive.length === 0
+    ? 1
+    : alive.some((pl) => pl.hp <= 1) ? 1.25 : alive.every((pl) => pl.hp >= pl.maxHp) ? 0.85 : 1
   const grace = state.time < 15 ? 2 : 1
   return (base * factor * grace) / (state.spawnMult * (1 + 0.15 * (state.island - 1)))
 }
@@ -844,7 +849,7 @@ export function advanceIsland(state: SurvivalState): void {
   state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
   state.comboBonus += 150 * state.island
   state.banner = { text: `ISLAND ${state.island}`, life: 1.8 }
-  state.shake = 5
+  queueShake(state.juice, 5)
   spawnBurst(state, state.player.x, state.player.y, '#67e8f9', 24, 190)
   playSfx('wave')
 }
@@ -1043,7 +1048,9 @@ function bossBarrage(state: SurvivalState, boss: Enemy): void {
       state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120, size: 5, life: 4 })
     }
   } else if (pattern === 1) {
-    const base = Math.atan2(state.player.y - boss.y, state.player.x - boss.x)
+    // R219.1: 扇形瞄准最近存活玩家(原恒瞄 P1——多人局 P1 倒下后弹幕仍打向尸体)
+    const tgt = nearestAlive(state, boss) ?? state.player
+    const base = Math.atan2(tgt.y - boss.y, tgt.x - boss.x)
     for (let i = -2; i <= 2; i += 1) {
       const a = base + i * 0.18
       state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 170, vy: Math.sin(a) * 170, size: 6, life: 4 })
@@ -1136,11 +1143,12 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   syncRoster(state)
   // R218 U8: juice 顿帧——hitStop>0 时本帧 dt=0(计时/敌人/掉落全静止,渲染继续);
   // juice 自身(shake 衰减/飘字)按真实 dt 步进。
+  // R200: hit-stop(进化/boss 击杀);预警条目独立于冻结推进
+  // (R219.1: 移到 juice 冻结 early-return 之前——冻结期间预警照常倒计时)
+  state.warnings = tickWarnings(state.warnings, dt)
   const juiceFrozen = state.juice.hitStop > 0
   tickJuice(state.juice, dt)
   if (juiceFrozen) return
-  // R200: hit-stop(进化/boss 击杀);预警条目独立于冻结推进
-  state.warnings = tickWarnings(state.warnings, dt)
   // R202(FR-SW02): boss 弹幕三型循环(放射/瞄准扇形/环形,每 1.2s)
   state.bossBulletTimer += dt
   for (const enemy of state.enemies) {
@@ -1165,7 +1173,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
         pl.hp -= dmg
         pl.invuln = state.invulnWindow
         pl.hitFlash = 0.15
-        state.shake = Math.min(8, state.shake + 4)
+        queueShake(state.juice, 4)
         floatText(state.juice, pl.x, pl.y - 26, `-${dmg}`, '#f87171')
         eb.life = 0
         playSfx('hurt')
@@ -1190,7 +1198,6 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   }
   dt *= state.timeScale
   state.clock += dt
-  state.shake = Math.max(0, state.shake - dt * 14)
   for (const text of state.texts) {
     text.y -= 28 * dt
     text.life -= dt
@@ -1425,7 +1432,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       target.hp -= dmg
       target.invuln = state.invulnWindow
       target.hitFlash = 0.15
-      state.shake = enemy.kind === 'boss' ? 9 : 6
+      queueShake(state.juice, enemy.kind === 'boss' ? 9 : 6)
       playSfx('hurt')
       floatText(state.juice, target.x, target.y - 26, `-${dmg}`, '#f87171')
       spawnBurst(state, target.x, target.y, '#f87171', 12, 150)
@@ -1562,12 +1569,72 @@ const ISLAND_THEMES = [
 
 function dimScene(ctx: CanvasRenderingContext2D, phase: SurvivalPhase): void {
   if (phase === 'ready' || phase === 'lost') {
-    ctx.fillStyle = 'rgba(5, 10, 14, 0.68)'
+    // R219.3: ready 态菜单已移出画布(下方独立面板),压暗只为场景预览分层,
+    // 幅度 0.68→0.35;lost 结算覆盖层仍在画布中央,维持压暗。
+    ctx.fillStyle = phase === 'ready' ? 'rgba(5, 10, 14, 0.35)' : 'rgba(5, 10, 14, 0.68)'
     ctx.fillRect(0, 0, WIDTH, HEIGHT)
   } else if (phase === 'roulette') {
     ctx.fillStyle = 'rgba(5, 10, 14, 0.55)'
     ctx.fillRect(0, 0, WIDTH, HEIGHT)
   }
+}
+
+/** R219.4(S3): 船体多层绘制——尾焰(动画抖动)/描边船身/翼刃高光/座舱双层。
+ *  轮廓与旧 3 笔船完全一致(15/-10/-5 锚点),只叠层次不改判定尺寸。 */
+function drawShipBody(
+  ctx: CanvasRenderingContext2D,
+  pl: { x: number; y: number; angle: number; invuln: number },
+  hull: string,
+  accent: string,
+  clock: number,
+  hitFlash: number,
+): void {
+  ctx.save()
+  ctx.translate(pl.x, pl.y)
+  ctx.rotate(pl.angle)
+  // 尾焰:长度随 clock 高频抖动;无敌帧期间更亮(受击反馈)
+  const flick = 0.7 + 0.3 * Math.sin(clock * 26)
+  const flameLen = 12 + 7 * flick
+  const flameAlpha = pl.invuln > 0 ? 0.7 : 0.45
+  const flame = ctx.createLinearGradient(-8, 0, -8 - flameLen, 0)
+  if (flame) {
+    flame.addColorStop(0, `rgba(103, 232, 249, ${flameAlpha})`)
+    flame.addColorStop(1, 'rgba(103, 232, 249, 0)')
+    ctx.fillStyle = flame
+  } else {
+    ctx.fillStyle = `rgba(103, 232, 249, ${flameAlpha * 0.5})`
+  }
+  ctx.beginPath()
+  ctx.moveTo(-8, -3.5)
+  ctx.lineTo(-8 - flameLen, 0)
+  ctx.lineTo(-8, 3.5)
+  ctx.closePath()
+  ctx.fill()
+  // 船身:浅色 hull + accent 描边(受击闪白整体覆盖)
+  ctx.fillStyle = hitFlash > 0 ? '#ffffff' : hull
+  ctx.strokeStyle = accent
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(15, 0)
+  ctx.lineTo(-10, -10)
+  ctx.lineTo(-5, 0)
+  ctx.lineTo(-10, 10)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+  // 翼刃高光(上半翼细线,廉价立体感)
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(12, -1)
+  ctx.lineTo(-7, -8)
+  ctx.stroke()
+  // 座舱:accent 圆 + 内白高光点
+  ctx.fillStyle = accent
+  ctx.beginPath(); ctx.arc(2, 0, 4, 0, Math.PI * 2); ctx.fill()
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+  ctx.beginPath(); ctx.arc(3, -1, 1.4, 0, Math.PI * 2); ctx.fill()
+  ctx.restore()
 }
 
 export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState): void {
@@ -1595,7 +1662,8 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   const player = state.player
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   ctx.save()
-  if (state.shake > 0.2) ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake)
+  // R219.1: 震屏单一路径——legacy state.shake 平移已删,统一走 juice.shake
+  // (applyShake;受击/换岛/boss 击杀全部经 queueShake 入队)。
   applyShake(ctx, state.juice)
   // R213: 场景背景系统——state.scene 指定程序化场景(fusion=按岛屿轮换);
   // 未设置时保留原岛屿主题星空(单机默认走 view 层写入,引擎侧不预设)。
@@ -1761,6 +1829,12 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
       ctx.restore()
     } else if (enemy.kind === 'brute') {
       ctx.fillRect(enemy.x - enemy.size, enemy.y - enemy.size, enemy.size * 2, enemy.size * 2)
+      // R219.4(S3): 方块系(brute)同批加描边+高光角
+      ctx.strokeStyle = 'rgba(8, 12, 20, 0.45)'
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(enemy.x - enemy.size, enemy.y - enemy.size, enemy.size * 2, enemy.size * 2)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'
+      ctx.fillRect(enemy.x - enemy.size + 3, enemy.y - enemy.size + 3, enemy.size * 0.9, 3)
     } else if (enemy.kind === 'tank') {
       // R218 D: 堡垒——厚甲方块+描边+暗核(阻挡感)
       ctx.fillRect(enemy.x - enemy.size, enemy.y - enemy.size, enemy.size * 2, enemy.size * 2)
@@ -1807,7 +1881,13 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
         ctx.beginPath(); ctx.arc(enemy.x, enemy.y, 90 * (1 - pulse / 0.6) + 10, 0, Math.PI * 2); ctx.stroke()
       }
     } else {
+      // R219.4(S3): 圆系敌人(chaser/swarm 等)加暗描边+左上高光点(低成本立体感)
       ctx.beginPath(); ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2); ctx.fill()
+      ctx.strokeStyle = 'rgba(8, 12, 20, 0.45)'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
+      ctx.beginPath(); ctx.arc(enemy.x - enemy.size * 0.32, enemy.y - enemy.size * 0.32, Math.max(1.2, enemy.size * 0.18), 0, Math.PI * 2); ctx.fill()
     }
     ctx.shadowBlur = 0
     if (enemy.kind !== 'boss' && enemy.hp < enemy.maxHp) {
@@ -1818,19 +1898,9 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     }
   }
 
-  ctx.restore() // ── R218 U11: 世界层结束,以下 HUD 恒在视口坐标 ──
-
-  const boss = state.enemies.find((enemy) => enemy.kind === 'boss')
-  if (boss) {
-    // R218 U1/U5: boss 血条走共享胶囊+连续血条(顶边居中,不进中央 60%)
-    drawHealthBar(ctx, WIDTH / 2 - 160, 52, 320, 10, clamp(boss.hp / boss.maxHp, 0, 1), state.clock, { segments: false })
-    ctx.fillStyle = '#f9a8d4'
-    ctx.font = '800 12px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'alphabetic'
-    ctx.fillText('BOSS', WIDTH / 2, 46)
-  }
-
+  // ── R219.1: 世界实体补齐——粒子/涟漪/玩家/飘字同为世界坐标,必须在摄像机
+  //    层内绘制(R218 合并回归:曾被画在 restore 之后,导致玩家出生点 (900,520)
+  //    按视口坐标落在 900×520 画布右下角外——开局飞船不可见、移动全错位)。──
   for (const particle of state.particles) {
     ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1)
     ctx.fillStyle = particle.color
@@ -1849,14 +1919,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   }
 
   if (!(player.invuln > 0 && Math.floor(player.invuln * 12) % 2 === 0)) {
-    ctx.save()
-    ctx.translate(player.x, player.y)
-    ctx.rotate(player.angle)
-    ctx.fillStyle = player.hitFlash > 0 ? '#ffffff' : '#e2f8ff'
-    ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-10, -10); ctx.lineTo(-5, 0); ctx.lineTo(-10, 10); ctx.closePath(); ctx.fill()
-    ctx.fillStyle = '#67e8f9'
-    ctx.beginPath(); ctx.arc(2, 0, 4, 0, Math.PI * 2); ctx.fill()
-    ctx.restore()
+    drawShipBody(ctx, player, '#e2f8ff', '#67e8f9', state.clock, player.hitFlash)
   }
 
   // R208(FR-MP01)→R213: 玩家 2..n 实体(P2 琥珀/P3 粉/P4 青,区别 P1 青白)
@@ -1864,14 +1927,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   for (let pi = 1; pi < state.players.length; pi++) {
     const pl = state.players[pi]
     if (pl.hp <= 0 || (pl.invuln > 0 && Math.floor(pl.invuln * 12) % 2 === 0)) continue
-    ctx.save()
-    ctx.translate(pl.x, pl.y)
-    ctx.rotate(pl.angle)
-    ctx.fillStyle = pl.hitFlash > 0 ? '#ffffff' : ROSTER_HULL[pi - 1]
-    ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-10, -10); ctx.lineTo(-5, 0); ctx.lineTo(-10, 10); ctx.closePath(); ctx.fill()
-    ctx.fillStyle = ROSTER_ACCENT[pi - 1]
-    ctx.beginPath(); ctx.arc(2, 0, 4, 0, Math.PI * 2); ctx.fill()
-    ctx.restore()
+    drawShipBody(ctx, pl, ROSTER_HULL[pi - 1], ROSTER_ACCENT[pi - 1], state.clock, pl.hitFlash)
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
     ctx.fillRect(pl.x - 16, pl.y - 26, 32, 3)
     ctx.fillStyle = ROSTER_ACCENT[pi - 1]
@@ -1889,6 +1945,19 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
 
   // R218 U8: juice 伤害飘字(世界坐标层内)
   drawFloats(ctx, state.juice)
+
+  ctx.restore() // ── R218 U11: 世界层结束,以下 HUD 恒在视口坐标 ──
+
+  const boss = state.enemies.find((enemy) => enemy.kind === 'boss')
+  if (boss) {
+    // R218 U1/U5: boss 血条走共享胶囊+连续血条(顶边居中,不进中央 60%)
+    drawHealthBar(ctx, WIDTH / 2 - 160, 52, 320, 10, clamp(boss.hp / boss.maxHp, 0, 1), state.clock, { segments: false })
+    ctx.fillStyle = '#f9a8d4'
+    ctx.font = '800 12px Inter, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillText('BOSS', WIDTH / 2, 46)
+  }
 
   // ── R218 U1/U5: 战斗 HUD 胶囊化 + 心数行 → 连续血条(贴边,不进中央 60%) ──
   // 玩家 HP:左上纵向堆叠(P1 起每人一条,渐变+低血脉冲);倒下玩家画空底保位次。

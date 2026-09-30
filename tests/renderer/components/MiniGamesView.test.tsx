@@ -295,18 +295,22 @@ describe('renderer/components/MiniGamesView', () => {
     } })
     const phase = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
     expect(phase()).toBe('ready')
-    // hold open-palm snapshots for ~400ms — below the 700ms threshold
+    // hold open-palm snapshots for ~400ms — below the 700ms threshold.
+    // R219: 负向断言加墙钟护栏——全量并发负载下 10×40ms 实际墙钟可能超阈值,
+    // 此时跳过(时序前提失效),只保正向结论;正向改 waitFor 轮询,消除 rAF
+    // 饥饿下的负载敏感(同轮 crashLog 计时 flake 一类,断言本身不变)。
+    const negStart = Date.now()
     for (let i = 0; i < 10; i++) {
       await act(async () => { openPalmSnap() })
       await new Promise((r) => setTimeout(r, 40))
     }
-    expect(phase()).toBe('ready') // still short of the hold
+    if (Date.now() - negStart < 650) expect(phase()).toBe('ready') // still short of the hold
     // keep holding past 700ms total → the run starts
     for (let i = 0; i < 14 && phase() === 'ready'; i++) {
       await act(async () => { openPalmSnap() })
       await new Promise((r) => setTimeout(r, 40))
     }
-    expect(phase()).toBe('running')
+    await waitFor(() => expect(phase()).toBe('running'), { timeout: 5000, interval: 50 })
     ctxSpy.mockRestore()
   })
 
@@ -476,7 +480,20 @@ describe('renderer/components/MiniGamesView · gamepad Start (R218 U2)', () => {
     })
   }
 
-  const frames = (ms = 90) => new Promise((r) => setTimeout(r, ms))
+  // R219: 手柄/视觉类断言依赖组件 rAF 循环的轮询推进(pollGamepad/pollVision/
+  // snapshot publish)。固定 ms 等待在全量并发负载下会 rAF 饥饿(同轮已两次复现)
+  // ——改为「≥minTicks 个 rAF 量子 且 ≥ms 墙钟」双屏障:本 helper 的 rAF 回调
+  // 得以执行即证明该帧队列排空,组件循环同帧必然跑过;3s 兜底防极端饥饿悬挂。
+  const frames = (ms = 90, minTicks = 2): Promise<void> => new Promise((resolve) => {
+    const start = performance.now()
+    let ticks = 0
+    const loop = (): void => {
+      ticks += 1
+      if ((ticks >= minTicks && performance.now() - start >= ms) || performance.now() - start > ms + 3000) resolve()
+      else requestAnimationFrame(loop)
+    }
+    requestAnimationFrame(loop)
+  })
 
   beforeEach(() => {
     localStorage.clear()
@@ -601,7 +618,18 @@ describe('renderer/components/MiniGamesView · difficulty four tiers (R218 U4)',
     set: () => true,
   }) as unknown as CanvasRenderingContext2D
 
-  const frames = (ms = 260) => new Promise((r) => setTimeout(r, ms))
+  // R219: rAF 量子屏障版 frames(见 gamepad describe 处说明)——固定 ms 等待
+  // 在全量并发负载下会 rAF 饥饿,改为「≥2 量子且 ≥ms 墙钟」双屏障 + 3s 兜底。
+  const frames = (ms = 260, minTicks = 2): Promise<void> => new Promise((resolve) => {
+    const start = performance.now()
+    let ticks = 0
+    const loop = (): void => {
+      ticks += 1
+      if ((ticks >= minTicks && performance.now() - start >= ms) || performance.now() - start > ms + 3000) resolve()
+      else requestAnimationFrame(loop)
+    }
+    requestAnimationFrame(loop)
+  })
 
   const enterTd = (container: HTMLElement) => {
     fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[0])
@@ -642,8 +670,8 @@ describe('renderer/components/MiniGamesView · difficulty four tiers (R218 U4)',
     const { container } = render(<MiniGamesView />)
     enterTd(container)
     fireEvent.click(container.querySelector('[data-diff="hard"]')!)
-    // header start button (text is the raw key — tests render without I18nProvider)
-    const start = [...container.querySelectorAll('.games-header-actions button')].find((b) => b.textContent === 'games.start') as HTMLButtonElement
+    // R219.3: ready 态唯一主 CTA 是画布下方面板的开局按钮(header 开始已隐藏)
+    const start = container.querySelector('[data-action="ready-start"]') as HTMLButtonElement
     fireEvent.click(start)
     await frames() // loop publishes the snapshot every 0.18s
     const lives = [...container.querySelectorAll('.games-stat-grid span')].find((s) => s.getAttribute('aria-label')?.includes('games.ariaLives'))
@@ -658,7 +686,8 @@ describe('renderer/components/MiniGamesView · difficulty four tiers (R218 U4)',
     const { container } = render(<MiniGamesView />)
     fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[2]) // Tetris
     fireEvent.click(container.querySelector('[data-diff="insane"]')!)
-    const start = [...container.querySelectorAll('.games-header-actions button')].find((b) => b.textContent === 'games.start') as HTMLButtonElement
+    // R219.3: ready 态唯一主 CTA(同上)
+    const start = container.querySelector('[data-action="ready-start"]') as HTMLButtonElement
     fireEvent.click(start)
     await frames()
     const lv = [...container.querySelectorAll('.games-stat-grid span')].find((s) => s.getAttribute('aria-label')?.includes('games.ariaWave'))
@@ -681,7 +710,18 @@ describe('renderer/components/MiniGamesView · ready panel (R218 U3)', () => {
     set: () => true,
   }) as unknown as CanvasRenderingContext2D
 
-  const frames = (ms = 120) => new Promise((r) => setTimeout(r, ms))
+  // R219: rAF 量子屏障版 frames(见 gamepad describe 处说明)——固定 ms 等待
+  // 在全量并发负载下会 rAF 饥饿,改为「≥2 量子且 ≥ms 墙钟」双屏障 + 3s 兜底。
+  const frames = (ms = 120, minTicks = 2): Promise<void> => new Promise((resolve) => {
+    const start = performance.now()
+    let ticks = 0
+    const loop = (): void => {
+      ticks += 1
+      if ((ticks >= minTicks && performance.now() - start >= ms) || performance.now() - start > ms + 3000) resolve()
+      else requestAnimationFrame(loop)
+    }
+    requestAnimationFrame(loop)
+  })
 
   function makePad(index: number, id: string): Gamepad {
     const buttons = Array.from({ length: 18 }, () => ({ pressed: false, value: 0, touched: false }))
@@ -747,14 +787,19 @@ describe('renderer/components/MiniGamesView · ready panel (R218 U3)', () => {
     const { container } = render(<MiniGamesView />)
     fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
     fireEvent.change(container.querySelector('[data-field="swarm-players"]')!, { target: { value: '2' } })
-    await frames()
+    // R219: seating 行 = 玩家数 state(立即)+ 手柄名(经 rAF 轮询的 gamepadInfo,
+    // 晚一拍)——固定 260ms 等待在全量并发负载下会 rAF 饥饿,改对最终形态条件
+    // 轮询(2 行齐 + 双手柄名到齐,断言不变)。
+    await waitFor(() => {
+      const spans = container.querySelectorAll('[data-field="ready-seating"] span')
+      expect(spans.length).toBe(2)
+      expect(spans[0].textContent).toContain('Pad Zero')
+      expect(spans[1].textContent).toContain('Pad Three')
+    }, { timeout: 5000, interval: 50 })
     // U7: two seating rows (P1 default wasd + pad 0; P2 default ijkl + pad 3)
     const seating = container.querySelectorAll('[data-field="ready-seating"] span')
-    expect(seating.length).toBe(2)
     expect(seating[0].textContent).toContain('w/s/a/d')
-    expect(seating[0].textContent).toContain('Pad Zero')
     expect(seating[1].textContent).toContain('i/k/j/l')
-    expect(seating[1].textContent).toContain('Pad Three')
     fireEvent.click(container.querySelector('[data-action="ready-start"]') as HTMLButtonElement)
     await frames()
     const probe = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
@@ -779,7 +824,18 @@ describe('renderer/components/MiniGamesView · screen size & focus mode (R218 U9
     set: () => true,
   }) as unknown as CanvasRenderingContext2D
 
-  const frames = (ms = 320) => new Promise((r) => setTimeout(r, ms))
+  // R219: rAF 量子屏障版 frames(见 gamepad describe 处说明)——固定 ms 等待
+  // 在全量并发负载下会 rAF 饥饿,改为「≥2 量子且 ≥ms 墙钟」双屏障 + 3s 兜底。
+  const frames = (ms = 320, minTicks = 2): Promise<void> => new Promise((resolve) => {
+    const start = performance.now()
+    let ticks = 0
+    const loop = (): void => {
+      ticks += 1
+      if ((ticks >= minTicks && performance.now() - start >= ms) || performance.now() - start > ms + 3000) resolve()
+      else requestAnimationFrame(loop)
+    }
+    requestAnimationFrame(loop)
+  })
   const root = (container: HTMLElement) => container.querySelector('.games-screen') as HTMLElement
 
   it('focus toggle button enters/exits; Esc exits; badge shown while active', async () => {
@@ -849,7 +905,18 @@ describe('renderer/components/MiniGamesView · multiplayer shell chrome (R218 U7
     set: () => true,
   }) as unknown as CanvasRenderingContext2D
 
-  const frames = (ms = 320) => new Promise((r) => setTimeout(r, ms))
+  // R219: rAF 量子屏障版 frames(见 gamepad describe 处说明)——固定 ms 等待
+  // 在全量并发负载下会 rAF 饥饿,改为「≥2 量子且 ≥ms 墙钟」双屏障 + 3s 兜底。
+  const frames = (ms = 320, minTicks = 2): Promise<void> => new Promise((resolve) => {
+    const start = performance.now()
+    let ticks = 0
+    const loop = (): void => {
+      ticks += 1
+      if ((ticks >= minTicks && performance.now() - start >= ms) || performance.now() - start > ms + 3000) resolve()
+      else requestAnimationFrame(loop)
+    }
+    requestAnimationFrame(loop)
+  })
 
   it('running state shows the player-count badge in the (translucent) canvas chrome', async () => {
     const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)

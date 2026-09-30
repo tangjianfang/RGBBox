@@ -554,6 +554,10 @@ export function MiniGamesView(): JSX.Element {
       probe: () => ({
         phase: survivalRef.current.phase,
         player: { x: survivalRef.current.player.x, y: survivalRef.current.player.y },
+        // R219.5: 摄像机 + 飞船视口坐标——E2E 断言「世界层归位后飞船恒在画面
+        // 中央 60%」的取证字段(绘制在摄像机层内,shipVp 即屏幕坐标)。
+        camera: { ...survivalRef.current.camera },
+        shipVp: worldToViewport(survivalRef.current.camera, WIDTH, HEIGHT, survivalRef.current.player.x, survivalRef.current.player.y),
         axis: { ...survivalRef.current.axis },
         keys: [...survivalRef.current.keys],
       }),
@@ -1586,6 +1590,9 @@ export function MiniGamesView(): JSX.Element {
     .map((artifact) => artifact.id), [meta])
 
   const startSurvivalRun = useCallback(() => {
+    // R219.3: 升级三选一/轮盘进行中不开局——原路径会静默换难度(开局无反馈且
+    // 打断选择流);选择走数字键/卡片点击,「开始」此时不该做事。
+    if (survivalRef.current.phase === 'levelup' || survivalRef.current.phase === 'roulette') return
     // R218 U4: 难度经 initialSurvivalState 第 4 参进引擎(eHP 四档权威来源)
     const difficulty = readDifficulty('survival')
     runDifficultyRef.current = difficulty
@@ -1627,6 +1634,10 @@ export function MiniGamesView(): JSX.Element {
 
   const restartSurvivalRun = useCallback(() => {
     survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts, readDifficulty('survival'))
+    // R219.3: 重开也带上当前场景/冲刺偏好——回 ready 态的画布与开局参数一致
+    // (原重开丢 scene,预览背景静默回退旧星空主题)。
+    survivalRef.current.scene = swarmSceneRef.current
+    survivalRef.current.sprintSeconds = swarmSprintOnRef.current ? 90 : undefined
     publishSurvival()
   }, [enabledArtifacts, meta, publishSurvival, swarmCharacter])
 
@@ -2156,15 +2167,21 @@ export function MiniGamesView(): JSX.Element {
             </button>
           ) : null}
           {/* R209: LAN 客端为远程席位——开波/重开由房主决定,客端控件禁用防死按钮
-              (三期起仅 TD 快照合作禁用;tetris 对战双方跑本地引擎,客端可自行开局) */}
-          <button className="aspect-lock-btn" type="button" onClick={startHandler} disabled={lanRole === 'guest' && lanGame === 'td'}>
-            <Play size={13} />
-            {isTd && tdSnapshot.wave > 0 ? t('games.nextWave') : t('games.start')}
-          </button>
-          <button className="aspect-lock-btn" type="button" onClick={restartHandler} disabled={lanRole === 'guest' && lanGame === 'td'}>
-            <RotateCcw size={13} />
-            {t('games.restart')}
-          </button>
+              (三期起仅 TD 快照合作禁用;tetris 对战双方跑本地引擎,客端可自行开局)
+              R219.3: ready 态隐藏「开始/重新开始」——画布下方面板的大号开局按钮
+              是唯一主 CTA(去「双开始」混排);lost 态仍显示便于一键再战。 */}
+          {!showReady ? (
+            <>
+              <button className="aspect-lock-btn" type="button" onClick={startHandler} disabled={lanRole === 'guest' && lanGame === 'td'}>
+                <Play size={13} />
+                {isTd && tdSnapshot.wave > 0 ? t('games.nextWave') : t('games.start')}
+              </button>
+              <button className="aspect-lock-btn" type="button" onClick={restartHandler} disabled={lanRole === 'guest' && lanGame === 'td'}>
+                <RotateCcw size={13} />
+                {t('games.restart')}
+              </button>
+            </>
+          ) : null}
           <button className="aspect-lock-btn" type="button" aria-label={t('games.fullscreen')} title={t('games.fullscreen')} onClick={toggleFullscreen}>
             {fullscreen ? <Minimize2 aria-hidden="true" size={13} /> : <Maximize2 aria-hidden="true" size={13} />}
             {fullscreen ? t('games.exitFullscreen') : t('games.fullscreen')}
@@ -2275,6 +2292,20 @@ export function MiniGamesView(): JSX.Element {
       <div className="games-layout">
         <section className="games-canvas-panel panel">
           <div className="games-canvas-wrap" ref={canvasWrapRef}>
+            {/* R219.3: canvas 提为 wrap 首子(wrap 纵列 flex)——ready 面板静态化后
+                自然排在画布下方;各浮层均为 absolute,绘制/命中映射零改动。 */}
+            <canvas
+              ref={canvasRef}
+              className="games-canvas"
+              onClick={handleUnifiedCanvasClick}
+              onDoubleClick={() => {
+                // R218 U9: 双击画布进入专注(TD 除外——双击会先落两座塔)
+                if (!isTd && currentPhaseRef.current() === 'running') setFocusMode(true)
+              }}
+              onMouseMove={handleUnifiedCanvasMove}
+              onMouseLeave={() => { hudHoverRef.current = null; if (isTd) setTdHover(null) }}
+              aria-label={`${gameTitle} game board`}
+            />
             {/* R206(FR-G03.5): fs 暂停浮层(Esc 呼出;继续/重开/退出全屏/返回 hub) */}
             {/* R218 U3: ready 态统一信息架构(四作)——大号「开局」主按钮(Fitts)
                 + 一行核心胶囊(难度四档×倍率 + 各作核心项) + 高级项折叠进
@@ -2479,6 +2510,11 @@ export function MiniGamesView(): JSX.Element {
                 <div className="fs-pause-actions">
                   <button type="button" className="video-btn" data-action="fs-resume" onClick={() => setFsPaused(false)}>{t('games.pause.resume')}</button>
                   <button type="button" className="video-btn" data-action="fs-restart" onClick={() => { if (restartHandler) restartHandler(); setFsPaused(false) }} disabled={!restartHandler}>{t('games.pause.restart')}</button>
+                  {/* R219.2: 运行态 header 被 .running 隐藏,OS 级全屏入口只剩这里——
+                      非 fs 暂停浮层补「全屏」按钮(用户报「游戏中点不到全屏」)。 */}
+                  {!fullscreen ? (
+                    <button type="button" className="video-btn" data-action="fs-enter" onClick={() => { setFsPaused(false); toggleFullscreen() }}>{t('games.fullscreen')}</button>
+                  ) : null}
                   {/* R218 U2: 非 fs 态也可暂停(手柄 Start/Esc)——「退出全屏」仅 fs 态显示 */}
                   {fullscreen ? (
                     <button type="button" className="video-btn" data-action="fs-exit" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined) }}>{t('games.pause.exitFs')}</button>
@@ -2491,18 +2527,6 @@ export function MiniGamesView(): JSX.Element {
             {inputPanelOpen ? (
               <InputConfigPanel onClose={() => setInputPanelOpen(false)} onApply={applyInputConfigs} />
             ) : null}
-            <canvas
-              ref={canvasRef}
-              className="games-canvas"
-              onClick={handleUnifiedCanvasClick}
-              onDoubleClick={() => {
-                // R218 U9: 双击画布进入专注(TD 除外——双击会先落两座塔)
-                if (!isTd && currentPhaseRef.current() === 'running') setFocusMode(true)
-              }}
-              onMouseMove={handleUnifiedCanvasMove}
-              onMouseLeave={() => { hudHoverRef.current = null; if (isTd) setTdHover(null) }}
-              aria-label={`${gameTitle} game board`}
-            />
             {/* R218 U9: 专注模式半透明退出角标(Esc / 点击退出) */}
             {focusMode ? (
               <button type="button" className="focus-exit-badge" data-action="focus-exit" onClick={() => setFocusMode(false)}>
