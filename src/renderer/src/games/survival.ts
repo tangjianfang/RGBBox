@@ -78,6 +78,117 @@ export function setSurvivalDifficulty(state: SurvivalState, difficulty: GameDiff
   }
 }
 
+// ── R218 D: 敌人 8 种行为正交矩阵(spec §二 Survival;VS 设计法) ──────────────
+// 每种一个「迫使决策」行为:
+//   chaser  = 贴身压迫(基线)     sprinter = 走位考验(快而脆)
+//   brute   = 火力考验(厚)       tank    = 堡垒(极慢极厚,高击退抗,逼绕行)
+//   swarm   = 虫群(一次 8-12 小体,逼范围清场)
+//   shooter = 炮手(220-300 风筝带,2.2s 敌弹,逼追击/掩体决策)
+//   splitter= 分裂体(死亡裂变 2 小体,逼集火顺序)
+//   healer  = 医疗者(6s 脉冲群疗半径 90,逼优先击杀)
+// boss 保留(四型弹幕循环)。
+export type SpawnableKind = Exclude<Enemy['kind'], 'boss'>
+export const SPAWNABLE_KINDS: readonly SpawnableKind[] = ['chaser', 'sprinter', 'swarm', 'brute', 'tank', 'shooter', 'splitter', 'healer']
+
+/** 解锁波次(spec 表 tank4/swarm3/shooter5/splitter6/healer7;基准 15s/波,
+ *  chaser 0/sprinter 40/brute 90 沿用既有节奏)。 */
+export const ENEMY_UNLOCK_SECONDS: Record<SpawnableKind, number> = {
+  chaser: 0,
+  sprinter: 40,
+  swarm: 45,
+  tank: 60,
+  shooter: 75,
+  splitter: 90,
+  brute: 90,
+  healer: 105,
+}
+
+/** 威胁值标称统计(标准档/中期;dps 为等效接触输出,healer 计入群疗支援价值)。 */
+export interface EnemyNominalStats {
+  hp: number
+  dps: number
+  speed: number
+}
+
+export const ENEMY_NOMINAL_STATS: Record<SpawnableKind, EnemyNominalStats> = {
+  chaser: { hp: 8, dps: 1.1, speed: 80 },
+  sprinter: { hp: 4, dps: 1.6, speed: 132 },
+  brute: { hp: 14, dps: 1.8, speed: 40 },
+  tank: { hp: 48, dps: 2.2, speed: 22 },
+  swarm: { hp: 1, dps: 0.8, speed: 95 },
+  shooter: { hp: 6, dps: 1.5, speed: 70 },
+  splitter: { hp: 10, dps: 1.2, speed: 60 },
+  healer: { hp: 8, dps: 2.5, speed: 55 },
+}
+
+/** 威胁值 = hp × dps / speed(归一化基准;越大越危险)。 */
+export function threatOf(kind: SpawnableKind): number {
+  const s = ENEMY_NOMINAL_STATS[kind]
+  return (s.hp * s.dps) / s.speed
+}
+
+export const SWARM_PACK_MIN = 8
+export const SWARM_PACK_MAX = 12
+/** 权重计算用的标称虫群规模(一次 spawn 事件的总威胁 = 个体 × 规模)。 */
+const SWARM_PACK_NOMINAL = (SWARM_PACK_MIN + SWARM_PACK_MAX) / 2
+
+/** 事件威胁(shake 一词不妥——是「一次 spawn 事件的总威胁」):swarm 按整包计。 */
+function eventThreat(kind: SpawnableKind): number {
+  return threatOf(kind) * (kind === 'swarm' ? SWARM_PACK_NOMINAL : 1)
+}
+
+/** 投放权重 = 归一化逆威胁(高威胁种类更稀有;威胁预算守恒的等价形式)。 */
+export const ENEMY_SPAWN_WEIGHTS: Record<SpawnableKind, number> = (() => {
+  const inv = {} as Record<SpawnableKind, number>
+  let sum = 0
+  for (const kind of SPAWNABLE_KINDS) {
+    inv[kind] = 1 / eventThreat(kind)
+    sum += inv[kind]
+  }
+  const weights = {} as Record<SpawnableKind, number>
+  for (const kind of SPAWNABLE_KINDS) weights[kind] = inv[kind] / sum
+  return weights
+})()
+
+/** 纯函数:按解锁池+权重从 roll ∈ [0,1) 选种(测试可注入确定性 roll)。 */
+export function pickSpawnKindFrom(time: number, roll: number): SpawnableKind {
+  const unlocked = SPAWNABLE_KINDS.filter((kind) => time >= ENEMY_UNLOCK_SECONDS[kind])
+  const pool = unlocked.length > 0 ? unlocked : (['chaser'] as SpawnableKind[])
+  const total = pool.reduce((sum, kind) => sum + ENEMY_SPAWN_WEIGHTS[kind], 0)
+  let r = clamp(roll, 0, 0.999999) * total
+  for (const kind of pool) {
+    r -= ENEMY_SPAWN_WEIGHTS[kind]
+    if (r < 0) return kind
+  }
+  return pool[pool.length - 1]
+}
+
+/** shooter/healer 风筝带 [近界, 远界](px,对最近存活玩家)。 */
+export const SHOOTER_BAND: readonly [number, number] = [220, 300]
+export const HEALER_BAND: readonly [number, number] = [140, 220]
+
+/** 各敌种基础移速(不含难度/artifact 乘法)——tank 下界即 22。 */
+export function enemyBaseSpeed(enemy: Enemy): number {
+  switch (enemy.kind) {
+    case 'sprinter': return 132
+    case 'brute': return 40
+    case 'boss': return 34
+    case 'tank': return 22
+    case 'swarm': return 95 * (enemy.jitter ?? 1)
+    case 'splitter': return (enemy.gen ?? 0) > 0 ? 90 : 60
+    case 'shooter': return 70
+    case 'healer': return 55
+    default: return 0 // chaser:随时间爬升,见 enemySpeedFor
+  }
+}
+
+/** 敌移速 = 基速 ×(artifact swift × 难度敌速);chaser 随时间 64→112 爬升。 */
+export function enemySpeedFor(state: SurvivalState, enemy: Enemy): number {
+  const mult = state.enemySpeedMult * survivalDifficultyParams(state).enemySpeedMult
+  if (enemy.kind === 'chaser') return Math.min(112, 64 + state.time * 0.12) * mult
+  return enemyBaseSpeed(enemy) * mult
+}
+
 interface Point {
   x: number
   y: number
@@ -90,9 +201,21 @@ interface Enemy extends Point {
   size: number
   hp: number
   maxHp: number
-  kind: 'chaser' | 'sprinter' | 'brute' | 'boss'
+  kind: 'chaser' | 'sprinter' | 'brute' | 'boss' | 'tank' | 'swarm' | 'shooter' | 'splitter' | 'healer'
   elite: boolean
   hitFlash: number
+  /** R218 D: splitter 世代(0=可裂变母体;1=裂变小体,不再分裂)。 */
+  gen?: number
+  /** R218 D: shooter 开火计时(2.2s 一发;elite 1.5s)。 */
+  fireTimer?: number
+  /** R218 D: shooter 切向游走方向(±1)。 */
+  strafeDir?: number
+  /** R218 D: healer 脉冲治疗计时(6s;elite 4s)。 */
+  healTimer?: number
+  /** R218 D: healer 治疗脉冲视觉剩余秒数(扩散光环环)。 */
+  healPulse?: number
+  /** R218 D: swarm 个体速度散布系数(0.75-1.25)。 */
+  jitter?: number
 }
 
 interface Bullet extends Point {
@@ -235,6 +358,8 @@ export interface SurvivalState {
   evolved: string[]
   /** R202(FR-SW02): boss 弹幕计时(驱动三型循环)。 */
   bossBulletTimer: number
+  /** R218 D: boss 弹幕型序号(0-3 显式轮转,放射/扇形/环形/双螺旋)。 */
+  bossBulletPattern: number
   /** R208(FR-MP01): 二号位玩家(本地合作;null=单人局)。hp≤0 为倒下态。
    *  R213: players[1] 的别名引用(同一对象);视图仍直接读写该字段
    *  (合作开关关闭时直接置 null),tick/draw 入口 syncRoster 负责回写名册。 */
@@ -379,6 +504,7 @@ export function initialSurvivalState(
     warnings: [],
     evolved: [],
     bossBulletTimer: 0,
+    bossBulletPattern: 0,
     eBullets: [],
     player2: null,
     keys2: new Set<string>(),
@@ -628,24 +754,105 @@ function spawnEnemy(state: SurvivalState): void {
   const x = side === 0 ? -30 : side === 1 ? WIDTH + 30 : Math.random() * WIDTH
   const y = side === 2 ? -30 : side === 3 ? HEIGHT + 30 : Math.random() * HEIGHT
   const elite = state.time > 60 && Math.random() < 0.08
+  // R218 D: 种类按「威胁值加权」投放(已解锁池内归一化逆威胁权重)
+  spawnEnemyKind(state, pickSpawnKindFrom(state.time, Math.random()), x, y, elite)
+}
+
+/** R218 D: 按种类生成敌人(可导出供测试/脚本直接投放)。swarm 一次生成整包。 */
+export function spawnEnemyKind(state: SurvivalState, kind: SpawnableKind, x: number, y: number, elite = false): void {
   const islandMult = 1 + 0.25 * (state.island - 1)
   const scale = (elite ? 2.5 : 1) * islandMult
-  const roll = Math.random()
-  if (state.time > 90 && roll < 0.12) {
-    const hp = Math.round((10 + Math.floor(state.time / 15)) * scale)
-    state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 20, hp, maxHp: hp, kind: 'brute', elite, hitFlash: 0 })
-  } else if (state.time > 40 && roll < 0.34) {
-    const hp = Math.round(2 * scale)
-    state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 11, hp, maxHp: hp, kind: 'sprinter', elite, hitFlash: 0 })
+  if (kind === 'swarm') {
+    const pack = SWARM_PACK_MIN + Math.floor(Math.random() * (SWARM_PACK_MAX - SWARM_PACK_MIN + 1))
+    const hp = Math.max(1, Math.round(1 * scale))
+    for (let i = 0; i < pack; i++) {
+      state.enemies.push({
+        id: state.nextId++, x: x + (Math.random() - 0.5) * 48, y: y + (Math.random() - 0.5) * 48, vx: 0, vy: 0,
+        size: 6, hp, maxHp: hp, kind: 'swarm', elite, hitFlash: 0,
+        jitter: 0.75 + Math.random() * 0.5,
+      })
+    }
+    return
+  }
+  const hpFor = (): number => {
+    if (kind === 'tank') return Math.round((10 + Math.floor(state.time / 15)) * 6 * scale)
+    if (kind === 'brute') return Math.round((10 + Math.floor(state.time / 15)) * scale)
+    if (kind === 'sprinter') return Math.round(2 * scale)
+    if (kind === 'shooter') return Math.round(6 * scale)
+    if (kind === 'splitter') return Math.round(9 * scale)
+    if (kind === 'healer') return Math.round(8 * scale)
+    return Math.round((3 + Math.floor(state.time / 25)) * scale)
+  }
+  const sizeFor = (): number => {
+    if (kind === 'tank') return 22
+    if (kind === 'brute') return 20
+    if (kind === 'splitter' || kind === 'healer') return 12
+    if (kind === 'sprinter' || kind === 'shooter') return 11
+    if (kind === 'chaser') return 14
+    return 6
+  }
+  const hp = hpFor()
+  const enemy: Enemy = { id: state.nextId++, x, y, vx: 0, vy: 0, size: sizeFor(), hp, maxHp: hp, kind, elite, hitFlash: 0 }
+  if (kind === 'shooter') {
+    enemy.fireTimer = 1.5
+    enemy.strafeDir = Math.random() < 0.5 ? -1 : 1
+  }
+  if (kind === 'healer') enemy.healTimer = 3
+  if (kind === 'splitter') enemy.gen = 0
+  state.enemies.push(enemy)
+}
+
+/** R218 D: 风筝带移动——远于上界接近/近于下界后撤/带内切向游走(死区)。 */
+function kiteMove(state: SurvivalState, enemy: Enemy, target: Point, dt: number, band: readonly [number, number]): void {
+  const dx = target.x - enemy.x
+  const dy = target.y - enemy.y
+  const dist = Math.max(1, Math.hypot(dx, dy))
+  const nx = dx / dist
+  const ny = dy / dist
+  const speed = enemySpeedFor(state, enemy)
+  if (dist > band[1]) {
+    enemy.x += nx * speed * dt
+    enemy.y += ny * speed * dt
+  } else if (dist < band[0]) {
+    enemy.x -= nx * speed * dt
+    enemy.y -= ny * speed * dt
   } else {
-    const hp = Math.round((3 + Math.floor(state.time / 25)) * scale)
-    state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 14, hp, maxHp: hp, kind: 'chaser', elite, hitFlash: 0 })
+    const dir = enemy.strafeDir ?? 1
+    enemy.x += -ny * dir * speed * 0.6 * dt
+    enemy.y += nx * dir * speed * 0.6 * dt
   }
 }
 
-/** R202(FR-SW02): boss 弹幕——放射(12 向)/瞄准扇形(5 发)/环形(16 发)循环。 */
+/** R218 D: shooter 开火——2.2s 一发瞄准弹(elite 1.5s,乘法提速)。 */
+function shooterFire(state: SurvivalState, enemy: Enemy, target: Point, dt: number): void {
+  enemy.fireTimer = (enemy.fireTimer ?? 1.5) - dt
+  if (enemy.fireTimer > 0) return
+  enemy.fireTimer = enemy.elite ? 1.5 : 2.2
+  const a = Math.atan2(target.y - enemy.y, target.x - enemy.x)
+  state.eBullets.push({ x: enemy.x, y: enemy.y, vx: Math.cos(a) * 170, vy: Math.sin(a) * 170, size: 6, life: 4 })
+}
+
+/** R218 D: healer 脉冲——6s 一拍,半径 90 内友军 +30% maxHp(elite 4s)。 */
+function healerPulse(state: SurvivalState, enemy: Enemy, dt: number): void {
+  enemy.healTimer = (enemy.healTimer ?? 3) - dt
+  if (enemy.healTimer > 0) return
+  enemy.healTimer = enemy.elite ? 4 : 6
+  enemy.healPulse = 0.6
+  let healed = 0
+  for (const ally of state.enemies) {
+    if (ally === enemy || ally.hp <= 0 || ally.hp >= ally.maxHp) continue
+    if (distance(ally, enemy) <= 90) {
+      ally.hp = Math.min(ally.maxHp, ally.hp + Math.max(1, Math.round(ally.maxHp * 0.3)))
+      healed += 1
+    }
+  }
+  if (healed > 0) spawnBurst(state, enemy.x, enemy.y, '#4ade80', 6, 70)
+}
+
+/** R202(FR-SW02)+R218 D: boss 弹幕——放射(12 向)/瞄准扇形(5 发)/环形(16 发)/
+ *  双螺旋(两臂旋进,新形态)四型循环(bossBulletPattern 显式计数轮转)。 */
 function bossBarrage(state: SurvivalState, boss: Enemy): void {
-  const pattern = Math.floor(state.bossBulletTimer) % 3
+  const pattern = state.bossBulletPattern % 4
   if (pattern === 0) {
     for (let i = 0; i < 12; i += 1) {
       const a = (i / 12) * Math.PI * 2
@@ -657,10 +864,19 @@ function bossBarrage(state: SurvivalState, boss: Enemy): void {
       const a = base + i * 0.18
       state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 170, vy: Math.sin(a) * 170, size: 7, life: 4 })
     }
-  } else {
+  } else if (pattern === 2) {
     for (let i = 0; i < 16; i += 1) {
       const a = (i / 16) * Math.PI * 2 + 0.2
       state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 95, vy: Math.sin(a) * 95, size: 5, life: 5 })
+    }
+  } else {
+    // R218 D: 双螺旋——两臂相位差 π,基角随 clock 旋进(跨齐射旋转)
+    const base = state.clock * 2.6
+    for (let arm = 0; arm < 2; arm += 1) {
+      for (let i = 0; i < 6; i += 1) {
+        const a = base + arm * Math.PI + (i / 6) * Math.PI
+        state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 110, vy: Math.sin(a) * 110, size: 5, life: 5 })
+      }
     }
   }
 }
@@ -705,6 +921,17 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
     return
   }
   const color = enemy.kind === 'brute' ? '#f472b6' : enemy.kind === 'sprinter' ? '#fbbf24' : '#fb7185'
+  // R218 D: splitter 裂变——母体死亡裂出 2 个 size 7 小体(gen 1,不再分裂)
+  if (enemy.kind === 'splitter' && (enemy.gen ?? 0) === 0) {
+    for (let i = 0; i < 2; i++) {
+      const childHp = Math.max(1, Math.round(enemy.maxHp * 0.25))
+      state.enemies.push({
+        id: state.nextId++, x: enemy.x + (i === 0 ? -9 : 9), y: enemy.y + (i === 0 ? -6 : 6), vx: 0, vy: 0,
+        size: 7, hp: childHp, maxHp: childHp, kind: 'splitter', elite: false, hitFlash: 0, gen: 1,
+      })
+    }
+    spawnBurst(state, enemy.x, enemy.y, '#fb923c', 8, 120)
+  }
   spawnBurst(state, enemy.x, enemy.y, color, enemy.kind === 'brute' ? 18 : 9, 140)
   const drops = enemy.elite || enemy.kind === 'brute' ? 3 : 1
   for (let i = 0; i < drops; i++) {
@@ -722,6 +949,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   for (const enemy of state.enemies) {
     if (enemy.kind === 'boss' && state.bossBulletTimer >= 1.2) {
       bossBarrage(state, enemy)
+      state.bossBulletPattern = (state.bossBulletPattern + 1) % 4
     }
   }
   if (state.bossBulletTimer >= 1.2) state.bossBulletTimer = 0
@@ -948,8 +1176,10 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       if (distance(bullet, enemy) < 5 + enemy.size) {
         enemy.hp -= bullet.damage
         enemy.hitFlash = 0.1
-        enemy.x += bullet.vx * dt * 0.5
-        enemy.y += bullet.vy * dt * 0.5
+        // R218 D: tank 堡垒体——子弹击退系数 0.08(其余 0.5),阻挡感
+        const knock = enemy.kind === 'tank' ? 0.08 : 0.5
+        enemy.x += bullet.vx * dt * knock
+        enemy.y += bullet.vy * dt * knock
         bullet.pierce -= 1
         spawnBurst(state, bullet.x, bullet.y, bullet.crit ? '#fbbf24' : '#67e8f9', 3, 60)
         playSfx('hit')
@@ -958,22 +1188,24 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   }
   state.bullets = state.bullets.filter((bullet) => bullet.life > 0 && bullet.pierce >= 0 && bullet.x > -20 && bullet.x < WIDTH + 20 && bullet.y > -20 && bullet.y < HEIGHT + 20)
 
-  const speedFor = (enemy: Enemy): number => {
-    // R218 E: 难度敌速乘法(1/1/1.08/1.15)叠加 artifact swift 的 enemySpeedMult
-    const mult = state.enemySpeedMult * survivalDifficultyParams(state).enemySpeedMult
-    if (enemy.kind === 'sprinter') return 132 * mult
-    if (enemy.kind === 'brute') return 40 * mult
-    if (enemy.kind === 'boss') return 34 * mult
-    return Math.min(112, 64 + state.time * 0.12) * mult
-  }
   for (const enemy of state.enemies) {
-    // R208(FR-MP01): 敌人追最近存活玩家(单人局退化原行为)
+    // R208(FR-MP01): 敌人追最近存活玩家(单人局退化原行为);
+    // R218 D: shooter/healer 走风筝带移动(220-300/140-220,带内切向游走),
+    // 其余直追。shooter 兼施放瞄准弹,healer 兼脉冲群疗。
     const target = nearestAlive(state, enemy) ?? player
-    const dist = Math.max(1, distance(enemy, target))
-    const speed = speedFor(enemy)
-    enemy.x += ((target.x - enemy.x) / dist) * speed * dt
-    enemy.y += ((target.y - enemy.y) / dist) * speed * dt
     enemy.hitFlash = Math.max(0, enemy.hitFlash - dt)
+    if ((enemy.healPulse ?? 0) > 0) enemy.healPulse = Math.max(0, (enemy.healPulse ?? 0) - dt)
+    if (enemy.kind === 'shooter' || enemy.kind === 'healer') {
+      kiteMove(state, enemy, target, dt, enemy.kind === 'shooter' ? SHOOTER_BAND : HEALER_BAND)
+      if (enemy.kind === 'shooter') shooterFire(state, enemy, target, dt)
+      else healerPulse(state, enemy, dt)
+    } else {
+      const dist = Math.max(1, distance(enemy, target))
+      const speed = enemySpeedFor(state, enemy)
+      enemy.x += ((target.x - enemy.x) / dist) * speed * dt
+      enemy.y += ((target.y - enemy.y) / dist) * speed * dt
+    }
+    const dist = Math.max(1, distance(enemy, target))
     if (target.invuln <= 0 && distance(enemy, target) < enemy.size + target.size) {
       const dmg = enemyContactDamage(state)
       target.hp -= dmg
@@ -983,8 +1215,10 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       playSfx('hurt')
       addText(state, target.x, target.y - 26, `-${dmg}`, '#f87171')
       spawnBurst(state, target.x, target.y, '#f87171', 12, 150)
-      enemy.x -= (target.x - enemy.x) / dist * 46
-      enemy.y -= (target.y - enemy.y) / dist * 46
+      // R218 D: tank 高击退抗——接触后撤仅 8px(其余 46px)
+      const recoil = enemy.kind === 'tank' ? 8 : 46
+      enemy.x -= ((target.x - enemy.x) / dist) * recoil
+      enemy.y -= ((target.y - enemy.y) / dist) * recoil
       if (stats.thorns > 0) {
         enemy.hp -= stats.thorns
         enemy.hitFlash = 0.1
@@ -1255,7 +1489,16 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
       ctx.shadowColor = '#fde68a'
       ctx.shadowBlur = 14
     }
-    ctx.fillStyle = enemy.hitFlash > 0 ? '#ffffff' : enemy.kind === 'brute' ? '#f472b6' : enemy.kind === 'sprinter' ? '#fbbf24' : '#fb7185'
+    const kindColor =
+      enemy.kind === 'brute' ? '#f472b6'
+        : enemy.kind === 'sprinter' ? '#fbbf24'
+          : enemy.kind === 'tank' ? '#7c8da4'
+            : enemy.kind === 'swarm' ? '#a3e635'
+              : enemy.kind === 'shooter' ? '#c084fc'
+                : enemy.kind === 'splitter' ? '#fb923c'
+                  : enemy.kind === 'healer' ? '#34d399'
+                    : '#fb7185'
+    ctx.fillStyle = enemy.hitFlash > 0 ? '#ffffff' : kindColor
     if (enemy.kind === 'boss') {
       ctx.save()
       ctx.translate(enemy.x, enemy.y)
@@ -1289,6 +1532,51 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
       ctx.restore()
     } else if (enemy.kind === 'brute') {
       ctx.fillRect(enemy.x - enemy.size, enemy.y - enemy.size, enemy.size * 2, enemy.size * 2)
+    } else if (enemy.kind === 'tank') {
+      // R218 D: 堡垒——厚甲方块+描边+暗核(阻挡感)
+      ctx.fillRect(enemy.x - enemy.size, enemy.y - enemy.size, enemy.size * 2, enemy.size * 2)
+      ctx.strokeStyle = 'rgba(226,232,240,0.4)'
+      ctx.lineWidth = 2
+      ctx.strokeRect(enemy.x - enemy.size + 2, enemy.y - enemy.size + 2, enemy.size * 2 - 4, enemy.size * 2 - 4)
+      ctx.fillStyle = enemy.hitFlash > 0 ? '#ffffff' : '#334155'
+      ctx.fillRect(enemy.x - enemy.size * 0.45, enemy.y - enemy.size * 0.45, enemy.size * 0.9, enemy.size * 0.9)
+    } else if (enemy.kind === 'shooter') {
+      // R218 D: 炮手——朝向玩家的箭镞(带尾凹)
+      const heading = nearestAlive(state, enemy) ?? state.player
+      const angle = Math.atan2(heading.y - enemy.y, heading.x - enemy.x)
+      ctx.save(); ctx.translate(enemy.x, enemy.y); ctx.rotate(angle)
+      ctx.beginPath()
+      ctx.moveTo(enemy.size + 4, 0)
+      ctx.lineTo(-enemy.size * 0.7, -enemy.size * 0.8)
+      ctx.lineTo(-enemy.size * 0.3, 0)
+      ctx.lineTo(-enemy.size * 0.7, enemy.size * 0.8)
+      ctx.closePath(); ctx.fill()
+      ctx.restore()
+    } else if (enemy.kind === 'splitter') {
+      // R218 D: 分裂体——双球叶+中缝(预示裂变)
+      const r = enemy.size * 0.62
+      ctx.beginPath()
+      ctx.arc(enemy.x - enemy.size * 0.34, enemy.y, r, 0, Math.PI * 2)
+      ctx.arc(enemy.x + enemy.size * 0.34, enemy.y, r, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(5,10,18,0.55)'
+      ctx.lineWidth = 1.5
+      ctx.beginPath(); ctx.moveTo(enemy.x, enemy.y - r); ctx.lineTo(enemy.x, enemy.y + r); ctx.stroke()
+    } else if (enemy.kind === 'healer') {
+      // R218 D: 医疗者——绿球+白十字;常显 90px 治疗半径提示环,脉冲时扩散环
+      ctx.strokeStyle = 'rgba(52,211,153,0.1)'
+      ctx.lineWidth = 1
+      ctx.beginPath(); ctx.arc(enemy.x, enemy.y, 90, 0, Math.PI * 2); ctx.stroke()
+      ctx.beginPath(); ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = '#052012'
+      ctx.fillRect(enemy.x - 1.5, enemy.y - enemy.size * 0.55, 3, enemy.size * 1.1)
+      ctx.fillRect(enemy.x - enemy.size * 0.55, enemy.y - 1.5, enemy.size * 1.1, 3)
+      const pulse = enemy.healPulse ?? 0
+      if (pulse > 0) {
+        ctx.strokeStyle = `rgba(74,222,128,${(pulse / 0.6) * 0.5})`
+        ctx.lineWidth = 2
+        ctx.beginPath(); ctx.arc(enemy.x, enemy.y, 90 * (1 - pulse / 0.6) + 10, 0, Math.PI * 2); ctx.stroke()
+      }
     } else {
       ctx.beginPath(); ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2); ctx.fill()
     }

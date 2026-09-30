@@ -1,14 +1,23 @@
 import { describe, it, expect } from 'vitest'
 import {
   applyUpgrade,
+  debugSpawnBoss,
   deployPlayer2,
   deployPlayers,
   directorSpawnInterval,
   enemyContactDamage,
+  enemySpeedFor,
+  ENEMY_SPAWN_WEIGHTS,
+  ENEMY_UNLOCK_SECONDS,
   initialSurvivalState,
+  pickSpawnKindFrom,
   recomputeStats,
   setSurvivalDifficulty,
+  SPAWNABLE_KINDS,
+  spawnEnemyKind,
+  startSurvival,
   SURVIVAL_DIFFICULTY_PARAMS,
+  threatOf,
   tickSurvival,
   xpToNext,
 } from '../../../src/renderer/src/games/survival'
@@ -550,5 +559,156 @@ describe('R218 survival difficulty tiers (eHP + 血条化)', () => {
     const glass = initialSurvivalState('wisp', undefined, ['glass'], 'standard')
     setSurvivalDifficulty(glass, 'casual')
     expect(glass.player.maxHp).toBe(1)
+  })
+})
+
+// ── R218 D: 敌人 8 种行为正交矩阵 + 威胁值加权投放 ──────────────────────────
+describe('R218 enemy matrix (8 行为正交 + 威胁值加权投放)', () => {
+  it('威胁值全为正;投放权重全为正、和为 1,且高威胁种类更稀有', () => {
+    let sum = 0
+    for (const kind of SPAWNABLE_KINDS) {
+      expect(threatOf(kind)).toBeGreaterThan(0)
+      expect(ENEMY_SPAWN_WEIGHTS[kind]).toBeGreaterThan(0)
+      expect(ENEMY_SPAWN_WEIGHTS[kind]).toBeLessThan(1)
+      sum += ENEMY_SPAWN_WEIGHTS[kind]
+    }
+    expect(sum).toBeCloseTo(1, 9)
+    expect(ENEMY_SPAWN_WEIGHTS.tank).toBeLessThan(ENEMY_SPAWN_WEIGHTS.chaser)
+    expect(ENEMY_SPAWN_WEIGHTS.tank).toBeLessThan(ENEMY_SPAWN_WEIGHTS.swarm)
+  })
+
+  it('波次解锁单调: swarm<tank<shooter<splitter<healer(映射 45/60/75/90/105s)', () => {
+    expect(ENEMY_UNLOCK_SECONDS.swarm).toBeLessThan(ENEMY_UNLOCK_SECONDS.tank)
+    expect(ENEMY_UNLOCK_SECONDS.tank).toBeLessThan(ENEMY_UNLOCK_SECONDS.shooter)
+    expect(ENEMY_UNLOCK_SECONDS.shooter).toBeLessThan(ENEMY_UNLOCK_SECONDS.splitter)
+    expect(ENEMY_UNLOCK_SECONDS.splitter).toBeLessThan(ENEMY_UNLOCK_SECONDS.healer)
+    for (const kind of SPAWNABLE_KINDS) expect(ENEMY_UNLOCK_SECONDS[kind]).toBeGreaterThanOrEqual(0)
+  })
+
+  it('pickSpawnKindFrom: 未解锁期恒 chaser;满解锁期 roll 全扫描覆盖全部 8 种', () => {
+    for (let i = 0; i < 200; i++) expect(pickSpawnKindFrom(30, i / 200)).toBe('chaser')
+    const seen = new Set<string>()
+    for (let i = 0; i < 2000; i++) seen.add(pickSpawnKindFrom(1000, i / 2000))
+    expect(seen.size).toBe(8)
+  })
+
+  it('swarm 虫群: 一次 spawn 8-12 个 size 6 小体,hp≥1,速度散布 0.75-1.25', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    spawnEnemyKind(s, 'swarm', 400, 300)
+    const pack = s.enemies.filter((e) => e.kind === 'swarm')
+    expect(pack.length).toBeGreaterThanOrEqual(8)
+    expect(pack.length).toBeLessThanOrEqual(12)
+    for (const e of pack) {
+      expect(e.size).toBe(6)
+      expect(e.hp).toBeGreaterThanOrEqual(1)
+      expect(e.jitter ?? 1).toBeGreaterThanOrEqual(0.75)
+      expect(e.jitter ?? 1).toBeLessThanOrEqual(1.25)
+    }
+  })
+
+  it('tank 堡垒: 移速下界 22 且显著慢于 brute(40);hp 公式 ×6 于 brute 基线', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.time = 60
+    const tank = { id: 1, x: 450, y: 100, vx: 0, vy: 0, size: 22, hp: 100, maxHp: 100, kind: 'tank', elite: false, hitFlash: 0 }
+    const brute = { id: 2, x: 450, y: 100, vx: 0, vy: 0, size: 20, hp: 100, maxHp: 100, kind: 'brute', elite: false, hitFlash: 0 }
+    expect(enemySpeedFor(s, tank)).toBe(22)
+    expect(enemySpeedFor(s, tank)).toBeLessThan(enemySpeedFor(s, brute))
+    spawnEnemyKind(s, 'tank', 100, 100)
+    spawnEnemyKind(s, 'brute', 100, 100)
+    const spawnedTank = s.enemies.find((e) => e.kind === 'tank')
+    const spawnedBrute = s.enemies.find((e) => e.kind === 'brute')
+    expect(spawnedTank!.hp).toBe(spawnedBrute!.hp * 6)
+    expect(spawnedTank!.size).toBe(22)
+  })
+
+  it('shooter 炮手: 距离保持带死区(远于 300 接近/带内径向不动/近于 220 后撤)+ 2.2s 瞄准弹', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    const mk = (dx: number): void => {
+      s.enemies.length = 0
+      s.enemies.push({ id: 1, x: s.player.x + dx, y: s.player.y, vx: 0, vy: 0, size: 11, hp: 50, maxHp: 50, kind: 'shooter', elite: false, hitFlash: 0, fireTimer: 99, strafeDir: 1 })
+    }
+    mk(500)
+    tickSurvival(s, 0.5)
+    expect(Math.abs(s.enemies[0].x - s.player.x)).toBeLessThan(500)
+    mk(260)
+    const radialBefore = Math.hypot(s.enemies[0].x - s.player.x, s.enemies[0].y - s.player.y)
+    tickSurvival(s, 0.2)
+    const radialAfter = Math.hypot(s.enemies[0].x - s.player.x, s.enemies[0].y - s.player.y)
+    expect(Math.abs(radialAfter - radialBefore)).toBeLessThan(1)
+    expect(radialAfter).toBeGreaterThanOrEqual(220)
+    expect(radialAfter).toBeLessThanOrEqual(300)
+    mk(150)
+    tickSurvival(s, 0.5)
+    expect(Math.abs(s.enemies[0].x - s.player.x)).toBeGreaterThan(150)
+    mk(280)
+    s.enemies[0].fireTimer = 0.01
+    s.eBullets.length = 0
+    tickSurvival(s, 0.1)
+    expect(s.eBullets.length).toBe(1)
+    // elite 提速:1.5s 一发
+    s.enemies[0].elite = true
+    s.enemies[0].fireTimer = 0.01
+    s.eBullets.length = 0
+    tickSurvival(s, 0.1)
+    expect(s.enemies[0].fireTimer).toBeCloseTo(1.5, 5)
+  })
+
+  it('healer 医疗者: 6s 脉冲治疗半径 90 内友军 +30% maxHp(有上限),远处友军不回', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    const healer = { id: 1, x: s.player.x + 300, y: s.player.y, vx: 0, vy: 0, size: 12, hp: 20, maxHp: 20, kind: 'healer', elite: false, hitFlash: 0, healTimer: 0 }
+    const near = { id: 2, x: healer.x + 50, y: healer.y, vx: 0, vy: 0, size: 14, hp: 2, maxHp: 10, kind: 'chaser', elite: false, hitFlash: 0 }
+    const capped = { id: 3, x: healer.x - 60, y: healer.y, vx: 0, vy: 0, size: 14, hp: 9, maxHp: 10, kind: 'chaser', elite: false, hitFlash: 0 }
+    const far = { id: 4, x: healer.x + 300, y: healer.y, vx: 0, vy: 0, size: 14, hp: 2, maxHp: 10, kind: 'chaser', elite: false, hitFlash: 0 }
+    s.enemies.push(healer, near, capped, far)
+    tickSurvival(s, 0.02)
+    expect(near.hp).toBe(5) // 2 + round(10*0.3)=3
+    expect(capped.hp).toBe(10) // 9+3 → 钳到 maxHp
+    expect(far.hp).toBe(2)
+    expect(healer.healPulse ?? 0).toBeGreaterThan(0)
+    // 脉冲后计时回满档(elite 4s / 普通 6s)
+    expect(healer.healTimer).toBe(6)
+  })
+
+  it('splitter 分裂体: 母体死亡裂变 2 个 size 7 小体(gen1),小体死亡不再裂变', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    s.enemies.push({ id: 1, x: 300, y: 300, vx: 0, vy: 0, size: 12, hp: 0, maxHp: 9, kind: 'splitter', elite: false, hitFlash: 0, gen: 0 })
+    tickSurvival(s, 0.016)
+    const children = s.enemies.filter((e) => e.kind === 'splitter')
+    expect(children).toHaveLength(2)
+    for (const c of children) {
+      expect(c.size).toBe(7)
+      expect(c.gen).toBe(1)
+      expect(c.hp).toBe(2)
+    }
+    for (const c of children) c.hp = 0
+    tickSurvival(s, 0.016)
+    expect(s.enemies.filter((e) => e.kind === 'splitter')).toHaveLength(0)
+  })
+
+  it('boss 弹幕四型显式轮转: bossBulletPattern 逐齐射 +1 并 mod 4', () => {
+    const s = initialSurvivalState()
+    startSurvival(s)
+    debugSpawnBoss(s)
+    const boss = s.enemies.find((e) => e.kind === 'boss')!
+    for (let volley = 1; volley <= 5; volley++) {
+      s.bossBulletTimer = 1.19
+      boss.x = 450
+      boss.y = 260
+      const before = s.eBullets.length
+      tickSurvival(s, 0.02)
+      expect(s.bossBulletPattern).toBe(volley % 4)
+      expect(s.eBullets.length).toBeGreaterThan(before)
+    }
   })
 })
