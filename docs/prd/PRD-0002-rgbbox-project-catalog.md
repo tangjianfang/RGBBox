@@ -1417,7 +1417,7 @@
 
 ### R93. AI 画质增强（超分/插帧）——入档待启动（2026-09-14 用户问询，确认排 R91 后）
 
-> 调研结论（2026-09-14，受 ≤100MB 硬预算约束）：**动画视频实时超分成熟**（RealESRGAN-AnimeVideo-v3 xs ~0.3-2MB，官方为实时视频设计，GPU 30-60fps）；真人视频开源界**不存在** 1080p→4K 实时超分（NVIDIA RTX VSR/Maxine 为闭源驱动级），现实档位=低分辨率→1080p 近实时（RealESRGAN_x4plus 65MB 预算内紧）/ 暂停单帧精修；时序模型（BasicVSR++/RVRT）质量最高但 <1fps 仅适合离线转码；RIFE v4（~几MB）可做 30→60fps 插帧。执行路径：**WebGPU 首选**（Electron 41 Chromium Windows D3D12 默认可用 + onnxruntime-web webgpu backend；参考 sb2702/websr、Amazon IVS WebGPU 实时超分演示），WebGL 后备（慢 3-5×），CPU WASM 仅 xs 模型低分辨率可用，ncnn-vulkan 原生 sidecar（Upscayl 路线）为备选不入主线。**建议档位**：①动画实时超分（xs）②真人降档实时（540p/720p→1080p，x4plus int8 ~32MB）③单帧精修（暂停/截图跑大模型，与 R75-78 截图标注体系打通）。**状态：⏳（用户确认排 R91 之后启动，实施前重新对齐档位）**
+> 调研结论（2026-09-14，受 ≤100MB 硬预算约束）：**动画视频实时超分成熟**（RealESRGAN-AnimeVideo-v3 xs ~0.3-2MB，官方为实时视频设计，GPU 30-60fps）；真人视频开源界**不存在** 1080p→4K 实时超分（NVIDIA RTX VSR/Maxine 为闭源驱动级），现实档位=低分辨率→1080p 近实时（RealESRGAN_x4plus 65MB 预算内紧）/ 暂停单帧精修；时序模型（BasicVSR++/RVRT）质量最高但 <1fps 仅适合离线转码；RIFE v4（~几MB）可做 30→60fps 插帧。执行路径：**WebGPU 首选**（Electron 41 Chromium Windows D3D12 默认可用 + onnxruntime-web webgpu backend；参考 sb2702/websr、Amazon IVS WebGPU 实时超分演示），WebGL 后备（慢 3-5×），CPU WASM 仅 xs 模型低分辨率可用，ncnn-vulkan 原生 sidecar（Upscayl 路线）为备选不入主线。**建议档位**：①动画实时超分（xs）②真人降档实时（540p/720p→1080p，x4plus int8 ~32MB）③单帧精修（暂停/截图跑大模型，与 R75-78 截图标注体系打通）。**状态：✅ 档位① MVP（2026-09-30 R216 worktree-agent-v 实施，merge 提交含 ed802f5）**——**技术路线**：onnxruntime-web@1.30.0 全量 vendor（`public/vendor/ort/`，ort.all.bundle.min.mjs 819KB + jsep wasm 28.3MB，R131 mediapipe 同模式）运行时动态 import，bundler 全程不经手，正面规避 R91.3b 的 electron-vite+file:// wasm 坑，**零 npm 直接依赖**；backend 链 webgpu→webgl→wasm（探测降级，CPU 兜底 UI 标注「性能受限」）；模型 skillsafe-ai/realesr-animevideov3 ×4 ONNX（fp32 2.49MB sha256 钉死，×2/×3 档经输入预缩放实现——HF/OpenModelDB 查证无公开 ×2/×3 ONNX，决策记录）；modelsManifest +1 onnx 条目复用 modelDownload 管线（模型按需下载不进包，wasm 经 asarUnpack 进包）。UI=播放器「画质增强」面板（倍率/开关/backend+fps 显示/下载进度，与 R91.3 音频面板互斥同模式）。**证据**：typecheck 双绿；全量 152 files/1363 用例 0 失败（worktree 基点）；build 成功 vendor 落 out/renderer/vendor/ort/；模型 hf-mirror 实测下载 sha256 一致；新单测 15（tile 布局/backend 优先级/帧调度/manifest 不变量）；merge 后主干组合验证 1380 绿 + video view 快照 0.0000% + CDP 交互探针画质入口命中（docs/ui-review/r216/video-player.png）。**待真机验证**（R216.2④ 如实保留）：WebGPU 实际推理画质/降级 fps/28MB wasm 经 media:// 首载/blob: 视频全链路/MiniPlayer 隐藏态泵停。
 
 ### R14. 产品功能竞争力（赛道 B：88 → 100）
 
@@ -3464,6 +3464,8 @@
 
 **排期建议**:P-1/P-2 首批(flash);P-4 与 P-3 并行(glm 会话);P-6 随批;P-7 单独排期。
 
+> **R177 批次收口记录（2026-09-30 R216 worktree-agent-ai）**：P-2 ✅（工具卡双阈值折叠 12 行/600 字符+每卡独立态+diff 配色 token 化 `--status-error/success`；顺带修复 loadSession 孤 tool-result 卡片静默丢失缺陷；流式光标 done 移除经查现状已实现仅补验证）；P-4 ✅ 二轮迭代（R186 一轮基础上：多步规划 2-4 步/工具选择三分法 glob 定位→list 看目录→read 确认→edit 修改/KERNEL 单调用等待/禁编造输出；长度纪律 KERNEL 881→1137、REACT 1362→1626 均 ±30% 内；R193 纠偏正则/缓存回放/双协议分支零触碰；真机冒烟成功率对比无 key 环境不可测，如实保留）。P-1 由 R216.3 CDP 视觉复核闭环承接（docs/ui-review/r216/review.md）；P-3 已由 R194 承接 ✅；P-5/P-6/P-7 未承接（P-7 挂起待产品决策，见 R189 排期注）。
+
 ### R180. 声文/Agent 深度 review + 自动化测试轮（2026-09-26 用户指令「深度 review + 自动化测试，业务功能/流程/API/下载细节全通，UI 自动布局合理，高标准执行」；实施于 main）
 
 - **R180.1 审出并修复 3 个真实缺陷**：①**并发 send 交叉污染**——运行中第二次 send 会重赋 `run`，两循环消息/事件互相串写 → busy 守卫 + run 槽同步占用（首个 await 前声明）；②**run 生命周期泄漏**——完成/取消/出错后 `run` 永不清空 → 之后再也无法发送（busy 永真）→ 全部终态置 null；③**glob 越界**——绝对路径/盘符/`..` 模式可逃逸工作区 → 模式钳制。附：cancel 现以 AbortController 真正掐断在途模型请求（Claude 式 stop），不再等流挂起。
@@ -3543,7 +3545,7 @@
 
 **排期顺序**:Q-1 → Q-2 → Q-3(发版) → Q-4 → Q-5 → v0.3.85。P-7(RC-2/RC-3/B-2)继续挂起待产品决策;D3/D8/D10(悬浮胶囊/「关」语义/toast 生命周期)随 Q-5 后另议。
 
-- **R189.1 状态**:🔄(规划条款;按批推进时逐批转独立 R-N 执行)
+- **R189.1 状态**:✅(Q-1→Q-5 五批全部落地;2026-09-30 Q-5 经 R216 worktree-agent-u 实施——token 方案一页 `docs/design/q5-design-tokens.md`(中性阶分层/单一强调色绿收敛:app.css+base.css 绿色字面值归零/字号 4 档 census/圆角 3→2 档/间距阶核对)+四项实施(模块卡中性化图标保九色/状态卡右缘对齐/顶栏与 H1 去重 7 view);证据:typecheck 双绿+全量 1347 绿+hex audit 0+contrast 170 对 0 违例+ui-snapshot 重立后 9/9 GATE PASS+9 基线逐张目检;阴影/radius/spacing 字面存量 census 划归 R148 S3 批次承接。遗留:D3/D8/D10(悬浮胶囊/「关」语义/toast 生命周期)按排期随 Q-5 后另议,未启动)
 
 ### R190. Q-1 滚动/杂项快修（R189 首批;P-1 走查入档 D4/D5/D6 销项）
 
@@ -3748,7 +3750,7 @@
 
 ### R209. `feat` — M4 LAN 联机(SRS FR-LN01–05;RA2 式建房;零新增 npm 依赖)
 
-- **状态**: ✅ 一期+二期核心(FR-LN03 重连/观战/对账已交付,见 R215;FR-LN05 Tetris 对战与客端插值渲染仍为后续)
+- **状态**: ✅ 一期+二期核心(FR-LN03 重连/观战/对账已交付,见 R215)+**三期(FR-LN05 Tetris 对战+客端插值,2026-09-30 R216 worktree-agent-g)**——三期证据:①LAN Tetris=事件同步非快照:LanCommand +garbage(消行攻击)/result(比分互显)、welcome +seed(31 位 mulberry32,双方 bag 序列一致,单机无种子路径不变);lanService 补 host 下行广播与客端 cmd 上抛(原 cmd 为 guest→host 单向,~+10 行);tetris.ts initialTetrisState(seed?) 注入 rng;LanPanel 房间类型选择(TD 合作/Tetris 对战)+建房生成种子;本地消行 garbageFor 折算发对方/收 garbage 即 applyGarbage/终局互发 result 复用 duel-panel 互显;②客端插值:td.ts 纯函数 extrapolateBalloons(state,dt) 恒速 progress 线性外推(0.56 减速因子+词缀放大+钳 1,逐帧从基准重算不叠加),snap 存深拷贝基准+时间戳,dt 钳 0.3s,塔/弹不做;③测试 +13(种子序列一致/异种子相异/garbage 往返确定性/外推纯函数矩阵/轴控 4),games 域 147 绿;④CDP 交互探针 games-lan.png 双房间类型+建房/beacon 扫描态视觉复核通过。断线不恢复(重开新局)/观战 tetris 不做=规格边界。
 - **边界**(强制): 仅本网段 UDP 广播 + TCP 直连;无公网/无 NAT 穿透/无账号;Node 原生 dgram/net;渲染层经 window.rgbbox IPC 桥扩展事件接入,不直接触网。
 - **验收点**(SRS §6.2): 房间发现(UDP beacon 1s/版本握手拒绝)/房主权威+10–20Hz 快照/心跳断线恢复+快照 hash 对账/LAN TD 合作首发+Tetris 对战次发。
 - **证据**: ✅ 一期 — ①shared/lanProtocol.ts(纯函数:长度前缀帧+FrameDecoder 粘半包/超限抛错断连、beacon 解析+版本校验、versionsCompatible)+4 用例;②main/lanService.ts(dgram beacon 1s 广播+本机回环、net TCP 会话、hello→welcome/reject 版本握手先行、2s ping/5s 判死、256KB 帧上限、listening 后登记房间——修掉同步 address() 返回 null 的崩溃);③IPC 七通道+preload 白名单 lanHost/lanJoin/lanLeave/lanDiscover/lanCmd/lanSnapshot/onLanEvent(渲染层不触网,NFR-05 零新增依赖);④LanPanel(建房/发现列表 3s 滚出/手输直连兜底/状态回显);⑤TD 合作:房主权威(客端不 tick,快照直接落 tdStateRef 复用统计条/绘制通路),房主 15Hz JSON 快照+hash 附带,客端建塔/升级/出售/选塔/陨石指令上行(建塔逻辑抽 buildTowerAtRef 供本地点击与远程指令共用);guest 死控件禁用(无尽开关/开波/重开);peer-left 提示+房主续局;⑥E2E 本机双实例回环(createRequire 解析 playwright-core,双 --user-data-dir):建房 port 50920→加入 guest→A 开局 B 统计条实时显示「波次 1/1 20♥ 220◎」快照→A 侧 peers=1+「LAN·1P」芯片→B 选塔+点击指令上行。已知限制:beacon 自动发现在本机双实例未命中(手输兜底验证;真双机广播待验)。1282 绿(+4);快照 games 0.028% 阈值内(LAN 按钮)9/9;走查:guest 截图复核通过(死控件问题已修)。
@@ -3767,7 +3769,7 @@
 
 ### R213. `feat` — 新星蜂群扩展:4P 本地合作 + 角色头像自定义 + 输入配置中心 + 升级自动预选(2026-09-30 用户需求)
 
-- **状态**: ✅(worktree 三分支并行 TA/TB/TC+主干 TD 接线;手柄 axis 多柄联动为后续小项——P2-P4 手柄绑定 UI 就绪但摇杆轴控二期)
+- **状态**: ✅(worktree 三分支并行 TA/TB/TC+主干 TD 接线;**二期 P2-P4 手柄摇杆轴控 2026-09-30 R216 worktree-agent-g 补齐**——survival.ts axes: Array<{x,y}> 数组随 deployPlayers 伸缩,移动段读 axes[pi] 与 P1 legacy axis 同语义(0.18 死区/模拟幅度缩放/过阈值覆盖键池),pollGamepad 重写为遍历全部手柄→assignGamepads 映射→逐玩家写 axes[pi],P1 双写 legacy axis 保 vision 叠加路径零改动;+4 用例(槽伸缩/P2 右移零串轴/P3 上移+死区/半倾幅度),survival 30 绿)
 - **需求**(用户原话拆解):
   1. **最多 4 人游戏**:Swarm 本地合作从 2P 扩到 4P——players 数组化(1-4 实体,独立 HP/无敌帧/索敌/开火);复活珠/敌人 AI/HP HUD/全员倒判负全部数组化;人数在选战机面板选择。
   2. **角色图片自定义(大头像)**:每玩家可用本地图片作角色贴图(文件选择→userData 持久化,canvas drawImage 替代默认三角飞船,等比缩放+圆形裁切);默认角色保留。
@@ -3820,4 +3822,4 @@
 - **R216.3 E 段历史积压批量闭环**：~45 条 2026-06~07 🔄「代码已实施待用户实机验收」条款，以「已随 v0.3.17~v0.3.83 多轮发版使用 + 本轮全量回归绿 + CDP 关键路径截图 AI 视觉 review」为证据批量回写 ✅（注明「AI 审核批量闭环（R216.2 授权），历史积压 2026-09-30」）；R52 标题 ⏳ 滞后一并闭环。
 - **R216.4 发版里程碑（AI 审核 gate 替代用户验收 gate）**：全分支 merge 回 feat/games-upgrade → 全量验证链绿 → C 清单 AI 审核（游戏四作 CDP 视觉 review/R130 截图提速脚本取证/TTS 客观指标/R214 关机复验）→ merge main → `dist:dir` 冷启动冒烟 → `dist:win` 出包 → 体积核查（R176.3 口径）。
 - **R216.5 验收点**：①四分支各自 typecheck 双绿 + 域内测试绿 + 提交规范；②merge 后全量 `yarn test` 0 失败 + `yarn build` + `yarn ui:snapshot` 9/9（视觉域变更后按规则重立基线一次）；③各子任务映射条款（R93/R148/R177/R189/R209/R213）状态按证据回写；④E 段批量闭环证据链完整；⑤发版产物 + 体积报告。
-- **R216.6 状态**：🔄（2026-09-30 开工；worktree 四分支并行实施中）
+- **R216.6 状态**：🔄（进度：①四分支 g/ai/v/u 全部实施完成并 merge 回主干（merge 链至 9d3b56c）；②E 段 42 条批量闭环 ✅（commit f4f810f，证据 docs/ui-review/r216/）；③主干组合验证全绿——typecheck 双绿/全量 152 files 1380 passed 0 失败/build 成功/ui-snapshot 9/9 GATE PASS（0.0000%）/hex audit 0 违例；④merge-gate UI 交互探针三处命中（games-lan Tetris 房间类型/video-player 画质入口/ai-agent tab，截图+视觉复核通过）；⑤R93/R189/R209/R213/R177 已回写 ✅。**待办**：A4=R148 S3+S5 由 worktree-agent-u2 实施中；U2 merge 后最终验证链；R216.4 发版段（merge main/dist:dir 冒烟/dist:win/体积核查））

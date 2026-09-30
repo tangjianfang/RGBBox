@@ -1,0 +1,19 @@
+{
+  "lan": {
+    "clicked": "局域网",
+    "hasRoomType": true,
+    "hasTetrisWord": true,
+    "hasHost": true
+  },
+  "video": {
+    "clicked": "播放器",
+    "hasSuperresWord": true,
+    "hasTransportBtns": true
+  },
+  "agent": {
+    "clicked": "AGENT",
+    "hasSend": false,
+    "hasApproval": true,
+    "hasWorkspace": true
+  }
+}
