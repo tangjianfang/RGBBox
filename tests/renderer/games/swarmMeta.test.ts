@@ -149,7 +149,7 @@ describe('renderer/games/swarmMeta (R101)', () => {
     expect(initialSurvivalState('wisp', EMPTY_PERM, ['chrono']).timeScale).toBe(1.25)
     expect(initialSurvivalState('wisp', EMPTY_PERM, ['famine']).xpMult).toBeLessThan(initialSurvivalState('wisp', EMPTY_PERM, []).xpMult)
     expect(initialSurvivalState('wisp', EMPTY_PERM, ['bounty']).coinMult).toBe(2)
-    expect(initialSurvivalState('wisp', EMPTY_PERM, ['magnetWell']).stats.magnet).toBeCloseTo(130, 5)
+    expect(initialSurvivalState('wisp', EMPTY_PERM, ['magnetWell']).stats.magnet).toBeCloseTo(116, 5) // R218 B: 基础磁吸 70→56
     expect(initialSurvivalState('wisp', EMPTY_PERM, ['pain']).invulnWindow).toBe(0.5)
   })
 

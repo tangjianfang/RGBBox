@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   applyUpgrade,
   debugSpawnBoss,
+  hitRadiusOf,
   deployPlayer2,
   deployPlayers,
   directorSpawnInterval,
@@ -710,5 +711,62 @@ describe('R218 enemy matrix (8 行为正交 + 威胁值加权投放)', () => {
       expect(s.bossBulletPattern).toBe(volley % 4)
       expect(s.eBullets.length).toBeGreaterThan(before)
     }
+  })
+})
+
+// ── R218 B/U6: 尺寸重校(全线缩 20-25%)+ 宽容判定(判定 ≤ 视觉 80%) ──────────
+describe('R218 size recalibration + forgiving hitboxes', () => {
+  it('hitRadiusOf = 视觉 size × 0.8', () => {
+    expect(hitRadiusOf(14)).toBeCloseTo(11.2, 5)
+    expect(hitRadiusOf(11)).toBeCloseTo(8.8, 5)
+    for (const size of [6, 9, 11, 12, 15, 22, 28]) {
+      expect(hitRadiusOf(size)).toBeGreaterThan(0)
+      expect(hitRadiusOf(size) / size).toBeCloseTo(0.8, 5)
+    }
+  })
+
+  it('尺寸表: 玩家 11/chaser 11/sprinter 9/brute 15/boss 28/tank 22/swarm 6/shooter 11/splitter+healer 12', () => {
+    const s = initialSurvivalState()
+    expect(s.player.size).toBe(11)
+    s.phase = 'running'
+    s.time = 200
+    for (const kind of ['chaser', 'sprinter', 'brute', 'tank', 'swarm', 'shooter', 'splitter', 'healer'] as const) {
+      spawnEnemyKind(s, kind, 100, 100)
+    }
+    const byKind = new Map(s.enemies.filter((e) => e.kind !== 'swarm' || true).map((e) => [e.kind, e.size]))
+    expect(byKind.get('chaser')).toBe(11)
+    expect(byKind.get('sprinter')).toBe(9)
+    expect(byKind.get('brute')).toBe(15)
+    expect(byKind.get('tank')).toBe(22)
+    expect(byKind.get('swarm')).toBe(6)
+    expect(byKind.get('shooter')).toBe(11)
+    expect(byKind.get('splitter')).toBe(12)
+    expect(byKind.get('healer')).toBe(12)
+    debugSpawnBoss(s)
+    expect(s.enemies.find((e) => e.kind === 'boss')!.size).toBe(28)
+  })
+
+  it('宽容判定: 视觉重叠但判定外(0.8-1.0 视觉半径和)不受击;深重叠受击', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    s.player.fireTimer = 99
+    // 距离 22:旧口径(size 和 25)会受击;新判定和 0.8×(14+11)=20 → 不受击
+    s.enemies.push({ id: 1, x: s.player.x + 22, y: s.player.y, vx: 0, vy: 0, size: 14, hp: 99, maxHp: 99, kind: 'chaser', elite: false, hitFlash: 0 })
+    const hp0 = s.player.hp
+    tickSurvival(s, 0.016)
+    expect(s.player.hp).toBe(hp0)
+    expect(22).toBeLessThan(14 + 11)
+    // 深重叠(15 < 20)受击
+    s.enemies[0].x = s.player.x + 15
+    s.player.invuln = 0
+    tickSurvival(s, 0.016)
+    expect(s.player.hp).toBe(hp0 - 1)
+  })
+
+  it('磁吸/拾取半径 ×0.8: 基础磁吸 70→56;磁铁井 artifact 116', () => {
+    expect(initialSurvivalState().stats.magnet).toBeCloseTo(56, 5)
+    expect(initialSurvivalState('wisp', undefined, ['magnetWell']).stats.magnet).toBeCloseTo(116, 5)
   })
 })

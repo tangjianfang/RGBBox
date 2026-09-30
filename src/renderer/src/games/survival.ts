@@ -129,6 +129,12 @@ export function threatOf(kind: SpawnableKind): number {
 
 export const SWARM_PACK_MIN = 8
 export const SWARM_PACK_MAX = 12
+
+/** R218 U6/B: 宽容判定——命中/受击判定半径 = 视觉 size × 0.8(判定 ≤ 视觉 80%,
+ *  商业宽容判定惯例;视觉绘制尺寸不变,只收窄碰撞)。 */
+export function hitRadiusOf(size: number): number {
+  return size * 0.8
+}
 /** 权重计算用的标称虫群规模(一次 spawn 事件的总威胁 = 个体 × 规模)。 */
 const SWARM_PACK_NOMINAL = (SWARM_PACK_MIN + SWARM_PACK_MAX) / 2
 
@@ -403,7 +409,7 @@ function baseStats(): PlayerStats {
     pierce: 0,
     blade: 0,
     moveSpeed: 170,
-    magnet: 70,
+    magnet: 56,
     crit: 0,
     bulletSpeed: 420,
     thorns: 0,
@@ -425,7 +431,7 @@ export function recomputeStats(
   stats.pierce = taken.pierce
   stats.blade = taken.blade + character.innateBlade
   stats.moveSpeed = 170 * (1 + 0.12 * taken.speed) * (1 + 0.1 * (perm?.moveSpeed ?? 0)) * (1 + (bonuses?.moveSpeed ?? 0)) * character.speedMod
-  stats.magnet = (70 + 45 * taken.magnet + (ctx?.magnetBonus ?? 0)) * (1 + (bonuses?.magnet ?? 0))
+  stats.magnet = (56 + 45 * taken.magnet + (ctx?.magnetBonus ?? 0)) * (1 + (bonuses?.magnet ?? 0))
   stats.crit = 0.1 * taken.crit + (bonuses?.crit ?? 0)
   stats.bulletSpeed = 420 * (1 + 0.3 * taken.bulletSpeed)
   stats.thorns = taken.thorns + character.innateThorns
@@ -446,7 +452,7 @@ export function initialSurvivalState(
   if (has('glass')) maxHp = 1
   // R213: 先构造 player/keys 再装配 state——players[0]/inputs[0] 与
   // player/keys 字段从出生起就是同一对象引用(别名不变量由构造保证)。
-  const player: PlayerState = { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 14, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2, hitFlash: 0 }
+  const player: PlayerState = { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 11, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2, hitFlash: 0 }
   const keys = new Set<string>()
   const state: SurvivalState = {
     phase: 'ready',
@@ -553,7 +559,7 @@ export function deployPlayers(state: SurvivalState, count: 1 | 2 | 3 | 4): void 
   for (let i = state.players.length; i < count; i++) {
     const off = DEPLOY_OFFSETS[i]
     state.players.push({
-      x: WIDTH / 2 + off.dx, y: HEIGHT / 2 + off.dy, vx: 0, vy: 0, size: 14,
+      x: WIDTH / 2 + off.dx, y: HEIGHT / 2 + off.dy, vx: 0, vy: 0, size: 11,
       hp: state.player.maxHp, maxHp: state.player.maxHp, invuln: 2,
       fireTimer: 0, angle: -Math.PI / 2, hitFlash: 0,
     })
@@ -784,11 +790,13 @@ export function spawnEnemyKind(state: SurvivalState, kind: SpawnableKind, x: num
     return Math.round((3 + Math.floor(state.time / 25)) * scale)
   }
   const sizeFor = (): number => {
+    // R218 B: 尺寸重校(玩家/敌全线缩 20-25%;实体直径 ≤ 画布短边 4%)
     if (kind === 'tank') return 22
-    if (kind === 'brute') return 20
+    if (kind === 'brute') return 15
     if (kind === 'splitter' || kind === 'healer') return 12
-    if (kind === 'sprinter' || kind === 'shooter') return 11
-    if (kind === 'chaser') return 14
+    if (kind === 'sprinter') return 9
+    if (kind === 'shooter') return 11
+    if (kind === 'chaser') return 11
     return 6
   }
   const hp = hpFor()
@@ -829,7 +837,7 @@ function shooterFire(state: SurvivalState, enemy: Enemy, target: Point, dt: numb
   if (enemy.fireTimer > 0) return
   enemy.fireTimer = enemy.elite ? 1.5 : 2.2
   const a = Math.atan2(target.y - enemy.y, target.x - enemy.x)
-  state.eBullets.push({ x: enemy.x, y: enemy.y, vx: Math.cos(a) * 170, vy: Math.sin(a) * 170, size: 6, life: 4 })
+  state.eBullets.push({ x: enemy.x, y: enemy.y, vx: Math.cos(a) * 170, vy: Math.sin(a) * 170, size: 5, life: 4 })
 }
 
 /** R218 D: healer 脉冲——6s 一拍,半径 90 内友军 +30% maxHp(elite 4s)。 */
@@ -856,18 +864,18 @@ function bossBarrage(state: SurvivalState, boss: Enemy): void {
   if (pattern === 0) {
     for (let i = 0; i < 12; i += 1) {
       const a = (i / 12) * Math.PI * 2
-      state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120, size: 6, life: 4 })
+      state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120, size: 5, life: 4 })
     }
   } else if (pattern === 1) {
     const base = Math.atan2(state.player.y - boss.y, state.player.x - boss.x)
     for (let i = -2; i <= 2; i += 1) {
       const a = base + i * 0.18
-      state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 170, vy: Math.sin(a) * 170, size: 7, life: 4 })
+      state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 170, vy: Math.sin(a) * 170, size: 6, life: 4 })
     }
   } else if (pattern === 2) {
     for (let i = 0; i < 16; i += 1) {
       const a = (i / 16) * Math.PI * 2 + 0.2
-      state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 95, vy: Math.sin(a) * 95, size: 5, life: 5 })
+      state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 95, vy: Math.sin(a) * 95, size: 4, life: 5 })
     }
   } else {
     // R218 D: 双螺旋——两臂相位差 π,基角随 clock 旋进(跨齐射旋转)
@@ -875,7 +883,7 @@ function bossBarrage(state: SurvivalState, boss: Enemy): void {
     for (let arm = 0; arm < 2; arm += 1) {
       for (let i = 0; i < 6; i += 1) {
         const a = base + arm * Math.PI + (i / 6) * Math.PI
-        state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 110, vy: Math.sin(a) * 110, size: 5, life: 5 })
+        state.eBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 110, vy: Math.sin(a) * 110, size: 4, life: 5 })
       }
     }
   }
@@ -886,7 +894,7 @@ function spawnBoss(state: SurvivalState): void {
   const side = Math.floor(Math.random() * 4)
   const x = side === 0 ? -50 : side === 1 ? WIDTH + 50 : Math.random() * WIDTH
   const y = side === 2 ? -50 : side === 3 ? HEIGHT + 50 : Math.random() * HEIGHT
-  state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 34, hp, maxHp: hp, kind: 'boss', elite: false, hitFlash: 0 })
+  state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 28, hp, maxHp: hp, kind: 'boss', elite: false, hitFlash: 0 })
   state.banner = { text: 'BOSS INBOUND', life: 1.6 }
   playSfx('wave')
 }
@@ -963,7 +971,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   for (const eb of state.eBullets) {
     // R208: 弹幕对任一存活玩家结算(独立无敌帧)
     for (const pl of alivePlayers(state)) {
-      if (pl.invuln <= 0 && Math.hypot(eb.x - pl.x, eb.y - pl.y) < pl.size + eb.size) {
+      if (pl.invuln <= 0 && Math.hypot(eb.x - pl.x, eb.y - pl.y) < hitRadiusOf(pl.size) + eb.size) {
         const dmg = enemyContactDamage(state)
         pl.hp -= dmg
         pl.invuln = state.invulnWindow
@@ -1159,7 +1167,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       const bx = player.x + Math.cos(angle) * 78
       const by = player.y + Math.sin(angle) * 78
       for (const enemy of state.enemies) {
-        if (distance({ x: bx, y: by }, enemy) < 16 + enemy.size) {
+        if (distance({ x: bx, y: by }, enemy) < 13 + hitRadiusOf(enemy.size)) {
           enemy.hp -= stats.damage
           enemy.hitFlash = 0.1
         }
@@ -1173,7 +1181,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     bullet.life -= dt
     for (const enemy of state.enemies) {
       if (bullet.pierce < 0 || bullet.life <= 0) break
-      if (distance(bullet, enemy) < 5 + enemy.size) {
+      if (distance(bullet, enemy) < 4 + hitRadiusOf(enemy.size)) {
         enemy.hp -= bullet.damage
         enemy.hitFlash = 0.1
         // R218 D: tank 堡垒体——子弹击退系数 0.08(其余 0.5),阻挡感
@@ -1206,7 +1214,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       enemy.y += ((target.y - enemy.y) / dist) * speed * dt
     }
     const dist = Math.max(1, distance(enemy, target))
-    if (target.invuln <= 0 && distance(enemy, target) < enemy.size + target.size) {
+    if (target.invuln <= 0 && distance(enemy, target) < hitRadiusOf(enemy.size) + hitRadiusOf(target.size)) {
       const dmg = enemyContactDamage(state)
       target.hp -= dmg
       target.invuln = state.invulnWindow
@@ -1266,7 +1274,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       orb.x += ((holder.x - orb.x) / dist) * speed * dt
       orb.y += ((holder.y - orb.y) / dist) * speed * dt
     }
-    if (dist < holder.size + 8) {
+    if (dist < holder.size + 6) {
       state.xp += orb.value * state.xpMult
       playSfx('xp')
       return false
@@ -1294,7 +1302,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       orb.x += ((rescuer.x - orb.x) / rescuerDist) * speed * dt
       orb.y += ((rescuer.y - orb.y) / rescuerDist) * speed * dt
     }
-    if (rescuerDist < rescuer.size + 10) {
+    if (rescuerDist < rescuer.size + 8) {
       target.hp = Math.max(1, Math.ceil(target.maxHp / 2))
       target.invuln = 2
       target.x = clamp(rescuer.x + (Math.random() - 0.5) * 64, 16, WIDTH - 16)
@@ -1528,7 +1536,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
       const heading = nearestAlive(state, enemy) ?? state.player
       const angle = Math.atan2(heading.y - enemy.y, heading.x - enemy.x)
       ctx.save(); ctx.translate(enemy.x, enemy.y); ctx.rotate(angle)
-      ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-9, -8); ctx.lineTo(-9, 8); ctx.closePath(); ctx.fill()
+      ctx.beginPath(); ctx.moveTo(enemy.size + 3, 0); ctx.lineTo(-enemy.size * 0.8, -enemy.size * 0.9); ctx.lineTo(-enemy.size * 0.8, enemy.size * 0.9); ctx.closePath(); ctx.fill()
       ctx.restore()
     } else if (enemy.kind === 'brute') {
       ctx.fillRect(enemy.x - enemy.size, enemy.y - enemy.size, enemy.size * 2, enemy.size * 2)
