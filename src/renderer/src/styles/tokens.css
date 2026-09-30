@@ -2,6 +2,9 @@
    Layer 1 primitives (mint/slate scales arrive in S3 polish) + Layer 2
    semantic tokens (surface/text/border/accent/status) + content colors. */
 :root {
+  /* R148 S5: native form controls / scrollbars / <select> popups follow the
+     active theme; the app boots dark-first (stage-first design language). */
+  color-scheme: dark;
   color: var(--text-primary); /* R148 S1: consume the semantic token, not a literal */
   background: var(--bg-content);
   font-family:
@@ -49,6 +52,26 @@
   --motion-fast: 120ms;  /* hover / press / toggle        */
   --motion-slow: 240ms;  /* panels, view fades, expanding */
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  /* ── R148 S5: theme-flippable overlay / scrim / scrollbar steps ────────
+     Formerly literal rgba(255,255,255,a) lifts and near-black translucent
+     scrims scattered through app.css. Dark: white-alpha lifts on near-black;
+     light (below): mirrored dark-alpha lifts on light surfaces. The five
+     overlay steps absorb the historical alpha spread (0.02–0.2 → ±0.02). */
+  --overlay-hair: rgba(255, 255, 255, 0.03);
+  --overlay-weak: rgba(255, 255, 255, 0.05);
+  --overlay-soft: rgba(255, 255, 255, 0.09);
+  --overlay-medium: rgba(255, 255, 255, 0.13);
+  --overlay-strong: rgba(255, 255, 255, 0.19);
+  --scrim-weak: rgba(10, 16, 22, 0.60);
+  --scrim: rgba(10, 16, 22, 0.85);
+  --scrim-strong: rgba(10, 16, 22, 0.95);
+  --scrollbar-thumb: rgba(138, 162, 173, 0.18);
+  --scrollbar-thumb-hover: rgba(138, 162, 173, 0.32);
+  /* ── R148 S5: stage — the "audience faces the stage" invariant. LED
+     previews / video players / game canvases / 3D scenes sit on a near-black
+     stage in BOTH themes (R148.2: the light effect content is the only
+     saturation; high-contrast RGB reads against dark). Never overridden. */
+  --stage-bg: #0a0f13;
   /* ── R86 P1 design tokens（Synapse 三层明度 → RGBBox 冷蓝灰） ────────── */
   --bg-rail: #0d1318;
   --bg-toolbar: #11191f;
@@ -125,6 +148,12 @@
   --fx-danger-border-dim: #7a3040;
   --fx-danger-bg-dim: #311c1c;
   --fx-warn-bg: #2c2308;
+  /* R148 S5: foreground for the never-flipping --fx-warn-bg stage fill
+     (roulette spin FAB over the dark canvas) — immune to the theme flip. */
+  --fx-warn-fg: #fde68a;
+  /* R148 S3: AI SVG animation stage backdrop (content layer — the scene art
+     was authored against this navy; not a chrome surface). */
+  --fx-stage-bg: #101724;
 
   /* ── R158.2: contrast pair registry — declared fg/bg combos for the auditor.
      The same-rule scan could never see these (fg and bg usually live in
@@ -161,8 +190,6 @@
   --pair-accent-on-control-fg: var(--accent); --pair-accent-on-control-bg: var(--bg-control);
   --pair-accent-on-raised-fg: var(--accent); --pair-accent-on-raised-bg: var(--surface-raised);
   --pair-btn-primary-fg: var(--accent-contrast); --pair-btn-primary-bg: var(--accent);
-  --pair-white-on-control-fg: var(--white); --pair-white-on-control-bg: var(--bg-control);
-  --pair-white-on-raised-fg: var(--white); --pair-white-on-raised-bg: var(--surface-raised);
   /* (no white-on-accent pair: that combo must not exist — accent-contrast is
      the on-accent text color; registering it would only bless a defect) */
   /* status pills / banners on the surfaces they ride */
@@ -177,7 +204,6 @@
   --pair-error-on-content-fg: var(--status-error); --pair-error-on-content-bg: var(--bg-content);
   --pair-error-on-card-fg: var(--status-error); --pair-error-on-card-bg: var(--bg-card);
   --pair-error-on-control-fg: var(--status-error); --pair-error-on-control-bg: var(--bg-control);
-  --pair-error-on-danger-bg-fg: var(--status-error); --pair-error-on-danger-bg-bg: var(--fx-danger-bg);
   --pair-success-on-content-fg: var(--status-success); --pair-success-on-content-bg: var(--bg-content);
   --pair-success-on-card-fg: var(--status-success); --pair-success-on-card-bg: var(--bg-card);
   --pair-success-on-control-fg: var(--status-success); --pair-success-on-control-bg: var(--bg-control);
@@ -196,15 +222,91 @@
   --pair-accent-soft-on-card-fg: var(--accent-soft-text); --pair-accent-soft-on-card-bg: var(--bg-card);
   --pair-accent-deep-on-content-fg: var(--accent-deep-text); --pair-accent-deep-on-content-bg: var(--bg-content);
   --pair-accent-deep-on-card-fg: var(--accent-deep-text); --pair-accent-deep-on-card-bg: var(--bg-card);
-  /* content-layer colors on the scene backgrounds they paint into */
-  --pair-fx-pink-on-content-fg: var(--fx-pink); --pair-fx-pink-on-content-bg: var(--bg-content);
-  --pair-fx-blue-on-content-fg: var(--fx-blue); --pair-fx-blue-on-content-bg: var(--bg-content);
-  --pair-fx-magenta-on-content-fg: var(--fx-magenta); --pair-fx-magenta-on-content-bg: var(--bg-content);
-  --pair-fx-cyan-on-content-fg: var(--fx-cyan); --pair-fx-cyan-on-content-bg: var(--bg-content);
-  --pair-fx-gold-on-content-fg: var(--fx-gold); --pair-fx-gold-on-content-bg: var(--bg-content);
-  --pair-fx-orange-on-content-fg: var(--fx-orange); --pair-fx-orange-on-content-bg: var(--bg-content);
-  --pair-fx-pink-on-warn-bg-fg: var(--fx-pink); --pair-fx-pink-on-warn-bg-bg: var(--fx-warn-bg);
-  --pair-fx-gold-on-warn-bg-fg: var(--fx-gold); --pair-fx-gold-on-warn-bg-bg: var(--fx-warn-bg);
-  --pair-fx-gold-on-danger-bg-fg: var(--fx-gold); --pair-fx-gold-on-danger-bg-bg: var(--fx-danger-bg);
-  --pair-fx-orange-on-danger-bg-fg: var(--fx-orange); --pair-fx-orange-on-danger-bg-bg: var(--fx-danger-bg);
+  /* content-layer colors on the scene backgrounds they paint into.
+     R148 S5: the fx-as-CHROME-text pairs were retired — after the light-theme
+     pass those combos render with semantic status/text tokens instead;
+     remaining fx text and colors ride non-flipping stage backgrounds only. */
+}
+
+/* ══ R148 S5: light theme — semantic overrides under [data-theme='light'] ═══
+   Dark stays the shipped default (stage-first design, R148.2); light flips
+   the SEMANTIC layer only, never the primitives that stages/content read:
+   neutral surfaces invert around a white card, text tiers swap to dark
+   slate, the accent deepens to hold 4.5:1 as text on light (fill keeps the
+   dark-on-accent contrast via --accent-contrast: white), status hues drop
+   one Tailwind step for the same reason, and the overlay/scrim/scrollbar
+   steps mirror to dark-alpha lifts. --stage-bg / --fx-* / --white/--black /
+   the game & scene literal families never flip (dark stages in both themes). */
+[data-theme='light'] {
+  color-scheme: light;
+  /* surfaces (chrome recedes: rail/toolbar slightly darker than content) */
+  --bg-rail: #dde5e9;
+  --bg-toolbar: #e9eff2;
+  --bg-content: #f0f4f6;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f2f8f9;
+  --bg-control: #edf3f5;
+  --surface-deep: #e6edf0;
+  --surface-raised: #e8eff2;
+  --border-subtle: #d3dde2;
+  --border-strong: #b6c6cd;
+  --border-control: #a3b8c0;
+  --border-hover: #6f96a5;
+  /* text tiers (all ≥4.5:1 on --bg-card/white; faint checked on card) */
+  --text-primary: #182b33;
+  --text-secondary: #3f5a66;
+  --text-muted: #4d6875;   /* 4.63 on rail / 5.91 on card */
+  --text-faint: #556e7c;   /* 4.86 on content / 5.37 on card */
+  /* accent family — brand green deepened one step for light surfaces */
+  --accent: #09734b;
+  --accent-rgb: 9, 115, 75;
+  --accent-dim: rgba(9, 115, 75, 0.1);
+  --accent-glow-50: rgba(9, 115, 75, 0.45);
+  --accent-ring-25: rgba(9, 115, 75, 0.28);
+  --accent-contrast: #ffffff;
+  --accent-bright-text: #09734b;
+  --accent-soft-text: #0a7d53;   /* 4.66 on content / 5.16 on card */
+  --accent-deep-text: #085c3d;
+  /* button matrix */
+  --btn-primary-bg: var(--accent);
+  --btn-primary-fg: var(--accent-contrast);
+  --btn-primary-bg-hover: #0b855a;
+  --btn-primary-bg-pressed: #075f40;
+  --btn-secondary-bg: #e8eff2;
+  --btn-secondary-bg-hover: #dbe5ea;
+  --btn-secondary-fg: var(--text-primary);
+  --btn-ghost-fg: var(--text-secondary);
+  --btn-ghost-fg-hover: var(--text-primary);
+  --btn-danger-bg: rgba(185, 28, 28, 0.08);
+  --btn-danger-fg: #b91c1c;
+  --btn-danger-border: rgba(185, 28, 28, 0.4);
+  /* info / status (one Tailwind step down for 4.5:1 on light) */
+  --info-text: #0c3d4a;
+  --info-soft-text: #35586a;
+  --info-vivid-text: #0e7490;
+  --status-info: #0369a1;
+  --status-warn: #92400e;
+  --status-warn-strong: #b45309;
+  --status-error: #b91c1c;
+  --status-success: var(--accent);
+  /* module identity hues — darkened for icon glyphs on white cards */
+  --tint-violet: #7c3aed;
+  --tint-sky: #0369a1;
+  --tint-amber: #b45309;
+  --tint-rose: #be123c;
+  --tint-lime: #4d7c0f;
+  --tint-orange: #c2410c;
+  --tint-fuchsia: #a21caf;
+  --tint-cyan: #0e7490;
+  /* overlays / scrims / scrollbar — mirrored lifts */
+  --overlay-hair: rgba(15, 23, 32, 0.03);
+  --overlay-weak: rgba(15, 23, 32, 0.05);
+  --overlay-soft: rgba(15, 23, 32, 0.09);
+  --overlay-medium: rgba(15, 23, 32, 0.13);
+  --overlay-strong: rgba(15, 23, 32, 0.19);
+  --scrim-weak: rgba(255, 255, 255, 0.6);
+  --scrim: rgba(255, 255, 255, 0.85);
+  --scrim-strong: rgba(255, 255, 255, 0.95);
+  --scrollbar-thumb: rgba(38, 60, 70, 0.22);
+  --scrollbar-thumb-hover: rgba(38, 60, 70, 0.38);
 }

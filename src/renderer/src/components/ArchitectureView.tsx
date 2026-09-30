@@ -30,7 +30,12 @@ type DemoPhase = 'idle' | 'compile' | 'runtime'
 interface ModuleSpec {
   id:      ModuleId
   label:   string
-  color:   string   // CSS hex
+  color:   string   // CSS hex — 3D materials (sphere/glow/particles)
+  // R148 S3 (ARCH-1): DOM display color for labels/legend/info text. The 3D
+  // hue stays brand-true, but on the dark glass panels several base hues
+  // (#0066FF Electron, #8B5CF6 React, #6B7280 Node.js) fall below readable
+  // contrast — the DOM side rides a brightened step of the same hue.
+  labelColor: string
   hex:     number   // THREE hex
   az:      number   // base azimuth, degrees
   el:      number   // base elevation, degrees
@@ -48,7 +53,7 @@ const ORBIT_R = 5.0
 const MODULES: ModuleSpec[] = [
   {
     id: 'electron',   label: 'Electron Main',
-    color: '#0066FF', hex: 0x0066FF,
+    color: '#0066FF', labelColor: '#6FA0FF', hex: 0x0066FF,
     az: 210, el: -8,
     heading: 'Electron Main Process',
     items: ['Main Process', 'Window Management', 'IPC Bridge', 'Native APIs'],
@@ -56,7 +61,7 @@ const MODULES: ModuleSpec[] = [
   },
   {
     id: 'react',      label: 'React Components',
-    color: '#8B5CF6', hex: 0x8B5CF6,
+    color: '#8B5CF6', labelColor: '#A78BFA', hex: 0x8B5CF6,
     az: 330, el: 12,
     heading: 'React Components',
     items: ['Functional Components', 'State Management', 'Hooks & Context', 'Component Tree'],
@@ -64,7 +69,7 @@ const MODULES: ModuleSpec[] = [
   },
   {
     id: 'vite',       label: 'Vite Build',
-    color: '#10B981', hex: 0x10B981,
+    color: '#10B981', labelColor: '#10B981', hex: 0x10B981,
     az: 270, el: 52,
     heading: 'Vite Build System',
     items: ['Dev Server', 'HMR', 'Build Pipeline', 'Plugin System'],
@@ -72,7 +77,7 @@ const MODULES: ModuleSpec[] = [
   },
   {
     id: 'typescript', label: 'TypeScript',
-    color: '#FBBF24', hex: 0xFBBF24,
+    color: '#FBBF24', labelColor: '#FBBF24', hex: 0xFBBF24,
     az: 45,  el: -10,
     heading: 'TypeScript Type System',
     items: ['Type Definitions', 'Interface & Generics', 'Type Checking', 'Declaration Files'],
@@ -80,7 +85,7 @@ const MODULES: ModuleSpec[] = [
   },
   {
     id: 'nodejs',     label: 'Node.js',
-    color: '#6B7280', hex: 0x6B7280,
+    color: '#6B7280', labelColor: '#AEB8C2', hex: 0x6B7280,
     az: 135, el: -15,
     heading: 'Node.js Runtime',
     items: ['V8 Engine', 'Module System', 'Event Loop', 'Native Bindings'],
@@ -88,7 +93,7 @@ const MODULES: ModuleSpec[] = [
   },
   {
     id: 'ipc',        label: 'IPC Communication',
-    color: '#06B6D4', hex: 0x06B6D4,
+    color: '#06B6D4', labelColor: '#06B6D4', hex: 0x06B6D4,
     az: 200, el: -38,
     heading: 'IPC Communication',
     items: ['ipcMain / ipcRenderer', 'Context Bridge', 'Message Queue', 'Event System'],
@@ -96,7 +101,7 @@ const MODULES: ModuleSpec[] = [
   },
   {
     id: 'output',     label: 'Build Output',
-    color: '#F97316', hex: 0xF97316,
+    color: '#F97316', labelColor: '#F97316', hex: 0xF97316,
     az: 350, el: -32,
     heading: 'Build Output',
     items: ['Compiled JavaScript', 'Minified CSS', 'Static Assets', 'Bundle Files'],
@@ -471,18 +476,25 @@ export function ArchitectureView(): JSX.Element {
 
       // Raycasting (hover detection)
       raycaster.current.setFromCamera(mouseNDC.current, cam)
-      const hits = raycaster.current.intersectObjects(sphereList.current, false)
-      const newHover: ModuleId | null = hits.length > 0
-        ? (hits[0].object.userData.moduleId as ModuleId | undefined) ?? null
+      const rayHits = raycaster.current.intersectObjects(sphereList.current, false)
+      const newHover: ModuleId | null = rayHits.length > 0
+        ? (rayHits[0].object.userData.moduleId as ModuleId | undefined) ?? null
         : null
       if (newHover !== hoveredRef.current) {
         hoveredRef.current = newHover
         renderer.domElement.style.cursor = newHover ? 'pointer' : 'default'
       }
 
-      // HTML label positions (direct DOM manipulation — no React re-renders)
+      // HTML label positions (direct DOM manipulation — no React re-renders).
+      // R148 S3 (ARCH-1): labels de-conflict — the orbit periodically projects
+      // two spheres to the same screen point (e.g. Electron × React); when a
+      // label's rect hits an already-placed one it flips below its sphere /
+      // nudges a step further instead of overlapping. 7 labels ⇒ trivial cost.
       const cw = renderer.domElement.clientWidth
       const ch = renderer.domElement.clientHeight
+      const placed: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
+      const rectHits = (x1: number, y1: number, x2: number, y2: number): boolean =>
+        placed.some(p => x1 < p.x2 + 2 && x2 > p.x1 - 2 && y1 < p.y2 + 2 && y2 > p.y1 - 2)
       for (const mod of MODULES) {
         const sphere  = sphereMap.current.get(mod.id)
         const labelEl = labelRefs.current.get(mod.id)
@@ -491,9 +503,26 @@ export function ArchitectureView(): JSX.Element {
         worldPosV.current.project(cam)
         const lx = (worldPosV.current.x + 1) / 2 * cw
         const ly = (-worldPosV.current.y + 1) / 2 * ch
-        labelEl.style.transform = `translate(-50%,-220%) translate(${lx}px,${ly}px)`
         const vis = worldPosV.current.z < 1
-        labelEl.style.opacity = vis ? (hoveredRef.current === mod.id ? '1' : '0.65') : '0'
+        const w = labelEl.offsetWidth || 64
+        const h = labelEl.offsetHeight || 18
+        // Label CENTER candidates: above (default), below, then one extra
+        // step away in each direction (multi-pile alignments). If every
+        // candidate collides the last one wins (at worst partly stacked).
+        let ax = lx
+        let ay = ly - h * 1.7
+        if (vis) {
+          for (const cy of [ly - h * 1.7, ly + h * 1.7, ly - h * 2.9, ly + h * 2.9]) {
+            ay = cy
+            if (!rectHits(ax - w / 2, cy - h / 2, ax + w / 2, cy + h / 2)) break
+          }
+          placed.push({ x1: ax - w / 2, y1: ay - h / 2, x2: ax + w / 2, y2: ay + h / 2 })
+        }
+        labelEl.style.transform = `translate(-50%,-50%) translate(${ax}px,${ay}px)`
+        // ARCH-1: base opacity 0.65 dimmed mid-hue labels below readable
+        // contrast on the dark glass — 0.85 keeps the recessive look while
+        // the brightened labelColor steps carry the contrast.
+        labelEl.style.opacity = vis ? (hoveredRef.current === mod.id ? '1' : '0.85') : '0'
       }
 
       renderer.render(scene, cam)
@@ -574,7 +603,7 @@ export function ArchitectureView(): JSX.Element {
             key={mod.id}
             className="arch-label"
             ref={el => { labelRefs.current.set(mod.id, el) }}
-            style={{ color: mod.color, borderColor: mod.color + '66' }}
+            style={{ color: mod.labelColor, borderColor: mod.labelColor + '66' }}
           >
             {t(`arch.module.${mod.id}` as Parameters<typeof t>[0])}
           </div>
@@ -601,8 +630,8 @@ export function ArchitectureView(): JSX.Element {
               aria-label={t('arch.closePanel')}
               onClick={() => setSelectedId(null)}
             >✕</button>
-            <div className="arch-info-accent" style={{ background: selectedMod.color }} />
-            <h3 className="arch-info-title" style={{ color: selectedMod.color }}>
+            <div className="arch-info-accent" style={{ background: selectedMod.labelColor }} />
+            <h3 className="arch-info-title" style={{ color: selectedMod.labelColor }}>
               {t(`arch.module.${selectedMod.id}.heading` as Parameters<typeof t>[0])}
             </h3>
             <ul className="arch-info-list">
@@ -622,7 +651,7 @@ export function ArchitectureView(): JSX.Element {
                         key={depId}
                         className="arch-dep-chip"
                         type="button"
-                        style={{ '--chip-color': dep.color } as CSSProperties}
+                        style={{ '--chip-color': dep.labelColor } as CSSProperties}
                         onClick={() => setSelectedId(depId)}
                       >
                         {t(`arch.module.${depId}` as Parameters<typeof t>[0])}
@@ -649,7 +678,7 @@ export function ArchitectureView(): JSX.Element {
           <p className="arch-legend-sub">{t('arch.legend.modules')}</p>
           {MODULES.map(m => (
             <div key={m.id} className="arch-legend-row">
-              <span className="arch-legend-dot" style={{ background: m.color }} />
+              <span className="arch-legend-dot" style={{ background: m.labelColor }} />
               <span>{t(`arch.module.${m.id}` as Parameters<typeof t>[0])}</span>
             </div>
           ))}
