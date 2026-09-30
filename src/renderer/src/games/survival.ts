@@ -173,6 +173,41 @@ export function pickSpawnKindFrom(time: number, roll: number): SpawnableKind {
 export const SHOOTER_BAND: readonly [number, number] = [220, 300]
 export const HEALER_BAND: readonly [number, number] = [140, 220]
 
+// ── R218 U10: 质心 → 归一化视差偏移(纯函数链) ────────────────────────────────
+export interface BgOffset {
+  x: number
+  y: number
+}
+
+/** 存活玩家质心(全倒下 → null)。 */
+export function playersCentroid(players: Array<{ x: number; y: number; hp: number }>): { x: number; y: number } | null {
+  let sx = 0
+  let sy = 0
+  let n = 0
+  for (const pl of players) {
+    if (pl.hp <= 0) continue
+    sx += pl.x
+    sy += pl.y
+    n += 1
+  }
+  if (n === 0) return null
+  return { x: sx / n, y: sy / n }
+}
+
+/** 质心 → 归一化视差偏移(以区域半宽/半高归一,钳制 ±1;null → 0)。 */
+export function centroidToOffset(centroid: { x: number; y: number } | null, w: number, h: number): BgOffset {
+  if (centroid === null) return { x: 0, y: 0 }
+  return {
+    x: clamp((centroid.x - w / 2) / (w / 2), -1, 1),
+    y: clamp((centroid.y - h / 2) / (h / 2), -1, 1),
+  }
+}
+
+/** 指数平滑(默认 alpha=0.1;每帧向目标收敛 10%)。 */
+export function smoothOffsetTo(cur: BgOffset, target: BgOffset, alpha = 0.1): BgOffset {
+  return { x: cur.x + (target.x - cur.x) * alpha, y: cur.y + (target.y - cur.y) * alpha }
+}
+
 /** 各敌种基础移速(不含难度/artifact 乘法)——tank 下界即 22。 */
 export function enemyBaseSpeed(enemy: Enemy): number {
   switch (enemy.kind) {
@@ -268,6 +303,14 @@ interface Banner {
   life: number
 }
 
+/** R218 U10: 击杀涟漪轻量环(击杀点扩散圆环,particles 之外的克制一层)。 */
+interface Ripple {
+  x: number
+  y: number
+  life: number
+  maxLife: number
+}
+
 export interface PlayerState {
   x: number
   y: number
@@ -334,6 +377,10 @@ export interface SurvivalState {
   orbs: Orb[]
   particles: Particle[]
   texts: FloatText[]
+  /** R218 U10: 击杀涟漪环池。 */
+  ripples: Ripple[]
+  /** R218 U10: 背景视差偏移(平滑后的归一化 ±1;存活玩家质心驱动)。 */
+  bgOffset: BgOffset
   banner: Banner | null
   island: number
   portal: Point | null
@@ -484,6 +531,8 @@ export function initialSurvivalState(
     orbs: [],
     particles: [],
     texts: [],
+    ripples: [],
+    bgOffset: { x: 0, y: 0 },
     banner: null,
     island: 1,
     portal: null,
@@ -908,6 +957,9 @@ export function debugSpawnBoss(state: SurvivalState): void {
 
 function killEnemy(state: SurvivalState, enemy: Enemy): void {
   state.kills += 1
+  // R218 U10: 击杀涟漪(大敌环更大更久)
+  const rippleLife = enemy.kind === 'boss' || enemy.kind === 'tank' ? 0.6 : 0.4
+  state.ripples.push({ x: enemy.x, y: enemy.y, life: rippleLife, maxLife: rippleLife })
   state.combo = state.comboTimer > 0 ? state.combo + 1 : 1
   state.comboTimer = 2.5
   state.comboBest = Math.max(state.comboBest, state.combo)
@@ -1007,6 +1059,9 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     text.life -= dt
   }
   state.texts = state.texts.filter((text) => text.life > 0)
+  // R218 U10: 涟漪寿命衰减
+  for (const rp of state.ripples) rp.life -= dt
+  state.ripples = state.ripples.filter((rp) => rp.life > 0)
   for (const particle of state.particles) {
     particle.x += particle.vx * dt
     particle.y += particle.vy * dt
@@ -1157,6 +1212,10 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       pl.fireTimer = 1 / stats.fireRate
     }
   }
+
+  // R218 U10: 背景视差偏移——存活玩家质心 → 归一化 ±1 → 0.1 指数平滑
+  // (任务 5 起由摄像机位置派生,二者合一;此处为平滑收敛的驱动点)
+  state.bgOffset = smoothOffsetTo(state.bgOffset, centroidToOffset(playersCentroid(state.players), WIDTH, HEIGHT))
 
   state.bladeAngle += dt * 2.8
   state.bladeTimer += dt
@@ -1403,9 +1462,14 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   if (state.shake > 0.2) ctx.translate((Math.random() - 0.5) * state.shake, (Math.random() - 0.5) * state.shake)
   // R213: 场景背景系统——state.scene 指定程序化场景(fusion=按岛屿轮换);
   // 未设置时保留原岛屿主题星空(单机默认走 view 层写入,引擎侧不预设)。
+  // R218 U10: 传视差 offset(质心平滑派生)与 darken(boss 在场压暗)。
   if (state.scene !== undefined) {
     const id = state.scene === 'fusion' ? SCENE_IDS[(state.island - 1) % (SCENE_IDS.length - 1)] : state.scene
-    drawScene(id, { ctx, w: WIDTH, h: HEIGHT, t: state.clock, px: player.x, py: player.y })
+    drawScene(id, {
+      ctx, w: WIDTH, h: HEIGHT, t: state.clock, px: player.x, py: player.y,
+      offset: state.bgOffset,
+      darken: state.enemies.some((enemy) => enemy.kind === 'boss') ? 0.32 : 0,
+    })
   } else {
   const theme = ISLAND_THEMES[(state.island - 1) % ISLAND_THEMES.length]
   ctx.fillStyle = theme.bg
@@ -1613,6 +1677,16 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
     ctx.fillStyle = particle.color
     ctx.beginPath(); ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2); ctx.fill()
     ctx.globalAlpha = 1
+  }
+
+  // R218 U10: 击杀涟漪——克制的一层扩散圆环
+  for (const rp of state.ripples) {
+    const p = 1 - rp.life / rp.maxLife
+    ctx.strokeStyle = `rgba(103, 232, 249, ${(1 - p) * 0.35})`
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(rp.x, rp.y, 6 + p * 34, 0, Math.PI * 2)
+    ctx.stroke()
   }
 
   if (!(player.invuln > 0 && Math.floor(player.invuln * 12) % 2 === 0)) {

@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   applyUpgrade,
+  centroidToOffset,
   debugSpawnBoss,
   hitRadiusOf,
+  playersCentroid,
   deployPlayer2,
   deployPlayers,
   directorSpawnInterval,
@@ -14,6 +16,7 @@ import {
   pickSpawnKindFrom,
   recomputeStats,
   setSurvivalDifficulty,
+  smoothOffsetTo,
   SPAWNABLE_KINDS,
   spawnEnemyKind,
   startSurvival,
@@ -768,5 +771,47 @@ describe('R218 size recalibration + forgiving hitboxes', () => {
   it('磁吸/拾取半径 ×0.8: 基础磁吸 70→56;磁铁井 artifact 116', () => {
     expect(initialSurvivalState().stats.magnet).toBeCloseTo(56, 5)
     expect(initialSurvivalState('wisp', undefined, ['magnetWell']).stats.magnet).toBeCloseTo(116, 5)
+  })
+})
+
+// ── R218 U10: 质心视差动态背景 ───────────────────────────────────────────────
+describe('R218 U10 background offset (质心 → 归一化 → 平滑)', () => {
+  it('playersCentroid: 均值质心;排除倒下玩家;全倒为 null', () => {
+    const mk = (x: number, y: number, hp: number): { x: number; y: number; hp: number } => ({ x, y, hp })
+    expect(playersCentroid([mk(0, 0, 1), mk(100, 50, 3)])).toEqual({ x: 50, y: 25 })
+    expect(playersCentroid([mk(0, 0, 0), mk(100, 50, 3)])).toEqual({ x: 100, y: 50 })
+    expect(playersCentroid([mk(0, 0, 0)])).toBeNull()
+  })
+
+  it('centroidToOffset: 区域中心→0/边缘→±1/越界钳制;null→0', () => {
+    expect(centroidToOffset({ x: 450, y: 260 }, 900, 520)).toEqual({ x: 0, y: 0 })
+    expect(centroidToOffset({ x: 900, y: 0 }, 900, 520)).toEqual({ x: 1, y: -1 })
+    expect(centroidToOffset({ x: 5000, y: -5000 }, 900, 520)).toEqual({ x: 1, y: -1 })
+    expect(centroidToOffset(null, 900, 520)).toEqual({ x: 0, y: 0 })
+  })
+
+  it('smoothOffsetTo: 单步 10% 收敛,迭代逼近目标(指数平滑)', () => {
+    let cur = { x: 0, y: 0 }
+    cur = smoothOffsetTo(cur, { x: 1, y: -1 })
+    expect(cur.x).toBeCloseTo(0.1, 5)
+    expect(cur.y).toBeCloseTo(-0.1, 5)
+    for (let i = 0; i < 60; i++) cur = smoothOffsetTo(cur, { x: 1, y: -1 })
+    expect(cur.x).toBeCloseTo(1, 2)
+    expect(cur.y).toBeCloseTo(-1, 2)
+  })
+
+  it('tick 集成: 玩家持续右移 → bgOffset.x 平滑为正;击杀产生涟漪环', () => {
+    const s = initialSurvivalState()
+    s.phase = 'running'
+    s.spawnTimer = 99
+    s.bossTimer = 99
+    s.keys.add('d')
+    for (let i = 0; i < 60; i++) tickSurvival(s, 1 / 60)
+    expect(s.bgOffset.x).toBeGreaterThan(0.05)
+    expect(Math.abs(s.bgOffset.y)).toBeLessThan(0.05)
+    s.enemies.push({ id: 9, x: s.player.x + 5, y: s.player.y, vx: 0, vy: 0, size: 11, hp: 0, maxHp: 5, kind: 'chaser', elite: false, hitFlash: 0 })
+    tickSurvival(s, 1 / 60)
+    expect(s.ripples.length).toBe(1)
+    expect(s.ripples[0].life).toBeGreaterThan(0)
   })
 })
