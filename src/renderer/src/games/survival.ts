@@ -620,7 +620,9 @@ export function initialSurvivalState(
   if (has('glass')) maxHp = 1
   // R213: 先构造 player/keys 再装配 state——players[0]/inputs[0] 与
   // player/keys 字段从出生起就是同一对象引用(别名不变量由构造保证)。
-  const player: PlayerState = { x: WORLD_W / 2, y: WORLD_H / 2, vx: 0, vy: 0, size: 11, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2, hitFlash: 0 }
+  // R219.9: 初始态=1P 固定视口——玩家与相机都在 vp 中心(单人画面零滚动);
+  // 2P+ 部署时由 deployPlayers 迁至世界中心。
+  const player: PlayerState = { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, size: 11, hp: maxHp, maxHp, invuln: 0, fireTimer: 0, angle: -Math.PI / 2, hitFlash: 0 }
   const keys = new Set<string>()
   const state: SurvivalState = {
     phase: 'ready',
@@ -653,7 +655,7 @@ export function initialSurvivalState(
     texts: [],
     ripples: [],
     bgOffset: { x: 0, y: 0 },
-    camera: { x: WORLD_W / 2, y: WORLD_H / 2, zoom: 1 },
+    camera: { x: WIDTH / 2, y: HEIGHT / 2, zoom: 1 },
     juice: emptyJuice(),
     banner: null,
     island: 1,
@@ -728,6 +730,28 @@ function syncRoster(state: SurvivalState): void {
  *  共享 build(升级/轮盘对全员同时生效),仅实体与输入独立。 */
 export function deployPlayers(state: SurvivalState, count: 1 | 2 | 3 | 4): void {
   syncRoster(state)
+  // R219.9: 单人局固定视口——站位基准=vp 中心(相机钉死处);2P+ =世界中心
+  // 分侧站位(初始态在 vp 中心,多人部署须整体迁至世界中心,含相机免开局漂移)。
+  if (count < 2) {
+    for (let i = 0; i < state.players.length; i++) {
+      const off = DEPLOY_OFFSETS[i]
+      state.players[i].x = state.vp.w / 2 + off.dx
+      state.players[i].y = state.vp.h / 2 + off.dy
+    }
+    // 相机一并钉死——否则首帧生成环仍按旧相机在视口角落外生成。
+    state.camera.x = state.vp.w / 2
+    state.camera.y = state.vp.h / 2
+    state.camera.zoom = 1
+  } else {
+    for (let i = 0; i < state.players.length; i++) {
+      const off = DEPLOY_OFFSETS[i]
+      state.players[i].x = WORLD_W / 2 + off.dx
+      state.players[i].y = WORLD_H / 2 + off.dy
+    }
+    state.camera.x = WORLD_W / 2
+    state.camera.y = WORLD_H / 2
+    state.camera.zoom = 1
+  }
   for (let i = state.players.length; i < count; i++) {
     const off = DEPLOY_OFFSETS[i]
     state.players.push({
@@ -1253,6 +1277,11 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   player.invuln = Math.max(0, player.invuln - dt)
   player.hitFlash = Math.max(0, player.hitFlash - dt)
 
+  // R219.9: 单人局固定视口——玩家钳视口界(相机钉死,画面零滚动);2P+ 大世界界。
+  const fixedViewport = state.players.length < 2
+  const boundMaxX = (fixedViewport ? state.vp.w : WORLD_W) - 16
+  const boundMaxY = (fixedViewport ? state.vp.h : WORLD_H) - 16
+
   const dx = (key(state, 'arrowright') || key(state, 'd') ? 1 : 0) - (key(state, 'arrowleft') || key(state, 'a') ? 1 : 0)
   const dy = (key(state, 'arrowdown') || key(state, 's') ? 1 : 0) - (key(state, 'arrowup') || key(state, 'w') ? 1 : 0)
   let moveX = dx
@@ -1265,8 +1294,8 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   const moveLen = Math.hypot(moveX, moveY)
   const moveScale = Math.min(1, moveLen)
   if (moveLen > 0.0001) {
-    player.x = clamp(player.x + (moveX / moveLen) * moveScale * stats.moveSpeed * dt, 16, WORLD_W - 16)
-    player.y = clamp(player.y + (moveY / moveLen) * moveScale * stats.moveSpeed * dt, 16, WORLD_H - 16)
+    player.x = clamp(player.x + (moveX / moveLen) * moveScale * stats.moveSpeed * dt, 16, boundMaxX)
+    player.y = clamp(player.y + (moveY / moveLen) * moveScale * stats.moveSpeed * dt, 16, boundMaxY)
     player.angle = Math.atan2(moveY, moveX)
     if (Math.random() < dt * 40) state.particles.push({ x: player.x - Math.cos(player.angle) * 14, y: player.y - Math.sin(player.angle) * 14, vx: -Math.cos(player.angle) * 60, vy: -Math.sin(player.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: '#67e8f9' })
   }
@@ -1346,8 +1375,8 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     const lenP = Math.hypot(movePx, movePy)
     const scaleP = Math.min(1, lenP)
     if (lenP > 0.0001) {
-      pl.x = clamp(pl.x + (movePx / lenP) * scaleP * stats.moveSpeed * dt, 16, WORLD_W - 16)
-      pl.y = clamp(pl.y + (movePy / lenP) * scaleP * stats.moveSpeed * dt, 16, WORLD_H - 16)
+      pl.x = clamp(pl.x + (movePx / lenP) * scaleP * stats.moveSpeed * dt, 16, boundMaxX)
+      pl.y = clamp(pl.y + (movePy / lenP) * scaleP * stats.moveSpeed * dt, 16, boundMaxY)
       pl.angle = Math.atan2(movePy, movePx)
       if (Math.random() < dt * 40) state.particles.push({ x: pl.x - Math.cos(pl.angle) * 14, y: pl.y - Math.sin(pl.angle) * 14, vx: -Math.cos(pl.angle) * 60, vy: -Math.sin(pl.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: ROSTER_ACCENT[pi - 1] })
     }
@@ -1380,11 +1409,20 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   // zoom-to-fit 2-4P;玩家出屏软约束(向心 120px/s);背景 offset 由摄像机派生
   // (与 U10 质心视差合一:摄像机即平滑后的质心)。
   // R219.7①: 视口读 vp;③ 动态背景停用时 bgOffset 不再随摄像机漂移(恒 0)。
-  updateCamera(state.camera, playersBBox(state.players), state.vp.w, state.vp.h, dt)
-  for (const pl of alivePlayers(state)) {
-    const push = softPushForce(state.camera, state.vp.w, state.vp.h, pl)
-    pl.x += push.x * dt
-    pl.y += push.y * dt
+  // R219.9: 单人局固定视口——相机钉死 vp 中心、无软推(玩家已钳视口界):
+  // 移动时世界不滚动,消除跟镜头滚动在深色背景上的帧步进观感(用户三轮反馈);
+  // 2P+ 合作保留跟镜头+zoom-to-fit(多人同屏必需)。
+  if (fixedViewport) {
+    state.camera.x = state.vp.w / 2
+    state.camera.y = state.vp.h / 2
+    state.camera.zoom = 1
+  } else {
+    updateCamera(state.camera, playersBBox(state.players), state.vp.w, state.vp.h, dt)
+    for (const pl of alivePlayers(state)) {
+      const push = softPushForce(state.camera, state.vp.w, state.vp.h, pl)
+      pl.x += push.x * dt
+      pl.y += push.y * dt
+    }
   }
   if (DYNAMIC_BG_ENABLED) {
     state.bgOffset = smoothOffsetTo(state.bgOffset, {

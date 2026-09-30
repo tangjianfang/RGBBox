@@ -221,11 +221,13 @@ describe('FR-MP01 swarm local co-op', () => {
     state.player2!.invuln = 0
     state.player2!.fireTimer = 99
     const x0 = state.player2!.x
+    // R219.9: P1 基线在部署后取(初始态 P1 在 vp 中心,多人部署整体迁世界中心)
+    const p1x0 = state.player.x
     state.keys2.add('p2right')
     for (let i = 0; i < 30; i++) tickSurvival(state, 1 / 60)
     expect(state.player2!.x).toBeGreaterThan(x0 + 40)
     // P1 未按任何键,原地不动
-    expect(state.player.x).toBe(initialSurvivalState().player.x)
+    expect(state.player.x).toBe(p1x0)
   })
 
   it('P2 自动索敌开火(共享弹池)', () => {
@@ -811,21 +813,46 @@ describe('R218 U10 background offset (质心 → 归一化 → 平滑)', () => {
     expect(cur.y).toBeCloseTo(-1, 2)
   })
 
-  it('tick 集成(R219.7③ 动态背景停用): 玩家持续右移 → bgOffset 恒 0(不再随摄像机漂移);击杀仍产生涟漪环', () => {
+  it('tick 集成(R219.7③+R219.9): 1P 持续右移 → bgOffset 恒 0+相机钉死 vp 中心+玩家钳视口界;击杀仍产生涟漪环', () => {
     const s = initialSurvivalState()
+    deployPlayers(s, 1)
     s.phase = 'running'
     s.spawnTimer = 99
     s.bossTimer = 99
     s.keys.add('d')
-    for (let i = 0; i < 60; i++) tickSurvival(s, 1 / 60)
+    for (let i = 0; i < 120; i++) tickSurvival(s, 1 / 60)
     // 停用锁:DYNAMIC_BG_ENABLED=false 期间 bgOffset 不推进(移动时背景静止——
     // 用户指令「先停止动态背景」;恢复开关时本断言与 smoothOffsetTo 单测同步改回)。
     expect(s.bgOffset).toEqual({ x: 0, y: 0 })
-    expect(s.camera.x).toBeGreaterThan(900) // 摄像机确实跟随了(停的是背景,不是镜头)
+    // R219.9: 单人固定视口——相机恒 vp 中心(画面零滚动),玩家钳在视口界内
+    expect(s.camera.x).toBe(450)
+    expect(s.camera.y).toBe(260)
+    expect(s.camera.zoom).toBe(1)
+    expect(s.player.x).toBeLessThanOrEqual(s.vp.w - 16)
+    expect(s.player.x).toBeGreaterThan(0)
     s.enemies.push({ id: 9, x: s.player.x + 5, y: s.player.y, vx: 0, vy: 0, size: 11, hp: 0, maxHp: 5, kind: 'chaser', elite: false, hitFlash: 0 })
     tickSurvival(s, 1 / 60)
     expect(s.ripples.length).toBe(1)
     expect(s.ripples[0].life).toBeGreaterThan(0)
+  })
+
+  it('R219.9: 1P 出生在 vp 中心+相机即钉死;2P 保留大世界跟镜头', () => {
+    const one = initialSurvivalState()
+    deployPlayers(one, 1)
+    expect(one.player.x).toBe(450)
+    expect(one.player.y).toBe(260)
+    expect(one.camera).toEqual({ x: 450, y: 260, zoom: 1 })
+
+    const two = initialSurvivalState()
+    deployPlayers(two, 2)
+    two.phase = 'running'
+    two.spawnTimer = 99
+    two.bossTimer = 99
+    // P2 大幅右移拉出包围盒 → 相机必须跟随(固定视口不得泄漏到多人局)
+    two.players[1].x = two.players[0].x + 700
+    for (let i = 0; i < 120; i++) tickSurvival(two, 1 / 60)
+    expect(two.camera.x).toBeGreaterThan(460)
+    expect(two.camera.zoom).toBeLessThanOrEqual(1)
   })
 })
 
@@ -893,12 +920,17 @@ describe('R218 U11 world + camera follow', () => {
     expect(worldToViewport({ x: 900, y: 520, zoom: 0.7 }, 900, 520, 990, 590)).toEqual({ x: 450 + 90 * 0.7, y: 260 + 70 * 0.7 })
   })
 
-  it('deployPlayers 初始位置改世界中心分侧;camera 初始对准世界中心', () => {
+  it('deployPlayers 初始位置改世界中心分侧;camera 初始对准世界中心(R219.9: 初始态=1P vp 中心)', () => {
     const s = initialSurvivalState()
+    // R219.9: 初始(1P 固定视口)——玩家/相机都在 vp 中心
+    expect(s.player.x).toBe(450)
+    expect(s.player.y).toBe(260)
+    expect(s.camera).toEqual({ x: 450, y: 260, zoom: 1 })
+    deployPlayers(s, 2)
+    // 多人部署:整体迁世界中心分侧,相机对准世界中心
     expect(s.player.x).toBe(WORLD_W / 2)
     expect(s.player.y).toBe(WORLD_H / 2)
     expect(s.camera).toEqual({ x: WORLD_W / 2, y: WORLD_H / 2, zoom: 1 })
-    deployPlayers(s, 2)
     expect(s.player2!.x).toBe(WORLD_W / 2 - 60)
     expect(s.player2!.y).toBe(WORLD_H / 2 + 40)
   })

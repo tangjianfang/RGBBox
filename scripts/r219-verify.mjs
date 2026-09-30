@@ -108,7 +108,10 @@ const after = await page.evaluate(() => (window).__rgbboxVision.probe())
 report.shipCentered = {
   movedWorld: Math.round(Math.abs(after.player.x - before.player.x)),
   shipVp: { x: Math.round(after.shipVp.x), y: Math.round(after.shipVp.y) },
-  withinCentral60: after.shipVp.x > after.vp.w * 0.35 && after.shipVp.x < after.vp.w * 0.65 && after.shipVp.y > after.vp.h * 0.35 && after.shipVp.y < after.vp.h * 0.65,
+  vp: { w: Math.round(after.vp.w), h: Math.round(after.vp.h) },
+  // R219.9: 1P 固定视口——移动中相机钉死 vp 中心(画面零滚动)+飞船在画内
+  cameraFixed: Math.abs(after.camera.x - after.vp.w / 2) < 1 && Math.abs(after.camera.y - after.vp.h / 2) < 1 && after.camera.zoom === 1,
+  shipOnScreen: after.shipVp.x > 0 && after.shipVp.x < after.vp.w && after.shipVp.y > 0 && after.shipVp.y < after.vp.h,
   phase: after.phase,
 }
 report.shipPixels = await brightPixelsIn(after.shipVp.x - 24, after.shipVp.y - 24, 48, 48)
