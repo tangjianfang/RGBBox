@@ -8,7 +8,7 @@
    the app follows. 16px is the browser default the px→rem migration was
    calibrated against (Npx = N/16 rem, pixel-identical at 100%). */
 html {
-  font-size: 16px;
+  font-size: 1rem; /* R148 S3: px-form residual → rem (identical at 100%) */
 }
 
 /* ── Custom scrollbar — matches dark theme, eliminates browser-default gray ── */
