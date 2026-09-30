@@ -125,6 +125,9 @@
   --fx-danger-border-dim: #7a3040;
   --fx-danger-bg-dim: #311c1c;
   --fx-warn-bg: #2c2308;
+  /* R148 S3: AI SVG animation stage backdrop (content layer — the scene art
+     was authored against this navy; not a chrome surface). */
+  --fx-stage-bg: #101724;
 
   /* ── R158.2: contrast pair registry — declared fg/bg combos for the auditor.
      The same-rule scan could never see these (fg and bg usually live in

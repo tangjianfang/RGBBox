@@ -1310,8 +1310,8 @@ input:not([type]):focus {
   scrollbar-color: rgba(138, 162, 173, 0.18) transparent;
   /* R183: cards hard-cut at the viewport bottom read as broken, not
      scrollable — fade the last stretch to signal continuation. */
-  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 28px), transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to bottom, var(--black) 0, var(--black) calc(100% - 28px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, var(--black) 0, var(--black) calc(100% - 28px), transparent 100%);
 }
 
 .effects-favorites-section {
@@ -6500,7 +6500,7 @@ input[type='range'].audio-slider {
 
 .video-filmstrip-toggle:hover {
   background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary, #fff);
+  color: var(--text-primary);
 }
 
 .video-filmstrip-clearall {
@@ -7670,8 +7670,8 @@ input[type='range'].video-player-volume {
    有明确的「下方还有」信号(原 thin 滚动条 0.18 透明度近乎不可见)。 */
 .fx-sidebar,
 .diagnostics-view {
-  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 28px), transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to bottom, var(--black) 0, var(--black) calc(100% - 28px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, var(--black) 0, var(--black) calc(100% - 28px), transparent 100%);
 }
 
 /* 配置面板限宽居中:右半 300px+ 死白均分为两侧留白(D6) */
@@ -8938,7 +8938,7 @@ input:disabled {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   overflow: hidden;
-  background: #101724;
+  background: var(--fx-stage-bg);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
 }
 
@@ -9155,7 +9155,7 @@ input:disabled {
 .vs-sentences { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .vs-sentence-list { list-style: none; margin: 0; padding: 0 0 0 6px; flex: 1; overflow: auto; font-size: 12px; }
 .vs-sentence-list li { padding: 3px 6px; border-radius: 6px; cursor: pointer; color: var(--text-secondary, rgba(255, 255, 255, 0.7)); }
-.vs-sentence-list li.current { background: rgba(var(--accent-rgb), 0.15); color: var(--text-primary, #fff); }
+.vs-sentence-list li.current { background: rgba(var(--accent-rgb), 0.15); color: var(--text-primary); }
 
 /* ── R172-S2: Agent workbench tab ─────────────────────────────────────────── */
 
@@ -9207,7 +9207,7 @@ input:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.agent-sessions button:hover { background: rgba(255, 255, 255, 0.06); color: var(--text-primary, #fff); }
+.agent-sessions button:hover { background: rgba(255, 255, 255, 0.06); color: var(--text-primary); }
 
 .agent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 
@@ -9236,14 +9236,14 @@ input:disabled {
 .agent-msg-assistant { align-self: flex-start; max-width: 95%; background: rgba(255, 255, 255, 0.05); }
 
 .agent-tool { border-left: 2px solid var(--text-secondary, rgba(255, 255, 255, 0.4)); padding-left: 8px; font-size: 12px; }
-.agent-tool.status-error { border-left-color: var(--status-error, #f87171); }
-.agent-tool.status-denied { border-left-color: var(--status-warn, #fbbf24); }
+.agent-tool.status-error { border-left-color: var(--status-error); }
+.agent-tool.status-denied { border-left-color: var(--status-warn); }
 .agent-tool.status-done { border-left-color: var(--accent); }
 .agent-tool-head { display: flex; align-items: center; gap: 6px; }
 .agent-tool-glyph { font-size: 11px; line-height: 1; }
 .agent-tool-glyph.done { color: var(--accent); }
-.agent-tool-glyph.error { color: var(--status-error, #f87171); }
-.agent-tool-glyph.denied { color: var(--status-warn, #fbbf24); }
+.agent-tool-glyph.error { color: var(--status-error); }
+.agent-tool-glyph.denied { color: var(--status-warn); }
 .agent-tool-glyph.running { color: var(--accent); animation: agent-pulse 1.2s ease-in-out infinite; }
 .agent-tool-duration {
   margin-left: auto;
@@ -9297,7 +9297,7 @@ input:disabled {
   border-left: 2px solid color-mix(in srgb, var(--status-success) 55%, transparent);
 }
 
-.agent-approval { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--status-warn, #fbbf24); font-size: 12px; }
+.agent-approval { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--status-warn); font-size: 12px; }
 .agent-approval.resolved { opacity: 0.55; border-style: dashed; }
 
 .agent-approval-bar {
@@ -9307,7 +9307,7 @@ input:disabled {
   flex-wrap: wrap;
   padding: 8px 10px;
   border-radius: 10px;
-  border: 1px solid var(--status-warn, #fbbf24);
+  border: 1px solid var(--status-warn);
   background: rgba(251, 191, 36, 0.08);
   font-size: 12.5px;
 }
@@ -9402,7 +9402,7 @@ input:disabled {
 .vs-model-list code { font-family: ui-monospace, monospace; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vs-model-size { color: var(--text-secondary, rgba(255, 255, 255, 0.55)); white-space: nowrap; }
 .vs-model-pct { color: var(--accent); }
-.vs-model-err { color: var(--status-error, #f87171); }
+.vs-model-err { color: var(--status-error); }
 
 .ai-tab-toggle { margin-left: auto; opacity: 0.75; }
 .ai-tab-toggle.on { opacity: 1; color: var(--accent); }
@@ -9463,7 +9463,7 @@ input:disabled {
   color: var(--text-secondary, rgba(255, 255, 255, 0.6));
 }
 .agent-empty-icon { color: var(--accent); opacity: 0.8; }
-.agent-empty h3 { margin: 0; font-size: 15px; color: var(--text-primary, #fff); }
+.agent-empty h3 { margin: 0; font-size: 15px; color: var(--text-primary); }
 .agent-empty p { margin: 0; font-size: 12.5px; }
 .agent-empty-steps {
   margin: 8px 0 0;
@@ -9509,7 +9509,7 @@ input:disabled {
   cursor: pointer;
   padding: 3px;
 }
-.agent-session-icon-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-primary, #fff); }
+.agent-session-icon-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-primary); }
 .agent-session-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .agent-sessions ul { display: flex; flex-direction: column; gap: 2px; }
@@ -9564,7 +9564,7 @@ input:disabled {
   border-radius: 10px;
   border: 1px solid rgba(248, 113, 113, 0.45);
   background: rgba(248, 113, 113, 0.1);
-  color: #f87171;
+  color: var(--status-error);
   font-size: 12.5px;
 }
 .agent-error-banner strong { margin-right: 6px; }
@@ -9729,7 +9729,7 @@ input:disabled {
   border-radius: 6px;
   white-space: nowrap;
 }
-.coach-off-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-primary, #fff); }
+.coach-off-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-primary); }
 
 .games-profile { margin-top: 4px; }
 .games-profile h3 { margin: 0 0 8px; font-size: 13px; color: var(--text-secondary); }
@@ -9771,7 +9771,7 @@ input:disabled {
 .run-recap-score span { color: var(--text-muted); font-size: 11.5px; }
 .run-recap-score strong { font-size: 22px; font-weight: 800; color: var(--text-primary); }
 .run-recap-up { color: var(--accent); font-weight: 600; }
-.run-recap-down { color: var(--status-warn, #fbbf24); font-weight: 600; }
+.run-recap-down { color: var(--status-warn); font-weight: 600; }
 .run-recap-best { color: var(--text-secondary); }
 .run-recap-highlight { color: var(--text-primary); font-weight: 600; }
 .run-recap-coach { color: var(--text-secondary); font-size: 11.5px; margin-left: auto; }
@@ -9838,7 +9838,7 @@ input:disabled {
   margin: 0;
   font-size: 20px;
   font-weight: 800;
-  color: #e2f8ff;
+  color: var(--info-text);
   letter-spacing: 0.04em;
 }
 .fs-pause-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
@@ -9848,7 +9848,7 @@ input:disabled {
 .td-endless-toggle { display: flex; align-items: center; gap: 6px; }
 .td-meteor-ready { color: var(--accent); }
 .td-meteor-cd { color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.td-affix-chip { padding: 2px 10px; border-radius: 999px; border: 1px solid rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.1); color: #fbbf24; }
+.td-affix-chip { padding: 2px 10px; border-radius: 999px; border: 1px solid rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.1); color: var(--status-warn-strong); }
 
 /* R204: 难度选择器(ready 态) */
 .difficulty-picker {
@@ -9912,7 +9912,7 @@ input:disabled {
 .input-key-row { display: flex; gap: 4px; }
 .input-key { flex: 1; min-width: 0; padding: 4px 2px; border-radius: 6px; border: 1px solid var(--surface-raised); background: rgba(255, 255, 255, 0.04); color: var(--text-primary); font-size: 11px; text-align: center; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .input-key.capturing { border-color: var(--accent); color: var(--accent); }
-.input-conflicts { font-size: 11.5px; color: #fca5a5; }
+.input-conflicts { font-size: 11.5px; color: var(--status-error); }
 .input-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
 /* ── R209 (FR-LN01): LAN 房间面板 ── */
