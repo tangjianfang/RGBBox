@@ -37,8 +37,8 @@ import { DIFFICULTY_SCORE_MULT, GAME_DIFFICULTIES, type GameDifficulty } from '.
 import { WIDTH, HEIGHT } from '../../../src/renderer/src/games/td'
 
 describe('renderer/games/survival engine (R99.3/R99.4)', () => {
-  it('xp curve grows with level', () => {
-    expect(xpToNext(1)).toBe(8)
+  it('xp curve grows with level(R220.2: 4+2L)', () => {
+    expect(xpToNext(1)).toBe(6)
     expect(xpToNext(5)).toBeGreaterThan(xpToNext(2))
   })
 
@@ -163,10 +163,12 @@ describe('renderer/games/survival engine (R99.3/R99.4)', () => {
     state.phase = 'running'
     state.taken.thorns = 2
     recomputeStats(state.stats, state.taken)
-    state.enemies.push({ id: 5, x: state.player.x + 10, y: state.player.y, vx: 0, vy: 0, size: 14, hp: 10, maxHp: 10, kind: 'chaser', elite: false, hitFlash: 0 })
+    state.player.fireTimer = 99 // R220.3: 关自动开火——12px 固定击退会把 +10 的敌推出接触距离
+    state.enemies.push({ id: 5, x: state.player.x + 4, y: state.player.y, vx: 0, vy: 0, size: 14, hp: 10, maxHp: 10, kind: 'chaser', elite: false, hitFlash: 0 })
     const hpBefore = state.player.hp
     tickSurvival(state, 0.016)
-    expect(state.player.hp).toBe(hpBefore - 1)
+    // R220.2: 标准档接触伤害 0.7(连续值,不取整)
+    expect(state.player.hp).toBeCloseTo(hpBefore - 0.7, 5)
     expect(state.enemies[0].hp).toBeLessThanOrEqual(10 - 2)
   })
 
@@ -247,9 +249,10 @@ describe('FR-MP01 swarm local co-op', () => {
     deployPlayer2(state)
     state.phase = 'running'
     state.player2!.invuln = 0
-    state.player2!.hp = 1
+    state.player2!.hp = 0.5 // R220.2: 连续伤害 0.7 一击致倒(原 1 血对整数伤害)
     state.player.invuln = 0
-    state.enemies.push({ id: 9002, kind: 'brute', x: state.player2!.x, y: state.player2!.y, hp: 99, maxHp: 99, size: 12, vx: 0, vy: 0, elite: false, hitFlash: 0 })
+    state.player.fireTimer = 99
+    state.enemies.push({ id: 9002, kind: 'brute', x: state.player2!.x + 2, y: state.player2!.y, hp: 99, maxHp: 99, size: 12, vx: 0, vy: 0, elite: false, hitFlash: 0 })
     for (let i = 0; i < 240 && state.phase === 'running'; i++) tickSurvival(state, 1 / 60)
     expect(state.phase).toBe('running')
     expect(state.player2!.hp).toBeLessThanOrEqual(0)
@@ -353,8 +356,8 @@ describe('R213 4P engine roster', () => {
     expect(state.players[3].x).toBe(xs[3])
   })
 
-  it('四人局:三人倒下仍 running,全员倒下才 lost(弹幕结算路径)', () => {
-    const state = initialSurvivalState()
+  it('四人局:三人倒下仍 running,全员倒下才 lost(弹幕结算路径;insane 档保证 1 血一击倒)', () => {
+    const state = initialSurvivalState('wisp', undefined, [], 'insane')
     deployPlayers(state, 4)
     state.phase = 'running'
     state.stats.magnet = 10
@@ -373,9 +376,9 @@ describe('R213 4P engine roster', () => {
     expect(state.phase).toBe('running')
     expect(state.players.filter((pl) => pl.hp <= 0)).toHaveLength(3)
     expect(state.reviveOrbs.map((orb) => orb.target).sort()).toEqual([2, 3, 4])
-    // 最后一人倒下 → lost
+    // 最后一人倒下 → lost(R220.3: 前一击的受击顿帧会冻结紧邻帧,循环至翻转)
     hit(0)
-    tickSurvival(state, 1 / 60)
+    for (let i = 0; i < 6 && state.phase !== 'lost'; i++) tickSurvival(state, 1 / 60)
     expect(state.phase).toBe('lost')
   })
 
@@ -488,23 +491,22 @@ describe('R218 survival difficulty tiers (eHP + 血条化)', () => {
     expect(initialSurvivalState().difficulty).toBe('standard')
   })
 
-  it('敌伤乘难度系数后取整 ≥1: 休闲/标准/困难=1,炼狱=2', () => {
-    const expected: Record<GameDifficulty, number> = { casual: 1, standard: 1, hard: 1, insane: 2 }
+  it('敌伤按难度连续值(R220.2 修三档取整坍缩): 0.625/0.7/0.85/1.0 严格递增', () => {
+    const expected: Record<GameDifficulty, number> = { casual: 0.625, standard: 0.7, hard: 0.85, insane: 1.0 }
     for (const d of GAME_DIFFICULTIES) {
-      expect(enemyContactDamage(initialSurvivalState('wisp', undefined, [], d))).toBe(expected[d])
+      expect(enemyContactDamage(initialSurvivalState('wisp', undefined, [], d))).toBeCloseTo(expected[d], 5)
     }
   })
 
-  it('容错次数反推(受击 1.2 次/min × 10min ≈ 12 次口径): 单调递减 10>7>5>2', () => {
+  it('容错次数反推(R220.2 连续伤害): 满血容错 16>10>6>3(对齐 spec 容错表)', () => {
     const tolerance = (d: GameDifficulty): number =>
-      Math.ceil(SURVIVAL_DIFFICULTY_PARAMS[d].hp / Math.max(1, Math.round(SURVIVAL_DIFFICULTY_PARAMS[d].enemyDmgMult)))
-    expect(tolerance('casual')).toBe(10)
-    expect(tolerance('standard')).toBe(7)
-    expect(tolerance('hard')).toBe(5)
-    expect(tolerance('insane')).toBe(2)
-    // 休闲档裸容错 ≥ 平均局(12 次受击)的八成——升级/换岛/boss 击杀的 +1HP
-    // 治疗流补足余量;炼狱档显著低于平均(硬核定位)
-    expect(tolerance('casual')).toBeGreaterThanOrEqual(Math.ceil(12 * 0.8))
+      Math.ceil(SURVIVAL_DIFFICULTY_PARAMS[d].hp / SURVIVAL_DIFFICULTY_PARAMS[d].enemyDmgMult)
+    expect(tolerance('casual')).toBe(16)
+    expect(tolerance('standard')).toBe(10)
+    expect(tolerance('hard')).toBe(6)
+    expect(tolerance('insane')).toBe(3)
+    // 休闲档裸容错 > 平均局(12 次受击)——原 10<12 是死亡墙组成项之一
+    expect(tolerance('casual')).toBeGreaterThan(12)
     expect(tolerance('insane')).toBeLessThan(12)
     expect(tolerance('casual')).toBeGreaterThan(tolerance('standard'))
     expect(tolerance('standard')).toBeGreaterThan(tolerance('hard'))
@@ -529,17 +531,17 @@ describe('R218 survival difficulty tiers (eHP + 血条化)', () => {
     expect(insane.score).toBeGreaterThan(casual.score * 2)
   })
 
-  it('受击走难度伤害: 炼狱档接触伤害 2,飘出 -2 数字并触发闪白', () => {
+  it('受击走难度伤害: 炼狱档接触伤害 1(R220.2 连续值),飘出 -1 数字并触发闪白', () => {
     const s = initialSurvivalState('wisp', undefined, [], 'insane')
     s.phase = 'running'
     s.spawnTimer = 99
     s.enemies.push({ id: 1, x: s.player.x + 5, y: s.player.y, vx: 0, vy: 0, size: 14, hp: 99, maxHp: 99, kind: 'chaser', elite: false, hitFlash: 0 })
     const hp0 = s.player.hp
     tickSurvival(s, 0.016)
-    expect(s.player.hp).toBe(hp0 - 2)
+    expect(s.player.hp).toBeCloseTo(hp0 - 1, 5)
     expect(s.player.hitFlash).toBeGreaterThan(0)
-    // R218 U8: 伤害数字走 juice.floats(hud floatText)
-    expect(s.juice.floats.some((tx) => tx.text === '-2')).toBe(true)
+    // R218 U8: 伤害数字走 juice.floats(hud floatText;显示层 Math.ceil)
+    expect(s.juice.floats.some((tx) => tx.text === '-1')).toBe(true)
   })
 
   it('敌速乘难度系数: hard 档 chaser 位移 ≈ 标准 ×1.08', () => {
@@ -717,6 +719,7 @@ describe('R218 enemy matrix (8 行为正交 + 威胁值加权投放)', () => {
     const s = initialSurvivalState()
     startSurvival(s)
     debugSpawnBoss(s)
+    s.player.invuln = 999 // R220.3: 受击顿帧会冻结后续帧,锁无敌保轮转节奏
     const boss = s.enemies.find((e) => e.kind === 'boss')!
     for (let volley = 1; volley <= 5; volley++) {
       s.bossBulletTimer = 1.19
@@ -774,11 +777,11 @@ describe('R218 size recalibration + forgiving hitboxes', () => {
     tickSurvival(s, 0.016)
     expect(s.player.hp).toBe(hp0)
     expect(22).toBeLessThan(14 + 11)
-    // 深重叠(15 < 20)受击
+    // 深重叠(15 < 20)受击(R220.2: 标准档伤害为连续值 0.7)
     s.enemies[0].x = s.player.x + 15
     s.player.invuln = 0
     tickSurvival(s, 0.016)
-    expect(s.player.hp).toBe(hp0 - 1)
+    expect(s.player.hp).toBeCloseTo(hp0 - 0.7, 5)
   })
 
   it('磁吸/拾取半径 ×0.8: 基础磁吸 70→56;磁铁井 artifact 116', () => {

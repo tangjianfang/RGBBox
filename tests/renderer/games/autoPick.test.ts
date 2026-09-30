@@ -40,11 +40,15 @@ describe('renderer/games/swarmAutoPick (R213)', () => {
     expect(autoPick(['fireRate', 'damage'], [], 'best', zeroTaken({ fireRate: 3 }), 2, 10)).toBe('damage')
   })
 
-  it('best 模式常规:取 taken 计数最少者,并列取 offers 数组序', () => {
+  it('best 模式常规(R220.2 估值序): 估值=基础价值/(1+0.35×taken),并列取 offers 数组序', () => {
+    // damage 已取 2 → 0.9/1.7 < fireRate 0.9/1 → 选 fireRate(与旧最少已取一致)
     expect(autoPick(['damage', 'fireRate'], [], 'best', zeroTaken({ damage: 2, fireRate: 0 }), 10, 10)).toBe('fireRate')
-    expect(autoPick(['pierce', 'blade'], [], 'best', zeroTaken(), 10, 10)).toBe('pierce')
-    // taken 缺项按 0 计
-    expect(autoPick(['crit', 'magnet'], [], 'best', {} as Record<UpgradeId, number>, 10, 10)).toBe('crit')
+    // 零取时按基础价值:blade(0.6) > pierce(0.55)——旧「最少已取」会误选 pierce
+    expect(autoPick(['pierce', 'blade'], [], 'best', zeroTaken(), 10, 10)).toBe('blade')
+    // magnet(0.65) > crit(0.5);taken 缺项按 0 计
+    expect(autoPick(['crit', 'magnet'], [], 'best', {} as Record<UpgradeId, number>, 10, 10)).toBe('magnet')
+    // 低价值项不再被「从未取过」吸引:thorns(0.15) 永远输给 DPS 主轴
+    expect(autoPick(['thorns', 'multishot'], [], 'best', zeroTaken(), 10, 10)).toBe('multishot')
   })
 
   it('best 模式空 offers → null;maxHp=0 不崩溃走常规', () => {

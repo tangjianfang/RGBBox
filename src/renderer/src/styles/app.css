@@ -2109,6 +2109,19 @@ input:not([type]):focus {
   transform: translateY(-3px);
 }
 
+/* R220.2: autoPick 待执行高亮——青色脉冲描边标记「即将自动选择」,1s 内可手动改选 */
+.levelup-card.autopick {
+  animation: levelup-autopick-pulse 0.5s ease-in-out infinite alternate;
+  box-shadow: 0 0 22px color-mix(in srgb, var(--game-accent, var(--accent)) 45%, transparent);
+  outline: 2px solid rgb(103 232 249);
+  outline-offset: 2px;
+}
+
+@keyframes levelup-autopick-pulse {
+  from { outline-color: rgba(103, 232, 249, 0.3); }
+  to { outline-color: rgba(103, 232, 249, 1); }
+}
+
 .levelup-card strong {
   color: var(--game-accent, var(--accent));
   font-size: 0.875rem;

@@ -362,6 +362,11 @@ export function MiniGamesView(): JSX.Element {
   focusModeRef.current = focusMode
   const swarmAutoPickRef = useRef<{ mode: 'off' | 'list' | 'best'; prefs: UpgradeId[] }>({ mode: 'off', prefs: ['fireRate', 'damage', 'multishot', 'speed', 'magnet', 'maxHp', 'blade', 'pierce'] })
   swarmAutoPickRef.current.mode = autoPickMode
+  // R220.2: autoPick 延迟拍板态——选择+高亮即刻呈现,1s 后执行(修静默剥夺)
+  const [autoPickChoice, setAutoPickChoice] = useState<UpgradeId | null>(null)
+  const autoPickChoiceRef = useRef<UpgradeId | null>(null)
+  const autoPickAtRef = useRef(0)
+  const AUTO_PICK_DELAY_MS = 1000
   const [keyMap, setKeyMap] = useState<Record<string, string>>(() => buildKeyToPoolMap(loadInputConfigs(localStorage)))
   const keyMapRef = useRef<Record<string, string>>({})
   keyMapRef.current = keyMap
@@ -1142,14 +1147,26 @@ export function MiniGamesView(): JSX.Element {
         if (survivalRef.current.player2 === null) pollVision()
         tickSurvival(survivalRef.current, dt)
         const phase = survivalRef.current.phase
-        // R213: 升级自动预选——levelup 瞬间按模式自动拍板(off=手动三选一不变)
-        if (phase === 'levelup' && lastPhase !== phase && swarmAutoPickRef.current.mode !== 'off') {
-          const s = survivalRef.current
-          const pick = autoPick(s.offers, swarmAutoPickRef.current.prefs, swarmAutoPickRef.current.mode, s.taken, s.player.hp, s.player.maxHp)
-          if (pick !== null) {
-            applyUpgrade(s, pick)
-            publishSurvival()
+        // R213→R220.2: 升级自动预选不再同帧静默拍板——先强制发布快照让三选一
+        // 卡片当帧渲染,记录选择并高亮,延迟 1s 执行(保住 build 学习回路,
+        // G6 P0「一帧不渲染+英文 ID 飘字」/G1 S-2)。
+        if (phase === 'levelup' && lastPhase !== phase) {
+          publishSurvival()
+          if (swarmAutoPickRef.current.mode !== 'off') {
+            const s = survivalRef.current
+            const pick = autoPick(s.offers, swarmAutoPickRef.current.prefs, swarmAutoPickRef.current.mode, s.taken, s.player.hp, s.player.maxHp)
+            if (pick !== null) {
+              autoPickChoiceRef.current = pick
+              autoPickAtRef.current = now
+              setAutoPickChoice(pick)
+            }
           }
+        }
+        if (phase === 'levelup' && autoPickChoiceRef.current !== null && now - autoPickAtRef.current >= AUTO_PICK_DELAY_MS) {
+          applyUpgrade(survivalRef.current, autoPickChoiceRef.current)
+          autoPickChoiceRef.current = null
+          setAutoPickChoice(null)
+          publishSurvival()
         }
         if (phase === 'lost' && lastPhase !== phase) finishSurvivalRun()
         lastPhase = phase
@@ -1887,6 +1904,9 @@ export function MiniGamesView(): JSX.Element {
   }, [publishTetris])
 
   const chooseUpgrade = useCallback((id: UpgradeId) => {
+    // R220.2: 手动点卡即取消待执行的自动选择
+    autoPickChoiceRef.current = null
+    setAutoPickChoice(null)
     applyUpgrade(survivalRef.current, id)
     publishSurvival()
   }, [publishSurvival])
@@ -2715,7 +2735,7 @@ export function MiniGamesView(): JSX.Element {
                     const def = UPGRADES.find((upgrade) => upgrade.id === id)
                     const takenCount = survivalSnapshot.taken[id] ?? 0
                     return (
-                      <button className="levelup-card" type="button" key={id} style={{ '--game-accent': RARITY_COLORS[def?.rarity ?? 0] } as CSSProperties} onClick={() => chooseUpgrade(id)}>
+                      <button className={`levelup-card${autoPickChoice === id ? ' autopick' : ''}`} type="button" key={id} style={{ '--game-accent': RARITY_COLORS[def?.rarity ?? 0] } as CSSProperties} onClick={() => chooseUpgrade(id)}>
                         <strong>{t(`games.up.${id}`)}</strong>
                         <small>{t(`games.up.${id}.desc`)}</small>
                         <em>{takenCount}/{def?.max ?? 0}</em>
