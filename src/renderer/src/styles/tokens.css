@@ -24,10 +24,11 @@
   --text-title-size: 0.9375rem;   --text-title-lh: 1.375rem;   --text-title-weight: 500;
   --text-body-size: 0.8125rem;    --text-body-lh: 1.25rem;
   --text-caption-size: 0.6875rem; --text-caption-lh: 1rem; --text-caption-tracking: 0.02em;
-  /* ── R148 S3: shape & spacing scales (4px grid) ───────────────────────── */
-  --radius-s: 4px;   /* inputs, small buttons, chips        */
-  --radius-m: 6px;   /* buttons, cards, panels              */
-  --radius-l: 10px;  /* modals, overlays, fullscreen frames */
+  /* ── Shape & spacing scales (4px grid). R189 Q-5: radius converged to TWO
+     steps (--radius-m folded into -s; consumers remapped). Pills (999px) and
+     circles (50%) are shape primitives, not radius steps. ──────────────── */
+  --radius-s: 6px;   /* inputs, buttons, chips, small cards */
+  --radius-l: 10px;  /* cards, panels, modals, tiles        */
   --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
   --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
   /* ── R148 S3: button-state matrix (4 types × 4 states) ────────────────── */
@@ -62,8 +63,16 @@
      (timestamps, hints), so it clears 4.5:1 now; the tier below muted is
      still readable as fainter by hue+size, just no longer sub-standard. */
   --text-faint: #74919c;
+  /* R189 Q-5: --accent is THE single green definition. --accent-rgb carries
+     the same color as a triplet for rgba(var(--accent-rgb), a) consumers in
+     app.css (they must not spell the green out again); the three rgba tokens
+     below and the accent text/button ramp further down are bound to this hue
+     by definition and stay literal so the contrast auditor can parse them. */
   --accent: #42e8a9;
+  --accent-rgb: 66, 232, 169;
   --accent-dim: rgba(66, 232, 169, 0.12);
+  --accent-glow-50: rgba(66, 232, 169, 0.5);
+  --accent-ring-25: rgba(66, 232, 169, 0.25);
   --accent-contrast: #081014;
   --bg-control: #1f3139;
   --border-control: #33505b;
@@ -80,8 +89,6 @@
   --accent-bright-text: #8fe8cf;
   --accent-soft-text: #c5f0e4;
   --accent-deep-text: #36a87c;
-  --accent-glow-50: rgba(66, 232, 169, 0.5);
-  --accent-ring-25: rgba(66, 232, 169, 0.25);
   --info-text: #dff8ff;
   --info-soft-text: #c9e4ec;
   --info-vivid-text: #6fd7f0;
@@ -89,7 +96,22 @@
   --status-warn: #fde68a;
   --status-warn-strong: #fbbf24;
   --status-error: #f87171;
-  --status-success: #86efac;
+  /* R189 Q-5: success no longer introduces a second green — the brand green
+     IS the ok/running color; the semantic alias stays so future divergence
+     (if ever needed) is a one-line change. */
+  --status-success: var(--accent);
+  /* ── R189 Q-5: module identity hues (R151.1, content layer) — carried by
+     the dashboard tile ICON GLYPH ONLY; tile/card surfaces stay neutral
+     (--bg-control circle on --bg-card). mint is the accent itself. ─────── */
+  --tint-mint: var(--accent);
+  --tint-violet: #a78bfa;
+  --tint-sky: #38bdf8;
+  --tint-amber: #fbbf24;
+  --tint-rose: #fb7185;
+  --tint-lime: #a3e635;
+  --tint-orange: #fb923c;
+  --tint-fuchsia: #e879f9;
+  --tint-cyan: #22d3ee;
   /* content-layer colors (game/AI8 scenes — not chrome semantics) */
   --fx-pink: #f8a0b0;
   --fx-blue: #60a5fa;

@@ -31,11 +31,8 @@ export function SettingsView(props: SettingsViewProps) {
   const [gamesClearedAt, setGamesClearedAt] = useState<number | null>(null)
   return (
     <div className="settings-view">
-      <header className="workspace-header">
-        <div>
-          <h2>{t('menu.settings')}</h2>
-        </div>
-      </header>
+      {/* R189 Q-5: topbar already shows '设置' — the duplicate in-view header
+          is removed; the groups grid starts directly. */}
       <div className="settings-groups">
         <section className="panel settings-group" data-group="run">
           <h3>{t('settings.group.run')}</h3>

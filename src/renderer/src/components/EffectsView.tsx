@@ -391,7 +391,8 @@ export function EffectsView({ activeKind, favoriteKinds, curatedKinds, onPreview
   return (
     <div className="effects-view">
       <header className="effects-view-header">
-        <h2>{t('effects.library')}</h2>
+        {/* R189 Q-5: topbar already shows '效果库' — the 26px in-view H1
+            duplicate (and its off-ramp font rule) is gone. */}
         <p className="eyebrow">{t('effects.eyebrow')}</p>
       </header>
 
