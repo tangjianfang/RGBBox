@@ -53,6 +53,7 @@ import {
   initialSurvivalState,
   openRoulette,
   startSurvival,
+  SURVIVAL_DIFFICULTY_PARAMS,
   tickSurvival,
   survivalHints,
   type SurvivalState,
@@ -87,7 +88,7 @@ import { isBgmEnabled, isSfxEnabled, playSfx, setBgmEnabled, setBgmPreset, setBg
 import { isOnboarded, markOnboarded, pickHint, type CoachHint } from '../games/coach'
 import { loadRuns, profileStats, recordRun, type GameId } from '../domain/gamesTelemetry'
 import { recapCoachKey } from '../games/juice'
-import { loadDaily, recordDaily } from '../games/daily'
+import { dailySeed, loadDaily, mulberry32, recordDaily } from '../games/daily'
 import {
   RUN_SECONDS,
   bomb as slashBomb,
@@ -122,7 +123,9 @@ const ONBOARD_STEPS = {
   ],
   survival: [
     { key: 'sw.1', done: (s: SurvivalState) => s.clock > 4 },
-    { key: 'sw.2', done: (s: SurvivalState) => Object.keys(s.taken).length >= 1 },
+    // R220.1③: taken 初始化即含全部 12 键(值为 0),按 length>=1 恒真——升级
+    // 教学步从未真正等待玩家首次升级;改判「任一升级 >0」。
+    { key: 'sw.2', done: (s: SurvivalState) => Object.values(s.taken).some((v) => v > 0) },
     { key: 'sw.3', done: (s: SurvivalState) => s.bossKills >= 1 || s.level >= 3 },
   ],
   tetris: [
@@ -234,10 +237,11 @@ interface ReadyPrefs {
   endless?: boolean
   blitz?: boolean
   coop?: boolean
-  /** survival:人数 / 场景 / 90s 冲刺 */
+  /** survival:人数 / 场景 / 90s 冲刺 / R220.5 每日挑战(种子局) */
   players?: 1 | 2 | 3 | 4
   scene?: SwarmSceneId
   sprint?: boolean
+  daily?: boolean
   /** tetris:40 行竞速 / 双板对决 */
   race?: boolean
   duel?: boolean
@@ -289,9 +293,20 @@ export function MiniGamesView(): JSX.Element {
   const [selectedTower, setSelectedTower] = useState<TowerKind>('dart')
   const [selectedTowerId, setSelectedTowerId] = useState<number | null>(null)
   const [tdSpeed, setTdSpeed] = useState<1 | 2>(1)
+  // R220.1⑦: 游戏循环 effect 的状态读值一律走 ref——原 deps 含
+  // tdSpeed/selectedTowerId/bgmOn/fullscreen,任一变化整个 rAF 循环重建并
+  // startBgm() 从头重启音乐(G5)。
+  const tdSpeedRef = useRef(tdSpeed)
+  tdSpeedRef.current = tdSpeed
+  const selectedTowerIdRef = useRef(selectedTowerId)
+  selectedTowerIdRef.current = selectedTowerId
+  const fullscreenRef = useRef(fullscreen)
+  fullscreenRef.current = fullscreen
   // R201: TD 无尽模式 + 放置悬停预览(F6)
   const [tdEndless, setTdEndless] = useState(false)
-  const [tdHover, setTdHover] = useState<{ x: number; y: number } | null>(null)
+  // R220.1⑩: TD 悬停预览改 ref——原 state 每次mousemove触发 2939 行全树重渲,
+  // 且 rAF 闭包依赖表缺它导致 R201 悬停射程圈实际失效(02 U-4/04 双报)。
+  const tdHoverRef = useRef<{ x: number; y: number } | null>(null)
   // R204: 难度二档(按作) → R218 U4: 四档
   const [difficulty, setDifficulty] = useState<Difficulty>(() => readDifficulty('td'))
   const [bests, setBests] = useState<Record<GameKey, number>>({ ...bestRef.current })
@@ -348,6 +363,11 @@ export function MiniGamesView(): JSX.Element {
   focusModeRef.current = focusMode
   const swarmAutoPickRef = useRef<{ mode: 'off' | 'list' | 'best'; prefs: UpgradeId[] }>({ mode: 'off', prefs: ['fireRate', 'damage', 'multishot', 'speed', 'magnet', 'maxHp', 'blade', 'pierce'] })
   swarmAutoPickRef.current.mode = autoPickMode
+  // R220.2: autoPick 延迟拍板态——选择+高亮即刻呈现,1s 后执行(修静默剥夺)
+  const [autoPickChoice, setAutoPickChoice] = useState<UpgradeId | null>(null)
+  const autoPickChoiceRef = useRef<UpgradeId | null>(null)
+  const autoPickAtRef = useRef(0)
+  const AUTO_PICK_DELAY_MS = 1000
   const [keyMap, setKeyMap] = useState<Record<string, string>>(() => buildKeyToPoolMap(loadInputConfigs(localStorage)))
   const keyMapRef = useRef<Record<string, string>>({})
   keyMapRef.current = keyMap
@@ -401,6 +421,10 @@ export function MiniGamesView(): JSX.Element {
   const [swarmSprintOn, setSwarmSprintOn] = useState(false)
   const swarmSprintOnRef = useRef(false)
   swarmSprintOnRef.current = swarmSprintOn
+  // R220.5(OD-05): 每日挑战——种子局(mulberry32(dailySeed())),当日共同棋盘
+  const [swarmDailyOn, setSwarmDailyOn] = useState(false)
+  const swarmDailyOnRef = useRef(false)
+  swarmDailyOnRef.current = swarmDailyOn
   const [tetrisRaceOn, setTetrisRaceOn] = useState(false)
   const tetrisRaceOnRef = useRef(false)
   tetrisRaceOnRef.current = tetrisRaceOn
@@ -446,6 +470,7 @@ export function MiniGamesView(): JSX.Element {
       setSwarmPlayers(prefs.players ?? 1)
       setSwarmScene(prefs.scene ?? 'station')
       setSwarmSprintOn(prefs.sprint === true)
+      setSwarmDailyOn(prefs.daily === true)
     } else if (screen === 'tetris') {
       setTetrisRaceOn(prefs.race === true)
       setTetrisDuelOn(prefs.duel === true)
@@ -470,6 +495,8 @@ export function MiniGamesView(): JSX.Element {
   const [roulette, setRoulette] = useState<{ stage: 'pick' | 'spin' | 'result'; result?: RouletteResult }>({ stage: 'pick' })
   const [gamepadName, setGamepadName] = useState<string | null>(null)
   const [bgmOn, setBgmOn] = useState(() => isBgmEnabled())
+  const bgmOnRef = useRef(bgmOn) // R220.1⑦: 循环读值走 ref(见 tdSpeedRef 注)
+  bgmOnRef.current = bgmOn
   const [newAchievements, setNewAchievements] = useState<string[]>([])
   const [showCodex, setShowCodex] = useState(false)
   const metaRef = useRef<SwarmMeta>(meta)
@@ -610,6 +637,51 @@ export function MiniGamesView(): JSX.Element {
     setRecap({ score: Math.floor(score), deltaPct: stats.deltaPct, best, highlight, coach: recapCoachKey(Math.floor(score), stats.totalRuns >= 2 ? prev : null) })
   }, [])
 
+  /** R220.1⑧: survival 终局结算(best/金币/成就)——从游戏循环提取,供
+   *  backToHub 中途弃局同样结算(修 enterGame 残留 running 旁路 ready,07 X-1)。 */
+  const finishSurvivalRun = useCallback(() => {
+    settleBest('survival', survivalRef.current.score, survivalRef.current.time, `击杀 ${survivalRef.current.kills} · LV${survivalRef.current.level}`)
+    const run = survivalRef.current
+    const earned = runCoinsFor(run.score, run.coinMult)
+    const prevMeta = metaRef.current
+    const stats = {
+      runs: prevMeta.stats.runs + 1,
+      totalKills: prevMeta.stats.totalKills + run.kills,
+      bosses: prevMeta.stats.bosses + run.bossKills,
+      bestCombo: Math.max(prevMeta.stats.bestCombo, run.comboBest),
+      bestScore: Math.max(prevMeta.stats.bestScore, run.score),
+    }
+    const satisfied = checkAchievements(stats)
+    const fresh = satisfied.filter((id) => !prevMeta.achievements[id])
+    const next = {
+      coins: prevMeta.coins + earned,
+      perm: prevMeta.perm,
+      stats,
+      artifacts: prevMeta.artifacts,
+      achievements: Object.fromEntries(satisfied.map((id) => [id, true])) as Record<string, boolean>,
+    }
+    writeMeta(next)
+    metaRef.current = next
+    setMeta(next)
+    if (fresh.length > 0) {
+      setNewAchievements(fresh)
+      window.setTimeout(() => setNewAchievements([]), 4500)
+      playSfx('levelup')
+    }
+  }, [settleBest])
+
+  /** R220.1⑨: 释放全部引擎输入池(vision 关闭/切屏/弃局时调用)——修 vision
+   *  disable 后直通键残留导致的飞船漂移(04 P2)与 hub 往返卡键(R96.4 遗留)。 */
+  const releaseAllEngineInputs = useCallback(() => {
+    const sv = survivalRef.current
+    sv.keys.clear()
+    sv.axis = { x: 0, y: 0 }
+    for (const pool of sv.inputs) pool.clear()
+    for (let i = 0; i < sv.axes.length; i += 1) sv.axes[i] = { x: 0, y: 0 }
+    tetrisRef.current.keys.clear()
+    tetrisBRef.current.keys.clear()
+  }, [])
+
   // R103→R213 二期: poll every connected gamepad each frame — presence
   // detection (no pairing-event dependency) + assignGamepads 玩家→手柄映射
   // (显式绑定优先+余柄补位,与 InputConfigPanel 绑定 UI 同源);每玩家左
@@ -713,7 +785,13 @@ export function MiniGamesView(): JSX.Element {
   // discrete command queue. Must run AFTER pollGamepad() (which rewrites the
   // raw axis each frame) — see the loop below.
   const pollVision = useCallback(() => {
-    if (!vision.enabled) return
+    if (!vision.enabled) {
+      // R220.1⑨: vision 关闭 falling-edge——释放其注入 survival 键池的直通键
+      //  (否则按住手势时关闭 vision,飞船持续漂移;04 P2)。每帧幂等,代价可忽略。
+      const s = survivalRef.current
+      for (const k of VISION_PASSTHROUGH_KEYS) s.keys.delete(k)
+      return
+    }
     // R142-L4: finger-chord commands are screen-agnostic — handle them first
     // and pull them out of the queue (branch handlers below drain the rest).
     const queue = vision.queueRef.current
@@ -1033,7 +1111,7 @@ export function MiniGamesView(): JSX.Element {
       if (screen === 'td') {
         // R209(FR-LN02): 房主权威——客端不 tick 本地引擎(快照经 onLanEvent
         // 直接写 tdStateRef,统计条/绘制全复用);房主 15Hz 推快照(hash 供对账)。
-        if (lanRoleRef.current !== 'guest') tickGame(tdStateRef.current, dt * tdSpeed)
+        if (lanRoleRef.current !== 'guest') tickGame(tdStateRef.current, dt * tdSpeedRef.current)
         if (lanRoleRef.current === 'host' && lanPeersRef.current > 0) {
           lanSnapAcc += dt
           if (lanSnapAcc >= 0.066) {
@@ -1056,7 +1134,7 @@ export function MiniGamesView(): JSX.Element {
           if (tdStateRef.current.score >= bestRef.current.td) addText(tdStateRef.current, WIDTH / 2, HEIGHT / 2 + 96, 'NEW BEST!', '#fde68a')
         }
         lastPhase = phase
-        drawGame(ctx, tdStateRef.current, selectedTowerId, bestRef.current.td, {
+        drawGame(ctx, tdStateRef.current, selectedTowerIdRef.current, bestRef.current.td, {
           // R201: 交给 drawGame 之后的覆盖层(悬停射程圈 + 词缀波提示条在 banner 内已带)
           readyTitle: t('games.td.readyTitle'),
           readySubtitle: t('games.td.readySubtitle'),
@@ -1075,45 +1153,28 @@ export function MiniGamesView(): JSX.Element {
         if (survivalRef.current.player2 === null) pollVision()
         tickSurvival(survivalRef.current, dt)
         const phase = survivalRef.current.phase
-        // R213: 升级自动预选——levelup 瞬间按模式自动拍板(off=手动三选一不变)
-        if (phase === 'levelup' && lastPhase !== phase && swarmAutoPickRef.current.mode !== 'off') {
-          const s = survivalRef.current
-          const pick = autoPick(s.offers, swarmAutoPickRef.current.prefs, swarmAutoPickRef.current.mode, s.taken, s.player.hp, s.player.maxHp)
-          if (pick !== null) {
-            applyUpgrade(s, pick)
-            publishSurvival()
+        // R213→R220.2: 升级自动预选不再同帧静默拍板——先强制发布快照让三选一
+        // 卡片当帧渲染,记录选择并高亮,延迟 1s 执行(保住 build 学习回路,
+        // G6 P0「一帧不渲染+英文 ID 飘字」/G1 S-2)。
+        if (phase === 'levelup' && lastPhase !== phase) {
+          publishSurvival()
+          if (swarmAutoPickRef.current.mode !== 'off') {
+            const s = survivalRef.current
+            const pick = autoPick(s.offers, swarmAutoPickRef.current.prefs, swarmAutoPickRef.current.mode, s.taken, s.player.hp, s.player.maxHp)
+            if (pick !== null) {
+              autoPickChoiceRef.current = pick
+              autoPickAtRef.current = now
+              setAutoPickChoice(pick)
+            }
           }
         }
-        if (phase === 'lost' && lastPhase !== phase) {
-          settleBest('survival', survivalRef.current.score, survivalRef.current.time, `击杀 ${survivalRef.current.kills} · LV${survivalRef.current.level}`)
-          const run = survivalRef.current
-          const earned = runCoinsFor(run.score, run.coinMult)
-          const prevMeta = metaRef.current
-          const stats = {
-            runs: prevMeta.stats.runs + 1,
-            totalKills: prevMeta.stats.totalKills + run.kills,
-            bosses: prevMeta.stats.bosses + run.bossKills,
-            bestCombo: Math.max(prevMeta.stats.bestCombo, run.comboBest),
-            bestScore: Math.max(prevMeta.stats.bestScore, run.score),
-          }
-          const satisfied = checkAchievements(stats)
-          const fresh = satisfied.filter((id) => !prevMeta.achievements[id])
-          const next = {
-            coins: prevMeta.coins + earned,
-            perm: prevMeta.perm,
-            stats,
-            artifacts: prevMeta.artifacts,
-            achievements: Object.fromEntries(satisfied.map((id) => [id, true])) as Record<string, boolean>,
-          }
-          writeMeta(next)
-          metaRef.current = next
-          setMeta(next)
-          if (fresh.length > 0) {
-            setNewAchievements(fresh)
-            window.setTimeout(() => setNewAchievements([]), 4500)
-            playSfx('levelup')
-          }
+        if (phase === 'levelup' && autoPickChoiceRef.current !== null && now - autoPickAtRef.current >= AUTO_PICK_DELAY_MS) {
+          applyUpgrade(survivalRef.current, autoPickChoiceRef.current)
+          autoPickChoiceRef.current = null
+          setAutoPickChoice(null)
+          publishSurvival()
         }
+        if (phase === 'lost' && lastPhase !== phase) finishSurvivalRun()
         lastPhase = phase
         // R219.8②: 静态背景离屏缓存(先查缓存,miss 时整幅重画一次)
         const bgKey = `${survivalRef.current.scene ?? 'legacy'}|${survivalRef.current.island}|${canvas.width}x${canvas.height}`
@@ -1195,8 +1256,10 @@ export function MiniGamesView(): JSX.Element {
         }
         const phase = tetrisRef.current.phase
         const duelOver = duelB && (phase === 'lost' || tetrisBRef.current.phase === 'lost')
-        if (phase === 'lost' && lastPhase !== phase && !duelB) {
-          settleBest('tetris', tetrisRef.current.score, tetrisRef.current.clock, `消行 ${tetrisRef.current.lines} · T-spin ${tetrisRef.current.tspins}`)
+        // R220.1②: 40 行竞速达标进 'won' 同样写 best——原只挂 'lost',竞速玩家
+        // 完赛零记录(用户 tetris 零 best 的根因,G7)。
+        if ((phase === 'lost' || phase === 'won') && lastPhase !== phase && !duelB && !lanTetris) {
+          settleBest('tetris', tetrisRef.current.score, tetrisRef.current.clock, phase === 'won' ? `竞速达成 ${tetrisRef.current.lines} 行` : `消行 ${tetrisRef.current.lines} · T-spin ${tetrisRef.current.tspins}`)
         }
         if (lanTetris && (phase === 'lost' || phase === 'won') && lastPhase !== phase) {
           // 结算上报:本端终局分发对方,互显比对(对方分经 cmd result 事件回填)
@@ -1227,28 +1290,29 @@ export function MiniGamesView(): JSX.Element {
         }
       }
       // R201(FR-TD01/F6): 放置悬停预览——射程圈 + 有效性配色
-      if (isTd && tdHover !== null && tdStateRef.current.phase === 'running') {
-        const def = TOWER_DEFINITIONS.find((d) => d.kind === selectedTower)
-        const blocked = distanceToPath(tdHover) < 42 || tdStateRef.current.towers.some((tw) => Math.hypot(tw.x - tdHover.x, tw.y - tdHover.y) < 44)
+      if (isTd && tdHoverRef.current !== null && tdStateRef.current.phase === 'running') {
+        const hov = tdHoverRef.current
+        const def = TOWER_DEFINITIONS.find((d) => d.kind === selectedTowerRef.current)
+        const blocked = distanceToPath(hov) < 42 || tdStateRef.current.towers.some((tw) => Math.hypot(tw.x - hov.x, tw.y - hov.y) < 44)
         ctx.save()
         ctx.strokeStyle = blocked ? 'rgba(251, 113, 133, 0.6)' : 'rgba(103, 232, 249, 0.6)'
         ctx.lineWidth = 1.5
         ctx.setLineDash([6, 4])
         if (def !== undefined && def.range > 0) {
           ctx.beginPath()
-          ctx.arc(tdHover.x, tdHover.y, def.range, 0, Math.PI * 2)
+          ctx.arc(hov.x, hov.y, def.range, 0, Math.PI * 2)
           ctx.stroke()
         }
         ctx.setLineDash([])
         ctx.fillStyle = blocked ? 'rgba(251, 113, 133, 0.18)' : 'rgba(103, 232, 249, 0.14)'
         ctx.beginPath()
-        ctx.arc(tdHover.x, tdHover.y, 14, 0, Math.PI * 2)
+        ctx.arc(hov.x, hov.y, 14, 0, Math.PI * 2)
         ctx.fill()
         ctx.restore()
       }
       // R211: fs 纯画布 HUD——hud.ts 接线(退出角标/状态面板/主按钮条/TD 商店/Swarm 三选一)。
       // 暂停浮层(DOM)显示时停画,避免双层操作面。
-      if (fullscreen && !fsPausedRef.current) {
+      if (fullscreenRef.current && !fsPausedRef.current) {
         fsButtonsRef.current = []
         fsDrawRef.current(ctx, now)
       } else {
@@ -1256,7 +1320,7 @@ export function MiniGamesView(): JSX.Element {
       }
       // R205 尾款(FR-G07 二期): BGM 张力变奏——危险态拉起,解除回落。
       // 去抖:仅等级变化时切(setBgmTension 内部下一拍生效,不重排音频)。
-      if (bgmOn) {
+      if (bgmOnRef.current) {
         const danger = screen === 'td'
           ? tdStateRef.current.lives <= 8
           : screen === 'survival'
@@ -1270,7 +1334,10 @@ export function MiniGamesView(): JSX.Element {
           setBgmTension(level)
         }
       } else if (bgmTensionCur !== 0) {
+        // R220.1⑥: 关 BGM 时同步把张力推回 0——原只清局部变量,sfx 侧残留 1,
+        // 重开 BGM 后卡急变奏直到下次危险翻转(G5)。
         bgmTensionCur = 0
+        setBgmTension(0)
       }
       snapshotTimer += dt
       if (snapshotTimer > 0.18) {
@@ -1314,7 +1381,7 @@ export function MiniGamesView(): JSX.Element {
       ro.disconnect()
       stopBgm()
     }
-  }, [bgmOn, fullscreen, pollGamepad, pollVision, publishTd, publishSurvival, publishTetris, screen, selectedTowerId, settleBest, tdSpeed])
+  }, [finishSurvivalRun, pollGamepad, pollVision, publishTd, publishSurvival, publishTetris, screen, settleBest])
 
   useEffect(() => {
     if (screen !== 'survival' && screen !== 'tetris' && screen !== 'slash' && !fullscreen) return
@@ -1415,8 +1482,12 @@ export function MiniGamesView(): JSX.Element {
     return () => {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
+      // R220.1⑨: 切屏/退全屏重建监听时释放全部引擎键池——修按住方向键切
+      // hub/换游戏后的卡键残留(R96.4 明示遗留)。
+      releaseAllEngineInputs()
     }
-  }, [fullscreen, screen])
+    // eslint 未接入(exhaustive-deps 无强制);releaseAllEngineInputs 为稳定空依赖回调
+  }, [fullscreen, screen, releaseAllEngineInputs])
 
   // ── R218 U2/U9: Escape 统一分层(独立 effect,不受上方「非 fs TD 早退门」
   // 影响):专注模式退出 > fs 暂停切换(R206 语义) > 非 fs 运行态暂停切换 >
@@ -1456,8 +1527,18 @@ export function MiniGamesView(): JSX.Element {
   const backToHub = useCallback(() => {
     setFullscreen(false)
     if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
+    // R220.1⑧: survival 中途弃局(running/levelup/roulette)按 lost 结算——
+    // 原样保留会导致重进游戏时残留 running 态、ready 面板被旁路(07 X-1,
+    // 主审 CDP 第一手复现)。分数与进度照常入账。
+    const sv = survivalRef.current
+    if (sv.phase === 'running' || sv.phase === 'levelup' || sv.phase === 'roulette') {
+      sv.phase = 'lost'
+      releaseAllEngineInputs()
+      finishSurvivalRun()
+      publishSurvival()
+    }
     setScreen('hub')
-  }, [])
+  }, [finishSurvivalRun, publishSurvival, releaseAllEngineInputs])
 
   // R142-L4: chord 'back' fires this via a late-binding ref (pollVision is
   // declared above backToHub — same pattern as startTetrisRef)
@@ -1647,7 +1728,7 @@ export function MiniGamesView(): JSX.Element {
     lastInputAtRef.current = performance.now()
     const hit = hitTest(fsButtonsRef.current, point.x, point.y)
     hudHoverRef.current = hit?.id ?? null
-    if (isTd) setTdHover(point)
+    if (isTd) tdHoverRef.current = point // R220.1⑩: ref 直写,免全树重渲
   }
   const handleUnifiedCanvasClick = (event: MouseEvent<HTMLCanvasElement>): void => {
     const point = toCanvasPoint(event)
@@ -1686,6 +1767,8 @@ export function MiniGamesView(): JSX.Element {
     }
     // FR-G08: 90 秒冲刺——时限到走既有 lost 结算(分数保留)
     survivalRef.current.sprintSeconds = swarmSprintOnRef.current ? 90 : undefined
+    // R220.5: 每日挑战注入当日种子(共同棋盘);自由局清除
+    survivalRef.current.rng = swarmDailyOnRef.current ? mulberry32(dailySeed()) : undefined
     // R213: 4P 名册部署(人数选择;swarmCoopOn 开关是人数=2 的快捷别名)与场景背景
     const count = Math.max(1, Math.min(4, swarmPlayersRef.current)) as 1 | 2 | 3 | 4
     deployPlayers(survivalRef.current, count)
@@ -1829,6 +1912,9 @@ export function MiniGamesView(): JSX.Element {
   }, [publishTetris])
 
   const chooseUpgrade = useCallback((id: UpgradeId) => {
+    // R220.2: 手动点卡即取消待执行的自动选择
+    autoPickChoiceRef.current = null
+    setAutoPickChoice(null)
     applyUpgrade(survivalRef.current, id)
     publishSurvival()
   }, [publishSurvival])
@@ -2153,6 +2239,30 @@ export function MiniGamesView(): JSX.Element {
       push({ id: 'fs-primary', x: vw / 2 - 162, y: vh - 58, w: 152, h: 40, label: primaryLabel, key: 'Enter' })
       push({ id: 'fs-restart', x: vw / 2 + 10, y: vh - 58, w: 152, h: 40, label: t('games.restart'), key: 'R' })
     }
+    // R220.1⑪: fs 态死亡结算画布化——两 DOM 结算面板(swarm-summary/run-recap)
+    // 在 fs 均隐藏,原 fs 死亡只有按钮条无任何战绩反馈(G6 P2)。
+    if (isSurvival && survivalRef.current.phase === 'lost') {
+      const s = survivalRef.current
+      const cx = vw / 2
+      drawHudPanel(ctx, cx - 170, vh / 2 - 92, 340, 168)
+      ctx.save()
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillStyle = '#f9a8d4'
+      ctx.font = '800 20px Inter, sans-serif'
+      ctx.fillText(t('games.summaryTitle'), cx, vh / 2 - 60)
+      ctx.fillStyle = '#e2f8ff'
+      ctx.font = '700 15px Inter, sans-serif'
+      ctx.fillText(`★ ${s.score}`, cx, vh / 2 - 30)
+      ctx.fillStyle = 'rgba(159, 183, 193, 0.95)'
+      ctx.font = '500 12px Inter, sans-serif'
+      ctx.fillText(`${t('games.summaryKills')} ${s.kills} · ${t('games.summaryTime')} ${Math.floor(s.time)}s · ${t('games.summaryCombo')} ×${s.comboBest}`, cx, vh / 2 - 6)
+      ctx.fillText(`LV ${s.level} · +${runCoinsFor(s.score, s.coinMult)} ${t('games.summaryCoins')}`, cx, vh / 2 + 16)
+      ctx.fillStyle = 'rgba(159, 183, 193, 0.75)'
+      ctx.font = '500 11px Inter, sans-serif'
+      ctx.fillText(t('games.summaryAgain'), cx, vh / 2 + 44)
+      ctx.restore()
+    }
     // ⑤ 退出角标(3s 无操作自动隐藏)
     if (now - lastInputAtRef.current < 3000) drawExitBadge(ctx, `Esc · ${t('games.pause.title')}`)
   }
@@ -2395,7 +2505,7 @@ export function MiniGamesView(): JSX.Element {
                 if (!isTd && currentPhaseRef.current() === 'running') setFocusMode(true)
               }}
               onMouseMove={handleUnifiedCanvasMove}
-              onMouseLeave={() => { hudHoverRef.current = null; if (isTd) setTdHover(null) }}
+              onMouseLeave={() => { hudHoverRef.current = null; tdHoverRef.current = null }}
               aria-label={`${gameTitle} game board`}
             />
             {/* R206(FR-G03.5): fs 暂停浮层(Esc 呼出;继续/重开/退出全屏/返回 hub) */}
@@ -2433,7 +2543,7 @@ export function MiniGamesView(): JSX.Element {
                           style={{ '--game-accent': character.accent } as CSSProperties}
                           title={t(`games.char.${character.id}.desc`)}
                           onClick={() => selectCharacter(character.id)}
-                        >{t(`games.char.${character.id}`)}<em className="ready-chip-em">HP {5 + character.hpMod}</em></button>
+                        >{t(`games.char.${character.id}`)}<em className="ready-chip-em">HP {SURVIVAL_DIFFICULTY_PARAMS[difficulty].hp + character.hpMod}</em></button>
                       ))}
                     </div>
                   ) : null}
@@ -2502,6 +2612,9 @@ export function MiniGamesView(): JSX.Element {
                       ) : null}
                       {isSurvival ? (
                         <button type="button" className={`ready-chip ${swarmSprintOn ? 'on' : ''}`} data-field="swarm-sprint-toggle" onClick={() => { const next = !swarmSprintOn; setSwarmSprintOn(next); persistReadyPref('survival', { sprint: next }) }}>{t('games.short.sprint')}</button>
+                      ) : null}
+                      {isSurvival ? (
+                        <button type="button" className={`ready-chip ${swarmDailyOn ? 'on' : ''}`} data-field="swarm-daily-toggle" onClick={() => { const next = !swarmDailyOn; setSwarmDailyOn(next); persistReadyPref('survival', { daily: next }) }}>{t('games.daily.run')}</button>
                       ) : null}
                       {isTetris ? (
                         <button type="button" className={`ready-chip ${tetrisRaceOn ? 'on' : ''}`} data-field="tetris-race-toggle" onClick={() => { const next = !tetrisRaceOn; setTetrisRaceOn(next); persistReadyPref('tetris', { race: next }) }}>{t('games.short.race')}</button>
@@ -2633,7 +2746,7 @@ export function MiniGamesView(): JSX.Element {
                     const def = UPGRADES.find((upgrade) => upgrade.id === id)
                     const takenCount = survivalSnapshot.taken[id] ?? 0
                     return (
-                      <button className="levelup-card" type="button" key={id} style={{ '--game-accent': RARITY_COLORS[def?.rarity ?? 0] } as CSSProperties} onClick={() => chooseUpgrade(id)}>
+                      <button className={`levelup-card${autoPickChoice === id ? ' autopick' : ''}`} type="button" key={id} style={{ '--game-accent': RARITY_COLORS[def?.rarity ?? 0] } as CSSProperties} onClick={() => chooseUpgrade(id)}>
                         <strong>{t(`games.up.${id}`)}</strong>
                         <small>{t(`games.up.${id}.desc`)}</small>
                         <em>{takenCount}/{def?.max ?? 0}</em>
@@ -2906,8 +3019,9 @@ export function MiniGamesView(): JSX.Element {
             </div>
             <p className="codex-section">{t('games.codexEnemies')}</p>
             <div className="codex-grid">
-              {(['chaser', 'sprinter', 'brute', 'elite', 'boss'] as const).map((kind) => (
-                <div className="codex-entry" key={kind} style={{ '--game-accent': { chaser: '#fb7185', sprinter: '#fbbf24', brute: '#f472b6', elite: '#fde68a', boss: '#db2777' }[kind] } as CSSProperties}>
+              {/* R220.5: 补 R218 敌矩阵 5 新种(tank/swarm/shooter/splitter/healer),图鉴教学不再缺位 */}
+              {(['chaser', 'sprinter', 'brute', 'elite', 'boss', 'tank', 'swarm', 'shooter', 'splitter', 'healer'] as const).map((kind) => (
+                <div className="codex-entry" key={kind} style={{ '--game-accent': { chaser: '#fb7185', sprinter: '#fbbf24', brute: '#f472b6', elite: '#fde68a', boss: '#db2777', tank: '#7c8da4', swarm: '#a3e635', shooter: '#c084fc', splitter: '#fb923c', healer: '#f87171' }[kind] } as CSSProperties}>
                   <strong>{t(`games.codex.enemy.${kind}`)}</strong>
                   <small>{t(`games.codex.enemy.${kind}.lore`)}</small>
                 </div>

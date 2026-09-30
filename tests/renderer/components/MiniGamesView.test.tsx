@@ -91,7 +91,7 @@ describe('renderer/components/MiniGamesView', () => {
     expect(codexButton).toBeTruthy()
     fireEvent.click(codexButton as HTMLButtonElement)
     expect(container.querySelectorAll('.codex-overlay').length).toBe(1)
-    expect(container.querySelectorAll('.codex-entry').length).toBe(3 + 5 + 12 + 8)
+    expect(container.querySelectorAll('.codex-entry').length).toBe(3 + 10 + 12 + 8) // R220.5: 敌图鉴 +5 种 R218 新敌型
     const close = [...container.querySelectorAll('.codex-head button')][0] as HTMLButtonElement
     fireEvent.click(close)
     expect(container.querySelectorAll('.codex-overlay').length).toBe(0)

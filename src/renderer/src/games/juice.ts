@@ -32,6 +32,9 @@ export interface SpawnWarning {
   /** 剩余预警时间(秒);<=0 移除。 */
   t: number
   label?: string
+  /** R220.5: 实际入场点(视口坐标;缺省回退边中心)——G6:箭头应标到
+   *  敌人将从哪进来,不是边中央。 */
+  pos?: { x: number; y: number }
 }
 
 export const SPAWN_WARN_SECONDS = 0.5

@@ -67,6 +67,23 @@ export interface HealthBarOpts {
  * Continuous health bar (spec U5): green→yellow→red gradient by ratio, low
  * health pulse (~1.2 Hz), white flash overlay when `flash` > 0.
  */
+// R220.4: 血条渐变缓存——横向渐变与 y 无关、x 由 translate 对齐,按
+// (宽|色档) 缓存渐变对象,免每条每帧 createLinearGradient+addColorStop
+// (四作 HUD 每帧 5-8 条血条,G3 对拍表热点)。
+const healthGradCache = new Map<string, CanvasGradient>()
+function healthGradient(ctx: CanvasRenderingContext2D, w: number, bucket: 'hi' | 'mid' | 'low'): CanvasGradient | null {
+  const key = `${w}|${bucket}`
+  const hit = healthGradCache.get(key)
+  if (hit !== undefined) return hit
+  const g = ctx.createLinearGradient(0, 0, w, 0)
+  if (!g) return null // happy-dom noop ctx(防御模式同 R218)
+  if (bucket === 'hi') { g.addColorStop(0, '#34d399'); g.addColorStop(1, '#6ee7a9') }
+  else if (bucket === 'mid') { g.addColorStop(0, '#fbbf24'); g.addColorStop(1, '#fcd34d') }
+  else { g.addColorStop(0, '#f87171'); g.addColorStop(1, '#fca5a5') }
+  healthGradCache.set(key, g)
+  return g
+}
+
 export function drawHealthBar (
   ctx: CanvasRenderingContext2D,
   x: number, y: number, w: number, h: number,
@@ -76,19 +93,12 @@ export function drawHealthBar (
   const r = Math.max(0, Math.min(1, ratio))
   drawHudCapsule(ctx, x, y, w, h, { alpha: 0.14 })
   ctx.save()
+  ctx.translate(x, y) // R220.4: 渐变缓存按局部坐标对齐
   ctx.beginPath()
-  ctx.roundRect(x + 1.5, y + 1.5, Math.max(0, (w - 3) * r), h - 3, 6)
-  // R218: 测试环境(happy-dom noop ctx)的 createLinearGradient 可能返回
-  // undefined——退回首 stop 纯色(与 games/scene.ts vgrad 同一防御模式)。
-  const g = ctx.createLinearGradient(x, y, x + w, y)
-  if (g) {
-    if (r > 0.5) { g.addColorStop(0, '#34d399'); g.addColorStop(1, '#6ee7a9') }
-    else if (r > 0.25) { g.addColorStop(0, '#fbbf24'); g.addColorStop(1, '#fcd34d') }
-    else { g.addColorStop(0, '#f87171'); g.addColorStop(1, '#fca5a5') }
-    ctx.fillStyle = g
-  } else {
-    ctx.fillStyle = r > 0.5 ? '#34d399' : r > 0.25 ? '#fbbf24' : '#f87171'
-  }
+  ctx.roundRect(1.5, 1.5, Math.max(0, (w - 3) * r), h - 3, 6)
+  const bucket = r > 0.5 ? 'hi' : r > 0.25 ? 'mid' : 'low'
+  const g = healthGradient(ctx, w, bucket)
+  ctx.fillStyle = g ?? (r > 0.5 ? '#34d399' : r > 0.25 ? '#fbbf24' : '#f87171')
   if (r <= pulseThreshold) {
     ctx.globalAlpha = 0.72 + 0.28 * Math.abs(Math.sin(t * Math.PI * 2 * 1.2))
   }
@@ -98,10 +108,10 @@ export function drawHealthBar (
     ctx.strokeStyle = 'rgba(8,12,20,0.9)'
     ctx.lineWidth = 1
     for (let s = 1; s <= 3; s++) {
-      const sx = Math.round(x + (w * s) / 4)
+      const sx = Math.round((w * s) / 4) // R220.4: translate 后局部坐标
       ctx.beginPath()
-      ctx.moveTo(sx, y + 1.5)
-      ctx.lineTo(sx, y + h - 1.5)
+      ctx.moveTo(sx, 1.5)
+      ctx.lineTo(sx, h - 1.5)
       ctx.stroke()
     }
   }

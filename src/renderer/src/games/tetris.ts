@@ -350,7 +350,6 @@ function lockPiece(state: TetrisState): void {
     state.flash = { rows: [], life: 0.25 }
     state.shake = Math.min(7, 2 + cleared * 1.5)
     playSfx(cleared >= 3 || tspin ? 'levelup' : 'pop')
-    playSfx(cleared >= 3 ? 'levelup' : 'pop')
     // FR-G08 race: line goal reached → win. Settle BEFORE spawning the next
     // piece so a topped-out board cannot overwrite 'won' with 'lost', and use
     // the level-up jingle instead of the game-over shake/sfx.
@@ -589,9 +588,9 @@ function lgrad(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number
  * R218 S2: 方块 2.5D 质感——圆角主体 + 顶部内发光高光 + 底部暗边厚度
  * (纯绘制层,判定/逻辑零改动)。
  */
-function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, alpha = 1, originX = BOARD_X): void {
+function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, alpha = 1, originX = BOARD_X, glow = false): void {
   const rect = cellRect(x, y, originX)
-  const pad = 1.5
+  const pad = glow ? -1.5 : 1.5 // R220.4: glow 态外扩 3px 作淡底
   const w = CELL - pad * 2
   const h = CELL - pad * 2
   ctx.save()
@@ -778,9 +777,9 @@ export function drawTetris(ctx: CanvasRenderingContext2D, state: TetrisState, be
     const gy = state.py + cell.y
     if (gy >= 0) {
       ctx.shadowColor = KIND_COLORS[state.kind]
-      ctx.shadowBlur = 10
+      // R220.4: 当前方块 shadowBlur→假发光(外扩淡格一次,免逐格模糊通道)
+      drawCell(ctx, state.px + cell.x, gy, KIND_COLORS[state.kind], 0.25, bx, true)
       drawCell(ctx, state.px + cell.x, gy, KIND_COLORS[state.kind], 1, bx)
-      ctx.shadowBlur = 0
     }
   }
 

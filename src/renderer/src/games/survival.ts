@@ -3,6 +3,7 @@
 // three upgrade card, and an adaptive director tightens or eases the spawn pace
 // based on how well the run is going.
 import { playSfx } from './sfx'
+import { mulberry32 } from './daily'
 import { WIDTH, HEIGHT } from './td'
 import { SCENE_IDS, drawScene, type SceneId } from './scene'
 import {
@@ -22,8 +23,10 @@ import {
 } from './hud'
 import {
   UPGRADES,
+  EVOLUTIONS,
   characterById,
   pickOffers as pickWeightedOffers,
+  readyEvolutions,
   scoreMultiplier,
   type ArtifactId,
   type CharacterId,
@@ -35,6 +38,13 @@ import {
 } from './swarmMeta'
 
 export { UPGRADES }
+export { mulberry32 } // R220.5: 供 view 注入每日种子(OD-05 承诺补齐)
+
+/** R220.5: 引擎随机源——state.rng 注入时走种子序列(每日共同棋盘),
+ *  缺省 Math.random(自由局)。survival 全部 33 处随机统一经此取值。 */
+function rand(state: SurvivalState): number {
+  return state.rng?.() ?? Math.random()
+}
 export type { UpgradeDef, UpgradeId }
 
 export type SurvivalPhase = 'ready' | 'running' | 'levelup' | 'roulette' | 'lost'
@@ -72,10 +82,13 @@ export interface SurvivalDifficultyParams {
 }
 
 export const SURVIVAL_DIFFICULTY_PARAMS: Record<GameDifficulty, SurvivalDifficultyParams> = {
-  casual: { hp: 10, enemyDmgMult: 0.65, enemySpeedMult: 1, scoreMult: DIFFICULTY_SCORE_MULT.casual },
-  standard: { hp: 7, enemyDmgMult: 1, enemySpeedMult: 1, scoreMult: DIFFICULTY_SCORE_MULT.standard },
-  hard: { hp: 5, enemyDmgMult: 1.35, enemySpeedMult: 1.08, scoreMult: DIFFICULTY_SCORE_MULT.hard },
-  insane: { hp: 3, enemyDmgMult: 1.6, enemySpeedMult: 1.15, scoreMult: DIFFICULTY_SCORE_MULT.insane },
+  // R220.2(S-3): enemyDmgMult 改为不经取整的连续值 0.625/0.7/0.85/1.0——
+  // 原 0.65/1/1.35 被 enemyContactDamage 的 round 坍缩成 1/1/1(三档同伤);
+  // 新值按满血容错次数 16/10/6/3 反推(10/0.625≈16、7/0.7=10、5/0.85≈6、3/1=3)。
+  casual: { hp: 10, enemyDmgMult: 0.625, enemySpeedMult: 1, scoreMult: DIFFICULTY_SCORE_MULT.casual },
+  standard: { hp: 7, enemyDmgMult: 0.7, enemySpeedMult: 1, scoreMult: DIFFICULTY_SCORE_MULT.standard },
+  hard: { hp: 5, enemyDmgMult: 0.85, enemySpeedMult: 1.08, scoreMult: DIFFICULTY_SCORE_MULT.hard },
+  insane: { hp: 3, enemyDmgMult: 1.0, enemySpeedMult: 1.15, scoreMult: DIFFICULTY_SCORE_MULT.insane },
 }
 
 /** 读当前难度参数(旧状态缺 difficulty 字段时退 standard)。 */
@@ -83,9 +96,10 @@ export function survivalDifficultyParams(state: SurvivalState): SurvivalDifficul
   return SURVIVAL_DIFFICULTY_PARAMS[state.difficulty ?? 'standard']
 }
 
-/** 敌方单次伤害(接触/弹幕同口径):×难度系数取整且 ≥1(休闲/标准/困难=1,炼狱=2)。 */
+/** 敌方单次伤害(接触/弹幕同口径):难度系数连续值(不取整——R220.2 修三档
+ *  坍缩;显示层用 Math.ceil 呈现)。下限 0.25 防极端模组。 */
 export function enemyContactDamage(state: SurvivalState): number {
-  return Math.max(1, Math.round(survivalDifficultyParams(state).enemyDmgMult))
+  return Math.max(0.25, survivalDifficultyParams(state).enemyDmgMult)
 }
 
 /** ready 态改档:按两档基数差重算全员 maxHp(玻璃 artifact maxHp=1 时跳过),
@@ -524,6 +538,8 @@ export interface SurvivalState {
   regenTimer: number
   bladeAngle: number
   bladeTimer: number
+  /** R220.3: thornAura 进化光环的 0.5s 节拍累加器。 */
+  auraTimer: number
   lastMinute: number
   /** R200(FR-G06): 进化/boss 顿帧与出生预警。 */
   hitStop: number
@@ -559,6 +575,9 @@ export interface SurvivalState {
   revivesUsedN: number[]
   /** R213-⑤: 场景背景(view 层写入;undefined=原岛屿主题星空)。 */
   scene?: SceneId
+  /** R220.5(OD-05): 种子 RNG——每日挑战注入 mulberry32(dailySeed()),自由局
+   *  缺省(=Math.random)。纯闭包不序列化,与 Tetris.rng 同一模式。 */
+  rng?: () => number
 }
 
 // ── R213: P2..P4 皮肤(琥珀/粉/青;P1 沿用青白 #e2f8ff/#67e8f9 不变) ──
@@ -566,7 +585,9 @@ const ROSTER_ACCENT = ['#fbbf24', '#f472b6', '#4ade80']
 const ROSTER_HULL = ['#fff7e2', '#ffe4f1', '#e4ffee']
 
 export function xpToNext(level: number): number {
-  return 5 + level * 3
+  // R220.2(S-1): 5+3L→4+2L——原曲线三重节流致前 8 级见 multishot 概率仅
+  // 44%、中位局 68-98s 全灭;G1 模拟 P0 组合的 XP 腿。
+  return 4 + level * 2
 }
 
 function baseStats(): PlayerStats {
@@ -679,6 +700,7 @@ export function initialSurvivalState(
     regenTimer: 0,
     bladeAngle: 0,
     bladeTimer: 0,
+    auraTimer: 0, // R220.3: thornAura 进化的光环节拍
     lastMinute: 0,
     hitStop: 0,
     warnings: [],
@@ -846,9 +868,9 @@ function addText(state: SurvivalState, x: number, y: number, text: string, color
 
 function spawnBurst(state: SurvivalState, x: number, y: number, color: string, count = 10, power = 130): void {
   for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2
-    const speed = power * (0.35 + Math.random() * 0.65)
-    state.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 30, life: 0.5 + Math.random() * 0.35, maxLife: 0.85, size: 2 + Math.random() * 3, color })
+    const angle = rand(state) * Math.PI * 2
+    const speed = power * (0.35 + rand(state) * 0.65)
+    state.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 30, life: 0.5 + rand(state) * 0.35, maxLife: 0.85, size: 2 + rand(state) * 3, color })
   }
 }
 
@@ -867,7 +889,10 @@ export function restartSurvival(): SurvivalState {
  * eases off when the player is one hit from death, tightens when untouched. */
 export function directorSpawnInterval(state: SurvivalState): number {
   const minutes = state.time / 60
-  const base = clamp(1.5 - minutes * 0.28 - state.level * 0.05, 0.32, 1.5)
+  // R220.2(S-1): 爬升斜率 0.28→0.16/等级项 0.05→0.04/地板 0.32→0.45——
+  // 原参数中位局 68-98s 全灭(刷怪吞吐 4-7 units/s vs 基础 DPS 2.0);
+  // G1 模拟 P0 组合的刷怪腿,目标中位存活 ≥3min。
+  const base = clamp(1.5 - minutes * 0.16 - state.level * 0.04, 0.45, 1.5)
   // R219.1: 低血/满血因子按存活玩家集合判定(单人局与旧语义逐值一致;
   // 多人局不再只看 P1——P1 倒下但队友满血时应收紧而非放松)。
   const alive = alivePlayers(state)
@@ -897,10 +922,29 @@ export function advanceIsland(state: SurvivalState): void {
 }
 
 function pickOffers(state: SurvivalState): UpgradeId[] {
+  // R220.3: 进化优先——配方就绪时三选一让位给进化卡(VS 品类惯例:质变时刻
+  // 单独成卡)。effect id 与 UpgradeId 共享字符串空间(UPGRADES 查不到,
+  // applyUpgrade 会在 def 查找前特判)。
+  const ready = readyEvolutions(state.taken, state.evolved)
+  if (ready.length > 0) return [ready[0].effect as unknown as UpgradeId]
   return pickWeightedOffers(state.taken, 3, 0.12 * state.perm.luck)
 }
 
 export function applyUpgrade(state: SurvivalState, id: UpgradeId): void {
+  // R220.3: 进化卡——不动 taken,登记 evolved + 重档演出(顿帧/横幅/金爆),
+  // 立即恢复 running。R202 以来首次接线(此前 EVOLUTIONS 为死数据)。
+  const recipe = EVOLUTIONS.find((e) => e.effect === (id as string))
+  if (recipe !== undefined) {
+    state.evolved.push(recipe.id)
+    state.offers = []
+    state.phase = 'running'
+    state.hitStop = HIT_STOP.heavy
+    state.banner = { text: `EVOLVED · ${recipe.effect.toUpperCase()}`, life: 1.8 }
+    spawnBurst(state, state.player.x, state.player.y, '#fde047', 30, 220)
+    queueShake(state.juice, 7)
+    playSfx('levelup')
+    return
+  }
   const def = UPGRADES.find((upgrade) => upgrade.id === id)
   if (!def || state.taken[id] >= def.max) return
   state.taken[id] += 1
@@ -959,21 +1003,21 @@ export function dissolveRoulette(state: SurvivalState, result: RouletteResult): 
 function spawnRingPoint(state: SurvivalState, ring: number): { x: number; y: number; side: number } {
   const vw = state.vp.w / state.camera.zoom
   const vh = state.vp.h / state.camera.zoom
-  const side = Math.floor(Math.random() * 4)
+  const side = Math.floor(rand(state) * 4)
   let x: number
   let y: number
   if (side === 0) {
-    x = state.camera.x + (Math.random() - 0.5) * vw
+    x = state.camera.x + (rand(state) - 0.5) * vw
     y = state.camera.y - vh / 2 - ring
   } else if (side === 1) {
     x = state.camera.x + vw / 2 + ring
-    y = state.camera.y + (Math.random() - 0.5) * vh
+    y = state.camera.y + (rand(state) - 0.5) * vh
   } else if (side === 2) {
-    x = state.camera.x + (Math.random() - 0.5) * vw
+    x = state.camera.x + (rand(state) - 0.5) * vw
     y = state.camera.y + vh / 2 + ring
   } else {
     x = state.camera.x - vw / 2 - ring
-    y = state.camera.y + (Math.random() - 0.5) * vh
+    y = state.camera.y + (rand(state) - 0.5) * vh
   }
   return { x: clamp(x, -60, WORLD_W + 60), y: clamp(y, -60, WORLD_H + 60), side }
 }
@@ -981,11 +1025,12 @@ function spawnRingPoint(state: SurvivalState, ring: number): { x: number; y: num
 function spawnEnemy(state: SurvivalState): void {
   // R218 U11: 大世界——敌人在摄像机视口外环生成(warning 边沿即相对视口方位);
   // R200: 出生预警——下一次入场的敌人先在对应边缘亮 0.5s 红箭头(登记在生成前)。
-  const spot = spawnRingPoint(state, 30 + Math.random() * 50)
-  state.warnings.push({ edge: spot.side as 0 | 1 | 2 | 3, t: SPAWN_WARN_SECONDS })
-  const elite = state.time > 60 && Math.random() < 0.08
+  const spot = spawnRingPoint(state, 30 + rand(state) * 50)
+  const wp = worldToViewport(state.camera, state.vp.w, state.vp.h, spot.x, spot.y)
+  state.warnings.push({ edge: spot.side as 0 | 1 | 2 | 3, t: SPAWN_WARN_SECONDS, pos: { x: clamp(wp.x, 26, state.vp.w - 26), y: clamp(wp.y, 26, state.vp.h - 26) } })
+  const elite = state.time > 60 && rand(state) < 0.08
   // R218 D: 种类按「威胁值加权」投放(已解锁池内归一化逆威胁权重)
-  spawnEnemyKind(state, pickSpawnKindFrom(state.time, Math.random()), spot.x, spot.y, elite)
+  spawnEnemyKind(state, pickSpawnKindFrom(state.time, rand(state)), spot.x, spot.y, elite)
 }
 
 /** R218 D: 按种类生成敌人(可导出供测试/脚本直接投放)。swarm 一次生成整包。 */
@@ -993,13 +1038,13 @@ export function spawnEnemyKind(state: SurvivalState, kind: SpawnableKind, x: num
   const islandMult = 1 + 0.25 * (state.island - 1)
   const scale = (elite ? 2.5 : 1) * islandMult
   if (kind === 'swarm') {
-    const pack = SWARM_PACK_MIN + Math.floor(Math.random() * (SWARM_PACK_MAX - SWARM_PACK_MIN + 1))
+    const pack = SWARM_PACK_MIN + Math.floor(rand(state) * (SWARM_PACK_MAX - SWARM_PACK_MIN + 1))
     const hp = Math.max(1, Math.round(1 * scale))
     for (let i = 0; i < pack; i++) {
       state.enemies.push({
-        id: state.nextId++, x: x + (Math.random() - 0.5) * 48, y: y + (Math.random() - 0.5) * 48, vx: 0, vy: 0,
+        id: state.nextId++, x: x + (rand(state) - 0.5) * 48, y: y + (rand(state) - 0.5) * 48, vx: 0, vy: 0,
         size: 6, hp, maxHp: hp, kind: 'swarm', elite, hitFlash: 0,
-        jitter: 0.75 + Math.random() * 0.5,
+        jitter: 0.75 + rand(state) * 0.5,
       })
     }
     return
@@ -1027,7 +1072,7 @@ export function spawnEnemyKind(state: SurvivalState, kind: SpawnableKind, x: num
   const enemy: Enemy = { id: state.nextId++, x, y, vx: 0, vy: 0, size: sizeFor(), hp, maxHp: hp, kind, elite, hitFlash: 0 }
   if (kind === 'shooter') {
     enemy.fireTimer = 1.5
-    enemy.strafeDir = Math.random() < 0.5 ? -1 : 1
+    enemy.strafeDir = rand(state) < 0.5 ? -1 : 1
   }
   if (kind === 'healer') enemy.healTimer = 3
   if (kind === 'splitter') enemy.gen = 0
@@ -1116,9 +1161,11 @@ function bossBarrage(state: SurvivalState, boss: Enemy): void {
 }
 
 function spawnBoss(state: SurvivalState): void {
-  const hp = 60 + Math.floor(state.time / 10) * 6
+  // R220.2(S-5): 60+6/10s→45+3/10s——90s boss 原 114HP,P50 build 需 19.7s
+  // (16 轮弹幕,不可完成);新值 90s≈72HP,配合 DPS 曲线可 8-12s 击破。
+  const hp = 45 + Math.floor(state.time / 10) * 3
   // R218 U11: boss 同样在摄像机视口外环登场(50-100px)
-  const spot = spawnRingPoint(state, 50 + Math.random() * 50)
+  const spot = spawnRingPoint(state, 50 + rand(state) * 50)
   const x = spot.x
   const y = spot.y
   state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 28, hp, maxHp: hp, kind: 'boss', elite: false, hitFlash: 0 })
@@ -1150,7 +1197,7 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
     spawnBurst(state, enemy.x, enemy.y, '#f472b6', 34, 260)
     spawnBurst(state, enemy.x, enemy.y, '#fde68a', 20, 180)
     for (let i = 0; i < 15; i++) {
-      state.orbs.push({ id: state.nextId++, x: enemy.x + (Math.random() - 0.5) * 110, y: enemy.y + (Math.random() - 0.5) * 110, value: 1 })
+      state.orbs.push({ id: state.nextId++, x: enemy.x + (rand(state) - 0.5) * 110, y: enemy.y + (rand(state) - 0.5) * 110, value: 1 })
     }
     state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
     state.pendingSpins += 1
@@ -1174,10 +1221,20 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
     }
     spawnBurst(state, enemy.x, enemy.y, '#fb923c', 8, 120)
   }
-  spawnBurst(state, enemy.x, enemy.y, color, enemy.kind === 'brute' ? 18 : 9, 140)
+  // R220.3 手感:普通击杀补 pop 音(原全静默,G2 F-3);爆散改锥形(朝最近
+  // 玩家方向喷射,VS 式打击方向感,G2 P0)。
+  playSfx('pop')
+  const toward = nearestAlive(state, enemy) ?? state.player
+  const coneAngle = Math.atan2(toward.y - enemy.y, toward.x - enemy.x)
+  const coneCount = enemy.kind === 'brute' ? 16 : 8
+  for (let i = 0; i < coneCount; i++) {
+    const a = coneAngle + (rand(state) - 0.5) * 1.1
+    const speed = 150 * (0.4 + rand(state) * 0.6)
+    state.particles.push({ x: enemy.x, y: enemy.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - 30, life: 0.4 + rand(state) * 0.3, maxLife: 0.7, size: 2 + rand(state) * 3, color })
+  }
   const drops = enemy.elite || enemy.kind === 'brute' ? 3 : 1
   for (let i = 0; i < drops; i++) {
-    state.orbs.push({ id: state.nextId++, x: enemy.x + (Math.random() - 0.5) * 18, y: enemy.y + (Math.random() - 0.5) * 18, value: 1 })
+    state.orbs.push({ id: state.nextId++, x: enemy.x + (rand(state) - 0.5) * 18, y: enemy.y + (rand(state) - 0.5) * 18, value: 1 })
   }
 }
 
@@ -1192,47 +1249,10 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   const juiceFrozen = state.juice.hitStop > 0
   tickJuice(state.juice, dt)
   if (juiceFrozen) return
-  // R202(FR-SW02): boss 弹幕三型循环(放射/瞄准扇形/环形,每 1.2s)
-  state.bossBulletTimer += dt
-  for (const enemy of state.enemies) {
-    if (enemy.kind === 'boss' && state.bossBulletTimer >= 1.2) {
-      bossBarrage(state, enemy)
-      state.bossBulletPattern = (state.bossBulletPattern + 1) % 4
-    }
-  }
-  if (state.bossBulletTimer >= 1.2) state.bossBulletTimer = 0
-  // 弹幕运动/寿命/命中
-  for (const eb of state.eBullets) {
-    eb.x += eb.vx * dt
-    eb.y += eb.vy * dt
-    eb.life -= dt
-  }
-  state.eBullets = state.eBullets.filter((eb) => eb.life > 0 && eb.x > -40 && eb.x < WORLD_W + 40 && eb.y > -40 && eb.y < WORLD_H + 40)
-  for (const eb of state.eBullets) {
-    // R208: 弹幕对任一存活玩家结算(独立无敌帧)
-    for (const pl of alivePlayers(state)) {
-      if (pl.invuln <= 0 && Math.hypot(eb.x - pl.x, eb.y - pl.y) < hitRadiusOf(pl.size) + eb.size) {
-        const dmg = enemyContactDamage(state)
-        pl.hp -= dmg
-        pl.invuln = state.invulnWindow
-        pl.hitFlash = 0.15
-        queueShake(state.juice, 4)
-        floatText(state.juice, pl.x, pl.y - 26, `-${dmg}`, '#f87171')
-        eb.life = 0
-        playSfx('hurt')
-        if (pl.hp <= 0) {
-          playerDown(state, playerIndexOf(state, pl))
-          if (alivePlayers(state).length === 0) {
-            state.phase = 'lost'
-            playSfx('gameover')
-            return
-          }
-        }
-        break
-      }
-    }
-  }
-  state.eBullets = state.eBullets.filter((eb) => eb.life > 0)
+  // (R220.1①: boss 弹幕循环/弹幕运动与命中已移至 phase gate 之后——原位置在
+  //  gate 之前,导致选卡/轮盘冻结期间弹幕继续飞行并伤害玩家,与文件头
+  //  「level-ups freeze the run」承诺矛盾;顺带修正 juice hit-stop 冻结期间
+  //  弹幕同样移动的旧不一致。)
   if (state.hitStop > 0) {
     const [remain, thaw] = hitStopTick(state.hitStop, dt)
     state.hitStop = remain
@@ -1261,6 +1281,51 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     if (state.banner.life <= 0) state.banner = null
   }
   if (state.phase !== 'running') return
+
+  // ── R220.1①: 弹幕结算(running 专属)——原在文件头部 phase gate 之前执行,
+  //    选卡/轮盘/结算冻结期间照飞照伤;现移到 gate 后,冻结即真冻结。──
+  // R202(FR-SW02): boss 弹幕三型循环(放射/瞄准扇形/环形,每 1.2s)
+  state.bossBulletTimer += dt
+  for (const enemy of state.enemies) {
+    if (enemy.kind === 'boss' && state.bossBulletTimer >= 1.2) {
+      bossBarrage(state, enemy)
+      state.bossBulletPattern = (state.bossBulletPattern + 1) % 4
+    }
+  }
+  if (state.bossBulletTimer >= 1.2) state.bossBulletTimer = 0
+  // 弹幕运动/寿命/命中
+  for (const eb of state.eBullets) {
+    eb.x += eb.vx * dt
+    eb.y += eb.vy * dt
+    eb.life -= dt
+  }
+  state.eBullets = state.eBullets.filter((eb) => eb.life > 0 && eb.x > -40 && eb.x < WORLD_W + 40 && eb.y > -40 && eb.y < WORLD_H + 40)
+  for (const eb of state.eBullets) {
+    // R208: 弹幕对任一存活玩家结算(独立无敌帧)
+    for (const pl of alivePlayers(state)) {
+      if (pl.invuln <= 0 && Math.hypot(eb.x - pl.x, eb.y - pl.y) < hitRadiusOf(pl.size) + eb.size) {
+        const dmg = enemyContactDamage(state)
+        pl.hp -= dmg
+        pl.invuln = state.invulnWindow
+        pl.hitFlash = 0.15
+        queueShake(state.juice, 4)
+        queueHitStop(state.juice, 0.03) // R220.3 手感:弹幕受击同款顿帧
+        floatText(state.juice, pl.x, pl.y - 26, `-${Math.ceil(dmg)}`, '#f87171')
+        eb.life = 0
+        playSfx('hurt')
+        if (pl.hp <= 0) {
+          playerDown(state, playerIndexOf(state, pl))
+          if (alivePlayers(state).length === 0) {
+            state.phase = 'lost'
+            playSfx('gameover')
+            return
+          }
+        }
+        break
+      }
+    }
+  }
+  state.eBullets = state.eBullets.filter((eb) => eb.life > 0)
 
   state.time += dt
   state.comboTimer = Math.max(0, state.comboTimer - dt)
@@ -1297,13 +1362,13 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     player.x = clamp(player.x + (moveX / moveLen) * moveScale * stats.moveSpeed * dt, 16, boundMaxX)
     player.y = clamp(player.y + (moveY / moveLen) * moveScale * stats.moveSpeed * dt, 16, boundMaxY)
     player.angle = Math.atan2(moveY, moveX)
-    if (Math.random() < dt * 40) state.particles.push({ x: player.x - Math.cos(player.angle) * 14, y: player.y - Math.sin(player.angle) * 14, vx: -Math.cos(player.angle) * 60, vy: -Math.sin(player.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: '#67e8f9' })
+    if (rand(state) < dt * 40) state.particles.push({ x: player.x - Math.cos(player.angle) * 14, y: player.y - Math.sin(player.angle) * 14, vx: -Math.cos(player.angle) * 60, vy: -Math.sin(player.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: '#67e8f9' })
   }
 
   state.spawnTimer -= dt
   if (state.spawnTimer <= 0) {
     spawnEnemy(state)
-    if (state.time > 60 && Math.random() < 0.35) spawnEnemy(state)
+    if (state.time > 60 && rand(state) < 0.35) spawnEnemy(state)
     state.spawnTimer = directorSpawnInterval(state)
   }
   // R208: 传送门任一存活玩家踩中即换岛
@@ -1337,11 +1402,23 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     if (nearest) {
       const baseAngle = Math.atan2(nearest.y - player.y, nearest.x - player.x)
       const shots = stats.multishot
+      // R220.3 lightspear 进化:弹体成光枪——伤害×1.3/穿透+2/弹速×1.3
+      const spear = state.evolved.includes('lightspear')
+      const dmgMult = spear ? 1.3 : 1
+      const pierceBonus = spear ? 2 : 0
+      const speedMult = spear ? 1.3 : 1
       for (let i = 0; i < shots; i++) {
         const spread = (i - (shots - 1) / 2) * (Math.PI / 14)
         const angle = baseAngle + spread
-        const crit = Math.random() < stats.crit
-        state.bullets.push({ id: state.nextId++, x: player.x, y: player.y, vx: Math.cos(angle) * stats.bulletSpeed, vy: Math.sin(angle) * stats.bulletSpeed, damage: crit ? stats.damage * 2 : stats.damage, pierce: stats.pierce, crit, life: 1.2 })
+        const crit = rand(state) < stats.crit
+        state.bullets.push({ id: state.nextId++, x: player.x, y: player.y, vx: Math.cos(angle) * stats.bulletSpeed * speedMult, vy: Math.sin(angle) * stats.bulletSpeed * speedMult, damage: (crit ? stats.damage * 2 : stats.damage) * dmgMult, pierce: stats.pierce + pierceBonus, crit, life: 1.2 })
+      }
+      // R220.3 barrage 进化:齐射追加两翼斜射弹(±0.5rad,0.7×伤害)
+      if (state.evolved.includes('barrage')) {
+        for (const side of [-0.5, 0.5]) {
+          const angle = baseAngle + side
+          state.bullets.push({ id: state.nextId++, x: player.x, y: player.y, vx: Math.cos(angle) * stats.bulletSpeed * speedMult, vy: Math.sin(angle) * stats.bulletSpeed * speedMult, damage: stats.damage * dmgMult * 0.7, pierce: stats.pierce + pierceBonus, crit: false, life: 1.2 })
+        }
       }
       playSfx('shoot')
     }
@@ -1378,7 +1455,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       pl.x = clamp(pl.x + (movePx / lenP) * scaleP * stats.moveSpeed * dt, 16, boundMaxX)
       pl.y = clamp(pl.y + (movePy / lenP) * scaleP * stats.moveSpeed * dt, 16, boundMaxY)
       pl.angle = Math.atan2(movePy, movePx)
-      if (Math.random() < dt * 40) state.particles.push({ x: pl.x - Math.cos(pl.angle) * 14, y: pl.y - Math.sin(pl.angle) * 14, vx: -Math.cos(pl.angle) * 60, vy: -Math.sin(pl.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: ROSTER_ACCENT[pi - 1] })
+      if (rand(state) < dt * 40) state.particles.push({ x: pl.x - Math.cos(pl.angle) * 14, y: pl.y - Math.sin(pl.angle) * 14, vx: -Math.cos(pl.angle) * 60, vy: -Math.sin(pl.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: ROSTER_ACCENT[pi - 1] })
     }
     pl.fireTimer -= dt
     if (pl.fireTimer <= 0 && state.enemies.length > 0) {
@@ -1397,7 +1474,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
         for (let i = 0; i < shots; i++) {
           const spread = (i - (shots - 1) / 2) * (Math.PI / 14)
           const angle = baseAngle + spread
-          const crit = Math.random() < stats.crit
+          const crit = rand(state) < stats.crit
           state.bullets.push({ id: state.nextId++, x: pl.x, y: pl.y, vx: Math.cos(angle) * stats.bulletSpeed, vy: Math.sin(angle) * stats.bulletSpeed, damage: crit ? stats.damage * 2 : stats.damage, pierce: stats.pierce, crit, life: 1.2 })
         }
       }
@@ -1433,16 +1510,36 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
 
   state.bladeAngle += dt * 2.8
   state.bladeTimer += dt
-  if (stats.blade > 0 && state.bladeTimer >= 0.25) {
+  // R220.3 moonblade 进化:环刃数×2/半径 78→104/伤害×1.5
+  const moonblade = state.evolved.includes('moonblade')
+  const bladeCount = stats.blade * (moonblade ? 2 : 1)
+  const bladeRadius = moonblade ? 104 : 78
+  const bladeDamage = stats.damage * (moonblade ? 1.5 : 1)
+  if (bladeCount > 0 && state.bladeTimer >= 0.25) {
     state.bladeTimer = 0
-    for (let i = 0; i < stats.blade; i++) {
-      const angle = state.bladeAngle + (i * Math.PI * 2) / stats.blade
-      const bx = player.x + Math.cos(angle) * 78
-      const by = player.y + Math.sin(angle) * 78
+    for (let i = 0; i < bladeCount; i++) {
+      const angle = state.bladeAngle + (i * Math.PI * 2) / bladeCount
+      const bx = player.x + Math.cos(angle) * bladeRadius
+      const by = player.y + Math.sin(angle) * bladeRadius
       for (const enemy of state.enemies) {
         if (distance({ x: bx, y: by }, enemy) < 13 + hitRadiusOf(enemy.size)) {
-          enemy.hp -= stats.damage
+          enemy.hp -= bladeDamage
           enemy.hitFlash = 0.1
+        }
+      }
+    }
+  }
+  // R220.3 thornAura 进化:0.5s 一拍,玩家 95px 光环内敌人受 3 伤
+  if (state.evolved.includes('thornAura')) {
+    state.auraTimer += dt
+    if (state.auraTimer >= 0.5) {
+      state.auraTimer = 0
+      for (const pl of alivePlayers(state)) {
+        for (const enemy of state.enemies) {
+          if (distance(pl, enemy) < 95 + hitRadiusOf(enemy.size)) {
+            enemy.hp -= 3
+            enemy.hitFlash = 0.08
+          }
         }
       }
     }
@@ -1457,10 +1554,14 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       if (distance(bullet, enemy) < 4 + hitRadiusOf(enemy.size)) {
         enemy.hp -= bullet.damage
         enemy.hitFlash = 0.1
-        // R218 D: tank 堡垒体——子弹击退系数 0.08(其余 0.5),阻挡感
-        const knock = enemy.kind === 'tank' ? 0.08 : 0.5
-        enemy.x += bullet.vx * dt * knock
-        enemy.y += bullet.vy * dt * knock
+        // R220.3 手感:击退改固定像素(沿弹道单位向量;普通 12px/tank 3px)——
+        // 原「弹速×dt×0.5」在 60fps 仅 ~3.5px 且随帧率/弹速漂移,不可感知。
+        const bulletSpeed = Math.hypot(bullet.vx, bullet.vy)
+        if (bulletSpeed > 1) {
+          const knockPx = enemy.kind === 'tank' ? 3 : 12
+          enemy.x += (bullet.vx / bulletSpeed) * knockPx
+          enemy.y += (bullet.vy / bulletSpeed) * knockPx
+        }
         bullet.pierce -= 1
         spawnBurst(state, bullet.x, bullet.y, bullet.crit ? '#fbbf24' : '#67e8f9', 3, 60)
         playSfx('hit')
@@ -1493,8 +1594,9 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       target.invuln = state.invulnWindow
       target.hitFlash = 0.15
       queueShake(state.juice, enemy.kind === 'boss' ? 9 : 6)
+      queueHitStop(state.juice, 0.03) // R220.3 手感:玩家受击顿帧(TD 漏球有、本作缺)
       playSfx('hurt')
-      floatText(state.juice, target.x, target.y - 26, `-${dmg}`, '#f87171')
+      floatText(state.juice, target.x, target.y - 26, `-${Math.ceil(dmg)}`, '#f87171')
       spawnBurst(state, target.x, target.y, '#f87171', 12, 150)
       // R218 D: tank 高击退抗——接触后撤仅 8px(其余 46px)
       const recoil = enemy.kind === 'tank' ? 8 : 46
@@ -1578,8 +1680,8 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     if (rescuerDist < rescuer.size + 8) {
       target.hp = Math.max(1, Math.ceil(target.maxHp / 2))
       target.invuln = 2
-      target.x = clamp(rescuer.x + (Math.random() - 0.5) * 64, 16, WORLD_W - 16)
-      target.y = clamp(rescuer.y + (Math.random() - 0.5) * 64, 16, WORLD_H - 16)
+      target.x = clamp(rescuer.x + (rand(state) - 0.5) * 64, 16, WORLD_W - 16)
+      target.y = clamp(rescuer.y + (rand(state) - 0.5) * 64, 16, WORLD_H - 16)
       spendRevive(state, orb.target - 1)
       addText(state, rescuer.x, rescuer.y - 34, `P${orb.target} REVIVED`, '#4ade80')
       spawnBurst(state, rescuer.x, rescuer.y, '#4ade80', 18, 160)
@@ -1711,8 +1813,8 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
     ctx.font = '800 26px Inter, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    const cx = w.edge === 1 ? state.vp.w - 46 : w.edge === 3 ? 46 : state.vp.w / 2
-    const cy = w.edge === 0 ? 46 : w.edge === 2 ? state.vp.h - 46 : state.vp.h / 2
+    const cx = w.pos?.x ?? (w.edge === 1 ? state.vp.w - 46 : w.edge === 3 ? 46 : state.vp.w / 2)
+    const cy = w.pos?.y ?? (w.edge === 0 ? 46 : w.edge === 2 ? state.vp.h - 46 : state.vp.h / 2)
     const glyph = w.edge === 0 ? '▲' : w.edge === 1 ? '▶' : w.edge === 2 ? '▼' : '◀'
     ctx.fillText(glyph, cx, cy)
     ctx.restore()
@@ -1761,8 +1863,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
   const sceneT = DYNAMIC_BG_ENABLED ? state.clock : (state.island - 1) * 97.3
   const bgPx = DYNAMIC_BG_ENABLED ? player.x : vp.w / 2
   const bgPy = DYNAMIC_BG_ENABLED ? player.y : vp.h / 2
-  ctx.clearRect(0, 0, vp.w, vp.h)
-  ctx.save()
+  ctx.save() // R220.4: 撤冗余 clearRect——背景(blit 或 direct)全幅覆盖
   // R219.1: 震屏单一路径——legacy state.shake 平移已删,统一走 juice.shake
   // (applyShake;受击/换岛/boss 击杀全部经 queueShake 入队)。
   applyShake(ctx, state.juice)
@@ -1819,12 +1920,14 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
 
   for (const orb of state.orbs) {
     // R219.8: shadowBlur→双层假发光(CDP 二分实验:shadowBlur 是帧耗时主因)
+    // R220.5: 配色绿→天蓝——原 #4ade80 与 swarm/healer/敌血条五连撞(G6 P1),
+    // 拾取物语义分离(VS 品类蓝宝石惯例)
     ctx.save()
     ctx.translate(orb.x, orb.y)
     ctx.rotate(Math.PI / 4)
-    ctx.fillStyle = 'rgba(74, 222, 128, 0.28)'
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.3)'
     ctx.fillRect(-7, -7, 14, 14)
-    ctx.fillStyle = '#4ade80'
+    ctx.fillStyle = '#38bdf8'
     ctx.fillRect(-4, -4, 8, 8)
     ctx.restore()
   }
@@ -1838,12 +1941,12 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
     ctx.strokeStyle = `rgba(74, 222, 128, ${0.5 + glow * 0.4})`
     ctx.lineWidth = 3
     ctx.beginPath(); ctx.arc(0, 0, 9 + glow * 3, 0, Math.PI * 2); ctx.stroke()
+    // R220.4: 核心 shadowBlur→淡色外圆(R219.8 珠/敌弹同款假发光)
+    ctx.fillStyle = `rgba(74, 222, 128, ${0.22 + glow * 0.2})`
+    ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill()
     ctx.fillStyle = '#4ade80'
-    ctx.shadowColor = '#4ade80'
-    ctx.shadowBlur = 12
     ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill()
     ctx.restore()
-    ctx.shadowBlur = 0
   }
 
   if (state.stats.blade > 0) {
@@ -1874,9 +1977,10 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
   }
 
   for (const enemy of state.enemies) {
+    // R220.4: 精英发光 shadowBlur→淡色外环(免逐敌模糊通道;G3 对拍表)
     if (enemy.elite) {
-      ctx.shadowColor = '#fde68a'
-      ctx.shadowBlur = 14
+      ctx.fillStyle = 'rgba(253, 224, 71, 0.18)'
+      ctx.beginPath(); ctx.arc(enemy.x, enemy.y, enemy.size + 6, 0, Math.PI * 2); ctx.fill()
     }
     const kindColor =
       enemy.kind === 'brute' ? '#f472b6'
@@ -1974,14 +2078,15 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
       }
     } else {
       // R219.4(S3): 圆系敌人(chaser/swarm 等)加暗描边+左上高光点(低成本立体感)
-      ctx.beginPath(); ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2); ctx.fill()
+      // R220.3 手感:受击 squash——白闪期半径 ×1.22(免 transform 的成本零增量)
+      const sz = enemy.size * (enemy.hitFlash > 0 ? 1.22 : 1)
+      ctx.beginPath(); ctx.arc(enemy.x, enemy.y, sz, 0, Math.PI * 2); ctx.fill()
       ctx.strokeStyle = 'rgba(8, 12, 20, 0.45)'
       ctx.lineWidth = 1.5
       ctx.stroke()
       ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
-      ctx.beginPath(); ctx.arc(enemy.x - enemy.size * 0.32, enemy.y - enemy.size * 0.32, Math.max(1.2, enemy.size * 0.18), 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath(); ctx.arc(enemy.x - sz * 0.32, enemy.y - sz * 0.32, Math.max(1.2, sz * 0.18), 0, Math.PI * 2); ctx.fill()
     }
-    ctx.shadowBlur = 0
     if (enemy.kind !== 'boss' && enemy.hp < enemy.maxHp) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.fillRect(enemy.x - 14, enemy.y - enemy.size - 10, 28, 3)
