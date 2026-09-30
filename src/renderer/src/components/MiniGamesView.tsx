@@ -2,7 +2,7 @@ import { ArrowLeft, Crosshair, Eye, EyeOff, Grid, Heart, Maximize2, Minimize2, M
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
 import { useVisionInput } from '../hooks/useVisionInput'
 import { useI18n } from '../i18n'
-import { drawExitBadge, drawHudButton, drawHudPanel, hitTest, type HudButton } from '../games/hud'
+import { DIFFICULTY_SCORE_MULT, GAME_DIFFICULTIES, drawExitBadge, drawHudButton, drawHudPanel, hitTest, isGameDifficulty, type GameDifficulty, type HudButton } from '../games/hud'
 import { autoPick } from '../games/swarmAutoPick'
 import { assignGamepads, buildKeyToPoolMap, loadInputConfigs, type InputConfigs } from '../domain/inputConfig'
 import { deployPlayers } from '../games/survival'
@@ -187,14 +187,95 @@ const VISION_PASSTHROUGH_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'ar
 
 // DirectionRing defaults (gesture_engine.js, upstream v2) — the analog path
 // must apply the same transform the sector ring sees. Keep in sync.
-/** R204(FR-G05): 难度二档——休闲/标准,按作持久化 rgbbox:gamesDifficulty:<id>。 */
-export type Difficulty = 'casual' | 'standard'
-function readDifficulty(id: string): Difficulty {
-  try { return localStorage.getItem('rgbbox:gamesDifficulty:' + id) === 'casual' ? 'casual' : 'standard' } catch { return 'standard' }
+/** R204(FR-G05)→R218 U4: 难度四档(休闲/标准/困难/炼狱),按作持久化
+ * rgbbox:gamesDifficulty:<id>;旧二档值 'casual'/'standard' 直接映射,
+ * 非法/缺失回落 'standard'。类型统一到 games/hud.ts 的 GameDifficulty。 */
+export type Difficulty = GameDifficulty
+function readDifficulty(id: string): GameDifficulty {
+  try {
+    const raw = localStorage.getItem('rgbbox:gamesDifficulty:' + id)
+    return isGameDifficulty(raw) ? raw : 'standard'
+  } catch { return 'standard' }
 }
-function writeDifficulty(id: string, d: Difficulty): void {
+function writeDifficulty(id: string, d: GameDifficulty): void {
   try { localStorage.setItem('rgbbox:gamesDifficulty:' + id, d) } catch { /* best-effort */ }
 }
+
+/** R218 U3: ready 态「更多设置」抽屉展开记忆(全局,不分作)。 */
+function readDrawerOpen(): boolean {
+  try { return localStorage.getItem('rgbbox:gamesReady:drawer') === '1' } catch { return false }
+}
+function writeDrawerOpen(open: boolean): void {
+  try { localStorage.setItem('rgbbox:gamesReady:drawer', open ? '1' : '0') } catch { /* best-effort */ }
+}
+
+/** R218 U9: 「画面大小」三档偏好(标准/大/专注)——rgbbox:gamesFocusMode;
+ * 'focus' = 每次开局自动进入专注模式(窗口内满幅,与 OS 级 fs 全屏正交)。 */
+type ScreenScale = 'standard' | 'large' | 'focus'
+function readScreenScale(): ScreenScale {
+  try {
+    const raw = localStorage.getItem('rgbbox:gamesFocusMode')
+    return raw === 'large' || raw === 'focus' ? raw : 'standard'
+  } catch { return 'standard' }
+}
+function writeScreenScale(scale: ScreenScale): void {
+  try { localStorage.setItem('rgbbox:gamesFocusMode', scale) } catch { /* best-effort */ }
+}
+
+/** R218 U3: 上次选择全记忆——按作 JSON(rgbbox:gamesReady:<game>),坏值整体忽略。 */
+type SwarmSceneId = 'station' | 'desert' | 'snow' | 'grass' | 'ocean' | 'fusion'
+interface ReadyPrefs {
+  /** td:无尽 / 闪电赛 / 分工合作 */
+  endless?: boolean
+  blitz?: boolean
+  coop?: boolean
+  /** survival:人数 / 场景 / 90s 冲刺 */
+  players?: 1 | 2 | 3 | 4
+  scene?: SwarmSceneId
+  sprint?: boolean
+  /** tetris:40 行竞速 / 双板对决 */
+  race?: boolean
+  duel?: boolean
+  /** slash:30s 爆发 / 轮换对决(tetris 与 slash 各自 key 空间,不冲突) */
+  burst?: boolean
+}
+function readReadyPrefs(game: string): ReadyPrefs {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('rgbbox:gamesReady:' + game) ?? '{}') as ReadyPrefs
+    return typeof parsed === 'object' && parsed !== null ? parsed : {}
+  } catch { return {} }
+}
+function writeReadyPrefs(game: string, prefs: ReadyPrefs): void {
+  try { localStorage.setItem('rgbbox:gamesReady:' + game, JSON.stringify(prefs)) } catch { /* best-effort */ }
+}
+
+// ── TODO(r218-merge): 临时 shim(集中一处,merge 各作分支后整块删除) ──────────
+// 契约:四作引擎分支(wt-r218-tdsl / wt-r218-tet / wt-r218-sv)新增下列导出与
+// state.difficulty 字段;本分支按契约先行接线,merge 后改 import 真实导出:
+//   ① TD_DIFFICULTY_PARAMS        ← wt-r218-tdsl(src/renderer/src/games/td.ts)
+//      Record<GameDifficulty, { lives: number; startCoins: number; hpMult: number }>
+//   ② TETRIS_DIFFICULTY_START_LEVEL ← wt-r218-tet(src/renderer/src/games/tetris.ts)
+//      Record<GameDifficulty, number>(起始等级 1/5/9/13,guideline 重力曲线已有)
+//   ③ 各作 state.difficulty?: GameDifficulty 字段 ← sv/tdsl/tet 三分支
+//      (SurvivalState / GameState / SlashState / TetrisState;shell 在开局时
+//      写入,引擎 tick 内读各自参数表)——在字段落地前用 setEngineDifficulty
+//      宽类型写入,字段存在后可直接赋值并删该 helper。
+const TD_DIFFICULTY_PARAMS: Record<GameDifficulty, { lives: number; startCoins: number; hpMult: number }> = {
+  // spec §三 TD:lives 30/20/14/10 ×起始金 +50%/0/-15%/-25%(基线 220);
+  // casual/standard 与 R204 现值逐字对齐(30+300 / 20+220)。
+  casual: { lives: 30, startCoins: 300, hpMult: 0.8 },
+  standard: { lives: 20, startCoins: 220, hpMult: 1 },
+  hard: { lives: 14, startCoins: 187, hpMult: 1.25 },
+  insane: { lives: 10, startCoins: 165, hpMult: 1.5 },
+}
+const TETRIS_DIFFICULTY_START_LEVEL: Record<GameDifficulty, number> = {
+  casual: 1, standard: 5, hard: 9, insane: 13,
+}
+/** 宽类型写入引擎 difficulty 字段(字段由各作分支落地;交集类型可赋值)。 */
+function setEngineDifficulty(state: object, d: GameDifficulty): void {
+  ;(state as { difficulty?: GameDifficulty }).difficulty = d
+}
+// ── TODO(r218-merge) shim 块结束 ──────────────────────────────────────────────
 
 /** R207(FR-G04): 手势指示器(vision-pad)全局开关——默认关闭,持久化。 */
 function readVisionPadVisible(): boolean {
@@ -230,9 +311,11 @@ export function MiniGamesView(): JSX.Element {
   // R201: TD 无尽模式 + 放置悬停预览(F6)
   const [tdEndless, setTdEndless] = useState(false)
   const [tdHover, setTdHover] = useState<{ x: number; y: number } | null>(null)
-  // R204: 难度二档(按作)
+  // R204: 难度二档(按作) → R218 U4: 四档
   const [difficulty, setDifficulty] = useState<Difficulty>(() => readDifficulty('td'))
   const [bests, setBests] = useState<Record<GameKey, number>>({ ...bestRef.current })
+  /** R218 U4: 本局难度(开局时定格)——结算分数 ×DIFFICULTY_SCORE_MULT 挂街机档案。 */
+  const runDifficultyRef = useRef<GameDifficulty>('standard')
   // ── R198(FR-G01): 教练条 + 首局引导 ──
   const [coachHint, setCoachHint] = useState<CoachHint | null>(null)
   const [coachOff, setCoachOff] = useState(() => {
@@ -261,20 +344,27 @@ export function MiniGamesView(): JSX.Element {
   const duelRef = useRef<{ turn: 1 | 2; scores: [number | null, number | null]; done: boolean } | null>(null)
   duelRef.current = duel
   const [tdCoopOn, setTdCoopOn] = useState(false)
-  const [swarmCoopOn, setSwarmCoopOn] = useState(false)
-  const swarmCoopOnRef = useRef(false)
-  swarmCoopOnRef.current = swarmCoopOn
+  // R218 U3: swarmCoopOn 独立开关移除——人数选择(≥2P)即合作,提示语随之推导。
   // ── R213: Swarm 4P/场景/自动预选/按键配置 ──
   const [swarmPlayers, setSwarmPlayers] = useState<1 | 2 | 3 | 4>(1)
   const swarmPlayersRef = useRef<1 | 2 | 3 | 4>(1)
   swarmPlayersRef.current = swarmPlayers
-  const [swarmScene, setSwarmScene] = useState<'station' | 'desert' | 'snow' | 'grass' | 'ocean' | 'fusion'>('station')
-  const swarmSceneRef = useRef<'station' | 'desert' | 'snow' | 'grass' | 'ocean' | 'fusion'>('station')
+  const [swarmScene, setSwarmScene] = useState<SwarmSceneId>('station')
+  const swarmSceneRef = useRef<SwarmSceneId>('station')
   swarmSceneRef.current = swarmScene
   const [autoPickMode, setAutoPickMode] = useState<'off' | 'list' | 'best'>(() => {
     try { return (JSON.parse(localStorage.getItem('rgbbox:swarmAutoPick') ?? '"off"') as 'off' | 'list' | 'best') ?? 'off' } catch { return 'off' }
   })
   const [inputPanelOpen, setInputPanelOpen] = useState(false)
+  /** R218 U3: 「更多设置」抽屉展开态(localStorage 记忆,默认折叠)。 */
+  const [drawerOpen, setDrawerOpen] = useState(readDrawerOpen)
+  // ── R218 U9: 画面占比三档偏好 + 专注模式(窗口内满幅,瞬时态) ──
+  const [screenScale, setScreenScale] = useState<ScreenScale>(readScreenScale)
+  const screenScaleRef = useRef<ScreenScale>('standard')
+  screenScaleRef.current = screenScale
+  const [focusMode, setFocusMode] = useState(false)
+  const focusModeRef = useRef(false)
+  focusModeRef.current = focusMode
   const swarmAutoPickRef = useRef<{ mode: 'off' | 'list' | 'best'; prefs: UpgradeId[] }>({ mode: 'off', prefs: ['fireRate', 'damage', 'multishot', 'speed', 'magnet', 'maxHp', 'blade', 'pierce'] })
   swarmAutoPickRef.current.mode = autoPickMode
   const [keyMap, setKeyMap] = useState<Record<string, string>>(() => buildKeyToPoolMap(loadInputConfigs(localStorage)))
@@ -364,6 +454,24 @@ export function MiniGamesView(): JSX.Element {
   useEffect(() => {
     if (screen === 'hub') { setOnboardStep(0); setRecap(null); return }
     setDifficulty(readDifficulty(screen))
+    // R218 U3: 上次选择全记忆——重进恢复(rgbbox:gamesReady:<game>)。
+    const prefs = readReadyPrefs(screen)
+    if (screen === 'td') {
+      setTdEndless(prefs.endless === true)
+      setTdBlitzOn(prefs.blitz === true)
+      setTdCoopOn(prefs.coop === true)
+      tdStateRef.current.endless = prefs.endless === true
+    } else if (screen === 'survival') {
+      setSwarmPlayers(prefs.players ?? 1)
+      setSwarmScene(prefs.scene ?? 'station')
+      setSwarmSprintOn(prefs.sprint === true)
+    } else if (screen === 'tetris') {
+      setTetrisRaceOn(prefs.race === true)
+      setTetrisDuelOn(prefs.duel === true)
+    } else if (screen === 'slash') {
+      setSlashBurstOn(prefs.burst === true)
+      setSlashDuelOn(prefs.duel === true)
+    }
     // R205(FR-G07 一期): 进作切分曲(TD 沉稳/Swarm 急促/Tetris 上行/Slash 强拍)
     setBgmPreset(screen === 'td' ? 'td' : screen === 'survival' ? 'swarm' : screen === 'tetris' ? 'tetris' : 'slash')
     setOnboardStep(isOnboarded(localStorage, screen) ? 0 : 1)
@@ -391,6 +499,19 @@ export function MiniGamesView(): JSX.Element {
   const gamepadNameRef = useRef<string | null>(null)
   const prevStartRef = useRef(false)
   const startRunRef = useRef<() => void>(() => undefined)
+  // ── R218 U2: 手柄 Start 四作通用 ──
+  /** 在场手柄摘要(ready 态提示行 + U7 键位席位行);gamepadInfoKeyRef 去抖,逐帧不重渲。 */
+  const [gamepadInfo, setGamepadInfo] = useState<{ count: number; ids: string[]; indices: number[] }>({ count: 0, ids: [], indices: [] })
+  const gamepadInfoKeyRef = useRef('')
+  /** Start 边沿触发的统一入口(按 screen 分发开局/重开/暂停;渲染期赋值)。 */
+  const padStartRef = useRef<() => void>(() => undefined)
+  /** 当前游戏画面(hub|td|survival|tetris|slash)——rAF/Esc 闭包读的活值。 */
+  const screenRef = useRef<Screen>('hub')
+  screenRef.current = screen
+  /** 各作当前 phase(ref 读取,供 Esc/Start 暂停判定;hub 恒 'ready')。 */
+  const currentPhaseRef = useRef<() => 'ready' | 'running' | 'won' | 'lost' | 'levelup' | 'roulette'>(() => 'ready')
+  /** 当前画面的开局/重开入口(startHandler 的活引用;渲染期赋值)。 */
+  const startAnyRef = useRef<() => void>(() => undefined)
   // R131: vision gesture input (third source beside keyboard/gamepad) + a
   // late-binding ref so pollVision (declared above startTetrisRun) can start
   // a Tetris run on pinch without a TDZ-prone dependency.
@@ -471,7 +592,10 @@ export function MiniGamesView(): JSX.Element {
     setTetrisSnapshot({ ...tetrisRef.current, keys: new Set(tetrisRef.current.keys), queue: [...tetrisRef.current.queue] })
   }, [])
 
-  const settleBest = useCallback((game: GameKey, score: number, durationSec = 0, highlight = ''): void => {
+  const settleBest = useCallback((game: GameKey, rawScore: number, durationSec = 0, highlight = ''): void => {
+    // R218 U4: 街机档案按难度倍率记账(1×/1.5×/2×/3×)——best/daily/遥测/
+    // recap 全部一致地以乘后分呈现(引擎内局中显示保持原始分)。
+    const score = Math.floor(rawScore * DIFFICULTY_SCORE_MULT[runDifficultyRef.current])
     const prev = bestRef.current[game]
     const best = Math.max(prev, score)
     if (best > prev) {
@@ -491,7 +615,10 @@ export function MiniGamesView(): JSX.Element {
   // detection (no pairing-event dependency) + assignGamepads 玩家→手柄映射
   // (显式绑定优先+余柄补位,与 InputConfigPanel 绑定 UI 同源);每玩家左
   // 摇杆写入 axes[pi](P1 仍写 legacy axis——vision 叠加路径不变,axes[0]
-  // 同步双写保数组不变量)。Start 仍限 P1 手柄触发开局。
+  // 同步双写保数组不变量)。
+  // R218 U2: Start/Options 检测改为「任何已分配手柄」边沿触发(P5 卡点:
+  // 原来仅 pi===0 分支检测;PS5 Options=buttons[9] standard mapping 一致);
+  // 非 standard mapping 兜底扫 buttons[16];运行态 Start=暂停/恢复切换。
   const pollGamepad = useCallback(() => {
     if (typeof navigator.getGamepads !== 'function') return
     const pads = navigator.getGamepads()
@@ -499,6 +626,13 @@ export function MiniGamesView(): JSX.Element {
     const axes = survivalRef.current.axes
     for (let i = 0; i < axes.length; i += 1) axes[i] = { x: 0, y: 0 }
     survivalRef.current.axis = { x: 0, y: 0 }
+    // R218 U2: 在场手柄摘要(count+id 列表)供 ready 态提示行——逐帧比较后
+    // 才 setState,避免每帧渲染。
+    const infoKey = `${connected.length}|${connected.map((item) => item.id).join(',')}`
+    if (gamepadInfoKeyRef.current !== infoKey) {
+      gamepadInfoKeyRef.current = infoKey
+      setGamepadInfo({ count: connected.length, ids: connected.map((item) => item.id), indices: connected.map((item) => item.index) })
+    }
     if (connected.length === 0) {
       prevStartRef.current = false
       if (gamepadNameRef.current !== null) {
@@ -509,6 +643,7 @@ export function MiniGamesView(): JSX.Element {
     }
     const assign = assignGamepads(connected.map((item) => item.index), inputConfigsRef.current)
     let p1PadSeen = false
+    let anyStart = false
     for (const key of Object.keys(assign)) {
       const pi = Number(key)
       const pad = connected.find((item) => item.index === assign[pi])
@@ -521,17 +656,17 @@ export function MiniGamesView(): JSX.Element {
           gamepadNameRef.current = pad.id
           setGamepadName(pad.id)
         }
-        const startPressed = pad.buttons[9]?.pressed === true
-        if (startPressed && !prevStartRef.current) {
-          const phase = survivalRef.current.phase
-          if (phase === 'ready' || phase === 'lost') startRunRef.current()
-        }
-        prevStartRef.current = startPressed
+      }
+      // R218 U2: Start/Options —— Xbox Start 与 PS5 Options 在 standard
+      // mapping 下同为 buttons[9];非 standard 柄 9 号位失效时兜底 16。
+      if (pad.buttons[9]?.pressed === true || (pad.mapping !== 'standard' && pad.buttons[16]?.pressed === true)) {
+        anyStart = true
       }
       if (pi < axes.length) axes[pi] = ax
     }
+    if (anyStart && !prevStartRef.current) padStartRef.current()
+    prevStartRef.current = anyStart
     if (!p1PadSeen) {
-      prevStartRef.current = false
       // P1 未分得手柄(如仅有 index≠0 的柄被补位给 P2+)——在场提示回落到
       // 第一只已连接手柄,保持「检测到手柄」的可见性。
       const first = connected[0]
@@ -857,6 +992,10 @@ export function MiniGamesView(): JSX.Element {
       // R206: 暂停冻结全部引擎 tick(dt=0;含计时/倒计时/粒子由各引擎特效路径自然停)
       if (fsPausedRef.current) dt = 0
       last = now
+      // R218 U2: 手柄轮询提升到四作共用——Start/Options 检测与摇杆轴写入
+      // 不再只在 Survival 分支执行(survival 分支内原先的调用同步移除;
+      // pollVision 仍在其后,轴叠加顺序不变)。
+      pollGamepad()
       if (screen === 'td') {
         // R209(FR-LN02): 房主权威——客端不 tick 本地引擎(快照经 onLanEvent
         // 直接写 tdStateRef,统计条/绘制全复用);房主 15Hz 推快照(hash 供对账)。
@@ -895,8 +1034,8 @@ export function MiniGamesView(): JSX.Element {
         })
       } else if (screen === 'survival') {
         // R133: gamepad first (it rewrites the raw axis), vision second (adds
-        // its direction vector on top) — see pollVision.
-        pollGamepad()
+        // its direction vector on top) — see pollVision. (R218 U2: pollGamepad
+        // 已提升到四作共用的循环顶部,顺序不变。)
         // R208(FR-MP01): 双人局禁用手势——视觉通道是单用户假设,防输入冲突
         // (pollGamepad 无手柄时已把 axis 归零,跳过 pollVision 不残留旧轴)。
         if (survivalRef.current.player2 === null) pollVision()
@@ -1125,21 +1264,9 @@ export function MiniGamesView(): JSX.Element {
     if (screen !== 'survival' && screen !== 'tetris' && screen !== 'slash' && !fullscreen) return
     const normalizeKey = (event: KeyboardEvent) => event.code === 'Space' ? 'space' : event.key.toLowerCase()
     const down = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        // R206(FR-G03.5): fs 态内 Esc 分层——先出暂停(呼吸),不直接退全屏;
-        // 非 fs 维持原语义(退出全屏)。暂停浮层内提供「退出全屏」。
-        if (fullscreen && !document.fullscreenElement) {
-          setFsPaused((v) => !v)
-          return
-        }
-        if (fullscreen && document.fullscreenElement) {
-          setFsPaused((v) => !v)
-          return
-        }
-        setFullscreen(false)
-        if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
-        return
-      }
+      // R218 U2: Escape 分层迁至下方独立 effect(四作非 fs 态也要响应暂停/
+      // 专注退出;本 effect 的早退门会挡掉非 fs TD 的 Esc)。
+      if (event.key === 'Escape') return
       const normalized = normalizeKey(event)
       if (MOVEMENT_KEYS.has(normalized) && !event.ctrlKey && !event.metaKey && !event.altKey) event.preventDefault()
       if (screen === 'td' && normalized === 'q') {
@@ -1226,6 +1353,32 @@ export function MiniGamesView(): JSX.Element {
     }
   }, [fullscreen, screen])
 
+  // ── R218 U2/U9: Escape 统一分层(独立 effect,不受上方「非 fs TD 早退门」
+  // 影响):专注模式退出 > fs 暂停切换(R206 语义) > 非 fs 运行态暂停切换 >
+  // 兜底退出全屏。与手柄 Start 共用同一 fsPaused 冻结通路(loop 顶部 dt=0)。──
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || screenRef.current === 'hub') return
+      if (focusModeRef.current && !fullscreen) {
+        // U9: 退出专注模式(窗口内满幅 → 常规布局)
+        setFocusMode(false)
+        return
+      }
+      if (fullscreen) {
+        setFsPaused((v) => !v)
+        return
+      }
+      if (currentPhaseRef.current() === 'running') {
+        setFsPaused((v) => !v)
+        return
+      }
+      setFullscreen(false)
+      if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
+
   const enterGame = useCallback((next: Screen) => {
     setFullscreen(false)
     if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
@@ -1266,11 +1419,15 @@ export function MiniGamesView(): JSX.Element {
     }
     // FR-G08: 闪电赛——6 波上限(引擎 targetWaves 读 blitz)
     tdStateRef.current.blitz = tdBlitzOnRef.current
-    // R204: TD 难度二档(休闲 30 命+300 金 / 标准 20+220)
+    // R204→R218 U4: TD 难度四档开局参数(lives/起始金;敌 HP 系数由引擎读
+    // difficulty 字段自算——TODO(r218-merge) 后走 td.ts 真实参数表)。
     if (tdStateRef.current.wave === 0 && tdStateRef.current.towers.length === 0) {
       const d = readDifficulty('td')
-      tdStateRef.current.lives = d === 'casual' ? 30 : 20
-      tdStateRef.current.coins = d === 'casual' ? 300 : 220
+      runDifficultyRef.current = d
+      const params = TD_DIFFICULTY_PARAMS[d]
+      tdStateRef.current.lives = params.lives
+      tdStateRef.current.coins = params.startCoins
+      setEngineDifficulty(tdStateRef.current, d)
     }
     const state = tdStateRef.current
     if (state.phase === 'ready') {
@@ -1449,6 +1606,10 @@ export function MiniGamesView(): JSX.Element {
     }
     // FR-G08: 90 秒冲刺——时限到走既有 lost 结算(分数保留)
     survivalRef.current.sprintSeconds = swarmSprintOnRef.current ? 90 : undefined
+    // R218 U4: 难度写入引擎(eHP 四档参数由 sv 分支在 tick 内生效)
+    const difficulty = readDifficulty('survival')
+    runDifficultyRef.current = difficulty
+    setEngineDifficulty(survivalRef.current, difficulty)
     // R213: 4P 名册部署(人数选择;swarmCoopOn 开关是人数=2 的快捷别名)与场景背景
     const count = Math.max(1, Math.min(4, swarmPlayersRef.current)) as 1 | 2 | 3 | 4
     deployPlayers(survivalRef.current, count)
@@ -1460,10 +1621,12 @@ export function MiniGamesView(): JSX.Element {
   startRunRef.current = startSurvivalRun
   // R142-E4: slash uses the same unified start entry (pinch/open-palm/chord)
   const startSlashRunCb = useCallback(() => {
-    // R204: Slash 难度二档(休闲 5 心 / 标准 3 心)
+    // R204: Slash 难度二档 → R218 U4 四档。R204 的「开局前写 maxHearts/
+    // hearts」实为死代码——startSlash 内 Object.assign(s, initialSlashState())
+    // 会把两字段重置回 3(本分支删除该写入,难度语义整体移交引擎侧:
+    // tdsl 分支的 SLASH_DIFFICULTY_PARAMS/血条化在读 difficulty 字段生效)。
     const d = readDifficulty('slash')
-    slashRef.current.maxHearts = d === 'casual' ? 5 : 3
-    slashRef.current.hearts = slashRef.current.maxHearts
+    runDifficultyRef.current = d
     // FR-G08: 30 秒爆发——startSlash 可选时长(T1 引擎支持)
     // R208 (FR-MP03): 轮换对决——首次开局部署回合机(P1 先手)
     if (duelRef.current === null && slashDuelOnRef.current) {
@@ -1472,6 +1635,8 @@ export function MiniGamesView(): JSX.Element {
       setDuel(fresh)
     }
     startSlash(slashRef.current, slashBurstOnRef.current ? 30 : RUN_SECONDS)
+    // R218 U4: difficulty 必须在 startSlash 之后写(Object.assign 会覆盖先前字段)
+    setEngineDifficulty(slashRef.current, d)
     publishSlash()
   }, [publishSlash])
   slashStartRef.current = startSlashRunCb
@@ -1545,12 +1710,17 @@ export function MiniGamesView(): JSX.Element {
   }, [])
 
   const startTetrisRun = useCallback(() => {
+    // R218 U4: Tetris 难度=起始等级(1/5/9/13,重力曲线 0.8×0.85^(lv-1) 已有)。
+    const d = readDifficulty('tetris')
+    runDifficultyRef.current = d
+    const startLevel = TETRIS_DIFFICULTY_START_LEVEL[d]
     // R209 三期(FR-LN05): LAN Tetris 对战——双方各跑本地引擎(事件同步),
     // 种子开局(host 建房生成/guest 经 welcome 收取)保证 piece 序列一致;
     // 本地双板开关在该模式下不参与(对手即远端板);断线不恢复,重开即新局。
     if (lanRoleRef.current !== 'idle' && lanGameRef.current === 'tetris') {
       tetrisRef.current = initialTetrisState(lanSeedRef.current ?? undefined)
       tetrisBRef.current = initialTetrisState()
+      tetrisRef.current.level = startLevel
       setLanTetrisScore(null)
       startTetris(tetrisRef.current)
       publishTetris()
@@ -1565,8 +1735,10 @@ export function MiniGamesView(): JSX.Element {
     tetrisRef.current.raceLines = tetrisRaceOnRef.current ? 40 : undefined
     tetrisBRef.current.raceLines = tetrisRaceOnRef.current ? 40 : undefined
     tetrisRef.current.boardX = tetrisDuelOnRef.current ? 150 : 300
+    tetrisRef.current.level = startLevel
     if (tetrisDuelOnRef.current) {
       tetrisBRef.current.boardX = 560
+      tetrisBRef.current.level = startLevel
       startTetris(tetrisBRef.current)
     }
     startTetris(tetrisRef.current)
@@ -1585,6 +1757,23 @@ export function MiniGamesView(): JSX.Element {
     applyUpgrade(survivalRef.current, id)
     publishSurvival()
   }, [publishSurvival])
+
+  // ── R218 U9: 一局进行中(含 survival levelup/roulette 中场)——「进行态」
+  // 布局门:隐藏标题行/收窄边距/专注模式随开局进入。──
+  const runActive = screen === 'td' ? tdSnapshot.phase === 'running'
+    : screen === 'survival' ? (survivalSnapshot.phase === 'running' || survivalSnapshot.phase === 'levelup' || survivalSnapshot.phase === 'roulette')
+      : screen === 'slash' ? slashSnapshot.phase === 'running'
+        : screen === 'tetris' ? tetrisSnapshot.phase === 'running'
+          : false
+  const runActivePrevRef = useRef(false)
+  useEffect(() => {
+    if (runActive && !runActivePrevRef.current) {
+      if (screenScaleRef.current === 'focus') setFocusMode(true) // 偏好=专注:开局自动满幅
+    } else if (!runActive && runActivePrevRef.current) {
+      setFocusMode(false) // 终局/回 ready 自动退出专注
+    }
+    runActivePrevRef.current = runActive
+  }, [runActive])
 
   if (screen === 'hub') {
     return (
@@ -1755,6 +1944,55 @@ export function MiniGamesView(): JSX.Element {
       : vision.label ? ` · 👁 ${t('games.vision.error')}: ${vision.label}` : ''
   const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : isTetris ? startTetrisRun : startSlashRunCb
   const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
+  // ── R218 U3: ready 态统一面板的数据面 ──
+  /** 真实引擎 phase==='ready'(不经 levelup→ready 的显示映射,避免升级浮层下穿出)。 */
+  const showReady = isTd ? tdSnapshot.phase === 'ready' : isSurvival ? survivalSnapshot.phase === 'ready' : isSlash ? slashSnapshot.phase === 'ready' : tetrisSnapshot.phase === 'ready'
+  /** 选择写透 rgbbox:gamesReady:<game>(与进作恢复 effect 成对)。 */
+  const persistReadyPref = (game: GameKey, patch: Partial<ReadyPrefs>): void => {
+    writeReadyPrefs(game, { ...readReadyPrefs(game), ...patch })
+  }
+  /** R218 U7: ≥2P 的键位席位摘要(配置键位 + assignGamepads 分得的手柄)。 */
+  const readySeating: Array<{ n: number; keys: string; padId: string | null }> = []
+  if (isSurvival && swarmPlayers >= 2) {
+    const assign = assignGamepads(gamepadInfo.indices, inputConfigsRef.current)
+    for (let i = 0; i < swarmPlayers; i += 1) {
+      const cfg = inputConfigsRef.current[i]
+      const padIndex = assign[i]
+      const padPos = padIndex !== undefined ? gamepadInfo.indices.indexOf(padIndex) : -1
+      readySeating.push({
+        n: i + 1,
+        keys: `${cfg.up}/${cfg.down}/${cfg.left}/${cfg.right}`,
+        padId: padPos >= 0 ? (gamepadInfo.ids[padPos] ?? null) : null,
+      })
+    }
+  }
+  // ── R218 U2: 手柄 Start 统一入口的活引用(渲染期刷新,rAF/Esc 闭包免重建)──
+  startAnyRef.current = startHandler
+  currentPhaseRef.current = () => {
+    const scr = screenRef.current
+    if (scr === 'td') return tdStateRef.current.phase
+    if (scr === 'survival') return survivalRef.current.phase
+    if (scr === 'tetris') return tetrisRef.current.phase
+    if (scr === 'slash') return slashRef.current.phase
+    return 'ready'
+  }
+  padStartRef.current = () => {
+    const scr = screenRef.current
+    if (scr === 'hub') return
+    // LAN TD 客端为远程席位——开局/下一波由房主决定(与 DOM 按钮同禁用)。
+    if (scr === 'td' && lanRoleRef.current === 'guest' && lanGameRef.current === 'td') return
+    const phase = currentPhaseRef.current()
+    if (phase === 'running') {
+      // U2: 运行态 Start=暂停/恢复(复用 R206 fsPaused 冻结,非 fs 态同样生效)
+      setFsPaused((v) => !v)
+      return
+    }
+    if (phase === 'ready' || phase === 'lost' || phase === 'won') {
+      playSfx('confirm')
+      startAnyRef.current()
+    }
+    // levelup/roulette:升级选择走数字键/手势,Start 不抢焦点。
+  }
 
   // ── R211: fs 纯画布 HUD 绘制(hud.ts 首次接线;DOM 面板已由 CSS 隐藏) ──
   fsActionRef.current = {
@@ -1859,7 +2097,7 @@ export function MiniGamesView(): JSX.Element {
   }
 
   return (
-    <div ref={screenRootRef} className={`games-view games-screen ${fullscreen ? 'fs' : ''}`}>
+    <div ref={screenRootRef} className={`games-view games-screen ${fullscreen ? 'fs' : ''}${focusMode ? ' focus' : ''}${screenScale === 'large' ? ' size-large' : ''}${runActive ? ' running' : ''}`}>
       <header className="workspace-header games-header">
         <div>
           <p className="eyebrow">{t('games.eyebrow')}</p>
@@ -2026,6 +2264,13 @@ export function MiniGamesView(): JSX.Element {
             />
             <span>{t('games.td.endless')}</span>
           </label>
+          {/* R218 U9: 进行态标题行隐藏——提前开波的入口从 header 按钮移到这里 */}
+          {tdSnapshot.phase === 'running' && tdSnapshot.waveQueue === 0 && tdSnapshot.balloons.length === 0 && tdSnapshot.wave < MAX_WAVE ? (
+            <button type="button" className="aspect-lock-btn" data-action="td-next-wave" onClick={startOrNextWave} disabled={lanRole === 'guest' && lanGame === 'td'}>
+              <Play aria-hidden="true" size={12} />
+              {t('games.nextWave')}
+            </button>
+          ) : null}
           <span className={tdStateRef.current.meteorCd > 0 ? 'td-meteor-cd' : 'td-meteor-ready'} title={t('games.td.meteorHint')}>
             ☄ {tdStateRef.current.meteorCd > 0 ? Math.ceil(tdStateRef.current.meteorCd) + 's' : t('games.td.meteorReady')} · Q
           </span>
@@ -2050,45 +2295,167 @@ export function MiniGamesView(): JSX.Element {
         <section className="games-canvas-panel panel">
           <div className="games-canvas-wrap" ref={canvasWrapRef}>
             {/* R206(FR-G03.5): fs 暂停浮层(Esc 呼出;继续/重开/退出全屏/返回 hub) */}
-            {/* R204(FR-G05.2): 难度二档——ready 态选择,持久化 */}
-            {phase === 'ready' ? (
-              <div className="difficulty-picker" data-field="difficulty">
-                <span>{t('games.difficulty.label')}</span>
-                {(['casual', 'standard'] as const).map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    className={`diff-btn ${difficulty === d ? 'on' : ''}`}
-                    data-diff={d}
-                    onClick={() => { setDifficulty(d); writeDifficulty(screen, d) }}
-                  >{t(`games.difficulty.${d}` as Parameters<typeof t>[0])}</button>
-                ))}
-                {/* R208: 本地双人开关——Slash 轮换对决 / TD 分工合作(仅这两作) */}
-                {isSlash ? (
-                  <button type="button" className={`diff-btn ${slashDuelOn ? 'on' : ''}`} data-field="duel-toggle" onClick={() => setSlashDuelOn(!slashDuelOn)}>{t('games.duel.toggle')}</button>
+            {/* R218 U3: ready 态统一信息架构(四作)——大号「开局」主按钮(Fitts)
+                + 一行核心胶囊(难度四档×倍率 + 各作核心项) + 高级项折叠进
+                「更多设置」抽屉(渐进披露;展开态 rgbbox:gamesReady:drawer 记忆)。
+                上次选择全记忆 rgbbox:gamesReady:<game>,重进恢复(见 screen effect)。 */}
+            {showReady ? (
+              <div className="ready-panel" data-field="ready-panel">
+                <button type="button" className="ready-start" data-action="ready-start" onClick={startHandler} disabled={lanRole === 'guest' && lanGame === 'td'}>
+                  <Play aria-hidden="true" size={16} />
+                  {t('games.start')}
+                </button>
+                <div className="ready-core">
+                  <div className="ready-group" data-field="difficulty">
+                    <span className="ready-group-label">{t('games.difficulty.label')}</span>
+                    {GAME_DIFFICULTIES.map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        className={`ready-chip ${difficulty === d ? 'on' : ''}`}
+                        data-diff={d}
+                        onClick={() => { setDifficulty(d); writeDifficulty(screen, d) }}
+                      >{t(`games.difficulty.${d}`)}<em className="ready-chip-em">{DIFFICULTY_SCORE_MULT[d]}×</em></button>
+                    ))}
+                  </div>
+                  {isSurvival ? (
+                    <div className="ready-group" data-field="swarm-characters">
+                      <span className="ready-group-label">{t('games.setupTitle')}</span>
+                      {CHARACTERS.map((character) => (
+                        <button
+                          key={character.id}
+                          type="button"
+                          className={`ready-chip ${swarmCharacter === character.id ? 'on' : ''}`}
+                          style={{ '--game-accent': character.accent } as CSSProperties}
+                          title={t(`games.char.${character.id}.desc`)}
+                          onClick={() => selectCharacter(character.id)}
+                        >{t(`games.char.${character.id}`)}<em className="ready-chip-em">HP {5 + character.hpMod}</em></button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {isSurvival ? (
+                    <label className="ready-group">
+                      <span className="ready-group-label">{t('games.swarm.players')}</span>
+                      <select data-field="swarm-players" value={swarmPlayers} onChange={(e) => { const n = Number(e.target.value) as 1 | 2 | 3 | 4; setSwarmPlayers(n); persistReadyPref('survival', { players: n }) }}>
+                        {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}P</option>)}
+                      </select>
+                    </label>
+                  ) : null}
+                  {isSurvival ? (
+                    <label className="ready-group">
+                      <span className="ready-group-label">{t('games.swarm.scene')}</span>
+                      <select data-field="swarm-scene" value={swarmScene} onChange={(e) => { const s = e.target.value as SwarmSceneId; setSwarmScene(s); persistReadyPref('survival', { scene: s }) }}>
+                        {(['station', 'desert', 'snow', 'grass', 'ocean', 'fusion'] as const).map((s) => (
+                          <option key={s} value={s}>{t(`games.scene.${s}` as Parameters<typeof t>[0])}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {isTd ? (
+                    <div className="ready-group">
+                      <span className="ready-group-label">{t('games.td.endless')}</span>
+                      <button type="button" className={`ready-chip ${tdEndless ? 'on' : ''}`} data-field="td-endless-toggle" onClick={() => { const next = !tdEndless; setTdEndless(next); tdStateRef.current.endless = next; persistReadyPref('td', { endless: next }) }}>{tdEndless ? '✓' : '—'}</button>
+                    </div>
+                  ) : null}
+                </div>
+                {/* R218 U2: 手柄在场提示——任意已分配手柄 Start 开局/运行态暂停 */}
+                <div className="pad-hint-row" data-field="pad-hint">
+                  {gamepadInfo.count > 0 ? (
+                    <span>
+                      🎮 {t('games.pad.hint').replace('{n}', String(gamepadInfo.count))}
+                      {gamepadInfo.ids.length > 0 ? <small> · {gamepadInfo.ids.map((id) => id.length > 22 ? `${id.slice(0, 22)}…` : id).join(' · ')}</small> : null}
+                    </span>
+                  ) : (
+                    <span>{t('games.pad.none')}</span>
+                  )}
+                </div>
+                {/* R218 U7: ≥2P 键位席位摘要(每玩家方向键 + 分得的手柄) */}
+                {readySeating.length > 0 ? (
+                  <div className="ready-seating" data-field="ready-seating">
+                    {readySeating.map((row) => (
+                      <span key={row.n}><b>P{row.n}</b> {row.keys}{row.padId !== null ? <small> 🎮 {row.padId.length > 20 ? `${row.padId.slice(0, 20)}…` : row.padId}</small> : null}</span>
+                    ))}
+                  </div>
                 ) : null}
-                {isTd ? (
-                  <button type="button" className={`diff-btn ${tdCoopOn ? 'on' : ''}`} data-field="coop-toggle" onClick={() => setTdCoopOn(!tdCoopOn)}>{t('games.duel.coopToggle')}</button>
-                ) : null}
-                {isTetris ? (
-                  <button type="button" className={`diff-btn ${tetrisDuelOn ? 'on' : ''}`} data-field="tetris-duel-toggle" onClick={() => setTetrisDuelOn(!tetrisDuelOn)}>{t('games.duel.toggle')}</button>
-                ) : null}
-                {isSurvival ? (
-                  <button type="button" className={`diff-btn ${swarmCoopOn ? 'on' : ''}`} data-field="swarm-coop-toggle" onClick={() => setSwarmCoopOn(!swarmCoopOn)}>{t('games.swarm.coopToggle')}</button>
-                ) : null}
-                {/* R205 尾款(FR-G08): 短局矩阵——四作模式开关(引擎层已随 T1 合入) */}
-                {isTd ? (
-                  <button type="button" className={`diff-btn ${tdBlitzOn ? 'on' : ''}`} data-field="td-blitz-toggle" onClick={() => setTdBlitzOn(!tdBlitzOn)}>{t('games.short.blitz')}</button>
-                ) : null}
-                {isSurvival ? (
-                  <button type="button" className={`diff-btn ${swarmSprintOn ? 'on' : ''}`} data-field="swarm-sprint-toggle" onClick={() => setSwarmSprintOn(!swarmSprintOn)}>{t('games.short.sprint')}</button>
-                ) : null}
-                {isTetris ? (
-                  <button type="button" className={`diff-btn ${tetrisRaceOn ? 'on' : ''}`} data-field="tetris-race-toggle" onClick={() => setTetrisRaceOn(!tetrisRaceOn)}>{t('games.short.race')}</button>
-                ) : null}
-                {isSlash ? (
-                  <button type="button" className={`diff-btn ${slashBurstOn ? 'on' : ''}`} data-field="slash-burst-toggle" onClick={() => setSlashBurstOn(!slashBurstOn)}>{t('games.short.burst')}</button>
-                ) : null}
+                <details className="ready-drawer" data-field="ready-drawer" open={drawerOpen} onToggle={(e) => { const next = e.currentTarget.open; setDrawerOpen(next); writeDrawerOpen(next) }}>
+                  <summary>{t('games.ready.more')}</summary>
+                  <div className="ready-drawer-body">
+                    <div className="ready-drawer-grid">
+                      {/* R218 U9: 「画面大小」三档——标准/大(隐藏侧栏占比 ~95%)/专注(开局自动满幅) */}
+                      <div className="ready-group" data-field="screen-scale">
+                        <span className="ready-group-label">{t('games.screenSize.label')}</span>
+                        {(['standard', 'large', 'focus'] as const).map((scale) => (
+                          <button key={scale} type="button" className={`ready-chip ${screenScale === scale ? 'on' : ''}`} data-scale={scale} onClick={() => { setScreenScale(scale); writeScreenScale(scale) }}>{t(`games.screenSize.${scale}`)}</button>
+                        ))}
+                      </div>
+                      <button type="button" className={`ready-chip ${bgmOn ? 'on' : ''}`} data-field="bgm-toggle" onClick={toggleBgm}>{t('games.bgmToggle')}</button>
+                      {/* R205 尾款(FR-G08): 短局矩阵开关(引擎层已随 T1 合入) */}
+                      {isTd ? (
+                        <button type="button" className={`ready-chip ${tdBlitzOn ? 'on' : ''}`} data-field="td-blitz-toggle" onClick={() => { const next = !tdBlitzOn; setTdBlitzOn(next); persistReadyPref('td', { blitz: next }) }}>{t('games.short.blitz')}</button>
+                      ) : null}
+                      {isTd ? (
+                        <button type="button" className={`ready-chip ${tdCoopOn ? 'on' : ''}`} data-field="coop-toggle" onClick={() => { const next = !tdCoopOn; setTdCoopOn(next); persistReadyPref('td', { coop: next }) }}>{t('games.duel.coopToggle')}</button>
+                      ) : null}
+                      {isSurvival ? (
+                        <button type="button" className={`ready-chip ${swarmSprintOn ? 'on' : ''}`} data-field="swarm-sprint-toggle" onClick={() => { const next = !swarmSprintOn; setSwarmSprintOn(next); persistReadyPref('survival', { sprint: next }) }}>{t('games.short.sprint')}</button>
+                      ) : null}
+                      {isTetris ? (
+                        <button type="button" className={`ready-chip ${tetrisRaceOn ? 'on' : ''}`} data-field="tetris-race-toggle" onClick={() => { const next = !tetrisRaceOn; setTetrisRaceOn(next); persistReadyPref('tetris', { race: next }) }}>{t('games.short.race')}</button>
+                      ) : null}
+                      {isTetris ? (
+                        <button type="button" className={`ready-chip ${tetrisDuelOn ? 'on' : ''}`} data-field="tetris-duel-toggle" onClick={() => { const next = !tetrisDuelOn; setTetrisDuelOn(next); persistReadyPref('tetris', { duel: next }) }}>{t('games.duel.toggle')}</button>
+                      ) : null}
+                      {isSlash ? (
+                        <button type="button" className={`ready-chip ${slashBurstOn ? 'on' : ''}`} data-field="slash-burst-toggle" onClick={() => { const next = !slashBurstOn; setSlashBurstOn(next); persistReadyPref('slash', { burst: next }) }}>{t('games.short.burst')}</button>
+                      ) : null}
+                      {isSlash ? (
+                        <button type="button" className={`ready-chip ${slashDuelOn ? 'on' : ''}`} data-field="duel-toggle" onClick={() => { const next = !slashDuelOn; setSlashDuelOn(next); persistReadyPref('slash', { duel: next }) }}>{t('games.duel.toggle')}</button>
+                      ) : null}
+                      {/* R213: 输入配置中心(P1-P4 键位自定义+手柄绑定) */}
+                      <button type="button" className="ready-chip" data-field="input-config-open" onClick={() => setInputPanelOpen(true)}>{t('games.input.title')}</button>
+                      {isSurvival ? (
+                        <label className="ready-group">
+                          <span className="ready-group-label">{t('games.swarm.autoPick')}</span>
+                          <select data-field="swarm-autopick" value={autoPickMode} onChange={(e) => { const m = e.target.value as 'off' | 'list' | 'best'; setAutoPickMode(m); try { localStorage.setItem('rgbbox:swarmAutoPick', JSON.stringify(m)) } catch { /* best-effort */ } }}>
+                            <option value="off">{t('games.swarm.autoPick.off')}</option>
+                            <option value="list">{t('games.swarm.autoPick.list')}</option>
+                            <option value="best">{t('games.swarm.autoPick.best')}</option>
+                          </select>
+                        </label>
+                      ) : null}
+                    </div>
+                    {/* R213: 头像行(每玩家一张;画布上替代默认飞船贴图) */}
+                    {isSurvival ? (
+                      <div className="swarm-avatars" data-field="swarm-avatars">
+                        {Array.from({ length: swarmPlayers }, (_, i) => (
+                          <AvatarPicker key={i + 1} slot={i + 1} label={`P${i + 1}`} onSet={() => { void refreshAvatars() }} />
+                        ))}
+                      </div>
+                    ) : null}
+                    {isSurvival ? (
+                      <div className="artifact-bar" data-field="swarm-artifacts">
+                        {ARTIFACTS.map((artifact) => {
+                          const unlocked = isArtifactUnlocked(artifact, meta.stats)
+                          const on = unlocked && !!meta.artifacts[artifact.id]
+                          return (
+                            <button
+                              key={artifact.id}
+                              type="button"
+                              className={`artifact-chip ${on ? 'on' : ''} ${unlocked ? '' : 'locked'}`}
+                              disabled={!unlocked}
+                              onClick={() => toggleArtifact(artifact.id)}
+                              title={unlocked ? t(`games.art.${artifact.id}.desc`) : t(`games.art.${artifact.id}.lock`)}
+                            >
+                              <span>{unlocked ? t(`games.art.${artifact.id}`) : t(`games.art.${artifact.id}.lock`)}</span>
+                              <em>{artifact.mult >= 0 ? '+' : ''}{artifact.mult.toFixed(2)}×</em>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                </details>
+                <p className="ready-hint">{isSurvival ? (swarmPlayers >= 2 ? t('games.swarm.coopHint') : t('games.setupHint')) : isTd ? t('games.td.readySubtitle') : isTetris ? t('games.tetrisHint') : t('games.slashHint')}</p>
               </div>
             ) : null}
             {/* R209 三期(FR-LN05): LAN Tetris 对战——比分互显面板(任一方结算
@@ -2131,7 +2498,10 @@ export function MiniGamesView(): JSX.Element {
                 <div className="fs-pause-actions">
                   <button type="button" className="video-btn" data-action="fs-resume" onClick={() => setFsPaused(false)}>{t('games.pause.resume')}</button>
                   <button type="button" className="video-btn" data-action="fs-restart" onClick={() => { if (restartHandler) restartHandler(); setFsPaused(false) }} disabled={!restartHandler}>{t('games.pause.restart')}</button>
-                  <button type="button" className="video-btn" data-action="fs-exit" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined) }}>{t('games.pause.exitFs')}</button>
+                  {/* R218 U2: 非 fs 态也可暂停(手柄 Start/Esc)——「退出全屏」仅 fs 态显示 */}
+                  {fullscreen ? (
+                    <button type="button" className="video-btn" data-action="fs-exit" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined) }}>{t('games.pause.exitFs')}</button>
+                  ) : null}
                   <button type="button" className="video-btn" data-action="fs-hub" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined); backToHub() }}>{t('games.pause.hub')}</button>
                 </div>
               </div>
@@ -2144,10 +2514,20 @@ export function MiniGamesView(): JSX.Element {
               ref={canvasRef}
               className="games-canvas"
               onClick={handleUnifiedCanvasClick}
+              onDoubleClick={() => {
+                // R218 U9: 双击画布进入专注(TD 除外——双击会先落两座塔)
+                if (!isTd && currentPhaseRef.current() === 'running') setFocusMode(true)
+              }}
               onMouseMove={handleUnifiedCanvasMove}
               onMouseLeave={() => { hudHoverRef.current = null; if (isTd) setTdHover(null) }}
               aria-label={`${gameTitle} game board`}
             />
+            {/* R218 U9: 专注模式半透明退出角标(Esc / 点击退出) */}
+            {focusMode ? (
+              <button type="button" className="focus-exit-badge" data-action="focus-exit" onClick={() => setFocusMode(false)}>
+                Esc · {t('games.focus.exit')}
+              </button>
+            ) : null}
             {!isTd && survivalSnapshot.phase === 'levelup' && survivalSnapshot.offers.length > 0 ? (
               <div className="levelup-overlay">
                 <p>{t('games.levelupTitle')}</p>
@@ -2166,72 +2546,8 @@ export function MiniGamesView(): JSX.Element {
                 </div>
               </div>
             ) : null}
-            {isSurvival && survivalSnapshot.phase === 'ready' ? (
-              <div className="swarm-setup">
-                <p className="swarm-setup-title">{t('games.setupTitle')}</p>
-                <div className="char-cards">
-                  {CHARACTERS.map((character) => (
-                    <button key={character.id} type="button" className={`char-card ${swarmCharacter === character.id ? 'selected' : ''}`} style={{ '--game-accent': character.accent } as CSSProperties} onClick={() => selectCharacter(character.id)}>
-                      <strong>{t(`games.char.${character.id}`)}</strong>
-                      <small>{t(`games.char.${character.id}.desc`)}</small>
-                      <em>HP {5 + character.hpMod}</em>
-                    </button>
-                  ))}
-                </div>
-                <div className="artifact-bar">
-                  {ARTIFACTS.map((artifact) => {
-                    const unlocked = isArtifactUnlocked(artifact, meta.stats)
-                    const on = unlocked && !!meta.artifacts[artifact.id]
-                    return (
-                      <button
-                        key={artifact.id}
-                        type="button"
-                        className={`artifact-chip ${on ? 'on' : ''} ${unlocked ? '' : 'locked'}`}
-                        disabled={!unlocked}
-                        onClick={() => toggleArtifact(artifact.id)}
-                        title={unlocked ? t(`games.art.${artifact.id}.desc`) : t(`games.art.${artifact.id}.lock`)}
-                      >
-                        <span>{unlocked ? t(`games.art.${artifact.id}`) : t(`games.art.${artifact.id}.lock`)}</span>
-                        <em>{artifact.mult >= 0 ? '+' : ''}{artifact.mult.toFixed(2)}×</em>
-                      </button>
-                    )
-                  })}
-                </div>
-                {/* R213: 4P 人数 / 场景 / 升级自动预选 / 按键配置入口 */}
-                <div className="swarm-config-rows" data-field="swarm-config">
-                  <label>
-                    <span>{t('games.swarm.players')}</span>
-                    <select data-field="swarm-players" value={swarmPlayers} onChange={(e) => { const n = Number(e.target.value) as 1 | 2 | 3 | 4; setSwarmPlayers(n); setSwarmCoopOn(n >= 2) }}>
-                      {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}P</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    <span>{t('games.swarm.scene')}</span>
-                    <select data-field="swarm-scene" value={swarmScene} onChange={(e) => setSwarmScene(e.target.value as typeof swarmScene)}>
-                      {(['station', 'desert', 'snow', 'grass', 'ocean', 'fusion'] as const).map((s) => (
-                        <option key={s} value={s}>{t(`games.scene.${s}` as Parameters<typeof t>[0])}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>{t('games.swarm.autoPick')}</span>
-                    <select data-field="swarm-autopick" value={autoPickMode} onChange={(e) => { const m = e.target.value as 'off' | 'list' | 'best'; setAutoPickMode(m); try { localStorage.setItem('rgbbox:swarmAutoPick', JSON.stringify(m)) } catch { /* best-effort */ } }}>
-                      <option value="off">{t('games.swarm.autoPick.off')}</option>
-                      <option value="list">{t('games.swarm.autoPick.list')}</option>
-                      <option value="best">{t('games.swarm.autoPick.best')}</option>
-                    </select>
-                  </label>
-                  <button type="button" className="diff-btn" data-field="input-config-open" onClick={() => setInputPanelOpen(true)}>{t('games.input.title')}</button>
-                </div>
-                {/* R213: 头像行(每玩家一张;画布上替代默认飞船贴图) */}
-                <div className="swarm-avatars" data-field="swarm-avatars">
-                  {Array.from({ length: swarmPlayers }, (_, i) => (
-                    <AvatarPicker key={i + 1} slot={i + 1} label={`P${i + 1}`} onSet={() => { void refreshAvatars() }} />
-                  ))}
-                </div>
-                <p className="swarm-setup-hint">{swarmCoopOn ? t('games.swarm.coopHint') : t('games.setupHint')}</p>
-              </div>
-            ) : null}
+            {/* R218 U3: survival 的旧 swarm-setup ready 面板已并入上方统一 ready-panel
+                (战机/人数/场景=核心行;artifact/头像/自动预选/输入配置=抽屉)。 */}
             {isSurvival && survivalSnapshot.phase === 'roulette' ? (
               <div className="swarm-roulette">
                 {roulette.stage === 'pick' ? (
@@ -2299,10 +2615,21 @@ export function MiniGamesView(): JSX.Element {
             {vision.enabled && vision.state === 'active' ? <VisionCursor vision={vision} wrapRef={canvasWrapRef} stateRef={visionCursorRef} /> : null}
           </div>
           <div className="games-canvas-status">
+            {/* R218 U9: 专注模式开关(窗口内满幅;与 OS 级 fs 全屏正交) */}
+            <button
+              type="button"
+              className="aspect-lock-btn focus-toggle-btn"
+              data-action="focus-toggle"
+              aria-label={t('games.focus.toggle')}
+              title={t('games.focus.toggle')}
+              onClick={() => setFocusMode((v) => !v)}
+            >
+              {focusMode ? <Minimize2 aria-hidden="true" size={12} /> : <Maximize2 aria-hidden="true" size={12} />}
+            </button>
             <span>
               {isTd
                 ? `${t('games.wave')} ${tdSnapshot.wave}/${MAX_WAVE}${tdSnapshot.phase === 'running' && tdSnapshot.waveQueue + tdSnapshot.balloons.length > 0 ? ` · ${t('games.balloonsLeft').replace('{value}', String(tdSnapshot.waveQueue + tdSnapshot.balloons.length))}` : ''}`
-                : isSurvival ? `${t('games.swarmHint')} · ${t('games.island').replace('{n}', String(survivalSnapshot.island))}${gamepadName ? ` · 🎮 ${gamepadName}` : ''}${visionSuffix}` : isSlash ? `${t('games.slashHint')}${visionSuffix}` : `${t('games.tetrisHint')}${visionSuffix}`}
+                : isSurvival ? `${t('games.swarmHint')} · ${t('games.island').replace('{n}', String(survivalSnapshot.island))}${swarmPlayers >= 2 ? ` · ${swarmPlayers}P` : ''}${gamepadName ? ` · 🎮 ${gamepadName}` : ''}${visionSuffix}` : isSlash ? `${t('games.slashHint')}${visionSuffix}` : `${t('games.tetrisHint')}${visionSuffix}`}
             </span>
             <span>
               {isTd && tdSnapshot.phase === 'running' && tdSnapshot.waveQueue === 0 && tdSnapshot.balloons.length === 0 && tdSnapshot.wave < MAX_WAVE

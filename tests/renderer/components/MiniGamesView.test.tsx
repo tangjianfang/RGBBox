@@ -449,3 +449,419 @@ describe('renderer/components/MiniGamesView', () => {
   })
 })
 
+
+// ── R218 U2: gamepad Start/Options — any ASSIGNED pad, all four games ─────────
+describe('renderer/components/MiniGamesView · gamepad Start (R218 U2)', () => {
+  const noopCtx = new Proxy({}, {
+    get: (_t, prop) => {
+      if (prop === 'canvas') return undefined
+      if (prop === 'measureText') return () => ({ width: 10 })
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+        return () => ({ addColorStop: () => undefined })
+      }
+      return () => undefined
+    },
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D
+
+  function makePad(index: number, id: string, mapping = 'standard'): Gamepad {
+    const buttons = Array.from({ length: 18 }, () => ({ pressed: false, value: 0, touched: false }))
+    return { index, id, mapping, connected: true, axes: [0, 0, 0, 0], buttons, timestamp: 0 } as unknown as Gamepad
+  }
+
+  function mockGamepads(pads: Gamepad[]): void {
+    Object.defineProperty(navigator, 'getGamepads', {
+      value: () => pads,
+      configurable: true,
+    })
+  }
+
+  const frames = (ms = 90) => new Promise((r) => setTimeout(r, ms))
+
+  beforeEach(() => {
+    localStorage.clear()
+    Object.defineProperty(navigator, 'getGamepads', { value: () => [], configurable: true })
+  })
+
+  it('any assigned pad (not just P1) starts the run; hint row lists the count', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const pad0 = makePad(0, 'Xbox Wireless Controller')
+    const pad1 = makePad(1, 'DualSense Wireless Controller') // lands on P2 via assignGamepads fill
+    mockGamepads([pad0, pad1])
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm
+    await frames()
+    const probe = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
+    expect(probe()).toBe('ready')
+    // ready-state presence hint (tests render without I18nProvider → raw key) + ids
+    const hint = container.querySelector('[data-field="pad-hint"]')
+    expect(hint?.textContent).toContain('games.pad.hint')
+    expect(hint?.textContent).toContain('Xbox Wireless')
+    expect(hint?.textContent).toContain('DualSense')
+    // press Start on the P2 pad (index 1) — the pi!==0 pad that never worked before
+    pad1.buttons[9].pressed = true
+    await frames()
+    expect(probe()).toBe('running')
+    ctxSpy.mockRestore()
+  })
+
+  it('held Start does not re-trigger (edge detect) nor pause mid-press', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const pad0 = makePad(0, 'Pad A')
+    mockGamepads([pad0])
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    await frames()
+    pad0.buttons[9].pressed = true
+    await frames()
+    const probe = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
+    expect(probe()).toBe('running')
+    // keep holding: no new edge → no pause overlay, still running
+    await frames(150)
+    expect(container.querySelector('[data-field="fs-pause"]')).toBeNull()
+    expect(probe()).toBe('running')
+    ctxSpy.mockRestore()
+  })
+
+  it('Start while running toggles the pause overlay (non-fs state too)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const pad0 = makePad(0, 'Pad A')
+    mockGamepads([pad0])
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    await frames()
+    const probe = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
+    pad0.buttons[9].pressed = true
+    await frames()
+    expect(probe()).toBe('running')
+    pad0.buttons[9].pressed = false
+    await frames()
+    expect(container.querySelector('[data-field="fs-pause"]')).toBeNull()
+    // fresh press while running → pause overlay (resume/restart/hub; no exit-fs button outside fs)
+    pad0.buttons[9].pressed = true
+    await frames()
+    const overlay = container.querySelector('[data-field="fs-pause"]')
+    expect(overlay).toBeTruthy()
+    expect(overlay?.querySelector('[data-action="fs-resume"]')).toBeTruthy()
+    expect(overlay?.querySelector('[data-action="fs-exit"]')).toBeNull() // hidden outside fullscreen
+    // release + press again → resume
+    pad0.buttons[9].pressed = false
+    await frames()
+    pad0.buttons[9].pressed = true
+    await frames()
+    expect(container.querySelector('[data-field="fs-pause"]')).toBeNull()
+    expect(probe()).toBe('running')
+    ctxSpy.mockRestore()
+  })
+
+  it('non-standard mapping pad falls back to buttons[16]', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const pad0 = makePad(0, 'Generic HID', '')
+    mockGamepads([pad0])
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    await frames()
+    const probe = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
+    expect(probe()).toBe('ready')
+    pad0.buttons[16].pressed = true
+    await frames()
+    expect(probe()).toBe('running')
+    ctxSpy.mockRestore()
+  })
+
+  it('Start also starts TD (all four games share the poll path)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const pad0 = makePad(0, 'Pad A')
+    mockGamepads([pad0])
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[0]) // TD
+    await frames()
+    expect(container.querySelector('[data-field="td-ctl"]')).toBeTruthy()
+    pad0.buttons[9].pressed = true
+    await waitFor(() => {
+      // canvas-status second span shows the phase label once the snapshot publishes
+      const spans = container.querySelectorAll('.games-canvas-status span')
+      expect(spans[1]?.textContent).toContain('games.statusRunning')
+    }, { timeout: 1500 })
+    ctxSpy.mockRestore()
+  })
+})
+
+// ── R218 U4: difficulty four tiers, persistence, per-game wiring ──────────────
+describe('renderer/components/MiniGamesView · difficulty four tiers (R218 U4)', () => {
+  const noopCtx = new Proxy({}, {
+    get: (_t, prop) => {
+      if (prop === 'canvas') return undefined
+      if (prop === 'measureText') return () => ({ width: 10 })
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+        return () => ({ addColorStop: () => undefined })
+      }
+      return () => undefined
+    },
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D
+
+  const frames = (ms = 260) => new Promise((r) => setTimeout(r, ms))
+
+  const enterTd = (container: HTMLElement) => {
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[0])
+  }
+
+  it('renders four tiers with score multipliers and persists the pick', () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    enterTd(container)
+    const btns = container.querySelectorAll('[data-field="difficulty"] [data-diff]')
+    expect([...btns].map((b) => b.getAttribute('data-diff'))).toEqual(['casual', 'standard', 'hard', 'insane'])
+    expect([...btns].map((b) => b.querySelector('.ready-chip-em')?.textContent)).toEqual(['1×', '1.5×', '2×', '3×'])
+    expect(btns[1].className).toContain('on') // default standard
+    fireEvent.click(btns[2]) // hard
+    expect(localStorage.getItem('rgbbox:gamesDifficulty:td')).toBe('hard')
+    expect(btns[2].className).toContain('on')
+    ctxSpy.mockRestore()
+  })
+
+  it('legacy two-tier values map through; invalid falls back to standard', () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    localStorage.setItem('rgbbox:gamesDifficulty:td', 'casual')
+    const { container } = render(<MiniGamesView />)
+    enterTd(container)
+    expect(container.querySelector('[data-diff="casual"]')?.className).toContain('on')
+    ctxSpy.mockRestore()
+    cleanup()
+
+    localStorage.setItem('rgbbox:gamesDifficulty:td', 'bogus')
+    const second = render(<MiniGamesView />)
+    enterTd(second.container)
+    expect(second.container.querySelector('[data-diff="standard"]')?.className).toContain('on')
+    ctxSpy.mockRestore()
+  })
+
+  it('TD hard start applies the four-tier table (lives 14 / coins 187)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    enterTd(container)
+    fireEvent.click(container.querySelector('[data-diff="hard"]')!)
+    // header start button (text is the raw key — tests render without I18nProvider)
+    const start = [...container.querySelectorAll('.games-header-actions button')].find((b) => b.textContent === 'games.start') as HTMLButtonElement
+    fireEvent.click(start)
+    await frames() // loop publishes the snapshot every 0.18s
+    const lives = [...container.querySelectorAll('.games-stat-grid span')].find((s) => s.getAttribute('aria-label')?.includes('games.ariaLives'))
+    expect(lives?.textContent).toContain('14')
+    const coins = [...container.querySelectorAll('.games-stat-grid span')].find((s) => s.getAttribute('aria-label')?.includes('games.ariaCoins'))
+    expect(coins?.textContent).toContain('187')
+    ctxSpy.mockRestore()
+  })
+
+  it('tetris difficulty maps to the start level (insane → LV13)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[2]) // Tetris
+    fireEvent.click(container.querySelector('[data-diff="insane"]')!)
+    const start = [...container.querySelectorAll('.games-header-actions button')].find((b) => b.textContent === 'games.start') as HTMLButtonElement
+    fireEvent.click(start)
+    await frames()
+    const lv = [...container.querySelectorAll('.games-stat-grid span')].find((s) => s.getAttribute('aria-label')?.includes('games.ariaWave'))
+    expect(lv?.textContent).toContain('LV 13')
+    ctxSpy.mockRestore()
+  })
+})
+
+// ── R218 U3: ready 态统一信息架构——抽屉折叠/记忆恢复/主按钮/席位行 ───────────
+describe('renderer/components/MiniGamesView · ready panel (R218 U3)', () => {
+  const noopCtx = new Proxy({}, {
+    get: (_t, prop) => {
+      if (prop === 'canvas') return undefined
+      if (prop === 'measureText') return () => ({ width: 10 })
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+        return () => ({ addColorStop: () => undefined })
+      }
+      return () => undefined
+    },
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D
+
+  const frames = (ms = 120) => new Promise((r) => setTimeout(r, ms))
+
+  function makePad(index: number, id: string): Gamepad {
+    const buttons = Array.from({ length: 18 }, () => ({ pressed: false, value: 0, touched: false }))
+    return { index, id, mapping: 'standard', connected: true, axes: [0, 0, 0, 0], buttons, timestamp: 0 } as unknown as Gamepad
+  }
+
+  it('first screen ≤5 groups: start button + core row + pad hint + drawer (collapsed)', () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    expect(container.querySelector('[data-action="ready-start"]')).toBeTruthy()
+    expect(container.querySelector('.ready-core')).toBeTruthy()
+    expect(container.querySelector('[data-field="pad-hint"]')).toBeTruthy()
+    const drawer = container.querySelector('[data-field="ready-drawer"]') as HTMLDetailsElement
+    expect(drawer).toBeTruthy()
+    expect(drawer.open).toBe(false) // collapsed by default
+    // advanced items live inside the drawer only
+    expect(container.querySelector('[data-field="input-config-open"]')).toBeTruthy()
+    expect(container.querySelector('[data-field="swarm-avatars"]')).toBeTruthy()
+    ctxSpy.mockRestore()
+  })
+
+  it('drawer expands on summary click and the state persists', () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    fireEvent.click(container.querySelector('[data-field="ready-drawer"] summary')!)
+    const drawer = container.querySelector('[data-field="ready-drawer"]') as HTMLDetailsElement
+    expect(drawer.open).toBe(true)
+    expect(localStorage.getItem('rgbbox:gamesReady:drawer')).toBe('1')
+    ctxSpy.mockRestore()
+    cleanup()
+
+    // re-enter: expansion restored from storage
+    const second = render(<MiniGamesView />)
+    fireEvent.click(second.container.querySelectorAll('.game-tile:not(.ghost)')[2]) // tetris drawer is shared
+    const drawer2 = second.container.querySelector('[data-field="ready-drawer"]') as HTMLDetailsElement
+    expect(drawer2.open).toBe(true)
+  })
+
+  it('choices persist and restore across visits (players 3P + scene desert)', () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    fireEvent.change(container.querySelector('[data-field="swarm-players"]')!, { target: { value: '3' } })
+    fireEvent.change(container.querySelector('[data-field="swarm-scene"]')!, { target: { value: 'desert' } })
+    expect(JSON.parse(localStorage.getItem('rgbbox:gamesReady:survival') ?? '{}')).toEqual({ players: 3, scene: 'desert' })
+    // back to hub, re-enter
+    const back = [...container.querySelectorAll('button')].find((b) => b.textContent === 'games.backToHub') as HTMLButtonElement
+    fireEvent.click(back)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    expect((container.querySelector('[data-field="swarm-players"]') as HTMLSelectElement).value).toBe('3')
+    expect((container.querySelector('[data-field="swarm-scene"]') as HTMLSelectElement).value).toBe('desert')
+    ctxSpy.mockRestore()
+  })
+
+  it('the big start button starts the run; seating rows appear for 2P with pads', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    Object.defineProperty(navigator, 'getGamepads', {
+      value: () => [makePad(0, 'Pad Zero'), makePad(3, 'Pad Three')],
+      configurable: true,
+    })
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    fireEvent.change(container.querySelector('[data-field="swarm-players"]')!, { target: { value: '2' } })
+    await frames()
+    // U7: two seating rows (P1 default wasd + pad 0; P2 default ijkl + pad 3)
+    const seating = container.querySelectorAll('[data-field="ready-seating"] span')
+    expect(seating.length).toBe(2)
+    expect(seating[0].textContent).toContain('w/s/a/d')
+    expect(seating[0].textContent).toContain('Pad Zero')
+    expect(seating[1].textContent).toContain('i/k/j/l')
+    expect(seating[1].textContent).toContain('Pad Three')
+    fireEvent.click(container.querySelector('[data-action="ready-start"]') as HTMLButtonElement)
+    await frames()
+    const probe = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
+    expect(probe()).toBe('running')
+    // run started → ready panel unmounts
+    expect(container.querySelector('[data-field="ready-panel"]')).toBeNull()
+    ctxSpy.mockRestore()
+  })
+})
+
+// ── R218 U9: 画面占比三档 + 专注模式 ──────────────────────────────────────────
+describe('renderer/components/MiniGamesView · screen size & focus mode (R218 U9)', () => {
+  const noopCtx = new Proxy({}, {
+    get: (_t, prop) => {
+      if (prop === 'canvas') return undefined
+      if (prop === 'measureText') return () => ({ width: 10 })
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+        return () => ({ addColorStop: () => undefined })
+      }
+      return () => undefined
+    },
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D
+
+  const frames = (ms = 320) => new Promise((r) => setTimeout(r, ms))
+  const root = (container: HTMLElement) => container.querySelector('.games-screen') as HTMLElement
+
+  it('focus toggle button enters/exits; Esc exits; badge shown while active', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    expect(root(container).className).not.toContain('focus')
+    fireEvent.click(container.querySelector('[data-action="focus-toggle"]')!)
+    expect(root(container).className).toContain('focus')
+    expect(container.querySelector('[data-action="focus-exit"]')).toBeTruthy()
+    // Esc exits focus
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(root(container).className).not.toContain('focus')
+    expect(container.querySelector('[data-action="focus-exit"]')).toBeNull()
+    // badge click also exits
+    fireEvent.click(container.querySelector('[data-action="focus-toggle"]')!)
+    fireEvent.click(container.querySelector('[data-action="focus-exit"]')!)
+    expect(root(container).className).not.toContain('focus')
+    ctxSpy.mockRestore()
+  })
+
+  it('screen-size preference persists and restores (focus → auto-enter on run start)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    // drawer holds the three-tier screen size setting
+    fireEvent.click(container.querySelector('[data-field="ready-drawer"] summary')!)
+    fireEvent.click(container.querySelector('[data-scale="large"]')!)
+    expect(localStorage.getItem('rgbbox:gamesFocusMode')).toBe('large')
+    expect(root(container).className).toContain('size-large')
+    fireEvent.click(container.querySelector('[data-scale="focus"]')!)
+    expect(localStorage.getItem('rgbbox:gamesFocusMode')).toBe('focus')
+    // starting the run auto-enters focus (pref = focus)
+    fireEvent.click(container.querySelector('[data-action="ready-start"]') as HTMLButtonElement)
+    await frames() // phase snapshot publish (~0.18s) flips runActive
+    expect(root(container).className).toContain('focus')
+    expect(root(container).className).toContain('running')
+    // run ends → focus auto-exits is covered by the runActive effect; here verify
+    // the class is bound to run state at least via presence while running
+    ctxSpy.mockRestore()
+  })
+
+  it('double-click on the canvas enters focus while running (non-TD)', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    fireEvent.click(container.querySelector('[data-action="ready-start"]') as HTMLButtonElement)
+    await frames()
+    expect(root(container).className).toContain('running')
+    fireEvent.dblClick(container.querySelector('canvas.games-canvas')!)
+    expect(root(container).className).toContain('focus')
+    ctxSpy.mockRestore()
+  })
+})
+
+// ── R218 U7: 多人 shell 接线——ready 席位行(见 U3 组)/进行态人数徽章 ──────────
+describe('renderer/components/MiniGamesView · multiplayer shell chrome (R218 U7)', () => {
+  const noopCtx = new Proxy({}, {
+    get: (_t, prop) => {
+      if (prop === 'canvas') return undefined
+      if (prop === 'measureText') return () => ({ width: 10 })
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+        return () => ({ addColorStop: () => undefined })
+      }
+      return () => undefined
+    },
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D
+
+  const frames = (ms = 320) => new Promise((r) => setTimeout(r, ms))
+
+  it('running state shows the player-count badge in the (translucent) canvas chrome', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    fireEvent.change(container.querySelector('[data-field="swarm-players"]')!, { target: { value: '3' } })
+    fireEvent.click(container.querySelector('[data-action="ready-start"]') as HTMLButtonElement)
+    await frames()
+    const status = container.querySelector('.games-canvas-status span')?.textContent ?? ''
+    expect(status).toContain('3P')
+    // running state chrome carries the translucency hook (CSS class on root)
+    expect((container.querySelector('.games-screen') as HTMLElement).className).toContain('running')
+    ctxSpy.mockRestore()
+  })
+})
