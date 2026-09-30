@@ -46,7 +46,8 @@ describe('renderer/games/tetris engine (R100.3)', () => {
   })
 
   it('clearing two rows scores 300 and shifts the stack down', () => {
-    const state = initialTetrisState()
+    // R218: 计分算式断言用 casual(level 1)保持数字可读;默认档见 R218 套件
+    const state = initialTetrisState(undefined, 'casual')
     startTetris(state)
     state.kind = 1
     state.rot = 0
@@ -179,7 +180,8 @@ describe('renderer/games/tetris Hold + lock delay (FR-TE01)', () => {
 describe('renderer/games/tetris T-spin / B2B / combo scoring (FR-TE03)', () => {
   /** 构造经典 TSD:T rot1(px=4,py=16),角位程序化填充,行 17/18 由 T 补满双消。 */
   function tspinDoubleState(): ReturnType<typeof initialTetrisState> {
-    const state = initialTetrisState()
+    // R218: 计分算式断言用 casual(level 1)保持数字可读
+    const state = initialTetrisState(undefined, 'casual')
     startTetris(state)
     // 行19:仅 nub 下方一格支撑(grounded 锁定路径)——不能全满,否则被算进消行变 TST
     state.grid[19][5] = 1
@@ -232,7 +234,7 @@ describe('renderer/games/tetris T-spin / B2B / combo scoring (FR-TE03)', () => {
     expect(s2.tspins).toBe(1)
 
     // 非资格消行(单行普通) → B2B 清空
-    const s3 = initialTetrisState()
+    const s3 = initialTetrisState(undefined, 'casual')
     startTetris(s3)
     s3.b2b = true
     for (let x = 0; x < 9; x += 1) s3.grid[19][x] = 1
@@ -257,7 +259,7 @@ describe('renderer/games/tetris T-spin / B2B / combo scoring (FR-TE03)', () => {
     tickTetris(s4, 0.001)
     expect(s4.combo).toBe(-1)
     // 四消 Tetris 保持 B2B 资格并吃 ×1.5
-    const s5 = initialTetrisState()
+    const s5 = initialTetrisState(undefined, 'casual')
     startTetris(s5)
     s5.b2b = true
     for (let y = 16; y < 20; y += 1) for (let x = 0; x < 10; x += 1) s5.grid[y][x] = (x >= 4 && x <= 7 && y === 19) ? 0 : 1
@@ -431,5 +433,212 @@ describe('R209 LAN tetris: seeded bag + garbage roundtrip', () => {
     expect(b.grid.length).toBe(rowsBefore)
     expect(b.grid[rowsBefore - 1].filter((cell) => cell === GARBAGE_CELL)).toHaveLength(9)
     expect(b.grid[rowsBefore - 1][6]).toBe(0)
+  })
+})
+
+// ── R218 U4: 难度=起始等级四档 + 对战垃圾行系数 + 结算倍率 ──
+import {
+  drawTetris,
+  settledTetrisScore,
+  stackDanger,
+  TETRIS_DIFFICULTY_PARAMS,
+} from '../../../src/renderer/src/games/tetris'
+import type { GameDifficulty } from '../../../src/renderer/src/games/hud'
+
+describe('R218 difficulty tiers (start level + garbage multiplier)', () => {
+  it('四档参数矩阵:casual 1/0.7 · standard 5/1.0 · hard 9/1.3 · insane 13/1.6', () => {
+    expect(TETRIS_DIFFICULTY_PARAMS.casual).toEqual({ startLevel: 1, garbageMult: 0.7 })
+    expect(TETRIS_DIFFICULTY_PARAMS.standard).toEqual({ startLevel: 5, garbageMult: 1.0 })
+    expect(TETRIS_DIFFICULTY_PARAMS.hard).toEqual({ startLevel: 9, garbageMult: 1.3 })
+    expect(TETRIS_DIFFICULTY_PARAMS.insane).toEqual({ startLevel: 13, garbageMult: 1.6 })
+  })
+
+  it('无参默认 standard(level 5);seed+difficulty 可同时注入且向后兼容', () => {
+    const s = initialTetrisState()
+    expect(s.difficulty).toBe('standard')
+    expect(s.level).toBe(5)
+    expect(s.startLevel).toBe(5)
+    expect(initialTetrisState(undefined, 'casual').level).toBe(1)
+    const seeded = initialTetrisState(20260930, 'insane')
+    expect(seeded.level).toBe(13)
+    expect(seeded.rng).toBeDefined() // 种子注入不受新参数影响
+    expect(initialTetrisState(7).queue).toHaveLength(3) // 旧签名(仅 seed)仍成立
+  })
+
+  it('起始等级参与升级曲线:standard 消满 10 行 → level 6(不回落到 1+x 旧公式)', () => {
+    const s = initialTetrisState(undefined, 'standard')
+    startTetris(s)
+    s.lines = 9
+    s.kind = 1 // O
+    s.rot = 0
+    s.px = 4
+    s.py = 18
+    for (let y = 18; y <= 19; y++) {
+      for (let x = 0; x < 10; x++) s.grid[y][x] = x === 4 || x === 5 ? 0 : 1
+    }
+    s.commands = ['hard']
+    tickTetris(s, 0.001)
+    expect(s.lines).toBe(11)
+    expect(s.level).toBe(6) // 旧公式 1+floor(11/10)=2 会断崖回落
+  })
+
+  it('垃圾行取整乘法:接收方按自身难度放大(对称——发送量不变)', () => {
+    const mk = (d: GameDifficulty): TetrisState => {
+      const s = initialTetrisState(undefined, d)
+      s.phase = 'running'
+      return s
+    }
+    const garbageRows = (s: TetrisState): number => s.grid.flat().filter((c) => c === GARBAGE_CELL).length / 9
+    const c1 = mk('casual'); applyGarbage(c1, 2, 4); expect(garbageRows(c1)).toBe(2) // ceil(2×0.7)=ceil(1.4)
+    const st = mk('standard'); applyGarbage(st, 3, 4); expect(garbageRows(st)).toBe(3) // ×1.0 恒等
+    const hd = mk('hard'); applyGarbage(hd, 2, 4); expect(garbageRows(hd)).toBe(3) // ceil(2.6)
+    const in1 = mk('insane'); applyGarbage(in1, 3, 4); expect(garbageRows(in1)).toBe(5) // ceil(4.8)
+  })
+
+  it('结算倍率:settledTetrisScore = 原始分 × DIFFICULTY_SCORE_MULT,且不改写引擎分', () => {
+    const s = initialTetrisState(undefined, 'hard')
+    s.score = 123
+    expect(settledTetrisScore(s)).toBe(246) // hard ×2
+    expect(s.score).toBe(123) // 引擎内保持原始值(结算点换算)
+    const casual = initialTetrisState(undefined, 'casual')
+    casual.score = 100
+    expect(settledTetrisScore(casual)).toBe(100)
+    const insane = initialTetrisState(undefined, 'insane')
+    insane.score = 50
+    expect(settledTetrisScore(insane)).toBe(150) // ×3
+  })
+})
+
+// ── R218 U5: 危险压力条数据源(纯函数,不改机制) ──
+describe('R218 stackDanger (U5 danger pressure source)', () => {
+  it('空板 0 / 半满 ~0.55 / 贴顶 1', () => {
+    const s = initialTetrisState()
+    expect(stackDanger(s)).toBe(0)
+    for (let y = 10; y < 20; y += 1) for (let x = 0; x < 10; x += 1) s.grid[y][x] = 1
+    expect(stackDanger(s)).toBeCloseTo(10 / 20, 10)
+    s.grid[0][3] = 2
+    expect(stackDanger(s)).toBe(1)
+  })
+
+  it('消行后 danger 回落', () => {
+    const s = initialTetrisState(undefined, 'casual')
+    startTetris(s)
+    for (let y = 16; y < 20; y += 1) for (let x = 0; x < 10; x += 1) s.grid[y][x] = (y === 19 && x >= 4 && x <= 7) ? 0 : 1
+    s.kind = 0; s.rot = 0; s.px = 4; s.py = 18
+    s.lockTimer = 10
+    s.commands = []
+    const before = stackDanger(s) // 0.25
+    expect(before).toBeGreaterThan(0)
+    tickTetris(s, 0.001) // 四消 → 空板
+    expect(stackDanger(s)).toBe(0)
+    expect(stackDanger(s)).toBeLessThan(before)
+  })
+})
+
+// ── R218 S2: 绘制质感(圆角 2.5D/幽灵描边/HUD 胶囊/压力条/toast/vignette)──
+// node 环境 + 记录式 ctx stub(scene.test.ts 同款先例:验证可调用性与调用形状)。
+interface Recorder {
+  ctx: CanvasRenderingContext2D
+  counts: Record<string, number>
+  texts: string[]
+}
+
+function makeCtx(withGradients = true): Recorder {
+  const counts: Record<string, number> = {}
+  const texts: string[] = []
+  const gradient = { addColorStop: (): void => { counts.addColorStop = (counts.addColorStop ?? 0) + 1 } }
+  const rec = (name: string) => (...args: unknown[]): void => {
+    counts[name] = (counts[name] ?? 0) + 1
+    if (name === 'fillText' && typeof args[0] === 'string') texts.push(args[0])
+  }
+  const ctx = {
+    canvas: {},
+    clearRect: rec('clearRect'),
+    fillRect: rec('fillRect'),
+    strokeRect: rec('strokeRect'),
+    fillText: rec('fillText'),
+    beginPath: rec('beginPath'),
+    moveTo: rec('moveTo'),
+    lineTo: rec('lineTo'),
+    arc: rec('arc'),
+    fill: rec('fill'),
+    stroke: rec('stroke'),
+    save: rec('save'),
+    restore: rec('restore'),
+    translate: rec('translate'),
+    roundRect: rec('roundRect'),
+    rect: rec('rect'),
+    setLineDash: rec('setLineDash'),
+    createLinearGradient: withGradients
+      ? (): typeof gradient => { counts.createLinearGradient = (counts.createLinearGradient ?? 0) + 1; return gradient }
+      : undefined,
+    createRadialGradient: withGradients
+      ? (): typeof gradient => { counts.createRadialGradient = (counts.createRadialGradient ?? 0) + 1; return gradient }
+      : undefined,
+    fillStyle: '#000',
+    strokeStyle: '#000',
+    lineWidth: 1,
+    globalAlpha: 1,
+    font: '',
+    textAlign: 'left',
+    textBaseline: 'alphabetic',
+    shadowColor: '',
+    shadowBlur: 0,
+  }
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, counts, texts }
+}
+
+describe('R218 drawTetris rendering (capsule HUD + 2.5D cells + danger feedback)', () => {
+  it('running 态整帧可绘制:圆角路径/幽灵虚线描边/HUD 胶囊齐备(无渐变环境退防不炸)', () => {
+    const r = makeCtx(false) // 无 createLinearGradient/Radial(lgrad/vignette 退防)
+    const s = initialTetrisState(undefined, 'casual')
+    startTetris(s)
+    expect(() => drawTetris(r.ctx, s, 0)).not.toThrow()
+    expect(r.counts.roundRect ?? 0).toBeGreaterThanOrEqual(3) // 胶囊(NEXT/HOLD/计分)+ 方块圆角
+    expect(r.counts.setLineDash ?? 0).toBeGreaterThanOrEqual(1) // 幽灵块虚线描边化
+    expect(r.texts).toContain('NEXT')
+    expect(r.texts).toContain('HOLD')
+  })
+
+  it('低堆不触发警示 vignette/压力条渐变;贴顶(danger>0.75)触发 radial 呼吸', () => {
+    const low = makeCtx()
+    const s = initialTetrisState(undefined, 'casual')
+    startTetris(s)
+    drawTetris(low.ctx, s, 0)
+    expect(low.counts.createRadialGradient ?? 0).toBe(0) // 无 vignette
+    expect(low.counts.createLinearGradient ?? 0).toBe(0) // 空板压力条无填充渐变
+    const high = makeCtx()
+    const s2 = initialTetrisState(undefined, 'casual')
+    startTetris(s2)
+    for (let y = 2; y < 20; y += 1) for (let x = 0; x < 10; x += 1) s2.grid[y][x] = 1
+    expect(stackDanger(s2)).toBeGreaterThan(0.75)
+    drawTetris(high.ctx, s2, 0)
+    expect(high.counts.createRadialGradient ?? 0).toBeGreaterThanOrEqual(1) // vignette 呼吸
+    expect(high.counts.createLinearGradient ?? 0).toBeGreaterThanOrEqual(1) // 压力条渐变填充
+  })
+
+  it('B2B/连击/四消 toast:事件差分触发、随 clock 过期(绘制层局部,不入 state)', () => {
+    const r = makeCtx()
+    const s = initialTetrisState(undefined, 'casual')
+    startTetris(s)
+    drawTetris(r.ctx, s, 0) // 基线帧(fx 初始化,不误发)
+    expect(r.texts).not.toContain('TETRIS!')
+    // 帧间发生四消 + T-spin + 连击(引擎事件在 tick 内,这里模拟其 state 后果)
+    s.lines += 4
+    s.tspins += 1
+    s.combo = 2
+    s.b2b = true
+    s.clock += 0.016
+    const r2 = makeCtx()
+    drawTetris(r2.ctx, s, 0)
+    expect(r2.texts).toContain('TETRIS!')
+    expect(r2.texts).toContain('T-SPIN!')
+    expect(r2.texts).toContain('COMBO ×2')
+    // 3s 后过期(引擎时钟推进,toast 队列清空)
+    s.clock += 3
+    const r3 = makeCtx()
+    drawTetris(r3.ctx, s, 0)
+    expect(r3.texts).not.toContain('TETRIS!')
+    expect('toasts' in s).toBe(false) // state 不携带展示态(LAN 快照零新增字段)
   })
 })
