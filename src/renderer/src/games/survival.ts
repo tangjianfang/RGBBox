@@ -3,6 +3,7 @@
 // three upgrade card, and an adaptive director tightens or eases the spawn pace
 // based on how well the run is going.
 import { playSfx } from './sfx'
+import { mulberry32 } from './daily'
 import { WIDTH, HEIGHT } from './td'
 import { SCENE_IDS, drawScene, type SceneId } from './scene'
 import {
@@ -37,6 +38,13 @@ import {
 } from './swarmMeta'
 
 export { UPGRADES }
+export { mulberry32 } // R220.5: 供 view 注入每日种子(OD-05 承诺补齐)
+
+/** R220.5: 引擎随机源——state.rng 注入时走种子序列(每日共同棋盘),
+ *  缺省 Math.random(自由局)。survival 全部 33 处随机统一经此取值。 */
+function rand(state: SurvivalState): number {
+  return state.rng?.() ?? Math.random()
+}
 export type { UpgradeDef, UpgradeId }
 
 export type SurvivalPhase = 'ready' | 'running' | 'levelup' | 'roulette' | 'lost'
@@ -567,6 +575,9 @@ export interface SurvivalState {
   revivesUsedN: number[]
   /** R213-⑤: 场景背景(view 层写入;undefined=原岛屿主题星空)。 */
   scene?: SceneId
+  /** R220.5(OD-05): 种子 RNG——每日挑战注入 mulberry32(dailySeed()),自由局
+   *  缺省(=Math.random)。纯闭包不序列化,与 Tetris.rng 同一模式。 */
+  rng?: () => number
 }
 
 // ── R213: P2..P4 皮肤(琥珀/粉/青;P1 沿用青白 #e2f8ff/#67e8f9 不变) ──
@@ -857,9 +868,9 @@ function addText(state: SurvivalState, x: number, y: number, text: string, color
 
 function spawnBurst(state: SurvivalState, x: number, y: number, color: string, count = 10, power = 130): void {
   for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2
-    const speed = power * (0.35 + Math.random() * 0.65)
-    state.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 30, life: 0.5 + Math.random() * 0.35, maxLife: 0.85, size: 2 + Math.random() * 3, color })
+    const angle = rand(state) * Math.PI * 2
+    const speed = power * (0.35 + rand(state) * 0.65)
+    state.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 30, life: 0.5 + rand(state) * 0.35, maxLife: 0.85, size: 2 + rand(state) * 3, color })
   }
 }
 
@@ -992,21 +1003,21 @@ export function dissolveRoulette(state: SurvivalState, result: RouletteResult): 
 function spawnRingPoint(state: SurvivalState, ring: number): { x: number; y: number; side: number } {
   const vw = state.vp.w / state.camera.zoom
   const vh = state.vp.h / state.camera.zoom
-  const side = Math.floor(Math.random() * 4)
+  const side = Math.floor(rand(state) * 4)
   let x: number
   let y: number
   if (side === 0) {
-    x = state.camera.x + (Math.random() - 0.5) * vw
+    x = state.camera.x + (rand(state) - 0.5) * vw
     y = state.camera.y - vh / 2 - ring
   } else if (side === 1) {
     x = state.camera.x + vw / 2 + ring
-    y = state.camera.y + (Math.random() - 0.5) * vh
+    y = state.camera.y + (rand(state) - 0.5) * vh
   } else if (side === 2) {
-    x = state.camera.x + (Math.random() - 0.5) * vw
+    x = state.camera.x + (rand(state) - 0.5) * vw
     y = state.camera.y + vh / 2 + ring
   } else {
     x = state.camera.x - vw / 2 - ring
-    y = state.camera.y + (Math.random() - 0.5) * vh
+    y = state.camera.y + (rand(state) - 0.5) * vh
   }
   return { x: clamp(x, -60, WORLD_W + 60), y: clamp(y, -60, WORLD_H + 60), side }
 }
@@ -1014,11 +1025,12 @@ function spawnRingPoint(state: SurvivalState, ring: number): { x: number; y: num
 function spawnEnemy(state: SurvivalState): void {
   // R218 U11: 大世界——敌人在摄像机视口外环生成(warning 边沿即相对视口方位);
   // R200: 出生预警——下一次入场的敌人先在对应边缘亮 0.5s 红箭头(登记在生成前)。
-  const spot = spawnRingPoint(state, 30 + Math.random() * 50)
-  state.warnings.push({ edge: spot.side as 0 | 1 | 2 | 3, t: SPAWN_WARN_SECONDS })
-  const elite = state.time > 60 && Math.random() < 0.08
+  const spot = spawnRingPoint(state, 30 + rand(state) * 50)
+  const wp = worldToViewport(state.camera, state.vp.w, state.vp.h, spot.x, spot.y)
+  state.warnings.push({ edge: spot.side as 0 | 1 | 2 | 3, t: SPAWN_WARN_SECONDS, pos: { x: clamp(wp.x, 26, state.vp.w - 26), y: clamp(wp.y, 26, state.vp.h - 26) } })
+  const elite = state.time > 60 && rand(state) < 0.08
   // R218 D: 种类按「威胁值加权」投放(已解锁池内归一化逆威胁权重)
-  spawnEnemyKind(state, pickSpawnKindFrom(state.time, Math.random()), spot.x, spot.y, elite)
+  spawnEnemyKind(state, pickSpawnKindFrom(state.time, rand(state)), spot.x, spot.y, elite)
 }
 
 /** R218 D: 按种类生成敌人(可导出供测试/脚本直接投放)。swarm 一次生成整包。 */
@@ -1026,13 +1038,13 @@ export function spawnEnemyKind(state: SurvivalState, kind: SpawnableKind, x: num
   const islandMult = 1 + 0.25 * (state.island - 1)
   const scale = (elite ? 2.5 : 1) * islandMult
   if (kind === 'swarm') {
-    const pack = SWARM_PACK_MIN + Math.floor(Math.random() * (SWARM_PACK_MAX - SWARM_PACK_MIN + 1))
+    const pack = SWARM_PACK_MIN + Math.floor(rand(state) * (SWARM_PACK_MAX - SWARM_PACK_MIN + 1))
     const hp = Math.max(1, Math.round(1 * scale))
     for (let i = 0; i < pack; i++) {
       state.enemies.push({
-        id: state.nextId++, x: x + (Math.random() - 0.5) * 48, y: y + (Math.random() - 0.5) * 48, vx: 0, vy: 0,
+        id: state.nextId++, x: x + (rand(state) - 0.5) * 48, y: y + (rand(state) - 0.5) * 48, vx: 0, vy: 0,
         size: 6, hp, maxHp: hp, kind: 'swarm', elite, hitFlash: 0,
-        jitter: 0.75 + Math.random() * 0.5,
+        jitter: 0.75 + rand(state) * 0.5,
       })
     }
     return
@@ -1060,7 +1072,7 @@ export function spawnEnemyKind(state: SurvivalState, kind: SpawnableKind, x: num
   const enemy: Enemy = { id: state.nextId++, x, y, vx: 0, vy: 0, size: sizeFor(), hp, maxHp: hp, kind, elite, hitFlash: 0 }
   if (kind === 'shooter') {
     enemy.fireTimer = 1.5
-    enemy.strafeDir = Math.random() < 0.5 ? -1 : 1
+    enemy.strafeDir = rand(state) < 0.5 ? -1 : 1
   }
   if (kind === 'healer') enemy.healTimer = 3
   if (kind === 'splitter') enemy.gen = 0
@@ -1153,7 +1165,7 @@ function spawnBoss(state: SurvivalState): void {
   // (16 轮弹幕,不可完成);新值 90s≈72HP,配合 DPS 曲线可 8-12s 击破。
   const hp = 45 + Math.floor(state.time / 10) * 3
   // R218 U11: boss 同样在摄像机视口外环登场(50-100px)
-  const spot = spawnRingPoint(state, 50 + Math.random() * 50)
+  const spot = spawnRingPoint(state, 50 + rand(state) * 50)
   const x = spot.x
   const y = spot.y
   state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 28, hp, maxHp: hp, kind: 'boss', elite: false, hitFlash: 0 })
@@ -1185,7 +1197,7 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
     spawnBurst(state, enemy.x, enemy.y, '#f472b6', 34, 260)
     spawnBurst(state, enemy.x, enemy.y, '#fde68a', 20, 180)
     for (let i = 0; i < 15; i++) {
-      state.orbs.push({ id: state.nextId++, x: enemy.x + (Math.random() - 0.5) * 110, y: enemy.y + (Math.random() - 0.5) * 110, value: 1 })
+      state.orbs.push({ id: state.nextId++, x: enemy.x + (rand(state) - 0.5) * 110, y: enemy.y + (rand(state) - 0.5) * 110, value: 1 })
     }
     state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
     state.pendingSpins += 1
@@ -1216,13 +1228,13 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
   const coneAngle = Math.atan2(toward.y - enemy.y, toward.x - enemy.x)
   const coneCount = enemy.kind === 'brute' ? 16 : 8
   for (let i = 0; i < coneCount; i++) {
-    const a = coneAngle + (Math.random() - 0.5) * 1.1
-    const speed = 150 * (0.4 + Math.random() * 0.6)
-    state.particles.push({ x: enemy.x, y: enemy.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - 30, life: 0.4 + Math.random() * 0.3, maxLife: 0.7, size: 2 + Math.random() * 3, color })
+    const a = coneAngle + (rand(state) - 0.5) * 1.1
+    const speed = 150 * (0.4 + rand(state) * 0.6)
+    state.particles.push({ x: enemy.x, y: enemy.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - 30, life: 0.4 + rand(state) * 0.3, maxLife: 0.7, size: 2 + rand(state) * 3, color })
   }
   const drops = enemy.elite || enemy.kind === 'brute' ? 3 : 1
   for (let i = 0; i < drops; i++) {
-    state.orbs.push({ id: state.nextId++, x: enemy.x + (Math.random() - 0.5) * 18, y: enemy.y + (Math.random() - 0.5) * 18, value: 1 })
+    state.orbs.push({ id: state.nextId++, x: enemy.x + (rand(state) - 0.5) * 18, y: enemy.y + (rand(state) - 0.5) * 18, value: 1 })
   }
 }
 
@@ -1350,13 +1362,13 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     player.x = clamp(player.x + (moveX / moveLen) * moveScale * stats.moveSpeed * dt, 16, boundMaxX)
     player.y = clamp(player.y + (moveY / moveLen) * moveScale * stats.moveSpeed * dt, 16, boundMaxY)
     player.angle = Math.atan2(moveY, moveX)
-    if (Math.random() < dt * 40) state.particles.push({ x: player.x - Math.cos(player.angle) * 14, y: player.y - Math.sin(player.angle) * 14, vx: -Math.cos(player.angle) * 60, vy: -Math.sin(player.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: '#67e8f9' })
+    if (rand(state) < dt * 40) state.particles.push({ x: player.x - Math.cos(player.angle) * 14, y: player.y - Math.sin(player.angle) * 14, vx: -Math.cos(player.angle) * 60, vy: -Math.sin(player.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: '#67e8f9' })
   }
 
   state.spawnTimer -= dt
   if (state.spawnTimer <= 0) {
     spawnEnemy(state)
-    if (state.time > 60 && Math.random() < 0.35) spawnEnemy(state)
+    if (state.time > 60 && rand(state) < 0.35) spawnEnemy(state)
     state.spawnTimer = directorSpawnInterval(state)
   }
   // R208: 传送门任一存活玩家踩中即换岛
@@ -1398,7 +1410,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       for (let i = 0; i < shots; i++) {
         const spread = (i - (shots - 1) / 2) * (Math.PI / 14)
         const angle = baseAngle + spread
-        const crit = Math.random() < stats.crit
+        const crit = rand(state) < stats.crit
         state.bullets.push({ id: state.nextId++, x: player.x, y: player.y, vx: Math.cos(angle) * stats.bulletSpeed * speedMult, vy: Math.sin(angle) * stats.bulletSpeed * speedMult, damage: (crit ? stats.damage * 2 : stats.damage) * dmgMult, pierce: stats.pierce + pierceBonus, crit, life: 1.2 })
       }
       // R220.3 barrage 进化:齐射追加两翼斜射弹(±0.5rad,0.7×伤害)
@@ -1443,7 +1455,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       pl.x = clamp(pl.x + (movePx / lenP) * scaleP * stats.moveSpeed * dt, 16, boundMaxX)
       pl.y = clamp(pl.y + (movePy / lenP) * scaleP * stats.moveSpeed * dt, 16, boundMaxY)
       pl.angle = Math.atan2(movePy, movePx)
-      if (Math.random() < dt * 40) state.particles.push({ x: pl.x - Math.cos(pl.angle) * 14, y: pl.y - Math.sin(pl.angle) * 14, vx: -Math.cos(pl.angle) * 60, vy: -Math.sin(pl.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: ROSTER_ACCENT[pi - 1] })
+      if (rand(state) < dt * 40) state.particles.push({ x: pl.x - Math.cos(pl.angle) * 14, y: pl.y - Math.sin(pl.angle) * 14, vx: -Math.cos(pl.angle) * 60, vy: -Math.sin(pl.angle) * 60, life: 0.3, maxLife: 0.3, size: 2.5, color: ROSTER_ACCENT[pi - 1] })
     }
     pl.fireTimer -= dt
     if (pl.fireTimer <= 0 && state.enemies.length > 0) {
@@ -1462,7 +1474,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
         for (let i = 0; i < shots; i++) {
           const spread = (i - (shots - 1) / 2) * (Math.PI / 14)
           const angle = baseAngle + spread
-          const crit = Math.random() < stats.crit
+          const crit = rand(state) < stats.crit
           state.bullets.push({ id: state.nextId++, x: pl.x, y: pl.y, vx: Math.cos(angle) * stats.bulletSpeed, vy: Math.sin(angle) * stats.bulletSpeed, damage: crit ? stats.damage * 2 : stats.damage, pierce: stats.pierce, crit, life: 1.2 })
         }
       }
@@ -1668,8 +1680,8 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     if (rescuerDist < rescuer.size + 8) {
       target.hp = Math.max(1, Math.ceil(target.maxHp / 2))
       target.invuln = 2
-      target.x = clamp(rescuer.x + (Math.random() - 0.5) * 64, 16, WORLD_W - 16)
-      target.y = clamp(rescuer.y + (Math.random() - 0.5) * 64, 16, WORLD_H - 16)
+      target.x = clamp(rescuer.x + (rand(state) - 0.5) * 64, 16, WORLD_W - 16)
+      target.y = clamp(rescuer.y + (rand(state) - 0.5) * 64, 16, WORLD_H - 16)
       spendRevive(state, orb.target - 1)
       addText(state, rescuer.x, rescuer.y - 34, `P${orb.target} REVIVED`, '#4ade80')
       spawnBurst(state, rescuer.x, rescuer.y, '#4ade80', 18, 160)
@@ -1801,8 +1813,8 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
     ctx.font = '800 26px Inter, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    const cx = w.edge === 1 ? state.vp.w - 46 : w.edge === 3 ? 46 : state.vp.w / 2
-    const cy = w.edge === 0 ? 46 : w.edge === 2 ? state.vp.h - 46 : state.vp.h / 2
+    const cx = w.pos?.x ?? (w.edge === 1 ? state.vp.w - 46 : w.edge === 3 ? 46 : state.vp.w / 2)
+    const cy = w.pos?.y ?? (w.edge === 0 ? 46 : w.edge === 2 ? state.vp.h - 46 : state.vp.h / 2)
     const glyph = w.edge === 0 ? '▲' : w.edge === 1 ? '▶' : w.edge === 2 ? '▼' : '◀'
     ctx.fillText(glyph, cx, cy)
     ctx.restore()
@@ -1851,8 +1863,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
   const sceneT = DYNAMIC_BG_ENABLED ? state.clock : (state.island - 1) * 97.3
   const bgPx = DYNAMIC_BG_ENABLED ? player.x : vp.w / 2
   const bgPy = DYNAMIC_BG_ENABLED ? player.y : vp.h / 2
-  ctx.clearRect(0, 0, vp.w, vp.h)
-  ctx.save()
+  ctx.save() // R220.4: 撤冗余 clearRect——背景(blit 或 direct)全幅覆盖
   // R219.1: 震屏单一路径——legacy state.shake 平移已删,统一走 juice.shake
   // (applyShake;受击/换岛/boss 击杀全部经 queueShake 入队)。
   applyShake(ctx, state.juice)
@@ -1909,12 +1920,14 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
 
   for (const orb of state.orbs) {
     // R219.8: shadowBlur→双层假发光(CDP 二分实验:shadowBlur 是帧耗时主因)
+    // R220.5: 配色绿→天蓝——原 #4ade80 与 swarm/healer/敌血条五连撞(G6 P1),
+    // 拾取物语义分离(VS 品类蓝宝石惯例)
     ctx.save()
     ctx.translate(orb.x, orb.y)
     ctx.rotate(Math.PI / 4)
-    ctx.fillStyle = 'rgba(74, 222, 128, 0.28)'
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.3)'
     ctx.fillRect(-7, -7, 14, 14)
-    ctx.fillStyle = '#4ade80'
+    ctx.fillStyle = '#38bdf8'
     ctx.fillRect(-4, -4, 8, 8)
     ctx.restore()
   }
@@ -1928,12 +1941,12 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
     ctx.strokeStyle = `rgba(74, 222, 128, ${0.5 + glow * 0.4})`
     ctx.lineWidth = 3
     ctx.beginPath(); ctx.arc(0, 0, 9 + glow * 3, 0, Math.PI * 2); ctx.stroke()
+    // R220.4: 核心 shadowBlur→淡色外圆(R219.8 珠/敌弹同款假发光)
+    ctx.fillStyle = `rgba(74, 222, 128, ${0.22 + glow * 0.2})`
+    ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill()
     ctx.fillStyle = '#4ade80'
-    ctx.shadowColor = '#4ade80'
-    ctx.shadowBlur = 12
     ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill()
     ctx.restore()
-    ctx.shadowBlur = 0
   }
 
   if (state.stats.blade > 0) {
@@ -1964,9 +1977,10 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
   }
 
   for (const enemy of state.enemies) {
+    // R220.4: 精英发光 shadowBlur→淡色外环(免逐敌模糊通道;G3 对拍表)
     if (enemy.elite) {
-      ctx.shadowColor = '#fde68a'
-      ctx.shadowBlur = 14
+      ctx.fillStyle = 'rgba(253, 224, 71, 0.18)'
+      ctx.beginPath(); ctx.arc(enemy.x, enemy.y, enemy.size + 6, 0, Math.PI * 2); ctx.fill()
     }
     const kindColor =
       enemy.kind === 'brute' ? '#f472b6'
@@ -2073,7 +2087,6 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
       ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
       ctx.beginPath(); ctx.arc(enemy.x - sz * 0.32, enemy.y - sz * 0.32, Math.max(1.2, sz * 0.18), 0, Math.PI * 2); ctx.fill()
     }
-    ctx.shadowBlur = 0
     if (enemy.kind !== 'boss' && enemy.hp < enemy.maxHp) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.fillRect(enemy.x - 14, enemy.y - enemy.size - 10, 28, 3)

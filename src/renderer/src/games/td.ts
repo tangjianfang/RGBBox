@@ -756,7 +756,11 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, select
     ctx.lineWidth = 2
     ctx.beginPath(); ctx.moveTo(projectile.lx, projectile.ly); ctx.lineTo(projectile.x, projectile.y); ctx.stroke()
     ctx.globalAlpha = 1
-    ctx.beginPath(); ctx.arc(projectile.x, projectile.y, projectile.splash ? 5 : 4, 0, Math.PI * 2); ctx.fillStyle = projectile.color; ctx.shadowColor = projectile.color; ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0
+    // R220.4: shadowBlur→双层假发光(R219.8 同款,免逐弹模糊通道)
+    ctx.fillStyle = projectile.color; ctx.globalAlpha = 0.3
+    ctx.beginPath(); ctx.arc(projectile.x, projectile.y, projectile.splash ? 8 : 7, 0, Math.PI * 2); ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.beginPath(); ctx.arc(projectile.x, projectile.y, projectile.splash ? 5 : 4, 0, Math.PI * 2); ctx.fill()
   }
 
   for (const balloon of state.balloons) {

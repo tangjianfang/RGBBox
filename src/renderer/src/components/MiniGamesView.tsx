@@ -88,7 +88,7 @@ import { isBgmEnabled, isSfxEnabled, playSfx, setBgmEnabled, setBgmPreset, setBg
 import { isOnboarded, markOnboarded, pickHint, type CoachHint } from '../games/coach'
 import { loadRuns, profileStats, recordRun, type GameId } from '../domain/gamesTelemetry'
 import { recapCoachKey } from '../games/juice'
-import { loadDaily, recordDaily } from '../games/daily'
+import { dailySeed, loadDaily, mulberry32, recordDaily } from '../games/daily'
 import {
   RUN_SECONDS,
   bomb as slashBomb,
@@ -237,10 +237,11 @@ interface ReadyPrefs {
   endless?: boolean
   blitz?: boolean
   coop?: boolean
-  /** survival:人数 / 场景 / 90s 冲刺 */
+  /** survival:人数 / 场景 / 90s 冲刺 / R220.5 每日挑战(种子局) */
   players?: 1 | 2 | 3 | 4
   scene?: SwarmSceneId
   sprint?: boolean
+  daily?: boolean
   /** tetris:40 行竞速 / 双板对决 */
   race?: boolean
   duel?: boolean
@@ -420,6 +421,10 @@ export function MiniGamesView(): JSX.Element {
   const [swarmSprintOn, setSwarmSprintOn] = useState(false)
   const swarmSprintOnRef = useRef(false)
   swarmSprintOnRef.current = swarmSprintOn
+  // R220.5(OD-05): 每日挑战——种子局(mulberry32(dailySeed())),当日共同棋盘
+  const [swarmDailyOn, setSwarmDailyOn] = useState(false)
+  const swarmDailyOnRef = useRef(false)
+  swarmDailyOnRef.current = swarmDailyOn
   const [tetrisRaceOn, setTetrisRaceOn] = useState(false)
   const tetrisRaceOnRef = useRef(false)
   tetrisRaceOnRef.current = tetrisRaceOn
@@ -465,6 +470,7 @@ export function MiniGamesView(): JSX.Element {
       setSwarmPlayers(prefs.players ?? 1)
       setSwarmScene(prefs.scene ?? 'station')
       setSwarmSprintOn(prefs.sprint === true)
+      setSwarmDailyOn(prefs.daily === true)
     } else if (screen === 'tetris') {
       setTetrisRaceOn(prefs.race === true)
       setTetrisDuelOn(prefs.duel === true)
@@ -1761,6 +1767,8 @@ export function MiniGamesView(): JSX.Element {
     }
     // FR-G08: 90 秒冲刺——时限到走既有 lost 结算(分数保留)
     survivalRef.current.sprintSeconds = swarmSprintOnRef.current ? 90 : undefined
+    // R220.5: 每日挑战注入当日种子(共同棋盘);自由局清除
+    survivalRef.current.rng = swarmDailyOnRef.current ? mulberry32(dailySeed()) : undefined
     // R213: 4P 名册部署(人数选择;swarmCoopOn 开关是人数=2 的快捷别名)与场景背景
     const count = Math.max(1, Math.min(4, swarmPlayersRef.current)) as 1 | 2 | 3 | 4
     deployPlayers(survivalRef.current, count)
@@ -2605,6 +2613,9 @@ export function MiniGamesView(): JSX.Element {
                       {isSurvival ? (
                         <button type="button" className={`ready-chip ${swarmSprintOn ? 'on' : ''}`} data-field="swarm-sprint-toggle" onClick={() => { const next = !swarmSprintOn; setSwarmSprintOn(next); persistReadyPref('survival', { sprint: next }) }}>{t('games.short.sprint')}</button>
                       ) : null}
+                      {isSurvival ? (
+                        <button type="button" className={`ready-chip ${swarmDailyOn ? 'on' : ''}`} data-field="swarm-daily-toggle" onClick={() => { const next = !swarmDailyOn; setSwarmDailyOn(next); persistReadyPref('survival', { daily: next }) }}>{t('games.daily.run')}</button>
+                      ) : null}
                       {isTetris ? (
                         <button type="button" className={`ready-chip ${tetrisRaceOn ? 'on' : ''}`} data-field="tetris-race-toggle" onClick={() => { const next = !tetrisRaceOn; setTetrisRaceOn(next); persistReadyPref('tetris', { race: next }) }}>{t('games.short.race')}</button>
                       ) : null}
@@ -3008,8 +3019,9 @@ export function MiniGamesView(): JSX.Element {
             </div>
             <p className="codex-section">{t('games.codexEnemies')}</p>
             <div className="codex-grid">
-              {(['chaser', 'sprinter', 'brute', 'elite', 'boss'] as const).map((kind) => (
-                <div className="codex-entry" key={kind} style={{ '--game-accent': { chaser: '#fb7185', sprinter: '#fbbf24', brute: '#f472b6', elite: '#fde68a', boss: '#db2777' }[kind] } as CSSProperties}>
+              {/* R220.5: 补 R218 敌矩阵 5 新种(tank/swarm/shooter/splitter/healer),图鉴教学不再缺位 */}
+              {(['chaser', 'sprinter', 'brute', 'elite', 'boss', 'tank', 'swarm', 'shooter', 'splitter', 'healer'] as const).map((kind) => (
+                <div className="codex-entry" key={kind} style={{ '--game-accent': { chaser: '#fb7185', sprinter: '#fbbf24', brute: '#f472b6', elite: '#fde68a', boss: '#db2777', tank: '#7c8da4', swarm: '#a3e635', shooter: '#c084fc', splitter: '#fb923c', healer: '#f87171' }[kind] } as CSSProperties}>
                   <strong>{t(`games.codex.enemy.${kind}`)}</strong>
                   <small>{t(`games.codex.enemy.${kind}.lore`)}</small>
                 </div>

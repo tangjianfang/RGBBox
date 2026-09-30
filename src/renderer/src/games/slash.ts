@@ -21,6 +21,14 @@ import {
   shake as juiceShake,
   tickJuice,
 } from './hud'
+import { mulberry32 } from './daily'
+
+/** R220.5(OD-05): 引擎随机源——state.rng 注入时走种子序列(每日挑战),
+ *  缺省 Math.random(自由局)。 */
+function rand(s: SlashState): number {
+  return s.rng?.() ?? Math.random()
+}
+export { mulberry32 }
 
 export const WIDTH = 900
 export const HEIGHT = 520
@@ -117,6 +125,8 @@ export interface Streak {
 import { HIT_STOP, hitStopTick, TrailPoint, tickTrail, TRAIL_LIFE } from './juice'
 
 export interface SlashState {
+  /** R220.5(OD-05): 种子 RNG(每日挑战注入;缺省 Math.random)。 */
+  rng?: () => number
   phase: SlashPhase
   score: number
   combo: number
@@ -221,9 +231,9 @@ function spawnBlock(s: SlashState): void {
   // easier early, denser later — the difficulty curve (scaled to this run's ceiling)
   const run = s.runSeconds ?? RUN_SECONDS
   const hard = Math.min(1, (run - s.timeLeft) / run)
-  const dir = Math.floor(Math.random() * 8)
+  const dir = Math.floor(rand(s) * 8)
   // R218(B2): 新敌型按波次/进度渐进混入(假动作 15s 后;guard 25% / dasher 35% / thrower 45%)
-  const r = Math.random()
+  const r = rand(s)
   let kind: BlockKind | undefined
   if (s.timeLeft < RUN_SECONDS - 15 && r < 0.1) kind = 'feint'
   else if (hard >= 0.45 && r < 0.27) kind = r < 0.16 ? 'guard' : r < 0.22 ? 'dasher' : 'thrower'
@@ -233,9 +243,9 @@ function spawnBlock(s: SlashState): void {
     id: s.nextId++,
     dir,
     t: 0,
-    speed: 0.14 + hard * 0.16 + Math.random() * 0.05,
+    speed: 0.14 + hard * 0.16 + rand(s) * 0.05,
     hue: (dir * 45 + 180) % 360,
-    bonus: Math.random() < 0.08,
+    bonus: rand(s) < 0.08,
   }
   if (kind === 'feint') block.feint = true
   else if (kind !== undefined) block.kind = kind
@@ -263,9 +273,9 @@ function spawnKnife(s: SlashState, thrower: Block): void {
 
 function burst(s: SlashState, x: number, y: number, hue: number, count: number, power: number): void {
   for (let i = 0; i < count; i++) {
-    const a = Math.random() * Math.PI * 2
-    const v = (0.4 + Math.random() * 0.6) * power
-    s.streaks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.5 + Math.random() * 0.3, maxLife: 0.8, hue })
+    const a = rand(s) * Math.PI * 2
+    const v = (0.4 + rand(s) * 0.6) * power
+    s.streaks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.5 + rand(s) * 0.3, maxLife: 0.8, hue })
   }
 }
 
@@ -496,7 +506,7 @@ export function tickSlash(s: SlashState, dt: number): void {
     spawnBlock(s)
     const run = s.runSeconds ?? RUN_SECONDS
     const hard = Math.min(1, (run - s.timeLeft) / run)
-    s.spawnTimer = 0.9 - hard * 0.45 + Math.random() * 0.35
+    s.spawnTimer = 0.9 - hard * 0.45 + rand(s) * 0.35
   }
 }
 

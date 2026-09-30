@@ -1062,6 +1062,29 @@ function trackCtx(): { ctx: CanvasRenderingContext2D; translates: Array<{ ix: nu
   return { ctx: ctx as unknown as CanvasRenderingContext2D, translates }
 }
 
+describe('renderer/games/survival R220.5 种子确定性(OD-05)', () => {
+  it('同种子两局逐 tick 一致(每日共同棋盘);不同种子分歧', async () => {
+    const { mulberry32 } = await import('../../../src/renderer/src/games/survival')
+    const mk = (): SurvivalState => {
+      const st = initialSurvivalState()
+      st.phase = 'running'
+      st.rng = mulberry32(20261001)
+      return st
+    }
+    const a = mk()
+    const b = mk()
+    for (let i = 0; i < 600; i++) { tickSurvival(a, 1 / 60); tickSurvival(b, 1 / 60) }
+    expect(a.enemies.length).toBe(b.enemies.length)
+    expect(a.player.x).toBeCloseTo(b.player.x, 6)
+    expect(a.score).toBe(b.score)
+    expect(a.particles.length).toBe(b.particles.length)
+    const c = mk()
+    c.rng = mulberry32(987654321)
+    for (let i = 0; i < 600; i++) tickSurvival(c, 1 / 60)
+    expect(c.score).not.toBe(a.score)
+  })
+})
+
 describe('renderer/games/survival R220 冻结语义修复', () => {
   it('R220.1①: levelup/roulette 冻结期间 boss 不开火、弹幕不移动不伤害(恢复 running 后正常)', () => {
     const s = initialSurvivalState()
