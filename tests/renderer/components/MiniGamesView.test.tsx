@@ -834,3 +834,34 @@ describe('renderer/components/MiniGamesView · screen size & focus mode (R218 U9
     ctxSpy.mockRestore()
   })
 })
+
+// ── R218 U7: 多人 shell 接线——ready 席位行(见 U3 组)/进行态人数徽章 ──────────
+describe('renderer/components/MiniGamesView · multiplayer shell chrome (R218 U7)', () => {
+  const noopCtx = new Proxy({}, {
+    get: (_t, prop) => {
+      if (prop === 'canvas') return undefined
+      if (prop === 'measureText') return () => ({ width: 10 })
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+        return () => ({ addColorStop: () => undefined })
+      }
+      return () => undefined
+    },
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D
+
+  const frames = (ms = 320) => new Promise((r) => setTimeout(r, ms))
+
+  it('running state shows the player-count badge in the (translucent) canvas chrome', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    fireEvent.change(container.querySelector('[data-field="swarm-players"]')!, { target: { value: '3' } })
+    fireEvent.click(container.querySelector('[data-action="ready-start"]') as HTMLButtonElement)
+    await frames()
+    const status = container.querySelector('.games-canvas-status span')?.textContent ?? ''
+    expect(status).toContain('3P')
+    // running state chrome carries the translucency hook (CSS class on root)
+    expect((container.querySelector('.games-screen') as HTMLElement).className).toContain('running')
+    ctxSpy.mockRestore()
+  })
+})
