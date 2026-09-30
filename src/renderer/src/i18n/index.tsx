@@ -969,6 +969,8 @@ const EN = {
   'games.pad.none': 'No gamepad — keyboard / mouse ready',
   'games.difficulty.hard': 'Hard',
   'games.difficulty.insane': 'Insane',
+  // ── R218 U3: ready 态统一信息架构 ──
+  'games.ready.more': 'More settings',
   'games.td.endless': 'Endless mode',
   'games.td.meteorReady': 'Meteor ready',
   'games.td.meteorHint': 'Q — Meteor: 40 damage to all balloons (45s cooldown)',
@@ -2726,6 +2728,8 @@ const ZH: TranslationTable = {
   'games.pad.none': '未连接手柄 · 键盘/鼠标可玩',
   'games.difficulty.hard': '困难',
   'games.difficulty.insane': '炼狱',
+  // ── R218 U3: ready 态统一信息架构 ──
+  'games.ready.more': '更多设置',
   'games.td.endless': '无尽模式',
   'games.td.meteorReady': '陨石就绪',
   'games.td.meteorHint': 'Q——陨石:全屏气球 40 伤害(冷却 45 秒)',

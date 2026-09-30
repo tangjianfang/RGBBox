@@ -613,7 +613,7 @@ describe('renderer/components/MiniGamesView · difficulty four tiers (R218 U4)',
     enterTd(container)
     const btns = container.querySelectorAll('[data-field="difficulty"] [data-diff]')
     expect([...btns].map((b) => b.getAttribute('data-diff'))).toEqual(['casual', 'standard', 'hard', 'insane'])
-    expect([...btns].map((b) => b.querySelector('.diff-mult')?.textContent)).toEqual(['1×', '1.5×', '2×', '3×'])
+    expect([...btns].map((b) => b.querySelector('.ready-chip-em')?.textContent)).toEqual(['1×', '1.5×', '2×', '3×'])
     expect(btns[1].className).toContain('on') // default standard
     fireEvent.click(btns[2]) // hard
     expect(localStorage.getItem('rgbbox:gamesDifficulty:td')).toBe('hard')
@@ -663,6 +663,104 @@ describe('renderer/components/MiniGamesView · difficulty four tiers (R218 U4)',
     await frames()
     const lv = [...container.querySelectorAll('.games-stat-grid span')].find((s) => s.getAttribute('aria-label')?.includes('games.ariaWave'))
     expect(lv?.textContent).toContain('LV 13')
+    ctxSpy.mockRestore()
+  })
+})
+
+// ── R218 U3: ready 态统一信息架构——抽屉折叠/记忆恢复/主按钮/席位行 ───────────
+describe('renderer/components/MiniGamesView · ready panel (R218 U3)', () => {
+  const noopCtx = new Proxy({}, {
+    get: (_t, prop) => {
+      if (prop === 'canvas') return undefined
+      if (prop === 'measureText') return () => ({ width: 10 })
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+        return () => ({ addColorStop: () => undefined })
+      }
+      return () => undefined
+    },
+    set: () => true,
+  }) as unknown as CanvasRenderingContext2D
+
+  const frames = (ms = 120) => new Promise((r) => setTimeout(r, ms))
+
+  function makePad(index: number, id: string): Gamepad {
+    const buttons = Array.from({ length: 18 }, () => ({ pressed: false, value: 0, touched: false }))
+    return { index, id, mapping: 'standard', connected: true, axes: [0, 0, 0, 0], buttons, timestamp: 0 } as unknown as Gamepad
+  }
+
+  it('first screen ≤5 groups: start button + core row + pad hint + drawer (collapsed)', () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    expect(container.querySelector('[data-action="ready-start"]')).toBeTruthy()
+    expect(container.querySelector('.ready-core')).toBeTruthy()
+    expect(container.querySelector('[data-field="pad-hint"]')).toBeTruthy()
+    const drawer = container.querySelector('[data-field="ready-drawer"]') as HTMLDetailsElement
+    expect(drawer).toBeTruthy()
+    expect(drawer.open).toBe(false) // collapsed by default
+    // advanced items live inside the drawer only
+    expect(container.querySelector('[data-field="input-config-open"]')).toBeTruthy()
+    expect(container.querySelector('[data-field="swarm-avatars"]')).toBeTruthy()
+    ctxSpy.mockRestore()
+  })
+
+  it('drawer expands on summary click and the state persists', () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    fireEvent.click(container.querySelector('[data-field="ready-drawer"] summary')!)
+    const drawer = container.querySelector('[data-field="ready-drawer"]') as HTMLDetailsElement
+    expect(drawer.open).toBe(true)
+    expect(localStorage.getItem('rgbbox:gamesReady:drawer')).toBe('1')
+    ctxSpy.mockRestore()
+    cleanup()
+
+    // re-enter: expansion restored from storage
+    const second = render(<MiniGamesView />)
+    fireEvent.click(second.container.querySelectorAll('.game-tile:not(.ghost)')[2]) // tetris drawer is shared
+    const drawer2 = second.container.querySelector('[data-field="ready-drawer"]') as HTMLDetailsElement
+    expect(drawer2.open).toBe(true)
+  })
+
+  it('choices persist and restore across visits (players 3P + scene desert)', () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    fireEvent.change(container.querySelector('[data-field="swarm-players"]')!, { target: { value: '3' } })
+    fireEvent.change(container.querySelector('[data-field="swarm-scene"]')!, { target: { value: 'desert' } })
+    expect(JSON.parse(localStorage.getItem('rgbbox:gamesReady:survival') ?? '{}')).toEqual({ players: 3, scene: 'desert' })
+    // back to hub, re-enter
+    const back = [...container.querySelectorAll('button')].find((b) => b.textContent === 'games.backToHub') as HTMLButtonElement
+    fireEvent.click(back)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1])
+    expect((container.querySelector('[data-field="swarm-players"]') as HTMLSelectElement).value).toBe('3')
+    expect((container.querySelector('[data-field="swarm-scene"]') as HTMLSelectElement).value).toBe('desert')
+    ctxSpy.mockRestore()
+  })
+
+  it('the big start button starts the run; seating rows appear for 2P with pads', async () => {
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    Object.defineProperty(navigator, 'getGamepads', {
+      value: () => [makePad(0, 'Pad Zero'), makePad(3, 'Pad Three')],
+      configurable: true,
+    })
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // survival
+    fireEvent.change(container.querySelector('[data-field="swarm-players"]')!, { target: { value: '2' } })
+    await frames()
+    // U7: two seating rows (P1 default wasd + pad 0; P2 default ijkl + pad 3)
+    const seating = container.querySelectorAll('[data-field="ready-seating"] span')
+    expect(seating.length).toBe(2)
+    expect(seating[0].textContent).toContain('w/s/a/d')
+    expect(seating[0].textContent).toContain('Pad Zero')
+    expect(seating[1].textContent).toContain('i/k/j/l')
+    expect(seating[1].textContent).toContain('Pad Three')
+    fireEvent.click(container.querySelector('[data-action="ready-start"]') as HTMLButtonElement)
+    await frames()
+    const probe = () => (window as unknown as { __rgbboxVision: { probe(): { phase: string } } }).__rgbboxVision.probe().phase
+    expect(probe()).toBe('running')
+    // run started → ready panel unmounts
+    expect(container.querySelector('[data-field="ready-panel"]')).toBeNull()
     ctxSpy.mockRestore()
   })
 })

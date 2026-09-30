@@ -201,6 +201,41 @@ function writeDifficulty(id: string, d: GameDifficulty): void {
   try { localStorage.setItem('rgbbox:gamesDifficulty:' + id, d) } catch { /* best-effort */ }
 }
 
+/** R218 U3: ready 态「更多设置」抽屉展开记忆(全局,不分作)。 */
+function readDrawerOpen(): boolean {
+  try { return localStorage.getItem('rgbbox:gamesReady:drawer') === '1' } catch { return false }
+}
+function writeDrawerOpen(open: boolean): void {
+  try { localStorage.setItem('rgbbox:gamesReady:drawer', open ? '1' : '0') } catch { /* best-effort */ }
+}
+
+/** R218 U3: 上次选择全记忆——按作 JSON(rgbbox:gamesReady:<game>),坏值整体忽略。 */
+type SwarmSceneId = 'station' | 'desert' | 'snow' | 'grass' | 'ocean' | 'fusion'
+interface ReadyPrefs {
+  /** td:无尽 / 闪电赛 / 分工合作 */
+  endless?: boolean
+  blitz?: boolean
+  coop?: boolean
+  /** survival:人数 / 场景 / 90s 冲刺 */
+  players?: 1 | 2 | 3 | 4
+  scene?: SwarmSceneId
+  sprint?: boolean
+  /** tetris:40 行竞速 / 双板对决 */
+  race?: boolean
+  duel?: boolean
+  /** slash:30s 爆发 / 轮换对决(tetris 与 slash 各自 key 空间,不冲突) */
+  burst?: boolean
+}
+function readReadyPrefs(game: string): ReadyPrefs {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('rgbbox:gamesReady:' + game) ?? '{}') as ReadyPrefs
+    return typeof parsed === 'object' && parsed !== null ? parsed : {}
+  } catch { return {} }
+}
+function writeReadyPrefs(game: string, prefs: ReadyPrefs): void {
+  try { localStorage.setItem('rgbbox:gamesReady:' + game, JSON.stringify(prefs)) } catch { /* best-effort */ }
+}
+
 // ── TODO(r218-merge): 临时 shim(集中一处,merge 各作分支后整块删除) ──────────
 // 契约:四作引擎分支(wt-r218-tdsl / wt-r218-tet / wt-r218-sv)新增下列导出与
 // state.difficulty 字段;本分支按契约先行接线,merge 后改 import 真实导出:
@@ -296,20 +331,20 @@ export function MiniGamesView(): JSX.Element {
   const duelRef = useRef<{ turn: 1 | 2; scores: [number | null, number | null]; done: boolean } | null>(null)
   duelRef.current = duel
   const [tdCoopOn, setTdCoopOn] = useState(false)
-  const [swarmCoopOn, setSwarmCoopOn] = useState(false)
-  const swarmCoopOnRef = useRef(false)
-  swarmCoopOnRef.current = swarmCoopOn
+  // R218 U3: swarmCoopOn 独立开关移除——人数选择(≥2P)即合作,提示语随之推导。
   // ── R213: Swarm 4P/场景/自动预选/按键配置 ──
   const [swarmPlayers, setSwarmPlayers] = useState<1 | 2 | 3 | 4>(1)
   const swarmPlayersRef = useRef<1 | 2 | 3 | 4>(1)
   swarmPlayersRef.current = swarmPlayers
-  const [swarmScene, setSwarmScene] = useState<'station' | 'desert' | 'snow' | 'grass' | 'ocean' | 'fusion'>('station')
-  const swarmSceneRef = useRef<'station' | 'desert' | 'snow' | 'grass' | 'ocean' | 'fusion'>('station')
+  const [swarmScene, setSwarmScene] = useState<SwarmSceneId>('station')
+  const swarmSceneRef = useRef<SwarmSceneId>('station')
   swarmSceneRef.current = swarmScene
   const [autoPickMode, setAutoPickMode] = useState<'off' | 'list' | 'best'>(() => {
     try { return (JSON.parse(localStorage.getItem('rgbbox:swarmAutoPick') ?? '"off"') as 'off' | 'list' | 'best') ?? 'off' } catch { return 'off' }
   })
   const [inputPanelOpen, setInputPanelOpen] = useState(false)
+  /** R218 U3: 「更多设置」抽屉展开态(localStorage 记忆,默认折叠)。 */
+  const [drawerOpen, setDrawerOpen] = useState(readDrawerOpen)
   const swarmAutoPickRef = useRef<{ mode: 'off' | 'list' | 'best'; prefs: UpgradeId[] }>({ mode: 'off', prefs: ['fireRate', 'damage', 'multishot', 'speed', 'magnet', 'maxHp', 'blade', 'pierce'] })
   swarmAutoPickRef.current.mode = autoPickMode
   const [keyMap, setKeyMap] = useState<Record<string, string>>(() => buildKeyToPoolMap(loadInputConfigs(localStorage)))
@@ -399,6 +434,24 @@ export function MiniGamesView(): JSX.Element {
   useEffect(() => {
     if (screen === 'hub') { setOnboardStep(0); setRecap(null); return }
     setDifficulty(readDifficulty(screen))
+    // R218 U3: 上次选择全记忆——重进恢复(rgbbox:gamesReady:<game>)。
+    const prefs = readReadyPrefs(screen)
+    if (screen === 'td') {
+      setTdEndless(prefs.endless === true)
+      setTdBlitzOn(prefs.blitz === true)
+      setTdCoopOn(prefs.coop === true)
+      tdStateRef.current.endless = prefs.endless === true
+    } else if (screen === 'survival') {
+      setSwarmPlayers(prefs.players ?? 1)
+      setSwarmScene(prefs.scene ?? 'station')
+      setSwarmSprintOn(prefs.sprint === true)
+    } else if (screen === 'tetris') {
+      setTetrisRaceOn(prefs.race === true)
+      setTetrisDuelOn(prefs.duel === true)
+    } else if (screen === 'slash') {
+      setSlashBurstOn(prefs.burst === true)
+      setSlashDuelOn(prefs.duel === true)
+    }
     // R205(FR-G07 一期): 进作切分曲(TD 沉稳/Swarm 急促/Tetris 上行/Slash 强拍)
     setBgmPreset(screen === 'td' ? 'td' : screen === 'survival' ? 'swarm' : screen === 'tetris' ? 'tetris' : 'slash')
     setOnboardStep(isOnboarded(localStorage, screen) ? 0 : 1)
@@ -427,8 +480,8 @@ export function MiniGamesView(): JSX.Element {
   const prevStartRef = useRef(false)
   const startRunRef = useRef<() => void>(() => undefined)
   // ── R218 U2: 手柄 Start 四作通用 ──
-  /** 在场手柄摘要(ready 态提示行);gamepadInfoKeyRef 去抖,逐帧不重渲。 */
-  const [gamepadInfo, setGamepadInfo] = useState<{ count: number; ids: string[] }>({ count: 0, ids: [] })
+  /** 在场手柄摘要(ready 态提示行 + U7 键位席位行);gamepadInfoKeyRef 去抖,逐帧不重渲。 */
+  const [gamepadInfo, setGamepadInfo] = useState<{ count: number; ids: string[]; indices: number[] }>({ count: 0, ids: [], indices: [] })
   const gamepadInfoKeyRef = useRef('')
   /** Start 边沿触发的统一入口(按 screen 分发开局/重开/暂停;渲染期赋值)。 */
   const padStartRef = useRef<() => void>(() => undefined)
@@ -558,7 +611,7 @@ export function MiniGamesView(): JSX.Element {
     const infoKey = `${connected.length}|${connected.map((item) => item.id).join(',')}`
     if (gamepadInfoKeyRef.current !== infoKey) {
       gamepadInfoKeyRef.current = infoKey
-      setGamepadInfo({ count: connected.length, ids: connected.map((item) => item.id) })
+      setGamepadInfo({ count: connected.length, ids: connected.map((item) => item.id), indices: connected.map((item) => item.index) })
     }
     if (connected.length === 0) {
       prevStartRef.current = false
@@ -1849,6 +1902,28 @@ export function MiniGamesView(): JSX.Element {
       : vision.label ? ` · 👁 ${t('games.vision.error')}: ${vision.label}` : ''
   const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : isTetris ? startTetrisRun : startSlashRunCb
   const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
+  // ── R218 U3: ready 态统一面板的数据面 ──
+  /** 真实引擎 phase==='ready'(不经 levelup→ready 的显示映射,避免升级浮层下穿出)。 */
+  const showReady = isTd ? tdSnapshot.phase === 'ready' : isSurvival ? survivalSnapshot.phase === 'ready' : isSlash ? slashSnapshot.phase === 'ready' : tetrisSnapshot.phase === 'ready'
+  /** 选择写透 rgbbox:gamesReady:<game>(与进作恢复 effect 成对)。 */
+  const persistReadyPref = (game: GameKey, patch: Partial<ReadyPrefs>): void => {
+    writeReadyPrefs(game, { ...readReadyPrefs(game), ...patch })
+  }
+  /** R218 U7: ≥2P 的键位席位摘要(配置键位 + assignGamepads 分得的手柄)。 */
+  const readySeating: Array<{ n: number; keys: string; padId: string | null }> = []
+  if (isSurvival && swarmPlayers >= 2) {
+    const assign = assignGamepads(gamepadInfo.indices, inputConfigsRef.current)
+    for (let i = 0; i < swarmPlayers; i += 1) {
+      const cfg = inputConfigsRef.current[i]
+      const padIndex = assign[i]
+      const padPos = padIndex !== undefined ? gamepadInfo.indices.indexOf(padIndex) : -1
+      readySeating.push({
+        n: i + 1,
+        keys: `${cfg.up}/${cfg.down}/${cfg.left}/${cfg.right}`,
+        padId: padPos >= 0 ? (gamepadInfo.ids[padPos] ?? null) : null,
+      })
+    }
+  }
   // ── R218 U2: 手柄 Start 统一入口的活引用(渲染期刷新,rAF/Esc 闭包免重建)──
   startAnyRef.current = startHandler
   currentPhaseRef.current = () => {
@@ -2171,58 +2246,160 @@ export function MiniGamesView(): JSX.Element {
         <section className="games-canvas-panel panel">
           <div className="games-canvas-wrap" ref={canvasWrapRef}>
             {/* R206(FR-G03.5): fs 暂停浮层(Esc 呼出;继续/重开/退出全屏/返回 hub) */}
-            {/* R204(FR-G05.2)→R218 U4: 难度四档——ready 态选择,分数倍率 1×/1.5×/2×/3×,持久化 */}
-            {phase === 'ready' ? (
-              <div className="difficulty-picker" data-field="difficulty">
-                <span>{t('games.difficulty.label')}</span>
-                {GAME_DIFFICULTIES.map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    className={`diff-btn ${difficulty === d ? 'on' : ''}`}
-                    data-diff={d}
-                    onClick={() => { setDifficulty(d); writeDifficulty(screen, d) }}
-                  >{t(`games.difficulty.${d}`)}<em className="diff-mult">{DIFFICULTY_SCORE_MULT[d]}×</em></button>
-                ))}
-                {/* R208: 本地双人开关——Slash 轮换对决 / TD 分工合作(仅这两作) */}
-                {isSlash ? (
-                  <button type="button" className={`diff-btn ${slashDuelOn ? 'on' : ''}`} data-field="duel-toggle" onClick={() => setSlashDuelOn(!slashDuelOn)}>{t('games.duel.toggle')}</button>
+            {/* R218 U3: ready 态统一信息架构(四作)——大号「开局」主按钮(Fitts)
+                + 一行核心胶囊(难度四档×倍率 + 各作核心项) + 高级项折叠进
+                「更多设置」抽屉(渐进披露;展开态 rgbbox:gamesReady:drawer 记忆)。
+                上次选择全记忆 rgbbox:gamesReady:<game>,重进恢复(见 screen effect)。 */}
+            {showReady ? (
+              <div className="ready-panel" data-field="ready-panel">
+                <button type="button" className="ready-start" data-action="ready-start" onClick={startHandler} disabled={lanRole === 'guest' && lanGame === 'td'}>
+                  <Play aria-hidden="true" size={16} />
+                  {t('games.start')}
+                </button>
+                <div className="ready-core">
+                  <div className="ready-group" data-field="difficulty">
+                    <span className="ready-group-label">{t('games.difficulty.label')}</span>
+                    {GAME_DIFFICULTIES.map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        className={`ready-chip ${difficulty === d ? 'on' : ''}`}
+                        data-diff={d}
+                        onClick={() => { setDifficulty(d); writeDifficulty(screen, d) }}
+                      >{t(`games.difficulty.${d}`)}<em className="ready-chip-em">{DIFFICULTY_SCORE_MULT[d]}×</em></button>
+                    ))}
+                  </div>
+                  {isSurvival ? (
+                    <div className="ready-group" data-field="swarm-characters">
+                      <span className="ready-group-label">{t('games.setupTitle')}</span>
+                      {CHARACTERS.map((character) => (
+                        <button
+                          key={character.id}
+                          type="button"
+                          className={`ready-chip ${swarmCharacter === character.id ? 'on' : ''}`}
+                          style={{ '--game-accent': character.accent } as CSSProperties}
+                          title={t(`games.char.${character.id}.desc`)}
+                          onClick={() => selectCharacter(character.id)}
+                        >{t(`games.char.${character.id}`)}<em className="ready-chip-em">HP {5 + character.hpMod}</em></button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {isSurvival ? (
+                    <label className="ready-group">
+                      <span className="ready-group-label">{t('games.swarm.players')}</span>
+                      <select data-field="swarm-players" value={swarmPlayers} onChange={(e) => { const n = Number(e.target.value) as 1 | 2 | 3 | 4; setSwarmPlayers(n); persistReadyPref('survival', { players: n }) }}>
+                        {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}P</option>)}
+                      </select>
+                    </label>
+                  ) : null}
+                  {isSurvival ? (
+                    <label className="ready-group">
+                      <span className="ready-group-label">{t('games.swarm.scene')}</span>
+                      <select data-field="swarm-scene" value={swarmScene} onChange={(e) => { const s = e.target.value as SwarmSceneId; setSwarmScene(s); persistReadyPref('survival', { scene: s }) }}>
+                        {(['station', 'desert', 'snow', 'grass', 'ocean', 'fusion'] as const).map((s) => (
+                          <option key={s} value={s}>{t(`games.scene.${s}` as Parameters<typeof t>[0])}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {isTd ? (
+                    <div className="ready-group">
+                      <span className="ready-group-label">{t('games.td.endless')}</span>
+                      <button type="button" className={`ready-chip ${tdEndless ? 'on' : ''}`} data-field="td-endless-toggle" onClick={() => { const next = !tdEndless; setTdEndless(next); tdStateRef.current.endless = next; persistReadyPref('td', { endless: next }) }}>{tdEndless ? '✓' : '—'}</button>
+                    </div>
+                  ) : null}
+                </div>
+                {/* R218 U2: 手柄在场提示——任意已分配手柄 Start 开局/运行态暂停 */}
+                <div className="pad-hint-row" data-field="pad-hint">
+                  {gamepadInfo.count > 0 ? (
+                    <span>
+                      🎮 {t('games.pad.hint').replace('{n}', String(gamepadInfo.count))}
+                      {gamepadInfo.ids.length > 0 ? <small> · {gamepadInfo.ids.map((id) => id.length > 22 ? `${id.slice(0, 22)}…` : id).join(' · ')}</small> : null}
+                    </span>
+                  ) : (
+                    <span>{t('games.pad.none')}</span>
+                  )}
+                </div>
+                {/* R218 U7: ≥2P 键位席位摘要(每玩家方向键 + 分得的手柄) */}
+                {readySeating.length > 0 ? (
+                  <div className="ready-seating" data-field="ready-seating">
+                    {readySeating.map((row) => (
+                      <span key={row.n}><b>P{row.n}</b> {row.keys}{row.padId !== null ? <small> 🎮 {row.padId.length > 20 ? `${row.padId.slice(0, 20)}…` : row.padId}</small> : null}</span>
+                    ))}
+                  </div>
                 ) : null}
-                {isTd ? (
-                  <button type="button" className={`diff-btn ${tdCoopOn ? 'on' : ''}`} data-field="coop-toggle" onClick={() => setTdCoopOn(!tdCoopOn)}>{t('games.duel.coopToggle')}</button>
-                ) : null}
-                {isTetris ? (
-                  <button type="button" className={`diff-btn ${tetrisDuelOn ? 'on' : ''}`} data-field="tetris-duel-toggle" onClick={() => setTetrisDuelOn(!tetrisDuelOn)}>{t('games.duel.toggle')}</button>
-                ) : null}
-                {isSurvival ? (
-                  <button type="button" className={`diff-btn ${swarmCoopOn ? 'on' : ''}`} data-field="swarm-coop-toggle" onClick={() => setSwarmCoopOn(!swarmCoopOn)}>{t('games.swarm.coopToggle')}</button>
-                ) : null}
-                {/* R205 尾款(FR-G08): 短局矩阵——四作模式开关(引擎层已随 T1 合入) */}
-                {isTd ? (
-                  <button type="button" className={`diff-btn ${tdBlitzOn ? 'on' : ''}`} data-field="td-blitz-toggle" onClick={() => setTdBlitzOn(!tdBlitzOn)}>{t('games.short.blitz')}</button>
-                ) : null}
-                {isSurvival ? (
-                  <button type="button" className={`diff-btn ${swarmSprintOn ? 'on' : ''}`} data-field="swarm-sprint-toggle" onClick={() => setSwarmSprintOn(!swarmSprintOn)}>{t('games.short.sprint')}</button>
-                ) : null}
-                {isTetris ? (
-                  <button type="button" className={`diff-btn ${tetrisRaceOn ? 'on' : ''}`} data-field="tetris-race-toggle" onClick={() => setTetrisRaceOn(!tetrisRaceOn)}>{t('games.short.race')}</button>
-                ) : null}
-                {isSlash ? (
-                  <button type="button" className={`diff-btn ${slashBurstOn ? 'on' : ''}`} data-field="slash-burst-toggle" onClick={() => setSlashBurstOn(!slashBurstOn)}>{t('games.short.burst')}</button>
-                ) : null}
-              </div>
-            ) : null}
-            {/* R218 U2: 手柄在场提示(ready 态)——任意已分配手柄 Start 开局/运行态暂停 */}
-            {phase === 'ready' ? (
-              <div className="pad-hint-row" data-field="pad-hint">
-                {gamepadInfo.count > 0 ? (
-                  <span>
-                    🎮 {t('games.pad.hint').replace('{n}', String(gamepadInfo.count))}
-                    {gamepadInfo.ids.length > 0 ? <small> · {gamepadInfo.ids.map((id) => id.length > 22 ? `${id.slice(0, 22)}…` : id).join(' · ')}</small> : null}
-                  </span>
-                ) : (
-                  <span>{t('games.pad.none')}</span>
-                )}
+                <details className="ready-drawer" data-field="ready-drawer" open={drawerOpen} onToggle={(e) => { const next = e.currentTarget.open; setDrawerOpen(next); writeDrawerOpen(next) }}>
+                  <summary>{t('games.ready.more')}</summary>
+                  <div className="ready-drawer-body">
+                    <div className="ready-drawer-grid">
+                      <button type="button" className={`ready-chip ${bgmOn ? 'on' : ''}`} data-field="bgm-toggle" onClick={toggleBgm}>{t('games.bgmToggle')}</button>
+                      {/* R205 尾款(FR-G08): 短局矩阵开关(引擎层已随 T1 合入) */}
+                      {isTd ? (
+                        <button type="button" className={`ready-chip ${tdBlitzOn ? 'on' : ''}`} data-field="td-blitz-toggle" onClick={() => { const next = !tdBlitzOn; setTdBlitzOn(next); persistReadyPref('td', { blitz: next }) }}>{t('games.short.blitz')}</button>
+                      ) : null}
+                      {isTd ? (
+                        <button type="button" className={`ready-chip ${tdCoopOn ? 'on' : ''}`} data-field="coop-toggle" onClick={() => { const next = !tdCoopOn; setTdCoopOn(next); persistReadyPref('td', { coop: next }) }}>{t('games.duel.coopToggle')}</button>
+                      ) : null}
+                      {isSurvival ? (
+                        <button type="button" className={`ready-chip ${swarmSprintOn ? 'on' : ''}`} data-field="swarm-sprint-toggle" onClick={() => { const next = !swarmSprintOn; setSwarmSprintOn(next); persistReadyPref('survival', { sprint: next }) }}>{t('games.short.sprint')}</button>
+                      ) : null}
+                      {isTetris ? (
+                        <button type="button" className={`ready-chip ${tetrisRaceOn ? 'on' : ''}`} data-field="tetris-race-toggle" onClick={() => { const next = !tetrisRaceOn; setTetrisRaceOn(next); persistReadyPref('tetris', { race: next }) }}>{t('games.short.race')}</button>
+                      ) : null}
+                      {isTetris ? (
+                        <button type="button" className={`ready-chip ${tetrisDuelOn ? 'on' : ''}`} data-field="tetris-duel-toggle" onClick={() => { const next = !tetrisDuelOn; setTetrisDuelOn(next); persistReadyPref('tetris', { duel: next }) }}>{t('games.duel.toggle')}</button>
+                      ) : null}
+                      {isSlash ? (
+                        <button type="button" className={`ready-chip ${slashBurstOn ? 'on' : ''}`} data-field="slash-burst-toggle" onClick={() => { const next = !slashBurstOn; setSlashBurstOn(next); persistReadyPref('slash', { burst: next }) }}>{t('games.short.burst')}</button>
+                      ) : null}
+                      {isSlash ? (
+                        <button type="button" className={`ready-chip ${slashDuelOn ? 'on' : ''}`} data-field="duel-toggle" onClick={() => { const next = !slashDuelOn; setSlashDuelOn(next); persistReadyPref('slash', { duel: next }) }}>{t('games.duel.toggle')}</button>
+                      ) : null}
+                      {/* R213: 输入配置中心(P1-P4 键位自定义+手柄绑定) */}
+                      <button type="button" className="ready-chip" data-field="input-config-open" onClick={() => setInputPanelOpen(true)}>{t('games.input.title')}</button>
+                      {isSurvival ? (
+                        <label className="ready-group">
+                          <span className="ready-group-label">{t('games.swarm.autoPick')}</span>
+                          <select data-field="swarm-autopick" value={autoPickMode} onChange={(e) => { const m = e.target.value as 'off' | 'list' | 'best'; setAutoPickMode(m); try { localStorage.setItem('rgbbox:swarmAutoPick', JSON.stringify(m)) } catch { /* best-effort */ } }}>
+                            <option value="off">{t('games.swarm.autoPick.off')}</option>
+                            <option value="list">{t('games.swarm.autoPick.list')}</option>
+                            <option value="best">{t('games.swarm.autoPick.best')}</option>
+                          </select>
+                        </label>
+                      ) : null}
+                    </div>
+                    {/* R213: 头像行(每玩家一张;画布上替代默认飞船贴图) */}
+                    {isSurvival ? (
+                      <div className="swarm-avatars" data-field="swarm-avatars">
+                        {Array.from({ length: swarmPlayers }, (_, i) => (
+                          <AvatarPicker key={i + 1} slot={i + 1} label={`P${i + 1}`} onSet={() => { void refreshAvatars() }} />
+                        ))}
+                      </div>
+                    ) : null}
+                    {isSurvival ? (
+                      <div className="artifact-bar" data-field="swarm-artifacts">
+                        {ARTIFACTS.map((artifact) => {
+                          const unlocked = isArtifactUnlocked(artifact, meta.stats)
+                          const on = unlocked && !!meta.artifacts[artifact.id]
+                          return (
+                            <button
+                              key={artifact.id}
+                              type="button"
+                              className={`artifact-chip ${on ? 'on' : ''} ${unlocked ? '' : 'locked'}`}
+                              disabled={!unlocked}
+                              onClick={() => toggleArtifact(artifact.id)}
+                              title={unlocked ? t(`games.art.${artifact.id}.desc`) : t(`games.art.${artifact.id}.lock`)}
+                            >
+                              <span>{unlocked ? t(`games.art.${artifact.id}`) : t(`games.art.${artifact.id}.lock`)}</span>
+                              <em>{artifact.mult >= 0 ? '+' : ''}{artifact.mult.toFixed(2)}×</em>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                </details>
+                <p className="ready-hint">{isSurvival ? (swarmPlayers >= 2 ? t('games.swarm.coopHint') : t('games.setupHint')) : isTd ? t('games.td.readySubtitle') : isTetris ? t('games.tetrisHint') : t('games.slashHint')}</p>
               </div>
             ) : null}
             {/* R209 三期(FR-LN05): LAN Tetris 对战——比分互显面板(任一方结算
@@ -2303,72 +2480,8 @@ export function MiniGamesView(): JSX.Element {
                 </div>
               </div>
             ) : null}
-            {isSurvival && survivalSnapshot.phase === 'ready' ? (
-              <div className="swarm-setup">
-                <p className="swarm-setup-title">{t('games.setupTitle')}</p>
-                <div className="char-cards">
-                  {CHARACTERS.map((character) => (
-                    <button key={character.id} type="button" className={`char-card ${swarmCharacter === character.id ? 'selected' : ''}`} style={{ '--game-accent': character.accent } as CSSProperties} onClick={() => selectCharacter(character.id)}>
-                      <strong>{t(`games.char.${character.id}`)}</strong>
-                      <small>{t(`games.char.${character.id}.desc`)}</small>
-                      <em>HP {5 + character.hpMod}</em>
-                    </button>
-                  ))}
-                </div>
-                <div className="artifact-bar">
-                  {ARTIFACTS.map((artifact) => {
-                    const unlocked = isArtifactUnlocked(artifact, meta.stats)
-                    const on = unlocked && !!meta.artifacts[artifact.id]
-                    return (
-                      <button
-                        key={artifact.id}
-                        type="button"
-                        className={`artifact-chip ${on ? 'on' : ''} ${unlocked ? '' : 'locked'}`}
-                        disabled={!unlocked}
-                        onClick={() => toggleArtifact(artifact.id)}
-                        title={unlocked ? t(`games.art.${artifact.id}.desc`) : t(`games.art.${artifact.id}.lock`)}
-                      >
-                        <span>{unlocked ? t(`games.art.${artifact.id}`) : t(`games.art.${artifact.id}.lock`)}</span>
-                        <em>{artifact.mult >= 0 ? '+' : ''}{artifact.mult.toFixed(2)}×</em>
-                      </button>
-                    )
-                  })}
-                </div>
-                {/* R213: 4P 人数 / 场景 / 升级自动预选 / 按键配置入口 */}
-                <div className="swarm-config-rows" data-field="swarm-config">
-                  <label>
-                    <span>{t('games.swarm.players')}</span>
-                    <select data-field="swarm-players" value={swarmPlayers} onChange={(e) => { const n = Number(e.target.value) as 1 | 2 | 3 | 4; setSwarmPlayers(n); setSwarmCoopOn(n >= 2) }}>
-                      {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}P</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    <span>{t('games.swarm.scene')}</span>
-                    <select data-field="swarm-scene" value={swarmScene} onChange={(e) => setSwarmScene(e.target.value as typeof swarmScene)}>
-                      {(['station', 'desert', 'snow', 'grass', 'ocean', 'fusion'] as const).map((s) => (
-                        <option key={s} value={s}>{t(`games.scene.${s}` as Parameters<typeof t>[0])}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>{t('games.swarm.autoPick')}</span>
-                    <select data-field="swarm-autopick" value={autoPickMode} onChange={(e) => { const m = e.target.value as 'off' | 'list' | 'best'; setAutoPickMode(m); try { localStorage.setItem('rgbbox:swarmAutoPick', JSON.stringify(m)) } catch { /* best-effort */ } }}>
-                      <option value="off">{t('games.swarm.autoPick.off')}</option>
-                      <option value="list">{t('games.swarm.autoPick.list')}</option>
-                      <option value="best">{t('games.swarm.autoPick.best')}</option>
-                    </select>
-                  </label>
-                  <button type="button" className="diff-btn" data-field="input-config-open" onClick={() => setInputPanelOpen(true)}>{t('games.input.title')}</button>
-                </div>
-                {/* R213: 头像行(每玩家一张;画布上替代默认飞船贴图) */}
-                <div className="swarm-avatars" data-field="swarm-avatars">
-                  {Array.from({ length: swarmPlayers }, (_, i) => (
-                    <AvatarPicker key={i + 1} slot={i + 1} label={`P${i + 1}`} onSet={() => { void refreshAvatars() }} />
-                  ))}
-                </div>
-                <p className="swarm-setup-hint">{swarmCoopOn ? t('games.swarm.coopHint') : t('games.setupHint')}</p>
-              </div>
-            ) : null}
+            {/* R218 U3: survival 的旧 swarm-setup ready 面板已并入上方统一 ready-panel
+                (战机/人数/场景=核心行;artifact/头像/自动预选/输入配置=抽屉)。 */}
             {isSurvival && survivalSnapshot.phase === 'roulette' ? (
               <div className="swarm-roulette">
                 {roulette.stage === 'pick' ? (

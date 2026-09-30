@@ -9907,6 +9907,157 @@ input:disabled {
 }
 .pad-hint-row small { color: var(--text-muted); margin-left: 4px; }
 
+/* ── R218 U3: ready 态统一信息架构(四作)——开局主按钮+核心胶囊行+更多设置抽屉 ── */
+.ready-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px 14px;
+  background: rgba(4, 8, 12, 0.55);
+  border-radius: var(--radius-l);
+  overflow: auto;
+}
+/* fs 态由 R211 纯画布 HUD 承载(画布内主按钮/数字键等价),DOM 面板让位 */
+.games-screen.fs .ready-panel { display: none !important; }
+
+.ready-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 224px;
+  justify-content: center;
+  padding: 13px 34px;
+  font-size: var(--text-display-size);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--info-text);
+  background: rgba(var(--accent-rgb), 0.14);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-l);
+  cursor: pointer;
+  transition: transform 120ms, box-shadow 120ms, background 120ms;
+}
+.ready-start:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 0 22px rgba(var(--accent-rgb), 0.35);
+  background: rgba(var(--accent-rgb), 0.2);
+}
+.ready-start:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.ready-core {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 18px;
+  max-width: min(96%, 860px);
+}
+.ready-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ready-group-label {
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+.ready-group select {
+  padding: 3px 8px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--surface-raised);
+  background: var(--surface-deep);
+  color: var(--text-primary);
+  font-size: var(--text-caption-size);
+}
+.ready-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-radius: var(--radius-l);
+  border: 1px solid rgba(103, 232, 249, 0.3);
+  background: rgba(103, 232, 249, 0.08);
+  color: var(--text-secondary);
+  font-size: var(--text-caption-size);
+  cursor: pointer;
+  transition: border-color 120ms, color 120ms, background 120ms;
+}
+.ready-chip.on {
+  border-color: var(--game-accent, var(--accent));
+  color: var(--game-accent, var(--accent));
+  background: rgba(var(--accent-rgb), 0.12);
+}
+.ready-chip-em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--status-warn-strong);
+  font-variant-numeric: tabular-nums;
+}
+.ready-chip.on .ready-chip-em { color: inherit; opacity: 0.85; }
+
+/* pad 提示行在 ready 面板内改为流式(覆盖绝对定位) */
+.ready-panel .pad-hint-row {
+  position: static;
+  transform: none;
+  max-width: 96%;
+}
+
+/* R218 U7: ≥2P 键位席位摘要 */
+.ready-seating {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: center;
+  font-size: var(--text-caption-size);
+  color: var(--text-secondary);
+}
+.ready-seating b { color: var(--info-text); margin-right: 4px; }
+.ready-seating small { color: var(--text-muted); }
+
+.ready-drawer {
+  width: min(96%, 860px);
+  background: rgba(5, 10, 14, 0.78);
+  border: 1px solid var(--surface-raised);
+  border-radius: var(--radius-l);
+}
+.ready-drawer summary {
+  cursor: pointer;
+  padding: 8px 16px;
+  font-size: var(--text-caption-size);
+  font-weight: 700;
+  color: var(--text-secondary);
+  user-select: none;
+  list-style: revert;
+}
+.ready-drawer[open] summary { border-bottom: 1px solid var(--surface-raised); }
+.ready-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 14px;
+}
+.ready-drawer-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.ready-hint {
+  margin: 0;
+  font-size: var(--text-caption-size);
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 92%;
+}
+
 /* M3(FR-G09): daily 挑战行 */
 .games-daily-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-bottom: 8px; font-size: var(--text-caption-size); color: var(--text-secondary); }
 .daily-chip { padding: 2px 10px; border-radius: var(--radius-l); border: 1px solid rgba(148, 184, 200, 0.28); color: var(--text-secondary); }
