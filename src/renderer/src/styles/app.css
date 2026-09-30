@@ -2600,10 +2600,13 @@ input:not([type]):focus {
 }
 
 .games-canvas {
-  /* R219.2: contain-fit——replaced element 在「max-width×max-height」双约束下
-     取宽高都放得下的最大等比盒(替代原 width:100% 单约束:矮窗不再裁掉底部
-     HUD,高窗不再留大片死区)。ready/running 两档 chrome 预留(ready 态画布
-     下方还有开局面板,预留更大)。 */
+  /* R219.2: contain-fit(矮窗不裁底部 HUD/高窗不留死区);ready/running 两档
+     chrome 预留(ready 态画布下方还有开局面板,预留更大)。
+     R219.8②: 尺寸必须是**定值**——原 auto+双 max 约束让 replaced element 的
+     本征尺寸(=backing 位图)参与布局,开始瞬间 max-height 档位跳变触发
+     「盒变→RO 改 backing→本征变→盒再变」的逐拍爬升(每步 canvas.width 重赋值
+     清空位图=用户看到的缓慢变大空白)。width 直接由可用高度解出,本征不再
+     参与布局,档位切换瞬时完成。 */
   aspect-ratio: 900 / 520;
   background: var(--surface-deep);
   border: 1px solid var(--surface-raised);
@@ -2612,13 +2615,11 @@ input:not([type]):focus {
   display: block;
   height: auto;
   margin: auto;
-  max-height: calc(100vh - 430px);
-  max-width: 100%;
-  width: auto;
+  width: min(100%, calc((100vh - 430px) * 900 / 520));
   box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.3);
 }
 .games-screen.running .games-canvas {
-  max-height: calc(100vh - 158px);
+  width: min(100%, calc((100vh - 158px) * 900 / 520));
 }
 
 .games-control-panel {

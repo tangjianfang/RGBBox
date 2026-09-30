@@ -1660,10 +1660,10 @@ function drawShipBody(
   ctx.restore()
 }
 
-export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState): void {
+export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState, bgSource?: CanvasImageSource): void {
   // R213: 名册同步(与 tickSurvival 同口径,视图直改 player2 后立即生效)
   syncRoster(state)
-  drawSurvivalBody(ctx, state)
+  drawSurvivalBody(ctx, state, bgSource)
   // R200(FR-G06.2): 出生预警——边缘红色箭头(0.5s);R219.7①: 锚点读 vp
   for (const w of state.warnings) {
     const alpha = Math.min(1, w.t / 0.5)
@@ -1681,7 +1681,40 @@ export function drawSurvival(ctx: CanvasRenderingContext2D, state: SurvivalState
   }
 }
 
-function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): void {
+/** R219.8: 静态背景整幅绘制(不含 darken)——DYNAMIC_BG 冻结后背景逐帧内容
+ *  恒定,view 层离屏缓存只画一次、每帧 blit;boss 压暗改由 drawSurvivalBody
+ *  在 blit/direct 之后按运行时状态叠加(原先在 drawScene 内,缓存后必须外置)。 */
+export function drawSurvivalBackground(ctx: CanvasRenderingContext2D, state: SurvivalState): void {
+  const vp = state.vp
+  const sceneT = DYNAMIC_BG_ENABLED ? state.clock : (state.island - 1) * 97.3
+  const bgPx = DYNAMIC_BG_ENABLED ? state.player.x : vp.w / 2
+  const bgPy = DYNAMIC_BG_ENABLED ? state.player.y : vp.h / 2
+  paintSurvivalBg(ctx, state, vp, sceneT, bgPx, bgPy)
+}
+
+function paintSurvivalBg(ctx: CanvasRenderingContext2D, state: SurvivalState, vp: ViewportSize, sceneT: number, bgPx: number, bgPy: number): void {
+  // R213: 场景背景系统——state.scene 指定程序化场景(fusion=按岛屿轮换);
+  // 未设置时保留原岛屿主题星空。
+  if (state.scene !== undefined) {
+    const id = state.scene === 'fusion' ? SCENE_IDS[(state.island - 1) % (SCENE_IDS.length - 1)] : state.scene
+    drawScene(id, {
+      ctx, w: vp.w, h: vp.h, t: sceneT, px: bgPx, py: bgPy,
+      offset: DYNAMIC_BG_ENABLED ? state.bgOffset : undefined,
+    })
+  } else {
+    const theme = ISLAND_THEMES[(state.island - 1) % ISLAND_THEMES.length]
+    ctx.fillStyle = theme.bg
+    ctx.fillRect(0, 0, vp.w, vp.h)
+    for (const star of STARS) {
+      ctx.globalAlpha = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(sceneT * 2 + star.phase))
+      ctx.fillStyle = theme.star
+      ctx.fillRect(star.fx * vp.w - bgPx * 0.02, star.fy * vp.h - bgPy * 0.02, star.size, star.size)
+    }
+    ctx.globalAlpha = 1
+  }
+}
+
+function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, bgSource?: CanvasImageSource): void {
   const player = state.player
   // R219.7①: 视口尺寸统一入口——引擎不再直读 900×520 常量。
   const vp = state.vp
@@ -1695,27 +1728,17 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   // R219.1: 震屏单一路径——legacy state.shake 平移已删,统一走 juice.shake
   // (applyShake;受击/换岛/boss 击杀全部经 queueShake 入队)。
   applyShake(ctx, state.juice)
-  // R213: 场景背景系统——state.scene 指定程序化场景(fusion=按岛屿轮换);
-  // 未设置时保留原岛屿主题星空(单机默认走 view 层写入,引擎侧不预设)。
-  // R218 U10: 传视差 offset(质心平滑派生)与 darken(boss 在场压暗)。
-  if (state.scene !== undefined) {
-    const id = state.scene === 'fusion' ? SCENE_IDS[(state.island - 1) % (SCENE_IDS.length - 1)] : state.scene
-    drawScene(id, {
-      ctx, w: vp.w, h: vp.h, t: sceneT, px: bgPx, py: bgPy,
-      offset: DYNAMIC_BG_ENABLED ? state.bgOffset : undefined,
-      darken: state.enemies.some((enemy) => enemy.kind === 'boss') ? 0.32 : 0,
-    })
+  // R219.8: 背景——优先 blit view 层离屏缓存(静态,整帧一次 drawImage);
+  // 无缓存(单测直调)走直接绘制。boss 压暗恒为运行时叠加。
+  if (bgSource !== undefined) {
+    ctx.drawImage(bgSource, 0, 0, vp.w, vp.h)
   } else {
-  const theme = ISLAND_THEMES[(state.island - 1) % ISLAND_THEMES.length]
-  ctx.fillStyle = theme.bg
-  ctx.fillRect(0, 0, vp.w, vp.h)
-  for (const star of STARS) {
-    ctx.globalAlpha = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(sceneT * 2 + star.phase))
-    ctx.fillStyle = theme.star
-    ctx.fillRect(star.fx * vp.w - bgPx * 0.02, star.fy * vp.h - bgPy * 0.02, star.size, star.size)
+    paintSurvivalBg(ctx, state, vp, sceneT, bgPx, bgPy)
   }
+  if (state.enemies.some((enemy) => enemy.kind === 'boss')) {
+    ctx.fillStyle = 'rgba(2, 4, 10, 0.32)'
+    ctx.fillRect(0, 0, vp.w, vp.h)
   }
-  ctx.globalAlpha = 1
 
   // ── R218 U11: 世界层——摄像机变换(视口中心 → zoom → 负摄像机平移);
   //    世界实体(弹幕/门/珠/刀光/子弹/敌/粒子/涟漪/玩家/飘字)在此层绘制,
@@ -1727,14 +1750,15 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
 
   // R202: boss/shooter 弹幕绘制(世界坐标)
   for (const eb of state.eBullets) {
-    ctx.save()
+    // R219.8: shadowBlur→双层假发光(同上)
+    ctx.fillStyle = 'rgba(251, 113, 133, 0.3)'
+    ctx.beginPath()
+    ctx.arc(eb.x, eb.y, eb.size + 2.5, 0, Math.PI * 2)
+    ctx.fill()
     ctx.fillStyle = '#fb7185'
-    ctx.shadowColor = '#fb7185'
-    ctx.shadowBlur = 6
     ctx.beginPath()
     ctx.arc(eb.x, eb.y, eb.size, 0, Math.PI * 2)
     ctx.fill()
-    ctx.restore()
   }
 
   if (state.portal) {
@@ -1756,15 +1780,15 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState): 
   }
 
   for (const orb of state.orbs) {
+    // R219.8: shadowBlur→双层假发光(CDP 二分实验:shadowBlur 是帧耗时主因)
     ctx.save()
     ctx.translate(orb.x, orb.y)
     ctx.rotate(Math.PI / 4)
+    ctx.fillStyle = 'rgba(74, 222, 128, 0.28)'
+    ctx.fillRect(-7, -7, 14, 14)
     ctx.fillStyle = '#4ade80'
-    ctx.shadowColor = '#4ade80'
-    ctx.shadowBlur = 8
     ctx.fillRect(-4, -4, 8, 8)
     ctx.restore()
-    ctx.shadowBlur = 0
   }
 
   // R208(FR-MP01): 复活珠——脉动绿光十字,提示「拾取可救回队友」

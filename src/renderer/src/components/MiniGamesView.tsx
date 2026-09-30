@@ -47,6 +47,7 @@ import {
   debugSpawnBoss,
   dissolveRoulette,
   drawSurvival,
+  drawSurvivalBackground,
   setSurvivalDifficulty,
   worldToViewport,
   initialSurvivalState,
@@ -476,6 +477,9 @@ export function MiniGamesView(): JSX.Element {
   const screenRootRef = useRef<HTMLDivElement | null>(null)
   // R142-L3: relative-cursor overlay host (the games-canvas-wrap element)
   const canvasWrapRef = useRef<HTMLDivElement | null>(null)
+  // R219.8: survival 静态背景离屏缓存——DYNAMIC_BG 冻结后背景逐帧恒定,
+  // 仅在 场景/岛屿/backing 尺寸 变化时重画一次,游戏循环每帧一次 blit。
+  const bgCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null)
   const gamepadNameRef = useRef<string | null>(null)
   const prevStartRef = useRef(false)
   const startRunRef = useRef<() => void>(() => undefined)
@@ -560,6 +564,15 @@ export function MiniGamesView(): JSX.Element {
         camera: { ...survivalRef.current.camera },
         vp: { ...survivalRef.current.vp },
         shipVp: worldToViewport(survivalRef.current.camera, survivalRef.current.vp.w, survivalRef.current.vp.h, survivalRef.current.player.x, survivalRef.current.player.y),
+        // R219.8: 实体负载计数(性能取证用)
+        counts: {
+          enemies: survivalRef.current.enemies.length,
+          bullets: survivalRef.current.bullets.length,
+          eBullets: survivalRef.current.eBullets.length,
+          orbs: survivalRef.current.orbs.length,
+          particles: survivalRef.current.particles.length,
+          texts: survivalRef.current.texts.length,
+        },
         axis: { ...survivalRef.current.axis },
         keys: [...survivalRef.current.keys],
       }),
@@ -957,7 +970,10 @@ export function MiniGamesView(): JSX.Element {
   useEffect(() => {
     if (screen !== 'td' && screen !== 'survival' && screen !== 'tetris' && screen !== 'slash') return
     const canvas = canvasRef.current
-    const ctx = canvas?.getContext('2d')
+    // R219.8: alpha:false 不透明上下文——四作每帧都整幅绘制背景,无透明需求;
+    // 免去合成器对整页的逐像素混合,弱 GPU 上显著降低呈现反压主线程的成本
+    // (CDP 实测:画布可见时 rAF 入口 gap 可达 12.7ms,隐藏仅 2.1ms)。
+    const ctx = canvas?.getContext('2d', { alpha: false })
     if (!canvas || !ctx) return
     startBgm()
     // R217: DPR-aware backing store (games/hdCanvas.ts) — was a fixed 900×520
@@ -1099,7 +1115,23 @@ export function MiniGamesView(): JSX.Element {
           }
         }
         lastPhase = phase
-        drawSurvival(ctx, survivalRef.current)
+        // R219.8②: 静态背景离屏缓存(先查缓存,miss 时整幅重画一次)
+        const bgKey = `${survivalRef.current.scene ?? 'legacy'}|${survivalRef.current.island}|${canvas.width}x${canvas.height}`
+        let bgCache = bgCacheRef.current
+        if (bgCache === null || bgCache.key !== bgKey) {
+          const off = bgCache?.canvas ?? document.createElement('canvas')
+          off.width = canvas.width
+          off.height = canvas.height
+          const octx = off.getContext('2d', { alpha: false })
+          if (octx !== null) {
+            const s = canvas.height / LOGICAL_H
+            octx.setTransform(s, 0, 0, s, 0, 0)
+            drawSurvivalBackground(octx, survivalRef.current)
+          }
+          bgCache = { key: bgKey, canvas: off }
+          bgCacheRef.current = bgCache
+        }
+        drawSurvival(ctx, survivalRef.current, bgCache.canvas)
         // R213: 头像贴图——有头像的存活玩家在其位置画 28×28 圆形头像(盖在默认飞船上)
         for (let pi = 0; pi < survivalRef.current.players.length; pi += 1) {
           const img = avatarsRef.current[pi]
