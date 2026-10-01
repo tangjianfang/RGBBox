@@ -1,0 +1,23 @@
+name: CI
+
+# R221(06 R2 最小 CI): 应用面评审指出「全部门禁只存在于开发者本机,无 CI 承载」
+# ——typecheck 是零原生依赖、最快暴露类型破损的闸门,先落这一档;test/snapshot
+# 依赖 electron/headless-gl 原生模块,待 runner 预热后按平台矩阵补(P2)。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn typecheck

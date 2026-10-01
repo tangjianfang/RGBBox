@@ -5,7 +5,7 @@ import { get as httpGet } from 'node:http'
 import { get as httpsGet } from 'node:https'
 import { pipeline } from 'node:stream/promises'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join, basename, sep } from 'node:path'
+import { basename, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { defaultProfile } from '../shared/defaultProfile'
 import { LanService, registerLanIpc } from './lanService'
@@ -181,6 +181,21 @@ function createMainWindow(): void {
   // disabled Chromium's occluded-window backgrounding, no longer reliably
   // reflects minimize state. R44: also called explicitly below (and in
   // createTray()) since the 'hide' event alone is not reliable for every path.
+  // R221.4(04 R-2): 主窗口渲染进程崩溃/无响应观测——原仅 snip 池窗口有
+  // render-process-gone 处理,主窗口崩溃=白屏僵尸+零日志(与「无 dump」互为
+  // 因果)。此处记录结构化日志并触发一次干净重载(用户可感知恢复,而非僵尸)。
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    log.error('Main', `renderer gone: reason=${details.reason} exitCode=${details.exitCode}`)
+    if (details.reason !== 'clean-exit') {
+      try { void mainWindow?.webContents.reload() } catch { /* 窗口可能已销毁 */ }
+    }
+  })
+  mainWindow.webContents.on('unresponsive', () => {
+    log.error('Main', 'renderer unresponsive (>30s event loop stall)')
+  })
+  mainWindow.webContents.on('responsive', () => {
+    log.info('Main', 'renderer responsive again')
+  })
   mainWindow.on('minimize', () => sendMainWindowVisibility(false))
   mainWindow.on('restore', () => sendMainWindowVisibility(true))
   mainWindow.on('hide', () => sendMainWindowVisibility(false))
@@ -449,7 +464,10 @@ function registerIpc(): void {
     const cfg = activeSettings(profiles, activeId)
     const keyUnreadable = unreadableIds.includes(activeId)
     if (keyUnreadable) console.warn('[RGBBox] stored AI key could not be decrypted on this machine/account')
-    return { ...cfg, keyUnreadable, encryptionAvailable: safeStorage.isEncryptionAvailable() }
+    // R221.5(05 T-B3): apiKey 不再回传明文——本通道当前无 renderer 消费方
+    // (画像编辑走 aiGetProfiles/aiSaveProfile),掩码化收窄 IPC 面上的密文
+    // 暴露;hasKey 保留存在性语义。
+    return { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey !== '' ? '•••••' : '', hasKey: cfg.apiKey !== '', keyUnreadable, encryptionAvailable: safeStorage.isEncryptionAvailable() }
   })
   ipcMain.handle(ipcChannels.aiSetSettings, async (_event, p: unknown) =>
     runAiStoreOp(async () => {
@@ -1613,6 +1631,23 @@ app.whenReady().then(() => {
         // Path is stored as query param ?p= to avoid Windows drive-letter mangling
         // e.g. media://local?p=C%3A%5CUsers%5C...  →  C:\Users\...
         filePath = mediaUrl.searchParams.get('p') ?? ''
+        // R221.5(05 T-A1): media://local 任意路径零校验 + ACAO:* ——虽然该
+        // handler 仅注册在 default session(AI8 窗在独立 persist 分区,当前
+        // 不可达),仍按纵深防御收口:仅放行 userData 内的媒体/模型目录与
+        // 用户 Downloads/Music/Videos(播放列表/录制的既有来源),其余 403。
+        const normalized = resolve(filePath)
+        const allowedRoots = [
+          join(app.getPath('userData'), 'captures'),
+          join(app.getPath('userData'), 'models'),
+          join(app.getPath('home'), 'Downloads'),
+          join(app.getPath('music')),
+          join(app.getPath('videos')),
+        ]
+        const allowed = allowedRoots.some((root) => normalized === root || normalized.startsWith(root + sep))
+        if (!allowed) {
+          log.warn('MediaProtocol', `blocked non-whitelisted path: ${normalized.slice(0, 120)}`)
+          return new Response('Forbidden', { status: 403 })
+        }
       }
       // R53.8: was console.log — on Windows, the terminal's active codepage
       // (often GBK/936, not UTF-8) mangles non-ASCII (e.g. Chinese) file paths

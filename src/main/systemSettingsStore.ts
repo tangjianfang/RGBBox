@@ -1,6 +1,6 @@
 import { app } from 'electron'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { preserveBadFile, readJsonSafe, writeJsonAtomic } from './atomicJson'
 
 /**
  * System-level settings that should survive app restarts but are independent
@@ -8,6 +8,11 @@ import { join } from 'node:path'
  *
  * R69: 'powerSaveBlock' persists the "阻止屏保/睡眠" switch so it is restored
  * on the next launch.
+ * R221.1（05 T-C1）: 原子写 + 坏 JSON 拒绝合并默认——原实现「解析失败回 {} +
+ * 下次 save 合并写回」会把 AI 密文 profiles/热键/屏保整份清空（评审实测
+ * 6 个坏样本触发 5 个）。现在坏文件时保存路径直接以传入 settings 为准
+ * 覆盖（用户本次显式保存的内容是可信增量），原坏文件先备份为
+ * system.json.bad 以便手工抢救。
  */
 export interface SystemSettings {
   powerSaveBlock?: boolean
@@ -36,23 +41,26 @@ export interface SystemSettings {
   }
 }
 
-const configDir = join(app.getPath('userData'), 'config')
-const settingsPath = join(configDir, 'system.json')
+const configDir = () => join(app.getPath('userData'), 'config')
+const settingsPath = () => join(configDir(), 'system.json')
 
 export async function loadSystemSettings(): Promise<SystemSettings> {
-  try {
-    const raw = await readFile(settingsPath, 'utf-8')
-    return JSON.parse(raw) as SystemSettings
-  } catch {
-    // Missing or malformed file is not a fatal error; return defaults.
+  const r = await readJsonSafe<SystemSettings>(settingsPath())
+  if (r.ok) return r.value
+  if (r.reason === 'bad') {
+    // 坏文件：返回空默认供读取侧使用，但保存侧会走「覆盖」而非「合并」，
+    // 避免把坏文件里的残缺内容当成真值合并。原文件由首次保存前备份。
     return {}
   }
+  return {}
 }
 
 export async function saveSystemSettings(settings: SystemSettings): Promise<SystemSettings> {
-  await mkdir(configDir, { recursive: true })
-  const existing = await loadSystemSettings()
-  const merged = { ...existing, ...settings }
-  await writeFile(settingsPath, JSON.stringify(merged, null, 2), 'utf-8')
+  const r = await readJsonSafe<SystemSettings>(settingsPath())
+  // R221.1: 坏文件 → 先备份为 system.json.bad(抢救 AI 密文等),再以本次
+  // 显式保存覆盖(不与 {} 合并——那正是清空链);好文件 → 正常浅合并。
+  if (!r.ok && r.reason === 'bad') await preserveBadFile(settingsPath())
+  const merged = r.ok ? { ...r.value, ...settings } : { ...settings }
+  await writeJsonAtomic(settingsPath(), merged)
   return merged
 }

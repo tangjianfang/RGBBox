@@ -8,7 +8,17 @@ export function clampUnit(value: number): number {
   return Math.max(0, Math.min(1, value))
 }
 
+// R221.3(B-1): hex 解析结果缓存——参数对象里的 hex 字符串引用稳定,
+// 56k 像素×每层重复 hexToRgb 的字符串切片/parseInt 全部命中缓存。
+const hexCache = new Map<string, RgbColor>()
 export function hexToRgb(hex: string): RgbColor {
+  const hit = hexCache.get(hex)
+  if (hit !== undefined) return hit
+  const v = parseHex(hex)
+  if (hexCache.size < 4096) hexCache.set(hex, v)
+  return v
+}
+function parseHex(hex: string): RgbColor {
   const normalized = hex.replace('#', '')
   const fallback = { r: 255, g: 255, b: 255 }
 
