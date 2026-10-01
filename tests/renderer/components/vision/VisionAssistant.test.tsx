@@ -29,7 +29,9 @@ beforeEach(() => {
   host = new FakeHost()
   cleanup()
 })
-afterEach(() => host.dispose())
+// R223.5: 防御性 teardown——beforeEach 若中途抛错 host 未赋值,这里不再
+// 连环 TypeError 掩盖一手错误
+afterEach(() => host?.dispose())
 
 const ACTIVE = { state: 'active', label: 'x', geom: { palm: { x: 0.5, y: 0.5 }, pinch: 1.1, scale: 0.18 }, stats: { infer: { n: 9, p50: 8, p95: 12, mean: 9 }, fps: 60, inferFps: 30, delegate: 'GPU', lowFps: false } }
 

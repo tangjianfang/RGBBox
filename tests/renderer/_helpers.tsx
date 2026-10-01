@@ -171,6 +171,12 @@ export function setupRendererMocks() {
     getProcessCpuSamples: vi.fn().mockResolvedValue([]),
     reportPerfSelfTestTiming: vi.fn().mockResolvedValue(undefined)
   }
-  ;(globalThis as any).window.rgbbox = rgbbox
+  // R223.5(用户 dist:win 门禁拦截的 flake 根修): 负载下 happy-dom 的
+  // window 可能瞬时 undefined → 此行抛 → beforeEach 中断 → afterEach 的
+  // host.dispose() 连环 TypeError(VisionAssistant 两条用例偶发红)。
+  // 守卫:window 缺失时回退 globalThis 本身,双写保证任意取用路径可达。
+  const w = ((globalThis as any).window ??= globalThis)
+  w.rgbbox = rgbbox
+  ;(globalThis as any).rgbbox = rgbbox
   return rgbbox
 }

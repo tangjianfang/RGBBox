@@ -14,29 +14,21 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
 const FULL = args.includes('--full')
-const DIST_HOOK = args.includes('--dist-hook')
 const TOTAL_TIMEOUT_MS = 30 * 60 * 1000
 
-/** out/ 新鲜度（镜像 scripts/lib/cdp.mjs 的 assertFreshOut 语义；不可判时按不新鲜处理）。 */
-function outIsFresh() {
-  try {
-    const outMain = statSync(join(process.cwd(), 'out', 'main', 'index.js')).mtimeMs
-    const srcDirs = ['src/main', 'src/renderer/src', 'src/engine', 'src/shared', 'src/preload']
-    let srcMtime = 0
-    for (const d of srcDirs) srcMtime = Math.max(srcMtime, statSync(join(process.cwd(), d)).mtimeMs)
-    return outMain > srcMtime
-  } catch { return false }
-}
+// R223.5: 原 --dist-hook 的 L2 跳过判断用「目录 mtime」——内容修改不刷新
+// 目录时间,曾误判新鲜跳过构建,随后被 L3 的逐文件新鲜度检查拦下(用户
+// dist:win 实测暴露)。删掉该优化:门禁永远自己构建,L3/L4 的 out/ 由本层
+// 保证新鲜。
 
 const LAYERS = [
   { id: 'L0', name: '静态类型', cmd: ['yarn', 'typecheck'] },
   { id: 'L1', name: '全量单测', cmd: ['yarn', 'test'] },
-  { id: 'L2', name: '构建', cmd: ['yarn', 'build'], skip: DIST_HOOK && outIsFresh(), skipNote: 'out 新鲜(dist 链已构建)' },
+  { id: 'L2', name: '构建', cmd: ['yarn', 'build'] },
   { id: 'L3', name: '视觉快照', cmd: ['yarn', 'ui:snapshot'] },
   { id: 'L4a', name: '冒烟·应用面', cmd: ['node', 'scripts/smoke-app.mjs'] },
   { id: 'L4b', name: '冒烟·游戏环', cmd: ['node', 'scripts/smoke-games.mjs'] },
@@ -51,7 +43,7 @@ timer.unref?.()
 const results = []
 const t0 = Date.now()
 
-console.log(`\n=== RGBBox 发布门禁 ${FULL ? '--full' : '--quick'}${DIST_HOOK ? ' --dist-hook' : ''} ===\n`)
+console.log(`\n=== RGBBox 发布门禁 ${FULL ? '--full' : '--quick'} ===\n`)
 
 for (const layer of LAYERS) {
   if (layer.fullOnly && !FULL) { results.push({ ...layer, status: 'SKIP', note: 'full-only' }); continue }
