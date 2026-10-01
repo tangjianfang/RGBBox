@@ -28,7 +28,14 @@
     "probe": "node scripts/probe-runtime.mjs",
     "probe:full": "node scripts/probe-runtime.mjs --full",
     "ui:snapshot": "node scripts/ui-snapshot.mjs --compare",
-    "ui:snapshot:update": "node scripts/ui-snapshot.mjs --update-baseline"
+    "ui:snapshot:update": "node scripts/ui-snapshot.mjs --update-baseline",
+    "verify:release": "node scripts/verify-release.mjs --full",
+    "verify:quick": "node scripts/verify-release.mjs --quick",
+    "smoke:app": "node scripts/smoke-app.mjs",
+    "smoke:games": "node scripts/smoke-games.mjs",
+    "predist:win": "node scripts/verify-release.mjs --quick --dist-hook",
+    "predist:mac": "node scripts/verify-release.mjs --quick --dist-hook",
+    "predist:dir": "node scripts/verify-release.mjs --quick --dist-hook"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

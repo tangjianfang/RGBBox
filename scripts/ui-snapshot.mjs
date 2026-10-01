@@ -70,6 +70,13 @@ if (mode === 'compare') mkdirSync(DIFFDIR, { recursive: true })
 launchElectron({ port: PORT })
 const { page } = await connectRenderer({ port: PORT })
 
+// R222.3(T5): 注入 prefers-reduced-motion:reduce——app.css:8913 已有全局
+// 动画灭杀开关但脚本未用,是 workspace 2.72% 假阳性(动画偏相位帧)的根。
+// CDP 媒体特性模拟在页面加载前/后均可生效,截图前统一定格动画。
+try {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+} catch { /* 旧驱动不支持时静默降级(维持旧行为) */ }
+
 // Stable-ish viewport for comparable shots.
 await page.setViewportSize({ width: 1440, height: 900 }).catch(() => {})
 

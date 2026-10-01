@@ -21,3 +21,4 @@ docs/ui-baseline/diff/
 
 # R163 hygiene: coverage reports are build output, never tracked
 coverage/
+.verify-artifacts/

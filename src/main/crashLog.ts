@@ -17,6 +17,8 @@ const KEEP = 20
 
 const crashDir = (): string => join(app.getPath('userData'), 'logs')
 
+let crashSeq = 0
+
 const pad = (n: number, w = 2): string => String(n).padStart(w, '0')
 
 /** Must be called before app ready (crashReporter requirement). */
@@ -35,7 +37,8 @@ export async function recordCrashEvent(kind: CrashRecord['kind'], err: unknown):
     const dir = crashDir()
     await mkdir(dir, { recursive: true })
     const now = new Date()
-    const file = `crash-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${pad(now.getMilliseconds(), 3)}.json`
+    // R222.3: 同毫秒双崩溃会覆盖——追加进程内单调序号保唯一(产品缺陷+测试 flake 根)
+    const file = `crash-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${pad(now.getMilliseconds(), 3)}-${++crashSeq}.json`
     const message = err instanceof Error ? err.message : String(err)
     const rec = {
       at: now.toISOString(),

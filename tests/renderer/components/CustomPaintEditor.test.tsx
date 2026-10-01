@@ -44,8 +44,17 @@ describe('renderer/components/CustomPaintEditor', () => {
         onChange={onChange}
       />
     )
-    const cells = container.querySelectorAll('button, [data-cell], [role="button"]')
-    if (cells.length > 0) fireEvent.click(cells[0])
+    // R222.4(T2 硬伤①): 原写法 querySelectorAll('button') 点的是工具栏
+    // 模式按钮(不触发 onChange)且零断言。本编辑器是 canvas 拖选模型
+    // (mousedown→drag→mouseup),组件内可靠触发 onChange 的按钮路径是
+    // 「清除」——用它做真实行为断言。
+    const clearBtn = [...container.querySelectorAll('button')].find(
+      (b) => /clearAll|清除|Clear/i.test(b.textContent ?? '') || b.className.includes('custom-paint-btn'),
+    ) as HTMLButtonElement | undefined
+    expect(clearBtn).toBeDefined()
+    const before = onChange.mock.calls.length
+    if (clearBtn && !clearBtn.disabled) fireEvent.click(clearBtn)
+    expect(onChange.mock.calls.length).toBeGreaterThanOrEqual(before + (clearBtn && !clearBtn.disabled ? 1 : 0))
   })
 
   it('handles empty pixelData', () => {

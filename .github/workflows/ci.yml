@@ -17,7 +17,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22 # R222.2: devDep pi-coding-agent 要求 >=22.19,node20 下 install 即红(R221 的 CI 从未绿过)
           cache: yarn
       - run: yarn install --frozen-lockfile
       - run: yarn typecheck
+
+  # R222.2: 全量测试档——T6 实查 headless-gl@8.1.6 有 node-v115/127 的
+  # linux-x64 prebuilt(GitHub release),onnxruntime-node 三平台二进制随包
+  # 分发,electron 在测试中全被 vi.mock;glHarness 载入失败自动 it.skip
+  # 双保险。ubuntu 直上全量(首次运行为验证性 Likely)。
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn test
