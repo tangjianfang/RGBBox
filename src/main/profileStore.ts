@@ -1,32 +1,35 @@
 import { app } from 'electron'
-import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defaultProfile } from '../shared/defaultProfile'
 import type { Profile, ProfileMeta } from '../shared/types'
+import { preserveBadFile, readJsonSafe, writeJsonAtomic } from './atomicJson'
 
 const configDir = join(app.getPath('userData'), 'config')
 const profilePath = join(configDir, 'profile.json')
 const profilesDir = join(configDir, 'profiles')
 
 // ── Working profile (current session) ─────────────────────────────────────
+// R221.1（05 T-C1）: 原子写 + 坏 JSON 防清空。loadProfile 对坏文件返回
+// defaultProfile 供会话使用，但 saveProfile 直接以传入 profile 覆盖
+// （不经「默认合并」把坏残文件当真值）；临时文件 + rename 保证写一半
+// 崩溃不再产生截断 JSON。
 
 export async function loadProfile(): Promise<Profile> {
-  try {
-    const raw = await readFile(profilePath, 'utf-8')
-    const parsed: Profile = JSON.parse(raw)
-    return {
-      ...defaultProfile,
-      ...parsed,
-      sampling: { ...defaultProfile.sampling, ...parsed.sampling }
-    }
-  } catch {
-    return defaultProfile
+  const r = await readJsonSafe<Profile>(profilePath)
+  if (!r.ok) return defaultProfile
+  return {
+    ...defaultProfile,
+    ...r.value,
+    sampling: { ...defaultProfile.sampling, ...r.value.sampling }
   }
 }
 
 export async function saveProfile(profile: Profile): Promise<Profile> {
-  await mkdir(configDir, { recursive: true })
-  await writeFile(profilePath, JSON.stringify(profile, null, 2), 'utf-8')
+  // R221.1: 坏文件先抢救备份,再原子覆盖(免截断/免坏值合并)
+  const r = await readJsonSafe<Profile>(profilePath)
+  if (!r.ok && r.reason === 'bad') await preserveBadFile(profilePath)
+  await writeJsonAtomic(profilePath, profile)
   return profile
 }
 
@@ -63,10 +66,9 @@ export async function loadProfileById(id: string): Promise<Profile | null> {
 }
 
 export async function saveProfileAs(profile: Profile): Promise<ProfileMeta> {
-  await mkdir(profilesDir, { recursive: true })
   const savedAt = new Date().toISOString()
   const stored = { ...profile, _savedAt: savedAt }
-  await writeFile(join(profilesDir, `${profile.id}.json`), JSON.stringify(stored, null, 2), 'utf-8')
+  await writeJsonAtomic(join(profilesDir, `${profile.id}.json`), stored) // R221.1: 原子写
   return { id: profile.id, name: profile.name, savedAt }
 }
 

@@ -1085,6 +1085,16 @@ export function MiniGamesView(): JSX.Element {
     let lanSnapAcc = 0
     let bgmTensionCur = 0
     const loop = (now: number) => {
+      // R221.4(04 R-1): 单帧异常护栏——任一环节 throw 不再永久冻结画面:
+      // 打日志(含屏与相位,便于定位)、清 fs 按钮区(防悬停命中过期几何)、续帧。
+      try {
+        loopBody(now)
+      } catch (err) {
+        console.error('[games] frame error', { screen, err })
+        fsButtonsRef.current = []
+      }
+    }
+    const loopBody = (now: number): void => {
       // R217: map the logical 900×520 space onto the HiDPI backing store
       // every frame (also heals transform loss after a ResizeObserver
       // backing re-assignment resets the context state).

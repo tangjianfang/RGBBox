@@ -185,7 +185,8 @@ export function createAgentService(deps: AgentServiceDeps) {
   }
 
   const askApproval = (approval: AgentApprovalRequest, allowKey: string, allowList: string[]): Promise<'once' | 'always' | 'deny'> => {
-    if (allowList.some((k) => allowKey.startsWith(k) || allowKey === k)) return Promise.resolve('once')
+    // R221.2: 精确等值匹配（原 startsWith 前缀放行 = 评审实测的注入通道）
+    if (allowList.includes(allowKey)) return Promise.resolve('once')
     return new Promise((resolve) => {
       run?.pending.set(approval.id, { resolve })
       emit({ kind: 'approval', approval })
@@ -215,7 +216,11 @@ export function createAgentService(deps: AgentServiceDeps) {
         const command = String(args.command ?? '')
         summary = command
         approval = { id: `appr-${++seq}`, kind: 'bash', summary: command, command }
-        allowKey = command
+        // R221.2（05 T-B1）: 授权键 = 命令首词（可执行名），不再用整串前缀——
+        // 原实现 allowList.startsWith(整串) 使「批准 npm install」后
+        // 「npm install; shutdown /s」被前缀匹配放行（评审实测绕过）。
+        // 首词语义 = 同一工具的任意调用，命令注入链需新批准。
+        allowKey = command.trim().split(/\s+/)[0] ?? command
       } else if (tool === 'write') {
         const content = String(args.content ?? '')
         summary = `write ${path} (${content.length} bytes)`
@@ -236,7 +241,8 @@ export function createAgentService(deps: AgentServiceDeps) {
         return text
       }
       if (decision === 'always') {
-        if (tool === 'bash') run!.allowPrefixes.push(String(args.command ?? '').split(/\s+/)[0] + ' ')
+        // R221.2: 与 allowKey 同源(首词,无尾随空格——精确等值匹配)
+        if (tool === 'bash') run!.allowPrefixes.push(allowKey)
         else run!.allowPaths.push(allowKey)
       }
     }
