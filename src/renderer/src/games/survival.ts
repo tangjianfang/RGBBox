@@ -113,6 +113,7 @@ export function setSurvivalDifficulty(state: SurvivalState, difficulty: GameDiff
     pl.maxHp = Math.max(1, pl.maxHp + delta)
     pl.hp = clamp(pl.hp + Math.max(0, delta), 0, pl.maxHp)
   }
+  syncTeamHp(state) // R223.3: 改档后全员以池为准镜像
 }
 
 // ── R218 D: 敌人 8 种行为正交矩阵(spec §二 Survival;VS 设计法) ──────────────
@@ -793,6 +794,7 @@ export function deployPlayers(state: SurvivalState, count: 1 | 2 | 3 | 4): void 
     state.keys2 = state.inputs[1]
   }
   syncRoster(state)
+  syncTeamHp(state) // R223.2: 合作局开局即镜像(共享池从第一帧成立)
 }
 
 /** R208(FR-MP01): 部署二号位——R213 起为 deployPlayers(state, 2) 的别名
@@ -841,6 +843,41 @@ function spendRevive(state: SurvivalState, idx: number): void {
   state.revivesUsedN[idx] = (state.revivesUsedN?.[idx] ?? 0) + 1
   if (idx === 0) state.revivesUsed.p1 += 1
   else if (idx === 1) state.revivesUsed.p2 += 1
+}
+
+// ── R223.2: 合作局共享血量池——「只要有一个人没死,另一个可借用血量一起玩,
+//    直到两个人都死了」的机制化:池=players[0].hp;任一玩家受击扣池(个人
+//    无敌帧独立,走位价值保留);池>0 全员同活、池=0 全员同倒判负。
+//    单人局语义零变化。mid-run 个人倒下/复活珠在共享模式不再出现(池语义
+//    取代;R213 复活珠代码保留休眠)。 ──
+export function teamShareHp(state: SurvivalState): boolean {
+  return state.players.length >= 2
+}
+
+/** 池值同步到全员(hp/maxHp 镜像;maxHp 以 players[0] 为权威)。 */
+export function syncTeamHp(state: SurvivalState): void {
+  if (!teamShareHp(state)) return
+  const pool = state.players[0]
+  for (let i = 1; i < state.players.length; i++) {
+    const pl = state.players[i]
+    pl.maxHp = pool.maxHp
+    pl.hp = Math.max(0, Math.min(pool.hp, pl.maxHp))
+  }
+}
+
+/** R223.3 统一治疗入口:加到池(合作)或本人(单人),镜像全员。 */
+export function healTeam(state: SurvivalState, amount: number): void {
+  const pool = state.players[0]
+  pool.hp = Math.min(pool.maxHp, pool.hp + amount)
+  syncTeamHp(state)
+}
+
+/** R223.2 受击入口:伤害落到共享池(合作)或本人(单人);返回是否致死。 */
+function applyPlayerDamage(state: SurvivalState, pl: PlayerState, dmg: number): boolean {
+  const holder = teamShareHp(state) ? state.players[0] : pl
+  holder.hp -= dmg
+  syncTeamHp(state)
+  return holder.hp <= 0
 }
 
 /** 玩家倒下:爆散+掉复活珠(该玩家本局未被复活过时);全员倒下由调用方判负。 */
@@ -913,7 +950,7 @@ export function advanceIsland(state: SurvivalState): void {
   state.orbs = []
   state.island += 1
   state.portal = null
-  state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
+  healTeam(state, 1) // R223.3: 换岛治疗走统一入口(全员/池)
   state.comboBonus += 150 * state.island
   state.banner = { text: `ISLAND ${state.island}`, life: 1.8 }
   queueShake(state.juice, 5)
@@ -951,6 +988,7 @@ export function applyUpgrade(state: SurvivalState, id: UpgradeId): void {
   if (id === 'maxHp') {
     state.player.maxHp += 1
     state.player.hp = Math.min(state.player.maxHp, state.player.hp + 2)
+    syncTeamHp(state) // R223.3: maxHp 升级同步全员(原 P2 maxHp 停留初始值)
   }
   recomputeStats(state.stats, state.taken, { character: state.character, perm: state.perm, bonuses: state.bonuses, magnetBonus: state.magnetBonus })
   state.offers = []
@@ -975,6 +1013,7 @@ export function applyRouletteResult(state: SurvivalState, result: RouletteResult
       const gained = state.taken[result.upgradeId] - before
       state.player.maxHp += gained
       state.player.hp = Math.min(state.player.maxHp, state.player.hp + gained * 2)
+      syncTeamHp(state) // R223.3
     }
     spawnBurst(state, state.player.x, state.player.y, def?.accent ?? '#fde68a', 22, 180)
     addText(state, state.player.x, state.player.y - 34, `+${result.upgradeId} x${result.levels}`, def?.accent ?? '#fde68a')
@@ -1199,7 +1238,7 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
     for (let i = 0; i < 15; i++) {
       state.orbs.push({ id: state.nextId++, x: enemy.x + (rand(state) - 0.5) * 110, y: enemy.y + (rand(state) - 0.5) * 110, value: 1 })
     }
-    state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
+    healTeam(state, 1) // R223.3: boss 击杀治疗走统一入口(原只写 P1)
     state.pendingSpins += 1
     state.hitStop = HIT_STOP.heavy
     state.bossKills += 1
@@ -1305,7 +1344,6 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     for (const pl of alivePlayers(state)) {
       if (pl.invuln <= 0 && Math.hypot(eb.x - pl.x, eb.y - pl.y) < hitRadiusOf(pl.size) + eb.size) {
         const dmg = enemyContactDamage(state)
-        pl.hp -= dmg
         pl.invuln = state.invulnWindow
         pl.hitFlash = 0.15
         queueShake(state.juice, 4)
@@ -1313,7 +1351,13 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
         floatText(state.juice, pl.x, pl.y - 26, `-${Math.ceil(dmg)}`, '#f87171')
         eb.life = 0
         playSfx('hurt')
-        if (pl.hp <= 0) {
+        if (applyPlayerDamage(state, pl, dmg)) {
+          if (teamShareHp(state)) {
+            // R223.2: 池尽=全员同倒(「直到两个人都死了」)
+            state.phase = 'lost'
+            playSfx('gameover')
+            return
+          }
           playerDown(state, playerIndexOf(state, pl))
           if (alivePlayers(state).length === 0) {
             state.phase = 'lost'
@@ -1382,7 +1426,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     state.regenTimer += dt
     if (state.regenTimer >= stats.regenInterval) {
       state.regenTimer = 0
-      player.hp += 1
+      healTeam(state, 1) // R223.3: regen 走统一入口——原只写 P1,P2 零回血(用户实测根因)
       addText(state, player.x, player.y - 34, '+HP', '#34d399')
       spawnBurst(state, player.x, player.y, '#34d399', 8, 90)
     }
@@ -1590,7 +1634,6 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     const dist = Math.max(1, distance(enemy, target))
     if (target.invuln <= 0 && distance(enemy, target) < hitRadiusOf(enemy.size) + hitRadiusOf(target.size)) {
       const dmg = enemyContactDamage(state)
-      target.hp -= dmg
       target.invuln = state.invulnWindow
       target.hitFlash = 0.15
       queueShake(state.juice, enemy.kind === 'boss' ? 9 : 6)
@@ -1606,7 +1649,13 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
         enemy.hp -= stats.thorns
         enemy.hitFlash = 0.1
       }
-      if (target.hp <= 0) {
+      if (applyPlayerDamage(state, target, dmg)) {
+        if (teamShareHp(state)) {
+          state.phase = 'lost' // R223.2: 池尽=全员同倒
+          spawnBurst(state, target.x, target.y, '#f87171', 30, 230)
+          playSfx('gameover')
+          return
+        }
         playerDown(state, playerIndexOf(state, target))
         if (alivePlayers(state).length === 0) {
           state.phase = 'lost'
@@ -1695,7 +1744,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     state.xp -= state.xpNext
     state.level += 1
     state.xpNext = xpToNext(state.level)
-    state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1)
+    healTeam(state, 1) // R223.3: 升级治疗走统一入口(原只写 P1)
     addText(state, state.player.x, state.player.y - 44, '+HP', '#86efac')
     state.offers = pickOffers(state)
     if (state.offers.length > 0) {
@@ -1708,6 +1757,10 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   const minute = Math.floor(state.time / 60)
   if (minute > state.lastMinute) {
     state.lastMinute = minute
+    // R223.3: 坚持奖励——每存活 1 分钟全队 +1 HP(与横幅同拍;轻量回血节拍,
+    // 让「回不了血直到死」在无 regen build 时也有基础恢复)
+    healTeam(state, 1)
+    addText(state, state.player.x, state.player.y - 44, '+1 HP', '#86efac')
     state.banner = { text: `${minute} MIN SURVIVED`, life: 1.6 }
     playSfx('wave')
   }

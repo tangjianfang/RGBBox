@@ -18,6 +18,7 @@ import {
   pickSpawnKindFrom,
   recomputeStats,
   setSurvivalDifficulty,
+  syncTeamHp as syncTeamHpForTest,
   smoothOffsetTo,
   softPushForce,
   SPAWNABLE_KINDS,
@@ -244,20 +245,65 @@ describe('FR-MP01 swarm local co-op', () => {
     expect(state.bullets.length).toBeGreaterThan(bullets)
   })
 
-  it('单玩家倒下不判负,掉复活珠;全员倒下才 lost', () => {
+  it('R223.2 共享血量池:P2 受击扣 P1 池、两人 hp 镜像;池尽才双倒判负(不再掉复活珠)', () => {
+    const state = initialSurvivalState()
+    deployPlayer2(state)
+    syncTeamHpForTest(state)
+    state.phase = 'running'
+    state.player2!.invuln = 0
+    state.player.invuln = 0
+    state.player.fireTimer = 99
+    state.spawnTimer = 99
+    state.bossTimer = 99
+    const hp0 = state.player.hp // 池(标准档 7)
+    state.enemies.push({ id: 9002, kind: 'brute', x: state.player2!.x + 2, y: state.player2!.y, hp: 99, maxHp: 99, size: 12, vx: 0, vy: 0, elite: false, hitFlash: 0 })
+    for (let i = 0; i < 240 && state.phase === 'running'; i++) tickSurvival(state, 1 / 60)
+    // P2 被打 → 池(P1.hp)下降,但两人都活着(池>0),不掉复活珠
+    expect(state.player.hp).toBeLessThan(hp0)
+    expect(state.player.hp).toBe(state.player2!.hp) // 镜像
+    expect(state.phase).toBe('running')
+    expect(state.reviveOrbs.length).toBe(0) // R223.2: 共享模式无个人倒下
+    // 池打空 → 全员同倒判负
+    state.player.hp = 0.5
+    state.player.invuln = 0
+    state.player2!.invuln = 0
+    for (let i = 0; i < 240 && state.phase === 'running'; i++) tickSurvival(state, 1 / 60)
+    expect(state.phase).toBe('lost')
+    expect(state.player2!.hp).toBeLessThanOrEqual(0)
+  })
+
+  it('R223.3 回血通道全员化:regen/升级/分钟 tick 都治愈 P2(修「P2 回不了血」)', () => {
     const state = initialSurvivalState()
     deployPlayer2(state)
     state.phase = 'running'
-    state.player2!.invuln = 0
-    state.player2!.hp = 0.5 // R220.2: 连续伤害 0.7 一击致倒(原 1 血对整数伤害)
-    state.player.invuln = 0
+    state.spawnTimer = 99
+    state.bossTimer = 99
     state.player.fireTimer = 99
-    state.enemies.push({ id: 9002, kind: 'brute', x: state.player2!.x + 2, y: state.player2!.y, hp: 99, maxHp: 99, size: 12, vx: 0, vy: 0, elite: false, hitFlash: 0 })
-    for (let i = 0; i < 240 && state.phase === 'running'; i++) tickSurvival(state, 1 / 60)
-    expect(state.phase).toBe('running')
-    expect(state.player2!.hp).toBeLessThanOrEqual(0)
-    expect(state.reviveOrbs.length).toBe(1)
-    expect(state.reviveOrbs[0].target).toBe(2)
+    state.taken.regen = 1
+    recomputeStats(state.stats, state.taken)
+    state.player.hp = 2
+    state.regenTimer = 23.99
+    const p2Before = state.player2!.hp
+    tickSurvival(state, 0.016) // regen 触发
+    expect(state.player.hp).toBeCloseTo(3, 5)
+    // 分钟 tick:lastMinute=0,time 过 60 → 全队 +1
+    state.time = 59.99
+    state.lastMinute = 0
+    state.player.hp = 3
+    tickSurvival(state, 0.02)
+    expect(state.player.hp).toBeCloseTo(4, 5) // 分钟 tick +1(3→4;regen 24s 未到)
+    expect(state.player2!.hp).toBe(state.player.hp) // P2 镜像=被治愈
+    expect(p2Before).toBe(state.player2!.maxHp) // 开局满血(镜像成立的前提)
+  })
+
+  it('R223.3 maxHp 升级同步 P2(原 P2 maxHp 停留初始值)', () => {
+    const state = initialSurvivalState()
+    deployPlayer2(state)
+    state.phase = 'running'
+    state.offers = ['maxHp']
+    applyUpgrade(state, 'maxHp')
+    expect(state.player2!.maxHp).toBe(state.player.maxHp)
+    expect(state.player2!.hp).toBe(state.player.hp)
   })
 
   it('队友拾取复活珠救回倒下玩家(半血+2s 无敌,每局各 1 次)', () => {
@@ -356,30 +402,31 @@ describe('R213 4P engine roster', () => {
     expect(state.players[3].x).toBe(xs[3])
   })
 
-  it('四人局:三人倒下仍 running,全员倒下才 lost(弹幕结算路径;insane 档保证 1 血一击倒)', () => {
+  it('四人局(R223.2 共享池):任一人吃弹扣池、全员同活;池尽全员同倒 lost', () => {
     const state = initialSurvivalState('wisp', undefined, [], 'insane')
     deployPlayers(state, 4)
     state.phase = 'running'
     state.stats.magnet = 10
     for (const pl of state.players) {
       pl.invuln = 0
-      pl.hp = 1
       pl.fireTimer = 99
     }
+    state.player.hp = 3 // 池:3 血(insane 敌伤 1.0/次)
+    syncTeamHpForTest(state)
     const hit = (i: number): void => {
       state.eBullets.push({ x: state.players[i].x, y: state.players[i].y, vx: 0, vy: 0, size: 20, life: 1 })
     }
-    hit(1)
-    hit(2)
-    hit(3)
+    hit(1) // P2 吃一发 → 池 3→2,全员仍活
     tickSurvival(state, 1 / 60)
     expect(state.phase).toBe('running')
-    expect(state.players.filter((pl) => pl.hp <= 0)).toHaveLength(3)
-    expect(state.reviveOrbs.map((orb) => orb.target).sort()).toEqual([2, 3, 4])
-    // 最后一人倒下 → lost(R220.3: 前一击的受击顿帧会冻结紧邻帧,循环至翻转)
-    hit(0)
-    for (let i = 0; i < 6 && state.phase !== 'lost'; i++) tickSurvival(state, 1 / 60)
-    expect(state.phase).toBe('lost')
+    expect(state.player.hp).toBeCloseTo(2, 5)
+    expect(state.players.every((pl) => pl.hp === state.player.hp)).toBe(true) // 四人镜像
+    expect(state.reviveOrbs.length).toBe(0)
+    hit(2)
+    hit(3)
+    for (let i = 0; i < 6 && state.phase === 'running'; i++) tickSurvival(state, 1 / 60)
+    expect(state.phase).toBe('lost') // 池尽(2-2=0)→ 全员同倒
+    expect(state.players.every((pl) => pl.hp <= 0)).toBe(true)
   })
 
   it('复活珠 target 3:队友拾取复活 P3,revivesUsedN 计数且不误写 legacy {p1,p2}', () => {
