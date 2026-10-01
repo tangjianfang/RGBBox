@@ -21,7 +21,14 @@ try {
   // it/it.skip binding below is decided synchronously at describe time.
   const mod = await import('gl')
   const fn = typeof mod.default === 'function' ? mod.default : mod
-  createGl = typeof fn === 'function' ? fn : null
+  if (typeof fn === 'function') {
+    // R222.2(CI 实测): ubuntu runner 上模块可导入但上下文创建抛
+    // (无 X/GLX)——守卫必须真的建一个 1×1 上下文验证,否则 itGl 仍为
+    // it 而 13 例在 CI 全红。创建失败按无原生 GL 处理(skip)。
+    const probe = fn(1, 1)
+    if (probe && typeof probe.getExtension === 'function') createGl = fn
+    else createGl = null
+  }
 } catch {
   createGl = null // CI image without the native build — condition holds as skip
 }
