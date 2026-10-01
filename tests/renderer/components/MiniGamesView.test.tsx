@@ -271,6 +271,33 @@ describe('renderer/components/MiniGamesView', () => {
   })
 
   // R138: open-palm hold (~24 frames) starts the run from the ready screen
+  // R221.7(修 R220.1⑨ 回归): vision 关闭是常态——pollVision 的直通键释放
+  // 必须是下降沿,否则每帧 delete 与 keydown 互斥,WASD/方向键全部失效。
+  it('键盘移动键在 vision 关闭时持续驻留键池(修每帧清键回归)', async () => {
+    const noopCtx = new Proxy({}, {
+      get: (_t, prop) => {
+        if (prop === 'canvas') return undefined
+        if (prop === 'measureText') return () => ({ width: 10 })
+        return () => undefined
+      },
+      set: () => true,
+    }) as unknown as CanvasRenderingContext2D
+    const ctxSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(noopCtx)
+    const { container } = render(<MiniGamesView />)
+    fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm
+    const start = container.querySelector('[data-action="ready-start"]') as HTMLButtonElement
+    fireEvent.click(start)
+    const tick = (): Promise<void> => new Promise((resolve) => requestAnimationFrame(() => resolve()))
+    const quantum = async (): Promise<void> => { await new Promise((r) => setTimeout(r, 100)); await tick(); await tick() }
+    await quantum(); await quantum() // 修复前每帧都会清键——跨帧驻留是断言核心
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', bubbles: true, cancelable: true }))
+    await quantum(); await quantum() // 再过帧——键必须仍在
+    const keys = (window as unknown as { __rgbboxVision: { probe(): { keys: string[] } } }).__rgbboxVision.probe().keys
+    expect(keys).toContain('arrowleft') // p1KeyMap: a→arrowleft
+    document.body.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', code: 'KeyA', bubbles: true }))
+    ctxSpy.mockRestore()
+  })
+
   it('open-palm hold for ~0.8s starts the survival run (R138)', async () => {
     const noopCtx = new Proxy({}, {
       get: (_t, prop) => {

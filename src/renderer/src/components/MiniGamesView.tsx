@@ -773,6 +773,8 @@ export function MiniGamesView(): JSX.Element {
   // (joystick semantics), the dead zone falls out of the normalization, and
   // the exponential smoothing keeps it fluid at the ~30Hz inference cadence.
   const visionAnalogRef = useRef({ x: 0, y: 0 })
+  /** R221.7: vision 直通键曾注入过键池(下降沿释放用)。 */
+  const visionPassthroughActiveRef = useRef(false)
   // R138: open-palm hold-to-start — hand held OPEN (pinch distance above the
   // release threshold) at the ready/lost screen for ≥700ms; far more
   // forgiving than a pinch. Timestamp-based so the duration is fps-independent.
@@ -786,12 +788,18 @@ export function MiniGamesView(): JSX.Element {
   // raw axis each frame) — see the loop below.
   const pollVision = useCallback(() => {
     if (!vision.enabled) {
-      // R220.1⑨: vision 关闭 falling-edge——释放其注入 survival 键池的直通键
-      //  (否则按住手势时关闭 vision,飞船持续漂移;04 P2)。每帧幂等,代价可忽略。
-      const s = survivalRef.current
-      for (const k of VISION_PASSTHROUGH_KEYS) s.keys.delete(k)
+      // R221.7(修 R220.1⑨ 回归): vision 关闭只在**下降沿**释放一次直通键。
+      // 原实现每帧无条件 delete——vision 常关时与键盘 keydown 逐帧互斥,
+      // WASD/方向键全部失效(用户实测+CDP 复现:真实按键成功 add,300ms 后
+      // 键池被清空,飞船零位移)。
+      if (visionPassthroughActiveRef.current) {
+        visionPassthroughActiveRef.current = false
+        const s = survivalRef.current
+        for (const k of VISION_PASSTHROUGH_KEYS) s.keys.delete(k)
+      }
       return
     }
+    visionPassthroughActiveRef.current = true
     // R142-L4: finger-chord commands are screen-agnostic — handle them first
     // and pull them out of the queue (branch handlers below drain the rest).
     const queue = vision.queueRef.current
@@ -1093,6 +1101,9 @@ export function MiniGamesView(): JSX.Element {
         console.error('[games] frame error', { screen, err })
         fsButtonsRef.current = []
       }
+      // R221.7: 续帧调度移出 loopBody——原实现 throw 会跳过其尾部调度,循环
+      // 单帧即死(护栏形同虚设)。
+      frame = requestAnimationFrame(loop)
     }
     const loopBody = (now: number): void => {
       // R217: map the logical 900×520 space onto the HiDPI backing store
@@ -1383,7 +1394,6 @@ export function MiniGamesView(): JSX.Element {
           setCoachHint(hint)
         }
       }
-      frame = requestAnimationFrame(loop)
     }
     frame = requestAnimationFrame(loop)
     return () => {
