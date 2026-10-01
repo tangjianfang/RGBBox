@@ -7,6 +7,7 @@
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 import { app, BrowserWindow, nativeImage, screen } from 'electron'
+import { ipcChannels } from '../shared/ipc'
 import { join } from 'node:path'
 import { regionToNormalizedRect, isFullscreenRegion } from '../engine/overlayRegionFrame'
 import type { OverlayConfig, RgbFrame } from '../shared/types'
@@ -206,7 +207,7 @@ export function closeAllOverlays(): void {
 export function pushFrameToOverlays(frame: RgbFrame): void {
   for (const [, win] of overlayWindows) {
     if (!win.isDestroyed()) {
-      win.webContents.send('overlay:frame', frame)
+      win.webContents.send(ipcChannels.overlayFrame, frame) // R222.3: 字面量→常量(T3 漂移实锤)
     }
   }
 }
@@ -214,7 +215,7 @@ export function pushFrameToOverlays(frame: RgbFrame): void {
 export function pushFrameToDisplay(displayId: number, frame: RgbFrame): void {
   const win = overlayWindows.get(displayId)
   if (win && !win.isDestroyed()) {
-    win.webContents.send('overlay:frame', frame)
+    win.webContents.send(ipcChannels.overlayFrame, frame) // R222.3: 字面量→常量(T3 漂移实锤)
   }
 }
 

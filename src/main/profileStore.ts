@@ -66,9 +66,13 @@ export async function loadProfileById(id: string): Promise<Profile | null> {
 }
 
 export async function saveProfileAs(profile: Profile): Promise<ProfileMeta> {
+  // R222.3: 坏文件先抢救备份再原子覆盖——与 saveProfile 对称(T3 缺口)
+  const slotPath = join(profilesDir, `${profile.id}.json`)
+  const r = await readJsonSafe<Profile>(slotPath)
+  if (!r.ok && r.reason === 'bad') await preserveBadFile(slotPath)
   const savedAt = new Date().toISOString()
   const stored = { ...profile, _savedAt: savedAt }
-  await writeJsonAtomic(join(profilesDir, `${profile.id}.json`), stored) // R221.1: 原子写
+  await writeJsonAtomic(slotPath, stored) // R221.1: 原子写
   return { id: profile.id, name: profile.name, savedAt }
 }
 

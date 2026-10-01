@@ -13,15 +13,13 @@ describe('renderer/App', () => {
       const mod = await import('../../src/renderer/src/App')
       App = mod.App
     } catch (err) {
-      // The module might fail to load due to 3D code; that's expected here.
-      App = null
+      // The module might fail to load due to 3D code — R222.4: 原写法
+      // catch 里 expect(App).toBeNull() 是等价永真(T2 硬伤③):导入失败
+      // 也绿。改为**硬断言导入必须成功**——App.tsx 顶层不应再抛(3D 均
+      // lazy),失败即真失败;如此本用例才有门禁价值。
+      throw err
     }
-    if (App !== null) {
-      expect(typeof App).toBe('function')
-    } else {
-      // Surface the skip reason so it shows in output
-      expect(App).toBeNull()
-    }
+    expect(typeof App).toBe('function')
   })
 
   it.skip('renders the top-level app shell', () => {})
