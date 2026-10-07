@@ -30,6 +30,31 @@ class MockBroadcastChannel {
 
 ;(globalThis as any).BroadcastChannel = MockBroadcastChannel
 
+// ─── localStorage fallback (R223.6) ────────────────────────────────────────
+// Node ≥26 ships a native experimental `localStorage` on globalThis that
+// returns `undefined` unless node runs with `--localstorage-file`. Its mere
+// presence makes vitest's happy-dom env skip installing happy-dom's own
+// Storage (getWindowKeys only re-installs globals that are absent or on its
+// whitelist), so every DOM test that touches localStorage reads `undefined`
+// (13 files / 125 tests red under node 26.1). CI's node 22 has no such
+// global and happy-dom installs fine — there this fallback stays dormant.
+// Gate on `window` so pure-node test files are untouched. The native shell
+// is a configurable accessor, so a plain assignment would go through its
+// setter — defineProperty is required to replace it.
+const g = globalThis as any
+if (typeof g.window !== 'undefined' && typeof g.localStorage === 'undefined') {
+  const mem = new Map<string, string>()
+  const storage = {
+    get length() { return mem.size },
+    clear() { mem.clear() },
+    getItem(k: string) { return mem.has(k) ? (mem.get(k) as string) : null },
+    key(i: number) { return Array.from(mem.keys())[i] ?? null },
+    removeItem(k: string) { mem.delete(k) },
+    setItem(k: string, v: string) { mem.set(String(k), String(v)) }
+  }
+  Object.defineProperty(g, 'localStorage', { value: storage, configurable: true, writable: true })
+}
+
 // ─── i18n (return key as-is, deterministic) ───────────────────────────────
 vi.mock('../../src/renderer/src/i18n', () => ({
   useI18n: () => ({ t: (k: string) => k, lang: 'en', setLang: vi.fn() })
