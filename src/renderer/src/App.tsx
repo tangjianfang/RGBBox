@@ -536,7 +536,6 @@ export function App(): JSX.Element {
   if (!profile || !topology) {
     return (
       <>
-        <div className="titlebar-drag" aria-hidden="true" />
         <main className="boot-screen">RGBBox</main>
       </>
     )
@@ -544,7 +543,6 @@ export function App(): JSX.Element {
 
   return (
     <>
-      <div className="titlebar-drag" aria-hidden="true" />
       <main className="app-shell" ref={appRootRef}>
       {/* R164.2 (S2): applied-effect toast with a 5s undo window. */}
       {appliedToast && (() => {

@@ -83,17 +83,8 @@ button {
   letter-spacing: -0.01em;
 }
 
-/* Electron Window Controls Overlay drag region — covers the 40px titlebar strip */
-.titlebar-drag {
-  -webkit-app-region: drag;
-  height: 40px;
-  left: 0;
-  pointer-events: none;
-  position: fixed;
-  right: 152px; /* leave gap for native close/min/max buttons */
-  top: 0;
-  z-index: 9999;
-}
+/* R224.4: the dedicated 40px drag strip is gone — `.topbar` itself is the
+   Window Controls Overlay drag region now (see app.css). */
 
 
 /* ── R148 S2: numeric track ──────────────────────────────────────────────

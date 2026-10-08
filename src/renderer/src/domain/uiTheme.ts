@@ -39,6 +39,12 @@ export function applyTheme(pref: string, prefersDark: boolean): ResolvedTheme {
   const resolved = resolveTheme(pref, prefersDark)
   if (resolved === 'light') document.documentElement.setAttribute('data-theme', 'light')
   else document.documentElement.removeAttribute('data-theme')
+  // R224.3: this is the single choke point every theme resolution funnels
+  // through (bootTheme pre-paint, settings change, live prefers-color-scheme
+  // flips) — piggyback the resolved theme to main so the native window
+  // controls strip recolors with the chrome. Bridge may be absent (overlay /
+  // snip windows, tests) — optional chaining keeps it a silent no-op there.
+  window.rgbbox?.setTitleBarTheme?.(resolved)
   return resolved
 }
 

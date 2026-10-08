@@ -34,6 +34,7 @@ import { setRapidOcrRunner } from './ocrService'
 import { cleanupOcrText, translateOcrText, chatCompletion, testConnection, DEFAULT_AI_SETTINGS, type AiCleanupSettings } from './aiCleanupService'
 import { createAgentService } from './agentService'
 import { isZhText } from '../shared/zhPhonemes'
+import { titleBarOverlayColors } from '../shared/titleBarTheme'
 import { ttsDownloadModels, ttsDownloadVoice, ttsModelStatus, ttsSynthesize, type TtsDownloadEvent } from './ttsService'
 import { type SafeStorageCodec } from './aiSecretCodec'
 import { decodeProfileSecrets, encodeProfileSecrets, sanitizeAws } from './aiProfileStore'
@@ -364,6 +365,14 @@ function registerIpc(): void {
   ipcMain.on(ipcChannels.uiSetLocale, (_event, l: unknown) => {
     uiLocale = asUiLocale(l)
     rebuildTrayMenu?.()
+  })
+  // R224.3: 主题跟随 — renderer 推送已解析主题，主窗口 WCO 控制条按
+  // shared/titleBarTheme 映射重着色（浅色主题下不再残留深色条）。按发送方
+  // 窗口定位：无 overlay 的窗口（overlay/snip/screensaver 等）会 throw，吞掉即可。
+  ipcMain.on(ipcChannels.uiSetTitleBarTheme, (event, theme: unknown) => {
+    try {
+      BrowserWindow.fromWebContents(event.sender)?.setTitleBarOverlay(titleBarOverlayColors(theme))
+    } catch { /* window without a titleBarOverlay — no-op */ }
   })
   // R81: global snip hotkey preference (preset whitelist; re-register + persist + rebuild tray label)
   ipcMain.handle(ipcChannels.snipGetHotkey, () => getSnipHotkeyPref())

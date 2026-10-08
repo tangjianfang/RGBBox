@@ -201,6 +201,10 @@ const api = {
   setUiLocale: (l: 'zh' | 'en'): void => {
     ipcRenderer.send(ipcChannels.uiSetLocale, l)
   },
+  // R224.3: push the resolved UI theme so the native window-controls strip recolors
+  setTitleBarTheme: (theme: 'dark' | 'light'): void => {
+    ipcRenderer.send(ipcChannels.uiSetTitleBarTheme, theme)
+  },
   // R81: global snip hotkey preference
   snipGetHotkey: (): Promise<string> => ipcRenderer.invoke(ipcChannels.snipGetHotkey),
   snipSetHotkey: (accel: string): Promise<{ ok: boolean; hotkey: string }> =>

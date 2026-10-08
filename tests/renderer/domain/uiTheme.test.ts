@@ -42,6 +42,25 @@ describe('applyTheme', () => {
     expect(applyTheme('dark', false)).toBe('dark')
     expect(document.documentElement.getAttribute('data-theme')).toBeNull()
   })
+
+  it('R224.3: notifies the preload bridge with the resolved theme so the WCO strip follows', () => {
+    const calls: string[] = []
+    ;(window as unknown as { rgbbox: { setTitleBarTheme: (t: string) => void } }).rgbbox = {
+      setTitleBarTheme: (t: string) => calls.push(t),
+    }
+    try {
+      applyTheme('light', true)
+      applyTheme('dark', false)
+      applyTheme('system', false)
+      expect(calls).toEqual(['light', 'dark', 'light'])
+    } finally {
+      delete (window as unknown as { rgbbox?: unknown }).rgbbox
+    }
+  })
+
+  it('R224.3: no bridge present (overlay window / bare DOM) is a silent no-op', () => {
+    expect(() => applyTheme('light', true)).not.toThrow()
+  })
 })
 
 describe('bootTheme', () => {

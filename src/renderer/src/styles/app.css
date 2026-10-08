@@ -1,11 +1,11 @@
 /* R148 S1: component & view styles (body of the former styles.css).
    Further split per-view happens during S3's per-view pass. */
-/* R85→R86: vertical shell — toolbar + rail/content body */
+/* R85→R86: vertical shell — toolbar + rail/content body
+   R224.4: no more 40px drag-band offset; the topbar owns the window top. */
 .app-shell {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 40px);
-  margin-top: 40px;
+  height: 100vh;
   overflow: hidden;
   background: linear-gradient(180deg, var(--bg-content) 0%, var(--surface-deep) 100%);
 }
@@ -20,15 +20,15 @@
   align-items: center;
   background: linear-gradient(135deg, var(--accent), var(--status-info) 55%, var(--status-warn));
   border-radius: var(--radius-s);
-  box-shadow: 0 0 16px rgb(66 232 169 / 30%);
+  box-shadow: 0 0 10px rgb(66 232 169 / 25%);
   color: var(--surface-deep);
   display: flex;
   flex-shrink: 0;
-  font-size: var(--text-title-size);
+  font-size: var(--text-caption-size);
   font-weight: 800;
-  height: 40px;
+  height: 24px;
   justify-content: center;
-  width: 40px;
+  width: 24px;
 }
 
 .brand-block h1,
@@ -7321,21 +7321,28 @@ input[type='range'].video-player-volume {
   color: var(--accent-bright-text);
 }
 
-/* ══ R86 P1: rail + toolbar + shell body ═══════════════════════════ */
+/* ══ R86 P1: rail + toolbar + shell body ═══════════════════════════
+   R224.4: the topbar IS the WCO title row — one 40px band across the window
+   top (same height as the native overlay controls), draggable everywhere
+   except the interactive controls cluster; env(titlebar-area-*) keeps the
+   right edge clear of the native min/max/close buttons (fallback = plain
+   padding when env is unavailable, e.g. plain web / tests). */
 .topbar {
+  -webkit-app-region: drag;
   align-items: center;
   background: var(--bg-toolbar);
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   flex-shrink: 0;
   gap: var(--space-3);
-  height: 48px;
+  height: env(titlebar-area-height, 40px);
   padding: 0 12px;
+  padding-right: calc(100vw - env(titlebar-area-width, 100vw) + 12px);
   /* R183: the title optically centers on the WINDOW, not on whatever space
      is left between the (asymmetric) brand and controls groups. */
   position: relative;
 }
-.topbar-brand h1 { font-size: var(--text-title-size); }
+.topbar-brand h1 { font-size: var(--text-body-size); }
 .topbar-title {
   color: var(--text-secondary);
   font-size: var(--text-body-size);
@@ -7348,6 +7355,7 @@ input[type='range'].video-player-volume {
   white-space: nowrap;
 }
 .topbar-controls {
+  -webkit-app-region: no-drag; /* R224.4: buttons/menus stay clickable inside the draggable topbar */
   align-items: center;
   display: flex;
   flex-shrink: 0;

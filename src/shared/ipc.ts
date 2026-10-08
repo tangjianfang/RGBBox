@@ -156,6 +156,10 @@ export const ipcChannels = {
   snipCancel: 'rgbbox:snip:cancel',
   // R80.12: renderer i18n → main (tray menu follows UI language)
   uiSetLocale: 'rgbbox:ui:set-locale',
+  // R224.3: renderer → main, fire-and-forget. Pushes the resolved UI theme so
+  // the main window's Window Controls Overlay (min/max/close strip) recolors
+  // to match — it is created dark and would otherwise stay dark in light theme.
+  uiSetTitleBarTheme: 'rgbbox:ui:set-titlebar-theme',
   // R81: global snip hotkey preference (preset whitelist)
   snipGetHotkey: 'rgbbox:snip:get-hotkey',
   snipSetHotkey: 'rgbbox:snip:set-hotkey',
