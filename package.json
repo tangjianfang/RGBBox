@@ -30,6 +30,8 @@
     "ui:snapshot": "node scripts/ui-snapshot.mjs --compare",
     "ui:snapshot:update": "node scripts/ui-snapshot.mjs --update-baseline",
     "vision:extract": "node scripts/vision-extract.mjs",
+    "vision:fetch": "node scripts/vision-fetch-videos.mjs",
+    "vision:corpus": "node scripts/vision-corpus-report.mjs",
     "vision:smoke": "node scripts/vision-smoke-videos.mjs",
     "verify:release": "node scripts/verify-release.mjs --full",
     "verify:quick": "node scripts/verify-release.mjs --quick",

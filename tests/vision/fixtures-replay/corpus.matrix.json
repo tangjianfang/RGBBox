@@ -1,0 +1,40 @@
+{
+  "$comment": "R226.10 体感真实数据语料覆盖矩阵——『按 100% 覆盖率收集真实数据』的可度量定义。单元格 = 词汇/条件/引擎路径 × 最少样本数(min)。样本来源:①自录协议视频(带 marks+tags, replay 层) ②网抓视频(检测层, 计入 normal 条件)。报告: yarn vision:corpus。tags 写在 <name>.labels.json 的 tags 数组里。",
+  "vocabulary": [
+    { "id": "pinch", "min": 3, "note": "捏合按/放（confirm 60ms 路径）" },
+    { "id": "dir-up", "min": 2 },
+    { "id": "dir-up-right", "min": 2 },
+    { "id": "dir-right", "min": 2 },
+    { "id": "dir-down-right", "min": 2 },
+    { "id": "dir-down", "min": 2 },
+    { "id": "dir-down-left", "min": 2 },
+    { "id": "dir-left", "min": 2 },
+    { "id": "dir-up-left", "min": 2 },
+    { "id": "palm-hold", "min": 2, "note": "张掌悬停（R136 暂停手势；marks gesture 值 palm）" },
+    { "id": "double-pinch", "min": 2, "note": "双手同捏（marks gesture 值 double-pinch）" },
+    { "id": "offhand-pinch", "min": 2, "note": "副手捏合=KeyF（gesture 值 offhand-pinch）" },
+    { "id": "clutch", "min": 2, "note": "握拳离合（gesture 值 clutch）" }
+  ],
+  "conditions": [
+    { "id": "normal", "min": 3 },
+    { "id": "dim", "min": 1, "note": "暗光" },
+    { "id": "backlight", "min": 1, "note": "逆光" },
+    { "id": "far", "min": 1, "note": "远距离（>1m）" },
+    { "id": "close", "min": 1, "note": "近距离（<40cm）" },
+    { "id": "fast", "min": 1, "note": "快速挥手（延迟压力）" },
+    { "id": "exit-enter", "min": 1, "note": "手出画/入画（丢失-重捕路径）" },
+    { "id": "two-person", "min": 1, "note": "画面内有干扰人手" },
+    { "id": "left-hand", "min": 1, "note": "左撇子主手" },
+    { "id": "hand-varieties", "min": 3, "note": "不同人手型（≥3 人，tags 记 hand:alice 等）" }
+  ],
+  "enginePaths": [
+    { "id": "calibration", "min": 3, "note": "三步校准（协议视频天然含）" },
+    { "id": "cal-retry", "min": 1, "note": "校准失败-重试（视频里故意做坏一步）" },
+    { "id": "pause-resume", "min": 1, "note": "张掌暂停→张掌恢复" },
+    { "id": "lost-reacquire", "min": 2, "note": "手丢失≥1s 后重捕（tags: lost）" },
+    { "id": "sens-standard", "min": 1 },
+    { "id": "sens-sport", "min": 1, "note": "sport 档录像（labels.profile: sport）" },
+    { "id": "sens-relax", "min": 1 },
+    { "id": "precision-capture", "min": 1, "note": "R141-B 高精度模式切换段" }
+  ]
+}

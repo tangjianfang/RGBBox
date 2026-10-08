@@ -39,9 +39,11 @@ const out = qs.get('out') || '.'
 const gestures = (qs.get('gestures') || '').split(',').filter(Boolean)
 const auto = qs.get('auto') === '1'
 const video = document.getElementById('v')
-const status = (s) => { document.getElementById('status').textContent = s }
+video.src = src
+video.load()
+const status = (s) => { document.getElementById('status').textContent = s; console.log(`status: ${s}`); try { window.__vdLog?.(String(s)) } catch {} }
 document.getElementById('keymap').textContent =
-  gestures.map((g, i) => `${i + 1}=${g}`).join(' ') || '(未配置 — 仅抽取)')
+  gestures.map((g, i) => `${i + 1}=${g}`).join(' ') || '(未配置 — 仅抽取)'
 
 // ── real vendored MediaPipe (same assets the product ships) ────────────────
 const VENDOR = new URL('../../../src/renderer/public/vendor/mediapipe/', location.href).href
@@ -50,7 +52,10 @@ status('loading wasm…')
 const { FilesetResolver, HandLandmarker } = await import(new URL('vision_bundle.js', VENDOR).href)
 const fileset = await FilesetResolver.forVisionTasks(VENDOR)
 let landmarker
-for (const delegate of ['GPU', 'CPU']) {
+// extraction tool: CPU delegate only — the GPU delegate crashed the GPU
+// process in this standalone window (exit 143 -> compositor dead -> rAF
+// stalls). Offline extraction doesn't need GPU throughput.
+for (const delegate of ['CPU']) {
   try {
     landmarker = await HandLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: MODEL, delegate },
@@ -87,14 +92,15 @@ function detectAt () {
   frames.push({ t: tMs, hands, face: null })
   document.getElementById('progress').textContent =
     `frame ${frames.length} · hands ${n} · ${tMs}ms`
+  if (frames.length % 150 === 0) console.log(`progress: frame ${frames.length} · hands ${n} · ${tMs}ms`)
 }
 const round = (v, d = 4) => Math.round(v * 10 ** d) / 10 ** d
 
 function loop () {
   if (!extracting) return
-  if (!video.ended && !video.paused) { try { detectAt() } catch (e) { status(`detect error: ${e.message}`) } }
   if (video.ended) { finish(); return }
-  requestAnimationFrame(loop)
+  if (!video.paused) { try { detectAt() } catch (e) { status(`detect error: ${e.message}`) } }
+  setTimeout(loop, 1000 / 60) // timer-driven: compositor/rAF stalls (GPU crash) must not kill extraction
 }
 function finish () {
   extracting = false
@@ -102,6 +108,7 @@ function finish () {
   for (const [g, from] of open) { marks.push({ gesture: g, from, to: lastT }); open.delete(g) }
   document.getElementById('export').disabled = false
   status(`done — ${frames.length} frames, ${marks.length} marks. Ready to export.`)
+  console.log(`DONE frames=${frames.length} marks=${marks.length}`)
   if (auto) exportFiles()
 }
 
@@ -136,14 +143,32 @@ async function exportFiles () {
     (src.split(/[\\/]/).pop() || 'clip').replace(/\.[^.]+$/, '')
   const files = {}
   files[`${base}.jsonl`] = frames.map((f) => JSON.stringify(f)).join('\n') + '\n'
-  files[`${base}.labels.json`] = JSON.stringify({
-    source: src.split(/[\\/]/).pop(), fps: null, marks, gates: null,
-  }, null, 2) + '\n'
+  // labels sidecar only when there is something to say — auto-mode downloads
+  // (no marks) stay detection-tier in the smoke script instead of vacuously
+  // passing the replay tier with zero marks.
+  if (!auto || marks.length > 0) {
+    files[`${base}.labels.json`] = JSON.stringify({
+      source: src.split(/[\\/]/).pop(), fps: null, marks, gates: null,
+    }, null, 2) + '\n'
+  }
   const saved = await window.__vdSave(files)
   status(`exported: ${saved.join(', ')}`)
+  console.log(`EXPORTED ${saved.join(', ')}`)
 }
 document.getElementById('export').onclick = () => exportFiles()
-status(auto ? 'auto mode — click ▶ or wait' : 'ready — click ▶, mark with 1-9, then export')
+status(auto ? 'auto mode — playing through…' : 'ready — click ▶, mark with 1-9, then export')
+// R226.9: unattended mode — auto-play on load and close the window after the
+// export lands, so `yarn vision:smoke` can drive extraction headlessly.
+if (auto) {
+  // NB: this module's top-level awaits (wasm+model) resolve AFTER the window
+  // 'load' event has already fired — never rely on addEventListener('load').
+  setTimeout(() => document.getElementById('play').click(), 300)
+  const _export = exportFiles
+  exportFiles = async () => { await _export(); setTimeout(() => window.close(), 800) }
+}
+video.addEventListener('loadedmetadata', () => { try { window.__vdLog(`duration=${video.duration}s readyState=${video.readyState}`) } catch {} })
+video.addEventListener('error', () => { try { window.__vdLog(`VIDEO ERROR ${video.error?.code} ${video.error?.message}`) } catch {} })
+video.addEventListener('ended', () => { try { window.__vdLog('VIDEO ENDED') } catch {} })
 </script>
 </body>
 </html>

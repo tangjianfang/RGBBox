@@ -26,7 +26,7 @@ const out = resolve(flag('out', 'testdata/vision/fixtures'))
 const auto = argv.includes('--auto') ? '--auto' : ''
 
 const r = spawnSync('node_modules/electron/dist/electron.exe', [
-  'tools/vision-dataset/main.mjs', '--',
+  'tools/vision-dataset/main.cjs', '--',
   '--src', resolve(video), '--out', out, '--gestures', gestures, auto,
 ].filter(Boolean), { stdio: 'inherit' })
 process.exit(r.status ?? 1)
