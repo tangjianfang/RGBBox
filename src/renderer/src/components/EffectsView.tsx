@@ -320,37 +320,64 @@ export function EffectsView({ activeKind, favoriteKinds, curatedKinds, onPreview
   const { t } = useI18n()
   const favoriteSet = useMemo(() => new Set(favoriteKinds), [favoriteKinds])
 
-  // ── R164.2 (S2): hover preview — 300ms debounce so a pointer sweep across
-  //    the grid doesn't churn the canvas; Esc cancels; applying clears first.
+  // ── R164.2 (S2) + R225.2: hover preview — 300ms debounce on ENTER so a
+  //    pointer sweep across the grid doesn't churn the canvas, and a 300ms
+  //    GRACE on LEAVE (was: instant clear) so the fixed-position pill's
+  //    应用 button is actually reachable; the pill retains itself on its own
+  //    pointerenter. Esc / applying still clear immediately.
   const [previewingKind, setPreviewingKind] = useState<EffectKind | null>(null)
   const hoverTimerRef = useRef<number | null>(null)
-  const hoverKind = useCallback((kind: EffectKind | null) => {
+  const cancelHoverTimer = useCallback(() => {
     if (hoverTimerRef.current !== null) { window.clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null }
-    if (kind === null) {
-      setPreviewingKind(null)
-      onPreviewEffect(null)
-      return
-    }
+  }, [])
+  const clearPreview = useCallback(() => {
+    setPreviewingKind(null)
+    onPreviewEffect(null)
+  }, [onPreviewEffect])
+  const schedulePreview = useCallback((kind: EffectKind) => {
     hoverTimerRef.current = window.setTimeout(() => {
       hoverTimerRef.current = null
       setPreviewingKind(kind)
       onPreviewEffect(kind)
     }, 300)
   }, [onPreviewEffect])
+  /** pointer entered a card (kind) — debounced switch; null = pill hover, retain current. */
+  const hoverEnter = useCallback((kind: EffectKind | null) => {
+    cancelHoverTimer()
+    if (kind === null) return
+    schedulePreview(kind)
+  }, [cancelHoverTimer, schedulePreview])
+  /** pointer left a card / the pill — clear after the grace window. */
+  const hoverLeave = useCallback(() => {
+    cancelHoverTimer()
+    hoverTimerRef.current = window.setTimeout(() => {
+      hoverTimerRef.current = null
+      clearPreview()
+    }, 300)
+  }, [cancelHoverTimer, clearPreview])
+  /** cards keep their onHover(kind|null) contract; null now routes to the grace path. */
+  const hoverKind = useCallback((kind: EffectKind | null) => {
+    if (kind === null) hoverLeave()
+    else hoverEnter(kind)
+  }, [hoverEnter, hoverLeave])
+  const hoverClearNow = useCallback(() => {
+    cancelHoverTimer()
+    clearPreview()
+  }, [cancelHoverTimer, clearPreview])
   // Esc cancels the preview; unmount (view switch) clears the override so it
   // can never leak into the workspace canvas.
   useEffect(() => {
     if (!previewingKind) return undefined
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') hoverKind(null) }
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') hoverClearNow() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [previewingKind, hoverKind])
+  }, [previewingKind, hoverClearNow])
   useEffect(() => () => { onPreviewEffect(null) }, [onPreviewEffect])
 
   const applyFromPreview = useCallback((kind: EffectKind) => {
-    hoverKind(null) // clear the override before committing
+    hoverClearNow() // clear the override before committing
     onSelectEffect(kind)
-  }, [hoverKind, onSelectEffect])
+  }, [hoverClearNow, onSelectEffect])
 
   const renderCard = (p: (typeof effectPresets)[number]): JSX.Element => {
     if (EFFECT_3D_KINDS.has(p.kind)) {
@@ -396,12 +423,18 @@ export function EffectsView({ activeKind, favoriteKinds, curatedKinds, onPreview
         <p className="eyebrow">{t('effects.eyebrow')}</p>
       </header>
 
-      {/* R164.2 (S2): preview pill — hover shows the effect on the canvas,
-          click commits, Esc restores. */}
+      {/* R164.2 (S2) + R225: preview pill — fixed overlay (mounting in-flow
+          pushed the grid away from the pointer → flicker loop); hover retains
+          itself so the 应用 button is reachable. Click commits, Esc restores. */}
       {previewingKind && (() => {
         const preset = effectPresets.find((p) => p.kind === previewingKind)
         return (
-          <div className="fx-preview-pill" role="status">
+          <div
+            className="fx-preview-pill"
+            role="status"
+            onPointerEnter={() => hoverEnter(null)}
+            onPointerLeave={hoverLeave}
+          >
             <span>{t('effects.previewing').replace('{name}', preset ? presetLabel(preset, t) : previewingKind)}</span>
             <button type="button" onClick={() => applyFromPreview(previewingKind)}>{t('effects.previewApply')}</button>
             <span className="fx-preview-pill-esc">{t('effects.previewEsc')}</span>

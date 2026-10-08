@@ -1399,17 +1399,25 @@ input:not([type]):focus {
   color: var(--accent-soft-text);
 }
 
+/* R225.1: fixed overlay like .fx-applied-toast — mounting in-flow shifted
+   the grid away from the pointer, looping enter/leave = the flicker bug.
+   The pill intercepts hover itself (R225.2) to keep the button reachable. */
 .fx-preview-pill {
   align-items: center;
   background: var(--accent-dim);
   border: 1px solid var(--accent);
   border-radius: var(--radius-l);
+  bottom: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
   color: var(--accent-soft-text);
   display: flex;
   font-size: var(--text-caption-size);
   gap: 10px;
-  margin-bottom: 10px;
+  left: 50%;
   padding: 5px 14px;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 9000;
 }
 
 .fx-preview-pill button {
