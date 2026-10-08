@@ -168,6 +168,7 @@
 ## 8. 综合路线图
 
 ### Now（本周，~5 个工作日；判定反转主打）
+0. **体感测试视频数据集与回放基建（R226，S-M，1-2 天基建 + 用户录像）**——用户补充指令（2026-10-09）：先搜集大量测试视频数据用于冒烟/单元自动化。已落地：抽取工具（`yarn vision:extract`，真实 MediaPipe 逐帧抽 landmark）+ 回放门禁（`tests/vision/replay.test.mjs`：召回/延迟/误触发三指标对每夹具自带 gates 断言，CI 常绿）+ 视频冒烟（`yarn vision:smoke`：video→wasm→engine 全路径指标表，越界 exit 1）。**这直接补 Top5 差距③「真机证据链」：真实检测质量从此可度量、可门禁**。待用户按采集协议录像（校准三步 → 手势段）。
 1. **T-P0 止血包（S，1 天）**：`import handOpenness` 一行修 + 宿主 tick try/catch + ErrorBoundary + 全局错误捕获 + enable 竞态守卫 + 最小化收敛。（02/03/04/05 P0 全覆盖）
 2. **手势控灯 v1（M，2-3 天）**：径向菜单 + curatedKinds + selectEffect + 事件总线（四零件现成）；按 06-R3/R4 先做会话管理器与手势原语层（5 天口径可并行推进）。
 3. **失败路径 UX + 遥测接通（S，1 天）**：吞错改可见错误+可重试；acquireStats 上屏；表情键修一行或删；vision_input.js 删。

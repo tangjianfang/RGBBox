@@ -1,0 +1,149 @@
+<!doctype html>
+<!-- R226.3: vision-dataset extraction tool — plays a local video through the
+     REAL vendored MediaPipe (same wasm + hand_landmarker.task as the product)
+     and exports a replay fixture (per-frame landmarks JSONL). Interactive mode
+     also collects gesture marks (key presses) for the labels sidecar.
+
+     Opened by tools/vision-dataset/main.mjs with query:
+       ?src=<file url>&out=<dir>&gestures=pinch,dir-up,...&auto=1 -->
+<html>
+<head>
+<meta charset="utf-8" />
+<title>vision-dataset extract</title>
+<style>
+  body { background: #10161b; color: #cfe3ea; font: 13px/1.5 system-ui; margin: 16px; }
+  video { max-width: 640px; background: #000; display: block; }
+  .row { margin: 8px 0; }
+  button { background: #1d2a33; color: #cfe3ea; border: 1px solid #34505e; border-radius: 4px; padding: 4px 12px; cursor: pointer; }
+  #status { color: #7fd7b2; }
+  #marks { font-family: monospace; white-space: pre; color: #9cb7c3; }
+  kbd { background: #24333d; border-radius: 3px; padding: 0 4px; }
+</style>
+</head>
+<body>
+  <h3>R226 视觉数据集抽取</h3>
+  <div class="row"><video id="v" controls muted playsinline></video></div>
+  <div class="row" id="status">booting…</div>
+  <div class="row">
+    <button id="play">▶ 播放并抽取</button>
+    <button id="export" disabled>⬇ 导出夹具</button>
+    <span id="progress"></span>
+  </div>
+  <div class="row" id="hint">标注模式：手势开始时按对应键，再按同键结束。键位：
+    <span id="keymap"></span>（手势序号 1-9 对应 <code>gestures</code> 参数顺序）</div>
+  <div id="marks"></div>
+<script type="module">
+const qs = new URLSearchParams(location.search)
+const src = qs.get('src')
+const out = qs.get('out') || '.'
+const gestures = (qs.get('gestures') || '').split(',').filter(Boolean)
+const auto = qs.get('auto') === '1'
+const video = document.getElementById('v')
+const status = (s) => { document.getElementById('status').textContent = s }
+document.getElementById('keymap').textContent =
+  gestures.map((g, i) => `${i + 1}=${g}`).join(' ') || '(未配置 — 仅抽取)')
+
+// ── real vendored MediaPipe (same assets the product ships) ────────────────
+const VENDOR = new URL('../../../src/renderer/public/vendor/mediapipe/', location.href).href
+const MODEL = new URL('../../../src/renderer/public/models/hand_landmarker.task', location.href).href
+status('loading wasm…')
+const { FilesetResolver, HandLandmarker } = await import(new URL('vision_bundle.js', VENDOR).href)
+const fileset = await FilesetResolver.forVisionTasks(VENDOR)
+let landmarker
+for (const delegate of ['GPU', 'CPU']) {
+  try {
+    landmarker = await HandLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: MODEL, delegate },
+      runningMode: 'VIDEO',
+      numHands: 2,
+    })
+    break
+  } catch (e) { status(`${delegate} delegate failed: ${e.message}`) }
+}
+if (!landmarker) { status('FATAL: no delegate worked'); throw new Error('landmarker init failed') }
+status('models ready')
+
+// ── extraction loop ────────────────────────────────────────────────────────
+const frames = []   // {t, hands:[{lm,score,h}], face:null}
+const marks = []    // {gesture, from, to|null} — video-time ms
+const open = new Map() // gesture -> from
+let lastT = -1
+let extracting = false
+
+function detectAt () {
+  const tMs = Math.round(video.currentTime * 1000)
+  if (tMs === lastT) return
+  lastT = tMs
+  const res = landmarker.detectForVideo(video, tMs)
+  const hands = []
+  const n = res.landmarks?.length ?? 0
+  for (let i = 0; i < n; i++) {
+    hands.push({
+      lm: res.landmarks[i].map((p) => [round(p.x), round(p.y)]),
+      score: round(res.handedness?.[i]?.[0]?.score ?? 0.9, 3),
+      h: res.handedness?.[i]?.[0]?.categoryName ?? 'Right',
+    })
+  }
+  frames.push({ t: tMs, hands, face: null })
+  document.getElementById('progress').textContent =
+    `frame ${frames.length} · hands ${n} · ${tMs}ms`
+}
+const round = (v, d = 4) => Math.round(v * 10 ** d) / 10 ** d
+
+function loop () {
+  if (!extracting) return
+  if (!video.ended && !video.paused) { try { detectAt() } catch (e) { status(`detect error: ${e.message}`) } }
+  if (video.ended) { finish(); return }
+  requestAnimationFrame(loop)
+}
+function finish () {
+  extracting = false
+  // close any dangling mark at video end
+  for (const [g, from] of open) { marks.push({ gesture: g, from, to: lastT }); open.delete(g) }
+  document.getElementById('export').disabled = false
+  status(`done — ${frames.length} frames, ${marks.length} marks. Ready to export.`)
+  if (auto) exportFiles()
+}
+
+document.getElementById('play').onclick = () => {
+  frames.length = 0; marks.length = 0; open.clear()
+  extracting = true
+  video.currentTime = 0
+  void video.play()
+  loop()
+}
+video.onended = () => finish()
+
+// ── gesture marking keys (1..9 map onto the gestures list) ─────────────────
+window.addEventListener('keydown', (e) => {
+  const idx = Number(e.key) - 1
+  if (!Number.isInteger(idx) || idx < 0 || idx >= gestures.length) return
+  const g = gestures[idx]
+  const t = Math.round(video.currentTime * 1000)
+  if (open.has(g)) { marks.push({ gesture: g, from: open.get(g), to: t }); open.delete(g) }
+  else open.set(g, t)
+  renderMarks()
+})
+function renderMarks () {
+  document.getElementById('marks').textContent =
+    marks.map((m) => `${m.gesture}: ${m.from}–${m.to}ms`).join('\n') +
+    ([...open].length ? `\n[进行中] ${[...open].map(([g, f]) => `${g}@${f}`).join(', ')}` : '')
+}
+
+// ── export via tools preload bridge ────────────────────────────────────────
+async function exportFiles () {
+  const base = (out || '.').replace(/[\\/]+$/, '') + '/' +
+    (src.split(/[\\/]/).pop() || 'clip').replace(/\.[^.]+$/, '')
+  const files = {}
+  files[`${base}.jsonl`] = frames.map((f) => JSON.stringify(f)).join('\n') + '\n'
+  files[`${base}.labels.json`] = JSON.stringify({
+    source: src.split(/[\\/]/).pop(), fps: null, marks, gates: null,
+  }, null, 2) + '\n'
+  const saved = await window.__vdSave(files)
+  status(`exported: ${saved.join(', ')}`)
+}
+document.getElementById('export').onclick = () => exportFiles()
+status(auto ? 'auto mode — click ▶ or wait' : 'ready — click ▶, mark with 1-9, then export')
+</script>
+</body>
+</html>

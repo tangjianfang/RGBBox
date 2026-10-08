@@ -29,6 +29,8 @@
     "probe:full": "node scripts/probe-runtime.mjs --full",
     "ui:snapshot": "node scripts/ui-snapshot.mjs --compare",
     "ui:snapshot:update": "node scripts/ui-snapshot.mjs --update-baseline",
+    "vision:extract": "node scripts/vision-extract.mjs",
+    "vision:smoke": "node scripts/vision-smoke-videos.mjs",
     "verify:release": "node scripts/verify-release.mjs --full",
     "verify:quick": "node scripts/verify-release.mjs --quick",
     "smoke:app": "node scripts/smoke-app.mjs",
