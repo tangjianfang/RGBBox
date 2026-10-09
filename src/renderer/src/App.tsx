@@ -813,7 +813,20 @@ export function App(): JSX.Element {
 
       </section>
       </AppShell>
-      <VisionAssistant activeView={activeView} onNavigate={setActiveView} rootRef={appRootRef} />
+      {/* R229: 手势控灯 — the light ring applies an effect WITHOUT switching
+          views (unlike the library click): swapping the room's light must
+          never steal the screen you're working on. */}
+      <VisionAssistant
+        activeView={activeView}
+        onNavigate={setActiveView}
+        rootRef={appRootRef}
+        curatedKinds={curatedKinds}
+        onApplyLight={(kind) => {
+          const prevKind = selectedLayer?.kind
+          selectEffect(kind)
+          if (prevKind && prevKind !== kind) showAppliedToast(kind, prevKind)
+        }}
+      />
     </main>
     </>
   )

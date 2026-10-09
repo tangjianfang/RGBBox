@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { useI18n } from '../../i18n'
 import type { View } from '../../hooks/tabNavigation'
 import { useVisionInput } from '../../hooks/useVisionInput'
+import type { EffectKind } from '../../../../shared/types'
 import { VisionCursor } from './VisionCursor'
+import { VisionLightControl } from './VisionLightControl'
 import { createCursorState } from '../../vision/cursor'
 
 // R140 P1 / R142-E4b: the app-wide gesture assistant. Owns its OWN vision
@@ -21,10 +23,14 @@ const MENU_SLOTS: Array<{ view: View | null }> = [
   { view: 'ai' }, { view: 'audio' }, { view: 'games' }, { view: 'video' },
 ] // all members of the real View union
 
-export function VisionAssistant({ activeView, onNavigate, rootRef }: {
+export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds = [], onApplyLight = () => {} }: {
   activeView: View
   onNavigate: (view: View) => void
   rootRef: React.RefObject<HTMLElement | null>
+  /** R229: curated effect kinds for the LIGHT ring (favorites + recents first) */
+  curatedKinds?: EffectKind[]
+  /** R229: apply a light effect from the ring (no view switch) */
+  onApplyLight?: (kind: EffectKind) => void
 }): JSX.Element {
   const { t } = useI18n()
   const vision = useVisionInput()
@@ -33,6 +39,8 @@ export function VisionAssistant({ activeView, onNavigate, rootRef }: {
     try { return localStorage.getItem(ASSISTANT_KEY) === '1' } catch { return false }
   })
   const [menuOpen, setMenuOpen] = useState(false)
+  // R229: light-ring open state — the cursor must not click through it
+  const [lightOpen, setLightOpen] = useState(false)
   const [menuSel, setMenuSel] = useState(4) // default highlight: left = effects
   const [textMode, setTextMode] = useState(false)
   const [trainer, setTrainer] = useState<{ phrase: string; pos: number; hits: number; misses: number } | null>(null)
@@ -169,7 +177,15 @@ export function VisionAssistant({ activeView, onNavigate, rootRef }: {
       {assistantOn && vision.enabled && activeView !== 'games' ? (
         <>
           <div className="vision-assistant-badge">{t('games.vision.assistantBadge')}</div>
-          <VisionCursor vision={vision} wrapRef={rootRef as React.RefObject<HTMLDivElement | null>} stateRef={cursorStateRef} suppressClick={menuOpen} />
+          {/* already inside the non-games + assistant-on branch above —
+              `active` just mirrors it for the bus subscription */}
+          <VisionLightControl
+            active
+            curatedKinds={curatedKinds}
+            onApplyEffect={onApplyLight}
+            onOpenChange={setLightOpen}
+          />
+          <VisionCursor vision={vision} wrapRef={rootRef as React.RefObject<HTMLDivElement | null>} stateRef={cursorStateRef} suppressClick={menuOpen || lightOpen} />
         </>
       ) : null}
 

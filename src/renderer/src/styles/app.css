@@ -8748,6 +8748,14 @@ input[type='range'].video-player-volume {
   z-index: 60;
 }
 
+/* R229: the LIGHT ring — same geometry as the view ring, warm-amber accent
+   so "swapping the lights" reads differently from "navigating views". */
+.vision-radial.light .vision-radial-item { border-color: rgba(255, 176, 66, 0.35); }
+.vision-radial.light .vision-radial-item.sel {
+  border-color: #ffb042;
+  box-shadow: 0 0 14px rgba(255, 176, 66, 0.35);
+}
+.vision-radial.light .vision-radial-hint { color: #ffc477; }
 .vision-radial {
   left: 50%;
   position: fixed;

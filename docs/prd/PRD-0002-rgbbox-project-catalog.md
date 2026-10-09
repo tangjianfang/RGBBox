@@ -3977,6 +3977,15 @@
   - **R227.6 GPU delegate 崩溃降级**（R226.9 工具链同款发现）：pipeline 推理连续异常→自动重建 CPU delegate landmarker，不再静默断流。
   - **R227.7 受影响文件**：`src/renderer/src/vision/session.js`、`src/renderer/src/visionHostMain.js`、`src/renderer/src/vision/pipeline.js`、`src/renderer/src/hooks/useVisionInput.ts`、`src/renderer/src/components/vision/VisionAssistant.tsx`、`src/renderer/src/main.tsx`（或 App.tsx 挂 ErrorBoundary）+ 新 `components/ErrorBoundary.tsx`、tests（session 回归/useVisionInput 竞态/ErrorBoundary 渲染）。
 
+
+- **R229 `feat` — 手势控灯 v1「灯效环」（2026-10-09 批 3/5；REVIEW-VISION 08 决定性发现「控一切唯独不控灯」的价值反转；状态 🔄）**：
+  - **R229.1 和弦词表扩展（06 评的 🟢 一行扩展点）**：`fingerChords.js` CHORD_VOCAB 增 `'thumb+index+middle': 'light'`——该指形与既有 7 命令及全部 15 文字符零冲突（字符层只用 1-2 指），非中立形（3 指 <4）。
+  - **R229.2 灯效环组件**：新 `components/vision/VisionLightControl.tsx`——订阅 `vision-input` 总线（R228.5 结论：现有总线即手势原语层）：chord `light` 呼出/关闭 8 槽径向环（curatedKinds 前 8，含收藏/最近——「常亮的伸手即达」）；环开时 8 向选择高亮、捏合(Space)确认应用、`cancel`/`back`/Esc 关闭。挂载于 VisionAssistant 内（assistantOn && 非 games 时激活），灯效环开启期间抑制光标点击（与视图环同规则）。
+  - **R229.3 应用路径**：App 层回调 `selectEffect(kind)` + applied toast，**不切换视图**（人在任何视图挥手换灯效，灯效应用不抢屏——区别于效果库点击的 workspace 跳转）。
+  - **R229.4 UI/i18n**：复用 `.vision-radial` 样式 + `light` 修饰类（琥珀色语义区分视图环）；i18n zh/en 增 `games.vision.lightRing/lightHint/lightApply`。
+  - **R229.5 受影响文件**：`vision/fingerChords.js`、`components/vision/VisionLightControl.tsx`（新）、`components/vision/VisionAssistant.tsx`（挂载+点击抑制）、`App.tsx`（回调）、`styles/app.css`、`i18n/index.tsx`、tests（chords 词表 + LightControl 交互）。
+  - **R229.7 状态**：✅（2026-10-09 当日闭环，批 3/5）。**交付**：①`fingerChords.js` CHORD_VOCAB 增 `thumb+index+middle: 'light'`（与 7 命令+15 字符零冲突）；②新 `VisionLightControl.tsx`（订阅 vision-input 总线：chord light 呼出/关闭、8 向选择、捏合应用+✨反馈、cancel/back/Esc 关闭、环外事件忽略、失活自动收起）；挂载于 VisionAssistant 徽标分支（环开时与视图环同规则抑制光标点击），琥珀色 `.vision-radial.light` 修饰类区分视图环；③App 回调 `selectEffect+showAppliedToast` **不切视图**（灯效应用不抢屏）；i18n zh/en ×3 键。**证据**：typecheck 双绿；全量 **162 files / 1530 passed / 0 失败**（+7：LightControl 6 交互用例 + chords 词表/字符不产回归锁，既有词表循环测试自动覆盖新和弦）；**真机全链路实测**（本机 Integrated Camera）：pill 开启→摄像头真启→徽标挂载→chord light 开环→8 槽 curated 效果中文名（极光/火焰/霓虹脉冲/星光/星云/彩虹/呼吸/波浪）→dir-up 选中槽位 2→截图入库 `docs/ui-review/r229/light-ring.png`（AI 目视复核进行中，结果补充记录）。
+
 - **R228 `fix` — 视觉宿主会话管理器（引用计数）+ 协议契约化（2026-10-09 批 2/5；承载 REVIEW-VISION 03-B2/3/7、04-V5、05-TB3、06-④ 四家共识缺陷 + 06-R1/R3；状态 🔄）**：
   - **R228.1 缺陷回顾（已代码级确认）**：宿主单例对多消费者（games hook / VisionAssistant / AI Lab 体检台）无所有权模型——①任一消费者 disable 发 `stop` 连坐杀掉全部会话；②第二消费者 `init` 被宿主 `if (pipeline) return` 吞掉=enable 永挂；③`stop` 后 pipeline 置 null 但窗口存活，语义混乱。
   - **R228.2 会话注册表（可单测纯函数）**：新 `src/renderer/src/vision/hostProtocol.js`——消息类型常量表（18 种+新增 `acquire`/`release`）+ `createSessionRegistry()`（consumerId Set：acquire 幂等、release 幂等、empty() 判定）+ `.d.ts` 类型桥；宿主与客户端两端共用，替代纯字符串散落（06-R1 轻量契约化）。
