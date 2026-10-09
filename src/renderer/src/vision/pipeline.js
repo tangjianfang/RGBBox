@@ -172,6 +172,25 @@ export class VisionPipeline {
     this.inferMeter.push(performance.now() - t0);
     this.session.faceEveryN = adaptFaceRate(this.session.faceEveryN, this.inferMeter.stats().n > 60 ? this.inferMeter.stats().p95 : 0);
 
+    // R242 / F7: the engines assume 21 finite landmark points. A malformed
+    // hand from the detector (short array / NaN / out-of-range / non-finite
+    // score) is DROPPED and counted — never fed into the session, where one
+    // bad hand could poison cursor/chord state for the rest of the session.
+    this.landmarkRejects = this.landmarkRejects ?? 0;
+    if (hands.length) {
+      const validHands = [];
+      for (const h of hands) {
+        const lm = h?.landmarks;
+        const ok = Array.isArray(lm) && lm.length === 21
+          && lm.every((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)
+            && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1)
+          && Number.isFinite(h.score);
+        if (ok) validHands.push(h)
+        else this.landmarkRejects++
+      }
+      hands = validHands;
+    }
+
     const { events, snapshot } = this.session.onFrame({ nowMs, hands, face: faceMap });
     this.frameCount++;
     // R142-L4: chord events ride the same stream (active tracking only —
@@ -231,6 +250,7 @@ export class VisionPipeline {
       // the pad's third row and envCoach's light advice read empty forever
       // (REVIEW-VISION 06-③ "telemetry dead-ends in the host").
       acquire: this.acquireStats ?? null,
+      landmarkRejects: this.landmarkRejects ?? 0, // R242/F7: malformed-hand drops
       ...extra,
     };
   }
