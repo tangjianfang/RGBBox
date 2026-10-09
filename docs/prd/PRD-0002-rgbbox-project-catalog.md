@@ -4029,6 +4029,9 @@
 
 - **R251 `fix` — 任务族 F8：协议消息 fuzz（22 消息×3 畸形类=66 格；状态 ✅ 当日闭环）**。**证据**：畸形矩阵（缺字段错型/未知键+深嵌套+原型污染尝试/超长串+1e308 超值）全 66 格——handle() 零抛出、活会话不被毒化（fuzz 后重复 init 仍回 ready）、行为按契约表；hostSession 17 用例全绿；全量 **168 files / 1582 passed / 0 失败**（+1）。：hostSession.test 增畸形载荷矩阵——每消息喂 {malformed-payload(缺字段/错型)/unknown-fields(多余键)/oversized-values(超长串/深对象)}，断言 hostMessenger 不抛、按契约表行为（忽略/上报 error）、宿主会话状态不被毒化。验收：66 格全绿+全量 0 失败。
 
+
+- **R252 `feat` — 30min soak 长跑门禁（旗舰 T15；08-T8；状态 🔄）**：`scripts/vision-soak.mjs`（`yarn vision:soak`，R252 条款授权 scripts）——合成源驱动 30min 等效会话（假时钟压缩：宿主 synthetic 定时器 33ms 真跑×压缩采样或 vitest 假时钟，取实现最稳路径），断言：inferFps 降幅 <10%、heap 增长 <20MB（CDP Performance.getMetrics 首尾）、SK-0 长版无卡键（heldRef 空）、方向判定漂移 <死区（recenter 自愈）、中途 stop/start 恢复、退出宿主销毁。**夜档脚本**（不进默认套件）；产出 `docs/SOAK-LEDGER.md` 台账。
+
 - **R233 `fix` — 快照门禁 workspace 活动区遮罩（Wave1-T2；REVIEW-VISION 已知问题§8 条目；状态 ✅ 2026-10-09 闭环）**：workspace 视图 run-to-run 自差 1.7%（R227 期实证，stash 对照排除代码因素）——右侧 `.panel.map-panel` 拓扑/视频墙等活动元素未遮罩。修：`scripts/ui-snapshot.mjs` 增 `VOLATILE_REGION_SELECTORS`。验收：连续三跑 workspace ≤0.1%、其余 8 视图 0.0000%。
   - **R233.1 实测归因（6×6 网格定位）**：修前 workspace 对基线 1.4563%（两次同值=确定性差，R224 期基线已落后 10 个 src 提交，其中 1.79%>40 阈值热区=右列 rows1-4（map-panel）+底部 rows（sampling-panel），其余像素 run-to-run 0.0000%）+ 间歇尖峰 2.3188%：**异步拓扑枚举竞态**——`topology.displays.length>1` 达成时 linked-display-row+VideoWallEditor 挂载，map-panel h 441↔501、sampling-panel 整体下移 61px，单侧各自遮罩必留未遮边。顶栏 displays 计数文本（1↔2）同一竞态。
   - **R233.2 修法**：`VOLATILE_REGION_SELECTORS=['.panel.map-panel','.panel.sampling-panel']`（类名 grep 证实仅 WorkspaceView 使用，其余 8 视图天然零影响）+ `VOLATILE_TEXT_SELECTORS` 增 `.workspace-header .metric:first-child`；boxes.json schema 拆 `{canvases,volatile}`——canvas 仍双侧各自 rect（挪位仍要门禁），volatile 改**双侧 UNION 遮罩**（新增 `unionRects`：相交 rect 聚类成覆盖盒，面板 resize/位移不再留边）；基线按 T1 规则重立于 HEAD 8b080c8（9 视图 png+boxes 全量重立）。
