@@ -543,6 +543,18 @@ export function MiniGamesView(): JSX.Element {
   const [visionExitNotice, setVisionExitNotice] = useState(false)
   const visionWasEnabledRef = useRef(false)
 
+  // R250 (04-V6): camera follows window visibility from the GAMES side too —
+  // minimized/hidden must never keep the camera + inference running. Unlike
+  // the assistant layer there is NO auto re-enable on return: a game session
+  // is stateful, silent re-entry mid-run would misfire; the hub toggle is the
+  // explicit way back.
+  useEffect(() => {
+    if (typeof window.rgbbox?.onMainWindowVisibilityChanged !== 'function') return
+    return window.rgbbox.onMainWindowVisibilityChanged((visible) => {
+      if (!visible && vision.enabled) vision.disable()
+    })
+  }, [vision.enabled, vision.disable])
+
   const publishSlash = useCallback(() => {
     setSlashSnapshot({ ...slashRef.current, blocks: [...slashRef.current.blocks], streaks: [...slashRef.current.streaks] })
   }, [])
