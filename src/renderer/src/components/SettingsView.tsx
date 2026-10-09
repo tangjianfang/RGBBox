@@ -139,6 +139,11 @@ export function SettingsView(props: SettingsViewProps) {
               ))}
             </select>
           </div>
+          {/* R236.3: privacy statement pointer — plain text only (no window):
+              the camera pipeline is fully local; full statement in docs/PRIVACY.md. */}
+          <p className="ai-hint-line" data-field="privacy-note" title={t('settings.privacy.note')}>
+            {t('settings.privacy.label')} — {t('settings.privacy.note')}
+          </p>
         </section>
 
         {/* R198(FR-G02.3): games — clear local telemetry (bests kept by default). */}

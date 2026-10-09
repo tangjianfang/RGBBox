@@ -373,6 +373,9 @@ const EN = {
   'settings.games.clearConfirm': 'Clear run history and profile? Best scores are kept.',
   'settings.games.clearBestConfirm': 'Also clear best scores?',
   'settings.games.cleared': 'Game data cleared.',
+  // R236.3: privacy statement pointer — full statement lives in docs/PRIVACY.md.
+  'settings.privacy.label': 'Privacy',
+  'settings.privacy.note': 'Camera frames never leave this machine: gesture recognition runs locally (MediaPipe wasm), with zero upload, zero disk writes, and the stream stops the moment the feature is off. Full statement: docs/PRIVACY.md.',
   'uiFontScale.label': 'Interface font size',
   'uiFontScale.hint': 'Resizes text across the whole app (85%–130%)',
   'uiFontScale.tier.xs': 'Small (85%)',
@@ -2214,6 +2217,9 @@ const ZH: TranslationTable = {
   'settings.games.clearConfirm': '清空对局历史与档案?最高分会保留。',
   'settings.games.clearBestConfirm': '连最高分也一起清空吗?',
   'settings.games.cleared': '游戏数据已清空。',
+  // R236.3：隐私声明入口——完整声明见仓库 docs/PRIVACY.md。
+  'settings.privacy.label': '隐私',
+  'settings.privacy.note': '摄像头画面不出本机：手势识别全部本地推理（MediaPipe wasm），零上传、零落盘，关闭即停流。完整声明见仓库 docs/PRIVACY.md。',
   'uiFontScale.label': '界面字号',
   'uiFontScale.hint': '调整整个应用的文字大小（85%–130%）',
   'uiFontScale.tier.xs': '小（85%）',
