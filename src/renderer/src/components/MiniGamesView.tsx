@@ -2108,16 +2108,18 @@ export function MiniGamesView(): JSX.Element {
   const phaseLabel = phase === 'won' ? t('games.statusWon') : phase === 'lost' ? t('games.statusLost') : phase === 'ready' ? t('games.statusReady') : t('games.statusRunning')
   const best = isTd ? bests.td : isSurvival ? bests.survival : isSlash ? bests.slash : bests.tetris
   // R131/R132: vision status chip — localized wizard hint while calibrating
-  // (retry reasons from the engine stay verbatim — they are the actionable
-  // text); R132: an active session with no hand in frame flips to the
-  // "not detected" text immediately (the session itself stays active through
-  // the 45-frame grace), and a just-disabled session shows a short notice.
+  // (a retry gate result flips to the localized actionable reason); R132: an
+  // active session with no hand in frame flips to the "not detected" text
+  // immediately (the session itself stays active through the 45-frame grace),
+  // and a just-disabled session shows a short notice. R235: the retry check
+  // is the structured statusKey code (locale-independent), not zh-prefix text
+  // matching — `label` already carries the t()-localized reason.
   const visionSuffix = visionExitNotice
     ? ` · 👁 ${t('games.vision.exited')}`
     : vision.enabled
       ? ` · 👁 ${vision.state === 'active' && (phase === 'ready' || phase === 'lost')
           ? t('games.vision.startHint')
-          : vision.state === 'calibrating' && vision.stepId && !vision.label.startsWith('重试')
+          : vision.state === 'calibrating' && vision.stepId && !vision.statusKey?.endsWith('.retry')
             ? t(`games.vision.hint.${vision.stepId}`)
             : vision.state === 'active' && !vision.handSeen
               ? t('games.vision.state.searching')

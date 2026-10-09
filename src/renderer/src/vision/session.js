@@ -61,6 +61,54 @@ export const STATE_LABELS = {
   paused: '已暂停',
 };
 
+// R235: the engine message catalog. Every user-facing string renders from
+// here via {param} interpolation, so the 360 pre-R235 zh chars live in ONE
+// injectable table instead of the control flow. Defaults below are the exact
+// pre-R235 values (derived from STATE_LABELS/CAL_STEPS where possible so
+// they cannot drift) — a constructor WITHOUT `messages` is byte-identical
+// (compat lock, asserted in tests/vision/session.test.mjs). The renderer
+// hook injects the identity table (hostProtocol.VISION_KEY_MESSAGES) so the
+// engine emits stable codes, and localizes them per consumer language via
+// i18n `games.vision.engine.<key>` — zh values there equal these defaults.
+export const DEFAULT_SESSION_MESSAGES = Object.freeze({
+  'state.idle': STATE_LABELS.idle,
+  'state.searching': STATE_LABELS.searching,
+  'state.active': STATE_LABELS.active,
+  'state.paused': STATE_LABELS.paused,
+  'cal.hint.center': CAL_STEPS[0].hint,
+  'cal.hint.reach': CAL_STEPS[1].hint,
+  'cal.hint.pinch': CAL_STEPS[2].hint,
+  'cal.stepLabel': '校准 {i}/3:{hint}',
+  'cal.extend': '继续采样 — {reason}',
+  'cal.retry': '重试 — {reason}',
+  'cal.center.hand-seen.extend': '手可见率仅 {pct}%,请正对摄像头、手保持在画面中央',
+  'cal.center.hand-seen.retry': '手部检测不稳定,请改善光线/角度后重试',
+  'cal.center.no-hand.extend': '还没看到稳定的手,请把手张开停在画面中央',
+  'cal.center.no-hand.retry': '中心采样不足,重试',
+  'cal.center.jitter.extend': '手抖动较大(σ={sigma}),请支撑手肘后放松',
+  'cal.center.jitter.retry': '手抖动过大(σ={sigma}),请支撑手肘重试',
+  'cal.center.face.extend': '未检测到面部,请正对摄像头',
+  'cal.center.face.retry': '未检测到面部,请正对摄像头重试',
+  'cal.reach.range.extend': '伸展幅度还差一点(p90={p90}/{min}),继续向 8 个方向伸展',
+  'cal.reach.range.retry': '伸展幅度太小,请移到手肘支撑允许的最大范围重试',
+  'cal.reach.sectors.extend': '已覆盖 {n}/{min} 个方向,继续轮流伸展',
+  'cal.reach.sectors.retry': '只覆盖了 {n}/8 个方向,请轮流伸展 8 个方向重试',
+  'cal.pinch.samples.extend': '已采样 {n}/24 帧,请继续有节奏地捏合-张开(手保持在画面内)',
+  'cal.pinch.samples.retry': '捏合采样不足,请保持手在画面内重复捏合重试',
+  'cal.pinch.sep.extend': '开/合区分度 {sep}(需 ≥{min}),捏紧一点、张开一点',
+  'cal.pinch.sep.retry': '捏合幅度区分度不够,请加大捏合深度重试',
+  'cal.progress.pinch': '捏合校准:已检测 {n} 次捏合',
+  'cal.progress.reach': '行程校准:已覆盖 {n}/8 个方向',
+});
+
+/** {param} interpolation for catalog templates (missing key → the code itself). */
+function renderMessage(messages, key, params) {
+  const tpl = messages[key];
+  if (tpl == null) return key;
+  if (!params) return tpl;
+  return tpl.replace(/\{(\w+)\}/g, (m, name) => (params[name] != null ? String(params[name]) : m));
+}
+
 export function percentile(sortedAsc, p) {
   if (!sortedAsc.length) return NaN;
   return sortedAsc[Math.min(sortedAsc.length - 1, Math.floor(p * sortedAsc.length))];
@@ -76,6 +124,8 @@ export class SessionController {
   constructor(cfg = {}) {
     this.cfg = { ...DEFAULT_SESSION_CFG, ...cfg };
     this.cfg.dualHand = { ...DEFAULT_SESSION_CFG.dualHand, ...(cfg.dualHand || {}) };
+    // R235: partial catalog overrides merge over the zh defaults
+    this.cfg.messages = { ...DEFAULT_SESSION_MESSAGES, ...(this.cfg.messages || {}) };
     this.handEngine = new HandEngine({ pinch: this.cfg.pinch, direction: this.cfg.direction });
     this.offEngine = new OffHandEngine({
       pinchKey: this.cfg.dualHand.offPinchKey,
@@ -99,14 +149,48 @@ export class SessionController {
     this._geom = null;
     this._faceBlend = null;
     this.status = '';
+    // R235: structured twin of `status` — the stable message code + params, so
+    // consumers can localize without reverse-matching rendered text. Null
+    // while the status is not catalog-backed (e.g. the 'stopped' sentinel).
+    this.statusKey = null;
+    this.statusParams = null;
+    // extend/retry statuses are STICKY: live progress must not overwrite the
+    // actionable reason until the step actually advances (pre-R235 this was
+    // the status.startsWith('重试'/'继续采样') string check — same semantics,
+    // locale-independent)
+    this.statusSticky = false;
+  }
+
+  /** R235: render a catalog message ({param} interpolation, unknown key → code). */
+  msg(key, params) {
+    return renderMessage(this.cfg.messages, key, params);
   }
 
   label() {
     if (this.state === 'calibrating') {
       const step = CAL_STEPS[this.calStepIdx];
-      return `校准 ${this.calStepIdx + 1}/3:${step.hint}`;
+      return this.msg('cal.stepLabel', { i: this.calStepIdx + 1, hint: this.msg(`cal.hint.${step.id}`) });
     }
-    return STATE_LABELS[this.state];
+    return this.msg(`state.${this.state}`);
+  }
+
+  _setStatus(key, params = null) {
+    this.statusKey = key;
+    this.statusParams = params;
+    this.statusSticky = false;
+    this.status = this.msg(key, params);
+  }
+
+  /**
+   * Wrapper statuses (extend/retry) render `wrapper — reason` for the text
+   * surface (compat) while the structured key is the actionable REASON code
+   * — the wrapper framing is presentation, the reason is the information.
+   */
+  _setWrappedStatus(wrapperKey, reasonKey, reasonParams) {
+    this.statusKey = reasonKey;
+    this.statusParams = reasonParams ?? null;
+    this.statusSticky = true;
+    this.status = this.msg(wrapperKey, { reason: this.msg(reasonKey, reasonParams) });
   }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -123,7 +207,7 @@ export class SessionController {
   setPaused(p) {
     this.paused = p;
     if (p) {
-      const events = this._releaseAll('paused', STATE_LABELS.paused);
+      const events = this._releaseAll('paused', 'state.paused');
       return events;
     }
     if (this.state === 'paused') this._enterSearching();
@@ -144,10 +228,10 @@ export class SessionController {
       ...profile,
     });
     this.state = 'active';
-    this.status = STATE_LABELS.active;
+    this._setStatus('state.active');
   }
 
-  _releaseAll(state, status) {
+  _releaseAll(state, statusKey) {
     const events = [
       ...this.handEngine.onLost(),
       ...this.offEngine.releaseAll(),
@@ -157,12 +241,13 @@ export class SessionController {
     this.state = state;
     this.handLost = this.faceLost = this.offLost = 0;
     this.cal = null;
-    this.status = status;
+    // 'stopped' (force stop) is a non-catalog sentinel: msg() echoes it back
+    this._setStatus(statusKey);
     return events;
   }
 
   _enterSearching() {
-    return this._releaseAll('searching', STATE_LABELS.searching);
+    return this._releaseAll('searching', 'state.searching');
   }
 
   // ---- calibration wizard ------------------------------------------------
@@ -172,6 +257,14 @@ export class SessionController {
     this.calStepIdx = 0;
     this.calStartMs = nowMs;
     this.cal = this._newStepAcc('center');
+    this._setStepStatus();
+  }
+
+  /** step banner status — the same text label() shows while calibrating */
+  _setStepStatus() {
+    this.statusKey = 'cal.stepLabel';
+    this.statusParams = null;
+    this.statusSticky = false;
     this.status = this.label();
   }
 
@@ -197,16 +290,17 @@ export class SessionController {
    * the user exactly what is missing; only a second failure retries the step.
    * Real-camera feedback: hard-restarting on insufficient data mid-gesture
    * trapped users in an endless "捏合次数太少" retry loop.
+   * R235: reasons are catalog KEYS + params (not pre-rendered strings).
    */
-  _gate(ok, shortReason, retryReason, acc) {
+  _gate(ok, extendKey, extendParams, retryKey, retryParams, acc) {
     if (ok) return null;
     if (!acc.extended) {
       acc.extended = true;
       acc.stepMs *= 2;
-      this.status = `继续采样 — ${shortReason}`;
-      return [{ kind: 'face', key: null, down: false, name: 'cal-extend', value: shortReason }];
+      this._setWrappedStatus('cal.extend', extendKey, extendParams);
+      return [{ kind: 'face', key: null, down: false, name: 'cal-extend', value: this.msg(extendKey, extendParams) }];
     }
-    return this._retryStep(retryReason);
+    return this._retryStep(retryKey, retryParams);
   }
 
   _finishStep(nowMs) {
@@ -216,20 +310,20 @@ export class SessionController {
       const handSeen = acc.frames ? acc.palmN / acc.frames : 0;
       if (handSeen < 0.5) {
         return this._gate(false,
-          `手可见率仅 ${Math.round(handSeen * 100)}%,请正对摄像头、手保持在画面中央`,
-          '手部检测不稳定,请改善光线/角度后重试', acc);
+          'cal.center.hand-seen.extend', { pct: Math.round(handSeen * 100) },
+          'cal.center.hand-seen.retry', null, acc);
       }
       if (acc.palmN < 15) {
-        return this._gate(false, '还没看到稳定的手,请把手张开停在画面中央', '中心采样不足,重试', acc);
+        return this._gate(false, 'cal.center.no-hand.extend', null, 'cal.center.no-hand.retry', null, acc);
       }
       const jitter = Math.max(std(acc.xs), std(acc.ys));
       if (jitter > this.cfg.maxCenterJitter) {
         return this._gate(false,
-          `手抖动较大(σ=${jitter.toFixed(3)}),请支撑手肘后放松`,
-          `手抖动过大(σ=${jitter.toFixed(3)}),请支撑手肘重试`, acc);
+          'cal.center.jitter.extend', { sigma: jitter.toFixed(3) },
+          'cal.center.jitter.retry', { sigma: jitter.toFixed(3) }, acc);
       }
       if (this.cfg.requireFace !== false && acc.faceN < 8) {
-        return this._gate(false, '未检测到面部,请正对摄像头', '未检测到面部,请正对摄像头重试', acc);
+        return this._gate(false, 'cal.center.face.extend', null, 'cal.center.face.retry', null, acc);
       }
       const neutral = {};
       for (const [k, v] of Object.entries(acc.faceSums)) neutral[k] = v / acc.faceN;
@@ -244,13 +338,13 @@ export class SessionController {
       const reach = percentile(sorted, 0.9);
       if (!(reach >= this.cfg.minReach)) {
         return this._gate(false,
-          `伸展幅度还差一点(p90=${reach.toFixed(2)}/${this.cfg.minReach}),继续向 8 个方向伸展`,
-          '伸展幅度太小,请移到手肘支撑允许的最大范围重试', acc);
+          'cal.reach.range.extend', { p90: reach.toFixed(2), min: this.cfg.minReach },
+          'cal.reach.range.retry', null, acc);
       }
       if (acc.sectors.size < this.cfg.minSectorsCovered) {
         return this._gate(false,
-          `已覆盖 ${acc.sectors.size}/${this.cfg.minSectorsCovered} 个方向,继续轮流伸展`,
-          `只覆盖了 ${acc.sectors.size}/8 个方向,请轮流伸展 8 个方向重试`, acc);
+          'cal.reach.sectors.extend', { n: acc.sectors.size, min: this.cfg.minSectorsCovered },
+          'cal.reach.sectors.retry', { n: acc.sectors.size }, acc);
       }
       this.profile.reach = reach;
       this.profile.sectors = acc.sectors.size;
@@ -265,16 +359,16 @@ export class SessionController {
       // cameras (detection quality dips while the fingers are together).
       if (sorted.length < 24) {
         return this._gate(false,
-          `已采样 ${sorted.length}/24 帧,请继续有节奏地捏合-张开(手保持在画面内)`,
-          '捏合采样不足,请保持手在画面内重复捏合重试', acc);
+          'cal.pinch.samples.extend', { n: sorted.length },
+          'cal.pinch.samples.retry', null, acc);
       }
       const p10 = percentile(sorted, 0.10);
       const p90 = percentile(sorted, 0.90);
       const sep = p90 - p10;
       if (sep < this.cfg.minPinchSeparation) {
         return this._gate(false,
-          `开/合区分度 ${sep.toFixed(2)}(需 ≥${this.cfg.minPinchSeparation}),捏紧一点、张开一点`,
-          '捏合幅度区分度不够,请加大捏合深度重试', acc);
+          'cal.pinch.sep.extend', { sep: sep.toFixed(2), min: this.cfg.minPinchSeparation },
+          'cal.pinch.sep.retry', null, acc);
       }
       const on = Math.min(0.6, Math.max(0.3, p10 + sep * 0.18));
       const off = Math.min(1.2, Math.max(on + 0.15, p90 - sep * 0.10));
@@ -289,22 +383,26 @@ export class SessionController {
       this.calStepIdx++;
       this.cal = this._newStepAcc(CAL_STEPS[this.calStepIdx].id);
       this.calStartMs = nowMs;
-      this.status = this.label();
+      this._setStepStatus();
       return [{ kind: 'face', key: null, down: false, name: `cal-step:${this.calStepIdx}` }];
     }
     this.state = 'active';
     this.cal = null;
-    this.status = STATE_LABELS.active;
+    this._setStatus('state.active');
     this._saveProfile();
     return [{ kind: 'face', key: null, down: false, name: 'calibrated' }];
   }
 
-  _retryStep(reason) {
+  _retryStep(reasonKey, reasonParams) {
     // industrial rule: bad data is rejected, the SAME step restarts
     this.cal = this._newStepAcc(CAL_STEPS[this.calStepIdx].id);
     this.calStartMs = this._nowMs;
-    this.status = `重试 — ${reason}`;
-    return [{ kind: 'face', key: null, down: false, name: 'cal-retry', value: reason }];
+    this._setWrappedStatus('cal.retry', reasonKey, reasonParams);
+    // value keeps the rendered reason (compat); key/params are the R235 codes
+    return [{
+      kind: 'face', key: null, down: false, name: 'cal-retry',
+      value: this.msg(reasonKey, reasonParams), msgKey: reasonKey, msgParams: reasonParams ?? null,
+    }];
   }
 
   /** Apply (possibly partial) profile to live engines + persist. */
@@ -392,7 +490,14 @@ export class SessionController {
     // (_activeFrame may re-enter searching on long hand loss; its release
     // events are already included in the returned array.)
 
-    for (const ev of events) if (ev.name === 'cal-retry') this.status = `重试 — ${ev.value}`;
+    for (const ev of events) {
+      if (ev.name !== 'cal-retry') continue;
+      // keep the rendered wrapper for the text surface; sync the structured
+      // twin (events may originate outside this controller's own call stack)
+      this.status = this.msg('cal.retry', { reason: ev.value });
+      if (ev.msgKey) { this.statusKey = ev.msgKey; this.statusParams = ev.msgParams ?? null; }
+      this.statusSticky = true;
+    }
     return { events, snapshot: this._snapshot(primary, obs.inferMs ?? 0) };
   }
 
@@ -475,11 +580,13 @@ export class SessionController {
       this._faceBlend = faceMap;
     }
     // live progress feedback so the user sees the system counting their moves
-    if (!this.status.startsWith('重试') && !this.status.startsWith('继续采样')) {
+    // (extend/retry statuses are sticky until the step advances — R235 flag
+    // replaces the old zh-prefix string check, same semantics)
+    if (!this.statusSticky) {
       if (acc.id === 'pinch' && acc.pinchSamples.length > 4) {
-        this.status = `捏合校准:已检测 ${acc.pinchCycles} 次捏合`;
+        this._setStatus('cal.progress.pinch', { n: acc.pinchCycles });
       } else if (acc.id === 'reach' && acc.sectors.size > 0) {
-        this.status = `行程校准:已覆盖 ${acc.sectors.size}/8 个方向`;
+        this._setStatus('cal.progress.reach', { n: acc.sectors.size });
       }
     }
     if (nowMs - this.calStartMs >= acc.stepMs) {
@@ -571,6 +678,10 @@ export class SessionController {
         : null,
       profile: this.profile,
       status: this.status,
+      // R235: structured twin of status — stable code + params for consumers
+      // that localize (rendered `status` keeps the catalog text for compat)
+      statusKey: this.statusKey,
+      statusParams: this.statusParams,
       faceEveryN: this.faceEveryN,
     };
   }

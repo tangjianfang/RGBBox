@@ -66,7 +66,9 @@ async function loadLandmarkers(cfg) {
     return { hand, face }
   } catch (e) {
     if (preferred === 'CPU') throw e
-    post({ type: 'status', s: `GPU delegate unavailable (${String(e).slice(0, 60)}), CPU fallback` })
+    // R235: stable code + dynamic detail — the hook maps the code via i18n
+    // (games.vision.engine.models.gpu-fallback) and keeps the raw detail
+    post({ type: 'status', s: `models.gpu-fallback (${String(e).slice(0, 60)})` })
     const hand = await HandLandmarker.createFromOptions(fileset, makeHand('CPU'))
     const face = cfg.faceModel ? await FaceLandmarker.createFromOptions(fileset, makeFace('CPU')) : null
     pipeline.delegate = 'CPU'
@@ -136,7 +138,8 @@ async function startCamera(camera) {
         rebuilding = true
         try {
           if (pipeline.delegate === 'GPU' && lastCfg) {
-            post({ type: 'status', s: '推理连续异常，切换 CPU 模式重试 / inference failing, retrying on CPU' })
+            // R235: stable code (zh i18n value keeps the pre-R235 bilingual text)
+            post({ type: 'status', s: 'models.cpu-retry' })
             await pipeline.reloadLandmarkers({ ...lastCfg, cpuFallback: true })
             errStreak = 0
           } else {

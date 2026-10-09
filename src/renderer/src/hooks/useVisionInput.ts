@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VisionEvent, VisionFrame } from '../vision/vision_input'
 import { visionAssetBase } from './visionAssetBase'
+import { useI18n, type TranslationKey } from '../i18n'
 
 export type VisionState = 'idle' | 'searching' | 'calibrating' | 'active' | 'paused'
 export type VisionSensitivity = 'standard' | 'fast' | 'sport'
@@ -37,6 +38,48 @@ function readSensitivity(): VisionSensitivity {
 }
 
 const SENSITIVITY_CONFIRM_MS: Record<VisionSensitivity, number> = { standard: 90, fast: 45, sport: 0 }
+
+// ── R235: engine message localization ──────────────────────────────────────
+// The session/pipeline render user-facing text from a messages catalog. This
+// hook injects the identity table (key→key) so the engine emits stable CODES
+// over the wire, then localizes them at the consumer via i18n
+// `games.vision.engine.<key>` — per-consumer language, switchable at runtime,
+// zh values byte-identical to the pre-R235 engine strings. Text that hits no
+// key (real error messages — R227) passes through verbatim.
+
+type TFn = (key: TranslationKey) => string
+
+const ENGINE_PREFIX = 'games.vision.engine.'
+const VISION_MSG_KEY_SET: ReadonlySet<string> = new Set(VISION_MSG_KEYS)
+
+/** {param} interpolation over a t() template (params come from the engine). */
+function interpolate(template: string, params: Record<string, unknown> | null | undefined): string {
+  if (!params) return template
+  return template.replace(/\{(\w+)\}/g, (m, name: string) =>
+    params[name] != null ? String(params[name]) : m)
+}
+
+/** A structured engine code → localized text (exact key hit). */
+function translateEngineKey(key: string, params: Record<string, unknown> | null | undefined, t: TFn): string {
+  if (!VISION_MSG_KEY_SET.has(key)) return key
+  return interpolate(t((ENGINE_PREFIX + key) as TranslationKey), params)
+}
+
+/**
+ * Wire text → localized text. Exact code hit → t(); code with a dynamic tail
+ * ('models.gpu-fallback (…)' keeps the raw error detail); anything else is
+ * passed through unchanged (R227: real error messages are the actionable
+ * text — never mangle them).
+ */
+function translateEngineText(text: string, t: TFn): string {
+  if (VISION_MSG_KEY_SET.has(text)) return translateEngineKey(text, null, t)
+  for (const key of VISION_MSG_KEYS) {
+    if (text.startsWith(key) && (text.length === key.length || text[key.length] === ' ' || text[key.length] === '(')) {
+      return translateEngineKey(key, null, t) + text.slice(key.length)
+    }
+  }
+  return text
+}
 
 export interface VisionInputHandle {
   enable(): Promise<void>
@@ -67,6 +110,13 @@ export interface VisionInputHandle {
   sensitivity: VisionSensitivity
   enabled: boolean
   label: string
+  /**
+   * R235: the structured engine status code behind `label` when the engine
+   * reports a calibration gate result (e.g. 'cal.center.jitter.retry') —
+   * null otherwise. Consumers use it for locale-independent decisions (the
+   * retry chip check) instead of matching rendered text.
+   */
+  statusKey: string | null
   state: VisionState
   /** active calibration step while calibrating, else null */
   stepId: 'center' | 'reach' | 'pinch' | null
@@ -96,10 +146,16 @@ export interface VisionInputHandle {
  */
 
 // R228: protocol constants + per-instance consumer id for the refcounted
-// host session (see vision/hostProtocol.js).
-import { VISION_CHANNEL, nextConsumerId } from '../vision/hostProtocol'
+// host session (see vision/hostProtocol.js). R235: VISION_KEY_MESSAGES is
+// the identity table injected into the engine so it emits stable codes.
+import { VISION_CHANNEL, VISION_MSG_KEYS, VISION_KEY_MESSAGES, nextConsumerId } from '../vision/hostProtocol'
 
 export function useVisionInput(): VisionInputHandle {
+  const { t } = useI18n()
+  // handlers close over this ref, so a live language switch re-localizes the
+  // NEXT message without tearing the channel down (t identity changes per lang)
+  const tRef = useRef<TFn>(t)
+  tRef.current = t
   const channelRef = useRef<BroadcastChannel | null>(null)
   // R227.4: in-flight startup dedupe (double-toggle safety)
   const startInFlightRef = useRef<Promise<void> | null>(null)
@@ -110,6 +166,9 @@ export function useVisionInput(): VisionInputHandle {
   const pausedRef = useRef(false)
   const [enabled, setEnabled] = useState(false)
   const [label, setLabel] = useState('')
+  // R235: structured engine status code (published INSTANTLY with the state
+  // tuple — the retry chip must react on the exact frame it happens)
+  const [statusKey, setStatusKey] = useState<string | null>(null)
   // R230: the REAL last error (a failed enable used to leave `label` holding
   // a stale status like "models ready", which status chips rendered as the
   // nonsense "启动失败: models ready" — REVIEW-VISION 07-X1)
@@ -128,7 +187,7 @@ export function useVisionInput(): VisionInputHandle {
   const lastLabelPublishRef = useRef(0)
   // R138: consecutive handless frames — handSeen loss needs 5 before publish
   const handlessFramesRef = useRef(0)
-  const prevPublishRef = useRef<{ state: string; handSeen: boolean; stepId: string | null }>({ state: 'idle', handSeen: false, stepId: null })
+  const prevPublishRef = useRef<{ state: string; handSeen: boolean; stepId: string | null; statusKey: string | null }>({ state: 'idle', handSeen: false, stepId: null, statusKey: null })
 
   const onEvent = useCallback((event: VisionEvent) => {
     // diagnostics/E2E bus carries EVERY event (offhand pause, hands apart/together…)
@@ -167,17 +226,32 @@ export function useVisionInput(): VisionInputHandle {
     else handlessFramesRef.current++
     const prev = prevPublishRef.current
     const handSeenNext = seen ? true : handlessFramesRef.current >= 5 ? false : prev.handSeen
-    const next = { state: snapshot.state as string, handSeen: handSeenNext, stepId: snapshot.stepId ?? null }
-    if (next.state !== prev.state || next.handSeen !== prev.handSeen || next.stepId !== prev.stepId) {
+    // R235: the structured status code rides the INSTANT tuple (retry/extend
+    // gate results change without any state change while calibrating)
+    const next = {
+      state: snapshot.state as string,
+      handSeen: handSeenNext,
+      stepId: snapshot.stepId ?? null,
+      statusKey: snapshot.statusKey ?? null,
+    }
+    if (next.state !== prev.state || next.handSeen !== prev.handSeen || next.stepId !== prev.stepId || next.statusKey !== prev.statusKey) {
       prevPublishRef.current = next
       setState(next.state as VisionState)
       setHandSeen(next.handSeen)
       setStepId(next.stepId as 'center' | 'reach' | 'pinch' | null)
+      setStatusKey(next.statusKey)
     }
     const now = performance.now()
     if (now - lastLabelPublishRef.current >= 250) {
       lastLabelPublishRef.current = now
-      setLabel(snapshot.label ?? '')
+      // R235: a retry gate result replaces the (code-mode) label with the
+      // localized actionable reason; otherwise map the label code → t()
+      const key = snapshot.statusKey
+      if (key && key.endsWith('.retry')) {
+        setLabel(translateEngineKey(key, snapshot.statusParams, tRef.current))
+      } else {
+        setLabel(translateEngineText(snapshot.label ?? '', tRef.current))
+      }
     }
   }, [])
 
@@ -231,6 +305,9 @@ export function useVisionInput(): VisionInputHandle {
               requireFace: false,
               faceEveryN: 3,
               dualHand: { enabled: true, primaryHand, offPinchKey: 'KeyF' }, // R149: persisted primary-hand role
+              // R235: identity catalog — the engine emits stable codes, this
+              // hook localizes them per consumer language (zh = engine defaults)
+              messages: VISION_KEY_MESSAGES,
             },
           },
         })
@@ -258,7 +335,9 @@ export function useVisionInput(): VisionInputHandle {
         } else if (msg.type === 'snapshot' && msg.snapshot) {
           onSnapshot(msg.snapshot)
         } else if (msg.type === 'status' && msg.s) {
-          setLabel(msg.s)
+          // R235: pipeline/host lifecycle statuses are codes ('models.ready')
+          // — localize; anything else (real diagnostics) passes through
+          setLabel(translateEngineText(msg.s, tRef.current))
         } else if (msg.type === 'profile-save' && msg.profile) {
           try { localStorage.setItem(PROFILE_KEY, JSON.stringify(msg.profile)) } catch { /* non-fatal */ }
         }
@@ -305,6 +384,7 @@ export function useVisionInput(): VisionInputHandle {
     setStepId(null)
     setHandSeen(false)
     setLabel('')
+    setStatusKey(null)
     setError(null)
   }, [])
 
@@ -375,6 +455,6 @@ export function useVisionInput(): VisionInputHandle {
   return {
     enable, enableSynthetic, disable, recalibrate, setPaused, resumeActive, skipCalibration, applySettings,
     setMirror, mirror, setPrimaryHand, primaryHand, setChordTextMode, chordBackspace, chordBuffer, setCapturePrecision, setSensitivity, sensitivity,
-    enabled, label, error, state, stepId, handSeen, frameRef, heldRef, queueRef,
+    enabled, label, statusKey, error, state, stepId, handSeen, frameRef, heldRef, queueRef,
   }
 }

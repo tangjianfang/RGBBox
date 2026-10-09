@@ -140,7 +140,8 @@ function draw(ctx: CanvasRenderingContext2D, vision: VisionInputHandle, t: TFn, 
   const acquire = frame?.stats?.acquire
   const cam = frame?.stats?.cam
   const acquireText = acquire && acquire.n > 0
-    ? `采集 p95 ${Math.round(acquire.p95)}ms${cam?.w ? ` · ${cam.w}×${cam.h}@${Math.round(cam.fps ?? 0)}` : ''}`
+    // R235: localized label (was a hard-coded zh '采集' — en-mode direct-out)
+    ? `${t('games.vision.acquireStat')} ${Math.round(acquire.p95)}ms${cam?.w ? ` · ${cam.w}×${cam.h}@${Math.round(cam.fps ?? 0)}` : ''}`
     : ''
   ctx.fillText(acquireText, PAD_W / 2, 40)
 

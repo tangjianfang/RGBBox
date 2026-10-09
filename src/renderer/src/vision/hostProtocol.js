@@ -92,3 +92,49 @@ export function nextConsumerId() {
   consumerSeq += 1
   return `vision-consumer-${consumerSeq}`
 }
+
+/**
+ * R235: the engine message-catalog contract (single source for both ends).
+ * session.js renders EVERY user-facing string from an injectable messages
+ * table (defaults = the exact pre-R235 zh values); pipeline/host lifecycle
+ * statuses emit the codes directly. The hook injects VISION_KEY_MESSAGES
+ * (identity: key→key) so the engine emits stable codes over the wire, then
+ * localizes them per consumer language via i18n `games.vision.engine.<key>`.
+ * tests/vision/session.test.mjs locks this list against the session catalog.
+ */
+export const VISION_SESSION_MSG_KEYS = Object.freeze([
+  // session state labels (label())
+  'state.idle', 'state.searching', 'state.active', 'state.paused',
+  // calibration wizard: hints (label during calibrating), step wrapper,
+  // extend/retry wrappers, per-gate reasons, live progress
+  'cal.hint.center', 'cal.hint.reach', 'cal.hint.pinch',
+  'cal.stepLabel',
+  'cal.extend', 'cal.retry',
+  'cal.center.hand-seen.extend', 'cal.center.hand-seen.retry',
+  'cal.center.no-hand.extend', 'cal.center.no-hand.retry',
+  'cal.center.jitter.extend', 'cal.center.jitter.retry',
+  'cal.center.face.extend', 'cal.center.face.retry',
+  'cal.reach.range.extend', 'cal.reach.range.retry',
+  'cal.reach.sectors.extend', 'cal.reach.sectors.retry',
+  'cal.pinch.samples.extend', 'cal.pinch.samples.retry',
+  'cal.pinch.sep.extend', 'cal.pinch.sep.retry',
+  'cal.progress.pinch', 'cal.progress.reach',
+])
+
+/** pipeline/host lifecycle statuses — ride the same hook mapping (not session cfg). */
+export const VISION_MODEL_MSG_KEYS = Object.freeze([
+  'models.cpu-retry',
+  'models.gpu-fallback',
+  'models.loading',
+  'models.ready',
+  'models.reloading',
+  'models.synthetic',
+])
+
+/** every code the hook may map (session + models). */
+export const VISION_MSG_KEYS = Object.freeze([...VISION_SESSION_MSG_KEYS, ...VISION_MODEL_MSG_KEYS])
+
+/** identity table (key→key) — what the hook injects so the engine emits codes. */
+export const VISION_KEY_MESSAGES = Object.freeze(
+  Object.fromEntries(VISION_SESSION_MSG_KEYS.map((k) => [k, k])),
+)
