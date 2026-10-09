@@ -30,6 +30,9 @@ const onNavigate = vi.fn()
 beforeEach(() => {
   rgbbox = setupRendererMocks()
   localStorage.clear()
+  // R246: these are the pre-onboarding-behavior locks — an already-onboarded
+  // user (the wizard's own tests live in VisionOnboarding.test.tsx).
+  localStorage.setItem('rgbbox:visionOnboarded', '1')
   host = new FakeHost()
   cleanup()
 })
@@ -163,5 +166,31 @@ describe('renderer/components/vision/VisionAssistant (R142-E4b)', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
+
+  it('R246: first enable mounts the onboarding wizard; radial suppressed while open; Esc skip persists', async () => {
+    localStorage.removeItem('rgbbox:visionOnboarded') // the first-run state
+    const { container } = mount()
+    await act(async () => { fireEvent.click(container.querySelector('.vision-assistant-pill') as HTMLButtonElement) })
+    await act(async () => { host.send({ type: 'snapshot', snapshot: ACTIVE }) })
+    await waitFor(() => expect(document.querySelector('.vision-onboarding')).toBeTruthy())
+    // the badge still renders alongside — the wizard is an overlay, not a takeover
+    await waitFor(() => expect(container.querySelector('.vision-assistant-badge')).toBeTruthy())
+    // chord menu is the wizard's gesture while it is open — no radial behind
+    await act(async () => {
+      host.send({ type: 'events', events: [{ kind: 'chord', key: null, name: 'menu', down: true }] })
+    })
+    expect(container.querySelector('.vision-radial')).toBeNull()
+    // let the wizard walk env →(1s stability)→ cal → gestures so the funnel
+    // records the calibration milestone before the skip
+    await waitFor(() => expect(document.querySelector('.vision-onboarding[data-step="gestures"]')).toBeTruthy(), { timeout: 3000 })
+    // Esc = skip → persisted + overlay gone + the funnel counted the open
+    await act(async () => { fireEvent.keyDown(window, { key: 'Escape' }) })
+    await waitFor(() => expect(document.querySelector('.vision-onboarding')).toBeNull())
+    expect(localStorage.getItem('rgbbox:visionOnboarded')).toBe('1')
+    expect(JSON.parse(localStorage.getItem('rgbbox:visionFunnel') ?? '{}')).toEqual({ opened: 1, calDone: 1, firstCmd: 0 })
+    // and the radial works again once the wizard is gone
+    await act(async () => {
+      host.send({ type: 'events', events: [{ kind: 'chord', key: null, name: 'menu', down: true }] })
+    })
+    await waitFor(() => expect(container.querySelector('.vision-radial')).toBeTruthy())  })
 })

@@ -7,7 +7,11 @@ import { useGestureLightingDomain } from '../../hooks/domains/useGestureLighting
 import type { EffectKind, EffectLayer } from '../../../../shared/types'
 import { VisionCursor } from './VisionCursor'
 import { VisionLightControl } from './VisionLightControl'
+import { VisionOnboarding, type OnboardingStep } from './VisionOnboarding'
 import { createCursorState } from '../../vision/cursor'
+import {
+  isOnboarded, readFunnel, ONBOARDING_RESET_EVENT,
+} from '../../vision/onboarding'
 
 // R140 P1 / R142-E4b: the app-wide gesture assistant. Owns its OWN vision
 // host lifecycle (the hidden window is single-instance in main; when the
@@ -63,6 +67,14 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
   const [textMode, setTextMode] = useState(false)
   const [trainer, setTrainer] = useState<{ phrase: string; pos: number; hits: number; misses: number } | null>(null)
   const [typed, setTyped] = useState('')
+  // R246: first-use onboarding — open until completed/skipped once; the
+  // Settings「重看」entry + games hub re-arm it via the reset event.
+  const [onboardOpen, setOnboardOpen] = useState(() => !isOnboarded())
+  const [onboardStep, setOnboardStep] = useState<OnboardingStep | null>(null)
+  const [lightApplyTick, setLightApplyTick] = useState(0)
+  const onboardActive = assistantOn && activeView !== 'games' && onboardOpen
+  const onboardRef = useRef(onboardActive)
+  onboardRef.current = onboardActive
 
   const TRAIN_PHRASE = 'the quick brown fox'
 
@@ -99,6 +111,27 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
     })
   }, [vision])
 
+  // R246: wrap the apply callback so the wizard's step 4 learns a light was
+  // applied through the exact same path a real apply takes (tick = counter).
+  const applyLight = useCallback((kind: EffectKind) => {
+    onApplyLight(kind)
+    setLightApplyTick((n) => n + 1)
+  }, [onApplyLight])
+
+  // the wizard persists the flag itself; the assistant just closes + re-arms
+  const exitOnboarding = useCallback(() => {
+    setOnboardOpen(false)
+    setOnboardStep(null)
+  }, [])
+
+  // Settings「重看体感向导」/ games hub → re-open the wizard (same window, so
+  // the storage event never fires — the reset event is the poke)
+  useEffect(() => {
+    const onReset = (): void => setOnboardOpen(true)
+    window.addEventListener(ONBOARDING_RESET_EVENT, onReset)
+    return () => window.removeEventListener(ONBOARDING_RESET_EVENT, onReset)
+  }, [])
+
   // enable the pipeline when the assistant is on (and we're outside games,
   // where the games view owns the host)
   useEffect(() => {
@@ -130,6 +163,10 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
     const onVisionEvent = (ev: Event): void => {
       const detail = (ev as CustomEvent<{ kind: string; key: string | null; name?: string; down: boolean; dir?: string }>).detail
       if (!detail) return
+      // R246: while the onboarding wizard is open it owns the gesture space —
+      // no radial/back/pinch-confirm behind the overlay (the light ring alone
+      // stays live, and only for the wizard's own task step)
+      if (onboardRef.current) return
       if (detail.kind === 'chord' && detail.name === 'menu') setMenuOpen((open) => !open)
       else if (textMode && detail.kind === 'chord' && detail.name?.startsWith('char:')) {
         const ch = detail.name.slice(5)
@@ -164,6 +201,47 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
     window.addEventListener('vision-input', onVisionEvent)
     return () => window.removeEventListener('vision-input', onVisionEvent)
   }, [vision.enabled, menuOpen, menuSel, onNavigate])
+
+  // R246: E2E seam (the games __rgbboxVision / AI-lab __rgbboxVisionLab
+  // precedent) — verification scripts run the camera-free synthetic pipeline
+  // through the assistant and read the onboarding funnel from outside. The
+  // synthetic enable happens BEFORE assistant-on so the enable-effect above
+  // never races a second (camera) start.
+  const onboardStepRef = useRef<OnboardingStep | null>(null)
+  onboardStepRef.current = onboardStep
+  const visionProbeRef = useRef(vision)
+  visionProbeRef.current = vision
+  useEffect(() => {
+    const w = window as unknown as {
+      __rgbboxAssistant?: {
+        startSynthetic(): Promise<boolean>
+        onboarded(): boolean
+        funnel(): { opened: number; calDone: number; firstCmd: number }
+        step(): string | null
+        probe(): { state: string; handSeen: boolean; enabled: boolean; error: string | null }
+      }
+    }
+    w.__rgbboxAssistant = {
+      async startSynthetic(): Promise<boolean> {
+        try {
+          await vision.enableSynthetic()
+        } catch {
+          return false
+        }
+        try { localStorage.setItem(ASSISTANT_KEY, '1') } catch { /* non-fatal */ }
+        setAssistantOn(true)
+        return true
+      },
+      onboarded: () => isOnboarded(),
+      funnel: () => readFunnel(),
+      step: () => onboardStepRef.current,
+      probe: () => {
+        const v = visionProbeRef.current
+        return { state: v.state, handSeen: v.handSeen, enabled: v.enabled, error: v.error }
+      },
+    }
+    return () => { w.__rgbboxAssistant = undefined }
+  }, [vision.enableSynthetic])
 
 
   return (
@@ -210,17 +288,31 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
         <>
           <div className="vision-assistant-badge">{t('games.vision.assistantBadge')}</div>
           {/* already inside the non-games + assistant-on branch above —
-              `active` just mirrors it for the bus subscription */}
+              `active` just mirrors it for the bus subscription; R246: muted
+              while the wizard owns the gestures, EXCEPT during its task step
+              (the first light apply must go through the real ring) */}
           <VisionLightControl
-            active
+            active={!onboardActive || onboardStep === 'task'}
             curatedKinds={curatedKinds}
-            onApplyEffect={onApplyLight}
+            onApplyEffect={applyLight}
             onOpenChange={setLightOpen}
             adjustPercent={gesture.adjustPercent}
             frozen={gesture.frozen}
           />
-          <VisionCursor vision={vision} wrapRef={rootRef as React.RefObject<HTMLDivElement | null>} stateRef={cursorStateRef} suppressClick={menuOpen || lightOpen} />
+          <VisionCursor vision={vision} wrapRef={rootRef as React.RefObject<HTMLDivElement | null>} stateRef={cursorStateRef} suppressClick={menuOpen || lightOpen || onboardActive} />
         </>
+      ) : null}
+
+      {/* R246: first-use wizard — mounted while the assistant is on and not
+          yet onboarded (covers a failed enable too: the wizard shows the
+          classified error + retry instead of a dead overlay) */}
+      {onboardActive ? (
+        <VisionOnboarding
+          vision={vision}
+          lightApplyTick={lightApplyTick}
+          onExit={exitOnboarding}
+          onStepChange={setOnboardStep}
+        />
       ) : null}
 
       {menuOpen ? (
