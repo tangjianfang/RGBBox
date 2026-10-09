@@ -44,7 +44,19 @@ const DIFF_LIMITS = {
 // view's device/source names fill in asynchronously (enumerate timing), which
 // was the standing 0.0574% noise. Selectors are script-side on purpose
 // (zero product-code hooks); extend the list as new volatile regions appear.
-const VOLATILE_TEXT_SELECTORS = ['.video-source-name']
+// R233: + the workspace header's displays-count metric — it mirrors the async
+// topology enumeration (1→2 displays), same race the map panel masks below.
+const VOLATILE_TEXT_SELECTORS = ['.video-source-name', '.workspace-header .metric:first-child']
+// R233: whole-PANEL activity regions join the mask. The workspace right panel
+// (.panel.map-panel: DisplayMap mirrors the host's live display topology,
+// linked-display row, VideoWallEditor) and the bottom sampling panel
+// (.panel.sampling-panel: live engine metrics — estimated fps/throughput text
+// driven by the running engine loop) render host/session-dependent live state.
+// Measured vs the R224-era baseline the two panels were the entire 1.46%
+// workspace diff (6x6 grid: right column rows 1-4 + bottom rows) while the
+// rest of the view was pixel-identical run-to-run. Selectors exist only in
+// WorkspaceView (grep-verified), so the other 8 views get zero extra mask.
+const VOLATILE_REGION_SELECTORS = ['.panel.map-panel', '.panel.sampling-panel']
 const CANVAS_MASK_ALL = true
 
 /** Zero out canvas rects (±2px edge slack) in a PNG in place. */
@@ -59,6 +71,34 @@ function maskBoxes (img, boxes) {
       }
     }
   }
+}
+
+/** R233: cluster intersecting rects (±slack) into covering boxes. The union
+ * set is applied to BOTH images: a volatile panel may RESIZE run-to-run
+ * (workspace map-panel grows ~60px when the async topology enumeration lands
+ * before the shot — linked-display-row + VideoWallEditor mount), and masking
+ * each side with only its own rect would leave an unmasked rim on the other
+ * side (measured 2.32% from a 61px sampling-panel shift). */
+function unionRects (rects, slack = 8) {
+  const out = rects.map((r) => ({ ...r }))
+  let merged = true
+  while (merged) {
+    merged = false
+    for (let i = 0; i < out.length; i++) {
+      for (let j = i + 1; j < out.length; j++) {
+        const a = out[i]; const b = out[j]
+        const overlaps = a.x - slack < b.x + b.w + slack && b.x - slack < a.x + a.w + slack &&
+          a.y - slack < b.y + b.h + slack && b.y - slack < a.y + a.h + slack
+        if (overlaps) {
+          const x0 = Math.min(a.x, b.x); const y0 = Math.min(a.y, b.y)
+          out[i] = { x: x0, y: y0, w: Math.max(a.x + a.w, b.x + b.w) - x0, h: Math.max(a.y + a.h, b.y + b.h) - y0 }
+          out.splice(j, 1)
+          merged = true
+        }
+      }
+    }
+  }
+  return out
 }
 
 const mode = process.argv.includes('--update-baseline') ? 'update' : process.argv.includes('--compare') ? 'compare' : 'capture'
@@ -110,7 +150,10 @@ for (let i = 0; i < VIEWS.length; i++) {
     // Canvas rects in viewport coords (DPR-independent: the shot is CSS-sized).
     // Recorded for every view; consumed only where CANVAS_MASK says so.
     // R163.3: volatile-text rects (async-filled device names) ride the same
-    // boxes.json — the masking consumer doesn't care which kind a rect is.
+    // boxes.json. R233: volatile-REGION rects (live panels) ride along too,
+    // but kept in a SEPARATE list — canvases mask per-side (a moved canvas
+    // still gates) while volatile rects mask by UNION across both sides
+    // (live panels may resize/shift run-to-run; see unionRects).
     const boxes = await page.evaluate((selectors) => {
       const rect = (el) => {
         const r = el.getBoundingClientRect()
@@ -124,11 +167,11 @@ for (let i = 0; i < VIEWS.length; i++) {
           .filter((el) => el.getBoundingClientRect().width > 4)
           .map(rect)
       )
-      return [...canvases, ...volatile]
-    }, VOLATILE_TEXT_SELECTORS)
+      return { canvases, volatile }
+    }, [...VOLATILE_TEXT_SELECTORS, ...VOLATILE_REGION_SELECTORS])
     writeFileSync(`${shotDir}/${view}.boxes.json`, JSON.stringify(boxes))
     ok++
-    console.log(`SHOT  ${view} → ${shotDir}/ (${boxes.length} canvas)`)
+    console.log(`SHOT  ${view} → ${shotDir}/ (${boxes.canvases.length} canvas + ${boxes.volatile.length} volatile)`)
   } catch (err) {
     console.error(`FAIL  ${view}: ${err.message.split('\n')[0]}`)
   }
@@ -167,8 +210,14 @@ for (const view of VIEWS) {
   if (CANVAS_MASK_ALL) {
     const loadBoxes = (dir) => JSON.parse(readFileSync(`${dir}/${view}.boxes.json`, 'utf8'))
     try {
-      maskBoxes(a, loadBoxes(BASELINE))
-      maskBoxes(b, loadBoxes(CURRENT))
+      const ba = loadBoxes(BASELINE)
+      const bb = loadBoxes(CURRENT)
+      // R233: canvases mask per-side; volatile text+region rects mask by the
+      // UNION of both sides (a resized/shifted live panel must not leave an
+      // unmasked rim on the other side).
+      const union = unionRects([...ba.volatile, ...bb.volatile])
+      maskBoxes(a, [...ba.canvases, ...union])
+      maskBoxes(b, [...bb.canvases, ...union])
     } catch {
       console.log(`${view.padEnd(12)}  —           —          NO boxes.json (re-capture with --update-baseline)`)
       gateOk = false
