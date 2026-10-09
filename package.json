@@ -33,6 +33,7 @@
     "vision:fetch": "node scripts/vision-fetch-videos.mjs",
     "vision:corpus": "node scripts/vision-corpus-report.mjs",
     "vision:confusion": "node scripts/vision-confusion.mjs",
+    "vision:soak": "node scripts/vision-soak.mjs",
     "e2e:journeys": "node scripts/e2e-journeys/run.mjs",
     "vision:smoke": "node scripts/vision-smoke-videos.mjs",
     "verify:release": "node scripts/verify-release.mjs --full",
