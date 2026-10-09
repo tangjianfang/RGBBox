@@ -48,6 +48,7 @@ import { validateChatMessages } from '../shared/aiChatValidation'
 import { initAudioAi, disposeAudioAi, isCached as audioAiIsCached, runVad as audioAiRunVadPcm, runAst as audioAiRunAstPcm, startStream as audioAiStartStream, feedStream as audioAiFeedStream, stopStream as audioAiStopStream } from './audioAiService'
 import { Readable } from 'node:stream'
 import { mediaStreamPlan, parseRangeHeader, resolveAppAssetPath, resolveMediaMime } from './mediaProtocol'
+import { allowPermission } from './permissionGate'
 import { registerDenoiseService } from './denoiseService'
 
 // Initialize file logger — must be done after imports but before app.whenReady
@@ -683,6 +684,15 @@ function registerIpc(): void {
     // R129b: the site rejects logins from embedded browsers (works in regular
     // Chrome) — present a clean Chrome UA for this window only.
     win.webContents.setUserAgent(win.webContents.getUserAgent().replace(/\s*Electron\/[\d.]+/i, ''))
+    // R236.2: this partition loads a REMOTE site (https://ai8.rcouyi.com) that
+    // has zero legitimate need for device permissions — camera, microphone,
+    // notifications, geolocation… are denied outright for the whole
+    // 'persist:ai8' session, independent of the default session's origin-gated
+    // whitelist. (Login only needs cookies/localStorage — no device access.)
+    win.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
+      callback(false)
+    })
+    win.webContents.session.setPermissionCheckHandler(() => false)
     ai8LoginWindow = win
     let poller: ReturnType<typeof setInterval> | null = null
     const stopPolling = () => {
@@ -1588,12 +1598,17 @@ app.whenReady().then(() => {
   // silently denied (the returned promise never settles), making every
   // in-app "全屏" button visibly do nothing. All other permissions remain
   // denied (tighter than Electron's permissive default).
-  const ALLOWED_PERMISSIONS = new Set(['media', 'audioCapture', 'videoCapture', 'display-capture', 'fullscreen'])
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(ALLOWED_PERMISSIONS.has(permission))
+  //
+  // R236.1: the per-type whitelist now ALSO gates on the requesting origin —
+  // only the app's own surfaces (file:// packaged pages, media:// assets,
+  // http://<loopback> during `yarn dev`) may reach it; about:blank, remote
+  // https origins and unknown schemes are denied before the type check.
+  // Extracted to ./permissionGate so the matrix is unit-testable.
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+    callback(allowPermission(details?.requestingUrl ?? (wc && !wc.isDestroyed() ? wc.getURL() : undefined), permission))
   })
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-    return ALLOWED_PERMISSIONS.has(permission)
+  session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin) => {
+    return allowPermission(requestingOrigin ?? (wc && !wc.isDestroyed() ? wc.getURL() : undefined), permission)
   })
 
   // Modern screen/window capture path. The Video Studio calls
