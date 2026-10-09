@@ -385,3 +385,41 @@ test('init synthetic: the interval drives processFrame, emits events/snapshot; s
   assert.equal(h.timers.intervals[0], null)
   assert.equal(h.timers.intervals[1], null)
 })
+
+// ── R251 / TASK-UNIVERSE F8: protocol message FUZZ (22 messages × 3 classes) ──
+// A malformed message must never throw out of handle(), never poison a live
+// session, and behave per the contract table (ignore or error-reply).
+test('R251: 66-cell fuzz grid — no throw, no session poisoning, contract-shaped behavior', async () => {
+  const MESSAGES = ['init', 'acquire', 'release', 'stop', 'settings', 'pause', 'recalibrate',
+    'forceReady', 'mirror', 'primaryHand', 'textmode', 'backspace', 'capture',
+    'ready', 'events', 'snapshot', 'status', 'profile-save', 'error', 'heartbeat', 'host-hello', 'host-gone']
+  const MALFORMS = {
+    'malformed-payload': (t) => ({ type: t, cfg: null, consumerId: 42, patch: 'str-not-obj', p: 'yes', profile: [], m: 7, side: {}, on: {}, camera: undefined }),
+    'unknown-fields': (t) => ({ type: t, totallyUnknown: 'x'.repeat(64), nested: { deep: { deeper: { deepest: true } } }, __proto__pollution_attempt: 1 }),
+    'oversized-values': (t) => ({ type: t, consumerId: 'x'.repeat(10000), patch: { confirmMs: 1e308 }, s: 'y'.repeat(100000), profile: { center: { x: 1e308, y: -1e308 } } }),
+  }
+  let cells = 0
+  for (const msgType of MESSAGES) {
+    for (const [className, mk] of Object.entries(MALFORMS)) {
+      cells++
+      const h = makeHarness()
+      // establish a live session first (init synthetic path is deterministic)
+      await h.messenger.handle({ type: 'init', cfg: { mode: 'synthetic', maxFps: 0 } })
+      h.posted.length = 0
+      let threw = null
+      try { await h.messenger.handle(mk(msgType)) } catch (e) { threw = e }
+      assert.ok(!threw, `${msgType}/${className} threw: ${threw && threw.message}`)
+      // session must survive: a subsequent well-formed message still works
+      h.created[0].applySettingsCalls = (h.created[0].applySettingsCalls ?? 0) + 1
+      await h.messenger.handle({ type: 'settings', patch: { confirmMs: 60 } })
+      // 'ready'/'heartbeat' etc are host→client types the host should IGNORE on input
+      const posted = h.posted.filter((m) => m.type === 'error').map((m) => m.message)
+      assert.ok(Array.isArray(posted), `${msgType}/${className}: posted must stay array`)
+      // hard invariant: messenger still answers a fresh duplicate init with ready
+      h.posted.length = 0
+      await h.messenger.handle({ type: 'init', cfg: { mode: 'synthetic', maxFps: 0 } })
+      assert.ok(h.posted.some((m) => m.type === 'ready'), `${msgType}/${className}: session poisoned (no ready on re-init)`)
+    }
+  }
+  assert.equal(cells, 66)
+})

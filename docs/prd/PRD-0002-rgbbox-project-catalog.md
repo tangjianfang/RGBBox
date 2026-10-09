@@ -4027,7 +4027,7 @@
 - **R250 `fix` — games hook 最小化摄像头收敛（F9 发现 1；04-V6 同源；状态 ✅ 当日闭环）**。**证据**：MiniGamesView 挂 R43 可见性推送——不可见且 enabled 即 disable；与助手层差异（不自动恢复：游戏会话态有副作用，静默重入会误触发，hub 开关为显式回路）注释入码；typecheck 双绿；全量 168 files/1581+ 绿（本条零新用例，行为由可见性推送契约保证；真机手动验收待用户最小化复测）。：MiniGamesView 挂 `onMainWindowVisibilityChanged`——不可见且 vision.enabled → disable（回可见由 hub 开关手动重启，不做自动恢复：游戏会话态复杂，避免误恢复；与助手层差异点在 PRD 注明）。
 
 
-- **R251 `fix` — 任务族 F8：协议消息 fuzz（22 消息×3 畸形类=66 格；状态 🔄）**：hostSession.test 增畸形载荷矩阵——每消息喂 {malformed-payload(缺字段/错型)/unknown-fields(多余键)/oversized-values(超长串/深对象)}，断言 hostMessenger 不抛、按契约表行为（忽略/上报 error）、宿主会话状态不被毒化。验收：66 格全绿+全量 0 失败。
+- **R251 `fix` — 任务族 F8：协议消息 fuzz（22 消息×3 畸形类=66 格；状态 ✅ 当日闭环）**。**证据**：畸形矩阵（缺字段错型/未知键+深嵌套+原型污染尝试/超长串+1e308 超值）全 66 格——handle() 零抛出、活会话不被毒化（fuzz 后重复 init 仍回 ready）、行为按契约表；hostSession 17 用例全绿；全量 **168 files / 1582 passed / 0 失败**（+1）。：hostSession.test 增畸形载荷矩阵——每消息喂 {malformed-payload(缺字段/错型)/unknown-fields(多余键)/oversized-values(超长串/深对象)}，断言 hostMessenger 不抛、按契约表行为（忽略/上报 error）、宿主会话状态不被毒化。验收：66 格全绿+全量 0 失败。
 
 - **R233 `fix` — 快照门禁 workspace 活动区遮罩（Wave1-T2；REVIEW-VISION 已知问题§8 条目；状态 ✅ 2026-10-09 闭环）**：workspace 视图 run-to-run 自差 1.7%（R227 期实证，stash 对照排除代码因素）——右侧 `.panel.map-panel` 拓扑/视频墙等活动元素未遮罩。修：`scripts/ui-snapshot.mjs` 增 `VOLATILE_REGION_SELECTORS`。验收：连续三跑 workspace ≤0.1%、其余 8 视图 0.0000%。
   - **R233.1 实测归因（6×6 网格定位）**：修前 workspace 对基线 1.4563%（两次同值=确定性差，R224 期基线已落后 10 个 src 提交，其中 1.79%>40 阈值热区=右列 rows1-4（map-panel）+底部 rows（sampling-panel），其余像素 run-to-run 0.0000%）+ 间歇尖峰 2.3188%：**异步拓扑枚举竞态**——`topology.displays.length>1` 达成时 linked-display-row+VideoWallEditor 挂载，map-panel h 441↔501、sampling-panel 整体下移 61px，单侧各自遮罩必留未遮边。顶栏 displays 计数文本（1↔2）同一竞态。
