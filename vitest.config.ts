@@ -27,7 +27,13 @@ export default defineConfig({
         'src/renderer/src/engine/**',
         'src/renderer/src/workers/**',
         'src/renderer/src/components/**',
-        'src/renderer/src/hooks/**'
+        'src/renderer/src/hooks/**',
+        // R234: the vision layer (hostMessenger/pipeline/session engines +
+        // protocol) is pure enough to be covered headless — the host shell
+        // visionHostMain.js is included for VISIBILITY but carries no
+        // threshold (BroadcastChannel/getUserMedia glue, smoke:app covers it).
+        'src/renderer/src/vision/**',
+        'src/renderer/src/visionHostMain.js'
       ],
       // R12: 3D / WebGL files require a real GPU. We cover them with import-shape
       // and module-export tests (it.skip on the rendering paths) but they are
@@ -89,7 +95,12 @@ export default defineConfig({
         'src/shared/**': { lines: 85, branches: 72, functions: 75, statements: 85 },
         'src/main/**': { lines: 52, branches: 45, functions: 52, statements: 52 },
         'src/renderer/src/components/**': { lines: 47, branches: 38, functions: 43, statements: 45 },
-        'src/renderer/src/hooks/**': { lines: 55, branches: 28, functions: 42, statements: 50 }
+        'src/renderer/src/hooks/**': { lines: 55, branches: 28, functions: 42, statements: 50 },
+        // R234: vision layer first measured at 94.45 lines / 86.30 branches
+        // (hostMessenger extraction made the orchestration headless-testable).
+        // visionHostMain.js is include-only (DOM/BroadcastChannel glue, no
+        // threshold — smoke:app exercises it in the real app).
+        'src/renderer/src/vision/**': { lines: 91, branches: 83 }
       }
     }
   }
