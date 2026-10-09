@@ -7,6 +7,12 @@
 // starving the game's main thread) and the same-origin BroadcastChannel
 // bridge the AudioViz projector already uses.
 //
+// R234: this file is now a THIN SHELL — only the DOM/electron glue (channel,
+// video element + getUserMedia, landmarker loading, hello broadcast). All
+// session orchestration (init/refcount/stop/timeout/frame-error escalation)
+// lives in vision/hostMessenger.js and is unit-tested in
+// tests/vision/hostSession.test.mjs.
+//
 // Protocol (game window → host, on BroadcastChannel 'rgbbox-vision'):
 //   {type:'init', cfg} → {type:'ready', delegate} | {type:'error', message}
 //   cfg.mode: 'camera' | 'synthetic'
@@ -16,22 +22,11 @@
 //   | {type:'profile-save', profile}
 
 import { VisionPipeline } from './vision/pipeline.js'
-import { createSessionRegistry } from './vision/hostProtocol.js'
+import { createHostMessenger } from './vision/hostMessenger.js'
 
 const channel = new BroadcastChannel('rgbbox-vision')
-let pipeline = null
 let video = null
 let stream = null
-let vfcId = null
-let syntheticTimer = null
-// R228: the camera is refcounted — multiple consumers (games hook /
-// VisionAssistant / AI Lab bench) share this single host; the last one out
-// closes it. 'stop' remains a force-stop (clears the registry).
-const sessions = createSessionRegistry()
-// R227.6: kept for the GPU→CPU runtime rebuild path
-let lastCfg = null
-// R141-B: current capture mode (cfg.camera or the {type:'capture'} switch)
-let currentCamera = { width: 640, height: 360, frameRate: 60 }
 
 function post(msg) {
   channel.postMessage(msg)
@@ -59,35 +54,28 @@ async function loadLandmarkers(cfg) {
   })
   // R227.6: cpuFallback forces CPU directly (runtime GPU-process death rebuild)
   const preferred = cfg.cpuFallback ? 'CPU' : 'GPU'
+  const p = messenger.pipeline // the pipeline being initialized/reloaded
   try {
     const hand = await HandLandmarker.createFromOptions(fileset, makeHand(preferred))
     const face = cfg.faceModel ? await FaceLandmarker.createFromOptions(fileset, makeFace(preferred)) : null
-    pipeline.delegate = preferred
+    p.delegate = preferred
     return { hand, face }
   } catch (e) {
     if (preferred === 'CPU') throw e
     post({ type: 'status', s: `GPU delegate unavailable (${String(e).slice(0, 60)}), CPU fallback` })
     const hand = await HandLandmarker.createFromOptions(fileset, makeHand('CPU'))
     const face = cfg.faceModel ? await FaceLandmarker.createFromOptions(fileset, makeFace('CPU')) : null
-    pipeline.delegate = 'CPU'
+    p.delegate = 'CPU'
     return { hand, face }
   }
 }
 
-function emit(events, snapshot) {
-  if (events?.length) post({ type: 'events', events })
-  if (snapshot) {
-    snapshot.stats = pipeline.stats()
-    post({ type: 'snapshot', snapshot })
-  }
-}
-
-async function startCamera(camera) {
+// R234: camera ACQUISITION only — the capture mode (and its rollback) and
+// the inference loop live in hostMessenger. `mode` is always explicit.
+async function startCamera(mode) {
   // R141-B: capture mode is cfg-driven — games stay at the fast 640×360,
   // precision mode (960×540) serves cursor/assistant scenes where the
   // latency budget is loose but detection robustness matters.
-  const mode = camera ?? currentCamera
-  currentCamera = mode
   video = document.createElement('video')
   video.style.display = 'none'
   document.body.appendChild(video)
@@ -102,156 +90,24 @@ async function startCamera(camera) {
   video.srcObject = stream
   await new Promise((r) => { video.onloadedmetadata = r })
   await video.play()
-  pipeline.start(performance.now())
-  let lastSend = 0
-  const acquire = []
-  // R227.2: one thrown exception inside tick must NOT kill the rVFC chain —
-  // the pre-R136 main-thread loop had this defense and it was lost in the
-  // host migration. Consecutive errors escalate: GPU delegate death → CPU
-  // rebuild; still failing → clean shutdown (camera OFF, error surfaced —
-  // never a silent zombie keeping the camera light on).
-  let errStreak = 0
-  let rebuilding = false
-  const tick = async (now, meta) => {
-    try {
-      // inference-rate cap (R133 margin fix), mode-driven (60 continuous / 30 default)
-      const cap = pipeline?.maxFps && pipeline.maxFps > 0 ? pipeline.maxFps : 30
-      if (now - lastSend >= 1000 / cap - 4) {
-        lastSend = now
-        if (meta?.presentationTime && now - meta.presentationTime >= 0 && now - meta.presentationTime < 5000) {
-          acquire.push(now - meta.presentationTime)
-          if (acquire.length > 300) acquire.shift()
-          const sorted = [...acquire].sort((a, b) => a - b)
-          const q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]
-          pipeline.acquireStats = { n: sorted.length, p50: q(0.5), p95: q(0.95), mean: sorted.reduce((s, v) => s + v, 0) / sorted.length }
-        }
-        const r = pipeline.processFrame(now, { source: video })
-        emit(r.events, r.snapshot)
-        errStreak = 0
-      }
-    } catch (err) {
-      errStreak++
-      post({ type: 'status', s: `frame error (${errStreak}): ${String(err?.message ?? err).slice(0, 80)}` })
-      if (errStreak >= 8 && !rebuilding) {
-        rebuilding = true
-        try {
-          if (pipeline.delegate === 'GPU' && lastCfg) {
-            post({ type: 'status', s: '推理连续异常，切换 CPU 模式重试 / inference failing, retrying on CPU' })
-            await pipeline.reloadLandmarkers({ ...lastCfg, cpuFallback: true })
-            errStreak = 0
-          } else {
-            throw err
-          }
-        } catch (e2) {
-          post({ type: 'error', message: `vision pipeline failed: ${String(e2?.message ?? e2).slice(0, 120)}` })
-          teardown()
-          try { pipeline.stop() } catch { /* already broken */ }
-          return // stop the callback chain — camera is OFF, error is surfaced
-        } finally {
-          rebuilding = false
-        }
-      }
-    }
-    if (pipeline?.running && !video.ended) vfcId = video.requestVideoFrameCallback(tick)
-  }
-  vfcId = video.requestVideoFrameCallback(tick)
+  return video
 }
 
+// R234: camera/DOM cleanup only — the loop cancel + synthetic timer are owned
+// by the messenger (its fullTeardown calls this after its own bits).
 function teardown() {
-  if (vfcId != null && video?.cancelVideoFrameCallback) video.cancelVideoFrameCallback(vfcId)
-  vfcId = null
-  if (syntheticTimer) { clearInterval(syntheticTimer); syntheticTimer = null }
   for (const t of stream?.getTracks() ?? []) t.stop()
   stream = null
   video?.remove()
   video = null
 }
 
-channel.onmessage = async (ev) => {
-  const msg = ev.data
-  if (msg.type === 'init') {
-    if (pipeline) {
-      // R228: already running — the second consumer's init MUST get a ready
-      // (swallowing it left enable() awaiting a reply that never came).
-      post({ type: 'ready', delegate: pipeline.delegate })
-      return
-    }
-    try {
-      lastCfg = msg.cfg
-      pipeline = new VisionPipeline({
-        loadLandmarkers,
-        onEvents: (events) => post({ type: 'events', events }),
-        onSnapshot: (snapshot) => emit(null, snapshot),
-        onStatus: (s) => post({ type: 'status', s }),
-        onProfileSave: (profile) => post({ type: 'profile-save', profile }),
-      })
-      // R227.2: init must never hang forever — wasm/model load or camera
-      // negotiation that stalls gets cut at 20s with a surfaced error.
-      await Promise.race([
-        pipeline.init(msg.cfg),
-        new Promise((_r, rej) => setTimeout(() => rej(new Error('vision init timeout (20s)')), 20000)),
-      ])
-      pipeline.maxFps = msg.cfg.maxFps ?? 0
-      if (msg.cfg.mode === 'synthetic') {
-        await pipeline.startSynthetic()
-        syntheticTimer = setInterval(() => {
-          const r = pipeline.processFrame(performance.now(), {})
-          emit(r.events, r.snapshot)
-        }, 33)
-      } else {
-        await startCamera(msg.cfg.camera)
-      }
-      post({ type: 'ready', delegate: pipeline.delegate })
-    } catch (err) {
-      teardown()
-      try { pipeline?.stop() } catch { /* init half-finished — session may be null */ }
-      pipeline = null
-      post({ type: 'error', message: err instanceof Error ? err.message : String(err) })
-    }
-    return
-  }
-  if (!pipeline) return
-  try {
-    switch (msg.type) {
-      case 'settings': pipeline.applySettings(msg.patch); break
-      case 'pause': pipeline.setPaused(msg.p); break
-      case 'recalibrate': pipeline.recalibrate(); break
-      case 'forceReady': pipeline.forceReady(msg.profile); break
-      case 'mirror': pipeline.setMirror(msg.m); break
-      case 'primaryHand': pipeline.setPrimaryHand(msg.side); break
-      case 'textmode': pipeline.setTextMode(msg.on); break
-      case 'backspace': pipeline.chordBackspace(); break
-      case 'capture':
-        // R141-B: precision mode switch — restart the stream with new constraints
-        if (!msg.synthetic && stream) {
-          teardown()
-          await startCamera(msg.camera)
-        }
-        break
-      case 'acquire':
-        sessions.acquire(msg.consumerId)
-        break
-      case 'release':
-        // R228: refcounted shutdown — only the LAST consumer out closes the
-        // camera (one view leaving must never kill another live consumer).
-        sessions.release(msg.consumerId)
-        if (sessions.empty()) {
-          teardown()
-          try { pipeline.stop() } catch { /* already broken */ }
-          pipeline = null
-        }
-        break
-      case 'stop':
-        // force-stop: clears the registry so stray consumers can't resurrect
-        teardown()
-        try { pipeline.stop() } catch { /* session may be gone — teardown already ran */ }
-        pipeline = null
-        break
-      default: break
-    }
-  } catch (err) {
-    // R227.2: a bad message (or a half-dead pipeline) must not take the host
-    // down silently — surface it so the client can show/recover.
-    post({ type: 'error', message: `vision ${msg.type} failed: ${String(err?.message ?? err).slice(0, 120)}` })
-  }
-}
+const messenger = createHostMessenger({
+  post,
+  pipelineApi: { create: (opts) => new VisionPipeline(opts) },
+  loadLandmarkers,
+  startCamera,
+  teardown,
+})
+
+channel.onmessage = (ev) => { messenger.handle(ev.data) }
