@@ -3981,7 +3981,10 @@
 
 
 
-- **R233 `fix` — 快照门禁 workspace 活动区遮罩（Wave1-T2；REVIEW-VISION 已知问题§8 条目；状态 ⏳）**：workspace 视图 run-to-run 自差 1.7%（R227 期实证，stash 对照排除代码因素）——右侧 `.panel.map-panel` 拓扑/视频墙等活动元素未遮罩。修：`scripts/ui-snapshot.mjs` 增 `VOLATILE_REGION_SELECTORS`。验收：连续三跑 workspace ≤0.1%、其余 8 视图 0.0000%。
+- **R233 `fix` — 快照门禁 workspace 活动区遮罩（Wave1-T2；REVIEW-VISION 已知问题§8 条目；状态 ✅ 2026-10-09 闭环）**：workspace 视图 run-to-run 自差 1.7%（R227 期实证，stash 对照排除代码因素）——右侧 `.panel.map-panel` 拓扑/视频墙等活动元素未遮罩。修：`scripts/ui-snapshot.mjs` 增 `VOLATILE_REGION_SELECTORS`。验收：连续三跑 workspace ≤0.1%、其余 8 视图 0.0000%。
+  - **R233.1 实测归因（6×6 网格定位）**：修前 workspace 对基线 1.4563%（两次同值=确定性差，R224 期基线已落后 10 个 src 提交，其中 1.79%>40 阈值热区=右列 rows1-4（map-panel）+底部 rows（sampling-panel），其余像素 run-to-run 0.0000%）+ 间歇尖峰 2.3188%：**异步拓扑枚举竞态**——`topology.displays.length>1` 达成时 linked-display-row+VideoWallEditor 挂载，map-panel h 441↔501、sampling-panel 整体下移 61px，单侧各自遮罩必留未遮边。顶栏 displays 计数文本（1↔2）同一竞态。
+  - **R233.2 修法**：`VOLATILE_REGION_SELECTORS=['.panel.map-panel','.panel.sampling-panel']`（类名 grep 证实仅 WorkspaceView 使用，其余 8 视图天然零影响）+ `VOLATILE_TEXT_SELECTORS` 增 `.workspace-header .metric:first-child`；boxes.json schema 拆 `{canvases,volatile}`——canvas 仍双侧各自 rect（挪位仍要门禁），volatile 改**双侧 UNION 遮罩**（新增 `unionRects`：相交 rect 聚类成覆盖盒，面板 resize/位移不再留边）；基线按 T1 规则重立于 HEAD 8b080c8（9 视图 png+boxes 全量重立）。
+  - **R233.3 证据**：修后 `yarn ui:snapshot` **连续 6 跑 9 视图全部 0.0000% GATE PASS**（验收三跑×2 余量）；另以真实 1-display(441)/2-display(501) 两态捕获离线复演 union 路径：遮罩后 diff **0px=0.0000% PASS**。附注：diagnostics 曾现一次性 0.0659%（限内未复发；进程 CPU 表/帧时延类活文本，非 R233 范围，留观察）。
 - **R234 `refactor` — 宿主编排抽 hostMessenger+单测+覆盖率纳入（Wave1-T3；06-R1/R8；状态 ⏳）**：`visionHostMain.js` ~200 行 0 测试胶水。抽 `vision/hostMessenger.js` 纯函数（createHostMessenger）+ `tests/vision/hostSession.test.mjs`（重复 init ready/最后离开者关/switch 异常不断流）+ vitest coverage include vision 层并定阈值。验收：全量绿+smoke:app 0 FAIL。
 - **R235 `fix` — 引擎 i18n 化（Wave1-T4；06-R5/07-X4；状态 ⏳）**：session.js 360 汉字+pipeline 'loading models…' 直出（en 用户见中文）。方案=06-R5 messages catalog 注入（默认中文表保持兼容）+ i18n `games.vision.engine.*` 22 条 + hook 映射。验收：en 态全 UI 无中文直出；zh 值零变化兼容锁。
 - **R236 `fix` — 商业合规包（Wave1-T5；05-TB4/TB5/TC5；状态 ⏳）**：①origin 门禁（default session 权限白名单加 scheme∈{file,media} 判定）；②ai8 `persist:ai8` 分区全拒 handler；③PRIVACY.md+设置页声明；④RELEASE-SIGNING.md 评估文档。验收：门禁单测+ai8 走查拒摄像头。
