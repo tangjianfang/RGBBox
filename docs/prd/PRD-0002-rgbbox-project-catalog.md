@@ -3981,6 +3981,9 @@
 
 
 
+
+- **R237 `feat` — 任务族 F2：合成变体识别边界门禁（TASK-UNIVERSE P0 族，972 格；08-T5；状态 ✅ 当日闭环）**：6 手势 × 3 尺度 × 3 噪声 × 3 丢检 × 2 遮挡 × 3 速度的变体矩阵，每格生成合成 landmark 流驱动真实引擎，断言对角识别 ≥90%（低光组合 ≥80%）且零跨正交误触。交付：`tests/vision/variantFactory.mjs`（变体变换器）+ `tests/vision/confusion.test.mjs`（抽样格入 `yarn test` 秒级门禁 + FULL_CONFUSION=1 全量）+ `scripts/vision-confusion.mjs`（`yarn vision:confusion` 全 972 格矩阵表 + docs/QUALITY-MATRIX.md 台账）。验收：抽样门禁绿、全量跑通输出矩阵、首版阈值记录。**证据**：抽样 162 格（默认 `yarn test` 内 ~0.2s）与全量 972 格（`yarn vision:confusion`，FULL_CONFUSION=1）**双绿**——对角 100%≥90、低光 ≥80、方向正交误触 0；全量 **163 files / 1534 passed / 0 失败**；台账 `docs/QUALITY-MATRIX.md`。**实施发现（写进变体语义，F1 真录像对照用）**：①partial 遮挡须「向 PIP 保留 35% 位移」而非钉死（钉死=捏距信号全灭，全量首跑 pinch 79/162 挂）；②和弦释放必须握拳（张掌=5 指伸展不满足「向更少指释放」不提交）；③makeHand 拇指尖天然在捏合位（读作 folded），拇指主导和弦需显式伸展覆盖；④副手捏合事件 kind='offhand'。
+
 - **R233 `fix` — 快照门禁 workspace 活动区遮罩（Wave1-T2；REVIEW-VISION 已知问题§8 条目；状态 ⏳）**：workspace 视图 run-to-run 自差 1.7%（R227 期实证，stash 对照排除代码因素）——右侧 `.panel.map-panel` 拓扑/视频墙等活动元素未遮罩。修：`scripts/ui-snapshot.mjs` 增 `VOLATILE_REGION_SELECTORS`。验收：连续三跑 workspace ≤0.1%、其余 8 视图 0.0000%。
 - **R234 `refactor` — 宿主编排抽 hostMessenger+单测+覆盖率纳入（Wave1-T3；06-R1/R8；状态 ⏳）**：`visionHostMain.js` ~200 行 0 测试胶水。抽 `vision/hostMessenger.js` 纯函数（createHostMessenger）+ `tests/vision/hostSession.test.mjs`（重复 init ready/最后离开者关/switch 异常不断流）+ vitest coverage include vision 层并定阈值。验收：全量绿+smoke:app 0 FAIL。
 - **R235 `fix` — 引擎 i18n 化（Wave1-T4；06-R5/07-X4；状态 ⏳）**：session.js 360 汉字+pipeline 'loading models…' 直出（en 用户见中文）。方案=06-R5 messages catalog 注入（默认中文表保持兼容）+ i18n `games.vision.engine.*` 22 条 + hook 映射。验收：en 态全 UI 无中文直出；zh 值零变化兼容锁。
