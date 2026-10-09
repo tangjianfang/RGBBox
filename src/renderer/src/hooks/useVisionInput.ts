@@ -40,6 +40,15 @@ function readSensitivity(): VisionSensitivity {
 
 const SENSITIVITY_CONFIRM_MS: Record<VisionSensitivity, number> = { standard: 90, fast: 45, sport: 0 }
 
+// R244: host crash/hang self-healing. The hidden host window beats every 5s
+// (hostMessenger); main closes it on render-process-gone, and a HUNG renderer
+// posts nothing at all — either way the beats stop. The watchdog below checks
+// every 5s and treats >15s of silence as a dead host: ONE silent restart per
+// session (anti-storm), a second silence goes to the R239 error card.
+const HEARTBEAT_CHECK_MS = 5000
+const HEARTBEAT_TIMEOUT_MS = 15000
+const HOST_UNRESPONSIVE = '宿主无响应'
+
 // ── R235: engine message localization ──────────────────────────────────────
 // The session/pipeline render user-facing text from a messages catalog. This
 // hook injects the identity table (key→key) so the engine emits stable CODES
@@ -172,6 +181,12 @@ export function useVisionInput(): VisionInputHandle {
   const consumerIdRef = useRef<string>('')
   if (!consumerIdRef.current) consumerIdRef.current = nextConsumerId()
   const pausedRef = useRef(false)
+  // R244: mirror of `enabled` for the timer callback (state would be stale in
+  // the interval closure), the last-beat timestamp, and the one-shot restart
+  // budget (per session — one silent restart, never a storm).
+  const enabledRef = useRef(false)
+  const lastHeartbeatRef = useRef(0)
+  const restartsRef = useRef(0)
   const [enabled, setEnabled] = useState(false)
   const [label, setLabel] = useState('')
   // R235: structured engine status code (published INSTANTLY with the state
@@ -330,7 +345,12 @@ export function useVisionInput(): VisionInputHandle {
         const msg = ev.data as { type: string; events?: VisionEvent[]; snapshot?: Partial<VisionFrame>; s?: string; profile?: unknown; message?: string }
         if (msg.type === 'ready') {
           settled = true
+          // R244: the host just proved it is alive — arm the watchdog window
+          lastHeartbeatRef.current = Date.now()
           resolve()
+        } else if (msg.type === 'heartbeat') {
+          // R244: liveness beat (5s) — refresh the watchdog window
+          lastHeartbeatRef.current = Date.now()
         } else if (msg.type === 'error') {
           // R230: record the REAL reason — label too, so every existing status
           // chip shows it instead of the stale "models ready" nonsense.
@@ -348,6 +368,7 @@ export function useVisionInput(): VisionInputHandle {
             channel.close()
             channelRef.current = null
             setEnabled(false)
+            enabledRef.current = false // R244
           }
           reject(new Error(reason))
           return
@@ -373,6 +394,7 @@ export function useVisionInput(): VisionInputHandle {
     })
     channelRef.current?.postMessage({ type: 'acquire', consumerId: consumerIdRef.current })
     setEnabled(true)
+    enabledRef.current = true // R244
     })()
     // R227.4: failure must roll the half-built state back — a leaked
     // channelRef turned every later enable() into a silent no-op (the
@@ -412,6 +434,7 @@ export function useVisionInput(): VisionInputHandle {
     queueRef.current.length = 0
     frameRef.current = null
     setEnabled(false)
+    enabledRef.current = false // R244
     setState('idle')
     setStepId(null)
     setHandSeen(false)
@@ -484,6 +507,39 @@ export function useVisionInput(): VisionInputHandle {
 
   // leaving the games view unmounts the hook → stop the camera, release keys
   useEffect(() => disable, [disable])
+
+  // R244: host liveness watchdog. `enabled` + >15s since the last beat = the
+  // hidden host renderer died or hung (a hung renderer posts nothing; a
+  // crashed one gets its window closed by main — either way the beats stop).
+  // Recovery is ONE silent disable→enable cycle per session (release
+  // semantics clean the consumer refcount, then a fresh visionHostOpen
+  // rebuilds the window); a second silence surfaces the R239 timeout error
+  // card instead of hammering a host that keeps dying.
+  const enableRef = useRef(enable)
+  enableRef.current = enable
+  const disableRef = useRef(disable)
+  disableRef.current = disable
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!enabledRef.current) return
+      if (Date.now() - lastHeartbeatRef.current <= HEARTBEAT_TIMEOUT_MS) return
+      if (restartsRef.current >= 1) {
+        // second silence — give up quietly into the error card (enabled=false
+        // also stops the watchdog from re-firing)
+        disableRef.current()
+        setError(HOST_UNRESPONSIVE)
+        setErrorKind('timeout')
+        return
+      }
+      restartsRef.current = 1
+      lastHeartbeatRef.current = Date.now() // the rebuilt session gets a fresh window
+      disableRef.current()
+      // start()'s rollback already surfaces a failed rebuild via setError —
+      // swallow only the rejection here so the timer never throws
+      void enableRef.current().catch(() => {})
+    }, HEARTBEAT_CHECK_MS)
+    return () => clearInterval(id)
+  }, [])
 
   return {
     enable, enableSynthetic, disable, recalibrate, setPaused, resumeActive, skipCalibration, applySettings,

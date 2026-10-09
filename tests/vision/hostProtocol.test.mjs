@@ -9,6 +9,12 @@ test('protocol tables are frozen and complete (the wire contract)', () => {
   assert.equal(HOST_MSG.ACQUIRE, 'acquire')
   assert.equal(HOST_MSG.RELEASE, 'release')
   assert.equal(HOST_REPLY.READY, 'ready')
+  // R244: the host liveness signal (5s interval — the client watchdog's input)
+  assert.equal(HOST_REPLY.HEARTBEAT, 'heartbeat')
+  // R244: 表+单测计数同步 — a new wire type must be a conscious act: update
+  // these counts WITH the PRD note, not silent vocabulary creep.
+  assert.equal(Object.keys(HOST_MSG).length, 13)
+  assert.equal(Object.keys(HOST_REPLY).length, 8)
   // sanity: the two tables stay disjoint
   const hostMsgs = new Set(Object.values(HOST_MSG))
   for (const v of Object.values(HOST_REPLY)) assert.ok(!hostMsgs.has(v), `${v} must not appear in both tables`)

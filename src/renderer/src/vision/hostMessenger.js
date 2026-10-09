@@ -13,6 +13,12 @@
 //     rebuild the landmarkers on CPU (R227.6), then shut down CLEAN — camera
 //     off, error surfaced, never a silent zombie keeping the camera light on
 //   - a throwing pipeline method surfaces an error reply, never kills the host
+//   - R244: while a session is live the host BEATS every 5s ({type:'heartbeat'}).
+//     A dead/hung host renderer cannot say goodbye — the client's watchdog
+//     reads the missing beats (main closes the window on render-process-gone)
+//     and self-heals. The interval starts on a successful init (and is revived
+//     by a capture-mode restart, which rebuilds the stream) and dies with the
+//     session in fullTeardown.
 // The host shell keeps only the DOM/electron glue (BroadcastChannel, the
 // video element + getUserMedia, landmarker loading) and forwards every
 // message to messenger.handle(msg).
@@ -53,6 +59,9 @@ export function createHostMessenger(deps) {
   let video = null
   let vfcId = null
   let syntheticTimer = null
+  // R244: the 5s liveness beacon (see header) — idempotent start, cleared in
+  // fullTeardown so it always dies with the session.
+  let heartbeatTimer = null
   // R228: the camera is refcounted — multiple consumers (games hook /
   // VisionAssistant / AI Lab bench) share this single host; the last one out
   // closes it. 'stop' remains a force-stop (clears the registry).
@@ -72,8 +81,16 @@ export function createHostMessenger(deps) {
     if (vfcId != null && video?.cancelVideoFrameCallback) video.cancelVideoFrameCallback(vfcId)
     vfcId = null
     if (syntheticTimer) { clearTimer(syntheticTimer); syntheticTimer = null }
+    if (heartbeatTimer) { clearTimer(heartbeatTimer); heartbeatTimer = null } // R244
     video = null
     teardown()
+  }
+
+  /** R244: start the liveness beacon if it is not already beating. */
+  function startHeartbeat() {
+    if (heartbeatTimer == null) {
+      heartbeatTimer = scheduleInterval(() => post({ type: 'heartbeat' }), 5000)
+    }
   }
 
   async function openCamera(camera) {
@@ -81,6 +98,9 @@ export function createHostMessenger(deps) {
     cameraMode = mode
     video = await startCamera(mode)
     runCameraLoop()
+    // R244: a capture restart goes through fullTeardown (beacon cleared) —
+    // revive it here so a LIVE session never goes silent on a mode switch.
+    startHeartbeat()
   }
 
   // R227.2: one thrown exception inside tick must NOT kill the rVFC chain.
@@ -170,6 +190,9 @@ export function createHostMessenger(deps) {
         await openCamera(msg.cfg.camera)
       }
       post({ type: 'ready', delegate: pipeline.delegate })
+      // R244: the session is live — start beating (camera sessions already
+      // started it in openCamera; synthetic sessions start it here).
+      startHeartbeat()
     } catch (err) {
       fullTeardown()
       try { pipeline?.stop() } catch { /* init half-finished — session may be null */ }

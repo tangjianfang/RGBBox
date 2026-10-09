@@ -1134,6 +1134,17 @@ function registerIpc(): void {
       },
     })
     visionHostWindow.on('closed', () => { visionHostWindow = null })
+    // R244: the host renderer died (GPU crash / OOM / launch failure) — close
+    // the window so the next visionHostOpen builds a fresh one. The dead
+    // renderer cannot say goodbye: clients sense it via the heartbeat timeout
+    // (useVisionInput's watchdog auto-recovers once, then surfaces the card).
+    {
+      const hostWin = visionHostWindow
+      hostWin.webContents.on('render-process-gone', (_e, details) => {
+        log.warn('VisionHost', `renderer gone (${details.reason}) — closing window; clients self-heal via heartbeat timeout`)
+        if (!hostWin.isDestroyed()) hostWin.close()
+      })
+    }
     if (isDevelopment) {
       void visionHostWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}/visionHost.html`)
     } else {
