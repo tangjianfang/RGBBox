@@ -77,6 +77,8 @@ export interface VisionInputHandle {
    * VisionPad overlay reads this from its own rAF loop with zero re-renders.
    */
   frameRef: { readonly current: Partial<VisionFrame> | null }
+  /** R230: last enable/init failure message; null while healthy; cleared on retry */
+  error: string | null
   /** normalized held keys ('arrowleft' … 'space'), same names as MiniGamesView.normalizeKey */
   heldRef: { readonly current: Set<string> }
   /** discrete commands ('arrowleft'|'arrowright'|'arrowup'|'space') drained per frame by pollVision */
@@ -108,6 +110,10 @@ export function useVisionInput(): VisionInputHandle {
   const pausedRef = useRef(false)
   const [enabled, setEnabled] = useState(false)
   const [label, setLabel] = useState('')
+  // R230: the REAL last error (a failed enable used to leave `label` holding
+  // a stale status like "models ready", which status chips rendered as the
+  // nonsense "启动失败: models ready" — REVIEW-VISION 07-X1)
+  const [error, setError] = useState<string | null>(null)
   const [state, setState] = useState<VisionState>('idle')
   const [stepId, setStepId] = useState<'center' | 'reach' | 'pinch' | null>(null)
   const [handSeen, setHandSeen] = useState(false)
@@ -133,7 +139,14 @@ export function useVisionInput(): VisionInputHandle {
       return
     }
     if (!event.key) return
-    const norm = event.key === 'Space' ? 'space' : event.key.toLowerCase()
+    // R230: the engines emit KeyboardEvent-CODE names for face modifiers and
+    // the off-hand pinch ('KeyE'/'ShiftLeft'/'KeyF'), while the consumers'
+    // passthrough table expects 'e'/'shift'/'f' — the mismatch made R135's
+    // face-modifier feature dead on arrival (REVIEW-VISION 08, keye≠e).
+    const norm = event.key === 'Space' ? 'space'
+      : /^Key[A-Z]$/.test(event.key) ? event.key.slice(3).toLowerCase()
+      : /^(Shift|Control|Alt|Meta)(Left|Right)?$/.test(event.key) ? event.key.replace(/(Left|Right)$/, '').toLowerCase()
+      : event.key.toLowerCase()
     if (event.down) {
       heldRef.current.add(norm)
       queueRef.current.push(norm)
@@ -170,6 +183,7 @@ export function useVisionInput(): VisionInputHandle {
 
   const start = useCallback(async (mode: 'camera' | 'synthetic') => {
     if (channelRef.current) return
+    setError(null) // R230: a new attempt clears the previous failure
     // R227.4: rapid double-toggle must share ONE startup — two concurrent
     // starts each created a BroadcastChannel (double-queued commands, leaked
     // channel) and the loser's error left the winner's channel behind.
@@ -226,7 +240,12 @@ export function useVisionInput(): VisionInputHandle {
         if (msg.type === 'ready') {
           resolve()
         } else if (msg.type === 'error') {
-          reject(new Error(msg.message ?? 'vision host init failed'))
+          // R230: record the REAL reason — label too, so every existing status
+          // chip shows it instead of the stale "models ready" nonsense.
+          const reason = msg.message ?? 'vision host init failed'
+          setError(reason)
+          setLabel(reason)
+          reject(new Error(reason))
           return
         } else if (msg.type === 'host-hello') {
           // the hello proves the host just came up — an init posted before
@@ -286,6 +305,7 @@ export function useVisionInput(): VisionInputHandle {
     setStepId(null)
     setHandSeen(false)
     setLabel('')
+    setError(null)
   }, [])
 
   const recalibrate = useCallback(() => channelRef.current?.postMessage({ type: 'recalibrate' }), [])
@@ -355,6 +375,6 @@ export function useVisionInput(): VisionInputHandle {
   return {
     enable, enableSynthetic, disable, recalibrate, setPaused, resumeActive, skipCalibration, applySettings,
     setMirror, mirror, setPrimaryHand, primaryHand, setChordTextMode, chordBackspace, chordBuffer, setCapturePrecision, setSensitivity, sensitivity,
-    enabled, label, state, stepId, handSeen, frameRef, heldRef, queueRef,
+    enabled, label, error, state, stepId, handSeen, frameRef, heldRef, queueRef,
   }
 }

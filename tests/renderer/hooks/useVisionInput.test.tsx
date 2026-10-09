@@ -193,6 +193,10 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     })
     expect((caught as Error).message).toBe('wasm boom')
     expect(result.current.enabled).toBe(false)
+    // R230: the REAL error is visible via both surfaces — no stale
+    // "models ready" fake error on the status chips
+    expect(result.current.error).toBe('wasm boom')
+    expect(result.current.label).toBe('wasm boom')
     // R227.4: the failed attempt must roll the half-built state back — a
     // leaked channelRef used to turn every later enable() into a silent
     // no-op (the dead-button bug). Retry has to actually retry.
@@ -253,6 +257,20 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
   it('frameRef snapshot type surface (compile-time contract)', () => {
     const frame: Partial<VisionFrame> = { state: 'active', stepProgress: 0.5 }
     expect(frame.state).toBe('active')
+  })
+
+  it('R230: code-style key names normalize to the passthrough vocabulary (KeyE→e, ShiftLeft→shift, KeyF→f)', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(() => result.current.enableSynthetic())
+    act(() => {
+      host.send({ type: 'events', events: [
+        { kind: 'direction', key: 'KeyE', down: true },
+        { kind: 'direction', key: 'ShiftLeft', down: true },
+        { kind: 'pinch', key: 'KeyF', down: true },
+      ] })
+    })
+    expect([...result.current.heldRef.current].sort()).toEqual(['e', 'f', 'shift'])
+    await act(() => result.current.disable())
   })
 
   it('setCapturePrecision posts the capture-mode switch (R141-B)', async () => {

@@ -224,6 +224,11 @@ export class VisionPipeline {
       fps: 0, // camera fps is measured on the main thread (rVFC ticks)
       inferFps: this.inferFpsCounter.fps,
       delegate: this.delegate ?? '-',
+      // R230: acquire telemetry FINALLY flows — the host writes acquireStats
+      // every tick (frame age percentiles), but stats() never surfaced it, so
+      // the pad's third row and envCoach's light advice read empty forever
+      // (REVIEW-VISION 06-③ "telemetry dead-ends in the host").
+      acquire: this.acquireStats ?? null,
       ...extra,
     };
   }

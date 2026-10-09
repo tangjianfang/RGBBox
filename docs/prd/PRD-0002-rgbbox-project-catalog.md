@@ -3978,13 +3978,22 @@
   - **R227.7 受影响文件**：`src/renderer/src/vision/session.js`、`src/renderer/src/visionHostMain.js`、`src/renderer/src/vision/pipeline.js`、`src/renderer/src/hooks/useVisionInput.ts`、`src/renderer/src/components/vision/VisionAssistant.tsx`、`src/renderer/src/main.tsx`（或 App.tsx 挂 ErrorBoundary）+ 新 `components/ErrorBoundary.tsx`、tests（session 回归/useVisionInput 竞态/ErrorBoundary 渲染）。
 
 
+
+- **R230 `fix` — 体感失败路径 UX + 遥测接通（2026-10-09 批 4/5；REVIEW-VISION 07-X1 假错误/05-TB1 吞错/06-③ 遥测断链/08 表情键死亡键名；状态 🔄）**：
+  - **R230.1 假错误修复（X-1 的「体感启动失败: models ready」）**：错误路径 label 残留旧状态文案——host `error` 消息到达时同步 `setLabel(真实错误)` 且 hook 暴露 `error` state；enable 重试即清除。
+  - **R230.2 表情修饰键键名修复（08 实锤）**：`useVisionInput` 归一化补 code 风格映射——`KeyE→e`、`ShiftLeft→shift`、`KeyF→f`（R135 宣称的功能自本条起真正可达；单测锁）。
+  - **R230.3 遥测接通（06-③）**：`pipeline.stats()` 并入 `acquireStats`（采集帧龄/帧率），随 snapshot 流至消费端——VisionPad/envCoach 停止读空。
+  - **R230.4 死代码删除**：`vision/vision_input.js`（289 行孤儿双实现，仅 .d.ts 类型被引用——R226 评审实锤）删除，`.d.ts` 类型桥保留。
+  - **R230.5 受影响文件**：`hooks/useVisionInput.ts`、`vision/pipeline.js`、删 `vision/vision_input.js`、tests（错误可见性/键名归一化/acquire 透传）。
+  - **R230.7 状态**：✅（2026-10-09 当日闭环，批 4/5）。**交付**：①hook 增 `error` state + host error 消息同步写 `label`（修 X-1「启动失败: models ready」假错误——真错误直达全部既有状态芯片），enable 重试/disable 清除；②键名归一化补 code 风格映射（`Key[A-Z]→字母`、`Shift/Control/Alt/Meta±Left/Right→裸修饰键`）——R135 表情修饰键（KeyE/ShiftLeft）与副手捏合（KeyF）自本条起真正可达透传表；③`pipeline.stats()` 并入 `acquire`（宿主每 tick 写入的采集帧龄分位终于流到消费端，pad 第三行/envCoach 不再读空）；④删除 `vision/vision_input.js` 289 行死代码（全仓残留引用仅 `import type` 走保留的 .d.ts + 1 处注释）。**证据**：typecheck 双绿；全量 **162 files / 1532 passed / 0 失败**（+3：错误双面可见 / KeyE+ShiftLeft+KeyF 归一化进 heldRef / acquire 透传 null→写入值）。
+
 - **R229 `feat` — 手势控灯 v1「灯效环」（2026-10-09 批 3/5；REVIEW-VISION 08 决定性发现「控一切唯独不控灯」的价值反转；状态 🔄）**：
   - **R229.1 和弦词表扩展（06 评的 🟢 一行扩展点）**：`fingerChords.js` CHORD_VOCAB 增 `'thumb+index+middle': 'light'`——该指形与既有 7 命令及全部 15 文字符零冲突（字符层只用 1-2 指），非中立形（3 指 <4）。
   - **R229.2 灯效环组件**：新 `components/vision/VisionLightControl.tsx`——订阅 `vision-input` 总线（R228.5 结论：现有总线即手势原语层）：chord `light` 呼出/关闭 8 槽径向环（curatedKinds 前 8，含收藏/最近——「常亮的伸手即达」）；环开时 8 向选择高亮、捏合(Space)确认应用、`cancel`/`back`/Esc 关闭。挂载于 VisionAssistant 内（assistantOn && 非 games 时激活），灯效环开启期间抑制光标点击（与视图环同规则）。
   - **R229.3 应用路径**：App 层回调 `selectEffect(kind)` + applied toast，**不切换视图**（人在任何视图挥手换灯效，灯效应用不抢屏——区别于效果库点击的 workspace 跳转）。
   - **R229.4 UI/i18n**：复用 `.vision-radial` 样式 + `light` 修饰类（琥珀色语义区分视图环）；i18n zh/en 增 `games.vision.lightRing/lightHint/lightApply`。
   - **R229.5 受影响文件**：`vision/fingerChords.js`、`components/vision/VisionLightControl.tsx`（新）、`components/vision/VisionAssistant.tsx`（挂载+点击抑制）、`App.tsx`（回调）、`styles/app.css`、`i18n/index.tsx`、tests（chords 词表 + LightControl 交互）。
-  - **R229.7 状态**：✅（2026-10-09 当日闭环，批 3/5）。**交付**：①`fingerChords.js` CHORD_VOCAB 增 `thumb+index+middle: 'light'`（与 7 命令+15 字符零冲突）；②新 `VisionLightControl.tsx`（订阅 vision-input 总线：chord light 呼出/关闭、8 向选择、捏合应用+✨反馈、cancel/back/Esc 关闭、环外事件忽略、失活自动收起）；挂载于 VisionAssistant 徽标分支（环开时与视图环同规则抑制光标点击），琥珀色 `.vision-radial.light` 修饰类区分视图环；③App 回调 `selectEffect+showAppliedToast` **不切视图**（灯效应用不抢屏）；i18n zh/en ×3 键。**证据**：typecheck 双绿；全量 **162 files / 1530 passed / 0 失败**（+7：LightControl 6 交互用例 + chords 词表/字符不产回归锁，既有词表循环测试自动覆盖新和弦）；**真机全链路实测**（本机 Integrated Camera）：pill 开启→摄像头真启→徽标挂载→chord light 开环→8 槽 curated 效果中文名（极光/火焰/霓虹脉冲/星光/星云/彩虹/呼吸/波浪）→dir-up 选中槽位 2→截图入库 `docs/ui-review/r229/light-ring.png`（AI 目视复核进行中，结果补充记录）。
+  - **R229.7 状态**：✅（2026-10-09 当日闭环，批 3/5）。**交付**：①`fingerChords.js` CHORD_VOCAB 增 `thumb+index+middle: 'light'`（与 7 命令+15 字符零冲突）；②新 `VisionLightControl.tsx`（订阅 vision-input 总线：chord light 呼出/关闭、8 向选择、捏合应用+✨反馈、cancel/back/Esc 关闭、环外事件忽略、失活自动收起）；挂载于 VisionAssistant 徽标分支（环开时与视图环同规则抑制光标点击），琥珀色 `.vision-radial.light` 修饰类区分视图环；③App 回调 `selectEffect+showAppliedToast` **不切视图**（灯效应用不抢屏）；i18n zh/en ×3 键。**证据**：typecheck 双绿；全量 **162 files / 1530 passed / 0 失败**（+7：LightControl 6 交互用例 + chords 词表/字符不产回归锁，既有词表循环测试自动覆盖新和弦）；**真机全链路实测**（本机 Integrated Camera）：pill 开启→摄像头真启→徽标挂载→chord light 开环→8 槽 curated 效果中文名（极光/火焰/霓虹脉冲/星光/星云/彩虹/呼吸/波浪）→dir-up 选中槽位 2→截图入库 `docs/ui-review/r229/light-ring.png`；**AI 目视复核通过**：8 槽齐全文字无裁切、琥珀选中态（霓虹脉冲）与视图环双态独立可辨、与右下胶囊/光标零重叠遮挡、z-order 正常；两条非缺陷 polish 建议记档备用（环体可选 scrim 压暗层聚焦、槽位可加环形轮廓线——后续视觉打磨轮再议）。
 
 - **R228 `fix` — 视觉宿主会话管理器（引用计数）+ 协议契约化（2026-10-09 批 2/5；承载 REVIEW-VISION 03-B2/3/7、04-V5、05-TB3、06-④ 四家共识缺陷 + 06-R1/R3；状态 🔄）**：
   - **R228.1 缺陷回顾（已代码级确认）**：宿主单例对多消费者（games hook / VisionAssistant / AI Lab 体检台）无所有权模型——①任一消费者 disable 发 `stop` 连坐杀掉全部会话；②第二消费者 `init` 被宿主 `if (pipeline) return` 吞掉=enable 永挂；③`stop` 后 pipeline 置 null 但窗口存活，语义混乱。
