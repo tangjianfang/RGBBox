@@ -5,6 +5,7 @@ import { PRESET_SNIP_HOTKEYS } from '../../../shared/snipHotkeys'
 import { UI_FONT_SCALE_TIERS } from '../domain/uiFontScale'
 import { UI_THEME_OPTIONS } from '../domain/uiTheme'
 import { clearAllGameData, type GameId } from '../domain/gamesTelemetry'
+import { resetOnboarding } from '../vision/onboarding'
 
 export interface SettingsViewProps {
   // Runtime
@@ -33,6 +34,7 @@ export interface SettingsViewProps {
 export function SettingsView(props: SettingsViewProps) {
   const { t } = useI18n()
   const [gamesClearedAt, setGamesClearedAt] = useState<number | null>(null)
+  const [visionReplayAt, setVisionReplayAt] = useState<number | null>(null)
   return (
     <div className="settings-view">
       {/* R189 Q-5: topbar already shows '设置' — the duplicate in-view header
@@ -167,6 +169,19 @@ export function SettingsView(props: SettingsViewProps) {
             >{t('settings.games.clearBtn')}</button>
           </div>
           {gamesClearedAt !== null && <p className="ai-hint-line" data-field="games-cleared">{t('settings.games.cleared')}</p>}
+          {/* R246: 体感向导重看入口 — clears the done-flag; the wizard re-opens
+              the next time the gesture assistant is enabled (a mounted one
+              re-opens immediately via the reset event). */}
+          <div className="status-panel" title={t('settings.vision.replayHint')}>
+            <span>{t('settings.vision.replayLabel')}</span>
+            <button
+              type="button"
+              className="video-btn"
+              data-setting="vision-replay-onboarding"
+              onClick={() => { resetOnboarding(); setVisionReplayAt(Date.now()) }}
+            >{t('settings.vision.replayBtn')}</button>
+          </div>
+          {visionReplayAt !== null && <p className="ai-hint-line" data-field="vision-replay">{t('settings.vision.replayDone')}</p>}
         </section>
       </div>
     </div>

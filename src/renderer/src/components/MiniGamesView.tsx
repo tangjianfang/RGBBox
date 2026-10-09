@@ -12,6 +12,7 @@ import { AvatarPicker } from './games/AvatarPicker'
 import { VisionBanner } from './vision/VisionBanner'
 import { VisionCursor } from './vision/VisionCursor'
 import { createCursorState } from '../vision/cursor'
+import { resetOnboarding } from '../vision/onboarding'
 import { VisionPad } from './vision/VisionPad'
 import {
   HEIGHT,
@@ -540,6 +541,13 @@ export function MiniGamesView(): JSX.Element {
   // disables the input source — otherwise the camera just silently goes away.
   const [visionExitNotice, setVisionExitNotice] = useState(false)
   const visionWasEnabledRef = useRef(false)
+  // R246: transient note after the hub's「体感向导」entry re-arms the wizard
+  const [hubVisionResetAt, setHubVisionResetAt] = useState<number | null>(null)
+  useEffect(() => {
+    if (hubVisionResetAt == null) return
+    const timer = window.setTimeout(() => setHubVisionResetAt(null), 2500)
+    return () => window.clearTimeout(timer)
+  }, [hubVisionResetAt])
 
   const publishSlash = useCallback(() => {
     setSlashSnapshot({ ...slashRef.current, blocks: [...slashRef.current.blocks], streaks: [...slashRef.current.streaks] })
@@ -2066,6 +2074,20 @@ export function MiniGamesView(): JSX.Element {
               <small>{t('games.tileSoonSummary')}</small>
             </span>
           </div>
+        </div>
+        {/* R246 (修 X3): one-line onboarding entry — the wizard itself lives in
+            the app-wide assistant (off inside games, where the games hook owns
+            the camera), so this re-arms it and points the user at the 👁 pill. */}
+        <div className="games-hub-vision">
+          <button
+            type="button"
+            className="games-hub-entry"
+            data-action="vision-onboarding-entry"
+            onClick={() => { resetOnboarding(); setHubVisionResetAt(Date.now()) }}
+          >
+            👁 {t('games.vision.hubEntry')}
+          </button>
+          {hubVisionResetAt !== null ? <span className="games-hub-entry-note">{t('games.vision.hubReset')}</span> : null}
         </div>
         {/* R198(FR-G02): arcade profile——局数/时长/连续天数(遥测聚合) */}
         <div className="games-profile" data-field="games-profile">
