@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { useI18n } from '../../i18n'
-import type { View } from '../../hooks/tabNavigation'
+import { isViewReachable, type View } from '../../hooks/tabNavigation'
+import { CARD_VIEWS, getTabMeta } from '../shellModules'
 import { useVisionInput } from '../../hooks/useVisionInput'
 import type { EffectKind } from '../../../../shared/types'
 import { VisionCursor } from './VisionCursor'
@@ -17,13 +18,21 @@ import { createCursorState } from '../../vision/cursor'
 
 const ASSISTANT_KEY = 'rgbbox:visionAssistant'
 
-/** 8 radial slots mapped to the direction ring order (0=right … 7=down-right) */
-const MENU_SLOTS: Array<{ view: View | null }> = [
-  { view: 'workspace' }, { view: 'diagnostics' }, { view: 'dashboard' }, { view: 'effects' },
-  { view: 'ai' }, { view: 'audio' }, { view: 'games' }, { view: 'video' },
-] // all members of the real View union
+/**
+ * R243: radial slots are DATA-DRIVEN — dashboard + every reachable CARD_VIEW
+ * (the hardcoded 8-slot list silently went stale as modules were added).
+ * The ring supports 8 directions; extras fall into the '·' placeholder slots.
+ */
+function radialSlots(model3dEnabled: boolean): Array<{ view: View | null }> {
+  const views: View[] = ['workspace', 'diagnostics', 'dashboard',
+    ...CARD_VIEWS.filter((v) => v !== 'workspace' && v !== 'diagnostics' && isViewReachable(v, model3dEnabled))]
+  const seen = new Set<View>()
+  const uniq = views.filter((v) => !seen.has(v) && seen.add(v))
+  return [...uniq.map((view) => ({ view })),
+    ...Array.from({ length: Math.max(0, 8 - uniq.length) }, () => ({ view: null }))]
+}
 
-export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds = [], onApplyLight = () => {} }: {
+export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds = [], onApplyLight = () => {}, model3dEnabled = false }: {
   activeView: View
   onNavigate: (view: View) => void
   rootRef: React.RefObject<HTMLElement | null>
@@ -31,10 +40,14 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
   curatedKinds?: EffectKind[]
   /** R229: apply a light effect from the ring (no view switch) */
   onApplyLight?: (kind: EffectKind) => void
+  /** R243: module reachability for the radial slots (same source as the rail) */
+  model3dEnabled?: boolean
 }): JSX.Element {
   const { t } = useI18n()
   const vision = useVisionInput()
   const cursorStateRef = useRef(createCursorState())
+  // R243: slots follow module reachability (e.g. model3d off → slot dims out)
+  const MENU_SLOTS = radialSlots(model3dEnabled)
   const [assistantOn, setAssistantOn] = useState(() => {
     try { return localStorage.getItem(ASSISTANT_KEY) === '1' } catch { return false }
   })
@@ -200,7 +213,7 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
               onMouseEnter={() => setMenuSel(i)}
               onClick={() => { setMenuOpen(false); if (slot.view) onNavigate(slot.view) }}
             >
-              {slot.view ? t(RADIAL_LABELS[i]) : '·'}
+              {slot.view ? t(getTabMeta(slot.view).labelKey) : '·'}
             </button>
           ))}
           <span className="vision-radial-hint">{t('games.vision.radialHint')}</span>
@@ -213,8 +226,3 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
 const DIR_INDEX: Record<string, number> = {
   right: 0, 'up-right': 1, up: 2, 'up-left': 3, left: 4, 'down-left': 5, down: 6, 'down-right': 7,
 }
-
-const RADIAL_LABELS = [
-  'nav.workspace', 'nav.diagnostics', 'nav.dashboard', 'nav.effects',
-  'nav.ai', 'nav.audio', 'nav.games', 'nav.video',
-] as const

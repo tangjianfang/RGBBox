@@ -826,6 +826,7 @@ export function App(): JSX.Element {
           selectEffect(kind)
           if (prevKind && prevKind !== kind) showAppliedToast(kind, prevKind)
         }}
+        model3dEnabled={MODEL3D_VIEW_ENABLED}
       />
     </main>
     </>
