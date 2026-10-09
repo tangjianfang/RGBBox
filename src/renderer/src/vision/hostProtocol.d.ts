@@ -19,4 +19,6 @@ export interface SessionRegistry {
   has(consumerId: string): boolean
 }
 export declare function createSessionRegistry(): SessionRegistry
+export interface VocabEntry { readonly id: string; readonly zh: string; readonly en: string }
+export declare const USER_VOCAB: ReadonlyArray<Readonly<VocabEntry>>
 export declare function nextConsumerId(): string

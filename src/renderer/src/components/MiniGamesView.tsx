@@ -191,7 +191,7 @@ function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, cx: number,
 // R135 (guide §3.6/§3.7): vision passthrough keys — movement + face modifiers
 // (jaw=E, brow=Shift, smile=Enter) + off-hand pinch (KeyF). Games consume
 // keys.has('e') etc. when a skill mapping lands.
-const VISION_PASSTHROUGH_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'space', 'e', 'shift', 'enter', 'f', 'c']
+const VISION_PASSTHROUGH_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'space', 'e', 'shift', 'enter', 'f'] // R231: 'c' removed — no engine source ever emitted it (dead branch)
 
 // DirectionRing defaults (gesture_engine.js, upstream v2) — the analog path
 // must apply the same transform the sector ring sees. Keep in sync.

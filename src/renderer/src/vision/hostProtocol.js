@@ -70,6 +70,22 @@ export function createSessionRegistry() {
   }
 }
 
+/**
+ * R231: the USER-FACING gesture vocabulary — the complete list of gestures a
+ * user must learn (single source of truth; the learning surface may never
+ * exceed this table). Engine-level chords stay usable but "reserved"
+ * (pause/next/back) — they are NOT taught until they gain a consumer.
+ * Six words after R229 promoted the light ring into the core set.
+ */
+export const USER_VOCAB = Object.freeze([
+  Object.freeze({ id: 'dir8', zh: '八向挥手', en: '8-way wave' }),
+  Object.freeze({ id: 'pinch', zh: '捏合', en: 'pinch' }),
+  Object.freeze({ id: 'palm', zh: '张掌', en: 'open palm' }),
+  Object.freeze({ id: 'chord-menu', zh: '视图环（食中无三指）', en: 'view ring (3-finger chord)' }),
+  Object.freeze({ id: 'chord-light', zh: '灯效环（拇食中三指）', en: 'light ring (thumb-led chord)' }),
+  Object.freeze({ id: 'double-pinch', zh: '双手张合', en: 'two-hand spread' }),
+])
+
 /** Stable per-hook-instance consumer id (renderer, no crypto needed). */
 let consumerSeq = 0
 export function nextConsumerId() {

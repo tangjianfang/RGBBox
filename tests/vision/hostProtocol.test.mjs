@@ -1,7 +1,7 @@
 // R228: the vision-host protocol contract + session registry (pure functions).
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { createSessionRegistry, nextConsumerId, HOST_MSG, HOST_REPLY, VISION_CHANNEL } from '../../src/renderer/src/vision/hostProtocol.js'
+import { createSessionRegistry, nextConsumerId, HOST_MSG, HOST_REPLY, VISION_CHANNEL, USER_VOCAB } from '../../src/renderer/src/vision/hostProtocol.js'
 
 test('protocol tables are frozen and complete (the wire contract)', () => {
   assert.equal(VISION_CHANNEL, 'rgbbox-vision')
@@ -41,4 +41,19 @@ test('registry: clear() is the force-stop path; junk ids are ignored', () => {
 test('nextConsumerId: unique per call', () => {
   const ids = new Set(Array.from({ length: 100 }, () => nextConsumerId()))
   assert.equal(ids.size, 100)
+})
+
+// R231: the learning surface — the user-facing vocabulary is capped at 6 and
+// frozen. Adding a 7th word must be a conscious act (update the cap WITH a
+// PRD note), not vocabulary creep.
+test('R231: USER_VOCAB is frozen, unique, bilingual, and capped at 6', () => {
+  assert.equal(USER_VOCAB.length, 6)
+  assert.equal(new Set(USER_VOCAB.map((v) => v.id)).size, 6)
+  for (const v of USER_VOCAB) {
+    assert.ok(v.id && v.zh && v.en, `entry ${v.id} must be fully bilingual`)
+    assert.ok(Object.isFrozen(v))
+  }
+  // R229's light ring is core vocabulary; reserved chords must NOT be listed
+  assert.ok(USER_VOCAB.some((v) => v.id === 'chord-light'))
+  assert.ok(!USER_VOCAB.some((v) => v.id === 'pause' || v.id === 'next'))
 })

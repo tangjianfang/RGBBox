@@ -3979,6 +3979,14 @@
 
 
 
+
+- **R231 `fix` — 体感词汇收敛 + 死功能清理（2026-10-09 批 5/5；REVIEW-VISION 08-T6「玩具感减法」；状态 🔄）**：
+  - **R231.1 死键清理**：MiniGamesView 透传表删除 `'c'`（无任何引擎来源的死分支）；表情键与 vision_input.js 已随 R230 处理。
+  - **R231.2 用户可见词汇收敛为 6（权威表）**：评审原案收敛到 5（dir8/pinch/palmHold/chord-menu/doublePinch）——R229 灯效环（chord-light）是核心价值词升格入表，定为 **6 词**：`dir8`（八向一词）、`pinch`（捏合=确认/Space）、`palm`（张掌=离合/暂停）、`chord-menu`（视图环）、`chord-light`（灯效环）、`double-pinch`（双手张合）。`hostProtocol.js` 增 `USER_VOCAB` 冻结表（单一权威，含 zh/en 名），断言单测锁上限=6；引擎层未消费和弦（pause/next/back）保持 `reserved` 注释不删（能力保留，UI 不教——词汇学习面由本表约束）。
+  - **R231.3 范围裁剪如实声明**：08-T6 的「AiLab 9 卡看板重排（灯效驾驶卡上位）」是视觉打磨级 UI 活，不在本 S 批，随视觉打磨轮另行立项。
+  - **R231.4 受影响文件**：`components/MiniGamesView.tsx`、`vision/hostProtocol.js`+`.d.ts`、tests（词汇表断言+透传表无死键）。
+  - **R231.6 状态**：✅（2026-10-09 当日闭环，批 5/5——本执行批全部完成）。**交付**：①`hostProtocol.js` 增 `USER_VOCAB` 冻结表（6 词双语：dir8/pinch/palm/chord-menu/chord-light/double-pinch，学习面单一权威源；reserved 和弦不列）；②MiniGamesView 透传表删死键 `'c'`（注释注明）；③词汇断言单测（冻结/唯一/双语/上限 6/chord-light 在列·pause·next 不在列）。**证据**：typecheck 双绿；全量 **162 files / 1533 passed / 0 失败**（+1）。
+
 - **R230 `fix` — 体感失败路径 UX + 遥测接通（2026-10-09 批 4/5；REVIEW-VISION 07-X1 假错误/05-TB1 吞错/06-③ 遥测断链/08 表情键死亡键名；状态 🔄）**：
   - **R230.1 假错误修复（X-1 的「体感启动失败: models ready」）**：错误路径 label 残留旧状态文案——host `error` 消息到达时同步 `setLabel(真实错误)` 且 hook 暴露 `error` state；enable 重试即清除。
   - **R230.2 表情修饰键键名修复（08 实锤）**：`useVisionInput` 归一化补 code 风格映射——`KeyE→e`、`ShiftLeft→shift`、`KeyF→f`（R135 宣称的功能自本条起真正可达；单测锁）。
