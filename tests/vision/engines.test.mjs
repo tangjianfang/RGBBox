@@ -3,7 +3,7 @@
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict'; // works under vitest node env
-import { HandEngine, handGeometry, sectorOfAngle, SECTORS } from '../../src/renderer/src/vision/gesture_engine.js';
+import { HandEngine, DirectionRing, handGeometry, sectorOfAngle, SECTORS } from '../../src/renderer/src/vision/gesture_engine.js';
 import { FaceEngine } from '../../src/renderer/src/vision/face_engine.js';
 import { OneEuroFilter, OneEuroVec2 } from '../../src/renderer/src/vision/one_euro.js';
 import { makeHand, CENTER } from './helpers.mjs';
@@ -255,3 +255,30 @@ test('recenter never fights a deliberate hold (direction held ≠ drift)', () =>
   const after = eng.direction.center;
   assert.ok(Math.abs(after.x - before.x) < 1e-9 && Math.abs(after.y - before.y) < 1e-9, 'center frozen while holding');
 });
+
+// R256: releasing to the dead zone takes the FAST path (≤30ms confirm) —
+// sector-to-sector switches still pay the full anti-flicker confirmMs.
+// NOTE: with a JUMP to center the OneEuro filter needs ~3 frames to converge
+// into the dead zone — that lag is the filter's physics, not the confirm gate.
+// To measure the CONFIRM gate specifically, walk the palm in GRADUALLY so the
+// filter is already tracking when the dead zone is crossed.
+test('R256: direction release fires ≤1 frame after dead-zone entry (fast confirm)', () => {
+  const ring = new DirectionRing({ confirmMs: 90 });
+  ring.setCenter({ x: 0.5, y: 0.5 });
+  for (let i = 0; i < 8; i++) ring.update({ x: 0.9, y: 0.5 }, 1000 + i * 0.033);
+  assert.equal(ring.active, 0, 'should be in right sector');
+  // gradual walk back: 0.9 → 0.51 in 15 steps ≈ 0.026/step (filter tracks)
+  let t = 1000 + 0.264
+  let firedAt = null
+  for (let k = 15; k >= 0; k--) {
+    const x = 0.51 + k * 0.026
+    t += 0.033
+    const evs = ring.update({ x, y: 0.5 }, t)
+    if (evs.some((e) => e.down === false)) { firedAt = k; break }
+  }
+  // k=0 is the FIRST frame fully inside the dead zone (x=0.51). The release
+  // must have fired at k=0 or k=1 (≤1 frame settle + ≤30ms fast confirm) —
+  // the pre-R256 full-confirm path would need k≤-3 (three extra frames).
+  assert.ok(firedAt !== null && firedAt <= 1,
+    `release must fire by 1 frame after dead-zone entry (fast path), firedAt=${firedAt}`)
+})
