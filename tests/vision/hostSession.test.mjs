@@ -319,6 +319,49 @@ test('R239 onDeviceChange: synthetic sessions (no camera) ignore devicechange en
   assert.ok(h.messenger.pipeline, 'the synthetic session must survive a devicechange')
 })
 
+// ── R244: host heartbeat (crash/hang detection for the client watchdog) ────
+
+/** live (uncleared) 5s heartbeat intervals currently scheduled */
+const liveHeartbeats = (h) => h.timers.intervals.filter((i) => i && i.ms === 5000)
+
+test('R244 heartbeat: a successful init schedules ONE 5s heartbeat; init failure schedules none; stop clears it', async () => {
+  const h = makeHarness()
+  await h.messenger.handle({ type: 'init', cfg: {} })
+  assert.equal(liveHeartbeats(h).length, 1, 'one 5s heartbeat interval after a successful init')
+  liveHeartbeats(h)[0].fn()
+  assert.deepEqual(h.posted.at(-1), { type: 'heartbeat' })
+  // a hello-triggered duplicate init must not schedule a second heartbeat
+  await h.messenger.handle({ type: 'init', cfg: {} })
+  assert.equal(liveHeartbeats(h).length, 1)
+  // force-stop tears the session down — the heartbeat dies with it (the
+  // client's watchdog then sees silence and takes over)
+  await h.messenger.handle({ type: 'stop' })
+  assert.equal(liveHeartbeats(h).length, 0, 'force-stop clears the heartbeat')
+  // a FAILED init must never leave a beating timer behind
+  const h2 = makeHarness()
+  h2.cameraFail.err = new Error('no camera hardware')
+  await h2.messenger.handle({ type: 'init', cfg: {} })
+  assert.equal(liveHeartbeats(h2).length, 0, 'failed init schedules no heartbeat')
+})
+
+test('R244 heartbeat: camera-ended and last-consumer-out clear it; a capture restart REVIVES it', async () => {
+  const h = makeHarness()
+  await h.messenger.handle({ type: 'init', cfg: { camera: M1 } })
+  // precision switch: fullTeardown clears the heartbeat, the rebuilt stream
+  // restarts it — a live session must never go silent on a mode switch
+  await h.messenger.handle({ type: 'capture', camera: M2 })
+  assert.equal(liveHeartbeats(h).length, 1, 'capture restart revives the heartbeat')
+  // R239 camera-ended = session death → heartbeat cleared
+  h.messenger.onCameraEnded()
+  assert.equal(liveHeartbeats(h).length, 0, 'camera-ended clears the heartbeat')
+  // fresh session → heartbeat back; the LAST consumer out clears it again
+  await h.messenger.handle({ type: 'init', cfg: {} })
+  assert.equal(liveHeartbeats(h).length, 1)
+  await h.messenger.handle({ type: 'acquire', consumerId: 'a' })
+  await h.messenger.handle({ type: 'release', consumerId: 'a' })
+  assert.equal(liveHeartbeats(h).length, 0, 'last consumer out clears the heartbeat')
+})
+
 // ── synthetic mode ─────────────────────────────────────────────────────────
 
 test('init synthetic: the interval drives processFrame, emits events/snapshot; stop clears the interval', async () => {
@@ -326,7 +369,8 @@ test('init synthetic: the interval drives processFrame, emits events/snapshot; s
   h.frameResult.r = { events: [{ type: 'dir', dir: 'up' }], snapshot: { hands: 1 } }
   await h.messenger.handle({ type: 'init', cfg: { mode: 'synthetic' } })
   assert.equal(h.camCalls.length, 0, 'synthetic mode never opens a camera')
-  assert.equal(h.timers.intervals.length, 1)
+  // R244: the synthetic tick + the 5s heartbeat
+  assert.equal(h.timers.intervals.length, 2)
   assert.equal(h.timers.intervals[0].ms, 33)
   h.timers.intervals[0].fn()
   const ev = h.posted.find((m) => m.type === 'events')
@@ -336,7 +380,8 @@ test('init synthetic: the interval drives processFrame, emits events/snapshot; s
   // capture is a no-op in synthetic mode (no camera stream to restart)
   await h.messenger.handle({ type: 'capture' })
   assert.equal(h.camCalls.length, 0)
-  // force-stop clears the synthetic interval
+  // force-stop clears the synthetic interval AND the heartbeat (R244)
   await h.messenger.handle({ type: 'stop' })
   assert.equal(h.timers.intervals[0], null)
+  assert.equal(h.timers.intervals[1], null)
 })

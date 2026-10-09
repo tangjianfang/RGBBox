@@ -392,6 +392,56 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     expect(result.current.errorKind).toBe(null)
     await act(() => result.current.disable())
   })
+
+  // R244 ────────────────────────────────────────────────────────────────────
+  // Host crash/hang self-healing: the host beats every 5s; >15s of silence
+  // means the hidden renderer died (main closes the window on
+  // render-process-gone — the missing heartbeat is the client's only signal).
+  // Exactly ONE silent restart per session; a second silence surfaces the
+  // R239 timeout error card instead of a restart storm.
+  it('R244: a BEATING host is never restarted (heartbeats refresh the watchdog)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { result } = renderHook(() => useVisionInput())
+      await act(async () => { await result.current.enableSynthetic() })
+      const opens = rgbbox.visionHostOpen.mock.calls.length
+      // 60s of live 5s heartbeats — the watchdog never trips
+      for (let i = 0; i < 12; i++) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+        act(() => host.send({ type: 'heartbeat' }))
+      }
+      expect(rgbbox.visionHostOpen.mock.calls.length).toBe(opens)
+      expect(result.current.enabled).toBe(true)
+      expect(result.current.error).toBe(null)
+      await act(() => result.current.disable())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('R244: a SILENT host is auto-restarted exactly ONCE; the second silence goes to the error card (no storm)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { result } = renderHook(() => useVisionInput())
+      await act(async () => { await result.current.enableSynthetic() })
+      expect(result.current.enabled).toBe(true)
+      const opens = rgbbox.visionHostOpen.mock.calls.length
+      // silence (FakeHost never beats): checked every 5s, trips past 15s
+      // → exactly one disable→enable restart, session back up
+      await act(async () => { await vi.advanceTimersByTimeAsync(21_000) })
+      expect(rgbbox.visionHostOpen.mock.calls.length).toBe(opens + 1)
+      expect(result.current.enabled).toBe(true)
+      expect(result.current.error).toBe(null)
+      // second silence → NO further auto-retry; the R239 timeout card data
+      await act(async () => { await vi.advanceTimersByTimeAsync(21_000) })
+      expect(rgbbox.visionHostOpen.mock.calls.length).toBe(opens + 1, 'no restart storm')
+      expect(result.current.enabled).toBe(false)
+      expect(result.current.error).toBe('宿主无响应')
+      expect(result.current.errorKind).toBe('timeout')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 // R235 test harness: mounts the real I18nProvider and captures setLang so a

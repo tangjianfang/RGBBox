@@ -9,6 +9,7 @@ export declare const HOST_MSG: Readonly<{
 export declare const HOST_REPLY: Readonly<{
   HELLO: 'host-hello'; READY: 'ready'; EVENTS: 'events'; SNAPSHOT: 'snapshot'
   STATUS: 'status'; PROFILE_SAVE: 'profile-save'; ERROR: 'error'
+  HEARTBEAT: 'heartbeat'
 }>
 export interface SessionRegistry {
   acquire(consumerId: string): number

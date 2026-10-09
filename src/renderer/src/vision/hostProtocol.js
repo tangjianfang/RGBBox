@@ -38,6 +38,7 @@ export const HOST_REPLY = Object.freeze({
   STATUS: 'status',
   PROFILE_SAVE: 'profile-save',
   ERROR: 'error',
+  HEARTBEAT: 'heartbeat', // R244: 5s liveness beacon — silence means the host renderer died/hung
 })
 
 /**
