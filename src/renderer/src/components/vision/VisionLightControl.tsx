@@ -23,11 +23,15 @@ const DIR_SLOT: Record<string, number> = {
   left: 4, 'down-left': 5, down: 6, 'down-right': 7,
 }
 
-export function VisionLightControl({ active, curatedKinds, onApplyEffect, onOpenChange }: {
+export function VisionLightControl({ active, curatedKinds, onApplyEffect, onOpenChange, adjustPercent = null, frozen = false }: {
   active: boolean
   curatedKinds: EffectKind[]
   onApplyEffect: (kind: EffectKind) => void
   onOpenChange?: (open: boolean) => void
+  /** R247: live 0..1 brightness while the pinch-hold adjust mode is active */
+  adjustPercent?: number | null
+  /** R247: light frozen via the open-palm hold (vision stream paused) */
+  frozen?: boolean
 }): JSX.Element | null {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
@@ -37,6 +41,10 @@ export function VisionLightControl({ active, curatedKinds, onApplyEffect, onOpen
   selRef.current = sel
   const openRef = useRef(open)
   openRef.current = open
+  // R247: while adjusting, the pinch/direction vocabulary IS the adjust
+  // gesture — the ring must not also consume it (方向事件忽略，防误触).
+  const adjustingRef = useRef(false)
+  adjustingRef.current = adjustPercent != null
 
   useEffect(() => { onOpenChange?.(open) }, [open, onOpenChange])
 
@@ -66,6 +74,7 @@ export function VisionLightControl({ active, curatedKinds, onApplyEffect, onOpen
         return
       }
       if (!openRef.current) return
+      if (adjustingRef.current) return // R247: adjust owns pinch/direction while active
       if (detail.kind === 'chord' && detail.down && (detail.name === 'cancel' || detail.name === 'back')) setOpen(false)
       else if (detail.kind === 'pinch' && detail.key === 'Space' && detail.down) apply()
       else if (detail.kind === 'direction' && detail.down && detail.dir && DIR_SLOT[detail.dir] != null) {
@@ -84,26 +93,52 @@ export function VisionLightControl({ active, curatedKinds, onApplyEffect, onOpen
   // leaving the active context closes the ring (games view takes over, etc.)
   useEffect(() => { if (!active) setOpen(false) }, [active])
 
-  if (!active || !open) return null
+  if (!active) return null
+  // R247: the adjust ring + frozen badge render independently of the radial —
+  // the adjust gesture continues after the apply closed the ring (pinch-hold),
+  // and the freeze state must stay visible with the ring shut.
+  const RING_C = 2 * Math.PI * 52
+  const pct = adjustPercent == null ? 0 : Math.round(adjustPercent * 100)
   return (
-    <div className="vision-radial light" role="dialog" aria-label={t('games.vision.lightRing')}>
-      {slots.map((kind, i) => (
-        <button
-          key={kind}
-          type="button"
-          className={`vision-radial-item ${i === sel ? 'sel' : ''}`}
-          style={{ transform: `translate(${Math.cos((i * 45 - 90) * Math.PI / 180) * 96}px, ${Math.sin((i * 45 - 90) * Math.PI / 180) * 96}px)` }}
-          onMouseEnter={() => setSel(i)}
-          onClick={() => { onApplyEffect(kind); setOpen(false) }}
-        >
-          {labelOf(kind)}
-        </button>
-      ))}
-      <span className="vision-radial-hint">
-        {flash
-          ? `✨ ${t('games.vision.lightApply')}: ${labelOf(flash)}`
-          : t('games.vision.lightHint')}
-      </span>
-    </div>
+    <>
+      {frozen ? (
+        <div className="vision-light-frozen" role="status">⏸ {t('games.vision.lightFrozen')}</div>
+      ) : null}
+      {adjustPercent != null ? (
+        <div className="vision-light-adjust" role="status" aria-label={t('games.vision.lightAdjust')}>
+          <svg viewBox="0 0 120 120" width="132" height="132" aria-hidden="true">
+            <circle className="track" cx="60" cy="60" r="52" />
+            <circle
+              className="fill"
+              cx="60" cy="60" r="52"
+              strokeDasharray={`${adjustPercent * RING_C} ${RING_C}`}
+            />
+          </svg>
+          <span className="vision-light-adjust-num">{pct}</span>
+          <span className="vision-light-adjust-label">{t('games.vision.lightAdjust')}</span>
+        </div>
+      ) : null}
+      {!open ? null : (
+        <div className="vision-radial light" role="dialog" aria-label={t('games.vision.lightRing')}>
+          {slots.map((kind, i) => (
+            <button
+              key={kind}
+              type="button"
+              className={`vision-radial-item ${i === sel ? 'sel' : ''}`}
+              style={{ transform: `translate(${Math.cos((i * 45 - 90) * Math.PI / 180) * 96}px, ${Math.sin((i * 45 - 90) * Math.PI / 180) * 96}px)` }}
+              onMouseEnter={() => setSel(i)}
+              onClick={() => { onApplyEffect(kind); setOpen(false) }}
+            >
+              {labelOf(kind)}
+            </button>
+          ))}
+          <span className="vision-radial-hint">
+            {flash
+              ? `✨ ${t('games.vision.lightApply')}: ${labelOf(flash)}`
+              : t('games.vision.lightHint')}
+          </span>
+        </div>
+      )}
+    </>
   )
 }

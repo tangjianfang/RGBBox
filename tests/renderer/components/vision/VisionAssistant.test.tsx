@@ -6,13 +6,17 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, cleanup, fireEvent, act, waitFor } from '@testing-library/react'
 import { VisionAssistant } from '../../../../src/renderer/src/components/vision/VisionAssistant'
 import { setupRendererMocks } from '../../_helpers'
+import type { EffectLayer } from '../../../../../src/shared/types'
 
 class FakeHost {
   channel: BroadcastChannel
+  received: Array<{ type: string; [k: string]: unknown }> = []
   constructor() {
     this.channel = new BroadcastChannel('rgbbox-vision')
     this.channel.onmessage = (ev: MessageEvent) => {
-      if ((ev.data as { type: string }).type === 'init') this.channel.postMessage({ type: 'ready', delegate: 'GPU' })
+      const msg = ev.data as { type: string }
+      this.received.push(msg)
+      if (msg.type === 'init') this.channel.postMessage({ type: 'ready', delegate: 'GPU' })
     }
   }
   send(msg: unknown): void { this.channel.postMessage(msg) }
@@ -87,5 +91,77 @@ describe('renderer/components/vision/VisionAssistant (R142-E4b)', () => {
       <VisionAssistant activeView="games" onNavigate={onNavigate} rootRef={{ current: root } as React.RefObject<HTMLElement | null>} />,
     )
     expect(container.querySelector('.vision-assistant-pill')).toBeNull()
+  })
+
+  // R247: 灯效环 v2 E2E over the FakeHost event stream — pinch held ≥600ms
+  // adjusts the brightness parameter continuously (palm.y → intensity),
+  // pinch up fixes it; the open-palm hold freezes the vision stream and a
+  // second palm resumes it (host receives pause p:true / p:false).
+  it('R247: pinch-hold adjusts brightness continuously; open palm freezes and resumes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const onUpdateLightLayer = vi.fn()
+      const layer = (intensity: number): EffectLayer => ({
+        id: 'l1', name: 'Rainbow', kind: 'rainbow', enabled: true, opacity: 1, blendMode: 'normal',
+        parameters: { intensity, speed: 1 },
+      })
+      const root = document.createElement('main')
+      document.body.appendChild(root)
+      const { container } = render(
+        <VisionAssistant
+          activeView="dashboard"
+          onNavigate={onNavigate}
+          rootRef={{ current: root } as React.RefObject<HTMLElement | null>}
+          curatedKinds={['rainbow', 'aurora']}
+          onApplyLight={vi.fn()}
+          selectedLayer={layer(0.5)}
+          onUpdateLightLayer={onUpdateLightLayer}
+        />,
+      )
+      await act(async () => { fireEvent.click(container.querySelector('.vision-assistant-pill') as HTMLButtonElement) })
+      const snap = (y: number): void => {
+        host.send({ type: 'snapshot', snapshot: { ...ACTIVE, geom: { palm: { x: 0.5, y }, pinch: 1.1, scale: 0.18 } } })
+      }
+      await act(async () => { snap(0.6) })
+      await waitFor(() => expect(container.querySelector('.vision-assistant-badge')).toBeTruthy())
+
+      await act(async () => {
+        host.send({ type: 'events', events: [{ kind: 'pinch', key: 'Space', down: true }] })
+      })
+      await act(async () => { vi.advanceTimersByTime(600) }) // ≥600ms hold gate
+      expect(container.querySelector('.vision-light-adjust')).toBeTruthy()
+      expect(onUpdateLightLayer).toHaveBeenCalledTimes(1)
+      expect(onUpdateLightLayer).toHaveBeenLastCalledWith({ parameters: { intensity: 0.4, speed: 1 } })
+
+      await act(async () => { snap(0.2); vi.advanceTimersByTime(40) }) // hand up → brighter
+      expect(onUpdateLightLayer).toHaveBeenLastCalledWith({ parameters: { intensity: 0.8, speed: 1 } })
+      await act(async () => { snap(1); vi.advanceTimersByTime(40) }) // hand down → clamped min
+      expect(onUpdateLightLayer).toHaveBeenLastCalledWith({ parameters: { intensity: 0, speed: 1 } })
+      expect(onUpdateLightLayer).toHaveBeenCalledTimes(3)
+
+      await act(async () => {
+        host.send({ type: 'events', events: [{ kind: 'pinch', key: 'Space', down: false }] })
+      })
+      expect(container.querySelector('.vision-light-adjust')).toBeNull()
+
+      await act(async () => {
+        host.send({ type: 'events', events: [{ kind: 'offhand', name: 'pause', key: null, down: true }] })
+      })
+      expect(container.querySelector('.vision-light-frozen')).toBeTruthy()
+      const pauses = host.received.filter((m) => m.type === 'pause') as Array<{ p: boolean }>
+      expect(pauses).toHaveLength(1)
+      expect(pauses[0].p).toBe(true)
+
+      await act(async () => {
+        vi.advanceTimersByTime(800) // past the freeze-toggle cooldown
+        host.send({ type: 'events', events: [{ kind: 'offhand', name: 'pause', key: null, down: true }] })
+      })
+      expect(container.querySelector('.vision-light-frozen')).toBeNull()
+      const pauses2 = host.received.filter((m) => m.type === 'pause') as Array<{ p: boolean }>
+      expect(pauses2).toHaveLength(2)
+      expect(pauses2[1].p).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

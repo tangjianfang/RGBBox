@@ -3,7 +3,8 @@ import { useI18n } from '../../i18n'
 import { isViewReachable, type View } from '../../hooks/tabNavigation'
 import { CARD_VIEWS, getTabMeta } from '../shellModules'
 import { useVisionInput } from '../../hooks/useVisionInput'
-import type { EffectKind } from '../../../../shared/types'
+import { useGestureLightingDomain } from '../../hooks/domains/useGestureLightingDomain'
+import type { EffectKind, EffectLayer } from '../../../../shared/types'
 import { VisionCursor } from './VisionCursor'
 import { VisionLightControl } from './VisionLightControl'
 import { createCursorState } from '../../vision/cursor'
@@ -32,7 +33,7 @@ function radialSlots(model3dEnabled: boolean): Array<{ view: View | null }> {
     ...Array.from({ length: Math.max(0, 8 - uniq.length) }, () => ({ view: null }))]
 }
 
-export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds = [], onApplyLight = () => {}, model3dEnabled = false }: {
+export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds = [], onApplyLight = () => {}, model3dEnabled = false, selectedLayer = null, onUpdateLightLayer = () => {} }: {
   activeView: View
   onNavigate: (view: View) => void
   rootRef: React.RefObject<HTMLElement | null>
@@ -42,6 +43,10 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
   onApplyLight?: (kind: EffectKind) => void
   /** R243: module reachability for the radial slots (same source as the rail) */
   model3dEnabled?: boolean
+  /** R247: the live selected layer — brightness-param resolution + undo prev-kind */
+  selectedLayer?: EffectLayer | null
+  /** R247: live parameter writes for continuous brightness adjust */
+  onUpdateLightLayer?: (patch: Partial<EffectLayer>) => void
 }): JSX.Element {
   const { t } = useI18n()
   const vision = useVisionInput()
@@ -60,6 +65,20 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
   const [typed, setTyped] = useState('')
 
   const TRAIN_PHRASE = 'the quick brown fox'
+
+  // R247: 灯效环 v2 domain — brightness adjust / freeze / undo. Same mode gate
+  // as the light ring itself (assistant on, vision live, outside games), plus
+  // the two competing gesture UIs (radial menu picks, chord text typing)
+  // suspend it so their pinch/palm vocabulary is never double-consumed.
+  const gesture = useGestureLightingDomain({
+    enabled: assistantOn && vision.enabled && activeView !== 'games' && !menuOpen && !textMode,
+    selectedLayer,
+    selectEffect: onApplyLight,
+    updateSelectedLayer: onUpdateLightLayer,
+    curatedKinds,
+    frameRef: vision.frameRef,
+    setPaused: vision.setPaused,
+  })
 
   const toggleTextMode = useCallback(() => {
     setTextMode((on) => {
@@ -197,6 +216,8 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
             curatedKinds={curatedKinds}
             onApplyEffect={onApplyLight}
             onOpenChange={setLightOpen}
+            adjustPercent={gesture.adjustPercent}
+            frozen={gesture.frozen}
           />
           <VisionCursor vision={vision} wrapRef={rootRef as React.RefObject<HTMLDivElement | null>} stateRef={cursorStateRef} suppressClick={menuOpen || lightOpen} />
         </>
