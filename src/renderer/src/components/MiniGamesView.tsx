@@ -536,6 +536,8 @@ export function MiniGamesView(): JSX.Element {
   const rouletteFocusRef = useRef(0)
   const rouletteActionsRef = useRef<Array<() => void>>([])
   const visionDoublePinchRef = useRef(0)
+  // R249.1: first pinch ARMS the hard-drop; the second within 150ms commits
+  const tetrisHardArmRef = useRef(0)
   // R132.3: transient "vision off" notice when the user (or a lifecycle rule)
   // disables the input source — otherwise the camera just silently goes away.
   const [visionExitNotice, setVisionExitNotice] = useState(false)
@@ -946,7 +948,16 @@ export function MiniGamesView(): JSX.Element {
         if (cmd === 'space') {
           const phase = tetrisRef.current.phase
           if (phase === 'ready' || phase === 'lost') startTetrisRef.current()
-          else tetrisRef.current.commands.push('hard')
+          else {
+            const nowMs = performance.now()
+            // R249.1 (X9): hard-drop is IRREVERSIBLE — require a second pinch
+            // within 150ms (same double-pinch confirm pattern as the R139
+            // roulette) so a stray pinch never wastes the piece.
+            if (nowMs - tetrisHardArmRef.current < 150) {
+              tetrisRef.current.commands.push('hard')
+              tetrisHardArmRef.current = 0
+            } else tetrisHardArmRef.current = nowMs
+          }
         } else if (cmd === 'arrowleft') tetrisRef.current.commands.push('left')
         else if (cmd === 'arrowright') tetrisRef.current.commands.push('right')
         else if (cmd === 'arrowup') tetrisRef.current.commands.push('rotate')

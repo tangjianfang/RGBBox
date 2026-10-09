@@ -4018,7 +4018,10 @@
 - **R248 `docs` — 任务族 F12 首档：视觉栈架构文档对码重写（TASK-UNIVERSE F12；06-§7 文档漂移；状态 ✅ 当日闭环）**：architecture.md 视觉章节按现状重写（宿主进程/hostMessenger/hostProtocol 契约/引用计数会话/灯效环/错误恢复/i18n 结构化状态），逐节带 file:line 引用核对 ≥8 处。**证据**：architecture.md ①「schema 未读,推断」陈旧行→hostProtocol 契约事实源；②新增视觉栈专章：架构图（主窗消费方×宿主薄壳×hostMessenger×pipeline 分层）+7 关注点表（会话所有权/生命周期防御/故障恢复/引擎可测性/质量门禁/词汇纪律）——全部锚点对码（hostProtocol/hostMessenger/visionErrors/pipeline/confusion.test 等）。
 
 
-- **R249 `feat` — 任务族 F9：五游戏体感接入审计（TASK-UNIVERSE F9，5 游戏×4 检查；状态 🔄）**：hub/td/swarm/tetris/slash 各过 4 关——vision-mapping（八向/捏合映射表核对+文档化）/pause-convergence（暂停/Esc/最小化三路径摄像头与输入收敛走查）/undo-path（误触发可撤销——Tetris 硬降确认窗）/fps-guard（体感开启时游戏帧率降幅 <10% 对照）。产出 `docs/VISION-GAME-AUDIT.md` 审计台账（逐格结论+证据）；发现问题开修（映射错→即修，帧率超标→立案）。
+- **R249 `feat` — 任务族 F9：五游戏体感接入审计（TASK-UNIVERSE F9，5 游戏×4 检查；状态 ✅ 审计闭环+2 即修）**：hub/td/swarm/tetris/slash 各过 4 关——vision-mapping（八向/捏合映射表核对+文档化）/pause-convergence（暂停/Esc/最小化三路径摄像头与输入收敛走查）/undo-path（误触发可撤销——Tetris 硬降确认窗）/fps-guard（体感开启时游戏帧率降幅 <10% 对照）。产出 `docs/VISION-GAME-AUDIT.md` 审计台账（逐格结论+证据）；发现问题开修（映射错→即修，帧率超标→立案）。
+
+
+- **R249.1/249.2 即修 + R250 立案（F9 审计产出；状态 R249 ✅ / R250 ⏳）**：①R249.1 Tetris 硬降双 pinch 确认窗（150ms 内第二 pinch 才 hard——X9 误触发不可逆）；②R249.2 games init `faceModel:null`（03-B9 每 3 帧白跑 FaceLandmarker +34.6ms——games 零 face 消费）；③R250 立案：games hook 最小化不收敛摄像头（MiniGamesView 挂 R227.5 同款 onMainWindowVisibilityChanged）。**R249 证据**：审计台账 `docs/VISION-GAME-AUDIT.md`（映射总表+三关结论+代码锚点）；两即修落地——Tetris 硬降 150ms 双 pinch 确认窗（MiniGamesView tetrisHardArmRef）、games init `faceModel:null`（+34.6ms/3帧 白付清零）；typecheck 双绿；全量 **168 files / 1581 passed / 0 失败**（+4）。
 
 - **R233 `fix` — 快照门禁 workspace 活动区遮罩（Wave1-T2；REVIEW-VISION 已知问题§8 条目；状态 ✅ 2026-10-09 闭环）**：workspace 视图 run-to-run 自差 1.7%（R227 期实证，stash 对照排除代码因素）——右侧 `.panel.map-panel` 拓扑/视频墙等活动元素未遮罩。修：`scripts/ui-snapshot.mjs` 增 `VOLATILE_REGION_SELECTORS`。验收：连续三跑 workspace ≤0.1%、其余 8 视图 0.0000%。
   - **R233.1 实测归因（6×6 网格定位）**：修前 workspace 对基线 1.4563%（两次同值=确定性差，R224 期基线已落后 10 个 src 提交，其中 1.79%>40 阈值热区=右列 rows1-4（map-panel）+底部 rows（sampling-panel），其余像素 run-to-run 0.0000%）+ 间歇尖峰 2.3188%：**异步拓扑枚举竞态**——`topology.displays.length>1` 达成时 linked-display-row+VideoWallEditor 挂载，map-panel h 441↔501、sampling-panel 整体下移 61px，单侧各自遮罩必留未遮边。顶栏 displays 计数文本（1↔2）同一竞态。

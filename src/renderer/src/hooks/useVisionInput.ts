@@ -320,7 +320,10 @@ export function useVisionInput(): VisionInputHandle {
             bundleUrl: new URL('vendor/mediapipe/vision_bundle.js', base).href,
             wasmBase: new URL('vendor/mediapipe', base).href,
             handModel: new URL('models/hand_landmarker.task', base).href,
-            faceModel: new URL('models/face_landmarker.task', base).href,
+            // R249.2 (03-B9): games/assistant paths have ZERO face consumers —
+            // sending faceModel made the host run FaceLandmarker every 3rd
+            // frame (+34.6ms GPU) for nobody. null = faceless pipeline.
+            faceModel: null,
             numHands: 2,
             // R142-L1: 60fps full-frame capture — MJPG at 640×480 is standard
             // webcam fare; the host pipeline (its own renderer process)
