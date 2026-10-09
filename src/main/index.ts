@@ -219,6 +219,10 @@ function createMainWindow(): void {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    // R228: the hidden vision host must not outlive the main window —
+    // window-all-closed never fires while it lingers (zombie app + a
+    // renderer that could still hold the camera open).
+    if (visionHostWindow && !visionHostWindow.isDestroyed()) visionHostWindow.close()
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

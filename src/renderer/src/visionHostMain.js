@@ -16,6 +16,7 @@
 //   | {type:'profile-save', profile}
 
 import { VisionPipeline } from './vision/pipeline.js'
+import { createSessionRegistry } from './vision/hostProtocol.js'
 
 const channel = new BroadcastChannel('rgbbox-vision')
 let pipeline = null
@@ -23,6 +24,10 @@ let video = null
 let stream = null
 let vfcId = null
 let syntheticTimer = null
+// R228: the camera is refcounted — multiple consumers (games hook /
+// VisionAssistant / AI Lab bench) share this single host; the last one out
+// closes it. 'stop' remains a force-stop (clears the registry).
+const sessions = createSessionRegistry()
 // R227.6: kept for the GPU→CPU runtime rebuild path
 let lastCfg = null
 // R141-B: current capture mode (cfg.camera or the {type:'capture'} switch)
@@ -165,7 +170,12 @@ function teardown() {
 channel.onmessage = async (ev) => {
   const msg = ev.data
   if (msg.type === 'init') {
-    if (pipeline) return // already initialized — hello-triggered duplicate
+    if (pipeline) {
+      // R228: already running — the second consumer's init MUST get a ready
+      // (swallowing it left enable() awaiting a reply that never came).
+      post({ type: 'ready', delegate: pipeline.delegate })
+      return
+    }
     try {
       lastCfg = msg.cfg
       pipeline = new VisionPipeline({
@@ -218,10 +228,24 @@ channel.onmessage = async (ev) => {
           await startCamera(msg.camera)
         }
         break
+      case 'acquire':
+        sessions.acquire(msg.consumerId)
+        break
+      case 'release':
+        // R228: refcounted shutdown — only the LAST consumer out closes the
+        // camera (one view leaving must never kill another live consumer).
+        sessions.release(msg.consumerId)
+        if (sessions.empty()) {
+          teardown()
+          try { pipeline.stop() } catch { /* already broken */ }
+          pipeline = null
+        }
+        break
       case 'stop':
+        // force-stop: clears the registry so stray consumers can't resurrect
         teardown()
         try { pipeline.stop() } catch { /* session may be gone — teardown already ran */ }
-        pipeline = null // allow a later init (host window stays single-instance)
+        pipeline = null
         break
       default: break
     }

@@ -199,7 +199,7 @@ describe('renderer/components/MiniGamesView', () => {
     expect(container.querySelector('.games-canvas-status span')?.textContent).toContain('games.vision.exited')
   })
 
-  it('vision input: back to the hub terminates the worker (R131/R136)', async () => {
+  it('vision input: back to the hub releases the session (R131/R136; R228 refcount — no window close)', async () => {
     const { container } = render(<MiniGamesView />)
     fireEvent.click(container.querySelectorAll('.game-tile:not(.ghost)')[1]) // Nova Swarm
     await act(async () => {
@@ -210,7 +210,9 @@ describe('renderer/components/MiniGamesView', () => {
     })
     const back = [...container.querySelectorAll('button')].find((button) => button.textContent === 'games.backToHub') as HTMLButtonElement
     fireEvent.click(back)
-    expect(rgbboxMocks.visionHostClose).toHaveBeenCalled()
+    // R228: hub return disables vision → RELEASE only; the shared host window
+    // stays warm for other consumers and dies with the main window instead.
+    expect(rgbboxMocks.visionHostClose).not.toHaveBeenCalled()
   })
 
   // R137: the R135 analog path reused the DirectionRing's up-positive math

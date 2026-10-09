@@ -93,13 +93,18 @@ export interface VisionInputHandle {
  * pattern; the host window is the only IPC surface.
  */
 
-const VISION_CHANNEL = 'rgbbox-vision'
+// R228: protocol constants + per-instance consumer id for the refcounted
+// host session (see vision/hostProtocol.js).
+import { VISION_CHANNEL, nextConsumerId } from '../vision/hostProtocol'
 
 export function useVisionInput(): VisionInputHandle {
   const channelRef = useRef<BroadcastChannel | null>(null)
-  const hostOpenRef = useRef(false)
   // R227.4: in-flight startup dedupe (double-toggle safety)
   const startInFlightRef = useRef<Promise<void> | null>(null)
+  // R228: stable per-hook-instance id — the host refcounts consumers so one
+  // view disabling never kills another live consumer's camera session.
+  const consumerIdRef = useRef<string>('')
+  if (!consumerIdRef.current) consumerIdRef.current = nextConsumerId()
   const pausedRef = useRef(false)
   const [enabled, setEnabled] = useState(false)
   const [label, setLabel] = useState('')
@@ -179,7 +184,6 @@ export function useVisionInput(): VisionInputHandle {
 
     // open the hidden pipeline host window (its own renderer process)
     await window.rgbbox.visionHostOpen()
-    hostOpenRef.current = true
     const channel = new BroadcastChannel(VISION_CHANNEL)
     channelRef.current = channel
 
@@ -242,18 +246,17 @@ export function useVisionInput(): VisionInputHandle {
       }
       sendInit()
     })
+    channelRef.current?.postMessage({ type: 'acquire', consumerId: consumerIdRef.current })
     setEnabled(true)
     })()
     // R227.4: failure must roll the half-built state back — a leaked
     // channelRef turned every later enable() into a silent no-op (the
     // "dead button" bug: retry was impossible without remounting the view).
     const tracked = attempt.catch((err) => {
+      // R228: our OWN init failed — close our channel only. The host window
+      // may be serving another consumer; it is not ours to close.
       channelRef.current?.close()
       channelRef.current = null
-      if (hostOpenRef.current) {
-        hostOpenRef.current = false
-        void window.rgbbox.visionHostClose()
-      }
       throw err
     }).finally(() => { startInFlightRef.current = null })
     startInFlightRef.current = tracked
@@ -264,13 +267,15 @@ export function useVisionInput(): VisionInputHandle {
   const enableSynthetic = useCallback(() => start('synthetic'), [start])
 
   const disable = useCallback(() => {
-    channelRef.current?.postMessage({ type: 'stop' })
+    // R228: RELEASE, not stop — the host tears the camera down only when the
+    // last consumer leaves (this hook's 'stop' was killing the assistant's
+    // session and vice versa). The hidden host WINDOW stays warm (a hidden
+    // idle renderer is cheap); closing it here would kill every other
+    // consumer's session and defeat the refcount. It dies with the main
+    // window (main/index.ts R228).
+    channelRef.current?.postMessage({ type: 'release', consumerId: consumerIdRef.current })
     channelRef.current?.close()
     channelRef.current = null
-    if (hostOpenRef.current) {
-      hostOpenRef.current = false
-      void window.rgbbox.visionHostClose()
-    }
     pausedRef.current = false
     handlessFramesRef.current = 0
     heldRef.current.clear()

@@ -69,8 +69,10 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     expect((init.cfg.camera as { width: number }).width).toBe(640)
     expect((init.cfg.camera as { height: number }).height).toBe(480)
     await act(() => result.current.disable())
-    expect(host.received.some((m) => m.type === 'stop')).toBe(true)
-    expect(rgbbox.visionHostClose).toHaveBeenCalled()
+    // R228: disable RELEASES (refcounted host) — no stop, no window close
+    expect(host.received.some((m) => m.type === 'release')).toBe(true)
+    expect(host.received.some((m) => m.type === 'stop')).toBe(false)
+    expect(rgbbox.visionHostClose).not.toHaveBeenCalled()
   })
 
   it('host events normalize into held/queue + window bus (keyless events reach the bus only)', async () => {
@@ -219,12 +221,33 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     await act(() => result.current.disable())
   })
 
-  it('unmounting stops the host (stop + window close)', async () => {
+  it('R228: unmounting RELEASES the session (no stop, no window close — refcounted host)', async () => {
     const { result, unmount } = renderHook(() => useVisionInput())
     await act(() => result.current.enableSynthetic())
     unmount()
-    expect(host.received.some((m) => m.type === 'stop')).toBe(true)
-    expect(rgbbox.visionHostClose).toHaveBeenCalled()
+    // release (not stop): the shared host may serve another consumer
+    expect(host.received.some((m) => m.type === 'release')).toBe(true)
+    expect(host.received.some((m) => m.type === 'stop')).toBe(false)
+    expect(rgbbox.visionHostClose).not.toHaveBeenCalled()
+  })
+
+  it('R228: two consumers coexist — second enable ready, disable is release-only, enable sends acquire', async () => {
+    const a = renderHook(() => useVisionInput())
+    await act(async () => { await a.result.current.enableSynthetic() })
+    const b = renderHook(() => useVisionInput())
+    await act(async () => { await b.result.current.enableSynthetic() })
+    expect(a.result.current.enabled).toBe(true)
+    expect(b.result.current.enabled).toBe(true)
+    // both inits answered ready (FakeHost replies to every init — matching the
+    // R228 host behavior that unblocked the eternal-hang defect)
+    expect(host.received.filter((m) => m.type === 'init').length).toBe(2)
+    expect(host.received.filter((m) => m.type === 'acquire').length).toBe(2)
+    // one consumer leaving must not stop anything
+    await act(async () => { await a.result.current.disable() })
+    expect(host.received.some((m) => m.type === 'stop')).toBe(false)
+    expect(b.result.current.enabled).toBe(true)
+    await act(async () => { await b.result.current.disable() })
+    expect(host.received.filter((m) => m.type === 'release').length).toBe(2)
   })
 
   it('frameRef snapshot type surface (compile-time contract)', () => {
