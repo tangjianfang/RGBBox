@@ -827,6 +827,8 @@ export function App(): JSX.Element {
           if (prevKind && prevKind !== kind) showAppliedToast(kind, prevKind)
         }}
         model3dEnabled={MODEL3D_VIEW_ENABLED}
+        selectedLayer={selectedLayer}
+        onUpdateLightLayer={updateSelectedLayer}
       />
     </main>
     </>

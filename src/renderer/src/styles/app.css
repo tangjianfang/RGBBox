@@ -8766,6 +8766,68 @@ input[type='range'].video-player-volume {
   box-shadow: 0 0 14px rgba(255, 176, 66, 0.35);
 }
 .vision-radial.light .vision-radial-hint { color: #ffc477; }
+
+/* R247: 灯效环 v2 — adjust-mode brightness ring + frozen badge (amber family,
+   same accent as the light ring so "light gestures" read as one feature). */
+.vision-light-adjust {
+  height: 132px;
+  left: 50%;
+  position: fixed;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 132px;
+  z-index: 62;
+}
+.vision-light-adjust svg {
+  left: 0;
+  position: absolute;
+  top: 0;
+  transform: rotate(-90deg); /* 12 o'clock start */
+}
+.vision-light-adjust .track {
+  fill: rgba(10, 12, 18, 0.92);
+  stroke: rgba(255, 176, 66, 0.32);
+  stroke-width: 10;
+}
+.vision-light-adjust .fill {
+  fill: none;
+  stroke: #ffb042;
+  stroke-linecap: round;
+  stroke-width: 10;
+  transition: stroke-dasharray 60ms linear;
+}
+.vision-light-adjust-num {
+  color: #ffe9c9;
+  font-size: 30px;
+  font-weight: 700;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -54%);
+  text-shadow: 0 0 14px rgba(255, 176, 66, 0.55);
+}
+.vision-light-adjust-label {
+  color: #ffd39b;
+  font-size: var(--text-caption-size);
+  left: 50%;
+  letter-spacing: 0.25em;
+  position: absolute;
+  top: calc(100% + 8px); /* fully below the donut — clear air from the stroke */
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.vision-light-frozen {
+  border-bottom: 2px solid rgba(255, 176, 66, 0.55);
+  color: rgba(255, 196, 119, 0.9);
+  font-size: var(--text-caption-size);
+  left: 50%;
+  letter-spacing: 0.2em;
+  padding: 2px 0;
+  position: fixed;
+  top: 64px; /* under the assistant badge */
+  transform: translateX(-50%);
+  z-index: 60;
+}
 .vision-radial {
   left: 50%;
   position: fixed;
