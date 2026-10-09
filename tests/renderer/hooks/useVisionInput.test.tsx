@@ -345,6 +345,53 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
       nowSpy.mockRestore()
     }
   })
+
+  // R239 ────────────────────────────────────────────────────────────────────
+  // Camera-failure recovery: the raw error text stays the actionable detail
+  // (error), the classification (errorKind) drives the UI's recovery card.
+  it('R239: a host init error classifies into errorKind (raw text preserved); retry clears it', async () => {
+    host.dispose()
+    const failing = new FakeHost()
+    failing.channel.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as HostMessage
+      failing.received.push(msg)
+      if (msg.type === 'init') failing.send({ type: 'error', message: 'NotAllowedError: Permission denied' })
+    }
+    const { result } = renderHook(() => useVisionInput())
+    await act(async () => {
+      try { await result.current.enable() } catch { /* expected */ }
+    })
+    expect(result.current.error).toBe('NotAllowedError: Permission denied')
+    expect(result.current.errorKind).toBe('denied')
+    expect(result.current.enabled).toBe(false)
+    // retry on a healthy host clears the failure and succeeds
+    failing.channel.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as HostMessage
+      failing.received.push(msg)
+      if (msg.type === 'init') failing.send({ type: 'ready', delegate: 'GPU' })
+    }
+    await act(async () => { await result.current.enable() })
+    expect(result.current.enabled).toBe(true)
+    expect(result.current.error).toBe(null)
+    expect(result.current.errorKind).toBe(null)
+    failing.dispose()
+  })
+
+  it('R239: a RUNTIME camera-ended error classifies as detached, drops the channel (enabled=false) so retry truly restarts', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(() => result.current.enableSynthetic())
+    act(() => host.send({ type: 'error', message: 'camera-ended' }))
+    expect(result.current.error).toBe('camera-ended')
+    expect(result.current.errorKind).toBe('detached')
+    expect(result.current.enabled).toBe(false)
+    // without the channel drop, enable() early-returns on the live
+    // channelRef — the dead-button bug again. Retry must REALLY restart.
+    await act(async () => { await result.current.enable() })
+    expect(result.current.enabled).toBe(true)
+    expect(result.current.error).toBe(null)
+    expect(result.current.errorKind).toBe(null)
+    await act(() => result.current.disable())
+  })
 })
 
 // R235 test harness: mounts the real I18nProvider and captures setLang so a

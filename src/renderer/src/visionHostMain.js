@@ -92,8 +92,12 @@ async function startCamera(mode) {
   video.srcObject = stream
   await new Promise((r) => { video.onloadedmetadata = r })
   await video.play()
+  // R239: USB pull / OS sleep ends the track silently — route it through the
+  // messenger (error + teardown + registry clear) instead of a zombie
+  // "active" session. The DOM read stays here; the decision lives there.
+  const [track] = stream.getVideoTracks()
+  if (track) track.onended = () => { messenger.onCameraEnded() }
   return video
-worktree-agent-a13504f2066f23243
 }
 
 // R234: camera/DOM cleanup only — the loop cancel + synthetic timer are owned
@@ -112,5 +116,13 @@ const messenger = createHostMessenger({
   startCamera,
   teardown,
 })
+
+// R239: hotplug watchdog — devicechange fires for any camera add/remove; the
+// messenger decides (only our own dead stream escalates to the detached path).
+if (navigator.mediaDevices?.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', () => {
+    messenger.onDeviceChange(stream?.active === true)
+  })
+}
 
 channel.onmessage = (ev) => { messenger.handle(ev.data) }

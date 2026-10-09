@@ -272,6 +272,53 @@ test('tick: a FAILED CPU rebuild also shuts down clean (GPU death + reload death
   assert.equal(v.pending, false)
 })
 
+// ── R239: camera watchdogs (track.onended / devicechange) ─────────────────
+
+test('R239 onCameraEnded: track ended (USB pull) posts the camera-ended error, tears down CLEAN and clears the registry — retry can rebuild', async () => {
+  const h = makeHarness()
+  await h.messenger.handle({ type: 'init', cfg: {} })
+  await h.messenger.handle({ type: 'acquire', consumerId: 'games' })
+  h.messenger.onCameraEnded()
+  const err = h.posted.find((m) => m.type === 'error')
+  assert.ok(err, 'failure surfaced')
+  assert.equal(err.message, 'camera-ended', 'stable code — the hook classifies it as detached')
+  assert.equal(h.stops.teardown, 1, 'camera torn down — no zombie camera light')
+  assert.equal(h.stops.pipelineStop, 1)
+  assert.equal(h.messenger.pipeline, null)
+  // registry cleared: a STALE release from the dead session must not pin the
+  // next one — after a fresh init it applies last-out semantics immediately
+  await h.messenger.handle({ type: 'init', cfg: {} })
+  await h.messenger.handle({ type: 'release', consumerId: 'games' })
+  assert.equal(h.stops.teardown, 2, 'empty-registry release closes the new session')
+  // a racing double-fire (devicechange after onended) is a no-op
+  h.messenger.onCameraEnded()
+  assert.equal(h.posted.filter((m) => m.type === 'error').length, 1)
+})
+
+test('R239 onDeviceChange: a DEAD stream escalates the same detached path; a live stream is a no-op', async () => {
+  const h = makeHarness()
+  await h.messenger.handle({ type: 'init', cfg: {} })
+  // a NEW device plugged in (our stream still live) → nothing happens
+  h.messenger.onDeviceChange(true)
+  assert.equal(h.posted.filter((m) => m.type === 'error').length, 0)
+  assert.ok(h.messenger.pipeline)
+  assert.equal(h.stops.teardown, 0)
+  // OUR camera was removed → stream dead → same detached path as onended
+  h.messenger.onDeviceChange(false)
+  assert.equal(h.posted.find((m) => m.type === 'error')?.message, 'camera-ended')
+  assert.equal(h.stops.teardown, 1)
+  assert.equal(h.stops.pipelineStop, 1)
+  assert.equal(h.messenger.pipeline, null)
+})
+
+test('R239 onDeviceChange: synthetic sessions (no camera) ignore devicechange entirely', async () => {
+  const h = makeHarness()
+  await h.messenger.handle({ type: 'init', cfg: { mode: 'synthetic' } })
+  h.messenger.onDeviceChange(false)
+  assert.equal(h.posted.filter((m) => m.type === 'error').length, 0)
+  assert.ok(h.messenger.pipeline, 'the synthetic session must survive a devicechange')
+})
+
 // ── synthetic mode ─────────────────────────────────────────────────────────
 
 test('init synthetic: the interval drives processFrame, emits events/snapshot; stop clears the interval', async () => {

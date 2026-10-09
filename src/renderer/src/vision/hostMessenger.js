@@ -178,6 +178,33 @@ export function createHostMessenger(deps) {
     }
   }
 
+  // R239: USB pull / OS sleep / driver death ends the track with no say-so.
+  // Same clean-shutdown discipline as the fatal frame streak: the stable
+  // 'camera-ended' error is surfaced (the hook classifies it → detached),
+  // the camera is torn down and the registry cleared — a fresh init can
+  // always rebuild. The host shell wires track.onended / devicechange to
+  // these; the DOM reads stay there, the DECISION lives here.
+  function cameraEnded() {
+    if (!pipeline) return // double-fire (devicechange racing onended) or already dead
+    post({ type: 'error', message: 'camera-ended' })
+    sessions.clear()
+    fullTeardown()
+    try { pipeline.stop() } catch { /* already broken */ }
+    pipeline = null
+  }
+
+  /**
+   * R239: navigator.mediaDevices 'devicechange' fires for ANY camera
+   * add/remove. Only OUR OWN stream dying (the active camera was removed)
+   * escalates — and only for camera sessions; the shell passes the DOM
+   * liveness read (`stream.active`), the judgment is here.
+   */
+  function onDeviceChange(streamAlive) {
+    if (!pipeline || video == null) return // no camera session (idle/synthetic)
+    if (streamAlive) return // a new device plugged in — nothing to recover
+    cameraEnded()
+  }
+
   async function handle(msg) {
     if (msg.type === 'init') {
       await handleInit(msg)
@@ -239,6 +266,10 @@ export function createHostMessenger(deps) {
 
   return {
     handle,
+    /** R239: the shell wires track.onended here (camera gone without a say-so) */
+    onCameraEnded: cameraEnded,
+    /** R239: the shell wires mediaDevices devicechange here (liveness read stays in the shell) */
+    onDeviceChange,
     /** live pipeline — the host's loadLandmarkers sets .delegate during init */
     get pipeline() { return pipeline },
     /** current capture mode (R141-B; rolled back on a failed capture switch) */
