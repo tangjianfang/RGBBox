@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VisionEvent, VisionFrame } from '../vision/vision_input'
 import { visionAssetBase } from './visionAssetBase'
 import { useI18n, type TranslationKey } from '../i18n'
+import { classifyVisionError, type VisionErrorKind } from '../domain/visionErrors'
 
 export type VisionState = 'idle' | 'searching' | 'calibrating' | 'active' | 'paused'
 export type VisionSensitivity = 'standard' | 'fast' | 'sport'
@@ -129,6 +130,13 @@ export interface VisionInputHandle {
   frameRef: { readonly current: Partial<VisionFrame> | null }
   /** R230: last enable/init failure message; null while healthy; cleared on retry */
   error: string | null
+  /**
+   * R239: classifyVisionError(error).kind — the structured kind driving the
+   * recovery card (denied/no-device/occupied/detached/timeout/generic);
+   * null while healthy; cleared on retry. The raw `error` text stays the
+   * actionable detail.
+   */
+  errorKind: VisionErrorKind | null
   /** normalized held keys ('arrowleft' … 'space'), same names as MiniGamesView.normalizeKey */
   heldRef: { readonly current: Set<string> }
   /** discrete commands ('arrowleft'|'arrowright'|'arrowup'|'space') drained per frame by pollVision */
@@ -173,6 +181,8 @@ export function useVisionInput(): VisionInputHandle {
   // a stale status like "models ready", which status chips rendered as the
   // nonsense "启动失败: models ready" — REVIEW-VISION 07-X1)
   const [error, setError] = useState<string | null>(null)
+  // R239: the classification of `error` (drives the recovery card's CTA)
+  const [errorKind, setErrorKind] = useState<VisionErrorKind | null>(null)
   const [state, setState] = useState<VisionState>('idle')
   const [stepId, setStepId] = useState<'center' | 'reach' | 'pinch' | null>(null)
   const [handSeen, setHandSeen] = useState(false)
@@ -258,6 +268,7 @@ export function useVisionInput(): VisionInputHandle {
   const start = useCallback(async (mode: 'camera' | 'synthetic') => {
     if (channelRef.current) return
     setError(null) // R230: a new attempt clears the previous failure
+    setErrorKind(null) // R239
     // R227.4: rapid double-toggle must share ONE startup — two concurrent
     // starts each created a BroadcastChannel (double-queued commands, leaked
     // channel) and the loser's error left the winner's channel behind.
@@ -281,6 +292,9 @@ export function useVisionInput(): VisionInputHandle {
       // 'host-hello' re-triggers init: BroadcastChannel does not buffer, so an
       // init posted before the host script executed would otherwise be lost.
       let initSent = false
+      // R239: distinguishes init failure (the R227.4 catch rolls back) from
+      // RUNTIME death (ready already arrived; the rollback below must run here)
+      let settled = false
       const sendInit = () => {
         if (initSent) return
         initSent = true
@@ -315,13 +329,26 @@ export function useVisionInput(): VisionInputHandle {
       channel.onmessage = (ev: MessageEvent) => {
         const msg = ev.data as { type: string; events?: VisionEvent[]; snapshot?: Partial<VisionFrame>; s?: string; profile?: unknown; message?: string }
         if (msg.type === 'ready') {
+          settled = true
           resolve()
         } else if (msg.type === 'error') {
           // R230: record the REAL reason — label too, so every existing status
           // chip shows it instead of the stale "models ready" nonsense.
+          // R239: classify it (denied/no-device/…/generic) for the recovery card.
           const reason = msg.message ?? 'vision host init failed'
           setError(reason)
+          setErrorKind(classifyVisionError(reason).kind)
           setLabel(reason)
+          if (settled && channelRef.current === channel) {
+            // R239: RUNTIME death (camera pulled mid-session) — the host already
+            // tore the session down and cleared its registry. Drop our half of
+            // the channel too: a live channelRef turns every later enable()
+            // into a silent no-op (the dead-button bug all over again), and the
+            // recovery card's retry button must truly restart.
+            channel.close()
+            channelRef.current = null
+            setEnabled(false)
+          }
           reject(new Error(reason))
           return
         } else if (msg.type === 'host-hello') {
@@ -353,6 +380,11 @@ export function useVisionInput(): VisionInputHandle {
     const tracked = attempt.catch((err) => {
       // R228: our OWN init failed — close our channel only. The host window
       // may be serving another consumer; it is not ours to close.
+      // R239: failures OUTSIDE the handshake (host window open, channel
+      // constructor) get the same visible + classified treatment.
+      const reason = err instanceof Error ? err.message : String(err)
+      setError(reason)
+      setErrorKind(classifyVisionError(reason).kind)
       channelRef.current?.close()
       channelRef.current = null
       throw err
@@ -386,6 +418,7 @@ export function useVisionInput(): VisionInputHandle {
     setLabel('')
     setStatusKey(null)
     setError(null)
+    setErrorKind(null) // R239
   }, [])
 
   const recalibrate = useCallback(() => channelRef.current?.postMessage({ type: 'recalibrate' }), [])
@@ -455,6 +488,6 @@ export function useVisionInput(): VisionInputHandle {
   return {
     enable, enableSynthetic, disable, recalibrate, setPaused, resumeActive, skipCalibration, applySettings,
     setMirror, mirror, setPrimaryHand, primaryHand, setChordTextMode, chordBackspace, chordBuffer, setCapturePrecision, setSensitivity, sensitivity,
-    enabled, label, statusKey, error, state, stepId, handSeen, frameRef, heldRef, queueRef,
+    enabled, label, statusKey, error, errorKind, state, stepId, handSeen, frameRef, heldRef, queueRef,
   }
 }

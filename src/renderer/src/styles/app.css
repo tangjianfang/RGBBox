@@ -2012,6 +2012,16 @@ input:not([type]):focus {
 .vision-banner.calibrating .vision-banner-dot { background: var(--status-warn-strong); box-shadow: 0 0 8px var(--status-warn-strong); }
 .vision-banner.lost .vision-banner-dot, .vision-banner.searching .vision-banner-dot { background: var(--status-warn-strong); box-shadow: 0 0 8px var(--status-warn-strong); }
 .vision-banner.paused .vision-banner-dot { background: var(--text-muted); }
+/* R239: failure recovery card — the session is dead, red beats amber */
+.vision-banner.error .vision-banner-dot { background: var(--status-error); box-shadow: 0 0 8px var(--status-error); }
+.vision-banner.error { border-color: rgba(239, 68, 68, 0.45); }
+.vision-banner.error .vision-banner-text { color: #fca5a5; white-space: normal; }
+.vision-banner-errhint {
+  color: var(--status-warn-strong);
+  font-size: var(--text-caption-size);
+  white-space: normal;
+}
+.vision-banner-cta { font-weight: 600; }
 
 .vision-banner-text {
   color: var(--info-soft-text);

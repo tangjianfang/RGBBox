@@ -2114,6 +2114,8 @@ export function MiniGamesView(): JSX.Element {
   // and a just-disabled session shows a short notice. R235: the retry check
   // is the structured statusKey code (locale-independent), not zh-prefix text
   // matching — `label` already carries the t()-localized reason.
+  // R239: the disabled-with-error branch (a raw one-line error dump) is gone —
+  // the VisionBanner recovery card (classified text + CTA) renders instead.
   const visionSuffix = visionExitNotice
     ? ` · 👁 ${t('games.vision.exited')}`
     : vision.enabled
@@ -2124,7 +2126,7 @@ export function MiniGamesView(): JSX.Element {
             : vision.state === 'active' && !vision.handSeen
               ? t('games.vision.state.searching')
               : vision.label || t(`games.vision.state.${vision.state}`)}`
-      : vision.label ? ` · 👁 ${t('games.vision.error')}: ${vision.label}` : ''
+      : ''
   const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : isTetris ? startTetrisRun : startSlashRunCb
   const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
   // ── R218 U3: ready 态统一面板的数据面 ──
@@ -2839,8 +2841,12 @@ export function MiniGamesView(): JSX.Element {
             {isSurvival && newAchievements.length > 0 ? (
               <div className="ach-toast">🏆 {newAchievements.map((id) => t(`games.ach.${id as AchievementId}`)).join(' · ')}</div>
             ) : null}
-            {/* R136.2: immediate status banner — instant publish, progress via rAF */}
-            {vision.enabled ? <VisionBanner vision={vision} /> : null}
+            {/* R136.2: immediate status banner — instant publish, progress via rAF.
+                R239: also mounts on FAILURE (enabled=false + error) as the recovery
+                card — classified text + retry CTA; retry re-runs the real enable. */}
+            {vision.enabled || vision.error ? (
+              <VisionBanner vision={vision} onRetry={() => { void vision.enable().catch(() => undefined) }} />
+            ) : null}
             {/* R132.2: joystick + skeleton overlay — own rAF, reads frameRef directly */}
             {vision.enabled && visionPadVisible ? <VisionPad vision={vision} /> : null}
             {/* R142-L3: relative cursor overlay — hover highlight + pinch click */}
