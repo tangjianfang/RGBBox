@@ -166,6 +166,7 @@ describe('renderer/components/vision/VisionAssistant (R142-E4b)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
 
   it('R246: first enable mounts the onboarding wizard; radial suppressed while open; Esc skip persists', async () => {
     localStorage.removeItem('rgbbox:visionOnboarded') // the first-run state
@@ -192,5 +193,6 @@ describe('renderer/components/vision/VisionAssistant (R142-E4b)', () => {
     await act(async () => {
       host.send({ type: 'events', events: [{ kind: 'chord', key: null, name: 'menu', down: true }] })
     })
-    await waitFor(() => expect(container.querySelector('.vision-radial')).toBeTruthy())  })
+    await waitFor(() => expect(container.querySelector('.vision-radial')).toBeTruthy())
+  })
 })
