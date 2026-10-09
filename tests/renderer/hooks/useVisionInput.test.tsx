@@ -176,7 +176,9 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     host.dispose()
     const failing = new FakeHost()
     failing.channel.onmessage = (ev: MessageEvent) => {
-      if ((ev.data as HostMessage).type === 'init') failing.send({ type: 'error', message: 'wasm boom' })
+      const msg = ev.data as HostMessage
+      failing.received.push(msg)
+      if (msg.type === 'init') failing.send({ type: 'error', message: 'wasm boom' })
     }
     const { result } = renderHook(() => useVisionInput())
     let caught: unknown = null
@@ -189,7 +191,32 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     })
     expect((caught as Error).message).toBe('wasm boom')
     expect(result.current.enabled).toBe(false)
+    // R227.4: the failed attempt must roll the half-built state back — a
+    // leaked channelRef used to turn every later enable() into a silent
+    // no-op (the dead-button bug). Retry has to actually retry.
+    failing.channel.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as HostMessage
+      failing.received.push(msg)
+      if (msg.type === 'init') failing.send({ type: 'ready', delegate: 'GPU' })
+    }
+    await act(async () => {
+      await result.current.enableSynthetic()
+    })
+    expect(result.current.enabled).toBe(true)
+    expect(failing.received.filter((m) => m.type === 'init').length).toBeGreaterThanOrEqual(2)
     failing.dispose()
+  })
+
+  it('R227.4: rapid double-enable shares ONE startup (single init, single channel)', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(async () => {
+      const a = result.current.enableSynthetic()
+      const b = result.current.enableSynthetic()
+      await Promise.all([a, b])
+    })
+    expect(result.current.enabled).toBe(true)
+    expect(host.received.filter((m) => m.type === 'init').length).toBe(1)
+    await act(() => result.current.disable())
   })
 
   it('unmounting stops the host (stop + window close)', async () => {

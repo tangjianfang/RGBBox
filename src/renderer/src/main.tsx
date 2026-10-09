@@ -2,12 +2,23 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './App'
 import { AudioVizProjector } from './components/AudioVizProjector'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { OverlayCanvas } from './components/OverlayCanvas'
 import { ScreensaverView } from './components/ScreensaverView'
 import { SnipView } from './components/SnipView'
 import { I18nProvider } from './i18n'
 import { bootTheme } from './domain/uiTheme'
 import './styles.css'
+
+// R227.3: renderer JS errors must be visible somewhere — Crashpad only sees
+// native crashes, so before this an uncaught exception (e.g. a promise
+// rejection in the vision bridge) died silently. R230 wires file-logger IPC.
+window.addEventListener('error', (e) => {
+  console.error('[RGBBox] uncaught:', e.error ?? e.message)
+})
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[RGBBox] unhandled rejection:', e.reason)
+})
 
 // R148 S5: apply the persisted theme before first paint — a light-theme user
 // must not see a dark flash while React boots. Windows that are pure stages
@@ -38,9 +49,11 @@ if (isAudioViz) {
   // R70.9: the projector calls useI18n() for its ESC hint — without the
   // provider the context default renders the raw key ('overlay.hint').
   root.render(
-    <I18nProvider>
-      <AudioVizProjector displayId={overlayDisplayId} />
-    </I18nProvider>
+    <ErrorBoundary>
+      <I18nProvider>
+        <AudioVizProjector displayId={overlayDisplayId} />
+      </I18nProvider>
+    </ErrorBoundary>
   )
 } else if (isScreensaver) {
   // R74: light-effect screensaver — opaque fullscreen, renders the saved
@@ -49,31 +62,37 @@ if (isAudioViz) {
   document.documentElement.style.overflow = 'hidden'
   document.body.classList.add('audioviz-mode')
   root.render(
-    <I18nProvider>
-      <ScreensaverView displayId={overlayDisplayId} />
-    </I18nProvider>
+    <ErrorBoundary>
+      <I18nProvider>
+        <ScreensaverView displayId={overlayDisplayId} />
+      </I18nProvider>
+    </ErrorBoundary>
   )
 } else if (isSnip) {
   // R80: standalone global snip — frozen fullscreen frame + region select + annotator
   document.documentElement.style.overflow = 'hidden'
   document.body.classList.add('snip-mode')
   root.render(
-    <I18nProvider>
-      <SnipView displayId={overlayDisplayId} />
-    </I18nProvider>
+    <ErrorBoundary>
+      <I18nProvider>
+        <SnipView displayId={overlayDisplayId} />
+      </I18nProvider>
+    </ErrorBoundary>
   )
 } else if (isOverlay) {
   // Prevent the OS-theme scrollbars that appear when body min-width/min-height
   // (960px / 640px) exceeds the partial-region overlay window dimensions.
   document.documentElement.style.overflow = 'hidden'
   document.body.classList.add('overlay-mode')
-  root.render(<OverlayCanvas displayId={overlayDisplayId} opaque={overlayOpaque} />)
+  root.render(<ErrorBoundary><OverlayCanvas displayId={overlayDisplayId} opaque={overlayOpaque} /></ErrorBoundary>)
 } else {
   root.render(
     <React.StrictMode>
-      <I18nProvider>
-        <App />
-      </I18nProvider>
+      <ErrorBoundary>
+        <I18nProvider>
+          <App />
+        </I18nProvider>
+      </ErrorBoundary>
     </React.StrictMode>
   )
 }

@@ -98,6 +98,8 @@ const VISION_CHANNEL = 'rgbbox-vision'
 export function useVisionInput(): VisionInputHandle {
   const channelRef = useRef<BroadcastChannel | null>(null)
   const hostOpenRef = useRef(false)
+  // R227.4: in-flight startup dedupe (double-toggle safety)
+  const startInFlightRef = useRef<Promise<void> | null>(null)
   const pausedRef = useRef(false)
   const [enabled, setEnabled] = useState(false)
   const [label, setLabel] = useState('')
@@ -163,6 +165,11 @@ export function useVisionInput(): VisionInputHandle {
 
   const start = useCallback(async (mode: 'camera' | 'synthetic') => {
     if (channelRef.current) return
+    // R227.4: rapid double-toggle must share ONE startup — two concurrent
+    // starts each created a BroadcastChannel (double-queued commands, leaked
+    // channel) and the loser's error left the winner's channel behind.
+    if (startInFlightRef.current) return startInFlightRef.current
+    const attempt = (async () => {
     const base = visionAssetBase()
     let storedProfile: unknown = null
     try {
@@ -236,6 +243,21 @@ export function useVisionInput(): VisionInputHandle {
       sendInit()
     })
     setEnabled(true)
+    })()
+    // R227.4: failure must roll the half-built state back — a leaked
+    // channelRef turned every later enable() into a silent no-op (the
+    // "dead button" bug: retry was impossible without remounting the view).
+    const tracked = attempt.catch((err) => {
+      channelRef.current?.close()
+      channelRef.current = null
+      if (hostOpenRef.current) {
+        hostOpenRef.current = false
+        void window.rgbbox.visionHostClose()
+      }
+      throw err
+    }).finally(() => { startInFlightRef.current = null })
+    startInFlightRef.current = tracked
+    return tracked
   }, [mirror, onEvent, onSnapshot, sensitivity])
 
   const enable = useCallback(() => start('camera'), [start])

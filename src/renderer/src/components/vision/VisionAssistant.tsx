@@ -71,6 +71,19 @@ export function VisionAssistant({ activeView, onNavigate, rootRef }: {
     if (activeView === 'games' && vision.enabled) vision.disable()
   }, [activeView, vision.enabled, vision.disable])
 
+  // R227.5: the camera follows window visibility — minimized/hidden-to-tray
+  // must NEVER keep the camera + 60Hz inference running (privacy + battery:
+  // the camera light staying on while the window is gone was a P0). The
+  // main process pushes definitive visibility (R43 mainWindowVisibilityChanged
+  // — the Page Visibility API is unreliable after R38's occlusion tweaks).
+  // On return, the enable-effect above restores the session if still wanted.
+  useEffect(() => {
+    if (typeof window.rgbbox?.onMainWindowVisibilityChanged !== 'function') return
+    return window.rgbbox.onMainWindowVisibilityChanged((visible) => {
+      if (!visible && vision.enabled) vision.disable()
+    })
+  }, [vision.enabled, vision.disable])
+
   // chord + direction bindings (window bus — the events carry all kinds)
   useEffect(() => {
     if (!vision.enabled) return

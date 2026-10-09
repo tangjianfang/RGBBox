@@ -9,7 +9,10 @@
 //      ▲                            │ (retry step on bad data)            │
 //      └── lost ≥ handLostRecalFrames ◀── lost ≥ release frames ──────────┘
 
-import { HandEngine, OffHandEngine, GapEngine, handGeometry } from './gesture_engine.js';
+// R227.1: handOpenness MUST be imported — the paused-state off-hand resume
+// check called it unbound, and one ReferenceError inside the host tick killed
+// the frame loop permanently (camera on, zero feedback, no self-healing).
+import { HandEngine, OffHandEngine, GapEngine, handGeometry, handOpenness } from './gesture_engine.js';
 import { FaceEngine, blendshapeMap } from './face_engine.js';
 
 export const DEFAULT_SESSION_CFG = {

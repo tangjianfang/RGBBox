@@ -99,6 +99,18 @@ export class VisionPipeline {
     this.deps.onEvents?.(events);
   }
 
+  /**
+   * R227.6: swap the landmarkers at runtime (GPU delegate died mid-session →
+   * CPU). Reuses the injected loader so the unit-test seam stays intact.
+   */
+  async reloadLandmarkers(cfg = {}) {
+    this.deps.onStatus?.('reloading models…');
+    const loaded = await this.deps.loadLandmarkers(cfg);
+    this.hand = loaded.hand;
+    this.face = loaded.face ?? null;
+    this.deps.onStatus?.('models ready');
+  }
+
   setPaused(p) {
     this.paused = p;
     this.deps.onEvents?.(this.session.setPaused(p));

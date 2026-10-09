@@ -236,3 +236,22 @@ test('snapshot exposes the ring live center (ringCenter) and recenter moves it',
   const after = d.frame({ ...atPalm(CENTER.x + 0.02, CENTER.y) }).snapshot;
   assert.ok(after.ringCenter.x > first.ringCenter.x, 'recenter must move the live center');
 });
+
+// R227.1: the paused-state off-hand resume path called `handOpenness` WITHOUT
+// importing it — one ReferenceError inside the host tick killed the frame
+// loop permanently (camera on, zero feedback). This is the regression lock.
+test('R227.1: paused + off-hand present does not throw (handOpenness import regression)', () => {
+  const d = new SessionDriver({ cfg: QUICK_CFG });
+  d.calibrate();
+  d.session.setPaused(true);
+  // secondary (off) hand in frame while paused — the resume-gesture watcher
+  // runs handOpenness on it every frame. Before R227.1 this threw immediately.
+  let threw = null;
+  try {
+    for (let i = 0; i < 20; i++) {
+      d.frame({ ...atPalm(CENTER.x, CENTER.y), hand2: { cx: CENTER.x - 0.25, cy: CENTER.y - 0.1, pinch: i % 4 ? 1.25 : 0.22 } });
+    }
+  } catch (e) { threw = e; }
+  assert.ok(!threw, `paused off-hand path threw: ${threw && threw.message}`);
+  assert.equal(d.session.state, 'paused');
+});
