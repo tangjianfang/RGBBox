@@ -3980,6 +3980,12 @@
 
 
 
+
+- **R233 `fix` — 快照门禁 workspace 活动区遮罩（Wave1-T2；REVIEW-VISION 已知问题§8 条目；状态 ⏳）**：workspace 视图 run-to-run 自差 1.7%（R227 期实证，stash 对照排除代码因素）——右侧 `.panel.map-panel` 拓扑/视频墙等活动元素未遮罩。修：`scripts/ui-snapshot.mjs` 增 `VOLATILE_REGION_SELECTORS`。验收：连续三跑 workspace ≤0.1%、其余 8 视图 0.0000%。
+- **R234 `refactor` — 宿主编排抽 hostMessenger+单测+覆盖率纳入（Wave1-T3；06-R1/R8；状态 ⏳）**：`visionHostMain.js` ~200 行 0 测试胶水。抽 `vision/hostMessenger.js` 纯函数（createHostMessenger）+ `tests/vision/hostSession.test.mjs`（重复 init ready/最后离开者关/switch 异常不断流）+ vitest coverage include vision 层并定阈值。验收：全量绿+smoke:app 0 FAIL。
+- **R235 `fix` — 引擎 i18n 化（Wave1-T4；06-R5/07-X4；状态 ⏳）**：session.js 360 汉字+pipeline 'loading models…' 直出（en 用户见中文）。方案=06-R5 messages catalog 注入（默认中文表保持兼容）+ i18n `games.vision.engine.*` 22 条 + hook 映射。验收：en 态全 UI 无中文直出；zh 值零变化兼容锁。
+- **R236 `fix` — 商业合规包（Wave1-T5；05-TB4/TB5/TC5；状态 ⏳）**：①origin 门禁（default session 权限白名单加 scheme∈{file,media} 判定）；②ai8 `persist:ai8` 分区全拒 handler；③PRIVACY.md+设置页声明；④RELEASE-SIGNING.md 评估文档。验收：门禁单测+ai8 走查拒摄像头。
+
 - **R231 `fix` — 体感词汇收敛 + 死功能清理（2026-10-09 批 5/5；REVIEW-VISION 08-T6「玩具感减法」；状态 🔄）**：
   - **R231.1 死键清理**：MiniGamesView 透传表删除 `'c'`（无任何引擎来源的死分支）；表情键与 vision_input.js 已随 R230 处理。
   - **R231.2 用户可见词汇收敛为 6（权威表）**：评审原案收敛到 5（dir8/pinch/palmHold/chord-menu/doublePinch）——R229 灯效环（chord-light）是核心价值词升格入表，定为 **6 词**：`dir8`（八向一词）、`pinch`（捏合=确认/Space）、`palm`（张掌=离合/暂停）、`chord-menu`（视图环）、`chord-light`（灯效环）、`double-pinch`（双手张合）。`hostProtocol.js` 增 `USER_VOCAB` 冻结表（单一权威，含 zh/en 名），断言单测锁上限=6；引擎层未消费和弦（pause/next/back）保持 `reserved` 注释不删（能力保留，UI 不教——词汇学习面由本表约束）。
