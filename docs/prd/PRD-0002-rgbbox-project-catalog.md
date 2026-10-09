@@ -3991,7 +3991,7 @@
 - **R239 `fix` — 摄像头故障全恢复（Wave2-T6；03-B4/B5/B6、05-TB2、07-X1、08-T3；状态 ⏳）**：拔线/被占/权限拒/宿主崩四类故障全部「可见+可恢复」。①`vision/visionErrors.ts` 纯分类（NotAllowed→denied/NotFound→no-device/NotReadable→occupied/camera-ended→detached/timeout/retry，code 前缀透传）；②宿主 startCamera 挂 `track.onended`（拔线即 error+teardown）+ devicechange 监听；③hook 错误态暴露分类结果，enable 失败分类入 error；④VisionBanner 错误卡（分类文案+CTA：denied→系统隐私设置指引/no-device→重试+设备枚举提示/occupied·timeout→重试）替换 MiniGamesView 裸错误行；⑤i18n zh/en。验收：分类纯函数单测全绿；FakeHost error→错误卡渲染+CTA 回调；全量 0 失败。
 
 
-- **R240 `feat` — 任务族 F5：i18n 全量审计引擎（TASK-UNIVERSE F5，1706 键 ÷12/批；状态 🔄）**：新 `scripts/i18n-audit.mjs`（zh/en 键集差集/空值/占位符 {var} 不一致/zh-en 同文可疑直出/上下文长度溢出候选五类检查，输出逐批修复清单 + 汇总计数）。审计即任务：每个缺口=一个 F5 实例，修复随批次执行。验收：脚本跑通出首版报告；发现的缺口按批修复并加回归断言。
+- **R240 `feat` — 任务族 F5：i18n 全量审计引擎（TASK-UNIVERSE F5，1741 键 ÷12/批；状态 ✅ 引擎闭环+首清零）**：新 `scripts/i18n-audit.mjs`（zh/en 键集差集/空值/占位符 {var} 不一致/zh-en 同文可疑直出/上下文长度溢出候选五类检查，输出逐批修复清单 + 汇总计数）。审计即任务：每个缺口=一个 F5 实例，修复随批次执行。验收：脚本跑通出首版报告；发现的缺口按批修复并加回归断言。**证据**：首跑即抓真 bug——`games.pad.hint` en 侧缺 `{n}` 占位符（en 用户看不到手柄数），已修；复跑 **zh 1741/en 1741 全平价、缺键 0、空值 0、占位符 0、重复 0**（exit 0）；复核类发现入库 `docs/I18N-AUDIT.md`（zh=en 同文 13=品牌/术语候选、en>3×zh 122=布局溢出候选——随 F4 视觉审逐批消化）。
 
 - **R233 `fix` — 快照门禁 workspace 活动区遮罩（Wave1-T2；REVIEW-VISION 已知问题§8 条目；状态 ⏳）**：workspace 视图 run-to-run 自差 1.7%（R227 期实证，stash 对照排除代码因素）——右侧 `.panel.map-panel` 拓扑/视频墙等活动元素未遮罩。修：`scripts/ui-snapshot.mjs` 增 `VOLATILE_REGION_SELECTORS`。验收：连续三跑 workspace ≤0.1%、其余 8 视图 0.0000%。
 - **R234 `refactor` — 宿主编排抽 hostMessenger+单测+覆盖率纳入（Wave1-T3；06-R1/R8；状态 ✅）**：`visionHostMain.js` ~200 行 0 测试胶水。抽 `vision/hostMessenger.js` 纯函数（createHostMessenger）+ `tests/vision/hostSession.test.mjs`（重复 init ready/最后离开者关/switch 异常不断流）+ vitest coverage include vision 层并定阈值。验收：全量绿+smoke:app 0 FAIL。

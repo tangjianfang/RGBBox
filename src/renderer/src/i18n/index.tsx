@@ -1016,7 +1016,7 @@ const EN = {
   'games.difficulty.casual': 'Casual',
   'games.difficulty.standard': 'Standard',
   // ── R218 U2/U4: 手柄 Start 四作 + 难度四档 ──
-  'games.pad.hint': 'gamepads connected — press Start to play',
+  'games.pad.hint': '{n} gamepads connected — press Start to play',
   'games.pad.none': 'No gamepad — keyboard / mouse ready',
   'games.difficulty.hard': 'Hard',
   'games.difficulty.insane': 'Insane',
