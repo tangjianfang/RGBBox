@@ -84,7 +84,7 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
   // where the games view owns the host)
   useEffect(() => {
     if (!assistantOn || activeView === 'games') return
-    if (!vision.enabled) void vision.enable().catch(() => undefined)
+    if (!vision.enabled) void vision.enable().catch((err) => console.warn('[vision]', err))
   }, [assistantOn, activeView, vision.enabled, vision.enable])
 
   // off inside the games view — the games hook owns the lifecycle there

@@ -93,7 +93,7 @@ export class LanService {
       const beacon = parseBeacon(buf, this.appVersion)
       if (beacon) this.emit({ kind: 'peer-joined', detail: { found: { ...beacon, ip: rinfo.address } } })
     })
-    sock.on('error', () => undefined) // 端口被占(常见于本机双实例)→ 静默,走手输直连兜底
+    sock.on('error', (err) => console.info('[lan]', 'probe socket (expected on busy port):', String(err))) // 端口被占→手输直连兜底
     sock.bind(LAN_BEACON_PORT, () => {
       try { sock.setBroadcast(true) } catch { /* best-effort */ }
     })
@@ -119,7 +119,7 @@ export class LanService {
       const port = (server.address() as net.AddressInfo).port
       this.room = { name, game, port, seed }
       const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true })
-      sock.on('error', () => undefined)
+      sock.on('error', (err) => console.info('[lan]', 'socket:', String(err)))
       sock.bind(() => {
         try { sock.setBroadcast(true) } catch { /* best-effort */ }
         this.beaconTimer = setInterval(() => {
@@ -265,7 +265,7 @@ export class LanService {
         }
       }
     })
-    socket.on('error', () => undefined)
+    socket.on('error', (err) => console.info('[lan]', 'socket:', String(err)))
     socket.on('close', () => {
       const was = this.peers.delete(id)
       if (was) {

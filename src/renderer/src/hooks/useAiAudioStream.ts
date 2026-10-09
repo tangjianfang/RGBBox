@@ -47,8 +47,8 @@ export function useAiAudioStream(source: SourceId | null): AiAudioStreamState {
       // on source switches React runs destroy(old)-then-create(new) in one
       // flush, and ipcRenderer preserves invocation order: Stop(old) then
       // Start(new). The old order (Stop awaited last) killed the fresh session.
-      await window.rgbbox.audioAiStreamStop().catch(() => undefined)
-      await handle?.stop().catch(() => undefined)
+      await window.rgbbox.audioAiStreamStop().catch((err) => console.warn('[ai-audio]', err))
+      await handle?.stop().catch((err) => console.warn('[ai-audio]', err))
       handle = null
     }
 
@@ -85,7 +85,7 @@ export function useAiAudioStream(source: SourceId | null): AiAudioStreamState {
             astError: typeof tick.astError === 'string' ? tick.astError : null,
             batches: s.batches + 1,
           }))
-        }).catch(() => undefined)
+        }).catch((err) => console.warn('[ai-audio]', err))
       })
       if (cancelled) { await teardown(); return }
       setState((s) => ({ ...s, actualRate: handle?.actualRate ?? null }))

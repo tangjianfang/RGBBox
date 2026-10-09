@@ -34,7 +34,7 @@ export async function startAudioRecorder(seconds?: number): Promise<AudioRecorde
     source.disconnect()
     mute.disconnect()
     for (const track of stream.getTracks()) track.stop()
-    await ctx.close().catch(() => undefined)
+    await ctx.close().catch((err) => console.warn('[pcm]', 'ctx close failed:', err))
   }
 
   const concat = (): Float32Array => {

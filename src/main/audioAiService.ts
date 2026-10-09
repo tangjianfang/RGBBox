@@ -218,7 +218,7 @@ export function feedStream(pcm: Float32Array): Promise<StreamFeedResult> {
     () => feedStreamInner(pcm),
     () => feedStreamInner(pcm),
   ) as Promise<StreamFeedResult>
-  feedChain = run.then(() => undefined, () => undefined)
+  feedChain = run.then(() => undefined, (err) => console.warn('[audio-ai]', 'feed chain:', err))
   return run
 }
 

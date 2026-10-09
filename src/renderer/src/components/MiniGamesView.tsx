@@ -1032,7 +1032,7 @@ export function MiniGamesView(): JSX.Element {
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
       setFullscreen(false)
-      void document.exitFullscreen?.().catch(() => undefined)
+      void document.exitFullscreen?.().catch((err) => console.warn('[games]', err))
       return
     }
     setFsPaused(false)
@@ -1529,7 +1529,7 @@ export function MiniGamesView(): JSX.Element {
         return
       }
       setFullscreen(false)
-      if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
+      if (document.fullscreenElement) void document.exitFullscreen?.().catch((err) => console.warn('[games]', err))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -1537,7 +1537,7 @@ export function MiniGamesView(): JSX.Element {
 
   const enterGame = useCallback((next: Screen) => {
     setFullscreen(false)
-    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
+    if (document.fullscreenElement) void document.exitFullscreen?.().catch((err) => console.warn('[games]', err))
     // R208: 离开/切换游戏时清轮换对决状态(防止残留回合机污染下一局)
     duelRef.current = null
     setDuel(null)
@@ -1546,7 +1546,7 @@ export function MiniGamesView(): JSX.Element {
 
   const backToHub = useCallback(() => {
     setFullscreen(false)
-    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
+    if (document.fullscreenElement) void document.exitFullscreen?.().catch((err) => console.warn('[games]', err))
     // R220.1⑧: survival 中途弃局(running/levelup/roulette)按 lost 结算——
     // 原样保留会导致重进游戏时残留 running 态、ready 面板被旁路(07 X-1,
     // 主审 CDP 第一手复现)。分数与进度照常入账。
@@ -2352,7 +2352,7 @@ export function MiniGamesView(): JSX.Element {
             title={vision.enabled ? t('games.vision.disable') : t('games.vision.enable')}
             onClick={() => {
               if (vision.enabled) vision.disable()
-              else void vision.enable().catch(() => undefined)
+              else void vision.enable().catch((err) => console.warn('[games]', err))
             }}
           >
             {vision.enabled ? <Eye aria-hidden="true" size={13} /> : <EyeOff aria-hidden="true" size={13} />}
@@ -2746,9 +2746,9 @@ export function MiniGamesView(): JSX.Element {
                   ) : null}
                   {/* R218 U2: 非 fs 态也可暂停(手柄 Start/Esc)——「退出全屏」仅 fs 态显示 */}
                   {fullscreen ? (
-                    <button type="button" className="video-btn" data-action="fs-exit" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined) }}>{t('games.pause.exitFs')}</button>
+                    <button type="button" className="video-btn" data-action="fs-exit" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch((err) => console.warn('[games]', err)) }}>{t('games.pause.exitFs')}</button>
                   ) : null}
-                  <button type="button" className="video-btn" data-action="fs-hub" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined); backToHub() }}>{t('games.pause.hub')}</button>
+                  <button type="button" className="video-btn" data-action="fs-hub" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch((err) => console.warn('[games]', err)); backToHub() }}>{t('games.pause.hub')}</button>
                 </div>
               </div>
             ) : null}
@@ -2845,7 +2845,7 @@ export function MiniGamesView(): JSX.Element {
                 R239: also mounts on FAILURE (enabled=false + error) as the recovery
                 card — classified text + retry CTA; retry re-runs the real enable. */}
             {vision.enabled || vision.error ? (
-              <VisionBanner vision={vision} onRetry={() => { void vision.enable().catch(() => undefined) }} />
+              <VisionBanner vision={vision} onRetry={() => { void vision.enable().catch((err) => console.warn('[games]', err)) }} />
             ) : null}
             {/* R132.2: joystick + skeleton overlay — own rAF, reads frameRef directly */}
             {vision.enabled && visionPadVisible ? <VisionPad vision={vision} /> : null}

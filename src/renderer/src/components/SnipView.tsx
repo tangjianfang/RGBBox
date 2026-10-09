@@ -125,7 +125,7 @@ export function SnipView({ displayId }: { displayId: number }): JSX.Element {
       a.click()
     }
     void window.rgbbox.snipFinish(url, mode)
-      .catch(() => undefined)
+      .catch((err) => console.warn('[snip]', err))
       .finally(() => window.rgbbox.snipCancel())
   }, [])
 

@@ -211,7 +211,7 @@ export function AiLabAgentTab(): JSX.Element {
       autoRestoreRef.current = true
       void window.rgbbox.agentSessionsList().then((list) => {
         if (list.some((s) => s.id === prefs.lastSessionId)) loadSession(prefs.lastSessionId as string)
-      }).catch(() => undefined)
+      }).catch((err) => console.warn('[agent]', err))
     }
   }, [refreshSessions, prefs.profileId, prefs.lastSessionId])
 
@@ -404,7 +404,7 @@ export function AiLabAgentTab(): JSX.Element {
     void window.rgbbox.agentSessionRename(id, clean).then((out) => {
       if (!out.ok) setError(out.error ?? 'parse')
       refreshSessions()
-    }).catch(() => undefined)
+    }).catch((err) => console.warn('[agent]', err))
   }
 
   const deleteSession = (id: string): void => {
@@ -420,7 +420,7 @@ export function AiLabAgentTab(): JSX.Element {
         setError(null)
       }
       refreshSessions()
-    }).catch(() => undefined)
+    }).catch((err) => console.warn('[agent]', err))
   }
 
   return (

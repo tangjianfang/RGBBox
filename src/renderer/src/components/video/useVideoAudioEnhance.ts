@@ -175,7 +175,7 @@ export function useVideoAudioEnhance(videoRef: RefObject<HTMLVideoElement | null
     workletRef.current?.port.postMessage({ type: 'enable', value: false })
     setDenoiseStatus('idle')
     setDenoiseMessage('')
-    await window.rgbbox.denoiseStop().catch(() => undefined)
+    await window.rgbbox.denoiseStop().catch((err) => console.warn('[video-audio]', err))
   }, [])
 
   const toggleDenoise = useCallback((on: boolean): void => {
@@ -194,7 +194,7 @@ export function useVideoAudioEnhance(videoRef: RefObject<HTMLVideoElement | null
   useEffect(() => () => {
     workletRef.current?.port.postMessage({ type: 'enable', value: false })
     if (workletModuleUrlRef.current) URL.revokeObjectURL(workletModuleUrlRef.current)
-    void window.rgbbox.denoiseStop().catch(() => undefined)
+    void window.rgbbox.denoiseStop().catch((err) => console.warn('[video-audio]', err))
   }, [])
 
   // MediaElementSource 不会随元素 src 变化失效——同一元素换片无需重建图。

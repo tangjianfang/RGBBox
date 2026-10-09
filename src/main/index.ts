@@ -419,7 +419,7 @@ function registerIpc(): void {
   let aiStoreQueue: Promise<unknown> = Promise.resolve()
   const runAiStoreOp = <T,>(fn: () => Promise<T>): Promise<T> => {
     const p = aiStoreQueue.then(fn, fn)
-    aiStoreQueue = p.then(() => undefined, () => undefined)
+    aiStoreQueue = p.then(() => undefined, (err) => console.warn('[ai8]', 'store queue:', err))
     return p
   }
   // R89.3: multi-profile store. Normalize (with legacy single-config migration),
@@ -748,10 +748,10 @@ function registerIpc(): void {
       // starts from a clean logged-out state.
       if (fresh) {
         void win.webContents.session.clearStorageData({ storages: ['localstorage', 'cookies', 'indexdb'] })
-          .catch(() => undefined)
-          .then(() => { if (!win.isDestroyed()) win.loadURL('https://ai8.rcouyi.com/').catch(() => undefined) })
+          .catch((err) => console.warn('[main]', err))
+          .then(() => { if (!win.isDestroyed()) win.loadURL('https://ai8.rcouyi.com/').catch((err) => console.warn('[main]', err)) })
       } else {
-        void win.loadURL('https://ai8.rcouyi.com/').catch(() => undefined)
+        void win.loadURL('https://ai8.rcouyi.com/').catch((err) => console.warn('[main]', err))
       }
       win.webContents.on('did-navigate', () => {
         void readState().then(handleState)

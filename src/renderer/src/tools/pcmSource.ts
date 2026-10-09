@@ -62,7 +62,7 @@ async function startWebAudioSource(
   // Request 16k but trust nothing — the rate is read back from the context.
   const ctx = new AudioContext({ sampleRate: TARGET_RATE })
   // Autoplay policy can leave the context suspended with zero callbacks.
-  if (ctx.state === 'suspended') await ctx.resume().catch(() => undefined)
+  if (ctx.state === 'suspended') await ctx.resume().catch((err) => console.warn('[pcm]', err))
   const src = ctx.createMediaStreamSource(stream)
   const processor = ctx.createScriptProcessor(4096, 1, 1)
   let pending = new Float32Array(0)
@@ -109,7 +109,7 @@ async function startWebAudioSource(
       src.disconnect()
       mute.disconnect()
       for (const track of stream.getTracks()) track.stop()
-      await ctx.close().catch(() => undefined)
+      await ctx.close().catch((err) => console.warn('[pcm]', err))
     },
   }
   } catch (err) {

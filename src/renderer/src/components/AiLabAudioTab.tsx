@@ -88,7 +88,7 @@ function useModelDownloads(): {
   const download = useCallback((name: 'silero_vad' | 'ast_audioset') => {
     if (name === 'silero_vad') setSilero('downloading')
     else { setAst('downloading'); setAstPercent(0) }
-    void window.rgbbox.modelDownload(name).catch(() => undefined)
+    void window.rgbbox.modelDownload(name).catch((err) => console.warn('[ai-audio]', err))
   }, [])
 
   return { silero, ast, astPercent, err, download, refresh }

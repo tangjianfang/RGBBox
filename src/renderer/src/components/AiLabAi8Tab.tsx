@@ -231,7 +231,7 @@ export function AiLabAi8Tab(): JSX.Element {
         setVideoProviders(videoTmplCache.providers)
         setVideoNotice(videoTmplCache.notice)
       })
-      .catch(() => undefined)
+      .catch((err) => console.warn('[ai8]', err))
   }, [token])
 
   // R121: keep the video picker coherent — first provider when unset/removed
@@ -393,7 +393,7 @@ export function AiLabAi8Tab(): JSX.Element {
       setActiveId(null)
       writeActiveId(null)
     }
-    void client().deleteSession(id).catch(() => undefined)
+    void client().deleteSession(id).catch((err) => console.warn('[ai8]', err))
   }, [activeId])
 
   const upsertSession = useCallback((session: Ai8Session) => {
@@ -507,7 +507,7 @@ export function AiLabAi8Tab(): JSX.Element {
       if (finalUrls === undefined) {
         // R125.3: stuck task — clear the server slot (best-effort), then
         // retry once for a fresh submit or report for adoption/recovery.
-        await client().drawDelete(taskId).catch(() => undefined)
+        await client().drawDelete(taskId).catch((err) => console.warn('[ai8]', err))
         if (resubmit !== undefined && !abort.signal.aborted) {
           patchLastAssistant(sessionId, { content: t('ai.ai8.drawResubmit'), error: undefined })
           return await resubmit()
@@ -1337,14 +1337,14 @@ export function AiLabAi8Tab(): JSX.Element {
                 const file = e.target.files?.[0]
                 if (file) {
                   if (file.type.startsWith('image/') && prefs.mode === 'chat') {
-                    void readImageFile(file).then(setAttachment).catch(() => undefined)
+                    void readImageFile(file).then(setAttachment).catch((err) => console.warn('[ai8]', err))
                   } else if (file.size > 512 * 1024) {
                     setImportHint(t('ai.ai8.fileTooLarge'))
                     window.setTimeout(() => setImportHint(''), 2600)
                   } else {
                     void file.text().then((text) => {
                       setInput((prev) => (prev.trim() === '' ? '' : prev + '\n\n') + `【${file.name}】\n${text}`)
-                    }).catch(() => undefined)
+                    }).catch((err) => console.warn('[ai8]', err))
                   }
                 }
                 e.target.value = ''
@@ -1367,7 +1367,7 @@ export function AiLabAi8Tab(): JSX.Element {
               const file = item?.getAsFile()
               if (file) {
                 e.preventDefault()
-                void readImageFile(file).then(setAttachment).catch(() => undefined)
+                void readImageFile(file).then(setAttachment).catch((err) => console.warn('[ai8]', err))
               }
             }}
             onKeyDown={(e) => {

@@ -65,7 +65,7 @@ export function AiLabVoiceTab(): JSX.Element {
   useEffect(() => {
     const off = window.rgbbox.onTtsModelProgress((ev) => {
       setDlProgress((prev) => ({ ...prev, [ev.path]: ev }))
-      if (ev.done && !ev.error) void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch(() => undefined)
+      if (ev.done && !ev.error) void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch((err) => console.warn('[ai-voice]', err))
     })
     return off
   }, [])
@@ -78,7 +78,7 @@ export function AiLabVoiceTab(): JSX.Element {
     try {
       const out = await window.rgbbox.ttsModelDownload(paths)
       if (!out.ok) setDlError(out.error ?? 'network')
-      void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch(() => undefined)
+      void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch((err) => console.warn('[ai-voice]', err))
     } finally {
       setDownloading(false)
     }
@@ -92,7 +92,7 @@ export function AiLabVoiceTab(): JSX.Element {
     try {
       const out = await window.rgbbox.ttsModelDownload(undefined, { piper: true })
       if (!out.ok) setDlError(out.error ?? 'network')
-      void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch(() => undefined)
+      void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch((err) => console.warn('[ai-voice]', err))
     } finally {
       setDownloading(false)
     }
@@ -240,7 +240,7 @@ export function AiLabVoiceTab(): JSX.Element {
     try {
       const out = await window.rgbbox.ttsVoiceDownload(voiceId)
       if (!out.ok) setDlError(out.error === 'unknown-voice' ? 'network' : out.error ?? 'network')
-      void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch(() => undefined)
+      void window.rgbbox.ttsEngineStatus().then(setTtsStatus).catch((err) => console.warn('[ai-voice]', err))
     } finally {
       setVoiceDownloading(false)
     }
