@@ -22,3 +22,10 @@ export declare function createSessionRegistry(): SessionRegistry
 export interface VocabEntry { readonly id: string; readonly zh: string; readonly en: string }
 export declare const USER_VOCAB: ReadonlyArray<Readonly<VocabEntry>>
 export declare function nextConsumerId(): string
+// R235: engine message-catalog contract (see hostProtocol.js — tests lock the
+// list against session.js DEFAULT_SESSION_MESSAGES)
+export declare const VISION_SESSION_MSG_KEYS: ReadonlyArray<string>
+export declare const VISION_MODEL_MSG_KEYS: ReadonlyArray<string>
+export declare const VISION_MSG_KEYS: ReadonlyArray<string>
+/** identity table (key→key) the hook injects so the engine emits codes */
+export declare const VISION_KEY_MESSAGES: Readonly<Record<string, string>>

@@ -116,7 +116,7 @@ export function createHostMessenger(deps) {
           rebuilding = true
           try {
             if (pipeline.delegate === 'GPU' && lastCfg) {
-              post({ type: 'status', s: '推理连续异常，切换 CPU 模式重试 / inference failing, retrying on CPU' })
+              post({ type: 'status', s: 'models.cpu-retry' }) // R235: stable code, localized at the consumer
               await pipeline.reloadLandmarkers({ ...lastCfg, cpuFallback: true })
               errStreak = 0
             } else {

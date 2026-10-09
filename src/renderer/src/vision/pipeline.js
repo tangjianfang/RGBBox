@@ -58,7 +58,9 @@ export class VisionPipeline {
   /** @param {object} cfg { bundleless landmarkers come from the loader;
    *  sessionCfg, mirror, numHands, sensitivity, storedProfile } */
   async init(cfg = {}) {
-    this.deps.onStatus?.('loading models…');
+    // R235: lifecycle statuses are stable codes (hostProtocol.VISION_MODEL_MSG_KEYS)
+    // — the hook localizes them via i18n games.vision.engine.models.*
+    this.deps.onStatus?.('models.loading');
     const loaded = await this.deps.loadLandmarkers(cfg);
     this.hand = loaded.hand;
     this.face = loaded.face ?? null;
@@ -75,7 +77,7 @@ export class VisionPipeline {
     if (cfg.sensitivity && PIPELINE_SENSITIVITY[cfg.sensitivity]) {
       this.session.applySettings({ confirmMs: PIPELINE_SENSITIVITY[cfg.sensitivity].confirmMs });
     }
-    this.deps.onStatus?.('models ready');
+    this.deps.onStatus?.('models.ready');
   }
 
   start(nowMs) {
@@ -89,7 +91,7 @@ export class VisionPipeline {
       this.synthetic = new SyntheticSource();
       this.running = true;
       this.session.start(performance.now());
-      this.deps.onStatus?.('synthetic source running');
+      this.deps.onStatus?.('models.synthetic');
     });
   }
 
@@ -104,11 +106,11 @@ export class VisionPipeline {
    * CPU). Reuses the injected loader so the unit-test seam stays intact.
    */
   async reloadLandmarkers(cfg = {}) {
-    this.deps.onStatus?.('reloading models…');
+    this.deps.onStatus?.('models.reloading');
     const loaded = await this.deps.loadLandmarkers(cfg);
     this.hand = loaded.hand;
     this.face = loaded.face ?? null;
-    this.deps.onStatus?.('models ready');
+    this.deps.onStatus?.('models.ready');
   }
 
   setPaused(p) {

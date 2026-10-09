@@ -62,7 +62,9 @@ async function loadLandmarkers(cfg) {
     return { hand, face }
   } catch (e) {
     if (preferred === 'CPU') throw e
-    post({ type: 'status', s: `GPU delegate unavailable (${String(e).slice(0, 60)}), CPU fallback` })
+    // R235: stable code + dynamic detail — the hook maps the code via i18n
+    // (games.vision.engine.models.gpu-fallback) and keeps the raw detail
+    post({ type: 'status', s: `models.gpu-fallback (${String(e).slice(0, 60)})` })
     const hand = await HandLandmarker.createFromOptions(fileset, makeHand('CPU'))
     const face = cfg.faceModel ? await FaceLandmarker.createFromOptions(fileset, makeFace('CPU')) : null
     p.delegate = 'CPU'
@@ -91,6 +93,7 @@ async function startCamera(mode) {
   await new Promise((r) => { video.onloadedmetadata = r })
   await video.play()
   return video
+worktree-agent-a13504f2066f23243
 }
 
 // R234: camera/DOM cleanup only — the loop cancel + synthetic timer are owned

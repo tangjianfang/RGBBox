@@ -5,10 +5,17 @@
 // events / snapshots / profile-save messages.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { act, cleanup, renderHook } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { useVisionInput } from '../../../src/renderer/src/hooks/useVisionInput'
 import { visionAssetBase } from '../../../src/renderer/src/hooks/visionAssetBase'
+import { I18nProvider, useI18n, type Lang } from '../../../src/renderer/src/i18n'
 import type { VisionEvent, VisionFrame } from '../../../src/renderer/src/vision/vision_input'
 import { setupRendererMocks } from '../_helpers'
+
+// setup.ts globally stubs the i18n module (t = key echo). The R235 case needs
+// the REAL tables + provider (asserts concrete zh/en values and a runtime
+// language switch) — restore the actual module for this file only.
+vi.mock('../../../src/renderer/src/i18n', async (importOriginal) => importOriginal())
 
 interface HostMessage { type: string; [key: string]: unknown }
 
@@ -284,5 +291,77 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     expect((msgs[1] as { camera: { width: number } }).camera.width).toBe(640)
     await act(() => result.current.disable())
   })
+
+  // R235 ────────────────────────────────────────────────────────────────────
+  // Engine i18n: the hook injects the key-mode messages table (engine emits
+  // stable codes) and localizes every incoming code through t() at the
+  // component layer — per-consumer language, switchable at runtime. Text
+  // that hits no key passes through verbatim (R227 real-error compat).
+  it('R235: engine status codes localize via t() (zh default, en after switch); unknown text passes through', async () => {
+    // the label publish is ~4Hz-throttled on performance.now() — own the clock
+    const nowSpy = vi.spyOn(performance, 'now')
+    let now = 1_000_000
+    nowSpy.mockImplementation(() => now)
+    try {
+      const { result } = renderHook(() => useVisionInput(), { wrapper: I18nWrapper })
+      await act(() => result.current.enableSynthetic())
+      // the init ships the key-mode messages table → the engine emits codes
+      const init = host.received.find((m) => m.type === 'init') as { cfg: { sessionCfg: { messages: Record<string, string> } } }
+      expect(init.cfg.sessionCfg.messages['state.active']).toBe('state.active')
+      // snapshot label 'state.active' → the zh i18n value (first publish)
+      act(() => host.send({ type: 'snapshot', snapshot: { state: 'active', label: 'state.active' } }))
+      expect(result.current.label).toBe('已激活')
+      // switch to en → the NEXT snapshot renders English (per-consumer lang)
+      act(() => switchLang('en'))
+      now += 300
+      act(() => host.send({ type: 'snapshot', snapshot: { state: 'active', label: 'state.active' } }))
+      expect(result.current.label).toBe('Vision active')
+      // status messages map through the same key set
+      act(() => switchLang('zh'))
+      act(() => host.send({ type: 'status', s: 'models.ready' }))
+      expect(result.current.label).toBe('模型就绪')
+      // structured retry status → localized reason with interpolated params
+      now += 300
+      act(() => host.send({
+        type: 'snapshot',
+        snapshot: {
+          state: 'calibrating', stepId: 'center', label: 'cal.stepLabel',
+          statusKey: 'cal.center.jitter.retry', statusParams: { sigma: '0.123' },
+        },
+      }))
+      expect(result.current.label).toBe('手抖动过大(σ=0.123),请支撑手肘重试')
+      expect(result.current.statusKey).toBe('cal.center.jitter.retry')
+      // unknown text passes through verbatim — real error messages (R227)
+      now += 300
+      act(() => host.send({ type: 'status', s: 'frame error (2): boom' }))
+      expect(result.current.label).toBe('frame error (2): boom')
+      // a key code with a dynamic tail keeps the detail (GPU fallback)
+      now += 300
+      act(() => host.send({ type: 'status', s: 'models.gpu-fallback (WebGPU boom)' }))
+      expect(result.current.label).toContain('GPU')
+      expect(result.current.label).toContain('WebGPU boom')
+      await act(() => result.current.disable())
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
 })
+
+// R235 test harness: mounts the real I18nProvider and captures setLang so a
+// test can flip the language mid-session without remounting the hook.
+let switchLang: (l: Lang) => void = () => {}
+function LangProbe(): null {
+  const { setLang, lang } = useI18n()
+  switchLang = setLang
+  void lang
+  return null
+}
+function I18nWrapper({ children }: { children?: ReactNode }): JSX.Element {
+  return (
+    <I18nProvider>
+      <LangProbe />
+      {children}
+    </I18nProvider>
+  )
+}
 

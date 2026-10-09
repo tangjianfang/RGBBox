@@ -43,6 +43,11 @@ export interface VisionFrame {
   state: string
   label: string
   status: string
+  /** R235: structured twin of status — stable catalog code + interpolation
+   * params (null when the status is not catalog-backed), for consumers that
+   * localize via i18n games.vision.engine.<key> */
+  statusKey?: string | null
+  statusParams?: Record<string, unknown> | null
   /** DirectionRing LIVE center (recenter-updated); null before calibration */
   ringCenter?: { x: number; y: number } | null
   stepId: 'center' | 'reach' | 'pinch' | null
