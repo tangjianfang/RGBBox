@@ -1474,6 +1474,8 @@ const EN = {
   'audio.viz.exitFullscreen': 'Exit fullscreen',
   'audio.viz.popout': 'Project to display',
   'audio.viz.stopProject': 'Stop projecting',
+  // R272: waveform mode has no projector payload — the button is disabled with this hint
+  'audio.viz.projectUnsupportedWaveform': 'Waveform mode does not support projection',
   'audio.viz.selectDisplay': 'Select display',
   'audio.viz.cancel': 'Cancel',
   'audio.viz.style.classic': 'Classic',
@@ -3255,6 +3257,8 @@ const ZH: TranslationTable = {
   'audio.viz.exitFullscreen': '退出全屏',
   'audio.viz.popout': '投屏到显示器',
   'audio.viz.stopProject': '停止投屏',
+  // R272: 波形模式无投影数据源——按钮禁用并以此提示说明
+  'audio.viz.projectUnsupportedWaveform': '波形模式暂不支持投影',
   'audio.viz.selectDisplay': '选择显示器',
   'audio.viz.cancel': '取消',
   'audio.viz.style.classic': '经典',

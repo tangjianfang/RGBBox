@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { openMonitorStream, stripVideoTracks } from '../tools/desktopAudio'
 
 export type AudioCaptureError = 'permission-denied' | 'source-unavailable' | 'capture-failed'
@@ -85,6 +85,15 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze 
   // Per-band EMA: fast attack (0.75), slow decay (0.20) → VU-meter "peak hold" feel.
   // Prevents the harsh instant-drop that makes equalizer bars jittery.
   const smoothedBandsRef = useRef<number[]>(new Array(NUM_BANDS).fill(0))
+
+  // R272: shared zero-frame helper — whenever the per-tick stream goes silent
+  // (disable / pause / error / device switch) the EMA state must be wiped too,
+  // or the first resumed frame decays from the stale peaks instead of starting
+  // at zero (frozen-meter symptom #2).
+  const resetSmoothing = useCallback((): void => {
+    smoothedBandsRef.current = new Array(NUM_BANDS).fill(0)
+    prevBassRef.current = 0
+  }, [])
 
   const subscribe = useRef((cb: (data: AudioData) => void): (() => void) => {
     const listeners = listenersRef.current
@@ -205,6 +214,10 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze 
         if (cancelled) return
         const error = classifyAudioError(err)
         dataRef.current = { ...INACTIVE, error }
+        // R272: subscribers must see the failure too — without this push their
+        // last frame stayed at the pre-error level (VU meters frozen mid-air).
+        for (const cb of listenersRef.current) cb(dataRef.current)
+        resetSmoothing()
         setStatus({ active: false, error })
       })
 
@@ -213,17 +226,29 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze 
       if (intervalRef.current !== null) window.clearInterval(intervalRef.current)
       stream?.getTracks().forEach((t) => t.stop())
       audioContext?.close().catch(() => undefined)
+      // R272: deviceId switch / unmount — one zero frame so subscribed meters
+      // fall instead of holding the stopped device's last values until the
+      // new stream produces its first tick.
+      dataRef.current = INACTIVE
+      for (const cb of listenersRef.current) cb(INACTIVE)
+      resetSmoothing()
     }
   }, [enabled, deviceId])
 
-  // Keep the subscriber channel coherent when the hook disables: last frame
-  // flips back to INACTIVE so meters/visualizers fall to zero.
+  // R272 (review W1, extends the R147-era disable effect): keep the subscriber
+  // channel coherent whenever the per-tick stream goes SILENT, not just when
+  // the hook disables. `shouldAnalyze` flipping false (R45 visibility gate)
+  // used to leave subscribers' last frame stuck at a stale level. Push one
+  // zero frame and reset the EMA so meters fall to zero AND resume from zero
+  // instead of decaying from stale peaks. (Error + deviceId-change pushes
+  // live in the catch handler / effect cleanup above — they carry context.)
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || !shouldAnalyze) {
       dataRef.current = INACTIVE
       for (const cb of listenersRef.current) cb(INACTIVE)
+      resetSmoothing()
     }
-  }, [enabled])
+  }, [enabled, shouldAnalyze])
 
   return { status, ref: dataRef, subscribe }
 }

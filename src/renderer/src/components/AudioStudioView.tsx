@@ -28,7 +28,17 @@ type PlayMode = 'sequential' | 'loop' | 'shuffle'
 type NoiseType = 'white' | 'pink' | 'brown'
 type GeneratorType = 'sine' | 'sweep' | 'noise' | 'eq-test' | 'surround' | 'bass-boost' | 'spatial' | 'multichannel'
 type SceneCategory = 'instrument' | 'vocal' | 'game' | 'environment' | 'mix'
-type ExportFormat = 'wav' | 'flac'
+// R272: 'flac' was a MISLABEL — the option always produced 24-bit WAV
+// (encodeWav below has no FLAC encoder). The honest options are now
+// 'wav' (generator bit depth) and 'wav24' (forced 24-bit WAV). Real FLAC
+// encoding is explicitly out of scope (separate R-N per PRD R272).
+type ExportFormat = 'wav' | 'wav24'
+
+/** R272: normalize a possibly-stale cached format — legacy 'flac' selections
+ *  produced 24-bit WAV, so they map onto the honest 'wav24' option. */
+function normalizeExportFormat(cached: unknown): ExportFormat {
+  return cached === 'flac' || cached === 'wav24' ? 'wav24' : 'wav'
+}
 
 // ── LRC Types ──────────────────────────────────────────────────────────────
 
@@ -741,7 +751,9 @@ function writeString(view: DataView, offset: number, str: string): void {
 }
 
 function encodeLossless(audioBuffer: AudioBuffer, format: ExportFormat, bitDepth: number): ArrayBuffer {
-  return encodeWav(audioBuffer, format === 'flac' ? 24 : bitDepth)
+  // R272: 'wav24' forces 24-bit WAV (the old 'flac' label's actual output);
+  // 'wav' honors the generator's configured bit depth.
+  return encodeWav(audioBuffer, format === 'wav24' ? 24 : bitDepth)
 }
 
 // ── LRC Parser ─────────────────────────────────────────────────────────────
@@ -1057,7 +1069,7 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   const [sceneCategory, setSceneCategory] = useState<SceneCategory>('instrument')
 
   // Export state
-  const [exportFormat, setExportFormat] = useState<ExportFormat>(cached.exportFormat || 'wav')
+  const [exportFormat, setExportFormat] = useState<ExportFormat>(() => normalizeExportFormat(cached.exportFormat))
   const [lastGeneratedBuffer, setLastGeneratedBuffer] = useState<AudioBuffer | null>(null)
 
   // Tracks whether the cross-session restore has completed (prevents the initial
@@ -2025,7 +2037,10 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
     const buffer = lastGeneratedBuffer || await generateAudio(sceneId)
     if (!buffer) return
     const encoded = encodeLossless(buffer, exportFormat, genConfig.bitDepth)
-    const blob = new Blob([encoded], { type: exportFormat === 'wav' ? 'audio/wav' : 'audio/flac' })
+    // R272: every export option produces a WAV container — MIME and the .wav
+    // filename now say so honestly (the old 'flac' option shipped a 24-bit
+    // WAV labeled audio/flac).
+    const blob = new Blob([encoded], { type: 'audio/wav' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -2338,7 +2353,19 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                   key={mode}
                   type="button"
                   className={`audio-viz-mode-btn ${vizMode === mode ? 'active' : ''}`}
-                  onClick={() => { setVizMode(mode); spectrogramBufferRef.current = [] }}
+                  onClick={() => {
+                    setVizMode(mode)
+                    spectrogramBufferRef.current = []
+                    // R272 (review W2): waveform mode has no projector payload
+                    // (visualizers.ts excludes it from projected modes; the
+                    // draw loop skips the BroadcastChannel post entirely) —
+                    // entering it while projecting would leave the projector
+                    // window frozen black. Tear the projection down instead.
+                    if (mode === 'waveform') {
+                      if (projectDisplayIdsRef.current.length > 0) stopProjecting()
+                      setShowDisplayPicker(false)
+                    }
+                  }}
                 >
                   {t(`audio.viz.${mode}` as any)}
                 </button>
@@ -2370,7 +2397,18 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
               <button
                 type="button"
                 className={`audio-viz-fs-btn ${projectDisplayIds.length > 0 ? 'active' : ''}`}
-                title={t(projectDisplayIds.length > 0 ? 'audio.viz.stopProject' : 'audio.viz.popout')}
+                // R272 (review W2): waveform mode has no BroadcastChannel
+                // payload, so a projector window would stay black — disable
+                // the entry point with an explanatory title instead (switching
+                // INTO waveform mode auto-stops any running projection, see
+                // the mode buttons above, so this never blocks a "stop").
+                disabled={vizMode === 'waveform'}
+                title={vizMode === 'waveform'
+                  ? t('audio.viz.projectUnsupportedWaveform')
+                  : t(projectDisplayIds.length > 0 ? 'audio.viz.stopProject' : 'audio.viz.popout')}
+                aria-label={vizMode === 'waveform'
+                  ? t('audio.viz.projectUnsupportedWaveform')
+                  : t(projectDisplayIds.length > 0 ? 'audio.viz.stopProject' : 'audio.viz.popout')}
                 onClick={() => { if (projectDisplayIds.length > 0) stopProjecting(); else void projectToDisplay() }}
               >
                 <Monitor size={14} />
@@ -2924,12 +2962,15 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                           >
                             WAV
                           </button>
+                          {/* R272: honestly labeled — this option always produced
+                              24-bit WAV; it is NOT FLAC (real FLAC encoding is
+                              a separate R-N). */}
                           <button
                             type="button"
-                            className={`audio-gen-type-btn ${exportFormat === 'flac' ? 'active' : ''}`}
-                            onClick={() => setExportFormat('flac')}
+                            className={`audio-gen-type-btn ${exportFormat === 'wav24' ? 'active' : ''}`}
+                            onClick={() => setExportFormat('wav24')}
                           >
-                            FLAC
+                            WAV 24-bit
                           </button>
                         </div>
                       </div>
@@ -2941,7 +2982,9 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
                         </div>
                         <div className="audio-spec-item">
                           <span>{t('audio.gen.bitDepth')}</span>
-                          <span>{genConfig.bitDepth}-bit</span>
+                          {/* R272: specs readout shows the ACTUAL export depth —
+                              'WAV 24-bit' overrides the generator's setting. */}
+                          <span>{exportFormat === 'wav24' ? 24 : genConfig.bitDepth}-bit</span>
                         </div>
                         <div className="audio-spec-item">
                           <span>{t('audio.gen.channels')}</span>
