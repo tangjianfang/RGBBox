@@ -2,11 +2,52 @@ import type { EffectLayer, RgbColor } from '../shared/types'
 import { adjustSaturationAndContrast, clampByte, clampUnit, hexToRgb, hslToRgb, lerpColor } from './color'
 import { getTextMask } from './textRenderer'
 
-// Per-frame parsed data cache to avoid repeated JSON.parse per pixel
-let _cachedPixelDataStr = ''
-let _cachedPixelData: string[] = []
-let _cachedImageDataStr = ''
-let _cachedImageData: string[][] = []
+// ── R266 TA1: bounded content-keyed parse caches ───────────────────────────
+// Was a single slot (compare against the last parsed string): two same-kind
+// custom-paint / image-paint layers alternating per pixel re-JSON.parse'd on
+// every pixel. Keyed by the raw parameter string — the engine hands us the
+// same string object each frame, so the Map lookup costs no more than the old
+// `!==` compare. Bounded FIFO (Map preserves insertion order): the oldest
+// entry is evicted at the cap, so content churn cannot grow the cache.
+const PIXEL_DATA_CACHE_LIMIT = 16
+const _pixelDataCache = new Map<string, string[]>()
+const _imageDataCache = new Map<string, string[][]>()
+
+function cacheBoundedPut<T>(cache: Map<string, T>, key: string, value: T): void {
+  if (cache.size >= PIXEL_DATA_CACHE_LIMIT) {
+    const oldest = cache.keys().next().value
+    if (oldest !== undefined) cache.delete(oldest)
+  }
+  cache.set(key, value)
+}
+
+/** custom-paint pixelData: parse once per content string. Corrupt JSON → [] (renders black, same output as before — but parsed once instead of re-throwing per pixel). */
+function parsePixelDataCached(pixelDataStr: string): string[] {
+  let parsed = _pixelDataCache.get(pixelDataStr)
+  if (parsed === undefined) {
+    try {
+      parsed = JSON.parse(pixelDataStr) as string[]
+    } catch {
+      parsed = []
+    }
+    cacheBoundedPut(_pixelDataCache, pixelDataStr, parsed)
+  }
+  return parsed
+}
+
+/** image-paint imageDataList: parse once per content string (same failure semantics as pixelData). */
+function parseImageDataListCached(imageDataListStr: string): string[][] {
+  let parsed = _imageDataCache.get(imageDataListStr)
+  if (parsed === undefined) {
+    try {
+      parsed = JSON.parse(imageDataListStr) as string[][]
+    } catch {
+      parsed = []
+    }
+    cacheBoundedPut(_imageDataCache, imageDataListStr, parsed)
+  }
+  return parsed
+}
 
 export interface EffectContext {
   x: number
@@ -161,6 +202,152 @@ interface _FireColCache {
   tipFyArr: Float32Array
 }
 const _fireColCacheMap = new Map<string, _FireColCache>()
+
+// ── R266 TA2: frame-invariant geometry caches (heavy science pack) ─────────
+// solar-system / icosahedral-virus / protein-folding / mitosis-spindle /
+// synapse-pulse used to rebuild per-pixel geometry that depends only on
+// (layer, t, shape params): planet positions (8× trig pair), the projected
+// icosahedral shell (12 rotated vertices + pulses), the protein backbone
+// (47 sampled points), spindle chromosomes (10) and vesicle particles (20).
+// One entry per layerId, invalidated by t (= now·speed — a pure function of
+// the frame) or a shape-parameter change, mirroring _fireColCacheMap. The
+// hard cap guards long editing sessions with churny layer ids.
+const GEOMETRY_CACHE_LIMIT = 64
+
+export interface SolarPlanetGeometry {
+  orbitAx: number       // orbit semi-axis x: orbitRadius·(1+eccentricity)
+  orbitBy: number       // orbit semi-axis y: orbitRadius·0.72
+  planetX: number
+  planetY: number
+  planetSize: number
+}
+const SOLAR_ORBIT_RADII = [0.10, 0.15, 0.21, 0.28, 0.38, 0.48, 0.58, 0.68]
+const SOLAR_PERIODS = [0.24, 0.62, 1.0, 1.88, 5.0, 7.2, 10.5, 13.0]
+const SOLAR_HUES = [35, 48, 208, 10, 32, 44, 188, 226]
+interface _SolarGeom { t: number; density: number; planets: SolarPlanetGeometry[] }
+const _solarGeomMap = new Map<string, _SolarGeom>()
+
+/** solar-system planet positions for animation time `t` (= now·speed); identical math to the pre-R266 per-pixel loop. */
+export function getSolarSystemPlanets(layerId: string, t: number, density: number): readonly SolarPlanetGeometry[] {
+  const hit = _solarGeomMap.get(layerId)
+  if (hit && hit.t === t && hit.density === density) return hit.planets
+  const planets: SolarPlanetGeometry[] = []
+  for (let orbitIndex = 0; orbitIndex < SOLAR_ORBIT_RADII.length; orbitIndex++) {
+    const orbitRadius = SOLAR_ORBIT_RADII[orbitIndex] * (0.9 + density * 0.18)
+    const eccentricity = 0.04 + orbitIndex * 0.012
+    const planetAngle = t / SOLAR_PERIODS[orbitIndex] * Math.PI * 2 + orbitIndex * 0.72
+    planets.push({
+      orbitAx: orbitRadius * (1 + eccentricity),
+      orbitBy: orbitRadius * 0.72,
+      planetX: Math.cos(planetAngle) * orbitRadius * (1 + eccentricity),
+      planetY: Math.sin(planetAngle) * orbitRadius * 0.72,
+      planetSize: orbitIndex < 4 ? 0.032 : 0.042 + orbitIndex * 0.002,
+    })
+  }
+  if (_solarGeomMap.size >= GEOMETRY_CACHE_LIMIT) _solarGeomMap.clear()
+  _solarGeomMap.set(layerId, { t, density, planets })
+  return planets
+}
+
+export interface VirusVertexGeometry { x: number; y: number; z: number; pulse: number }
+interface _VirusGeom { t: number; vertices: VirusVertexGeometry[] }
+const _virusGeomMap = new Map<string, _VirusGeom>()
+
+/** icosahedral-virus projected shell vertices (yaw/pitch/perspective + spike pulse) for animation time `t`. */
+export function getVirusShellGeometry(layerId: string, t: number): readonly VirusVertexGeometry[] {
+  const hit = _virusGeomMap.get(layerId)
+  if (hit && hit.t === t) return hit.vertices
+  const yaw = t * 1.4
+  const pitch = Math.sin(t * 0.7) * 0.42
+  const vertices = ICOSAHEDRON_VERTICES.map(([vx, vy, vz], vertexIndex) => {
+    const x1 = vx * Math.cos(yaw) - vz * Math.sin(yaw)
+    const z1 = vx * Math.sin(yaw) + vz * Math.cos(yaw)
+    const y1 = vy * Math.cos(pitch) - z1 * Math.sin(pitch)
+    const z2 = vy * Math.sin(pitch) + z1 * Math.cos(pitch)
+    const perspective = 0.42 / Math.max(0.45, 1.35 - z2 * 0.55)
+    return { x: x1 * perspective, y: y1 * perspective, z: z2, pulse: 0.78 + Math.sin(t * 6 + vertexIndex * 1.7) * 0.22 }
+  })
+  if (_virusGeomMap.size >= GEOMETRY_CACHE_LIMIT) _virusGeomMap.clear()
+  _virusGeomMap.set(layerId, { t, vertices })
+  return vertices
+}
+
+export interface ProteinPointGeometry { x: number; y: number; z: number }
+interface _ProteinGeom { t: number; density: number; points: ProteinPointGeometry[] }
+const _proteinGeomMap = new Map<string, _ProteinGeom>()
+
+/** protein-folding backbone samples (u = 0..1 in 46 steps → 47 points) for animation time `t`. */
+export function getProteinBackboneGeometry(layerId: string, t: number, density: number): readonly ProteinPointGeometry[] {
+  const hit = _proteinGeomMap.get(layerId)
+  if (hit && hit.t === t && hit.density === density) return hit.points
+  const proteinPoint = (u: number): ProteinPointGeometry => {
+    const angle = u * Math.PI * (5.4 + density * 2.2) + t * 1.1
+    const fold = Math.sin(u * Math.PI * 3.0 + t * 0.8) * 0.20
+    return {
+      x: (u - 0.5) * 1.04 + Math.sin(angle * 0.7) * 0.12,
+      y: Math.sin(angle) * (0.18 + density * 0.05) + fold * 0.48,
+      z: Math.cos(angle) * 0.5 + Math.sin(u * Math.PI * 7.0 - t) * 0.18,
+    }
+  }
+  const points: ProteinPointGeometry[] = [proteinPoint(0)]
+  for (let sampleIndex = 1; sampleIndex <= 46; sampleIndex++) {
+    points.push(proteinPoint(sampleIndex / 46))
+  }
+  if (_proteinGeomMap.size >= GEOMETRY_CACHE_LIMIT) _proteinGeomMap.clear()
+  _proteinGeomMap.set(layerId, { t, density, points })
+  return points
+}
+
+export interface SpindleGeometry {
+  poleAx: number         // left pole x = -separation
+  poleBx: number         // right pole x = +separation
+  chromosomes: { x: number; y: number }[]
+}
+interface _SpindleGeom { t: number; density: number; spindle: SpindleGeometry }
+const _spindleGeomMap = new Map<string, _SpindleGeom>()
+
+/** mitosis-spindle poles and chromosome positions for animation time `t`. */
+export function getSpindleGeometry(layerId: string, t: number, density: number): SpindleGeometry {
+  const hit = _spindleGeomMap.get(layerId)
+  if (hit && hit.t === t && hit.density === density) return hit.spindle
+  const stage = (Math.sin(t * Math.PI * 2) + 1) * 0.5
+  const separation = 0.34 + stage * 0.16
+  const chromosomes: { x: number; y: number }[] = []
+  for (let chromosomeIndex = 0; chromosomeIndex < 10; chromosomeIndex++) {
+    const row = (chromosomeIndex - 4.5) / 12
+    const wiggle = Math.sin(t * 5 + chromosomeIndex * 1.3) * 0.018
+    chromosomes.push({
+      x: (stage - 0.5) * 0.16 * Math.sign(row || 1) + wiggle,
+      y: row * (0.62 + density * 0.18),
+    })
+  }
+  const spindle: SpindleGeometry = { poleAx: -separation, poleBx: separation, chromosomes }
+  if (_spindleGeomMap.size >= GEOMETRY_CACHE_LIMIT) _spindleGeomMap.clear()
+  _spindleGeomMap.set(layerId, { t, density, spindle })
+  return spindle
+}
+
+export interface VesicleGeometry { x: number; y: number }
+interface _VesicleGeom { t: number; density: number; vesicles: VesicleGeometry[] }
+const _vesicleGeomMap = new Map<string, _VesicleGeom>()
+
+/** synapse-pulse neurotransmitter vesicle positions for animation time `t` (release stays per-pixel — it depends on the local action wave). */
+export function getSynapseVesicles(layerId: string, t: number, density: number): readonly VesicleGeometry[] {
+  const hit = _vesicleGeomMap.get(layerId)
+  if (hit && hit.t === t && hit.density === density) return hit.vesicles
+  const vesicles: VesicleGeometry[] = []
+  for (let particleIndex = 0; particleIndex < 20; particleIndex++) {
+    const seed = hash(particleIndex * 31.7)
+    const progress = (t * (0.48 + seed * 0.34) + seed) % 1
+    vesicles.push({
+      x: -0.16 + progress * 0.36,
+      y: (hash(particleIndex * 17.2) - 0.5) * (0.10 + density * 0.20) + Math.sin(progress * Math.PI * 2 + particleIndex) * 0.025,
+    })
+  }
+  if (_vesicleGeomMap.size >= GEOMETRY_CACHE_LIMIT) _vesicleGeomMap.clear()
+  _vesicleGeomMap.set(layerId, { t, density, vesicles })
+  return vesicles
+}
 
 /**
  * Returns a 0..1 coordinate projected along the given direction angle (degrees, 0 = right, 90 = down).
@@ -1186,24 +1373,18 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       // planet dots ≥2 cells, soft halos. Concept untouched.
       const sunGlow = Math.exp(-(nx * nx + ny * ny) / 0.028)
       let color = colorScale(hslToRgb(42, 1.0, 0.66), sunGlow * intensity)
-      const orbitRadii = [0.10, 0.15, 0.21, 0.28, 0.38, 0.48, 0.58, 0.68]
-      const periods = [0.24, 0.62, 1.0, 1.88, 5.0, 7.2, 10.5, 13.0]
-      const hues = [35, 48, 208, 10, 32, 44, 188, 226]
-      for (let orbitIndex = 0; orbitIndex < orbitRadii.length; orbitIndex++) {
-        const orbitRadius = orbitRadii[orbitIndex] * (0.9 + density * 0.18)
-        const eccentricity = 0.04 + orbitIndex * 0.012
-        const ellipseRadius = Math.sqrt(Math.pow(nx / (orbitRadius * (1 + eccentricity)), 2) + Math.pow(ny / (orbitRadius * 0.72), 2))
+      // R266 TA2: planet positions/axes are frame-invariant — cached per (layerId, t, density)
+      const planets = getSolarSystemPlanets(layer.id, time, density)
+      for (let orbitIndex = 0; orbitIndex < planets.length; orbitIndex++) {
+        const planet = planets[orbitIndex]
+        const ellipseRadius = Math.sqrt(Math.pow(nx / planet.orbitAx, 2) + Math.pow(ny / planet.orbitBy, 2))
         const orbitLine = Math.exp(-Math.pow((ellipseRadius - 1) / 0.05, 2)) * 0.22
         color = colorAdd(color, hslToRgb(214, 0.65, 0.42), orbitLine)
-        const planetAngle = time / periods[orbitIndex] * Math.PI * 2 + orbitIndex * 0.72
-        const planetX = Math.cos(planetAngle) * orbitRadius * (1 + eccentricity)
-        const planetY = Math.sin(planetAngle) * orbitRadius * 0.72
-        const planetDistance = Math.sqrt((nx - planetX) ** 2 + (ny - planetY) ** 2)
-        const planetSize = orbitIndex < 4 ? 0.032 : 0.042 + orbitIndex * 0.002
-        const planetGlow = Math.exp(-Math.pow(planetDistance / planetSize, 2))
-        color = colorAdd(color, hslToRgb(hues[orbitIndex], 0.82, orbitIndex === 2 ? 0.68 : 0.62), planetGlow * intensity)
-        const planetHalo = Math.exp(-Math.pow(planetDistance / (planetSize * 3.2), 2)) * 0.3
-        color = colorAdd(color, hslToRgb(hues[orbitIndex], 0.7, 0.5), planetHalo * intensity)
+        const planetDistance = Math.sqrt((nx - planet.planetX) ** 2 + (ny - planet.planetY) ** 2)
+        const planetGlow = Math.exp(-Math.pow(planetDistance / planet.planetSize, 2))
+        color = colorAdd(color, hslToRgb(SOLAR_HUES[orbitIndex], 0.82, orbitIndex === 2 ? 0.68 : 0.62), planetGlow * intensity)
+        const planetHalo = Math.exp(-Math.pow(planetDistance / (planet.planetSize * 3.2), 2)) * 0.3
+        color = colorAdd(color, hslToRgb(SOLAR_HUES[orbitIndex], 0.7, 0.5), planetHalo * intensity)
       }
       return color
     }
@@ -1330,16 +1511,8 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const hueShift = Number(layer.parameters.hueShift ?? 135)
       const { nx, ny } = normCoords(context)
       const time = context.now * speed
-      const yaw = time * 1.4
-      const pitch = Math.sin(time * 0.7) * 0.42
-      const projected = ICOSAHEDRON_VERTICES.map(([vx, vy, vz]) => {
-        const x1 = vx * Math.cos(yaw) - vz * Math.sin(yaw)
-        const z1 = vx * Math.sin(yaw) + vz * Math.cos(yaw)
-        const y1 = vy * Math.cos(pitch) - z1 * Math.sin(pitch)
-        const z2 = vy * Math.sin(pitch) + z1 * Math.cos(pitch)
-        const perspective = 0.42 / Math.max(0.45, 1.35 - z2 * 0.55)
-        return { x: x1 * perspective, y: y1 * perspective, z: z2 }
-      })
+      // R266 TA2: shell projection + spike pulses are frame-invariant — cached per (layerId, t)
+      const projected = getVirusShellGeometry(layer.id, time)
       let shell = 0
       for (const [aIndex, bIndex] of ICOSAHEDRON_EDGES) {
         const a = projected[aIndex]
@@ -1351,8 +1524,7 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       for (let vertexIndex = 0; vertexIndex < projected.length; vertexIndex++) {
         const vertex = projected[vertexIndex]
         const distance = Math.sqrt((nx - vertex.x) ** 2 + (ny - vertex.y) ** 2)
-        const spikePulse = 0.78 + Math.sin(time * 6 + vertexIndex * 1.7) * 0.22
-        capsid += Math.exp(-Math.pow(distance / (0.058 + density * 0.018), 2)) * clampUnit(0.55 + vertex.z * 0.28) * spikePulse
+        capsid += Math.exp(-Math.pow(distance / (0.058 + density * 0.018), 2)) * clampUnit(0.55 + vertex.z * 0.28) * vertex.pulse
       }
       const envelope = Math.exp(-(nx * nx + ny * ny) / 0.24) * 0.3
       let color = colorScale(hslToRgb(168 + hueShift, 0.84, 0.52), shell * intensity * 0.6)
@@ -1368,22 +1540,16 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const hueShift = Number(layer.parameters.hueShift ?? 42)
       const { nx, ny } = normCoords(context)
       const time = context.now * speed
-      const proteinPoint = (u: number): { x: number; y: number; z: number } => {
-        const angle = u * Math.PI * (5.4 + density * 2.2) + time * 1.1
-        const fold = Math.sin(u * Math.PI * 3.0 + time * 0.8) * 0.20
-        const x = (u - 0.5) * 1.04 + Math.sin(angle * 0.7) * 0.12
-        const y = Math.sin(angle) * (0.18 + density * 0.05) + fold * 0.48
-        const z = Math.cos(angle) * 0.5 + Math.sin(u * Math.PI * 7.0 - time) * 0.18
-        return { x, y, z }
-      }
+      // R266 TA2: backbone samples are frame-invariant — cached per (layerId, t, density)
+      const backbonePoints = getProteinBackboneGeometry(layer.id, time, density)
       // R167: wider backbone/residue sigmas so the chain reads on a 24×14 grid.
       let backbone = 0
       let residueGlow = 0
       let helixBand = 0
-      let previous = proteinPoint(0)
       for (let sampleIndex = 1; sampleIndex <= 46; sampleIndex++) {
+        const previous = backbonePoints[sampleIndex - 1]
+        const current = backbonePoints[sampleIndex]
         const u = sampleIndex / 46
-        const current = proteinPoint(u)
         const depth = clampUnit(0.55 + current.z * 0.26)
         backbone += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, previous.x, previous.y, current.x, current.y) / 0.042, 2)) * depth
         if (sampleIndex % 5 === 0) {
@@ -1392,7 +1558,6 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         }
         const alphaMask = Math.pow(0.5 + 0.5 * Math.sin(u * Math.PI * 18 + time * 7), 4)
         helixBand += alphaMask * Math.exp(-Math.pow(pointSegmentDistance(nx, ny, previous.x, previous.y, current.x, current.y) / 0.085, 2)) * depth * 0.28
-        previous = current
       }
       let color = colorScale(hslToRgb(204 + hueShift, 0.82, 0.55), backbone * intensity * 0.85)
       color = colorAdd(color, hslToRgb(38 + hueShift, 0.90, 0.68), residueGlow * intensity * 0.95)
@@ -1407,21 +1572,18 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const hueShift = Number(layer.parameters.hueShift ?? 0)
       const { nx, ny } = normCoords(context)
       const time = context.now * speed
-      const stage = (Math.sin(time * Math.PI * 2) + 1) * 0.5
-      const separation = 0.34 + stage * 0.16
-      const poleA = { x: -separation, y: 0 }
-      const poleB = { x: separation, y: 0 }
+      // R266 TA2: poles + chromosome positions are frame-invariant — cached per (layerId, t, density)
+      const spindleGeometry = getSpindleGeometry(layer.id, time, density)
+      const poleAx = spindleGeometry.poleAx
+      const poleBx = spindleGeometry.poleBx
       let spindle = 0
       let chromosomes = 0
-      for (let chromosomeIndex = 0; chromosomeIndex < 10; chromosomeIndex++) {
-        const row = (chromosomeIndex - 4.5) / 12
-        const wiggle = Math.sin(time * 5 + chromosomeIndex * 1.3) * 0.018
-        const chromosomeX = (stage - 0.5) * 0.16 * Math.sign(row || 1) + wiggle
-        const chromosomeY = row * (0.62 + density * 0.18)
-        const chromosomeDistance = Math.sqrt((nx - chromosomeX) ** 2 + (ny - chromosomeY) ** 2)
+      for (let chromosomeIndex = 0; chromosomeIndex < spindleGeometry.chromosomes.length; chromosomeIndex++) {
+        const chromosome = spindleGeometry.chromosomes[chromosomeIndex]
+        const chromosomeDistance = Math.sqrt((nx - chromosome.x) ** 2 + (ny - chromosome.y) ** 2)
         chromosomes += Math.exp(-Math.pow(chromosomeDistance / 0.075, 2))
-        spindle += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, poleA.x, poleA.y, chromosomeX, chromosomeY) / 0.035, 2)) * 0.5
-        spindle += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, poleB.x, poleB.y, chromosomeX, chromosomeY) / 0.035, 2)) * 0.5
+        spindle += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, poleAx, 0, chromosome.x, chromosome.y) / 0.035, 2)) * 0.5
+        spindle += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, poleBx, 0, chromosome.x, chromosome.y) / 0.035, 2)) * 0.5
       }
       const membraneRadius = Math.sqrt(nx * nx + (ny * 1.1) ** 2)
       const membrane = Math.exp(-Math.pow((membraneRadius - 0.62) / 0.05, 2)) * 0.3
@@ -1443,14 +1605,14 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const dendrite = Math.exp(-Math.pow((nx - 0.38) / 0.21, 2)) * smoothstep(0.52, 0.03, Math.abs(ny))
       const cleft = smoothstep(-0.18, 0.22, nx) * smoothstep(0.22, -0.18, nx) * smoothstep(0.42, 0.02, Math.abs(ny))
       const actionWave = Math.exp(-Math.pow((nx + 0.55 - ((time * 0.9) % 1.2)) / 0.1, 2)) * smoothstep(0.22, 0.0, Math.abs(ny))
+      // R266 TA2: vesicle positions are frame-invariant — cached per (layerId, t, density).
+      // `release` stays per-pixel: it depends on the local action wave (nx).
+      const vesicles = getSynapseVesicles(layer.id, time, density)
       let neurotransmitters = 0
-      for (let particleIndex = 0; particleIndex < 20; particleIndex++) {
-        const seed = hash(particleIndex * 31.7)
-        const progress = (time * (0.48 + seed * 0.34) + seed) % 1
-        const px = -0.16 + progress * 0.36
-        const py = (hash(particleIndex * 17.2) - 0.5) * (0.10 + density * 0.20) + Math.sin(progress * Math.PI * 2 + particleIndex) * 0.025
+      for (let particleIndex = 0; particleIndex < vesicles.length; particleIndex++) {
+        const vesicle = vesicles[particleIndex]
         const release = smoothstep(0.18, 0.34, actionWave + 0.2)
-        neurotransmitters += Math.exp(-Math.pow(Math.sqrt((nx - px) ** 2 + (ny - py) ** 2) / 0.045, 2)) * release
+        neurotransmitters += Math.exp(-Math.pow(Math.sqrt((nx - vesicle.x) ** 2 + (ny - vesicle.y) ** 2) / 0.045, 2)) * release
       }
       let color = colorScale(hslToRgb(214 + hueShift, 0.80, 0.48), (axon + dendrite) * intensity * 0.55)
       color = colorAdd(color, hslToRgb(42 + hueShift, 1.0, 0.66), actionWave * intensity)
@@ -1649,19 +1811,11 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
     case 'custom-paint': {
       const pixelDataStr = String(layer.parameters.pixelData ?? '')
       if (!pixelDataStr) return { r: 0, g: 0, b: 0 }
-      // Use cached parse to avoid JSON.parse per pixel
-      if (pixelDataStr !== _cachedPixelDataStr) {
-        try {
-          _cachedPixelData = JSON.parse(pixelDataStr) as string[]
-          _cachedPixelDataStr = pixelDataStr
-        } catch {
-          _cachedPixelDataStr = ''
-          _cachedPixelData = []
-          return { r: 0, g: 0, b: 0 }
-        }
-      }
+      // R266 TA1: content-keyed bounded cache (was a single slot — alternating
+      // same-kind layers re-parsed on every pixel)
+      const pixelData = parsePixelDataCached(pixelDataStr)
       const idx = context.y * context.columns + context.x
-      const hex = _cachedPixelData[idx]
+      const hex = pixelData[idx]
       if (!hex) return { r: 0, g: 0, b: 0 }
       return hexToRgb(hex)
     }
@@ -1673,18 +1827,8 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       if (!imageDataListStr) return { r: 0, g: 0, b: 0 }
       const transitionSpeed = Number(layer.parameters.transitionSpeed ?? 3)
       const animateTransition = layer.parameters.animateTransition !== false
-      // Use cached parse to avoid JSON.parse per pixel
-      if (imageDataListStr !== _cachedImageDataStr) {
-        try {
-          _cachedImageData = JSON.parse(imageDataListStr) as string[][]
-          _cachedImageDataStr = imageDataListStr
-        } catch {
-          _cachedImageDataStr = ''
-          _cachedImageData = []
-          return { r: 0, g: 0, b: 0 }
-        }
-      }
-      const images = _cachedImageData
+      // R266 TA1: content-keyed bounded cache (was a single slot)
+      const images = parseImageDataListCached(imageDataListStr)
       if (images.length === 0) return { r: 0, g: 0, b: 0 }
       const idx = context.y * context.columns + context.x
 
