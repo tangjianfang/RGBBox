@@ -34,12 +34,14 @@ export function useOverlayTopology(args: {
 
   const handleToggleOverlay = useCallback(async (displayId: number) => {
     if (overlayDisplayIds.includes(displayId)) {
-      await window.rgbbox.closeOverlay(displayId)
-      setOverlayDisplayIds((prev) => prev.filter((id) => id !== displayId))
+      // R273: 回读结果——关闭失败保留本地态(下次可重试),不再乐观移除
+      const ok = await window.rgbbox.closeOverlay(displayId)
+      if (ok) setOverlayDisplayIds((prev) => prev.filter((id) => id !== displayId))
     } else {
       const config = overlayConfigs[displayId]
-      await window.rgbbox.openOverlay(displayId, config)
-      setOverlayDisplayIds((prev) => [...prev, displayId])
+      // R273: 回读结果——开窗失败不加入(否则幻影「已激活」+ tick loop 向不存在的窗口空推帧)
+      const ok = await window.rgbbox.openOverlay(displayId, config)
+      if (ok) setOverlayDisplayIds((prev) => [...prev, displayId])
     }
   }, [overlayDisplayIds, overlayConfigs])
 

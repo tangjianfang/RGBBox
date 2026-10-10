@@ -107,3 +107,25 @@ describe('domain/overlayDistribution distributeFrameToOverlays (R147 P1)', () =>
     expect(frame.columns).toBe(4) // half of the 8-wide virtual canvas
   })
 })
+
+
+
+// ── R273: 竖屏/混合 DPI 越界钳制 ─────────────────────────────────────────
+describe('overlayDistribution extractSubFrame 竖屏 clamp (R273)', () => {
+  it('offsetY+dispRows 超出虚拟画布时 y 钳到最后一行——末行像素=虚拟帧第 rows-1 行,无越界黑行', () => {
+    // 8x4 虚拟帧;display 下半延伸到虚拟边界外(bounds.y=270,h=540 → offsetY=2, dispRows=4, 2+4=6 > 4)
+    const frame = frame8x4()
+    const overflow: DisplayTopology = {
+      displays: [{ id: 9, label: 'P', bounds: { x: 0, y: 270, width: 1920, height: 540 }, scale: 1.25, isPrimary: false }],
+      virtualBounds: { x: 0, y: 0, width: 1920, height: 540 },
+    } as unknown as DisplayTopology
+    const sub = extractSubFrame(frame, 9, overflow)
+    expect(sub).not.toBeNull()
+    // 越界行(y>=rows)钳到 rows-1:末 dst 行 === 源第 3 行(修复前越界读→黑行)
+    const srcRow3 = 3 * 8 * 3
+    const dstLast = (sub!.rows - 1) * sub!.columns * 3
+    for (let i = 0; i < Math.min(sub!.columns, 8) * 3; i++) {
+      expect(sub!.pixels[dstLast + i]).toBe(frame.pixels[srcRow3 + Math.min(7, i / 3 | 0) * 3 + (i % 3)])
+    }
+  })
+})

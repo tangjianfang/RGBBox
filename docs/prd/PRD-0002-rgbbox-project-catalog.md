@@ -4135,3 +4135,31 @@
   - **R226.10 语料覆盖矩阵（「100% 覆盖率收数据」的可度量落地）**：`tests/vision/fixtures-replay/corpus.matrix.json` 定义 31 个单元格（13 手势词汇 ×8 向+pinch+张掌/双手捏/副手捏/离合、10 环境条件 暗光/逆光/远近/快速/出入画/干扰手/左撇/多人手型、8 引擎路径 校准重试/暂停恢复/丢失重捕/三灵敏度档/高精度段）×每格最少样本数；`yarn vision:corpus` 报告器扫全部夹具 labels（marks→词汇格、tags→条件/路径格）输出覆盖%与缺口清单（**现状 2/31=6%**——normal 5/3 已满，其余为下阶段录像待办，报告自带录制协议指引）。**行覆盖率口径如实说明**：本矩阵度量的是「真实数据对词汇/条件/路径的覆盖」，与 istanbul 行覆盖正交（行覆盖实测全局 61.56% 全绿于 R163.2 分层门禁；vision 引擎岛 R131.5 明示豁免）——100% 目标在此语境=31/31 单元格。
   - **R226.9 受影响文件**：`scripts/vision-fetch-videos.mjs`、`scripts/vision-sources.curated.json`（新入仓）、`scripts/vision-corpus-report.mjs`、`tests/vision/fixtures-replay/corpus.matrix.json`（新入仓）、`tools/vision-dataset/{main.cjs,preload.cjs,index.html}`（main/preload 改 CJS、vd:// 协议、CPU delegate、自动化修复）、`scripts/vision-smoke-videos.mjs`（两层门禁+downloaded/ 子目录）、package.json scripts（+`vision:fetch`/`vision:corpus`）。**证据**：typecheck 双绿；全量 `yarn test` 159 files/**1513 passed/0 失败**；`yarn vision:fetch` 实抓 5 视频+manifest；5 视频全自动抽取实测；`yarn vision:smoke` ALL PASS；`yarn vision:corpus` 2/31 报告正常。
 vitest 4.1.7 happy-dom 环境的 `getWindowKeys` 过滤规则「已存在于全局且不在其白名单的键不覆盖」因此**跳过安装 happy-dom 自己的 Storage**；连带 populateGlobal 的 `global.window=global` 别名，`window.localStorage` 同为 undefined。全量 **13 文件/125 用例确定性红**（全带 `@vitest-environment happy-dom`，签名一律 `Cannot read properties of undefined (reading 'getItem'/'clear')`，组件侧 `useVisionInput.ts:301` 与测试侧双双命中；HEAD 与工作区复跑 2 次同红=非 flake）。CI node22 无此全局、happy-dom 正常安装，远端不受影响。修：`tests/renderer/setup.ts` 增兜底 polyfill——仅当 `window` 存在（DOM 环境）且 `globalThis.localStorage===undefined` 时以 `Object.defineProperty` 注入内存版 Storage（原生空壳是 configurable accessor，普通赋值会走原生 setter，必须 defineProperty 顶掉）；node≤22/CI 零行为变化，纯 node 环境测试文件零影响。同批撤销 VisionAssistant.test.tsx 一处 10-01 调试遗留的 try/catch（其「负载/环境瞬时态」归因不成立，根修后为死代码且会掩盖同类回归）。**证据**：修前全量 13 文件/125 用例红；修后 13 红文件定向复跑 13×150 全绿，全量 **1538 用例 0 失败**（1512 过+26 skip），typecheck node+web 双绿。**教训**：「环境瞬时态/负载敏感」类归因在未隔离复现前不要写进代码注释——本轮实为 node 升级的确定性兼容回归，错误注释+局部 try/catch 既修不住真因也误导后来者。
+
+- **R267 `fix` — 全模块硬化 W1：atomicJson 失败路径 + 数据完整性批（REVIEW-main-ipc W2/W4 主审实锤；状态 ⏳）**：atomicJson.ts:52-62 catch 块写失败后再 rename(tmp,path)——不完整 tmp 覆盖原文件，复现 R221.1 清空链；system.json 五调用点读-合并-写无串行化（跨字段丢更新）；播放列表裸 writeFile 坏文件回空。修：catch 只清理 tmp 不 rename；互斥队列 + 原子写统一。验收：失败路径回归锁（writeFile 抛→原文件完整）；并发写单测。
+
+- **R268 `fix` — 全模块硬化 W2：media://local 白名单补缺（REVIEW-main-ipc W1 主审实锤；状态 ⏳）**：allowedRoots 缺 `userData/ai8-artifacts`（AI8 缩略图 403）且用户自选音视频目录全 403。修：补目录 + 自选文件夹来源记录进白名单。验收：三类路径放行单测 + 越权仍 403。
+
+- **R269 `fix` — 全模块硬化 W3：worker 引擎冻结双修 + useEngineLoop 直接测试（REVIEW-shell-loop TA6/C + REVIEW-shared #1 双报告汇聚；状态 ⏳）**：previewEngineWorker 零 try/catch + useEngineLoop:61-66 tickPending 门闩 worker 不回消息即永久冻结（未校验 import 可触发）。修：worker try/catch 兜底回错误消息 + 门闩超时复位降级。验收：注入 worker error → 门闩复位/显式降级；useEngineLoop 消费门控/背压/override 应用首批直接测试。
+
+- **R270 `fix` — 全模块硬化 W4：Preview3D rAF 不可见停帧（REVIEW-shell-loop A；PRD R42.5 旧账；状态 ✅ 2026-10-11 闭环）**：Preview3D.tsx:112 纯 rAF，最小化/切 view 停摆且 3D 旁路 worker 帧无兜底。**证据**：新 `domain/frameDriver.ts`（setTimeout(16ms) 自调度驱动——useEngineLoop R147 P2 同哲学，R38 后 document.hidden 不可靠故不搞双轨）；Preview3D 4 处 rAF/cancel 全替换（剩余 rAF 引用 0）；`tests/renderer/domain/frameDriver.test.ts` 3 用例（setTimeout 而非 rAF/清除+null 安全/自调度链连续帧）；typecheck 双绿。GL 渲染路径由 headless-gl previewGl.test 既有覆盖侧证。
+
+- **R271 `fix` — 全模块硬化 W5：hover GPU 预览泄漏到实体屏（REVIEW-shell-loop B 主审实锤；状态 ⏳）**：useEngineLoop:124-126 仅 worker 路径应用 previewOverride，EffectsView GPU 三路径零防护——悬停未选效果刷到实体屏。修：GPU 路径接同款 override。验收：hover 态 overlay 帧不受悬停效果污染断言。
+
+- **R272 `fix` — 全模块硬化 W6：音频三修 FLAC 标注/投影黑屏/VU 冻结（REVIEW-video-audio W1/W2/W3 W3 主审实锤；状态 ⏳）**：AudioStudioView:744 FLAC 选项实产 24-bit WAV；waveform 模式投影全黑窗；切 tab 后 VU 电平冻半空。修：FLAC 改标「WAV 24-bit」（真 FLAC 另立）；waveform 模式禁投影（title 说明）或自动切 spectrum；shouldAnalyze 翻 false/error/换设备推归零帧。验收：导出文件 RIFF 头校验；交互断言×2。
+
+- **R273 `fix` — 全模块硬化 W7：overlay 开关结果回读 + 竖屏子帧 clamp（REVIEW-workspace A2 主审实锤 + A5；状态 ✅ 2026-10-11 闭环）**：useOverlayTopology:36-43 丢弃 openOverlay/closeOverlay 布尔返回乐观更新（失败=幻影已激活+空推帧）；extractSubFrame y 未 clamp 混合 DPI 黑边行。**证据**：①`handleToggleOverlay` 回读 open/close 布尔——失败不更新本地态（open false 不入列/close false 保留可重试）；②`extractSubFrame` y 行钳制 `min(rows-1, offsetY+y)`（与 x 同款，混合 DPI 越界行=虚拟帧末行内容非黑行）；③TDD `useOverlayTopology.test.tsx` 3 用例（true 入列/false 幻影防护/close false 保留）+ `overlayDistribution.test.ts` 越界拓扑用例（末行钳到 rows-1 断言），先红后绿；typecheck 双绿。wall 分支测试并入 R280 墙批。
+
+- **R274 `fix` — 全模块硬化 W8：paramMeta i18n 补齐（REVIEW-workspace A3；状态 ⏳）**：30/37 labelKey 裸英文不走 t()，WorkspaceView:578 绕过 presetDescription——中文 UI 高级抽屉/全效果 tooltip 整片英文。修：labelKey 换 param.* 真键 + zh/en 词条 + WorkspaceView 改 presetDescription。验收：zh UI 抽屉零英文残留（键位完整性测试复用）。
+
+- **R275 `fix` — 全模块硬化 W9：文本掩码缓存治理 LRU（REVIEW-engine TA3 + REVIEW-shared #2 合并；状态 ⏳）**：canvasTextMask 无上限+整幅 getImageData（231MB 瞬时分配）；textRenderer 三处 cache 无淘汰。修：LRU 上限 + cellPx 自适应降采样。验收：上限淘汰单测 + textMaskMs 有界。
+
+- **R276 `fix` — 全模块硬化 W10：诊断数字修正包（REVIEW-engine TA5；状态 ⏳）**：p95 非 nearest-rank；outputMs 未接真实测量；dashFps 3D 路径用帧间隔倒数误导。修：三项口径修正 + 行集合冒烟锁。验收：p95 精确断言单测。
+
+- **R277 `fix` — 全模块硬化 W11：屏保中文位图回退（REVIEW-engine TA4；状态 ⏳）**：ScreensaverView 中文回退 `?` 位图。修：预计算 textMasks 随 IPC 传入（preload 通道已支持）。验收：CJK 层屏保真机截图视觉复核。
+
+- **R278 `test` — 全模块硬化 W12：i18n 键族不变量测试 + 死键清理（REVIEW-shared #3；状态 ⏳）**：动态键族（55 EffectKind×3 键等）无不变量测试；~45 已验证死键×2 语言。修：键族完整性测试 + 死键清理。验收：删任一 EffectKind 键测试红。
+
+- **R279 `fix` — 全模块硬化 W13：splat 缓存校验 + TTS 队列 onerror 兜底（REVIEW-ailab W3/W4；状态 ⏳）**：splat 只查存在性（断点 partial 永久死局）；系统引擎句队列无 onerror（卡死播放态）。修：manifest bytes 校验（复用 onnx 模式）+ onerror 跳过收束。验收：坏缓存重下;模拟 onerror 队列继续。
+
+- **R280 `fix` — 全模块硬化 W14：单屏墙模式逃生 + 墙预览保真（REVIEW-video-audio W4/W6；状态 ⏳）**：单显示器持久化 wall 模式困死；编辑器容器未接 getWallAspect（8×1 墙压扁）。修：单屏渲染逃生口 + aspect-ratio 接入。验收：单屏+wall 可一键关；DOM 断言。

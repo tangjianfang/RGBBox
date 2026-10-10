@@ -29,7 +29,10 @@ export function extractSubFrame(
   const pixels = new Uint8ClampedArray(dispCols * dispRows * 3)
   for (let y = 0; y < dispRows; y++) {
     for (let x = 0; x < dispCols; x++) {
-      const srcI = ((offsetY + y) * virtualFrame.columns + Math.min(virtualFrame.columns - 1, offsetX + x)) * 3
+      // R273: y 同 x 一样钳到虚拟画布最后一行——混合 DPI 取整放大时
+      // offsetY+dispRows 可越界(越界读=黑边行)
+      const srcY = Math.min(virtualFrame.rows - 1, offsetY + y)
+      const srcI = (srcY * virtualFrame.columns + Math.min(virtualFrame.columns - 1, offsetX + x)) * 3
       const dstI = (y * dispCols + x) * 3
       pixels[dstI]     = virtualFrame.pixels[srcI]
       pixels[dstI + 1] = virtualFrame.pixels[srcI + 1]

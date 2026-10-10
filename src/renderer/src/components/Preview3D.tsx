@@ -2,6 +2,7 @@ import { useEffect, useRef, type JSX } from 'react'
 import type { EffectLayer, RgbFrame } from '../../../shared/types'
 import { is3DEffect } from '../../../shared/types'
 import { EFFECT3D_CHANNEL, Effect3DGl } from '../gl/effect3dGl'
+import { startFrameDriver, stopFrameDriver } from '../domain/frameDriver'
 import type { Effect3DKind } from '../../../shared/types'
 
 interface Preview3DProps {
@@ -109,16 +110,18 @@ export function Preview3D({ layer, columns, rows, onFrame, aspectRatio = 16 / 9 
         channel.postMessage({ kind: layerRef.current.kind as Effect3DKind, t, params, detail, extra })
         const pixels = gl.readLEDs(colsRef.current, rowsRef.current)
         onFrameRef.current({ columns: colsRef.current, rows: rowsRef.current, pixels, generatedAt: Date.now() })
-        rafRef.current = requestAnimationFrame(loop)
+        // R270: rAF 改 setTimeout 自调度——最小化/遮挡时 rAF 停摆,overlay 激活的
+        // 3D 帧曾冻在最后一帧(R42.5 旧账);与 useEngineLoop R147 P2 同哲学。
+        rafRef.current = startFrameDriver(loop)
       }
-      rafRef.current = requestAnimationFrame(loop)
+      rafRef.current = startFrameDriver(loop)
     }
 
     if (glRef.current) startLoop()
 
     /* Reinitialise on canvas resize (e.g., window resize). */
     const ro = new ResizeObserver(() => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      stopFrameDriver(rafRef.current)
       glRef.current?.dispose()
       glRef.current = null
       const newGl = initGl()
@@ -128,7 +131,7 @@ export function Preview3D({ layer, columns, rows, onFrame, aspectRatio = 16 / 9 
     ro.observe(canvas)
 
     return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      stopFrameDriver(rafRef.current)
       ro.disconnect()
       channel.close()
       glRef.current?.dispose()
