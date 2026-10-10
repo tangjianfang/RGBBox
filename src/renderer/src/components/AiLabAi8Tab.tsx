@@ -163,6 +163,19 @@ export function AiLabAi8Tab(): JSX.Element {
   const [videoNotice, setVideoNotice] = useState(videoTmplCache?.notice ?? '')
   const [prefs, setPrefs] = useState<Ai8Prefs>(() => readPrefs())
   const [sessions, setSessions] = useState<Ai8Session[]>(() => readSessions())
+  // R265 (REVIEW-ailab-3d U3): the localStorage write must NOT live inside
+  // the setSessions updater — updaters only run while the component is
+  // mounted (and React expects them pure). Every session mutation goes
+  // through commitSessions: compute from the ref (coherent across same-tick
+  // streaming bursts), persist, then set state.
+  const sessionsRef = useRef(sessions)
+  sessionsRef.current = sessions
+  const commitSessions = useCallback((update: (list: Ai8Session[]) => Ai8Session[]): void => {
+    const next = update(sessionsRef.current)
+    sessionsRef.current = next
+    writeSessions(next)
+    setSessions(next)
+  }, [])
   const [activeId, setActiveId] = useState<string | number | null>(() => readActiveId())
   const [input, setInput] = useState('')
   const [attachment, setAttachment] = useState<{ name: string; dataUrl: string } | null>(null)
@@ -384,55 +397,41 @@ export function AiLabAi8Tab(): JSX.Element {
   }, [])
 
   const deleteSession = useCallback((id: string | number) => {
-    setSessions((list) => {
-      const next = list.filter((s) => String(s.id) !== String(id))
-      writeSessions(next)
-      return next
-    })
+    commitSessions((list) => list.filter((s) => String(s.id) !== String(id)))
     if (String(activeId) === String(id)) {
       setActiveId(null)
       writeActiveId(null)
     }
     void client().deleteSession(id).catch((err) => console.warn('[ai8]', err))
-  }, [activeId])
+  }, [activeId, commitSessions])
 
   const upsertSession = useCallback((session: Ai8Session) => {
-    setSessions((list) => {
+    commitSessions((list) => {
       const idx = list.findIndex((s) => String(s.id) === String(session.id))
-      const next = idx >= 0 ? list.map((s) => (String(s.id) === String(session.id) ? session : s)) : [session, ...list]
-      writeSessions(next)
-      return next
+      return idx >= 0 ? list.map((s) => (String(s.id) === String(session.id) ? session : s)) : [session, ...list]
     })
     setActiveId(session.id)
     writeActiveId(session.id)
-  }, [])
+  }, [commitSessions])
 
   const appendTurn = useCallback((sessionId: string | number, turn: Ai8Turn, patch?: Partial<Ai8Session>) => {
-    setSessions((list) => {
-      const next = list.map((s) => {
-        if (String(s.id) !== String(sessionId)) return s
-        const merged: Ai8Session = { ...s, ...patch, turns: [...s.turns, turn], updatedAt: Date.now() }
-        if (turn.role === 'user' && !s.turns.some((x) => x.role === 'user')) merged.title = titleFromContent(turn.content)
-        return merged
-      })
-      writeSessions(next)
-      return next
-    })
-  }, [])
+    commitSessions((list) => list.map((s) => {
+      if (String(s.id) !== String(sessionId)) return s
+      const merged: Ai8Session = { ...s, ...patch, turns: [...s.turns, turn], updatedAt: Date.now() }
+      if (turn.role === 'user' && !s.turns.some((x) => x.role === 'user')) merged.title = titleFromContent(turn.content)
+      return merged
+    }))
+  }, [commitSessions])
 
   const patchLastAssistant = useCallback((sessionId: string | number, patch: Partial<Ai8Turn>) => {
-    setSessions((list) => {
-      const next = list.map((s) => {
-        if (String(s.id) !== String(sessionId)) return s
-        const turns = [...s.turns]
-        const last = turns[turns.length - 1]
-        if (last?.role === 'assistant') turns[turns.length - 1] = { ...last, ...patch }
-        return { ...s, turns, updatedAt: Date.now() }
-      })
-      writeSessions(next)
-      return next
-    })
-  }, [])
+    commitSessions((list) => list.map((s) => {
+      if (String(s.id) !== String(sessionId)) return s
+      const turns = [...s.turns]
+      const last = turns[turns.length - 1]
+      if (last?.role === 'assistant') turns[turns.length - 1] = { ...last, ...patch }
+      return { ...s, turns, updatedAt: Date.now() }
+    }))
+  }, [commitSessions])
 
   /** R116.3 (round 2): the site's NATIVE generate-title endpoint — the server
    *  derives the title from the session content itself, so no throwaway
@@ -440,24 +439,16 @@ export function AiLabAi8Tab(): JSX.Element {
    *  keeps the truncated fallback. Local draw drafts have no server session
    *  and keep their prompt-derived title. */
   const refreshTitle = useCallback(async (sessionId: string | number) => {
-    setSessions((list) => {
-      const next = list.map((s) => (String(s.id) === String(sessionId) ? { ...s, titled: true } : s))
-      writeSessions(next)
-      return next
-    })
+    commitSessions((list) => list.map((s) => (String(s.id) === String(sessionId) ? { ...s, titled: true } : s)))
     try {
       const out = await client().generateTitle(sessionId)
       const title = cleanGeneratedTitle(String(out?.name ?? ''))
       if (title === '') return
-      setSessions((list) => {
-        const next = list.map((s) => (String(s.id) === String(sessionId) ? { ...s, title } : s))
-        writeSessions(next)
-        return next
-      })
+      commitSessions((list) => list.map((s) => (String(s.id) === String(sessionId) ? { ...s, title } : s)))
     } catch {
       // silent — the truncated fallback title stays
     }
-  }, [token])
+  }, [token, commitSessions])
 
   // R117.1: streaming bookkeeping is keyed by session id — concurrent chats
   // each get their own abort controller and stop button.
@@ -594,12 +585,8 @@ export function AiLabAi8Tab(): JSX.Element {
 
   /** R126: patch the batch bookkeeping on a session (progress/counters). */
   const patchBatch = useCallback((id: string | number, patch: (b: NonNullable<Ai8Session['batch']>) => Ai8Session['batch']) => {
-    setSessions((list) => {
-      const next = list.map((s) => (String(s.id) !== String(id) ? s : { ...s, batch: patch(s.batch ?? { folder: '', total: 0, done: 0, failed: 0 }) }))
-      writeSessions(next)
-      return next
-    })
-  }, [])
+    commitSessions((list) => list.map((s) => (String(s.id) !== String(id) ? s : { ...s, batch: patch(s.batch ?? { folder: '', total: 0, done: 0, failed: 0 }) })))
+  }, [commitSessions])
 
   /** R126: folder-batch draw — one session for the whole folder, one turn
    *  pair per MD file, strictly sequential (the server allows ONE running
@@ -629,11 +616,7 @@ export function AiLabAi8Tab(): JSX.Element {
     const drawArea = drawDef?.platform === undefined ? drawDef?.area : undefined
     const drawVersion = drawDef?.platform !== undefined && drawDef.platform !== 'mj' && drawDef.platform !== 'niji' ? drawModel0 : undefined
     setBatchBusy(true)
-    setSessions((list) => {
-      const next = [{ id: batchId, kind: 'draw' as const, model: drawModel0, title: `${t('ai.ai8.batchTitle')} · ${folderName}`, turns: [], createdAt: startedAt, updatedAt: startedAt, batch: { folder: picked.folder, total: files.length, done: 0, failed: 0, startedAt } } as Ai8Session, ...list]
-      writeSessions(next)
-      return next
-    })
+    commitSessions((list) => [{ id: batchId, kind: 'draw' as const, model: drawModel0, title: `${t('ai.ai8.batchTitle')} · ${folderName}`, turns: [], createdAt: startedAt, updatedAt: startedAt, batch: { folder: picked.folder, total: files.length, done: 0, failed: 0, startedAt } } as Ai8Session, ...list])
     setActiveId(batchId)
     writeActiveId(batchId)
     markStreaming(batchId, true)
@@ -754,11 +737,7 @@ export function AiLabAi8Tab(): JSX.Element {
       const version = prefs.videoVersion || provider?.versions[0]?.value || ''
       setInput('')
       const draftId = `video-${Date.now()}`
-      setSessions((list) => {
-        const next = [{ id: draftId, kind: 'video' as const, model: provider?.id ?? '', title: titleFromContent(content), turns: [{ role: 'user', content }, { role: 'assistant', content: t('ai.ai8.videoPending') }], createdAt: Date.now(), updatedAt: Date.now() } as Ai8Session, ...list]
-        writeSessions(next)
-        return next
-      })
+      commitSessions((list) => [{ id: draftId, kind: 'video' as const, model: provider?.id ?? '', title: titleFromContent(content), turns: [{ role: 'user', content }, { role: 'assistant', content: t('ai.ai8.videoPending') }], createdAt: Date.now(), updatedAt: Date.now() } as Ai8Session, ...list])
       setActiveId(draftId)
       writeActiveId(draftId)
       markStreaming(draftId, true)
@@ -813,11 +792,7 @@ export function AiLabAi8Tab(): JSX.Element {
       const drawVersion = drawDef?.platform !== undefined && drawDef.platform !== 'mj' && drawDef.platform !== 'niji' ? drawModel : undefined
       setInput('')
       const draftId = `draw-${Date.now()}`
-      setSessions((list) => {
-        const next = [{ id: draftId, kind: 'draw' as const, model: drawModel, title: titleFromContent(content), turns: [{ role: 'user', content }, { role: 'assistant', content: t('ai.ai8.drawPending') }], createdAt: Date.now(), updatedAt: Date.now() } as Ai8Session, ...list]
-        writeSessions(next)
-        return next
-      })
+      commitSessions((list) => [{ id: draftId, kind: 'draw' as const, model: drawModel, title: titleFromContent(content), turns: [{ role: 'user', content }, { role: 'assistant', content: t('ai.ai8.drawPending') }], createdAt: Date.now(), updatedAt: Date.now() } as Ai8Session, ...list])
       setActiveId(draftId)
       writeActiveId(draftId)
       markStreaming(draftId, true)
@@ -901,11 +876,7 @@ export function AiLabAi8Tab(): JSX.Element {
     if (sessionBefore !== null && sessionBefore.model !== prefs.model) {
       try {
         await client().updateSession(sessionId, { model: prefs.model, name: sessionBefore.title })
-        setSessions((list) => {
-          const next = list.map((s) => (String(s.id) === String(sessionId) ? { ...s, model: prefs.model } : s))
-          writeSessions(next)
-          return next
-        })
+        commitSessions((list) => list.map((s) => (String(s.id) === String(sessionId) ? { ...s, model: prefs.model } : s)))
       } catch {
         // best-effort: the send itself will surface any server rejection
       }
@@ -919,17 +890,13 @@ export function AiLabAi8Tab(): JSX.Element {
       for await (const ev of client().chat(sessionId, content, { thinking: prefs.thinking, webSearch: prefs.webSearch, signal: controller.signal, files })) {
         if (ev.type === 'delta') {
           replyText += ev.text
-          setSessions((list) => {
-            const next = list.map((s) => {
-              if (String(s.id) !== String(sessionId)) return s
-              const turns = [...s.turns]
-              const last = turns[turns.length - 1]
-              if (last?.role === 'assistant') turns[turns.length - 1] = { ...last, content: last.content + ev.text }
-              return { ...s, turns }
-            })
-            writeSessions(next)
-            return next
-          })
+          commitSessions((list) => list.map((s) => {
+            if (String(s.id) !== String(sessionId)) return s
+            const turns = [...s.turns]
+            const last = turns[turns.length - 1]
+            if (last?.role === 'assistant') turns[turns.length - 1] = { ...last, content: last.content + ev.text }
+            return { ...s, turns }
+          }))
         } else if (ev.type === 'error') {
           hadError = true
           patchLastAssistant(sessionId, { error: ev.message })
@@ -946,17 +913,13 @@ export function AiLabAi8Tab(): JSX.Element {
       markStreaming(sessionId, false)
       // empty-reply guard: a stream that ended without any delta must not stay
       // silently blank
-      setSessions((list) => {
-        const next = list.map((s) => {
-          if (String(s.id) !== String(sessionId)) return s
-          const turns = [...s.turns]
-          const last = turns[turns.length - 1]
-          if (last?.role === 'assistant' && last.content === '' && last.error === undefined) turns[turns.length - 1] = { ...last, error: 'network' }
-          return { ...s, turns }
-        })
-        writeSessions(next)
-        return next
-      })
+      commitSessions((list) => list.map((s) => {
+        if (String(s.id) !== String(sessionId)) return s
+        const turns = [...s.turns]
+        const last = turns[turns.length - 1]
+        if (last?.role === 'assistant' && last.content === '' && last.error === undefined) turns[turns.length - 1] = { ...last, error: 'network' }
+        return { ...s, turns }
+      }))
       // R116.3: after the FIRST completed exchange, replace the truncated
       // fallback title via the site's native generate-title endpoint
       if (isFirstExchange && !hadError && replyText.trim() !== '') {

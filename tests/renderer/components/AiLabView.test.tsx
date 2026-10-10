@@ -234,6 +234,109 @@ describe('AiLabView (R89)', () => {
   })
 })
 
+// ── R265: AI8 tab keep-alive (REVIEW-ailab-3d U3/W2) ────────────────────────
+// AI8 draw/video tasks run for MINUTES — unmounting the tab on switch-away
+// turned the streaming completion's setSessions into a no-op, so the finished
+// turn never reached localStorage. The fix mirrors the R175 agent/voice panes:
+// first visit mounts, then keep-alive via a display:none wrapper.
+describe('AiLabView AI8 keep-alive (R265)', () => {
+  /** Route-aware fetch stub: parked /chat/completions the test releases by hand. */
+  function stubAi8Fetch(): { releaseStream: (r: Response) => void; restore: () => void } {
+    const originalFetch = globalThis.fetch
+    let releaseStream: ((r: Response) => void) | null = null
+    globalThis.fetch = (async (url: string) => {
+      const u = String(url)
+      if (u.endsWith('/chat/tmpl')) return new Response(JSON.stringify({ code: 0, data: { models: [] }, msg: '' }), { status: 200 })
+      if (u.endsWith('/user/frequency/balance')) return new Response(JSON.stringify({ code: 0, data: { remaining: 7 }, msg: '' }), { status: 200 })
+      if (u.endsWith('/chat/session')) return new Response(JSON.stringify({ code: 0, data: { id: 4242 }, msg: '' }), { status: 200 })
+      if (u.includes('/chat/generate-title/')) return new Response(JSON.stringify({ code: 0, data: { name: '标题A' }, msg: '' }), { status: 200 })
+      if (u.endsWith('/chat/completions')) return await new Promise<Response>((resolve) => { releaseStream = resolve })
+      return Promise.reject(new Error(`no route: ${u}`))
+    }) as typeof fetch
+    return {
+      releaseStream: (r: Response) => {
+        expect(releaseStream).not.toBeNull()
+        releaseStream!(r)
+      },
+      restore: () => { globalThis.fetch = originalFetch },
+    }
+  }
+
+  it('a stream that completes while the ai8 tab is switched away still lands in localStorage; the tab is not remounted on return', { timeout: 20000 }, async () => {
+    // login + a chat model — the composer is gated on both
+    localStorage.setItem('rgbbox:ai8Token', 'tok-test')
+    localStorage.setItem('rgbbox:ai8Prefs', JSON.stringify({ model: 'm1', thinking: false, webSearch: false, mode: 'chat', drawModel: '', videoModel: '', videoVersion: '' }))
+    const { releaseStream, restore } = stubAi8Fetch()
+    try {
+      setupRendererMocks()
+      const { container } = render(<AiLabView />)
+      const tabBtn = (key: string) => [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === key) as HTMLElement
+      // lazy mount: the workbench does not exist before the first visit
+      expect(container.querySelector('[data-field="ai8-root"]')).toBeNull()
+      fireEvent.click(tabBtn('ai8'))
+      const rootEl = await waitFor(() => {
+        const el = container.querySelector('[data-field="ai8-root"]') as HTMLElement
+        expect(el).not.toBeNull()
+        return el
+      })
+      const pane = rootEl.closest('.ai-keep-pane') as HTMLElement | null
+      expect(pane).not.toBeNull() // R265: same wrapper pattern as agent/voice (R175)
+      expect(pane!.style.display).toBe('')
+
+      // start a chat — session created, streaming begins, completions fetch parked
+      fireEvent.change(container.querySelector('textarea[data-field="ai8-input"]') as HTMLTextAreaElement, { target: { value: '画一只猫' } })
+      fireEvent.click(container.querySelector('[data-action="ai8-send"]') as HTMLElement)
+      await waitFor(() => expect(container.querySelector('[data-action="ai8-stop"]')).not.toBeNull())
+
+      // switch away — the pane must stay MOUNTED (hidden), not unmounted
+      fireEvent.click(tabBtn('config'))
+      await waitFor(() => expect(pane!.style.display).toBe('none'))
+      expect(container.querySelector('[data-field="ai8-root"]')).toBe(rootEl) // same DOM node → no remount
+
+      // the stream completes while the tab is hidden — the finished turn MUST
+      // reach localStorage (this is the exact U3 data-loss repro)
+      releaseStream(new Response(JSON.stringify({ code: 0, data: '最终回答', msg: '' }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      await waitFor(() => {
+        const list = JSON.parse(localStorage.getItem('rgbbox:ai8Sessions') ?? '[]') as Array<{ turns: Array<{ content?: string }> }>
+        expect(list.some((s) => s.turns.some((t) => t.content === '最终回答'))).toBe(true)
+      })
+
+      // back on ai8: still the same instance and the reply is on screen
+      fireEvent.click(tabBtn('ai8'))
+      await waitFor(() => expect(pane!.style.display).not.toBe('none'))
+      expect(container.querySelector('[data-field="ai8-root"]')).toBe(rootEl)
+      expect(container.querySelector('.ai8-log')?.textContent).toContain('最终回答')
+    } finally {
+      restore()
+    }
+  })
+
+  it('R175 agent/voice keep-alive is unaffected: their panes stay mounted alongside the new ai8 pane', async () => {
+    const { container } = render(<AiLabView />)
+    const tabBtn = (key: string) => [...container.querySelectorAll('.ai-tab')].find((b) => b.getAttribute('data-tab') === key) as HTMLElement
+    fireEvent.click(tabBtn('agent'))
+    const agentRoot = await waitFor(() => {
+      const el = container.querySelector('.agent-tab') as HTMLElement
+      expect(el).not.toBeNull()
+      return el
+    })
+    fireEvent.click(tabBtn('voice'))
+    await waitFor(() => expect(container.querySelector('.vs-tab')).not.toBeNull())
+    const voiceRoot = container.querySelector('.vs-tab') as HTMLElement
+    fireEvent.click(tabBtn('ai8'))
+    await waitFor(() => expect(container.querySelector('[data-field="ai8-root"]')).not.toBeNull())
+    // ai8 visible; agent & voice hidden but alive (same DOM nodes)
+    expect((agentRoot.closest('.ai-keep-pane') as HTMLElement).style.display).toBe('none')
+    expect(container.contains(agentRoot)).toBe(true)
+    expect((voiceRoot.closest('.ai-keep-pane') as HTMLElement).style.display).toBe('none')
+    expect(container.contains(voiceRoot)).toBe(true)
+    // round-trip back to agent — still the same mounted instance
+    fireEvent.click(tabBtn('agent'))
+    await waitFor(() => expect((agentRoot.closest('.ai-keep-pane') as HTMLElement).style.display).not.toBe('none'))
+    expect(container.querySelector('.agent-tab')).toBe(agentRoot)
+  })
+})
+
 // ── R145: AWS Bedrock provider form ────────────────────────────────────────
 describe('AiLabView AWS Bedrock form (R145)', () => {
   async function toBedrock(container: HTMLElement): Promise<void> {

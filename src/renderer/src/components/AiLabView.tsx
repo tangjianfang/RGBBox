@@ -67,12 +67,16 @@ function mirrorOf(p: AiProfile | null): EditMirror {
 export function AiLabView(): JSX.Element {
   const { t } = useI18n()
   const [tab, setTab] = useState<AiLabTab>('config')
-  // R175: first visit mounts; afterwards keep-alive via display:none wrappers
+  // R175: first visit mounts; afterwards keep-alive via display:none wrappers.
+  // R265: ai8 joins the scheme — its draw/video tasks run for minutes and the
+  // completion callback's setSessions is a no-op on an unmounted component.
   const [agentVisited, setAgentVisited] = useState(false)
   const [voiceVisited, setVoiceVisited] = useState(false)
+  const [ai8Visited, setAi8Visited] = useState(false)
   useEffect(() => {
     if (tab === 'agent') setAgentVisited(true)
     if (tab === 'voice') setVoiceVisited(true)
+    if (tab === 'ai8') setAi8Visited(true)
   }, [tab])
   // R192.5: the agent tab is now a permanent member of the strip. The R179
   // hidden-behind-🤖-toggle design read as "the feature was deleted" (real
@@ -98,9 +102,10 @@ export function AiLabView(): JSX.Element {
   // R175: keep-alive for the agent & voice tabs — once visited they stay
   // mounted (display:none) so a running agent keeps streaming and transcripts
   // / drafts survive tab switches (Claude-style background run).
-  // R175: keep-alive for the agent & voice tabs — once visited they stay
-  // mounted (display:none) so a running agent keeps streaming and transcripts
-  // / drafts survive tab switches (Claude-style background run).
+  // R265: the ai8 tab joins the same scheme (REVIEW-ailab-3d U3) — without
+  // it, switching away mid draw/video task unmounts the workbench and the
+  // completion callback's setSessions becomes a no-op, so the finished turn
+  // never reaches localStorage.
 
   useEffect(() => {
     window.rgbbox.aiGetProfiles().then((c) => {
@@ -540,7 +545,14 @@ export function AiLabView(): JSX.Element {
         </div>
       )}
 
-      {tab === 'ai8' && <AiLabAi8Tab />}
+      {/* R265: keep-alive for the AI8 workbench — draw/video tasks are
+          minute-scale; the tab must survive switches so the completion
+          callback still lands the finished turn in localStorage. */}
+      {ai8Visited && (
+        <div className="ai-keep-pane" style={{ display: tab === 'ai8' ? undefined : 'none' }}>
+          <AiLabAi8Tab />
+        </div>
+      )}
     </div>
   )
 }
