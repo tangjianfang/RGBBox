@@ -179,4 +179,73 @@ describe('renderer/hooks/useAudioAnalyzer (R147 P2 dual-channel)', () => {
     expect(result.current.status.active).toBe(false)
     expect(result.current.ref.current.freqBands.every((v) => v === 0)).toBe(true)
   })
+
+  // ── R272 (review W1): the per-tick channel must never freeze mid-air ─────
+  // shouldAnalyze flipping false / capture error / deviceId switch all used
+  // to leave subscribers' LAST frame stuck at a stale level (VU meters froze
+  // half-way). Each transition now pushes one zero frame (+ resets the EMA).
+
+  it('R272: pushes a zero frame to subscribers when shouldAnalyze flips true → false', async () => {
+    const { result, rerender } = renderHook(({ sa }: { sa: boolean }) => useAudioAnalyzer(true, '', sa), {
+      initialProps: { sa: true }
+    })
+    await settle(50)
+    const ctx = FakeAudioContext.last!
+    ctx.analyser.nextValues = new Array(1024).fill(220)
+    await settle(60)
+    const frames: AudioData[] = []
+    act(() => { result.current.subscribe((d) => frames.push({ ...d })) })
+    await settle(60)
+    expect(frames.length).toBeGreaterThan(0)
+    expect(frames[frames.length - 1].level).toBeGreaterThan(0) // live data was flowing
+
+    rerender({ sa: false })
+    const last = frames[frames.length - 1]
+    expect(last.level).toBe(0)
+    expect(last.active).toBe(false)
+    expect(last.freqBands.every((v) => v === 0)).toBe(true)
+  })
+
+  it('R272: band EMA resets on pause — resumed analysis starts from zero, not stale peaks', async () => {
+    const { result, rerender } = renderHook(({ sa }: { sa: boolean }) => useAudioAnalyzer(true, '', sa), {
+      initialProps: { sa: true }
+    })
+    await settle(50)
+    const ctx = FakeAudioContext.last!
+    ctx.analyser.nextValues = new Array(1024).fill(220)
+    await settle(80)
+    expect(result.current.ref.current.freqBands.some((v) => v > 0.5)).toBe(true)
+
+    rerender({ sa: false })            // pause → zero frame + EMA reset
+    ctx.analyser.nextValues = null      // silence on resume
+    rerender({ sa: true })              // resume
+    await settle(120)
+    // Without the EMA reset the bars would decay from ~0.86 (0.8^n) and still
+    // read >0 here; with it every resumed band is exactly 0.
+    expect(result.current.ref.current.freqBands.every((v) => v === 0)).toBe(true)
+  })
+
+  it('R272: deviceId switch pushes a zero frame — subscriber channel never freezes (error frame carries the error)', async () => {
+    ;(navigator.mediaDevices.getUserMedia as any)
+      .mockResolvedValueOnce(fakeStream())       // device A: succeeds
+      .mockRejectedValueOnce(new Error('gone'))  // device B: fails
+    const { result, rerender } = renderHook(({ id }: { id: string }) => useAudioAnalyzer(true, id), {
+      initialProps: { id: 'mic-1' }
+    })
+    await settle(80)
+    const ctx = FakeAudioContext.last!
+    ctx.analyser.nextValues = new Array(1024).fill(220)
+    await settle(80)
+    const frames: AudioData[] = []
+    act(() => { result.current.subscribe((d) => frames.push({ ...d })) })
+    await settle(60)
+    expect(frames[frames.length - 1].level).toBeGreaterThan(0)
+
+    rerender({ id: 'mic-2' })
+    await settle(60) // let the rejected getUserMedia + catch handler settle
+    const last = frames[frames.length - 1]
+    expect(last.level).toBe(0)
+    expect(last.active).toBe(false)
+    expect(last.error).toBe('capture-failed')
+  })
 })
