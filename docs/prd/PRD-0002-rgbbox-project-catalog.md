@@ -4044,6 +4044,9 @@
 
 - **R256 `fix` — 离散指令延迟批：抬键快路径（旗舰 T19；02-U2 核心；状态 ✅ 当日闭环）**。**证据**：DirectionRing 确认阈值改 `want===null ? min(confirmMs, 30) : confirmMs`——回死区（释放）快路径 30ms（防抖守卫防的是扇区抖动，回静止永远不会抖）；扇区间切换保持全量 confirmMs；测试用渐进回中法（跳变回中时 OneEuro 需 ~3 帧收敛进死区=滤波器物理，与确认门无关——渐进走使滤波器已跟踪时精确测量确认门：死区进入后 ≤1 帧释放 vs 旧路径 3+ 帧=省 60ms 人工等待）；engines 18 用例全绿；全量 **170 files / 1591 passed / 0 失败**。：gesture_engine 方向环——`active→null`（回死区/释放）走快路径（confirm 上限 30ms），仅「切换到另一方向」吃全量 confirmMs——02 实测释放延迟 133ms（confirm 90+OneEuro 67）砍半目标 <50ms。阶跃基准复跑记录前后数字。验收：释放路径单测 + engines 既有用例不回归。
 
+
+- **R257 `fix` — 游戏评审二轮 Wave1：P0 立即修（REVIEW-GAMES-2026-10-10 F-1/F2-1/G3-1/G3-2；状态 🔄）**：①Slash 斜向块生成收敛 4 向（F-1 P0：50% 生成占比无输入路径可斩=不可玩）；②fs stale-closure：MiniGamesView:1106 `fullscreen` → `fullscreenRef.current`（F2-1 P0：survival fs 走错 backing 画面拉伸）；③slash 重开 fallthrough 到 restartTetrisRun（G3-1 :2176）；④restartTetrisRun 丢难度（G3-2 :1959）。验收：四修各带测试/复现证据；全量 0 失败。
+
 - **R233 `fix` — 快照门禁 workspace 活动区遮罩（Wave1-T2；REVIEW-VISION 已知问题§8 条目；状态 ✅ 2026-10-09 闭环）**：workspace 视图 run-to-run 自差 1.7%（R227 期实证，stash 对照排除代码因素）——右侧 `.panel.map-panel` 拓扑/视频墙等活动元素未遮罩。修：`scripts/ui-snapshot.mjs` 增 `VOLATILE_REGION_SELECTORS`。验收：连续三跑 workspace ≤0.1%、其余 8 视图 0.0000%。
   - **R233.1 实测归因（6×6 网格定位）**：修前 workspace 对基线 1.4563%（两次同值=确定性差，R224 期基线已落后 10 个 src 提交，其中 1.79%>40 阈值热区=右列 rows1-4（map-panel）+底部 rows（sampling-panel），其余像素 run-to-run 0.0000%）+ 间歇尖峰 2.3188%：**异步拓扑枚举竞态**——`topology.displays.length>1` 达成时 linked-display-row+VideoWallEditor 挂载，map-panel h 441↔501、sampling-panel 整体下移 61px，单侧各自遮罩必留未遮边。顶栏 displays 计数文本（1↔2）同一竞态。
   - **R233.2 修法**：`VOLATILE_REGION_SELECTORS=['.panel.map-panel','.panel.sampling-panel']`（类名 grep 证实仅 WorkspaceView 使用，其余 8 视图天然零影响）+ `VOLATILE_TEXT_SELECTORS` 增 `.workspace-header .metric:first-child`；boxes.json schema 拆 `{canvases,volatile}`——canvas 仍双侧各自 rect（挪位仍要门禁），volatile 改**双侧 UNION 遮罩**（新增 `unionRects`：相交 rect 聚类成覆盖盒，面板 resize/位移不再留边）；基线按 T1 规则重立于 HEAD 8b080c8（9 视图 png+boxes 全量重立）。
