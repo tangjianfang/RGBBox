@@ -75,7 +75,7 @@ export const SURVIVAL_LABELS: SurvivalLabels = {
   survive: 'SURVIVE',
   island: (n) => `ISLAND ${n}`,
   level: (n) => `LEVEL ${n}`,
-  bossInbound: '⚠ BOSS 逼近',
+  bossInbound: '⚠ BOSS INBOUND', // R278/V4: 缺省回英文(zh 由 view 注入覆盖)——缺省层保持引擎零 locale 契约
   bossDown: 'BOSS DOWN — ROULETTE +1',
   evolved: (e) => `EVOLVED · ${e.toUpperCase()}`,
   playerDown: (n) => `P${n} DOWN`,

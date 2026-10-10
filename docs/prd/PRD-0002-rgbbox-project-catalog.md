@@ -4173,7 +4173,7 @@ vitest 4.1.7 happy-dom 环境的 `getWindowKeys` 过滤规则「已存在于全�
 
 - **R277 `fix` — 全模块硬化 W11：屏保中文位图回退（REVIEW-engine TA4；状态 ✅ 2026-10-11 代码闭环，真机截图待舰队终局批）**：ScreensaverView:87 直调 renderPreviewFrame(IPC) 漏传 textMasks——主进程 engine 退回 5×7 位图，中文层渲染成 '?'。**证据**：抽 `domain/staticTextMasks.ts` 共享纯函数（worker 帧前预计算同款逻辑去重），worker 与 ScreensaverView 两路径统一接线；typecheck 双绿 + worker/main 43 files 352 tests 零回归。真机 CJK 屏保截图复核并入舰队终局视觉批。
 
-- **R278 `test` — 全模块硬化 W12：i18n 键族不变量测试 + 死键清理（REVIEW-shared #3；状态 ⏳）**：动态键族（55 EffectKind×3 键等）无不变量测试；~45 已验证死键×2 语言。修：键族完整性测试 + 死键清理。验收：删任一 EffectKind 键测试红。
+- **R278 `test` — 全模块硬化 W12：i18n 键族不变量测试 + 死键清理（REVIEW-shared #3；状态 ✅ 2026-10-11 闭环）**：动态键族无不变量测试；~45 已验证死键×2 语言。**证据**：①52 键逐键 grep src+tests 交叉核对（零引用 49 键删除 ×2 locale=98 行；3 键报告笔误不在表内跳过——video.zoom.title/save/lastShot）；②新 `tests/renderer/i18nKeyFamilies.test.ts`——effect 名键族双向锁（55+ kind × zh/en 完整非空 + 结构自检；效果描述不走 .desc 键族系报告「×3」表述修正，presetDescription 走 preset.descKey 语义）；③V4 顺手修——`SURVIVAL_LABELS.bossInbound` 缺省回 `'⚠ BOSS INBOUND'`（zh 由 view 注入覆盖，引擎缺省层恢复零 locale 契约）；④`i18n-audit` 复验 **zh=1782 en=1782 全平价 0 findings**（1804−49+27 本轮新增=1782 对账吻合）；gamesI18nKeys/SettingsView 13 用例绿；typecheck 双绿。
 
 - **R279 `fix` — 全模块硬化 W13：splat 缓存校验 + TTS 队列 onerror 兜底（REVIEW-ailab W3/W4；状态 ⏳）**：splat 只查存在性（断点 partial 永久死局）；系统引擎句队列无 onerror（卡死播放态）。修：manifest bytes 校验（复用 onnx 模式）+ onerror 跳过收束。验收：坏缓存重下;模拟 onerror 队列继续。
 
