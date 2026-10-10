@@ -231,7 +231,10 @@ function spawnBlock(s: SlashState): void {
   // easier early, denser later — the difficulty curve (scaled to this run's ceiling)
   const run = s.runSeconds ?? RUN_SECONDS
   const hard = Math.min(1, (run - s.timeLeft) / run)
-  const dir = Math.floor(rand(s) * 8)
+  // R257 (F-1 P0): converge to the 4 CARDINAL directions the input actually
+  // reaches — diagonals (1/3/5/7) had no key mapping and were unslashable,
+  // making 50% of spawns guaranteed leaks. 8-way input is a future enhancement.
+  const dir = Math.floor(rand(s) * 4) * 2
   // R218(B2): 新敌型按波次/进度渐进混入(假动作 15s 后;guard 25% / dasher 35% / thrower 45%)
   const r = rand(s)
   let kind: BlockKind | undefined

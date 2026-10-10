@@ -1103,7 +1103,7 @@ export function MiniGamesView(): JSX.Element {
       // 比例锁;vp 由 loop 高度基准反推,内容等比无拉伸);其余路径维持 R217。
       // (对抗审查修正:不做逐轴 LOGICAL 下限——单轴触底会破坏 backing/CSS
       // 同比,800×600 之类小屏全屏会横向压缩变形;小屏只损失清晰度不变形。)
-      if (screen === 'survival' && (fullscreen || focusModeRef.current)) {
+      if (screen === 'survival' && (fullscreenRef.current || focusModeRef.current)) { // R257 F2-1: closure was stale
         const dpr = Number.isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0 ? Math.min(window.devicePixelRatio, 2) : 1
         canvas.width = Math.max(1, Math.round(rect.width * dpr))
         canvas.height = Math.max(1, Math.round(rect.height * dpr))
@@ -1957,8 +1957,12 @@ export function MiniGamesView(): JSX.Element {
   startTetrisRef.current = startTetrisRun
 
   const restartTetrisRun = useCallback(() => {
-    tetrisRef.current = initialTetrisState()
-    tetrisBRef.current = initialTetrisState()
+    // R257 (G3-2): the restart path lost the difficulty — bare
+    // initialTetrisState() defaults to 'standard', silently resetting a
+    // casual/insane run. Read the same persisted pref the start path uses.
+    const d = readDifficulty('tetris')
+    tetrisRef.current = initialTetrisState(undefined, d)
+    tetrisBRef.current = initialTetrisState(undefined, d)
     publishTetris()
   }, [publishTetris])
 
@@ -2173,7 +2177,7 @@ export function MiniGamesView(): JSX.Element {
               : vision.label || t(`games.vision.state.${vision.state}`)}`
       : ''
   const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : isTetris ? startTetrisRun : startSlashRunCb
-  const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
+  const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : isSlash ? slashStartRef.current : restartTetrisRun // R257 G3-1: slash fell through to Tetris
   // ── R218 U3: ready 态统一面板的数据面 ──
   /** 真实引擎 phase==='ready'(不经 levelup→ready 的显示映射,避免升级浮层下穿出)。 */
   const showReady = isTd ? tdSnapshot.phase === 'ready' : isSurvival ? survivalSnapshot.phase === 'ready' : isSlash ? slashSnapshot.phase === 'ready' : tetrisSnapshot.phase === 'ready'
