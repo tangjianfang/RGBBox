@@ -24,7 +24,7 @@ import { armShutdown, cancelShutdown, getShutdownStatus } from './shutdownSchedu
 import { closeAllScreensaverWindows, disposeScreensaver, getScreensaverSettings, initScreensaver, setScreensaverSettings } from './screensaverManager'
 import { acknowledgeSnipPainted, cancelSnip, disposeSnipManager, finishSnip, getSnipHotkeyPref, initSnipHotkeyPref, initSnipManager, isPresetSnipHotkey, registerSnipHotkey, setSnipHotkeyPref, startSnip, warmSnipStack } from './snipManager'
 import { asUiLocale, trayMenuLabels, type UiLocale } from './trayMenu'
-import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
+import { deleteProfile, importProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
 import { initCrashLogging, listCrashLogs, exportCrashLog } from './crashLog'
@@ -1237,8 +1237,17 @@ function registerIpc(): void {
     if (result.canceled || !result.filePaths[0]) return null
     try {
       const raw = await readFile(result.filePaths[0], 'utf-8')
+      // R264: was a bare `JSON.parse(raw) as Profile` — wrong-shaped files
+      // crashed the renderer; same-id files silently overwrote the existing
+      // named slot via auto-save. importProfile validates + migrates + mints
+      // a fresh id on collision; null = reject the file.
+      const imported = await importProfile(raw)
+      if (!imported) {
+        log.error('Profile', `Failed to import profile from: ${result.filePaths[0]}`)
+        return null
+      }
       log.info('Profile', `Profile imported from: ${result.filePaths[0]}`)
-      return JSON.parse(raw) as Profile
+      return imported
     } catch {
       log.error('Profile', `Failed to import profile from: ${result.filePaths[0]}`)
       return null

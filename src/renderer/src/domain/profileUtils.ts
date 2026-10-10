@@ -1,12 +1,20 @@
 // R147 P1: extracted verbatim from App.tsx module scope (profile/frame helpers).
 import type { EffectLayer, Profile, Scene } from '../../../shared/types'
 
-// R147 P3b: module-scope layer-ID counter shared by addLayer (App) and the
-// layer-pack importer (useProfileManager) — moved verbatim from App.tsx.
-let _layerCounter = 100
-export function nextLayerId(): string {
-  _layerCounter += 1
-  return `layer-${_layerCounter}`
+// R264/U4: was a module-scope counter starting at 100 that never looked at
+// existing ids — importing layers with `layer-1xx` ids made subsequent adds
+// collide (updateLayer patched two layers at once). Now scans the profile's
+// existing numeric `layer-N` ids and returns max+1. With no numeric ids the
+// first id is still `layer-101`, matching the old counter's first value.
+export function nextLayerId(profile: Profile | null | undefined): string {
+  let max = 100
+  for (const scene of profile?.scenes ?? []) {
+    for (const layer of scene.layers ?? []) {
+      const m = /^layer-(\d+)$/.exec(layer.id)
+      if (m) max = Math.max(max, Number(m[1]))
+    }
+  }
+  return `layer-${max + 1}`
 }
 
 export function activeLayer(profile: Profile) {

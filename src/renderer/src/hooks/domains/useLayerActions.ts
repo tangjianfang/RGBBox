@@ -17,6 +17,7 @@ import { activeScene, nextLayerId, updateLayer } from '../../domain/profileUtils
  * updateSelectedLayer; no state of their own.
  */
 export function useLayerActions(args: {
+  profile: Profile | null
   setProfile: Dispatch<SetStateAction<Profile | null>>
   setSelectedLayerId: (id: string) => void
   selectedLayer: EffectLayer | null
@@ -24,7 +25,7 @@ export function useLayerActions(args: {
   randomizerMode: RandomizerMode
   randomizerLockedParams: string[]
 }) {
-  const { setProfile, setSelectedLayerId, selectedLayer, updateSelectedLayer, randomizerMode, randomizerLockedParams } = args
+  const { profile, setProfile, setSelectedLayerId, selectedLayer, updateSelectedLayer, randomizerMode, randomizerLockedParams } = args
 
   const randomizeSelectedLayer = useCallback(() => {
     if (!selectedLayer) return
@@ -84,7 +85,9 @@ export function useLayerActions(args: {
   const addLayer = useCallback((kind: EffectKind) => {
     const preset = effectPresets.find((p) => p.kind === kind) ?? effectPresets[0]
     const newLayer: EffectLayer = {
-      id: nextLayerId(),
+      // R264: scan existing ids (max+1) instead of a blind counter, so ids
+      // imported via layer packs can't collide with newly added layers.
+      id: nextLayerId(profile),
       name: preset.label,
       kind: preset.kind,
       enabled: true,
@@ -101,7 +104,7 @@ export function useLayerActions(args: {
       }
     })
     setSelectedLayerId(newLayer.id)
-  }, [])
+  }, [profile])
 
   const deleteLayer = useCallback((layerId: string) => {
     setProfile((cur) => {

@@ -166,7 +166,9 @@ export function useProfileManager(args: {
         if (!pack?.rgbboxEffectPack || !pack?.layer) throw new Error('Invalid pack')
         const src = pack.layer as Partial<EffectLayer>
         const imported: EffectLayer = {
-          id: nextLayerId(),
+          // R264: scan existing ids (max+1) so imported pack layers can't
+          // collide with ids added later.
+          id: nextLayerId(profile),
           name: typeof src.name === 'string' ? src.name : 'Imported',
           kind: (src.kind as EffectKind) ?? 'rainbow',
           enabled: true,
@@ -191,7 +193,7 @@ export function useProfileManager(args: {
     }
     reader.readAsText(file)
     e.target.value = ''
-  }, [t, setProfile, setSelectedLayerId])
+  }, [t, profile, setProfile, setSelectedLayerId])
 
   return {
     savedProfiles, setSavedProfiles, refreshProfiles,
