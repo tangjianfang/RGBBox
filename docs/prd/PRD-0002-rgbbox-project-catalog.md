@@ -4165,7 +4165,7 @@ vitest 4.1.7 happy-dom 环境的 `getWindowKeys` 过滤规则「已存在于全�
 
 - **R276 `fix` — 全模块硬化 W10：诊断数字修正包（REVIEW-engine TA5；状态 ⏳）**：p95 非 nearest-rank；outputMs 未接真实测量；dashFps 3D 路径用帧间隔倒数误导。修：三项口径修正 + 行集合冒烟锁。验收：p95 精确断言单测。
 
-- **R277 `fix` — 全模块硬化 W11：屏保中文位图回退（REVIEW-engine TA4；状态 ⏳）**：ScreensaverView 中文回退 `?` 位图。修：预计算 textMasks 随 IPC 传入（preload 通道已支持）。验收：CJK 层屏保真机截图视觉复核。
+- **R277 `fix` — 全模块硬化 W11：屏保中文位图回退（REVIEW-engine TA4；状态 ✅ 2026-10-11 代码闭环，真机截图待舰队终局批）**：ScreensaverView:87 直调 renderPreviewFrame(IPC) 漏传 textMasks——主进程 engine 退回 5×7 位图，中文层渲染成 '?'。**证据**：抽 `domain/staticTextMasks.ts` 共享纯函数（worker 帧前预计算同款逻辑去重），worker 与 ScreensaverView 两路径统一接线；typecheck 双绿 + worker/main 43 files 352 tests 零回归。真机 CJK 屏保截图复核并入舰队终局视觉批。
 
 - **R278 `test` — 全模块硬化 W12：i18n 键族不变量测试 + 死键清理（REVIEW-shared #3；状态 ⏳）**：动态键族（55 EffectKind×3 键等）无不变量测试；~45 已验证死键×2 语言。修：键族完整性测试 + 死键清理。验收：删任一 EffectKind 键测试红。
 
