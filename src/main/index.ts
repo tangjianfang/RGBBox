@@ -51,6 +51,7 @@ import { mediaStreamPlan, parseRangeHeader, resolveAppAssetPath, resolveMediaMim
 import { allowPermission } from './permissionGate'
 import { registerDenoiseService } from './denoiseService'
 import { loadPlaylist, savePlaylist } from './playlistStore'
+import { isMediaPathAllowed } from './mediaAllowlist'
 
 // Initialize file logger — must be done after imports but before app.whenReady
 const log = initLogger(join(app.getPath('userData'), 'logs'), { minLevel: 'debug' })
@@ -1660,14 +1661,19 @@ app.whenReady().then(() => {
         // 不可达),仍按纵深防御收口:仅放行 userData 内的媒体/模型目录与
         // 用户 Downloads/Music/Videos(播放列表/录制的既有来源),其余 403。
         const normalized = resolve(filePath)
-        const allowedRoots = [
-          join(app.getPath('userData'), 'captures'),
-          join(app.getPath('userData'), 'models'),
-          join(app.getPath('home'), 'Downloads'),
-          join(app.getPath('music')),
-          join(app.getPath('videos')),
-        ]
-        const allowed = allowedRoots.some((root) => normalized === root || normalized.startsWith(root + sep))
+        // R268: 白名单抽纯函数(mediaAllowlist)——补 userData/ai8-artifacts(AI8
+        // 缩略图 403 回归)与播放列表登记文件精确路径(用户自选目录全 403 回归)。
+        const [audioList, videoList] = await Promise.all([
+          loadPlaylist(join(app.getPath('userData'), 'config', 'audio-playlist.json')).catch(() => [] as Array<{ path: string }>),
+          loadPlaylist(join(app.getPath('userData'), 'config', 'video-playlist.json')).catch(() => [] as Array<{ path: string }>),
+        ])
+        const playlistPaths = [...audioList, ...videoList].map((item) => resolve(item.path))
+        const allowed = isMediaPathAllowed(normalized, playlistPaths, {
+          userData: app.getPath('userData'),
+          home: app.getPath('home'),
+          music: app.getPath('music'),
+          videos: app.getPath('videos'),
+        })
         if (!allowed) {
           log.warn('MediaProtocol', `blocked non-whitelisted path: ${normalized.slice(0, 120)}`)
           return new Response('Forbidden', { status: 403 })
