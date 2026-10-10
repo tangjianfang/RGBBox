@@ -1,6 +1,7 @@
 import { ArrowLeft, Crosshair, Eye, EyeOff, Grid, Heart, Maximize2, Minimize2, Music, Play, RotateCcw, Shield, Trophy, Volume2, VolumeX, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
 import { useVisionInput } from '../hooks/useVisionInput'
+import { createLedBridge, type GameLedEvent, type LedBridge } from '../games/ledBridge'
 import { useI18n } from '../i18n'
 import { DIFFICULTY_SCORE_MULT, GAME_DIFFICULTIES, drawExitBadge, drawHudButton, drawHudPanel, hitTest, isGameDifficulty, type GameDifficulty, type HudButton } from '../games/hud'
 import { autoPick } from '../games/swarmAutoPick'
@@ -543,6 +544,30 @@ export function MiniGamesView(): JSX.Element {
   // disables the input source — otherwise the camera just silently goes away.
   const [visionExitNotice, setVisionExitNotice] = useState(false)
   const visionWasEnabledRef = useRef(false)
+  // R258: LED bridge — game events → physical LED screens. One instance per
+  // component lifetime; events are cheap no-ops when no overlay is open.
+  const ledBridgeRef = useRef<LedBridge | null>(null)
+  if (!ledBridgeRef.current) ledBridgeRef.current = createLedBridge()
+  const ledActiveRef = useRef(false)
+  const ledBossRef = useRef(false) // R258: boss presence tracking for LED transitions
+
+  // R258: check overlay status — LED events only push when overlays are open
+  useEffect(() => {
+    let cancelled = false
+    const check = async () => {
+      try {
+        const ids = await window.rgbbox?.getOverlayDisplayIds?.()
+        if (!cancelled) ledActiveRef.current = Array.isArray(ids) && ids.length > 0
+      } catch { /* no overlay access — LED disabled */ }
+    }
+    void check()
+    const interval = window.setInterval(check, 5000) // recheck: user may open/close overlay mid-game
+    return () => { cancelled = true; window.clearInterval(interval) }
+  }, [])
+  /** R258: fire a game event to the LED bridge (no-op when no overlay) */
+  const ledEvent = useCallback((e: GameLedEvent) => {
+    ledBridgeRef.current?.onEvent(e)
+  }, [])
   // R246: transient note after the hub's「体感向导」entry re-arms the wizard
   const [hubVisionResetAt, setHubVisionResetAt] = useState<number | null>(null)
   useEffect(() => {
@@ -1128,6 +1153,19 @@ export function MiniGamesView(): JSX.Element {
       // 打日志(含屏与相位,便于定位)、清 fs 按钮区(防悬停命中过期几何)、续帧。
       try {
         loopBody(now)
+        // R258: push LED frame after game logic — bridge generates from active
+        // effects, pushes only when overlays exist (zero cost otherwise)
+        const ledBridge = ledBridgeRef.current
+        if (ledBridge && ledActiveRef.current) {
+          const frame = ledBridge.generateFrame(now, 33, 19)
+          if (frame.hasActive) {
+            try {
+              window.rgbbox?.pushFrameToOverlays?.({
+                columns: 33, rows: 19, pixels: frame.pixels, generatedAt: now,
+              })
+            } catch { /* overlay may have closed mid-frame — silent */ }
+          }
+        }
       } catch (err) {
         console.error('[games] frame error', { screen, err })
         fsButtonsRef.current = []
@@ -1204,11 +1242,18 @@ export function MiniGamesView(): JSX.Element {
         // (pollGamepad 无手柄时已把 axis 归零,跳过 pollVision 不残留旧轴)。
         if (survivalRef.current.player2 === null) pollVision()
         tickSurvival(survivalRef.current, dt)
+        // R258: boss presence → LED red breathing on/off
+        const bossAlive = survivalRef.current.enemies.some((e) => e.kind === 'boss')
+        if (bossAlive !== ledBossRef.current) {
+          ledBossRef.current = bossAlive
+          ledEvent({ type: bossAlive ? 'boss-enter' : 'boss-exit' })
+        }
         const phase = survivalRef.current.phase
         // R213→R220.2: 升级自动预选不再同帧静默拍板——先强制发布快照让三选一
         // 卡片当帧渲染,记录选择并高亮,延迟 1s 执行(保住 build 学习回路,
         // G6 P0「一帧不渲染+英文 ID 飘字」/G1 S-2)。
         if (phase === 'levelup' && lastPhase !== phase) {
+          ledEvent({ type: 'levelup' }) // R258: rainbow ring on physical LEDs
           publishSurvival()
           if (swarmAutoPickRef.current.mode !== 'off') {
             const s = survivalRef.current
@@ -1226,7 +1271,10 @@ export function MiniGamesView(): JSX.Element {
           setAutoPickChoice(null)
           publishSurvival()
         }
-        if (phase === 'lost' && lastPhase !== phase) finishSurvivalRun()
+        if (phase === 'lost' && lastPhase !== phase) {
+          ledEvent({ type: 'death' }) // R258: room lights fade to dark
+          finishSurvivalRun()
+        }
         lastPhase = phase
         // R219.8②: 静态背景离屏缓存(先查缓存,miss 时整幅重画一次)
         const bgKey = `${survivalRef.current.scene ?? 'legacy'}|${survivalRef.current.island}|${canvas.width}x${canvas.height}`
