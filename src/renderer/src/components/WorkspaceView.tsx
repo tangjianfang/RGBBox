@@ -937,7 +937,8 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                       )}
                     </div>
                   )}
-                  {topology.displays.length > 1 && (
+                  {/* R280(W4): 单屏且墙模式仍 enabled 时也渲染——编辑器自带单屏逃生条 */}
+                  {(topology.displays.length > 1 || scene?.videoWall !== undefined) && (
                     <VideoWallEditor
                       layout={scene?.videoWall}
                       topology={topology}
