@@ -575,7 +575,7 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                           key={preset.kind}
                           type="button"
                           onClick={() => selectEffect(preset.kind)}
-                          title={preset.description}
+                          title={presetDescription(preset, t)}
                         >
                           {t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}
                         </button>
