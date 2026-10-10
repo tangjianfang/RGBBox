@@ -6,7 +6,24 @@
  * mask[y*cols + x] === true → foreground pixel.
  */
 
+/** R275: LRU 上限——拖动文字位置每帧产生新 key,无上限缓存随拖动泄漏
+ *  (大网格 mask ≈56k 布尔/条);Map 迭代序=插入序,超限删最旧。 */
+const CACHE_LIMIT = 32
 const cache = new Map<string, boolean[]>()
+
+/** R275: cellPx 自适应——大网格 32px 过采样产生 231MB 瞬时 getImageData
+ *  (317×178 网格);按网格规模降采样(8px 仍保 CJK 可读,采样阈值等比)。 */
+export function cellPxFor(cols: number, rows: number): number {
+  const cells = cols * rows
+  if (cells > 40000) return 8
+  if (cells > 10000) return 16
+  return 32
+}
+
+/** 测试缝:当前缓存条目数。 */
+export function textMaskCacheSize(): number {
+  return cache.size
+}
 
 export function computeTextMask(
   text: string,
@@ -23,9 +40,9 @@ export function computeTextMask(
   const cached = cache.get(key)
   if (cached) return cached
 
-  // Canvas oversampling: 32 canvas-pixels per grid cell (constant, independent of s).
+  // Canvas oversampling: canvas-pixels per grid cell (adaptive, R275).
   // Scale s is applied through fontSize instead.
-  const cellPx = 32
+  const cellPx = cellPxFor(cols, rows)
   const canvasW = cols * cellPx
   const canvasH = rows * cellPx
 
@@ -71,5 +88,10 @@ export function computeTextMask(
   }
 
   cache.set(key, mask)
+  // R275: LRU 淘汰——超限删最旧(Map 首键)
+  if (cache.size > CACHE_LIMIT) {
+    const oldest = cache.keys().next().value
+    if (oldest !== undefined) cache.delete(oldest)
+  }
   return mask
 }

@@ -4160,7 +4160,7 @@ vitest 4.1.7 happy-dom 环境的 `getWindowKeys` 过滤规则「已存在于全�
 
 - **R274 `fix` — 全模块硬化 W8：paramMeta i18n 补齐（REVIEW-workspace A3；状态 ⏳）**：30/37 labelKey 裸英文不走 t()，WorkspaceView:578 绕过 presetDescription——中文 UI 高级抽屉/全效果 tooltip 整片英文。修：labelKey 换 param.* 真键 + zh/en 词条 + WorkspaceView 改 presetDescription。验收：zh UI 抽屉零英文残留（键位完整性测试复用）。
 
-- **R275 `fix` — 全模块硬化 W9：文本掩码缓存治理 LRU（REVIEW-engine TA3 + REVIEW-shared #2 合并；状态 ⏳）**：canvasTextMask 无上限+整幅 getImageData（231MB 瞬时分配）；textRenderer 三处 cache 无淘汰。修：LRU 上限 + cellPx 自适应降采样。验收：上限淘汰单测 + textMaskMs 有界。
+- **R275 `fix` — 全模块硬化 W9：文本掩码缓存治理 LRU（REVIEW-engine TA3 + REVIEW-shared #2 合并；状态 ✅ 2026-10-11 闭环）**：canvasTextMask 无上限+整幅 getImageData（231MB 瞬时分配）；textRenderer maskCache 无淘汰。**证据**：①canvasTextMask——LRU 32 条（Map 插入序删最旧）+ `cellPxFor` 自适应降采样（>40k cells→8px/>10k→16px/其余 32px，317×178 网格瞬时分配 231MB→~14MB）+ `textMaskCacheSize()` 测试缝；②textRenderer maskCache 同款 LRU 32；③`tests/renderer/canvasTextMask.test.ts` 3 用例（cellPx 三档/LRU 33 键≤32/命中不重算）+ 既有 textRenderer 17 用例零回归；typecheck 双绿。
 
 - **R276 `fix` — 全模块硬化 W10：诊断数字修正包（REVIEW-engine TA5；状态 ⏳）**：p95 非 nearest-rank；outputMs 未接真实测量；dashFps 3D 路径用帧间隔倒数误导。修：三项口径修正 + 行集合冒烟锁。验收：p95 精确断言单测。
 

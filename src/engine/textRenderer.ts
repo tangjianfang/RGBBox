@@ -87,6 +87,8 @@ function charData(ch: string): readonly number[] {
 }
 
 // ── Cache ─────────────────────────────────────────────────────────────────
+// R275: LRU 上限(canvasTextMask 同款——无上限缓存随文本参数变化泄漏)
+const MASK_CACHE_LIMIT = 32
 const maskCache = new Map<string, boolean[]>()
 
 /**
@@ -146,5 +148,10 @@ export function getTextMask(
   }
 
   maskCache.set(key, mask)
+  // R275: LRU 淘汰——超限删最旧
+  if (maskCache.size > MASK_CACHE_LIMIT) {
+    const oldest = maskCache.keys().next().value
+    if (oldest !== undefined) maskCache.delete(oldest)
+  }
   return mask
 }
