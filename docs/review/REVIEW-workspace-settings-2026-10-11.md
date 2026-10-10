@@ -97,3 +97,7 @@
 
 
 **A1（Profile 导入裸 parse）**：✅ 确认——`main/index.ts:1239` `JSON.parse(raw) as Profile` 零校验零默认合并实锤。A2/A3 未复核。
+
+
+### P2 池抽验（2026-10-11 主审）
+- **A2 overlay 回读**：✅ 实锤——`useOverlayTopology.ts:36-43` `await openOverlay/closeOverlay` 返回值丢弃，乐观更新本地态。
