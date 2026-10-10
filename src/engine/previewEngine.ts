@@ -54,20 +54,20 @@ export function computeZoneMaskWeight(
 
 /**
  * Returns a 0..1 opacity weight restricting a layer to a horizontal display slot.
- * @param slotStr  '0', '1', '2'… or 'all'
+ * R266: takes the slot index pre-parsed in LayerPrep — the pixel loop used to
+ * String()/parseInt() round-trip it on every pixel.
+ * @param slotIndex  parsed display slot ('0', '1', '2'…); NaN for 'all'/invalid
  * @param linked   true when the scene spans multiple displays as a virtual canvas
  * @param count    number of display slots in the scene
  */
 function computeDisplaySlotMask(
   x: number,
   columns: number,
-  slotStr: string,
+  slotIndex: number,
   linked: boolean,
   count: number
 ): number {
-  if (!linked || count <= 1 || slotStr === 'all') return 1
-  const slotIndex = parseInt(slotStr, 10)
-  if (isNaN(slotIndex) || slotIndex < 0 || slotIndex >= count) return 1
+  if (!linked || count <= 1 || isNaN(slotIndex) || slotIndex < 0 || slotIndex >= count) return 1
   const fx = columns > 1 ? x / (columns - 1) : 0.5
   const f = 0.015 // tight feather at display boundary
   const slotStart = slotIndex / count
@@ -165,7 +165,7 @@ export function renderPreviewFrame(
 
         const overlay = renderEffectPixel(prep.layer, ctx)
         const maskWeight = prep.maskZone === 'full' ? 1 : computeZoneMaskWeight(x, y, columns, rows, prep.maskZone)
-        const displayMask = prep.slotAll ? 1 : computeDisplaySlotMask(x, columns, String(prep.slotIndex), prep.slotLinked, prep.slotCount)
+        const displayMask = prep.slotAll ? 1 : computeDisplaySlotMask(x, columns, prep.slotIndex, prep.slotLinked, prep.slotCount)
         const alpha = prep.opacity * maskWeight * displayMask
         if (prep.layer.blendMode === 'normal') {
           r += (overlay.r - r) * alpha
