@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { MODELS_MANIFEST } from '../../src/shared/modelsManifest'
+import { MODELS_MANIFEST, isCacheSizeOk } from '../../src/shared/modelsManifest'
 
 describe('MODELS_MANIFEST invariants (restored, R90 review fix)', () => {
   it('names/files/urls are unique across all entries', () => {
@@ -71,5 +71,34 @@ describe('MODELS_MANIFEST invariants (restored, R90 review fix)', () => {
     expect(labels.every((l) => typeof l.labelZh === 'string' && l.labelZh !== '')).toBe(true)
     expect(labels[0].labelZh).toBe('语音')
     expect(labels[140].labelZh).toBe('吉他')
+  })
+})
+
+describe('R279 W3: splat cache-size validation (±10%, R90.9 pattern)', () => {
+  it('Mip-NeRF 360 splat entries pin their canonical upstream bytes', () => {
+    // Sizes pinned from the canonical public source (cakewalk/splat-data via
+    // hf-mirror X-Linked-Size, probed 2026-10-11) — the manifest URL's own
+    // release (models-v1) is 404, so the upstream demos' bytes are the pin.
+    const byName = new Map(MODELS_MANIFEST.map((m) => [m.name, m]))
+    expect(byName.get('train')!.bytes).toBe(32_848_256)
+    expect(byName.get('garden')!.bytes).toBe(186_713_088)
+    expect(byName.get('bicycle')!.bytes).toBe(196_222_528)
+  })
+
+  it('a half-downloaded partial is NOT cached; the complete file is (every pinned entry)', () => {
+    const pinned = MODELS_MANIFEST.filter((m) => m.bytes !== undefined)
+    expect(pinned.length).toBeGreaterThanOrEqual(8) // 5 onnx + 3 splat
+    for (const m of pinned) {
+      expect(isCacheSizeOk(Math.floor(m.bytes! / 2), m.bytes!), `${m.file} half-size must fail`).toBe(false)
+      expect(isCacheSizeOk(m.bytes!, m.bytes!), `${m.file} full-size must pass`).toBe(true)
+    }
+  })
+
+  it('the tolerance band matches R90.9 exactly (±10% inclusive, just outside fails)', () => {
+    expect(isCacheSizeOk(1_100_000, 1_000_000)).toBe(true) // exactly +10% — pass
+    expect(isCacheSizeOk(900_000, 1_000_000)).toBe(true) // exactly -10% — pass
+    expect(isCacheSizeOk(1_100_001, 1_000_000)).toBe(false) // just past +10%
+    expect(isCacheSizeOk(899_999, 1_000_000)).toBe(false) // just past -10%
+    expect(isCacheSizeOk(0, 1_000_000)).toBe(false) // empty/just-created partial
   })
 })
