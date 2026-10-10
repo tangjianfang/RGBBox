@@ -550,6 +550,7 @@ export function MiniGamesView(): JSX.Element {
   if (!ledBridgeRef.current) ledBridgeRef.current = createLedBridge()
   const ledActiveRef = useRef(false)
   const ledBossRef = useRef(false) // R258: boss presence tracking for LED transitions
+  const bossWarnRef = useRef(false) // R259: one-shot boss approach warning
 
   // R258: check overlay status — LED events only push when overlays are open
   useEffect(() => {
@@ -1247,6 +1248,17 @@ export function MiniGamesView(): JSX.Element {
         if (bossAlive !== ledBossRef.current) {
           ledBossRef.current = bossAlive
           ledEvent({ type: bossAlive ? 'boss-enter' : 'boss-exit' })
+        }
+        // R259 boss 入场预警: bossTimer <3s 时触发一次性警告
+        // (LED 已由 boss-enter 覆盖; 这里是画面/音效/震动层)
+        if (!ledBossRef.current && survivalRef.current.bossTimer < 3 && survivalRef.current.bossTimer > 0) {
+          if (!bossWarnRef.current) {
+            bossWarnRef.current = true
+            playSfx('confirm') // low rumble (reuse existing sfx channel for v1)
+            ledEvent({ type: 'hit', source: 'boss' }) // red edge flash as warning
+          }
+        } else if (ledBossRef.current) {
+          bossWarnRef.current = false // reset for next boss cycle
         }
         const phase = survivalRef.current.phase
         // R213→R220.2: 升级自动预选不再同帧静默拍板——先强制发布快照让三选一

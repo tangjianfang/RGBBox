@@ -1208,7 +1208,7 @@ function spawnBoss(state: SurvivalState): void {
   const x = spot.x
   const y = spot.y
   state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 28, hp, maxHp: hp, kind: 'boss', elite: false, hitFlash: 0 })
-  state.banner = { text: 'BOSS INBOUND', life: 1.6 }
+  state.banner = { text: '⚠ BOSS 逼近', life: 2.5 } // R259: bilingual→Chinese + longer hold
   playSfx('wave')
 }
 
@@ -2274,7 +2274,7 @@ export function survivalHints(state: SurvivalState): CoachHint[] {
   if (state.phase !== 'running') return hints
   if (state.player.hp / state.player.maxHp <= 0.35) hints.push({ key: 'sw.hpLow', tone: 'warn', priority: 85 })
   if (state.pendingSpins > 0) hints.push({ key: 'sw.spinReady', tone: 'tip', priority: 75 })
-  if (state.bossTimer > BOSS_INTERVAL - 15) hints.push({ key: 'sw.bossSoon', tone: 'warn', priority: 70 })
+  if (state.bossTimer < 15 && state.bossTimer > 0) hints.push({ key: 'sw.bossSoon', tone: 'warn', priority: 70 }) // R259/F-9: was inverted — now fires in the 15s BEFORE boss
   if (state.portal !== null) hints.push({ key: 'sw.portal', tone: 'praise', priority: 60 })
   if (state.combo >= 8) hints.push({ key: 'sw.combo', tone: 'praise', priority: 40 })
   return hints
