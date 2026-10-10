@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { join } from 'node:path'
-import { preserveBadFile, readJsonSafe, writeJsonAtomic } from './atomicJson'
+import { enqueueJson, preserveBadFile, readJsonSafe, writeJsonAtomic } from './atomicJson'
 
 /**
  * System-level settings that should survive app restarts but are independent
@@ -55,12 +55,17 @@ export async function loadSystemSettings(): Promise<SystemSettings> {
   return {}
 }
 
-export async function saveSystemSettings(settings: SystemSettings): Promise<SystemSettings> {
-  const r = await readJsonSafe<SystemSettings>(settingsPath())
-  // R221.1: 坏文件 → 先备份为 system.json.bad(抢救 AI 密文等),再以本次
-  // 显式保存覆盖(不与 {} 合并——那正是清空链);好文件 → 正常浅合并。
-  if (!r.ok && r.reason === 'bad') await preserveBadFile(settingsPath())
-  const merged = r.ok ? { ...r.value, ...settings } : { ...settings }
-  await writeJsonAtomic(settingsPath(), merged)
-  return merged
+export function saveSystemSettings(settings: SystemSettings): Promise<SystemSettings> {
+  // R267: 读-合并-写整体进同路径串行队列——ipcMain 不串行化 invoke,
+  // 电源/热键/屏保/定时关机/AI 画像多路并发 save 时,裸的 load→merge→
+  // write 会基于同一份旧值各写各的字段,后写者覆盖前者(跨字段丢更新)。
+  return enqueueJson(settingsPath(), async () => {
+    const r = await readJsonSafe<SystemSettings>(settingsPath())
+    // R221.1: 坏文件 → 先备份为 system.json.bad(抢救 AI 密文等),再以本次
+    // 显式保存覆盖(不与 {} 合并——那正是清空链);好文件 → 正常浅合并。
+    if (!r.ok && r.reason === 'bad') await preserveBadFile(settingsPath())
+    const merged = r.ok ? { ...r.value, ...settings } : { ...settings }
+    await writeJsonAtomic(settingsPath(), merged)
+    return merged
+  })
 }

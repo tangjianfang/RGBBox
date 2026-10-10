@@ -48,4 +48,40 @@ describe('main/systemSettingsStore R221.1 接线语义', () => {
     const loaded = await loadSystemSettings()
     expect(loaded).toEqual({})
   })
+
+  // ── R267(REVIEW-main-ipc W2): 读-合并-写串行化 ─────────────────────────
+  // ipcMain 不串行化 invoke:电源/热键/屏保/定时关机/AI 画像多路并发 save 时,
+  // 裸的 load→浅合并→write 基于同一份旧值各写各的字段,后写者整对象覆盖前者
+  // (跨字段丢更新)。锁死:并发 save 不同字段 → 全部落盘。
+  it('R267: 并发 save 五个不同字段 → 无跨字段丢更新(全部落盘)', async () => {
+    const expected = {
+      powerSaveBlock: true,
+      shutdownDeadline: 1760000000000,
+      screensaver: { enabled: true, idleMinutes: 5 },
+      snip: { hotkey: 'Ctrl+Alt+S' },
+      ai: { baseUrl: 'https://u', apiKey: 'enc:v1:K', model: 'gpt-x' },
+    }
+    await Promise.all([
+      saveSystemSettings({ powerSaveBlock: expected.powerSaveBlock }),
+      saveSystemSettings({ shutdownDeadline: expected.shutdownDeadline }),
+      saveSystemSettings({ screensaver: expected.screensaver }),
+      saveSystemSettings({ snip: expected.snip }),
+      saveSystemSettings({ ai: expected.ai }),
+    ])
+    expect(await loadSystemSettings()).toEqual(expected)
+    // 落盘的也必须是五字段全量(不是内存合并态)
+    expect(JSON.parse(readFileSync(settingsPath(), 'utf-8'))).toEqual(expected)
+  })
+
+  it('R267: save 完成前并发 load 不会读到半合并态(队列内原子可见)', async () => {
+    writeFileSync(settingsPath(), JSON.stringify({ powerSaveBlock: true }), 'utf-8')
+    const save = saveSystemSettings({ snip: { hotkey: 'Ctrl+Alt+S' } })
+    const loads = await Promise.all([loadSystemSettings(), loadSystemSettings(), save.then(() => loadSystemSettings())])
+    // save 前的 load 要么旧值要么新值,绝不含「只剩 snip」的半合并态
+    for (const s of loads.slice(0, 2)) {
+      expect(s.powerSaveBlock === true || s.powerSaveBlock === undefined).toBe(true)
+      if (s.snip) expect(s.powerSaveBlock).toBe(true) // 有新字段就必须还有旧字段
+    }
+    expect(loads[2]).toEqual({ powerSaveBlock: true, snip: { hotkey: 'Ctrl+Alt+S' } })
+  })
 })

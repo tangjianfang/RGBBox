@@ -49,6 +49,7 @@ import { initAudioAi, disposeAudioAi, isCached as audioAiIsCached, runVad as aud
 import { Readable } from 'node:stream'
 import { mediaStreamPlan, parseRangeHeader, resolveAppAssetPath, resolveMediaMime } from './mediaProtocol'
 import { registerDenoiseService } from './denoiseService'
+import { loadPlaylist, savePlaylist } from './playlistStore'
 
 // Initialize file logger — must be done after imports but before app.whenReady
 const log = initLogger(join(app.getPath('userData'), 'logs'), { minLevel: 'debug' })
@@ -1363,19 +1364,11 @@ function registerIpc(): void {
   // ── Audio Studio file path persistence ────────────────────────────────────
   const audioConfigPath = join(app.getPath('userData'), 'config', 'audio-playlist.json')
 
-  ipcMain.handle(ipcChannels.audioGetSavedPaths, async () => {
-    try {
-      const raw = await readFile(audioConfigPath, 'utf-8')
-      return JSON.parse(raw)
-    } catch {
-      return []
-    }
-  })
+  // R267: 裸 writeFile → playlistStore(串行队列 + 原子写 + 坏文件不回空覆盖)
+  ipcMain.handle(ipcChannels.audioGetSavedPaths, () => loadPlaylist(audioConfigPath))
 
-  ipcMain.handle(ipcChannels.audioSavePaths, async (_event, paths: Array<{ id: string; name: string; path: string; group: string }>) => {
-    await mkdir(join(app.getPath('userData'), 'config'), { recursive: true })
-    await writeFile(audioConfigPath, JSON.stringify(paths, null, 2), 'utf-8')
-  })
+  ipcMain.handle(ipcChannels.audioSavePaths, (_event, paths: Array<{ id: string; name: string; path: string; group: string }>) =>
+    savePlaylist(audioConfigPath, paths))
 
   const AUDIO_FILTERS = [{ name: 'Audio', extensions: ['wav', 'flac', 'mp3', 'aac', 'm4a', 'ogg', 'opus', 'weba'] }]
 
@@ -1407,21 +1400,13 @@ function registerIpc(): void {
   // ── Video Studio file path persistence ────────────────────────────────────
   const videoConfigPath = join(app.getPath('userData'), 'config', 'video-playlist.json')
 
-  ipcMain.handle(ipcChannels.videoGetSavedPaths, async () => {
-    try {
-      const raw = await readFile(videoConfigPath, 'utf-8')
-      return JSON.parse(raw)
-    } catch {
-      return []
-    }
-  })
+  // R267: 裸 writeFile → playlistStore(串行队列 + 原子写 + 坏文件不回空覆盖)
+  ipcMain.handle(ipcChannels.videoGetSavedPaths, () => loadPlaylist(videoConfigPath))
 
   // R91.1: entries may carry resume progress (progress/duration/updatedAt) —
   // stored verbatim alongside the structural fields.
-  ipcMain.handle(ipcChannels.videoSavePaths, async (_event, paths: Array<{ id: string; name: string; path: string; group: string; progress?: number; duration?: number; updatedAt?: number }>) => {
-    await mkdir(join(app.getPath('userData'), 'config'), { recursive: true })
-    await writeFile(videoConfigPath, JSON.stringify(paths, null, 2), 'utf-8')
-  })
+  ipcMain.handle(ipcChannels.videoSavePaths, (_event, paths: Array<{ id: string; name: string; path: string; group: string; progress?: number; duration?: number; updatedAt?: number }>) =>
+    savePlaylist(videoConfigPath, paths))
 
   const VIDEO_FILTERS = [{ name: 'Video', extensions: ['mp4', 'webm', 'mkv', 'mov', 'avi', 'flv', 'ts', 'm4v', 'wmv'] }]
 
