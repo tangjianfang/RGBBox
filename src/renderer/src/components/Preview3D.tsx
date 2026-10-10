@@ -8,6 +8,8 @@ import type { Effect3DKind } from '../../../shared/types'
 interface Preview3DProps {
   /** The active 3D effect layer. Re-mounts the WebGL context when kind changes. */
   layer: EffectLayer
+  /** R271: hover 预览期间 3D 帧不 postMessage 到 overlay 通道(worker 路径同款防护)。 */
+  suppressOverlayPost?: boolean
   /** LED grid width — used for readLEDs sampling. */
   columns: number
   /** LED grid height — used for readLEDs sampling. */
@@ -37,10 +39,13 @@ interface Preview3DProps {
  *
  * Replaces PreviewGrid when `is3DEffect(layer.kind)` is true.
  */
-export function Preview3D({ layer, columns, rows, onFrame, aspectRatio = 16 / 9 }: Preview3DProps): JSX.Element {
+export function Preview3D({ layer, suppressOverlayPost = false, columns, rows, onFrame, aspectRatio = 16 / 9 }: Preview3DProps): JSX.Element {
   const canvasRef  = useRef<HTMLCanvasElement | null>(null)
   const glRef      = useRef<Effect3DGl | null>(null)
   const rafRef     = useRef<number | null>(null)
+  // R271: overlay 投递抑制(loop 每帧读 ref)
+  const suppressOverlayPostRef = useRef(suppressOverlayPost)
+  useEffect(() => { suppressOverlayPostRef.current = suppressOverlayPost }, [suppressOverlayPost])
   const startRef   = useRef(performance.now())
 
   /* Stable refs so the rAF loop always reads the latest values without needing
@@ -107,7 +112,7 @@ export function Preview3D({ layer, columns, rows, onFrame, aspectRatio = 16 / 9 
           (p.scanWidth     as number) ?? 0.5,
         ]
         gl.draw(t, params, detail, extra)
-        channel.postMessage({ kind: layerRef.current.kind as Effect3DKind, t, params, detail, extra })
+        if (!suppressOverlayPostRef.current) channel.postMessage({ kind: layerRef.current.kind as Effect3DKind, t, params, detail, extra })
         const pixels = gl.readLEDs(colsRef.current, rowsRef.current)
         onFrameRef.current({ columns: colsRef.current, rows: rowsRef.current, pixels, generatedAt: Date.now() })
         // R270: rAF 改 setTimeout 自调度——最小化/遮挡时 rAF 停摆,overlay 激活的

@@ -891,6 +891,7 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                     {(() => { const eff = previewLayer ?? activeLayer(profile); return is3DEffect(eff.kind) ? (
                       <Preview3D
                         layer={eff}
+                        suppressOverlayPost={previewLayer !== null}
                         columns={profile.sampling.columns}
                         rows={profile.sampling.rows}
                         onFrame={handleFrame3D}
@@ -902,6 +903,7 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                         showGap={profile.sampling.showGap ?? false}
                         renderStyle={resolveFrameRenderStyle(profile.sampling.renderStyle, eff.kind)}
                         gpuLayer={gpuDirectLayer}
+                        suppressOverlayPost={previewLayer !== null}
                         onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
                         displayCount={scene?.linkedDisplays ? topology.displays.length : 1}
                         aspectRatio={previewAspectRatio}

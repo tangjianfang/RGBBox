@@ -22,6 +22,11 @@ interface PreviewGridProps {
    * pipeline (all effects not yet ported).
    */
   gpuLayer?: EffectLayer | null
+  /**
+   * R271: hover 预览期间 GPU 帧不 postMessage 到 overlay 通道——worker 路径在
+   * useEngineLoop:166 已有同款防护(实体屏不显示用户没选的效果),GPU 直渲路径补齐。
+   */
+  suppressOverlayPost?: boolean
   /** When a ripple layer is active, called with normalised (0..1) click coordinates. */
   onRippleClick?: (nx: number, ny: number) => void
   /**
@@ -67,7 +72,7 @@ function initGl(canvas: HTMLCanvasElement): PreviewGl | null {
   }
 }
 
-export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth', gpuLayer = null, onRippleClick, displayCount = 1, aspectRatio = 16 / 9 }: PreviewGridProps): JSX.Element {
+export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth', gpuLayer = null, suppressOverlayPost = false, onRippleClick, displayCount = 1, aspectRatio = 16 / 9 }: PreviewGridProps): JSX.Element {
   const canvasRef  = useRef<HTMLCanvasElement | null>(null)
   const glRef      = useRef<PreviewGl | null>(null)
   const effectGlRef = useRef<EffectGl | null>(null)
@@ -83,6 +88,9 @@ export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth',
   const renderStyleRef = useRef(renderStyle)
   const gpuLayerRef = useRef(gpuLayer)
   useEffect(() => { gpuLayerRef.current = gpuLayer }, [gpuLayer])
+  // R271: overlay 投递抑制走 ref(loop 闭包每帧读,不重建循环)
+  const suppressOverlayPostRef = useRef(suppressOverlayPost)
+  useEffect(() => { suppressOverlayPostRef.current = suppressOverlayPost }, [suppressOverlayPost])
 
   // Apply gap setting whenever it changes (without remounting the GL context).
   useEffect(() => {
@@ -148,7 +156,7 @@ export function PreviewGrid({ frameRef, showGap = false, renderStyle = 'smooth',
           }
         }
           const time = performance.now() / 1000
-          if (effectGlRef.current?.render(layer, time)) {
+          if (effectGlRef.current?.render(layer, time) && !suppressOverlayPostRef.current) {
             effect2dChannel.postMessage({ layer, t: time })
           }
         if (!startedRef.current) {

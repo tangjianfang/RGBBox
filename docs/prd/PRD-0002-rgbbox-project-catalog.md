@@ -4144,7 +4144,7 @@ vitest 4.1.7 happy-dom 环境的 `getWindowKeys` 过滤规则「已存在于全�
 
 - **R270 `fix` — 全模块硬化 W4：Preview3D rAF 不可见停帧（REVIEW-shell-loop A；PRD R42.5 旧账；状态 ✅ 2026-10-11 闭环）**：Preview3D.tsx:112 纯 rAF，最小化/切 view 停摆且 3D 旁路 worker 帧无兜底。**证据**：新 `domain/frameDriver.ts`（setTimeout(16ms) 自调度驱动——useEngineLoop R147 P2 同哲学，R38 后 document.hidden 不可靠故不搞双轨）；Preview3D 4 处 rAF/cancel 全替换（剩余 rAF 引用 0）；`tests/renderer/domain/frameDriver.test.ts` 3 用例（setTimeout 而非 rAF/清除+null 安全/自调度链连续帧）；typecheck 双绿。GL 渲染路径由 headless-gl previewGl.test 既有覆盖侧证。
 
-- **R271 `fix` — 全模块硬化 W5：hover GPU 预览泄漏到实体屏（REVIEW-shell-loop B 主审实锤；状态 ⏳）**：useEngineLoop:124-126 仅 worker 路径应用 previewOverride，EffectsView GPU 三路径零防护——悬停未选效果刷到实体屏。修：GPU 路径接同款 override。验收：hover 态 overlay 帧不受悬停效果污染断言。
+- **R271 `fix` — 全模块硬化 W5：hover GPU 预览泄漏到实体屏（REVIEW-shell-loop B 主审实锤；状态 ✅ 2026-10-11 闭环）**：useEngineLoop:124-126 仅 worker 路径应用 previewOverride，EffectsView GPU 三路径零防护——悬停未选效果刷到实体屏。**证据**：泄漏链实锤复现（PreviewGrid GPU 分支无条件 `effect2dChannel.postMessage`→OverlayCanvas 在实体屏渲染 hover layer）；修——PreviewGrid/Preview3D 增 `suppressOverlayPost` prop（ref 化 loop 内每帧读）+ WorkspaceView 装配点传 `previewLayer !== null`（与 useEngineLoop:166 worker 路径防护同语义）；TDD `PreviewGrid.test.tsx` 2 用例（缺省照常 post/suppress 零 post——rAF 桥 fake timers 驱动，mock EffectGl+BroadcastChannel）先红后绿；typecheck 双绿。
 
 - **R272 `fix` — 全模块硬化 W6：音频三修 FLAC 标注/投影黑屏/VU 冻结（REVIEW-video-audio W1/W2/W3 W3 主审实锤；状态 ⏳）**：AudioStudioView:744 FLAC 选项实产 24-bit WAV；waveform 模式投影全黑窗；切 tab 后 VU 电平冻半空。修：FLAC 改标「WAV 24-bit」（真 FLAC 另立）；waveform 模式禁投影（title 说明）或自动切 spectrum；shouldAnalyze 翻 false/error/换设备推归零帧。验收：导出文件 RIFF 头校验；交互断言×2。
 
