@@ -2164,6 +2164,21 @@ input:not([type]):focus {
   box-shadow: 0 0 14px color-mix(in srgb, var(--game-accent, var(--accent)) 25%, transparent);
 }
 
+/* R262: 死亡钩子行——「差一点进化」重开动机 */
+.run-recap-hook {
+  color: var(--accent, #67e8f9);
+  font-weight: 700;
+}
+
+/* R263: 进化在望标注(金色,弱于质变卡标签) */
+.levelup-card .evolve-tag {
+  color: #fde047;
+  font-size: 0.625rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
 .levelup-card .transform-tag {
   color: var(--game-accent, var(--accent));
   font-size: 0.625rem;

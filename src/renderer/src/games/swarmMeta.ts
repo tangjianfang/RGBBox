@@ -37,6 +37,28 @@ export const UPGRADES: UpgradeDef[] = [
 
 export const RARITY_WEIGHTS = [60, 25, 10, 5]
 
+/** R263 #5: 进化在望——某张升级卡是否「拿了就推进某个未完成进化配方」。
+ *  判定:id 出现在配方 requires 且 taken[id] < 该需求,且配方总缺口 ≤3 级。
+ *  返回 { recipeEffect, missing };无 → null。纯函数,升级卡面/codex 共用。 */
+export function evolutionInSight(
+  taken: Record<UpgradeId, number>,
+  evolved: readonly string[],
+  id: UpgradeId,
+): { recipeEffect: string; missing: number } | null {
+  let best: { recipeEffect: string; missing: number } | null = null
+  for (const recipe of EVOLUTIONS) {
+    if (evolved.includes(recipe.id)) continue
+    const req = recipe.requires.find((r) => r.id === id)
+    if (!req || taken[id] >= req.count) continue
+    let missing = 0
+    for (const r of recipe.requires) missing += Math.max(0, r.count - (taken[r.id] ?? 0))
+    if (missing > 0 && missing <= 3 && (best === null || missing < best.missing)) {
+      best = { recipeEffect: recipe.effect, missing }
+    }
+  }
+  return best
+}
+
 // ── R202(FR-SW01): 强化进化合成——纯数据配方(swarmMeta 模式) ─────────────────
 export interface EvolutionRecipe {
   id: string

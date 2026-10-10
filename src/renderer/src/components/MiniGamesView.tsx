@@ -52,7 +52,9 @@ import {
   drawSurvivalBackground,
   setSurvivalDifficulty,
   worldToViewport,
+  deathHook,
   initialSurvivalState,
+  type SurvivalLabels,
   openRoulette,
   startSurvival,
   SURVIVAL_DIFFICULTY_PARAMS,
@@ -80,6 +82,8 @@ import {
   writeCharacter,
   writeMeta,
   TRANSFORM_UPGRADE_IDS,
+  EVOLUTIONS,
+  evolutionInSight,
   type AchievementId,
   type ArtifactId,
   type CharacterId,
@@ -276,6 +280,29 @@ function writeVisionPadVisible(on: boolean): void {
 const VISION_GAIN_X = 1.4
 const VISION_GAIN_Y = 1.6
 
+/** R262 #9: 按 locale 组 survival 画布文案注入表(引擎缺省英文,view 覆盖为 zh)。 */
+function survivalLabelsFor(t: (key: string) => string): Partial<SurvivalLabels> {
+  const tpl = (key: string, n: number) => t(key).replace('{n}', String(n))
+  return {
+    survive: t('games.swarm.label.survive'),
+    island: (n) => tpl('games.swarm.label.island', n),
+    level: (n) => tpl('games.swarm.label.level', n),
+    bossInbound: t('games.swarm.label.bossInbound'),
+    bossDown: t('games.swarm.label.bossDown'),
+    evolved: (e) => t('games.swarm.label.evolved').replace('{e}', e),
+    playerDown: (n) => tpl('games.swarm.label.playerDown', n),
+    playerRevived: (n) => tpl('games.swarm.label.playerRevived', n),
+    plusHp: t('games.swarm.label.plusHp'),
+    plusOneHp: t('games.swarm.label.plusOneHp'),
+    minuteSurvived: (m) => t('games.swarm.label.minuteSurvived').replace('{m}', String(m)),
+    combo: (n) => tpl('games.swarm.label.combo', n),
+    player: (n) => tpl('games.swarm.label.player', n),
+    boss: t('games.swarm.label.boss'),
+    lv: (n) => tpl('games.swarm.label.lv', n),
+    upgrade: (id) => `+${t(`games.up.${id}`)}`,
+  }
+}
+
 export function MiniGamesView(): JSX.Element {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -334,7 +361,7 @@ export function MiniGamesView(): JSX.Element {
   // R200(FR-G06.5): 统一 run recap(结算面板)
   // R207: 手势指示器开关(默认关;Banner/Cursor 功能组件不受影响)
   const [visionPadVisible, setVisionPadVisible] = useState(readVisionPadVisible)
-  const [recap, setRecap] = useState<{ score: number; deltaPct: number | null; best: number; highlight: string; coach: string } | null>(null)
+  const [recap, setRecap] = useState<{ score: number; deltaPct: number | null; best: number; highlight: string; coach: string; hook?: { xpToLevel: number; evolveEffect: string | null; evolveMissing: number } | null } | null>(null)
   // ── R208 (FR-MP03/MP04): 本地双人——Slash 轮换对决 / TD 分工合作 ──
   const [slashDuelOn, setSlashDuelOn] = useState(false)
   const slashDuelOnRef = useRef(false)
@@ -667,7 +694,7 @@ export function MiniGamesView(): JSX.Element {
     setTetrisSnapshot({ ...tetrisRef.current, keys: new Set(tetrisRef.current.keys), queue: [...tetrisRef.current.queue] })
   }, [])
 
-  const settleBest = useCallback((game: GameKey, rawScore: number, durationSec = 0, highlight = ''): void => {
+  const settleBest = useCallback((game: GameKey, rawScore: number, durationSec = 0, highlight = '', hook?: { xpToLevel: number; evolveEffect: string | null; evolveMissing: number } | null): void => {
     // R218 U4: 街机档案按难度倍率记账(1×/1.5×/2×/3×)——best/daily/遥测/
     // recap 全部一致地以乘后分呈现(引擎内局中显示保持原始分)。
     const score = Math.floor(rawScore * DIFFICULTY_SCORE_MULT[runDifficultyRef.current])
@@ -683,13 +710,15 @@ export function MiniGamesView(): JSX.Element {
     recordDaily(localStorage, id, Math.floor(score))
     const buffer = recordRun(localStorage, id, { date: Date.now(), score: Math.floor(score), duration: Math.round(durationSec), highlight })
     const stats = profileStats(buffer, best)
-    setRecap({ score: Math.floor(score), deltaPct: stats.deltaPct, best, highlight, coach: recapCoachKey(Math.floor(score), stats.totalRuns >= 2 ? prev : null) })
+    setRecap({ score: Math.floor(score), deltaPct: stats.deltaPct, best, highlight, coach: recapCoachKey(Math.floor(score), stats.totalRuns >= 2 ? prev : null), hook: hook ?? null })
   }, [])
 
   /** R220.1⑧: survival 终局结算(best/金币/成就)——从游戏循环提取,供
    *  backToHub 中途弃局同样结算(修 enterGame 残留 running 旁路 ready,07 X-1)。 */
   const finishSurvivalRun = useCallback(() => {
-    settleBest('survival', survivalRef.current.score, survivalRef.current.time, `击杀 ${survivalRef.current.kills} · LV${survivalRef.current.level}`)
+    const hookData = deathHook(survivalRef.current) // R262 #6: 死亡钩子——「差一点」数据
+    settleBest('survival', survivalRef.current.score, survivalRef.current.time, `击杀 ${survivalRef.current.kills} · LV${survivalRef.current.level}`,
+      { xpToLevel: hookData.xpToLevel, evolveEffect: hookData.evolveHint?.effect ?? null, evolveMissing: hookData.evolveHint?.missing ?? 0 })
     const run = survivalRef.current
     const earned = runCoinsFor(run.score, run.coinMult)
     const prevMeta = metaRef.current
@@ -1881,6 +1910,7 @@ export function MiniGamesView(): JSX.Element {
     survivalRef.current.sprintSeconds = swarmSprintOnRef.current ? 90 : undefined
     // R220.5: 每日挑战注入当日种子(共同棋盘);自由局清除
     survivalRef.current.rng = swarmDailyOnRef.current ? mulberry32(dailySeed()) : undefined
+    survivalRef.current.labels = survivalLabelsFor((k) => t(k as Parameters<typeof t>[0])) // R262 #9: locale 注入画布文案
     // R213: 4P 名册部署(人数选择;swarmCoopOn 开关是人数=2 的快捷别名)与场景背景
     const count = Math.max(1, Math.min(4, swarmPlayersRef.current)) as 1 | 2 | 3 | 4
     deployPlayers(survivalRef.current, count)
@@ -1912,6 +1942,7 @@ export function MiniGamesView(): JSX.Element {
 
   const restartSurvivalRun = useCallback(() => {
     survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts, readDifficulty('survival'))
+    survivalRef.current.labels = survivalLabelsFor((k) => t(k as Parameters<typeof t>[0])) // R262 #9
     // R219.3: 重开也带上当前场景/冲刺偏好——回 ready 态的画布与开局参数一致
     // (原重开丢 scene,预览背景静默回退旧星空主题)。
     survivalRef.current.scene = swarmSceneRef.current
@@ -2556,6 +2587,12 @@ export function MiniGamesView(): JSX.Element {
           ) : null}
           <span className="run-recap-best">★ {t('games.recap.best')} {recap.best}</span>
           {recap.highlight !== '' ? <span className="run-recap-highlight">{recap.highlight}</span> : null}
+          {recap.hook ? (
+            <span className="run-recap-hook" data-field="run-recap-hook">
+              {t('games.recap.hookXp').replace('{n}', String(recap.hook.xpToLevel))}
+              {recap.hook.evolveEffect ? ` · ${t('games.recap.hookEvolve').replace('{e}', recap.hook.evolveEffect).replace('{m}', String(recap.hook.evolveMissing))}` : ''}
+            </span>
+          ) : null}
           <span className="run-recap-coach">{t(recap.coach as Parameters<typeof t>[0])}</span>
           <button
             type="button"
@@ -2886,6 +2923,9 @@ export function MiniGamesView(): JSX.Element {
                         <strong>{t(`games.up.${id}`)}</strong>
                         <small>{t(`games.up.${id}.desc`)}</small>
                         {isTransform ? <i className="transform-tag">{t('games.up.tagTransform')}</i> : null}
+                        {!isTransform && evolutionInSight(survivalSnapshot.taken, survivalSnapshot.evolved, id) ? (
+                          <i className="evolve-tag">{t('games.up.tagEvolve').replace('{e}', evolutionInSight(survivalSnapshot.taken, survivalSnapshot.evolved, id)!.recipeEffect)}</i>
+                        ) : null}
                         <em>{takenCount}/{def?.max ?? 0}</em>
                       </button>
                     )
@@ -3183,6 +3223,16 @@ export function MiniGamesView(): JSX.Element {
                 <div className="codex-entry" key={artifact.id} style={{ '--game-accent': artifact.mult >= 0 ? '#fde68a' : '#9aa5ad' } as CSSProperties}>
                   <strong>{t(`games.art.${artifact.id}`)}</strong>
                   <small>{t(`games.art.${artifact.id}.desc`)}</small>
+                </div>
+              ))}
+            </div>
+            <p className="codex-section">{t('games.codexEvolutions')}</p>
+            <div className="codex-grid">
+              {/* R263 #5: 进化配方表——EVOLUTIONS 曾是暗墙(R220.3 接线但玩家不可见) */}
+              {EVOLUTIONS.map((recipe) => (
+                <div className="codex-entry" key={recipe.id} style={{ '--game-accent': '#fde047' } as CSSProperties}>
+                  <strong>{t('games.swarm.evoName')} · {recipe.effect}</strong>
+                  <small>{recipe.requires.map((r) => `${t(`games.up.${r.id}`)} ×${r.count}`).join(' + ')}</small>
                 </div>
               ))}
             </div>
