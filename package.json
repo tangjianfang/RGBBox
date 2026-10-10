@@ -38,6 +38,8 @@
     "e2e:journeys": "node scripts/e2e-journeys/run.mjs",
     "vision:smoke": "node scripts/vision-smoke-videos.mjs",
     "verify:release": "node scripts/verify-release.mjs --full",
+    "verify:env": "node scripts/verify-env.mjs",
+    "verify:env:full": "node scripts/verify-env.mjs --full",
     "verify:quick": "node scripts/verify-release.mjs --quick",
     "smoke:app": "node scripts/smoke-app.mjs",
     "smoke:games": "node scripts/smoke-games.mjs",
