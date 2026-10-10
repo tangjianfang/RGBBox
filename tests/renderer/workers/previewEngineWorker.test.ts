@@ -165,6 +165,29 @@ describe('renderer/workers/previewEngineWorker', () => {
     expect(postedMessages).toHaveLength(1)
   })
 
+  // ── R269: exception bail-out — every input must produce a reply ─────────
+  // The renderer's tickPending gate is only cleared by a worker message;
+  // a handler that throws without replying freezes the engine permanently
+  // (REVIEW-shared-i18n-domain #1 / REVIEW-shell-loop U4).
+
+  it('posts a structured error message when the input makes the handler throw', () => {
+    // Malformed profile (no scenes — e.g. an unvalidated import) makes
+    // scenes[0] undefined → the handler throws at patchedScene.layers.
+    fireOnMessage({ profile: makeProfile({ scenes: [] }) })
+    expect(postedMessages).toHaveLength(1)
+    expect(postedMessages[0].type).toBe('error')
+    expect(typeof postedMessages[0].message).toBe('string')
+    expect((postedMessages[0].message as string).length).toBeGreaterThan(0)
+  })
+
+  it('stays alive after an error: the next valid input still renders a frame', () => {
+    fireOnMessage({ profile: makeProfile({ scenes: [] }) })
+    expect(postedMessages[0].type).toBe('error')
+    fireOnMessage({ profile: makeProfile() })
+    expect(postedMessages[1].frame).toBeDefined()
+    expect(postedMessages[1].frame.columns).toBe(20)
+  })
+
   it('patches ripple layer parameters when rippleBurst is provided', () => {
     const profile = makeProfile()
     profile.scenes[0].layers = [
