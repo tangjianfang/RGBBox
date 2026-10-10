@@ -2,6 +2,7 @@ import { useEffect, useRef, type JSX } from 'react'
 import { PreviewGl } from '../gl/previewGl'
 import { useI18n } from '../i18n'
 import type { Profile, RgbFrame } from '../../../shared/types'
+import { staticTextMasks } from '../domain/staticTextMasks'
 
 /**
  * R74: fullscreen light-effect screensaver window (route `?screensaver=1`).
@@ -84,7 +85,9 @@ export function ScreensaverView(_props: { displayId: number }): JSX.Element {
     void window.rgbbox.getDefaultProfile().then((profile: Profile) => {
       if (disposed) return
       frameTimer = window.setInterval(() => {
-        void window.rgbbox.renderPreviewFrame(profile).then(draw).catch(() => { /* skip frame */ })
+        // R277: 预计算 static 文本层掩码随 IPC 传入——中文层不再回退 '?' 位图
+        const scene = profile.scenes.find((sc) => sc.id === profile.activeSceneId) ?? profile.scenes[0]
+        void window.rgbbox.renderPreviewFrame(profile, undefined, staticTextMasks(profile, scene)).then(draw).catch(() => { /* skip frame */ })
       }, 1000 / FPS)
     }).catch(() => { /* no profile → stay dark; main closes on activity */ })
 

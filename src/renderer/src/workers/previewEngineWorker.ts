@@ -12,7 +12,7 @@
 import type { AudioInput } from '../../../engine/previewEngine'
 import { renderPreviewFrame } from '../../../engine/previewEngine'
 import type { FrameMetrics, Profile, RgbFrame } from '../../../shared/types'
-import { computeTextMask } from '../canvasTextMask'
+import { staticTextMasks } from '../domain/staticTextMasks'
 
 export interface WorkerInput {
   profile: Profile
@@ -95,23 +95,8 @@ function handleTick(input: WorkerInput): void {
     patchedProfile.scenes.find((s) => s.id === patchedProfile.activeSceneId) ?? patchedProfile.scenes[0]
 
   const textMaskStartedAt = performance.now()
-  const textMasks: Record<string, boolean[]> = {}
-  for (const layer of patchedScene.layers) {
-    if (layer.enabled && layer.kind === 'static') {
-      const text = String(layer.parameters.text ?? '')
-      if (text.trim()) {
-        textMasks[layer.id] = computeTextMask(
-          text,
-          patchedProfile.sampling.columns,
-          patchedProfile.sampling.rows,
-          Number(layer.parameters.textX ?? 0.5),
-          Number(layer.parameters.textY ?? 0.5),
-          Number(layer.parameters.textScale ?? 1),
-          Number(layer.parameters.textWeight ?? 400)
-        )
-      }
-    }
-  }
+  // R277: 抽 staticTextMasks 共享(ScreensaverView 直调 IPC 路径同款)
+  const textMasks = staticTextMasks(patchedProfile, patchedScene)
   const textMaskMs = performance.now() - textMaskStartedAt
 
   const renderStartedAt = performance.now()
