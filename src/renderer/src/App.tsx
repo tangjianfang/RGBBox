@@ -318,8 +318,8 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (activeView !== 'dashboard') return undefined
     const id = window.setInterval(() => {
-      const snap = metricsCollectorRef.current.snapshot()
-      setDashFps(snap.avgFrameMs > 0 ? Math.min(Math.round(1000 / snap.avgFrameMs), 999) : 0)
+      // R276: 真实帧到达率(原 avgFrameMs 倒数=处理耗时倒数,系统性高估)
+      setDashFps(Math.min(metricsCollectorRef.current.estimatedFps, 999))
     }, 1000)
     return () => window.clearInterval(id)
   }, [activeView])

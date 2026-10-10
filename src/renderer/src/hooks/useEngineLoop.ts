@@ -228,10 +228,15 @@ export function useEngineLoop(args: {
       // R164.2 (S2): hover-preview frames stay in-app — pushing them to the
       // real overlay projections would paint the user's physical screens with
       // an effect they never chose.
+      metricsCollectorRef.current.recordFrameArrival(frame.generatedAt > 0 ? frame.generatedAt : performance.now())
       if (!engineConfigRef.current.previewOverride) {
+        // R276: outputMs 接真实测量(原恒 0 误导诊断)
+        const outputStartedAt = performance.now()
         distributeFrameToOverlays(frame, cfgScene, topologyRef.current, overlayIdsRef.current, overlayConfigsRef.current)
+        metrics.outputMs = performance.now() - outputStartedAt
+      } else {
+        metrics.outputMs = 0
       }
-      metrics.outputMs = 0
       metrics.roundTripMs = lastPostAt > 0 ? performance.now() - lastPostAt : metrics.workerProcessMs
       metricsCollectorRef.current.add(metrics)
     }

@@ -4169,7 +4169,7 @@ vitest 4.1.7 happy-dom 环境的 `getWindowKeys` 过滤规则「已存在于全�
 
 - **R275 `fix` — 全模块硬化 W9：文本掩码缓存治理 LRU（REVIEW-engine TA3 + REVIEW-shared #2 合并；状态 ✅ 2026-10-11 闭环）**：canvasTextMask 无上限+整幅 getImageData（231MB 瞬时分配）；textRenderer maskCache 无淘汰。**证据**：①canvasTextMask——LRU 32 条（Map 插入序删最旧）+ `cellPxFor` 自适应降采样（>40k cells→8px/>10k→16px/其余 32px，317×178 网格瞬时分配 231MB→~14MB）+ `textMaskCacheSize()` 测试缝；②textRenderer maskCache 同款 LRU 32；③`tests/renderer/canvasTextMask.test.ts` 3 用例（cellPx 三档/LRU 33 键≤32/命中不重算）+ 既有 textRenderer 17 用例零回归；typecheck 双绿。
 
-- **R276 `fix` — 全模块硬化 W10：诊断数字修正包（REVIEW-engine TA5；状态 ⏳）**：p95 非 nearest-rank；outputMs 未接真实测量；dashFps 3D 路径用帧间隔倒数误导。修：三项口径修正 + 行集合冒烟锁。验收：p95 精确断言单测。
+- **R276 `fix` — 全模块硬化 W10：诊断数字修正包（REVIEW-engine TA5；状态 ✅ 2026-10-11 闭环）**：p95 非 nearest-rank；outputMs 恒 0（未接真实测量）；dashFps 用 avgFrameMs（worker 处理耗时）倒数=系统性高估（处理 5ms 显示 200fps 而实际 tick 30fps）；droppedTicks 未标注累计。**证据**：①metricsCollector p95 改 nearest-rank（ceil(0.95n)-1，既有测试期望随口径更新并注明）；②`recordFrameArrival`（帧到达间隔 EMA 平滑）+ `estimatedFps`——App dashFps 改用真实帧到达率；③useEngineLoop `outputMs` 接 distributeFrameToOverlays 真实计时（previewOverride 抑制期恒 0 语义保留）；④`diag.droppedTicks` zh「累计丢帧 tick」/en「Dropped ticks (cumulative)」；metricsCollector+useEngineLoop 25 用例绿（R269 的 13 用例零回归）；typecheck 双绿。
 
 - **R277 `fix` — 全模块硬化 W11：屏保中文位图回退（REVIEW-engine TA4；状态 ✅ 2026-10-11 代码闭环，真机截图待舰队终局批）**：ScreensaverView:87 直调 renderPreviewFrame(IPC) 漏传 textMasks——主进程 engine 退回 5×7 位图，中文层渲染成 '?'。**证据**：抽 `domain/staticTextMasks.ts` 共享纯函数（worker 帧前预计算同款逻辑去重），worker 与 ScreensaverView 两路径统一接线；typecheck 双绿 + worker/main 43 files 352 tests 零回归。真机 CJK 屏保截图复核并入舰队终局视觉批。
 
