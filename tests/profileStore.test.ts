@@ -105,13 +105,15 @@ describe('profileStore', () => {
   })
 
   describe('named profiles (saveProfileAs, listProfiles, loadProfileById, deleteProfile)', () => {
+    // R264: loadProfileById now normalizes (empty scenes → null), so the
+    // fixture carries one real scene instead of the old `scenes: []`.
     const testProfile = {
       id: 'named-1',
       name: 'Named Profile 1',
       activeSceneId: 's1',
       performanceMode: 'balanced' as const,
       sampling: { columns: 16, rows: 9, fps: 30, smoothing: 0.3, brightnessLimit: 1, saturationBoost: 1.2, usePerformanceGuard: true, showGap: false },
-      scenes: []
+      scenes: [{ id: 's1', name: 'S1', displayIds: [], layers: [{ id: 'layer-1', name: 'R', kind: 'rainbow', enabled: true, opacity: 0.8, blendMode: 'screen' as const, parameters: {} }] }]
     }
 
     it('saveProfileAs creates a named profile file', async () => {

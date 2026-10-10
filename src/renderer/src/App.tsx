@@ -233,7 +233,7 @@ export function App(): JSX.Element {
     [favoriteEffectKinds, recentKinds]
   )
   const layerActions = useLayerActions({
-    setProfile, setSelectedLayerId, selectedLayer, updateSelectedLayer,
+    profile, setProfile, setSelectedLayerId, selectedLayer, updateSelectedLayer,
     randomizerMode, randomizerLockedParams,
   })
   const {
