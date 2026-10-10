@@ -1,8 +1,26 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readJsonSafe, writeJsonAtomic, preserveBadFile } from '../../src/main/atomicJson'
+import { readJsonSafe, writeJsonAtomic, writeJsonQueued, enqueueJson, preserveBadFile } from '../../src/main/atomicJson'
+
+// ── R267: 注入「tmp 写一半失败」的可控 mock(仅 flag 打开时拦截 *.tmp)──
+// 模拟磁盘满/进程被杀:留下不完整 tmp 后抛错。其余 fs 调用全部透传真实现。
+const tmpWriteFail = vi.hoisted(() => ({ fail: false }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  const realWriteFile = actual.writeFile.bind(actual) as (p: unknown, d: unknown, ...r: unknown[]) => Promise<void>
+  return {
+    ...actual,
+    writeFile: (async (p: unknown, data: unknown, ...rest: unknown[]) => {
+      if (tmpWriteFail.fail && typeof p === 'string' && p.endsWith('.tmp')) {
+        await realWriteFile(p, '{"partial":') // 半截 JSON 落进 tmp
+        throw new Error('EIO: simulated mid-write failure (R267)')
+      }
+      return realWriteFile(p, data, ...rest)
+    }) as unknown as typeof actual.writeFile,
+  }
+})
 
 // ── R221.1（05 T-C1）: 原子写 + 坏 JSON 防清空 的回归锁 ──
 // 评审实测清空链:截断/坏 JSON → loadSystemSettings 静默回 {} → 下次 save
@@ -43,6 +61,32 @@ describe('readJsonSafe', () => {
       expect(await readJsonSafe(p)).toEqual({ ok: false, reason: 'bad' })
     }
   })
+
+  // ── R267 补充: 读侧行为锁 ─────────────────────────────────────────────
+  it('R267: 坏文件返回 bad 且原文件一字节不动(读侧永不写盘)', async () => {
+    const p = join(dir, 'untouched.json')
+    const bad = '{"ai":{"apiKey":"enc:v1:HALF"'
+    writeFileSync(p, bad, 'utf-8')
+    expect(await readJsonSafe(p)).toEqual({ ok: false, reason: 'bad' })
+    expect(readFileSync(p, 'utf-8')).toBe(bad) // BAD_JSON 分支不覆盖原文件
+    expect(readdirSync(dir)).toEqual(['untouched.json']) // 也不产生 .bad/.tmp 副本
+  })
+
+  // R267(播放列表): 数组根 JSON 需显式 allowArray;默认(配置对象语义)数组根
+  // 仍按 bad 处理——R221.1 锁定语义不放宽。
+  it('R267: allowArray=true 时数组根 ok;默认仍 bad;标量/对象根仍 bad', async () => {
+    const p = join(dir, 'arr.json')
+    writeFileSync(p, '[{"id":"a1","name":"bgm.mp3","path":"C:/x","group":"g1"}]', 'utf-8')
+    expect(await readJsonSafe<Array<{ id: string }>>(p)).toEqual({ ok: false, reason: 'bad' }) // 默认
+    expect(await readJsonSafe<Array<{ id: string }>>(p, { allowArray: true })).toEqual({
+      ok: true,
+      value: [{ id: 'a1', name: 'bgm.mp3', path: 'C:/x', group: 'g1' }],
+    })
+    writeFileSync(p, '{"not":"an array"}', 'utf-8')
+    expect(await readJsonSafe<Array<unknown>>(p, { allowArray: true })).toEqual({ ok: false, reason: 'bad' })
+    writeFileSync(p, '42', 'utf-8')
+    expect(await readJsonSafe<Array<unknown>>(p, { allowArray: true })).toEqual({ ok: false, reason: 'bad' })
+  })
 })
 
 describe('writeJsonAtomic', () => {
@@ -58,6 +102,87 @@ describe('writeJsonAtomic', () => {
     const p = join(dir, 'sub', 'e.json')
     await writeJsonAtomic(p, { ok: true })
     expect(JSON.parse(readFileSync(p, 'utf-8'))).toEqual({ ok: true })
+  })
+
+  // ── R267 失败路径回归锁(REVIEW-main-ipc W2 主审实锤)──────────────────
+  // 旧实现的 catch 块在写失败后再 rename(tmp,path):半截 tmp 直接顶掉好文件,
+  // 复现 R221.1 清空链(截断→下次读回默认→再写回=整份丢失)。锁死三件事:
+  // 原文件一字节不动 / 不完整 tmp 被清理 / promise reject(不静默吞错)。
+  it('R267: writeFile 半途失败 → 原文件不变、tmp 被清理、reject(失败不覆盖原文件)', async () => {
+    const p = join(dir, 'fail.json')
+    const before = JSON.stringify({ ai: { apiKey: 'enc:v1:PRECIOUS' }, powerSaveBlock: true }, null, 2)
+    writeFileSync(p, before, 'utf-8')
+    tmpWriteFail.fail = true
+    try {
+      await expect(writeJsonAtomic(p, { fresh: 1 })).rejects.toThrow('EIO')
+      expect(readFileSync(p, 'utf-8')).toBe(before) // 原文件一个字节都不能动
+      expect(readdirSync(dir).filter((f) => f.endsWith('.tmp'))).toEqual([]) // 半截 tmp 清走
+    } finally {
+      tmpWriteFail.fail = false
+    }
+  })
+
+  // R267: tmp 名只含 pid+Date.now() 时,同目录不同文件的并发原子写会在同一
+  // 毫秒撞同一个 tmp 名(写交错/rename ENOENT)。锁死:并发写互不踩。
+  it('R267: 同目录不同文件并发原子写 → 两个文件都完整(唯一 tmp 名)', async () => {
+    const a = join(dir, 'x.json')
+    const b = join(dir, 'y.json')
+    await Promise.all([writeJsonAtomic(a, { who: 'a' }), writeJsonAtomic(b, { who: 'b' })])
+    expect(JSON.parse(readFileSync(a, 'utf-8'))).toEqual({ who: 'a' })
+    expect(JSON.parse(readFileSync(b, 'utf-8'))).toEqual({ who: 'b' })
+  })
+})
+
+// ── R267(REVIEW-main-ipc W2): 按路径互斥的串行写队列 ──────────────────
+describe('writeJsonQueued / enqueueJson(R267 串行队列)', () => {
+  it('并发 N 次同路径写:全部完成、按入队顺序落盘、最终文件=最后一次值', async () => {
+    const p = join(dir, 'q.json')
+    const N = 25
+    const doneOrder: number[] = []
+    const writes = Array.from({ length: N }, (_, i) =>
+      writeJsonQueued(p, { seq: i }).then(() => { doneOrder.push(i) }),
+    )
+    await Promise.all(writes)
+    expect(doneOrder).toEqual(Array.from({ length: N }, (_, i) => i)) // 严格入队顺序
+    expect(JSON.parse(readFileSync(p, 'utf-8'))).toEqual({ seq: N - 1 }) // 无交错损坏
+    expect(readdirSync(dir).filter((f) => f.endsWith('.tmp'))).toEqual([])
+  })
+
+  it('enqueueJson: 同路径任务严格串行(前一个未完成下一个不启动)', async () => {
+    const p = join(dir, 'lock.json')
+    const events: string[] = []
+    let release!: () => void
+    const gate = new Promise<void>((res) => { release = res })
+    const t1 = enqueueJson(p, async () => { events.push('t1-start'); await gate; events.push('t1-end') })
+    const t2 = enqueueJson(p, async () => { events.push('t2-start') })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(events).toEqual(['t1-start']) // t2 被门闩挡住——没有串行化就会混入
+    release()
+    await Promise.all([t1, t2])
+    expect(events).toEqual(['t1-start', 't1-end', 't2-start'])
+  })
+
+  it('前一个任务 reject 不毒化队列: 后续任务照常执行', async () => {
+    const p = join(dir, 'poison.json')
+    const boom = enqueueJson(p, async () => { throw new Error('boom') })
+    const next = writeJsonQueued(p, { ok: true })
+    await expect(boom).rejects.toThrow('boom')
+    await next
+    expect(JSON.parse(readFileSync(p, 'utf-8'))).toEqual({ ok: true })
+  })
+
+  it('不同路径互不阻塞(队列按 path 分键)', async () => {
+    const a = join(dir, 'pa.json')
+    const b = join(dir, 'pb.json')
+    let release!: () => void
+    const gate = new Promise<void>((res) => { release = res })
+    const ta = enqueueJson(a, async () => { await gate })
+    let bRan = false
+    const tb = enqueueJson(b, async () => { bRan = true })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(bRan).toBe(true) // a 的门闩不该挡住 b
+    release()
+    await Promise.all([ta, tb])
   })
 })
 
