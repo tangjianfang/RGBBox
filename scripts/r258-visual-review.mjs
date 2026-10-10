@@ -41,17 +41,19 @@ await sleep(1000)
 await page.screenshot({ path: `${OUT}/01-hub.png` })
 console.log('SHOT 01-hub')
 
-// Start Swarm (survival) — click first game tile
+// Start Swarm (survival) — click 2nd game tile (nth(1) = 新星蜂群)
 const tiles = page.locator('.game-tile:not(.ghost)')
 if (await tiles.count() > 0) {
-  await tiles.first().click()
+  await tiles.nth(1).click()
   await sleep(800)
+  console.log('data-game after tile click:', await page.locator('.games-screen').getAttribute('data-game'))
   // Click start button
   const startBtn = page.locator('[data-action="ready-start"], button:has-text("开始")')
   if (await startBtn.count() > 0) {
     await startBtn.first().click()
     await sleep(2000)
-    // Screenshot 2: running game (should show Chinese banner, particles, effects)
+    console.log('data-game after start:', await page.locator('.games-screen').getAttribute('data-game'))
+    // Screenshot 2: running game (should show ship, enemies, bullets, HUD)
     await page.screenshot({ path: `${OUT}/02-survival-running.png` })
     console.log('SHOT 02-survival-running')
     // Wait for potential boss warning / more gameplay
