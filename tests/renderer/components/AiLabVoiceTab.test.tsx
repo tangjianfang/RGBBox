@@ -288,6 +288,72 @@ describe('AiLabVoiceTab (R173-S1)', () => {
     expect(list.length).toBe(2)
   })
 
+  it('R279 W4: every sentence erroring (no voice installed) still wraps the queue up — playing returns to false', async () => {
+    const rgbbox = setupRendererMocks() as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.ttsEngineStatus = vi.fn().mockResolvedValue({ complete: true, kokoroInstalled: true, files: [] })
+    // stub the system engine: EVERY utterance errors (the missing-voice environment)
+    const speakMock = vi.fn((u: { onerror?: (ev: unknown) => void }) => {
+      queueMicrotask(() => u.onerror?.(new Event('error')))
+    })
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { cancel: vi.fn(), speak: speakMock } })
+    class FakeUtterance {
+      text: string
+      lang = 'zh-CN'
+      rate = 1
+      onstart?: () => void
+      onend?: () => void
+      onerror?: (ev: unknown) => void
+      constructor(text: string) { this.text = text }
+    }
+    ;(globalThis as unknown as Record<string, unknown>).SpeechSynthesisUtterance = FakeUtterance
+
+    const { container } = render(<AiLabVoiceTab />)
+    fireEvent.change(container.querySelector('textarea[data-field="vs-text"]')!, { target: { value: '第一句。第二句。第三句。' } })
+    fireEvent.click(container.querySelector('[data-action="vs-play"]')!)
+    // all three utterances were queued and every one of them failed
+    await waitFor(() => expect(speakMock).toHaveBeenCalledTimes(3))
+    // the queue still wraps up: playing → false (stop disabled again)
+    const stop = await waitFor(() => {
+      const el = container.querySelector('[data-action="vs-stop"]') as HTMLButtonElement
+      expect(el.disabled).toBe(true)
+      return el
+    })
+    expect(stop).toBeTruthy()
+  })
+
+  it('R279 W4: one failed sentence is skipped and the rest of the queue still plays through', async () => {
+    const rgbbox = setupRendererMocks() as unknown as Record<string, ReturnType<typeof vi.fn>>
+    rgbbox.ttsEngineStatus = vi.fn().mockResolvedValue({ complete: true, kokoroInstalled: true, files: [] })
+    // first sentence errors, the rest end normally — the queue must continue
+    let spokenIdx = 0
+    const speakMock = vi.fn((u: { onend?: () => void; onerror?: (ev: unknown) => void }) => {
+      const i = spokenIdx++
+      queueMicrotask(() => { if (i === 0) u.onerror?.(new Event('error')); else u.onend?.() })
+    })
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { cancel: vi.fn(), speak: speakMock } })
+    class FakeUtterance {
+      text: string
+      lang = 'zh-CN'
+      rate = 1
+      onstart?: () => void
+      onend?: () => void
+      onerror?: (ev: unknown) => void
+      constructor(text: string) { this.text = text }
+    }
+    ;(globalThis as unknown as Record<string, unknown>).SpeechSynthesisUtterance = FakeUtterance
+
+    const { container } = render(<AiLabVoiceTab />)
+    fireEvent.change(container.querySelector('textarea[data-field="vs-text"]')!, { target: { value: '第一句。第二句。第三句。' } })
+    fireEvent.click(container.querySelector('[data-action="vs-play"]')!)
+    // the failed first sentence did not poison the queue — all 3 were spoken
+    await waitFor(() => expect(speakMock).toHaveBeenCalledTimes(3))
+    // and the run still concludes: playing → false
+    await waitFor(() => {
+      const el = container.querySelector('[data-action="vs-stop"]') as HTMLButtonElement
+      expect(el.disabled).toBe(true)
+    })
+  })
+
   it('lexicon add → persists to localStorage; delete removes', () => {
     const { container } = render(<AiLabVoiceTab />)
     fireEvent.change(container.querySelector('input[data-field="vs-word"]')!, { target: { value: 'read' } })

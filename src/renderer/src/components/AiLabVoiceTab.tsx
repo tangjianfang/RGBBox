@@ -43,6 +43,9 @@ export function AiLabVoiceTab(): JSX.Element {
   const kokoroUrlRef = useRef<string | null>(null)
   /** R187: streaming-queue cancel token — stop() flips it and pauses the audio. */
   const kokoroQueueRef = useRef<{ cancel: boolean } | null>(null)
+  /** R279 (W4): system-engine queue token — counts drained utterances and
+   *  supersedes stale onend/onerror callbacks after stop()/a newer speakFrom. */
+  const sysQueueRef = useRef<{ done: number } | null>(null)
   /** R187: sentence-level synthesis progress (N/M) while the queue runs. */
   const [synth, setSynth] = useState<{ done: number; total: number } | null>(null)
   const [voiceDownloading, setVoiceDownloading] = useState(false)
@@ -114,6 +117,9 @@ export function AiLabVoiceTab(): JSX.Element {
   const stopAll = (): void => {
     // R187: kill the streaming queue first — its play-loop resolves on pause
     if (kokoroQueueRef.current) kokoroQueueRef.current.cancel = true
+    // R279: retire the system queue's token — cancel()'s error events for the
+    // pending utterances must not finalize anything (stop already did)
+    sysQueueRef.current = null
     if (typeof window.speechSynthesis !== 'undefined') window.speechSynthesis.cancel()
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = '' }
     if (kokoroUrlRef.current) { URL.revokeObjectURL(kokoroUrlRef.current); kokoroUrlRef.current = null }
@@ -123,18 +129,34 @@ export function AiLabVoiceTab(): JSX.Element {
   }
 
   // 系统引擎:句级队列 + 高亮跟读
+  // R279 (W4): every utterance drains the queue via BOTH onend and onerror —
+  // a failed sentence (e.g. no zh-CN voice installed) is skipped and the queue
+  // still wraps up, so `playing` can no longer stick true forever.
   const speakFrom = (startIdx: number): void => {
     if (typeof window.speechSynthesis === 'undefined') { setVoiceError('speech-unavailable'); return }
     window.speechSynthesis.cancel()
     setVoiceError(null)
-    setPlaying(true)
     const queue = speechTexts.slice(startIdx)
+    if (queue.length === 0) return
+    setPlaying(true)
+    const token: { done: number } = { done: 0 }
+    sysQueueRef.current = token
+    const drainOne = (): void => {
+      if (sysQueueRef.current !== token) return // superseded by stop()/a newer queue
+      token.done += 1
+      if (token.done >= queue.length) {
+        sysQueueRef.current = null
+        setPlaying(false)
+        setCurrentIdx(-1)
+      }
+    }
     queue.forEach((sentence, i) => {
       const u = new SpeechSynthesisUtterance(sentence)
       u.lang = lang === 'zh' ? 'zh-CN' : 'en-US'
       u.rate = rate
       u.onstart = () => setCurrentIdx(startIdx + i)
-      if (i === queue.length - 1) u.onend = () => { setPlaying(false); setCurrentIdx(-1) }
+      u.onend = drainOne
+      u.onerror = drainOne
       window.speechSynthesis.speak(u)
     })
   }

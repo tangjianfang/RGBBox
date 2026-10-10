@@ -14,7 +14,7 @@ import { createCaptureStore } from './captureStore'
 import { recognizeImage } from './ocrService'
 import { ipcChannels } from '../shared/ipc'
 import { getLogger, initLogger } from '../shared/logger'
-import { MODELS_MANIFEST } from '../shared/modelsManifest'
+import { MODELS_MANIFEST, isCacheSizeOk } from '../shared/modelsManifest'
 import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
 import type { AgentEvent, AiProfile, CaptureEntry, DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
@@ -1296,8 +1296,11 @@ function registerIpc(): void {
   // partial download (the ECONNRESET saga) previously left a corrupt file that
   // "已就绪" happily reported while every InferenceSession.create failed. A
   // size mismatch deletes the file so the next download starts fresh.
-  const audioModelBytes = new Map<string, number>(
-    MODELS_MANIFEST.filter((e) => e.kind === 'onnx' && e.bytes !== undefined)
+  // R279 (W3): the map now covers EVERY entry with pinned bytes — onnx plus the
+  // canonical Mip-NeRF 360 splats — so getCachedModelUrl validates splats too
+  // (a resume-killed partial used to be served as "cached" forever).
+  const modelExpectedBytes = new Map<string, number>(
+    MODELS_MANIFEST.filter((e) => e.bytes !== undefined)
       .map((e) => [e.file, e.bytes as number])
   )
   initAudioAi({
@@ -1310,11 +1313,11 @@ function registerIpc(): void {
     findCached: async (file) => {
       const filePath = join(modelsDir, file)
       try { await access(filePath) } catch { return null }
-      const expected = audioModelBytes.get(file)
+      const expected = modelExpectedBytes.get(file)
       if (expected !== undefined) {
         try {
           const s = await stat(filePath)
-          if (Math.abs(s.size - expected) > expected * 0.1) {
+          if (!isCacheSizeOk(s.size, expected)) {
             log.warn('Model', `corrupt cache detected (${s.size}/${expected} bytes), deleting: ${file}`)
             await unlink(filePath)
             return null
@@ -1325,15 +1328,31 @@ function registerIpc(): void {
     },
   })
 
-  /** Return a file:// URL if the model is already cached, otherwise undefined. */
+  /** Return a file:// URL if the model is already cached, otherwise undefined.
+   *  R279 (W3): entries with pinned `bytes` (all onnx + canonical splats) get
+   *  the R90.9 ±10% size check — a partial file a killed resume left behind is
+   *  deleted and reported NOT cached, so the UI re-offers the download instead
+   *  of serving a half model forever. Entries without pinned bytes (keyboard_rgb/
+   *  mouse_rgb — no verifiable source, see manifest) keep the existence check. */
   async function getCachedModelUrl(fileName: string): Promise<string | undefined> {
     const filePath = join(modelsDir, fileName)
     try {
       await access(filePath)
-      return pathToFileURL(filePath).toString()
     } catch {
       return undefined
     }
+    const expected = modelExpectedBytes.get(fileName)
+    if (expected !== undefined) {
+      try {
+        const s = await stat(filePath)
+        if (!isCacheSizeOk(s.size, expected)) {
+          log.warn('Model', `corrupt cache detected (${s.size}/${expected} bytes), deleting: ${fileName}`)
+          await unlink(filePath)
+          return undefined
+        }
+      } catch { /* stat failed — treat as cached */ }
+    }
+    return pathToFileURL(filePath).toString()
   }
 
   /** Follow HTTPS/HTTP redirects and stream to dest, pushing progress events.
