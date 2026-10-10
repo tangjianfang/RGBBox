@@ -4074,7 +4074,9 @@
 
 - **R264 `fix` — B 线复核立案：Profile 导入校验 + 迁移统一（REVIEW-workspace-settings A1，主审已核实 main/index.ts:1239 裸 `JSON.parse` 零校验；状态 ⏳）**：坏形状 profile 文件可让渲染层崩到 ErrorBoundary；导入同 id 静默覆盖命名槽。修：形状校验 + 默认合并 + 同 id 冲突提示。验收：坏样本单测（往返+拒绝路径）；导入冲突 E2E。
 
-- **R265 `fix` — B 线复核立案：AI8 tab keep-alive（REVIEW-ailab-3d W2，主审已核实 AiLabView.tsx:543 条件挂载；状态 ⏳）**：AI8 绘画/视频分钟级任务切走即卸载，流式完成回调 `setSessions` 变 no-op，结果永不落 localStorage。修：对齐 R175 keep-alive 模式（visited + display:none）。验收：切走再切回，完成态落盘断言。
+- **R265 `fix` — B 线复核立案：AI8 tab keep-alive（REVIEW-ailab-3d W2/U3，主审已核实 AiLabView.tsx:543 条件挂载；状态 ✅）**：AI8 绘画/视频分钟级任务切走即卸载，流式完成回调 `setSessions` 变 no-op，结果永不落 localStorage。修：对齐 R175 keep-alive 模式（visited + display:none）。验收：切走再切回，完成态落盘断言。
+  - **R265.1 交付**：①`AiLabView.tsx` 增 `ai8Visited`（与 agent/voice 同一 effect 置位），`{tab === 'ai8' && <AiLabAi8Tab />}` 改为 `.ai-keep-pane` 包裹 + `display:none` 隐藏（照抄 R175 同款结构）；②`AiLabAi8Tab.tsx` 落盘副作用移出 setState updater（W2 报告第二半）：新增 `sessionsRef` + `commitSessions(update)`（从 ref 计算 → `writeSessions(next)` → `setSessions(next)`，ref 在 helper 内即时前推保证同 tick 流式连发一致性），13 处 `setSessions((list)=>{…writeSessions(next); return next})` 全部收编，唯一保留的裸 `setSessions` 是 createSession 失败的 err 占位（原本就不落盘，语义不变）。
+  - **R265.2 证据（2026-10-11，worktree agent-a2aa9ddb85e85cee7）**：TDD 先红后绿——新增 `tests/renderer/components/AiLabView.test.tsx` describe "AiLabView AI8 keep-alive (R265)" 两用例（①流式 fetch 手工 parked：切 config 后释放完成 → `rgbbox:ai8Sessions` 含完成回合 + 切回 DOM 节点同一（未重挂载）+ 回复上屏；②agent/voice R175 不回归：三 pane 并存、隐藏但同节点、往返仍同实例）；修前 ① 红（`pane` 为 null），修后 `yarn test tests/renderer/components/AiLabView.test.tsx` **21 passed**；`yarn typecheck` node+web 双绿。
 
 - **R266 `perf` — B 线复核立案：引擎像素数据缓存上界 + 重几何帧级缓存（REVIEW-engine-diagnostics TA1/TA2；状态 ⏳，profile 佐证后实施）**：effects.ts 单槽缓存多图层交替 miss；重科学系效果每像素重算帧不变几何。修：带上限 Map + (layerId, now) 帧级缓存。验收：帧时间预算回归测试。ssages catalog 注入（默认中文表保持兼容）+ i18n `games.vision.engine.*` 22 条 + hook 映射。验收：en 态全 UI 无中文直出；zh 值零变化兼容锁。
 - **R235 `fix` — 引擎 i18n 化（Wave1-T4；06-R5/07-X4；状态 ✅ 2026-10-09 当日闭环）**：session.js 360 汉字+pipeline 'loading models…' 直出（en 用户见中文）。方案=06-R5 messages catalog 注入（默认中文表保持兼容）+ i18n `games.vision.engine.*` + hook 映射。验收：en 态全 UI 无中文直出；zh 值零变化兼容锁。
