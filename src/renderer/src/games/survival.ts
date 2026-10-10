@@ -4,6 +4,7 @@
 // based on how well the run is going.
 import { playSfx } from './sfx'
 import { mulberry32 } from './daily'
+import { buildGrid, gridNear } from './spatialGrid'
 import { WIDTH, HEIGHT } from './td'
 import { SCENE_IDS, drawScene, type SceneId } from './scene'
 import {
@@ -48,6 +49,73 @@ function rand(state: SurvivalState): number {
 export type { UpgradeDef, UpgradeId }
 
 export type SurvivalPhase = 'ready' | 'running' | 'levelup' | 'roulette' | 'lost'
+
+// ── R262 #9: 画布文案 labels——R235 messages 同模式。引擎零 i18n 依赖,
+//    缺省=历史英文值(兼容锁);view 层按 locale 注入覆盖(zh 全中文)。 ──
+export interface SurvivalLabels {
+  survive: string
+  island: (n: number) => string
+  level: (n: number) => string
+  bossInbound: string
+  bossDown: string
+  evolved: (effect: string) => string
+  playerDown: (n: number) => string
+  playerRevived: (n: number) => string
+  plusHp: string
+  plusOneHp: string
+  minuteSurvived: (m: number) => string
+  combo: (n: number) => string
+  player: (n: number) => string
+  boss: string
+  lv: (n: number) => string
+  upgrade: (id: string) => string
+}
+
+export const SURVIVAL_LABELS: SurvivalLabels = {
+  survive: 'SURVIVE',
+  island: (n) => `ISLAND ${n}`,
+  level: (n) => `LEVEL ${n}`,
+  bossInbound: '⚠ BOSS 逼近',
+  bossDown: 'BOSS DOWN — ROULETTE +1',
+  evolved: (e) => `EVOLVED · ${e.toUpperCase()}`,
+  playerDown: (n) => `P${n} DOWN`,
+  playerRevived: (n) => `P${n} REVIVED`,
+  plusHp: '+HP',
+  plusOneHp: '+1 HP',
+  minuteSurvived: (m) => `${m} MIN SURVIVED`,
+  combo: (n) => `COMBO ×${n}`,
+  player: (n) => `P${n}`,
+  boss: 'BOSS',
+  lv: (n) => `LV ${n}`,
+  upgrade: (id) => `+${id}`,
+}
+
+/** 合成生效 labels(注入覆盖缺省;不注入=纯缺省)。 */
+export function labelsOf(state: SurvivalState): SurvivalLabels {
+  return state.labels ? { ...SURVIVAL_LABELS, ...state.labels } : SURVIVAL_LABELS
+}
+
+/** R262 #6: 死亡钩子——lost 态的「差一点」数据(结算屏钩子行)。 */
+export interface DeathHook {
+  xpToLevel: number
+  /** 缺 ≤2 级的最近进化配方(无则 null)。 */
+  evolveHint: { effect: string; missing: number } | null
+}
+
+export function deathHook(state: SurvivalState): DeathHook {
+  let best: { effect: string; missing: number } | null = null
+  for (const recipe of EVOLUTIONS) {
+    if (state.evolved.includes(recipe.id)) continue
+    let missing = 0
+    for (const req of recipe.requires) {
+      missing += Math.max(0, req.count - (state.taken[req.id] ?? 0))
+    }
+    if (missing > 0 && missing <= 2 && (best === null || missing < best.missing)) {
+      best = { effect: recipe.effect, missing }
+    }
+  }
+  return { xpToLevel: Math.max(0, Math.ceil(state.xpNext - state.xp)), evolveHint: best }
+}
 
 export const BOSS_INTERVAL = 90
 
@@ -173,6 +241,9 @@ export const SWARM_PACK_MAX = 12
 export function hitRadiusOf(size: number): number {
   return size * 0.8
 }
+/** R263 #8: 空间哈希 cell 尺寸(≈最大敌直径 2 倍,29×17 格覆盖大世界)。 */
+const GRID_CELL = 64
+
 /** 权重计算用的标称虫群规模(一次 spawn 事件的总威胁 = 个体 × 规模)。 */
 const SWARM_PACK_NOMINAL = (SWARM_PACK_MIN + SWARM_PACK_MAX) / 2
 
@@ -388,6 +459,8 @@ interface Enemy extends Point {
   healPulse?: number
   /** R218 D: swarm 个体速度散布系数(0.75-1.25)。 */
   jitter?: number
+  /** R263 #7: 击退节流——上次被击退后的冷却(>0 时跳过击退位移,防高频弹钉死)。 */
+  knockCd?: number
 }
 
 interface Bullet extends Point {
@@ -579,6 +652,8 @@ export interface SurvivalState {
   /** R220.5(OD-05): 种子 RNG——每日挑战注入 mulberry32(dailySeed()),自由局
    *  缺省(=Math.random)。纯闭包不序列化,与 Tetris.rng 同一模式。 */
   rng?: () => number
+  /** R262 #9: 画布文案注入(缺省=英文现值;view 层按 locale 注入)。 */
+  labels?: Partial<SurvivalLabels>
 }
 
 // ── R213: P2..P4 皮肤(琥珀/粉/青;P1 沿用青白 #e2f8ff/#67e8f9 不变) ──
@@ -659,7 +734,7 @@ export function initialSurvivalState(
     nextId: 1,
     player,
     stats: baseStats(),
-    taken: { fireRate: 0, damage: 0, multishot: 0, pierce: 0, blade: 0, speed: 0, maxHp: 0, magnet: 0, crit: 0, bulletSpeed: 0, thorns: 0, regen: 0 },
+    taken: { fireRate: 0, damage: 0, multishot: 0, pierce: 0, blade: 0, speed: 0, maxHp: 0, magnet: 0, crit: 0, bulletSpeed: 0, thorns: 0, regen: 0, eightway: 0, laser: 0, chain: 0, homing: 0 },
     bonuses: {},
     character,
     difficulty,
@@ -885,7 +960,7 @@ function playerDown(state: SurvivalState, which: 1 | 2 | 3 | 4): void {
   const p = state.players[which - 1]
   if (p === undefined || p.hp > 0) return
   spawnBurst(state, p.x, p.y, '#f87171', 22, 210)
-  addText(state, p.x, p.y - 30, `P${which} DOWN`, '#f87171')
+  addText(state, p.x, p.y - 30, labelsOf(state).playerDown(which), '#f87171')
   if (reviveQuotaLeft(state, which - 1)) {
     state.reviveOrbs.push({ id: state.nextId++, x: clamp(p.x, 30, WORLD_W - 30), y: clamp(p.y, 30, WORLD_H - 30), target: which })
   }
@@ -914,7 +989,7 @@ function spawnBurst(state: SurvivalState, x: number, y: number, color: string, c
 export function startSurvival(state: SurvivalState): void {
   if (state.phase !== 'ready') return
   state.phase = 'running'
-  state.banner = { text: 'SURVIVE', life: 1.5 }
+  state.banner = { text: labelsOf(state).survive, life: 1.5 }
   playSfx('wave')
 }
 
@@ -952,7 +1027,7 @@ export function advanceIsland(state: SurvivalState): void {
   state.portal = null
   healTeam(state, 1) // R223.3: 换岛治疗走统一入口(全员/池)
   state.comboBonus += 150 * state.island
-  state.banner = { text: `ISLAND ${state.island}`, life: 1.8 }
+  state.banner = { text: labelsOf(state).island(state.island), life: 1.8 }
   queueShake(state.juice, 5)
   spawnBurst(state, state.player.x, state.player.y, '#67e8f9', 24, 190)
   playSfx('wave')
@@ -976,7 +1051,7 @@ export function applyUpgrade(state: SurvivalState, id: UpgradeId): void {
     state.offers = []
     state.phase = 'running'
     state.hitStop = HIT_STOP.heavy
-    state.banner = { text: `EVOLVED · ${recipe.effect.toUpperCase()}`, life: 1.8 }
+    state.banner = { text: labelsOf(state).evolved(recipe.effect), life: 1.8 }
     spawnBurst(state, state.player.x, state.player.y, '#fde047', 30, 220)
     queueShake(state.juice, 7)
     playSfx('levelup')
@@ -994,7 +1069,7 @@ export function applyUpgrade(state: SurvivalState, id: UpgradeId): void {
   state.offers = []
   state.phase = 'running'
   spawnBurst(state, state.player.x, state.player.y, def.accent, 18, 150)
-  addText(state, state.player.x, state.player.y - 30, `+${id}`, def.accent)
+  addText(state, state.player.x, state.player.y - 30, labelsOf(state).upgrade(id), def.accent)
 }
 
 export function openRoulette(state: SurvivalState): void {
@@ -1208,7 +1283,7 @@ function spawnBoss(state: SurvivalState): void {
   const x = spot.x
   const y = spot.y
   state.enemies.push({ id: state.nextId++, x, y, vx: 0, vy: 0, size: 28, hp, maxHp: hp, kind: 'boss', elite: false, hitFlash: 0 })
-  state.banner = { text: 'BOSS INBOUND', life: 1.6 }
+  state.banner = { text: labelsOf(state).bossInbound, life: 2.5 } // R259 zh 默认;R262 入 labels
   playSfx('wave')
 }
 
@@ -1217,6 +1292,20 @@ function spawnBoss(state: SurvivalState): void {
 export function debugSpawnBoss(state: SurvivalState): void {
   if (state.phase !== 'running') return
   spawnBoss(state)
+}
+
+/** R260 chain 质变:连锁闪电——从直击致死的敌跳 ≤3 个 160px 内最近敌(0.6×伤害)。
+ *  链伤致死不再触发链(单跳,防递归雪崩)。 */
+function chainLightning(state: SurvivalState, from: Enemy, baseDamage: number): void {
+  const targets = state.enemies
+    .filter((e) => e !== from && e.hp > 0 && distance(e, from) <= 160)
+    .sort((a, b) => distance(a, from) - distance(b, from))
+    .slice(0, 3)
+  for (const t of targets) {
+    t.hp -= baseDamage * 0.6
+    t.hitFlash = 0.08
+    spawnBurst(state, t.x, t.y, '#fde047', 5, 110)
+  }
 }
 
 function killEnemy(state: SurvivalState, enemy: Enemy): void {
@@ -1243,7 +1332,7 @@ function killEnemy(state: SurvivalState, enemy: Enemy): void {
     state.hitStop = HIT_STOP.heavy
     state.bossKills += 1
     state.portal = { x: clamp(enemy.x, 60, WORLD_W - 60), y: clamp(enemy.y, 60, WORLD_H - 60) }
-    state.banner = { text: 'BOSS DOWN — ROULETTE +1', life: 1.8 }
+    state.banner = { text: labelsOf(state).bossDown, life: 1.8 }
     queueShake(state.juice, 6)
     playSfx('levelup')
     return
@@ -1427,7 +1516,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     if (state.regenTimer >= stats.regenInterval) {
       state.regenTimer = 0
       healTeam(state, 1) // R223.3: regen 走统一入口——原只写 P1,P2 零回血(用户实测根因)
-      addText(state, player.x, player.y - 34, '+HP', '#34d399')
+      addText(state, player.x, player.y - 34, labelsOf(state).plusHp, '#34d399')
       spawnBurst(state, player.x, player.y, '#34d399', 8, 90)
     }
   }
@@ -1448,14 +1537,26 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       const shots = stats.multishot
       // R220.3 lightspear 进化:弹体成光枪——伤害×1.3/穿透+2/弹速×1.3
       const spear = state.evolved.includes('lightspear')
+      // R260 laser 质变:穿透+4/弹速×1.6/寿命 2.2(与进化乘法叠加)
+      const laser = state.taken.laser > 0
       const dmgMult = spear ? 1.3 : 1
-      const pierceBonus = spear ? 2 : 0
-      const speedMult = spear ? 1.3 : 1
-      for (let i = 0; i < shots; i++) {
-        const spread = (i - (shots - 1) / 2) * (Math.PI / 14)
-        const angle = baseAngle + spread
-        const crit = rand(state) < stats.crit
-        state.bullets.push({ id: state.nextId++, x: player.x, y: player.y, vx: Math.cos(angle) * stats.bulletSpeed * speedMult, vy: Math.sin(angle) * stats.bulletSpeed * speedMult, damage: (crit ? stats.damage * 2 : stats.damage) * dmgMult, pierce: stats.pierce + pierceBonus, crit, life: 1.2 })
+      const pierceBonus = (spear ? 2 : 0) + (laser ? 4 : 0)
+      const speedMult = (spear ? 1.3 : 1) * (laser ? 1.6 : 1)
+      const bulletLife = laser ? 2.2 : 1.2
+      // R260 eightway 质变:齐射改 8 个绝对方向扇形开花(伤害×0.75 平衡 8× 弹量)
+      if (state.taken.eightway > 0) {
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2
+          const crit = rand(state) < stats.crit
+          state.bullets.push({ id: state.nextId++, x: player.x, y: player.y, vx: Math.cos(angle) * stats.bulletSpeed * speedMult, vy: Math.sin(angle) * stats.bulletSpeed * speedMult, damage: (crit ? stats.damage * 2 : stats.damage) * dmgMult * 0.75, pierce: stats.pierce + pierceBonus, crit, life: bulletLife })
+        }
+      } else {
+        for (let i = 0; i < shots; i++) {
+          const spread = (i - (shots - 1) / 2) * (Math.PI / 14)
+          const angle = baseAngle + spread
+          const crit = rand(state) < stats.crit
+          state.bullets.push({ id: state.nextId++, x: player.x, y: player.y, vx: Math.cos(angle) * stats.bulletSpeed * speedMult, vy: Math.sin(angle) * stats.bulletSpeed * speedMult, damage: (crit ? stats.damage * 2 : stats.damage) * dmgMult, pierce: stats.pierce + pierceBonus, crit, life: bulletLife })
+        }
       }
       // R220.3 barrage 进化:齐射追加两翼斜射弹(±0.5rad,0.7×伤害)
       if (state.evolved.includes('barrage')) {
@@ -1589,22 +1690,54 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     }
   }
 
+  // R263 #8: 空间哈希——homing 索敌/弹命中共用候选粗筛(本段敌位置仅受击退
+  //  ≤12px 影响,粗筛半径统一 +16px 余量;精筛仍是精确距离判定)。
+  const enemyGrid = buildGrid(state.enemies, GRID_CELL)
   for (const bullet of state.bullets) {
+    // R260 homing 质变:追踪飞刃——朝最近敌转向(5rad/s,速率不变;R263: 索敌
+    //  限 240px 内最近——满图索敌在大场面是 O(B×E) 大头,行为上远敌本就几乎追不上)
+    if (state.taken.homing > 0) {
+      let tgt: Enemy | undefined
+      let bestD = 240
+      for (const enemy of gridNear(enemyGrid, bullet.x, bullet.y, 240, GRID_CELL) as Enemy[]) {
+        const d = distance(bullet, enemy)
+        if (d < bestD) {
+          bestD = d
+          tgt = enemy
+        }
+      }
+      if (tgt !== undefined) {
+        const speed = Math.hypot(bullet.vx, bullet.vy)
+        const want = Math.atan2(tgt.y - bullet.y, tgt.x - bullet.x)
+        const cur = Math.atan2(bullet.vy, bullet.vx)
+        let diff = want - cur
+        while (diff > Math.PI) diff -= Math.PI * 2
+        while (diff < -Math.PI) diff += Math.PI * 2
+        const turn = clamp(diff, -5 * dt, 5 * dt)
+        bullet.vx = Math.cos(cur + turn) * speed
+        bullet.vy = Math.sin(cur + turn) * speed
+      }
+    }
     bullet.x += bullet.vx * dt
     bullet.y += bullet.vy * dt
     bullet.life -= dt
-    for (const enemy of state.enemies) {
+    const hitCandidates = gridNear(enemyGrid, bullet.x, bullet.y, 4 + 28 + 16, GRID_CELL) as Enemy[]
+    for (const enemy of hitCandidates) {
       if (bullet.pierce < 0 || bullet.life <= 0) break
       if (distance(bullet, enemy) < 4 + hitRadiusOf(enemy.size)) {
         enemy.hp -= bullet.damage
         enemy.hitFlash = 0.1
+        // R260 chain 质变:子弹直击致死时电弧跳 ≤3 邻敌(160px,0.6×伤害,一跳不递归)
+        if (state.taken.chain > 0 && enemy.hp <= 0) chainLightning(state, enemy, bullet.damage)
         // R220.3 手感:击退改固定像素(沿弹道单位向量;普通 12px/tank 3px)——
         // 原「弹速×dt×0.5」在 60fps 仅 ~3.5px 且随帧率/弹速漂移,不可感知。
         const bulletSpeed = Math.hypot(bullet.vx, bullet.vy)
-        if (bulletSpeed > 1) {
+        // R263 #7: 击退节流——0.15s 冷却内不重复击退(高频弹不再逐帧钉死敌人)
+        if (bulletSpeed > 1 && (enemy.knockCd ?? 0) <= 0) {
           const knockPx = enemy.kind === 'tank' ? 3 : 12
           enemy.x += (bullet.vx / bulletSpeed) * knockPx
           enemy.y += (bullet.vy / bulletSpeed) * knockPx
+          enemy.knockCd = 0.15
         }
         bullet.pierce -= 1
         spawnBurst(state, bullet.x, bullet.y, bullet.crit ? '#fbbf24' : '#67e8f9', 3, 60)
@@ -1620,6 +1753,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     // 其余直追。shooter 兼施放瞄准弹,healer 兼脉冲群疗。
     const target = nearestAlive(state, enemy) ?? player
     enemy.hitFlash = Math.max(0, enemy.hitFlash - dt)
+    if ((enemy.knockCd ?? 0) > 0) enemy.knockCd = Math.max(0, (enemy.knockCd ?? 0) - dt)
     if ((enemy.healPulse ?? 0) > 0) enemy.healPulse = Math.max(0, (enemy.healPulse ?? 0) - dt)
     if (enemy.kind === 'shooter' || enemy.kind === 'healer') {
       kiteMove(state, enemy, target, dt, enemy.kind === 'shooter' ? SHOOTER_BAND : HEALER_BAND)
@@ -1666,10 +1800,11 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       }
     }
   }
-  for (let i = 0; i < state.enemies.length; i++) {
-    for (let j = i + 1; j < state.enemies.length; j++) {
-      const a = state.enemies[i]
-      const b = state.enemies[j]
+  // R263 #8: 分离 O(n²) → 哈希配对(敌位置已更新,重建网格;b.id>a.id 去重单次处理)
+  const sepGrid = buildGrid(state.enemies, GRID_CELL)
+  for (const a of state.enemies) {
+    for (const b of gridNear(sepGrid, a.x, a.y, a.size + 28, GRID_CELL) as Enemy[]) {
+      if (b.id <= a.id) continue
       const dist = distance(a, b)
       const min = a.size + b.size
       if (dist < min && dist > 0.01) {
@@ -1732,7 +1867,7 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       target.x = clamp(rescuer.x + (rand(state) - 0.5) * 64, 16, WORLD_W - 16)
       target.y = clamp(rescuer.y + (rand(state) - 0.5) * 64, 16, WORLD_H - 16)
       spendRevive(state, orb.target - 1)
-      addText(state, rescuer.x, rescuer.y - 34, `P${orb.target} REVIVED`, '#4ade80')
+      addText(state, rescuer.x, rescuer.y - 34, labelsOf(state).playerRevived(orb.target), '#4ade80')
       spawnBurst(state, rescuer.x, rescuer.y, '#4ade80', 18, 160)
       playSfx('levelup')
       return false
@@ -1745,11 +1880,11 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     state.level += 1
     state.xpNext = xpToNext(state.level)
     healTeam(state, 1) // R223.3: 升级治疗走统一入口(原只写 P1)
-    addText(state, state.player.x, state.player.y - 44, '+HP', '#86efac')
+    addText(state, state.player.x, state.player.y - 44, labelsOf(state).plusHp, '#86efac')
     state.offers = pickOffers(state)
     if (state.offers.length > 0) {
       state.phase = 'levelup'
-      state.banner = { text: `LEVEL ${state.level}`, life: 1.4 }
+      state.banner = { text: labelsOf(state).level(state.level), life: 1.4 }
       playSfx('levelup')
     }
   }
@@ -1760,8 +1895,8 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
     // R223.3: 坚持奖励——每存活 1 分钟全队 +1 HP(与横幅同拍;轻量回血节拍,
     // 让「回不了血直到死」在无 regen build 时也有基础恢复)
     healTeam(state, 1)
-    addText(state, state.player.x, state.player.y - 44, '+1 HP', '#86efac')
-    state.banner = { text: `${minute} MIN SURVIVED`, life: 1.6 }
+    addText(state, state.player.x, state.player.y - 44, labelsOf(state).plusOneHp, '#86efac')
+    state.banner = { text: labelsOf(state).minuteSurvived(minute), life: 1.6 }
     playSfx('wave')
   }
 }
@@ -2019,10 +2154,12 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
   }
 
   for (const bullet of state.bullets) {
+    // R260 laser 质变:寿命 >1.5s 的弹(laser 2.2s)拖尾 ×3——光枪横扫观感
+    const trail = bullet.life > 1.5 ? 0.06 : 0.02
     ctx.strokeStyle = bullet.crit ? 'rgba(251, 191, 36, 0.6)' : 'rgba(103, 232, 249, 0.5)'
     ctx.lineWidth = 2
     ctx.beginPath()
-    ctx.moveTo(bullet.x - bullet.vx * 0.02, bullet.y - bullet.vy * 0.02)
+    ctx.moveTo(bullet.x - bullet.vx * trail, bullet.y - bullet.vy * trail)
     ctx.lineTo(bullet.x, bullet.y)
     ctx.stroke()
     ctx.fillStyle = bullet.crit ? '#fbbf24' : '#67e8f9'
@@ -2206,7 +2343,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
     ctx.font = '800 12px Inter, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'alphabetic'
-    ctx.fillText('BOSS', vp.w / 2, 46)
+    ctx.fillText(labelsOf(state).boss, vp.w / 2, 46)
   }
 
   // ── R218 U1/U5: 战斗 HUD 胶囊化 + 心数行 → 连续血条(贴边,不进中央 60%) ──
@@ -2219,7 +2356,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
     ctx.font = '700 10px Inter, sans-serif'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    ctx.fillText(`P${pi + 1}`, 16, y + 5.5)
+    ctx.fillText(labelsOf(state).player(pi + 1), 16, y + 5.5)
   }
 
   const comboTop = 14 + state.players.length * 18 + 4
@@ -2229,7 +2366,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
     ctx.font = `800 ${13 + Math.min(5, Math.floor(state.combo / 4))}px Inter, sans-serif`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    ctx.fillText(`COMBO ×${state.combo}`, 24, comboTop + 9)
+    ctx.fillText(labelsOf(state).combo(state.combo), 24, comboTop + 9)
   }
 
   // 右上信息胶囊(波次=岛屿/时间/分数——spec U1 三要素的 Survival 语义)
@@ -2240,7 +2377,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
   ctx.font = '700 11px Inter, sans-serif'
   ctx.textAlign = 'right'
   ctx.textBaseline = 'middle'
-  ctx.fillText(`ISLAND ${state.island}  ${mins}:${secs}  ${state.score}`, vp.w - 24, 24)
+  ctx.fillText(`${labelsOf(state).island(state.island)}  ${mins}:${secs}  ${state.score}`, vp.w - 24, 24)
 
   drawHealthBar(ctx, 76, vp.h - 24, vp.w - 112, 8, clamp(state.xp / state.xpNext, 0, 1), state.clock, { segments: false })
   drawHudCapsule(ctx, 16, vp.h - 30, 54, 20)
@@ -2248,7 +2385,7 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
   ctx.font = '700 12px Inter, sans-serif'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
-  ctx.fillText(`LV ${state.level}`, 24, vp.h - 20)
+  ctx.fillText(labelsOf(state).lv(state.level), 24, vp.h - 20)
 
   if (state.banner) {
     ctx.globalAlpha = clamp(state.banner.life / 0.5, 0, 1)
@@ -2274,7 +2411,7 @@ export function survivalHints(state: SurvivalState): CoachHint[] {
   if (state.phase !== 'running') return hints
   if (state.player.hp / state.player.maxHp <= 0.35) hints.push({ key: 'sw.hpLow', tone: 'warn', priority: 85 })
   if (state.pendingSpins > 0) hints.push({ key: 'sw.spinReady', tone: 'tip', priority: 75 })
-  if (state.bossTimer > BOSS_INTERVAL - 15) hints.push({ key: 'sw.bossSoon', tone: 'warn', priority: 70 })
+  if (state.bossTimer < 15 && state.bossTimer > 0) hints.push({ key: 'sw.bossSoon', tone: 'warn', priority: 70 }) // R259/F-9: was inverted — now fires in the 15s BEFORE boss
   if (state.portal !== null) hints.push({ key: 'sw.portal', tone: 'praise', priority: 60 })
   if (state.combo >= 8) hints.push({ key: 'sw.combo', tone: 'praise', priority: 40 })
   return hints

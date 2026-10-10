@@ -280,7 +280,7 @@ GPU 直通的意义:overlay 收到的是 shader uniforms 而非降采样网格�
 
 | 通道 | 发布方 | 订阅方 | 载荷 |
 |---|---|---|---|
-| `rgbbox-vision` | visionHost 渲染进程 | 主窗(`useVisionInput` 等) | 视觉检测结果(schema 未读,推断) |
+| `rgbbox-vision` | visionHost 渲染进程 | 主窗(`useVisionInput` 等) | 契约单一事实源:`src/renderer/src/vision/hostProtocol.js`(HOST_MSG/HOST_REPLY 冻结表+VISION_MSG_KEYS+USER_VOCAB 词汇权威表,配 .d.ts 类型桥;R228/R234) |
 | `rgbbox-2d-effect` | `PreviewGrid` | 不透明 overlay(`OverlayCanvas`) | `Effect2DMessage {layer, t}` |
 | `rgbbox-3d-effect` | `Preview3D` | overlay 窗口 | 3D uniforms |
 | audioviz 通道(名称未确认) | 主窗音频可视化 | `AudioVizProjector` | 可视化帧(仅见注释,推断) |
@@ -302,6 +302,35 @@ GPU 直通的意义:overlay 收到的是 shader uniforms 而非降采样网格�
 | 路由 | 来源 | 特性 |
 |---|---|---|
 | `media://app/<subpath>` | 打包产物 `out/renderer/<subpath>` | 防路径穿越;vision wasm / `.task` 模型 |
+
+## 视觉/体感栈（R227-R247 对码重写,2026-10-09）
+
+```text
+主窗 renderer                      视觉宿主(隐藏 BrowserWindow,独立渲染进程)
+┌─────────────────┐  visionHostOpen/Close(IPC,单例)  ┌──────────────────────┐
+│ useVisionInput   │◄─────BroadcastChannel 'rgbbox-vision'────►│ visionHostMain(薄壳,~110 行) │
+│ (适配层,R228)    │  init/acquire/release/settings…  │   └► hostMessenger.js       │
+│  ├ errorKind     │◄───events/snapshot/status/heartbeat────┤    (R234 注入式编排,可单测) │
+│  └ translateEngineText                            │   ├ VisionPipeline(pipeline.js) │
+├─────────────────┤                                  │   │   └ SessionController       │
+│ 消费方(事件总线 'vision-input')                          │   │      (session.js+messages 目录) │
+│  ├ VisionAssistant(视图环/向导/可见性收敛)               │   ├ gesture_engine/one_euro/     │
+│  ├ VisionLightControl(灯效环 v1/v2,R229/R247)          │   │  fingerChords/face_engine     │
+│  ├ VisionOnboarding(R246 四步向导)                     │   └ MediaPipe wasm(vendor 23MB)  │
+│  ├ MiniGamesView(游戏输入源之一)                        └──────────────────────────────┘
+│  └ AiLabVisionTab(体检台,深度体检 R237 期)
+└─────────────────┘
+```
+
+| 关注点 | 机制 | 代码锚点 |
+|---|---|---|
+| 会话所有权 | 引用计数 acquire/release,最后离开者关摄像头;stop=强制停清注册表 | `vision/hostProtocol.js` `createSessionRegistry` |
+| 生命周期防御 | tick try/catch+错误连击(8 次→GPU→CPU 重建→干净关停);init 20s 看门狗;心跳 5s+客户端 15s 超时自愈一次 | `vision/hostMessenger.js` |
+| 摄像头故障恢复 | onended/devicechange 看门狗+六分类错误(denied/no-device/occupied/detached/timeout/generic)+错误卡 CTA | `domain/visionErrors.ts`、`VisionBanner` |
+| 引擎可测性 | 纯 JS 零 DOM;landmark 入口守卫(21 点×[0,1]×有限值,坏手计数 stats.landmarkRejects);消息目录注入 i18n(statusKey/statusParams) | `vision/pipeline.js`、`vision/session.js` |
+| 识别质量门禁 | 合成变体 972 格混淆矩阵(6 手势×尺度×噪声×丢检×遮挡×速度)+真实语料回放门禁(召回/延迟/误触发) | `tests/vision/confusion.test.mjs`、`replay-harness.mjs` |
+| 词汇纪律 | USER_VOCAB 冻结 6 词(加词须 PRD) | `vision/hostProtocol.js` |
+
 | `media://local?p=<urlencoded>` | 任意本地媒体文件 | MIME 表 + HTTP Range(200/206/416),`createReadStream` 流式(>2GiB 安全) |
 
 ### 8.5 preload 桥(`RgbBoxApi`,340 行)

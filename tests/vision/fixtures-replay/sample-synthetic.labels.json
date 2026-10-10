@@ -1,0 +1,46 @@
+{
+  "source": "synthetic (makeHand — proves the replay chain, NOT detection quality)",
+  "fps": 30,
+  "marks": [
+    {
+      "gesture": "pinch",
+      "from": 4667,
+      "to": 4967
+    },
+    {
+      "gesture": "pinch",
+      "from": 5867,
+      "to": 6167
+    },
+    {
+      "gesture": "pinch",
+      "from": 7067,
+      "to": 7367
+    },
+    {
+      "gesture": "dir-up",
+      "from": 8733,
+      "to": 9700
+    },
+    {
+      "gesture": "dir-right",
+      "from": 10933,
+      "to": 11900
+    },
+    {
+      "gesture": "dir-down-left",
+      "from": 13133,
+      "to": 14100
+    },
+    {
+      "gesture": "dir-up-right",
+      "from": 15333,
+      "to": 16300
+    }
+  ],
+  "gates": {
+    "recall": 1,
+    "falseMax": 0,
+    "latencyMaxMs": 400
+  }
+}

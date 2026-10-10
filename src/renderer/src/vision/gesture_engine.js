@@ -163,11 +163,16 @@ export class DirectionRing {
       want = this.active; // in the radial hysteresis band: keep current
     }
 
-    // time-based confirmation before any change (fps-independent anti-flicker)
+    // time-based confirmation before any change (fps-independent anti-flicker).
+    // R256: releasing to null (back to dead zone) takes the FAST path — the
+    // anti-flicker guard exists to prevent SECTOR CHATTER, and going to rest
+    // is never chatter; making the player wait confirmMs to drop a held
+    // direction added ~133ms of perceived lag on every release (02-U2).
+    const confirmMs = want === null ? Math.min(this.cfg.confirmMs, 30) : this.cfg.confirmMs;
     if (want === this.active) {
       this.candidate = null;
     } else if (want === this.candidate) {
-      if ((tSec - this.candidateSince) * 1000 >= this.cfg.confirmMs) {
+      if ((tSec - this.candidateSince) * 1000 >= confirmMs) {
         events.push(...this._sectorTransition(this.active, want));
         this.active = want;
         this.candidate = null;

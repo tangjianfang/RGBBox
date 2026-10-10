@@ -4,7 +4,8 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict'; // works under vitest node env
 import { SessionDriver, heldKeys, atPalm, CENTER, mulberry32, gaussian } from './helpers.mjs';
-import { adaptFaceRate } from '../../src/renderer/src/vision/session.js';
+import { adaptFaceRate, DEFAULT_SESSION_MESSAGES } from '../../src/renderer/src/vision/session.js';
+import { VISION_MSG_KEYS, VISION_SESSION_MSG_KEYS, VISION_KEY_MESSAGES } from '../../src/renderer/src/vision/hostProtocol.js';
 
 const QUICK_CFG = { calSteps: { center: 500, reach: 700, pinch: 1100 } };
 
@@ -235,4 +236,87 @@ test('snapshot exposes the ring live center (ringCenter) and recenter moves it',
   d.collect(90, atPalm(CENTER.x + 0.02, CENTER.y));
   const after = d.frame({ ...atPalm(CENTER.x + 0.02, CENTER.y) }).snapshot;
   assert.ok(after.ringCenter.x > first.ringCenter.x, 'recenter must move the live center');
+});
+
+// R227.1: the paused-state off-hand resume path called `handOpenness` WITHOUT
+// importing it — one ReferenceError inside the host tick killed the frame
+// loop permanently (camera on, zero feedback). This is the regression lock.
+test('R227.1: paused + off-hand present does not throw (handOpenness import regression)', () => {
+  const d = new SessionDriver({ cfg: QUICK_CFG });
+  d.calibrate();
+  d.session.setPaused(true);
+  // secondary (off) hand in frame while paused — the resume-gesture watcher
+  // runs handOpenness on it every frame. Before R227.1 this threw immediately.
+  let threw = null;
+  try {
+    for (let i = 0; i < 20; i++) {
+      d.frame({ ...atPalm(CENTER.x, CENTER.y), hand2: { cx: CENTER.x - 0.25, cy: CENTER.y - 0.1, pinch: i % 4 ? 1.25 : 0.22 } });
+    }
+  } catch (e) { threw = e; }
+  assert.ok(!threw, `paused off-hand path threw: ${threw && threw.message}`);
+  assert.equal(d.session.state, 'paused');
+});
+
+// R235 ──────────────────────────────────────────────────────────────────────
+// Engine i18n: every user-facing string renders from an injectable messages
+// catalog. The DEFAULTS are the exact pre-R235 zh values (compat lock — the
+// zh assertions all over this file keep passing untouched), while the hook
+// injects the identity table (key→key, VISION_KEY_MESSAGES) so the engine
+// emits stable codes that the UI layer localizes per consumer language.
+test('R235: messages catalog — partial override merges over the zh defaults', () => {
+  const d = new SessionDriver({ cfg: { ...QUICK_CFG, messages: { 'state.active': 'ACTIVE!' } } });
+  d.calibrate();
+  assert.equal(d.session.state, 'active');
+  assert.ok(d.session.label().includes('ACTIVE!'), `label: ${d.session.label()}`);
+  // untouched keys keep the exact pre-R235 zh values, with and without cfg
+  const d2 = new SessionDriver({ cfg: QUICK_CFG });
+  assert.equal(d2.session.label(), '未检测到手 — 抬手进入画面');
+  d2.calibrate();
+  assert.equal(d2.session.label(), '已激活');
+});
+
+test('R235: key-mode catalog (identity) — label/status emit stable codes + structured statusKey', () => {
+  const d = new SessionDriver({ cfg: { ...QUICK_CFG, messages: VISION_KEY_MESSAGES } });
+  assert.equal(d.session.label(), 'state.searching');
+  d.collect(6, atPalm(CENTER.x, CENTER.y));            // → calibrating
+  assert.equal(d.session.state, 'calibrating');
+  assert.equal(d.session.label(), 'cal.stepLabel');
+  assert.equal(d.session.statusKey, 'cal.stepLabel');
+  // handless window expires → extend gate: the structured key is the
+  // actionable reason; the rendered text is the bare wrapper code (the
+  // identity template has no {reason} slot — the code carries the meaning)
+  d.collect(20, { absent: true });
+  assert.equal(d.session.statusKey, 'cal.center.hand-seen.extend');
+  assert.equal(d.session.status, 'cal.extend');
+  // persistent failure → hard retry: event + statusKey carry the reason code
+  let retryEv = null;
+  for (let i = 0; i < 120 && !retryEv; i++) {
+    const { events } = d.frame({ absent: true });
+    retryEv = events.find((e) => e.name === 'cal-retry') ?? null;
+  }
+  assert.ok(retryEv, 'persistent handlessness must eventually hard-retry');
+  assert.equal(retryEv.msgKey, 'cal.center.hand-seen.retry'); // `key` stays the KeyboardEvent code (null here)
+  assert.equal(d.session.statusKey, 'cal.center.hand-seen.retry');
+  assert.equal(d.session.status, 'cal.retry');
+  // default mode (no injected table) exposes the same structured key while
+  // the rendered status keeps the exact zh nesting (compat lock)
+  const d3 = new SessionDriver({ cfg: QUICK_CFG });
+  d3.collect(6, atPalm(CENTER.x, CENTER.y));
+  d3.collect(20, { absent: true });
+  assert.equal(d3.session.statusKey, 'cal.center.hand-seen.extend');
+  assert.ok(d3.session.status.startsWith('继续采样 — '), d3.session.status);
+});
+
+test('R235: VISION_MSG_KEYS ↔ catalog consistency (hostProtocol is the wire contract)', () => {
+  assert.deepEqual(
+    [...VISION_SESSION_MSG_KEYS].sort(),
+    Object.keys(DEFAULT_SESSION_MESSAGES).sort(),
+    'the shared key list must match the session catalog exactly',
+  );
+  // key-mode table = identity map over the session keys (nothing more)
+  assert.deepEqual(Object.keys(VISION_KEY_MESSAGES).sort(), [...VISION_SESSION_MSG_KEYS].sort());
+  for (const k of VISION_SESSION_MSG_KEYS) assert.equal(VISION_KEY_MESSAGES[k], k);
+  // models.* status codes ride the same key set but are NOT session messages
+  const models = VISION_MSG_KEYS.filter((k) => k.startsWith('models.'));
+  assert.deepEqual(models, ['models.cpu-retry', 'models.gpu-fallback', 'models.loading', 'models.ready', 'models.reloading', 'models.synthetic']);
 });

@@ -89,4 +89,17 @@ describe('SettingsView', () => {
     fireEvent.change(select, { target: { value: 'light' } })
     expect(props.onUiTheme).toHaveBeenCalledWith('light')
   })
+
+  it('R236.3: privacy note renders inside the appearance group', () => {
+    const { container } = render(<SettingsView {...makeProps()} />)
+    const note = container.querySelector('[data-field="privacy-note"]')
+    expect(note).not.toBeNull()
+    // label + statement both come from i18n (t returns the key in tests)
+    expect(note?.textContent).toContain('settings.privacy.label')
+    expect(note?.textContent).toContain('settings.privacy.note')
+    // it sits under the appearance group, not a group of its own
+    const groups = container.querySelectorAll('.settings-group')
+    expect(groups.length).toBe(5)
+    expect(groups[3].contains(note as Node)).toBe(true)
+  })
 })

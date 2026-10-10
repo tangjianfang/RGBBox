@@ -59,7 +59,7 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
     await rename(tmp, path)
   } catch (err) {
     try {
-      await rename(tmp, path).catch(() => undefined)
+      await rename(tmp, path).catch((err) => console.warn('[atomicJson]', 'rename fallback failed:', err))
     } catch { /* tmp 可能未创建 */ }
     throw err
   }

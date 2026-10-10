@@ -1,6 +1,7 @@
 import { ArrowLeft, Crosshair, Eye, EyeOff, Grid, Heart, Maximize2, Minimize2, Music, Play, RotateCcw, Shield, Trophy, Volume2, VolumeX, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type MouseEvent } from 'react'
 import { useVisionInput } from '../hooks/useVisionInput'
+import { createLedBridge, type GameLedEvent, type LedBridge } from '../games/ledBridge'
 import { useI18n } from '../i18n'
 import { DIFFICULTY_SCORE_MULT, GAME_DIFFICULTIES, drawExitBadge, drawHudButton, drawHudPanel, hitTest, isGameDifficulty, type GameDifficulty, type HudButton } from '../games/hud'
 import { autoPick } from '../games/swarmAutoPick'
@@ -12,6 +13,7 @@ import { AvatarPicker } from './games/AvatarPicker'
 import { VisionBanner } from './vision/VisionBanner'
 import { VisionCursor } from './vision/VisionCursor'
 import { createCursorState } from '../vision/cursor'
+import { resetOnboarding } from '../vision/onboarding'
 import { VisionPad } from './vision/VisionPad'
 import {
   HEIGHT,
@@ -50,7 +52,9 @@ import {
   drawSurvivalBackground,
   setSurvivalDifficulty,
   worldToViewport,
+  deathHook,
   initialSurvivalState,
+  type SurvivalLabels,
   openRoulette,
   startSurvival,
   SURVIVAL_DIFFICULTY_PARAMS,
@@ -77,6 +81,9 @@ import {
   runCoinsFor,
   writeCharacter,
   writeMeta,
+  TRANSFORM_UPGRADE_IDS,
+  EVOLUTIONS,
+  evolutionInSight,
   type AchievementId,
   type ArtifactId,
   type CharacterId,
@@ -191,7 +198,7 @@ function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, cx: number,
 // R135 (guide §3.6/§3.7): vision passthrough keys — movement + face modifiers
 // (jaw=E, brow=Shift, smile=Enter) + off-hand pinch (KeyF). Games consume
 // keys.has('e') etc. when a skill mapping lands.
-const VISION_PASSTHROUGH_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'space', 'e', 'shift', 'enter', 'f', 'c']
+const VISION_PASSTHROUGH_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'space', 'e', 'shift', 'enter', 'f'] // R231: 'c' removed — no engine source ever emitted it (dead branch)
 
 // DirectionRing defaults (gesture_engine.js, upstream v2) — the analog path
 // must apply the same transform the sector ring sees. Keep in sync.
@@ -273,6 +280,29 @@ function writeVisionPadVisible(on: boolean): void {
 const VISION_GAIN_X = 1.4
 const VISION_GAIN_Y = 1.6
 
+/** R262 #9: 按 locale 组 survival 画布文案注入表(引擎缺省英文,view 覆盖为 zh)。 */
+function survivalLabelsFor(t: (key: string) => string): Partial<SurvivalLabels> {
+  const tpl = (key: string, n: number) => t(key).replace('{n}', String(n))
+  return {
+    survive: t('games.swarm.label.survive'),
+    island: (n) => tpl('games.swarm.label.island', n),
+    level: (n) => tpl('games.swarm.label.level', n),
+    bossInbound: t('games.swarm.label.bossInbound'),
+    bossDown: t('games.swarm.label.bossDown'),
+    evolved: (e) => t('games.swarm.label.evolved').replace('{e}', e),
+    playerDown: (n) => tpl('games.swarm.label.playerDown', n),
+    playerRevived: (n) => tpl('games.swarm.label.playerRevived', n),
+    plusHp: t('games.swarm.label.plusHp'),
+    plusOneHp: t('games.swarm.label.plusOneHp'),
+    minuteSurvived: (m) => t('games.swarm.label.minuteSurvived').replace('{m}', String(m)),
+    combo: (n) => tpl('games.swarm.label.combo', n),
+    player: (n) => tpl('games.swarm.label.player', n),
+    boss: t('games.swarm.label.boss'),
+    lv: (n) => tpl('games.swarm.label.lv', n),
+    upgrade: (id) => `+${t(`games.up.${id}`)}`,
+  }
+}
+
 export function MiniGamesView(): JSX.Element {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -331,7 +361,7 @@ export function MiniGamesView(): JSX.Element {
   // R200(FR-G06.5): 统一 run recap(结算面板)
   // R207: 手势指示器开关(默认关;Banner/Cursor 功能组件不受影响)
   const [visionPadVisible, setVisionPadVisible] = useState(readVisionPadVisible)
-  const [recap, setRecap] = useState<{ score: number; deltaPct: number | null; best: number; highlight: string; coach: string } | null>(null)
+  const [recap, setRecap] = useState<{ score: number; deltaPct: number | null; best: number; highlight: string; coach: string; hook?: { xpToLevel: number; evolveEffect: string | null; evolveMissing: number } | null } | null>(null)
   // ── R208 (FR-MP03/MP04): 本地双人——Slash 轮换对决 / TD 分工合作 ──
   const [slashDuelOn, setSlashDuelOn] = useState(false)
   const slashDuelOnRef = useRef(false)
@@ -536,10 +566,56 @@ export function MiniGamesView(): JSX.Element {
   const rouletteFocusRef = useRef(0)
   const rouletteActionsRef = useRef<Array<() => void>>([])
   const visionDoublePinchRef = useRef(0)
+  // R249.1: first pinch ARMS the hard-drop; the second within 150ms commits
+  const tetrisHardArmRef = useRef(0)
   // R132.3: transient "vision off" notice when the user (or a lifecycle rule)
   // disables the input source — otherwise the camera just silently goes away.
   const [visionExitNotice, setVisionExitNotice] = useState(false)
   const visionWasEnabledRef = useRef(false)
+  // R258: LED bridge — game events → physical LED screens. One instance per
+  // component lifetime; events are cheap no-ops when no overlay is open.
+  const ledBridgeRef = useRef<LedBridge | null>(null)
+  if (!ledBridgeRef.current) ledBridgeRef.current = createLedBridge()
+  const ledActiveRef = useRef(false)
+  const ledBossRef = useRef(false) // R258: boss presence tracking for LED transitions
+  const bossWarnRef = useRef(false) // R259: one-shot boss approach warning
+
+  // R258: check overlay status — LED events only push when overlays are open
+  useEffect(() => {
+    let cancelled = false
+    const check = async () => {
+      try {
+        const ids = await window.rgbbox?.getOverlayDisplayIds?.()
+        if (!cancelled) ledActiveRef.current = Array.isArray(ids) && ids.length > 0
+      } catch { /* no overlay access — LED disabled */ }
+    }
+    void check()
+    const interval = window.setInterval(check, 5000) // recheck: user may open/close overlay mid-game
+    return () => { cancelled = true; window.clearInterval(interval) }
+  }, [])
+  /** R258: fire a game event to the LED bridge (no-op when no overlay) */
+  const ledEvent = useCallback((e: GameLedEvent) => {
+    ledBridgeRef.current?.onEvent(e)
+  }, [])
+  // R246: transient note after the hub's「体感向导」entry re-arms the wizard
+  const [hubVisionResetAt, setHubVisionResetAt] = useState<number | null>(null)
+  useEffect(() => {
+    if (hubVisionResetAt == null) return
+    const timer = window.setTimeout(() => setHubVisionResetAt(null), 2500)
+    return () => window.clearTimeout(timer)
+  }, [hubVisionResetAt])
+
+  // R250 (04-V6): camera follows window visibility from the GAMES side too —
+  // minimized/hidden must never keep the camera + inference running. Unlike
+  // the assistant layer there is NO auto re-enable on return: a game session
+  // is stateful, silent re-entry mid-run would misfire; the hub toggle is the
+  // explicit way back.
+  useEffect(() => {
+    if (typeof window.rgbbox?.onMainWindowVisibilityChanged !== 'function') return
+    return window.rgbbox.onMainWindowVisibilityChanged((visible) => {
+      if (!visible && vision.enabled) vision.disable()
+    })
+  }, [vision.enabled, vision.disable])
 
   const publishSlash = useCallback(() => {
     setSlashSnapshot({ ...slashRef.current, blocks: [...slashRef.current.blocks], streaks: [...slashRef.current.streaks] })
@@ -618,7 +694,7 @@ export function MiniGamesView(): JSX.Element {
     setTetrisSnapshot({ ...tetrisRef.current, keys: new Set(tetrisRef.current.keys), queue: [...tetrisRef.current.queue] })
   }, [])
 
-  const settleBest = useCallback((game: GameKey, rawScore: number, durationSec = 0, highlight = ''): void => {
+  const settleBest = useCallback((game: GameKey, rawScore: number, durationSec = 0, highlight = '', hook?: { xpToLevel: number; evolveEffect: string | null; evolveMissing: number } | null): void => {
     // R218 U4: 街机档案按难度倍率记账(1×/1.5×/2×/3×)——best/daily/遥测/
     // recap 全部一致地以乘后分呈现(引擎内局中显示保持原始分)。
     const score = Math.floor(rawScore * DIFFICULTY_SCORE_MULT[runDifficultyRef.current])
@@ -634,13 +710,15 @@ export function MiniGamesView(): JSX.Element {
     recordDaily(localStorage, id, Math.floor(score))
     const buffer = recordRun(localStorage, id, { date: Date.now(), score: Math.floor(score), duration: Math.round(durationSec), highlight })
     const stats = profileStats(buffer, best)
-    setRecap({ score: Math.floor(score), deltaPct: stats.deltaPct, best, highlight, coach: recapCoachKey(Math.floor(score), stats.totalRuns >= 2 ? prev : null) })
+    setRecap({ score: Math.floor(score), deltaPct: stats.deltaPct, best, highlight, coach: recapCoachKey(Math.floor(score), stats.totalRuns >= 2 ? prev : null), hook: hook ?? null })
   }, [])
 
   /** R220.1⑧: survival 终局结算(best/金币/成就)——从游戏循环提取,供
    *  backToHub 中途弃局同样结算(修 enterGame 残留 running 旁路 ready,07 X-1)。 */
   const finishSurvivalRun = useCallback(() => {
-    settleBest('survival', survivalRef.current.score, survivalRef.current.time, `击杀 ${survivalRef.current.kills} · LV${survivalRef.current.level}`)
+    const hookData = deathHook(survivalRef.current) // R262 #6: 死亡钩子——「差一点」数据
+    settleBest('survival', survivalRef.current.score, survivalRef.current.time, `击杀 ${survivalRef.current.kills} · LV${survivalRef.current.level}`,
+      { xpToLevel: hookData.xpToLevel, evolveEffect: hookData.evolveHint?.effect ?? null, evolveMissing: hookData.evolveHint?.missing ?? 0 })
     const run = survivalRef.current
     const earned = runCoinsFor(run.score, run.coinMult)
     const prevMeta = metaRef.current
@@ -946,7 +1024,16 @@ export function MiniGamesView(): JSX.Element {
         if (cmd === 'space') {
           const phase = tetrisRef.current.phase
           if (phase === 'ready' || phase === 'lost') startTetrisRef.current()
-          else tetrisRef.current.commands.push('hard')
+          else {
+            const nowMs = performance.now()
+            // R249.1 (X9): hard-drop is IRREVERSIBLE — require a second pinch
+            // within 150ms (same double-pinch confirm pattern as the R139
+            // roulette) so a stray pinch never wastes the piece.
+            if (nowMs - tetrisHardArmRef.current < 150) {
+              tetrisRef.current.commands.push('hard')
+              tetrisHardArmRef.current = 0
+            } else tetrisHardArmRef.current = nowMs
+          }
         } else if (cmd === 'arrowleft') tetrisRef.current.commands.push('left')
         else if (cmd === 'arrowright') tetrisRef.current.commands.push('right')
         else if (cmd === 'arrowup') tetrisRef.current.commands.push('rotate')
@@ -1032,7 +1119,7 @@ export function MiniGamesView(): JSX.Element {
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
       setFullscreen(false)
-      void document.exitFullscreen?.().catch(() => undefined)
+      void document.exitFullscreen?.().catch((err) => console.warn('[games]', err))
       return
     }
     setFsPaused(false)
@@ -1072,7 +1159,7 @@ export function MiniGamesView(): JSX.Element {
       // 比例锁;vp 由 loop 高度基准反推,内容等比无拉伸);其余路径维持 R217。
       // (对抗审查修正:不做逐轴 LOGICAL 下限——单轴触底会破坏 backing/CSS
       // 同比,800×600 之类小屏全屏会横向压缩变形;小屏只损失清晰度不变形。)
-      if (screen === 'survival' && (fullscreen || focusModeRef.current)) {
+      if (screen === 'survival' && (fullscreenRef.current || focusModeRef.current)) { // R257 F2-1: closure was stale
         const dpr = Number.isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0 ? Math.min(window.devicePixelRatio, 2) : 1
         canvas.width = Math.max(1, Math.round(rect.width * dpr))
         canvas.height = Math.max(1, Math.round(rect.height * dpr))
@@ -1097,6 +1184,19 @@ export function MiniGamesView(): JSX.Element {
       // 打日志(含屏与相位,便于定位)、清 fs 按钮区(防悬停命中过期几何)、续帧。
       try {
         loopBody(now)
+        // R258: push LED frame after game logic — bridge generates from active
+        // effects, pushes only when overlays exist (zero cost otherwise)
+        const ledBridge = ledBridgeRef.current
+        if (ledBridge && ledActiveRef.current) {
+          const frame = ledBridge.generateFrame(now, 33, 19)
+          if (frame.hasActive) {
+            try {
+              window.rgbbox?.pushFrameToOverlays?.({
+                columns: 33, rows: 19, pixels: frame.pixels, generatedAt: now,
+              })
+            } catch { /* overlay may have closed mid-frame — silent */ }
+          }
+        }
       } catch (err) {
         console.error('[games] frame error', { screen, err })
         fsButtonsRef.current = []
@@ -1173,11 +1273,29 @@ export function MiniGamesView(): JSX.Element {
         // (pollGamepad 无手柄时已把 axis 归零,跳过 pollVision 不残留旧轴)。
         if (survivalRef.current.player2 === null) pollVision()
         tickSurvival(survivalRef.current, dt)
+        // R258: boss presence → LED red breathing on/off
+        const bossAlive = survivalRef.current.enemies.some((e) => e.kind === 'boss')
+        if (bossAlive !== ledBossRef.current) {
+          ledBossRef.current = bossAlive
+          ledEvent({ type: bossAlive ? 'boss-enter' : 'boss-exit' })
+        }
+        // R259 boss 入场预警: bossTimer <3s 时触发一次性警告
+        // (LED 已由 boss-enter 覆盖; 这里是画面/音效/震动层)
+        if (!ledBossRef.current && survivalRef.current.bossTimer < 3 && survivalRef.current.bossTimer > 0) {
+          if (!bossWarnRef.current) {
+            bossWarnRef.current = true
+            playSfx('confirm') // low rumble (reuse existing sfx channel for v1)
+            ledEvent({ type: 'hit', source: 'boss' }) // red edge flash as warning
+          }
+        } else if (ledBossRef.current) {
+          bossWarnRef.current = false // reset for next boss cycle
+        }
         const phase = survivalRef.current.phase
         // R213→R220.2: 升级自动预选不再同帧静默拍板——先强制发布快照让三选一
         // 卡片当帧渲染,记录选择并高亮,延迟 1s 执行(保住 build 学习回路,
         // G6 P0「一帧不渲染+英文 ID 飘字」/G1 S-2)。
         if (phase === 'levelup' && lastPhase !== phase) {
+          ledEvent({ type: 'levelup' }) // R258: rainbow ring on physical LEDs
           publishSurvival()
           if (swarmAutoPickRef.current.mode !== 'off') {
             const s = survivalRef.current
@@ -1195,7 +1313,10 @@ export function MiniGamesView(): JSX.Element {
           setAutoPickChoice(null)
           publishSurvival()
         }
-        if (phase === 'lost' && lastPhase !== phase) finishSurvivalRun()
+        if (phase === 'lost' && lastPhase !== phase) {
+          ledEvent({ type: 'death' }) // R258: room lights fade to dark
+          finishSurvivalRun()
+        }
         lastPhase = phase
         // R219.8②: 静态背景离屏缓存(先查缓存,miss 时整幅重画一次)
         const bgKey = `${survivalRef.current.scene ?? 'legacy'}|${survivalRef.current.island}|${canvas.width}x${canvas.height}`
@@ -1529,7 +1650,7 @@ export function MiniGamesView(): JSX.Element {
         return
       }
       setFullscreen(false)
-      if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
+      if (document.fullscreenElement) void document.exitFullscreen?.().catch((err) => console.warn('[games]', err))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -1537,7 +1658,7 @@ export function MiniGamesView(): JSX.Element {
 
   const enterGame = useCallback((next: Screen) => {
     setFullscreen(false)
-    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
+    if (document.fullscreenElement) void document.exitFullscreen?.().catch((err) => console.warn('[games]', err))
     // R208: 离开/切换游戏时清轮换对决状态(防止残留回合机污染下一局)
     duelRef.current = null
     setDuel(null)
@@ -1546,7 +1667,7 @@ export function MiniGamesView(): JSX.Element {
 
   const backToHub = useCallback(() => {
     setFullscreen(false)
-    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined)
+    if (document.fullscreenElement) void document.exitFullscreen?.().catch((err) => console.warn('[games]', err))
     // R220.1⑧: survival 中途弃局(running/levelup/roulette)按 lost 结算——
     // 原样保留会导致重进游戏时残留 running 态、ready 面板被旁路(07 X-1,
     // 主审 CDP 第一手复现)。分数与进度照常入账。
@@ -1789,6 +1910,7 @@ export function MiniGamesView(): JSX.Element {
     survivalRef.current.sprintSeconds = swarmSprintOnRef.current ? 90 : undefined
     // R220.5: 每日挑战注入当日种子(共同棋盘);自由局清除
     survivalRef.current.rng = swarmDailyOnRef.current ? mulberry32(dailySeed()) : undefined
+    survivalRef.current.labels = survivalLabelsFor((k) => t(k as Parameters<typeof t>[0])) // R262 #9: locale 注入画布文案
     // R213: 4P 名册部署(人数选择;swarmCoopOn 开关是人数=2 的快捷别名)与场景背景
     const count = Math.max(1, Math.min(4, swarmPlayersRef.current)) as 1 | 2 | 3 | 4
     deployPlayers(survivalRef.current, count)
@@ -1820,6 +1942,7 @@ export function MiniGamesView(): JSX.Element {
 
   const restartSurvivalRun = useCallback(() => {
     survivalRef.current = initialSurvivalState(swarmCharacter, meta.perm, enabledArtifacts, readDifficulty('survival'))
+    survivalRef.current.labels = survivalLabelsFor((k) => t(k as Parameters<typeof t>[0])) // R262 #9
     // R219.3: 重开也带上当前场景/冲刺偏好——回 ready 态的画布与开局参数一致
     // (原重开丢 scene,预览背景静默回退旧星空主题)。
     survivalRef.current.scene = swarmSceneRef.current
@@ -1926,8 +2049,12 @@ export function MiniGamesView(): JSX.Element {
   startTetrisRef.current = startTetrisRun
 
   const restartTetrisRun = useCallback(() => {
-    tetrisRef.current = initialTetrisState()
-    tetrisBRef.current = initialTetrisState()
+    // R257 (G3-2): the restart path lost the difficulty — bare
+    // initialTetrisState() defaults to 'standard', silently resetting a
+    // casual/insane run. Read the same persisted pref the start path uses.
+    const d = readDifficulty('tetris')
+    tetrisRef.current = initialTetrisState(undefined, d)
+    tetrisBRef.current = initialTetrisState(undefined, d)
     publishTetris()
   }, [publishTetris])
 
@@ -2067,6 +2194,20 @@ export function MiniGamesView(): JSX.Element {
             </span>
           </div>
         </div>
+        {/* R246 (修 X3): one-line onboarding entry — the wizard itself lives in
+            the app-wide assistant (off inside games, where the games hook owns
+            the camera), so this re-arms it and points the user at the 👁 pill. */}
+        <div className="games-hub-vision">
+          <button
+            type="button"
+            className="games-hub-entry"
+            data-action="vision-onboarding-entry"
+            onClick={() => { resetOnboarding(); setHubVisionResetAt(Date.now()) }}
+          >
+            👁 {t('games.vision.hubEntry')}
+          </button>
+          {hubVisionResetAt !== null ? <span className="games-hub-entry-note">{t('games.vision.hubReset')}</span> : null}
+        </div>
         {/* R198(FR-G02): arcade profile——局数/时长/连续天数(遥测聚合) */}
         <div className="games-profile" data-field="games-profile">
           <h3>{t('games.profile.title')}</h3>
@@ -2108,23 +2249,27 @@ export function MiniGamesView(): JSX.Element {
   const phaseLabel = phase === 'won' ? t('games.statusWon') : phase === 'lost' ? t('games.statusLost') : phase === 'ready' ? t('games.statusReady') : t('games.statusRunning')
   const best = isTd ? bests.td : isSurvival ? bests.survival : isSlash ? bests.slash : bests.tetris
   // R131/R132: vision status chip — localized wizard hint while calibrating
-  // (retry reasons from the engine stay verbatim — they are the actionable
-  // text); R132: an active session with no hand in frame flips to the
-  // "not detected" text immediately (the session itself stays active through
-  // the 45-frame grace), and a just-disabled session shows a short notice.
+  // (a retry gate result flips to the localized actionable reason); R132: an
+  // active session with no hand in frame flips to the "not detected" text
+  // immediately (the session itself stays active through the 45-frame grace),
+  // and a just-disabled session shows a short notice. R235: the retry check
+  // is the structured statusKey code (locale-independent), not zh-prefix text
+  // matching — `label` already carries the t()-localized reason.
+  // R239: the disabled-with-error branch (a raw one-line error dump) is gone —
+  // the VisionBanner recovery card (classified text + CTA) renders instead.
   const visionSuffix = visionExitNotice
     ? ` · 👁 ${t('games.vision.exited')}`
     : vision.enabled
       ? ` · 👁 ${vision.state === 'active' && (phase === 'ready' || phase === 'lost')
           ? t('games.vision.startHint')
-          : vision.state === 'calibrating' && vision.stepId && !vision.label.startsWith('重试')
+          : vision.state === 'calibrating' && vision.stepId && !vision.statusKey?.endsWith('.retry')
             ? t(`games.vision.hint.${vision.stepId}`)
             : vision.state === 'active' && !vision.handSeen
               ? t('games.vision.state.searching')
               : vision.label || t(`games.vision.state.${vision.state}`)}`
-      : vision.label ? ` · 👁 ${t('games.vision.error')}: ${vision.label}` : ''
+      : ''
   const startHandler = isTd ? startOrNextWave : isSurvival ? startSurvivalRun : isTetris ? startTetrisRun : startSlashRunCb
-  const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : restartTetrisRun
+  const restartHandler = isTd ? restartTd : isSurvival ? restartSurvivalRun : isSlash ? slashStartRef.current : restartTetrisRun // R257 G3-1: slash fell through to Tetris
   // ── R218 U3: ready 态统一面板的数据面 ──
   /** 真实引擎 phase==='ready'(不经 levelup→ready 的显示映射,避免升级浮层下穿出)。 */
   const showReady = isTd ? tdSnapshot.phase === 'ready' : isSurvival ? survivalSnapshot.phase === 'ready' : isSlash ? slashSnapshot.phase === 'ready' : tetrisSnapshot.phase === 'ready'
@@ -2348,7 +2493,7 @@ export function MiniGamesView(): JSX.Element {
             title={vision.enabled ? t('games.vision.disable') : t('games.vision.enable')}
             onClick={() => {
               if (vision.enabled) vision.disable()
-              else void vision.enable().catch(() => undefined)
+              else void vision.enable().catch((err) => console.warn('[games]', err))
             }}
           >
             {vision.enabled ? <Eye aria-hidden="true" size={13} /> : <EyeOff aria-hidden="true" size={13} />}
@@ -2442,6 +2587,12 @@ export function MiniGamesView(): JSX.Element {
           ) : null}
           <span className="run-recap-best">★ {t('games.recap.best')} {recap.best}</span>
           {recap.highlight !== '' ? <span className="run-recap-highlight">{recap.highlight}</span> : null}
+          {recap.hook ? (
+            <span className="run-recap-hook" data-field="run-recap-hook">
+              {t('games.recap.hookXp').replace('{n}', String(recap.hook.xpToLevel))}
+              {recap.hook.evolveEffect ? ` · ${t('games.recap.hookEvolve').replace('{e}', recap.hook.evolveEffect).replace('{m}', String(recap.hook.evolveMissing))}` : ''}
+            </span>
+          ) : null}
           <span className="run-recap-coach">{t(recap.coach as Parameters<typeof t>[0])}</span>
           <button
             type="button"
@@ -2742,9 +2893,9 @@ export function MiniGamesView(): JSX.Element {
                   ) : null}
                   {/* R218 U2: 非 fs 态也可暂停(手柄 Start/Esc)——「退出全屏」仅 fs 态显示 */}
                   {fullscreen ? (
-                    <button type="button" className="video-btn" data-action="fs-exit" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined) }}>{t('games.pause.exitFs')}</button>
+                    <button type="button" className="video-btn" data-action="fs-exit" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch((err) => console.warn('[games]', err)) }}>{t('games.pause.exitFs')}</button>
                   ) : null}
-                  <button type="button" className="video-btn" data-action="fs-hub" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined); backToHub() }}>{t('games.pause.hub')}</button>
+                  <button type="button" className="video-btn" data-action="fs-hub" onClick={() => { setFsPaused(false); setFullscreen(false); if (document.fullscreenElement) void document.exitFullscreen?.().catch((err) => console.warn('[games]', err)); backToHub() }}>{t('games.pause.hub')}</button>
                 </div>
               </div>
             ) : null}
@@ -2765,10 +2916,16 @@ export function MiniGamesView(): JSX.Element {
                   {survivalSnapshot.offers.map((id) => {
                     const def = UPGRADES.find((upgrade) => upgrade.id === id)
                     const takenCount = survivalSnapshot.taken[id] ?? 0
+                    // R260: 质变卡——「形态改变」标签+虚线描边,区别于数值卡
+                    const isTransform = (TRANSFORM_UPGRADE_IDS as readonly string[]).includes(id)
                     return (
-                      <button className={`levelup-card${autoPickChoice === id ? ' autopick' : ''}`} type="button" key={id} style={{ '--game-accent': RARITY_COLORS[def?.rarity ?? 0] } as CSSProperties} onClick={() => chooseUpgrade(id)}>
+                      <button className={`levelup-card${isTransform ? ' transform' : ''}${autoPickChoice === id ? ' autopick' : ''}`} type="button" key={id} style={{ '--game-accent': isTransform ? (def?.accent ?? RARITY_COLORS[3]) : RARITY_COLORS[def?.rarity ?? 0] } as CSSProperties} onClick={() => chooseUpgrade(id)}>
                         <strong>{t(`games.up.${id}`)}</strong>
                         <small>{t(`games.up.${id}.desc`)}</small>
+                        {isTransform ? <i className="transform-tag">{t('games.up.tagTransform')}</i> : null}
+                        {!isTransform && evolutionInSight(survivalSnapshot.taken, survivalSnapshot.evolved, id) ? (
+                          <i className="evolve-tag">{t('games.up.tagEvolve').replace('{e}', evolutionInSight(survivalSnapshot.taken, survivalSnapshot.evolved, id)!.recipeEffect)}</i>
+                        ) : null}
                         <em>{takenCount}/{def?.max ?? 0}</em>
                       </button>
                     )
@@ -2837,8 +2994,12 @@ export function MiniGamesView(): JSX.Element {
             {isSurvival && newAchievements.length > 0 ? (
               <div className="ach-toast">🏆 {newAchievements.map((id) => t(`games.ach.${id as AchievementId}`)).join(' · ')}</div>
             ) : null}
-            {/* R136.2: immediate status banner — instant publish, progress via rAF */}
-            {vision.enabled ? <VisionBanner vision={vision} /> : null}
+            {/* R136.2: immediate status banner — instant publish, progress via rAF.
+                R239: also mounts on FAILURE (enabled=false + error) as the recovery
+                card — classified text + retry CTA; retry re-runs the real enable. */}
+            {vision.enabled || vision.error ? (
+              <VisionBanner vision={vision} onRetry={() => { void vision.enable().catch((err) => console.warn('[games]', err)) }} />
+            ) : null}
             {/* R132.2: joystick + skeleton overlay — own rAF, reads frameRef directly */}
             {vision.enabled && visionPadVisible ? <VisionPad vision={vision} /> : null}
             {/* R142-L3: relative cursor overlay — hover highlight + pinch click */}
@@ -3062,6 +3223,16 @@ export function MiniGamesView(): JSX.Element {
                 <div className="codex-entry" key={artifact.id} style={{ '--game-accent': artifact.mult >= 0 ? '#fde68a' : '#9aa5ad' } as CSSProperties}>
                   <strong>{t(`games.art.${artifact.id}`)}</strong>
                   <small>{t(`games.art.${artifact.id}.desc`)}</small>
+                </div>
+              ))}
+            </div>
+            <p className="codex-section">{t('games.codexEvolutions')}</p>
+            <div className="codex-grid">
+              {/* R263 #5: 进化配方表——EVOLUTIONS 曾是暗墙(R220.3 接线但玩家不可见) */}
+              {EVOLUTIONS.map((recipe) => (
+                <div className="codex-entry" key={recipe.id} style={{ '--game-accent': '#fde047' } as CSSProperties}>
+                  <strong>{t('games.swarm.evoName')} · {recipe.effect}</strong>
+                  <small>{recipe.requires.map((r) => `${t(`games.up.${r.id}`)} ×${r.count}`).join(' + ')}</small>
                 </div>
               ))}
             </div>

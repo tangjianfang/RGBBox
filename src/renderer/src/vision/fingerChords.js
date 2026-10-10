@@ -40,6 +40,10 @@ export const CHORD_VOCAB = {
   'pinky': 'cancel',            // reserved: back/cancel (E4)
   'thumb+index': 'back',        // back to library / close overlay
   'index+pinky': 'next',        // reserved: list paging (E4)
+  // R229: the LIGHT ring (effect swap) — thumb+index+middle collides with
+  // nothing: all 15 text chars are 1-2 finger patterns and no other command
+  // or neutral shape uses a thumb-led triple.
+  'thumb+index+middle': 'light',
 };
 
 

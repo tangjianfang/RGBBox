@@ -60,7 +60,7 @@ describe('survival hints (FR-G01, ≥5)', () => {
     expect(keys).toContain('sw.hpLow')
     s.pendingSpins = 1
     expect(survivalHints(s).map((h) => h.key)).toContain('sw.spinReady')
-    s.bossTimer = 80
+    s.bossTimer = 10
     expect(survivalHints(s).map((h) => h.key)).toContain('sw.bossSoon')
     s.portal = { x: 100, y: 100 }
     expect(survivalHints(s).map((h) => h.key)).toContain('sw.portal')

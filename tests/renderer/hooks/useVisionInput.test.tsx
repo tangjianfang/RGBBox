@@ -5,10 +5,17 @@
 // events / snapshots / profile-save messages.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { act, cleanup, renderHook } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { useVisionInput } from '../../../src/renderer/src/hooks/useVisionInput'
 import { visionAssetBase } from '../../../src/renderer/src/hooks/visionAssetBase'
+import { I18nProvider, useI18n, type Lang } from '../../../src/renderer/src/i18n'
 import type { VisionEvent, VisionFrame } from '../../../src/renderer/src/vision/vision_input'
 import { setupRendererMocks } from '../_helpers'
+
+// setup.ts globally stubs the i18n module (t = key echo). The R235 case needs
+// the REAL tables + provider (asserts concrete zh/en values and a runtime
+// language switch) — restore the actual module for this file only.
+vi.mock('../../../src/renderer/src/i18n', async (importOriginal) => importOriginal())
 
 interface HostMessage { type: string; [key: string]: unknown }
 
@@ -69,8 +76,10 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     expect((init.cfg.camera as { width: number }).width).toBe(640)
     expect((init.cfg.camera as { height: number }).height).toBe(480)
     await act(() => result.current.disable())
-    expect(host.received.some((m) => m.type === 'stop')).toBe(true)
-    expect(rgbbox.visionHostClose).toHaveBeenCalled()
+    // R228: disable RELEASES (refcounted host) — no stop, no window close
+    expect(host.received.some((m) => m.type === 'release')).toBe(true)
+    expect(host.received.some((m) => m.type === 'stop')).toBe(false)
+    expect(rgbbox.visionHostClose).not.toHaveBeenCalled()
   })
 
   it('host events normalize into held/queue + window bus (keyless events reach the bus only)', async () => {
@@ -176,7 +185,9 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     host.dispose()
     const failing = new FakeHost()
     failing.channel.onmessage = (ev: MessageEvent) => {
-      if ((ev.data as HostMessage).type === 'init') failing.send({ type: 'error', message: 'wasm boom' })
+      const msg = ev.data as HostMessage
+      failing.received.push(msg)
+      if (msg.type === 'init') failing.send({ type: 'error', message: 'wasm boom' })
     }
     const { result } = renderHook(() => useVisionInput())
     let caught: unknown = null
@@ -189,20 +200,84 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     })
     expect((caught as Error).message).toBe('wasm boom')
     expect(result.current.enabled).toBe(false)
+    // R230: the REAL error is visible via both surfaces — no stale
+    // "models ready" fake error on the status chips
+    expect(result.current.error).toBe('wasm boom')
+    expect(result.current.label).toBe('wasm boom')
+    // R227.4: the failed attempt must roll the half-built state back — a
+    // leaked channelRef used to turn every later enable() into a silent
+    // no-op (the dead-button bug). Retry has to actually retry.
+    failing.channel.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as HostMessage
+      failing.received.push(msg)
+      if (msg.type === 'init') failing.send({ type: 'ready', delegate: 'GPU' })
+    }
+    await act(async () => {
+      await result.current.enableSynthetic()
+    })
+    expect(result.current.enabled).toBe(true)
+    expect(failing.received.filter((m) => m.type === 'init').length).toBeGreaterThanOrEqual(2)
     failing.dispose()
   })
 
-  it('unmounting stops the host (stop + window close)', async () => {
+  it('R227.4: rapid double-enable shares ONE startup (single init, single channel)', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(async () => {
+      const a = result.current.enableSynthetic()
+      const b = result.current.enableSynthetic()
+      await Promise.all([a, b])
+    })
+    expect(result.current.enabled).toBe(true)
+    expect(host.received.filter((m) => m.type === 'init').length).toBe(1)
+    await act(() => result.current.disable())
+  })
+
+  it('R228: unmounting RELEASES the session (no stop, no window close — refcounted host)', async () => {
     const { result, unmount } = renderHook(() => useVisionInput())
     await act(() => result.current.enableSynthetic())
     unmount()
-    expect(host.received.some((m) => m.type === 'stop')).toBe(true)
-    expect(rgbbox.visionHostClose).toHaveBeenCalled()
+    // release (not stop): the shared host may serve another consumer
+    expect(host.received.some((m) => m.type === 'release')).toBe(true)
+    expect(host.received.some((m) => m.type === 'stop')).toBe(false)
+    expect(rgbbox.visionHostClose).not.toHaveBeenCalled()
+  })
+
+  it('R228: two consumers coexist — second enable ready, disable is release-only, enable sends acquire', async () => {
+    const a = renderHook(() => useVisionInput())
+    await act(async () => { await a.result.current.enableSynthetic() })
+    const b = renderHook(() => useVisionInput())
+    await act(async () => { await b.result.current.enableSynthetic() })
+    expect(a.result.current.enabled).toBe(true)
+    expect(b.result.current.enabled).toBe(true)
+    // both inits answered ready (FakeHost replies to every init — matching the
+    // R228 host behavior that unblocked the eternal-hang defect)
+    expect(host.received.filter((m) => m.type === 'init').length).toBe(2)
+    expect(host.received.filter((m) => m.type === 'acquire').length).toBe(2)
+    // one consumer leaving must not stop anything
+    await act(async () => { await a.result.current.disable() })
+    expect(host.received.some((m) => m.type === 'stop')).toBe(false)
+    expect(b.result.current.enabled).toBe(true)
+    await act(async () => { await b.result.current.disable() })
+    expect(host.received.filter((m) => m.type === 'release').length).toBe(2)
   })
 
   it('frameRef snapshot type surface (compile-time contract)', () => {
     const frame: Partial<VisionFrame> = { state: 'active', stepProgress: 0.5 }
     expect(frame.state).toBe('active')
+  })
+
+  it('R230: code-style key names normalize to the passthrough vocabulary (KeyE→e, ShiftLeft→shift, KeyF→f)', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(() => result.current.enableSynthetic())
+    act(() => {
+      host.send({ type: 'events', events: [
+        { kind: 'direction', key: 'KeyE', down: true },
+        { kind: 'direction', key: 'ShiftLeft', down: true },
+        { kind: 'pinch', key: 'KeyF', down: true },
+      ] })
+    })
+    expect([...result.current.heldRef.current].sort()).toEqual(['e', 'f', 'shift'])
+    await act(() => result.current.disable())
   })
 
   it('setCapturePrecision posts the capture-mode switch (R141-B)', async () => {
@@ -216,5 +291,174 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     expect((msgs[1] as { camera: { width: number } }).camera.width).toBe(640)
     await act(() => result.current.disable())
   })
+
+  // R235 ────────────────────────────────────────────────────────────────────
+  // Engine i18n: the hook injects the key-mode messages table (engine emits
+  // stable codes) and localizes every incoming code through t() at the
+  // component layer — per-consumer language, switchable at runtime. Text
+  // that hits no key passes through verbatim (R227 real-error compat).
+  it('R235: engine status codes localize via t() (zh default, en after switch); unknown text passes through', async () => {
+    // the label publish is ~4Hz-throttled on performance.now() — own the clock
+    const nowSpy = vi.spyOn(performance, 'now')
+    let now = 1_000_000
+    nowSpy.mockImplementation(() => now)
+    try {
+      const { result } = renderHook(() => useVisionInput(), { wrapper: I18nWrapper })
+      await act(() => result.current.enableSynthetic())
+      // the init ships the key-mode messages table → the engine emits codes
+      const init = host.received.find((m) => m.type === 'init') as { cfg: { sessionCfg: { messages: Record<string, string> } } }
+      expect(init.cfg.sessionCfg.messages['state.active']).toBe('state.active')
+      // snapshot label 'state.active' → the zh i18n value (first publish)
+      act(() => host.send({ type: 'snapshot', snapshot: { state: 'active', label: 'state.active' } }))
+      expect(result.current.label).toBe('已激活')
+      // switch to en → the NEXT snapshot renders English (per-consumer lang)
+      act(() => switchLang('en'))
+      now += 300
+      act(() => host.send({ type: 'snapshot', snapshot: { state: 'active', label: 'state.active' } }))
+      expect(result.current.label).toBe('Vision active')
+      // status messages map through the same key set
+      act(() => switchLang('zh'))
+      act(() => host.send({ type: 'status', s: 'models.ready' }))
+      expect(result.current.label).toBe('模型就绪')
+      // structured retry status → localized reason with interpolated params
+      now += 300
+      act(() => host.send({
+        type: 'snapshot',
+        snapshot: {
+          state: 'calibrating', stepId: 'center', label: 'cal.stepLabel',
+          statusKey: 'cal.center.jitter.retry', statusParams: { sigma: '0.123' },
+        },
+      }))
+      expect(result.current.label).toBe('手抖动过大(σ=0.123),请支撑手肘重试')
+      expect(result.current.statusKey).toBe('cal.center.jitter.retry')
+      // unknown text passes through verbatim — real error messages (R227)
+      now += 300
+      act(() => host.send({ type: 'status', s: 'frame error (2): boom' }))
+      expect(result.current.label).toBe('frame error (2): boom')
+      // a key code with a dynamic tail keeps the detail (GPU fallback)
+      now += 300
+      act(() => host.send({ type: 'status', s: 'models.gpu-fallback (WebGPU boom)' }))
+      expect(result.current.label).toContain('GPU')
+      expect(result.current.label).toContain('WebGPU boom')
+      await act(() => result.current.disable())
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
+  // R239 ────────────────────────────────────────────────────────────────────
+  // Camera-failure recovery: the raw error text stays the actionable detail
+  // (error), the classification (errorKind) drives the UI's recovery card.
+  it('R239: a host init error classifies into errorKind (raw text preserved); retry clears it', async () => {
+    host.dispose()
+    const failing = new FakeHost()
+    failing.channel.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as HostMessage
+      failing.received.push(msg)
+      if (msg.type === 'init') failing.send({ type: 'error', message: 'NotAllowedError: Permission denied' })
+    }
+    const { result } = renderHook(() => useVisionInput())
+    await act(async () => {
+      try { await result.current.enable() } catch { /* expected */ }
+    })
+    expect(result.current.error).toBe('NotAllowedError: Permission denied')
+    expect(result.current.errorKind).toBe('denied')
+    expect(result.current.enabled).toBe(false)
+    // retry on a healthy host clears the failure and succeeds
+    failing.channel.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as HostMessage
+      failing.received.push(msg)
+      if (msg.type === 'init') failing.send({ type: 'ready', delegate: 'GPU' })
+    }
+    await act(async () => { await result.current.enable() })
+    expect(result.current.enabled).toBe(true)
+    expect(result.current.error).toBe(null)
+    expect(result.current.errorKind).toBe(null)
+    failing.dispose()
+  })
+
+  it('R239: a RUNTIME camera-ended error classifies as detached, drops the channel (enabled=false) so retry truly restarts', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(() => result.current.enableSynthetic())
+    act(() => host.send({ type: 'error', message: 'camera-ended' }))
+    expect(result.current.error).toBe('camera-ended')
+    expect(result.current.errorKind).toBe('detached')
+    expect(result.current.enabled).toBe(false)
+    // without the channel drop, enable() early-returns on the live
+    // channelRef — the dead-button bug again. Retry must REALLY restart.
+    await act(async () => { await result.current.enable() })
+    expect(result.current.enabled).toBe(true)
+    expect(result.current.error).toBe(null)
+    expect(result.current.errorKind).toBe(null)
+    await act(() => result.current.disable())
+  })
+
+  // R244 ────────────────────────────────────────────────────────────────────
+  // Host crash/hang self-healing: the host beats every 5s; >15s of silence
+  // means the hidden renderer died (main closes the window on
+  // render-process-gone — the missing heartbeat is the client's only signal).
+  // Exactly ONE silent restart per session; a second silence surfaces the
+  // R239 timeout error card instead of a restart storm.
+  it('R244: a BEATING host is never restarted (heartbeats refresh the watchdog)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { result } = renderHook(() => useVisionInput())
+      await act(async () => { await result.current.enableSynthetic() })
+      const opens = rgbbox.visionHostOpen.mock.calls.length
+      // 60s of live 5s heartbeats — the watchdog never trips
+      for (let i = 0; i < 12; i++) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+        act(() => host.send({ type: 'heartbeat' }))
+      }
+      expect(rgbbox.visionHostOpen.mock.calls.length).toBe(opens)
+      expect(result.current.enabled).toBe(true)
+      expect(result.current.error).toBe(null)
+      await act(() => result.current.disable())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('R244: a SILENT host is auto-restarted exactly ONCE; the second silence goes to the error card (no storm)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { result } = renderHook(() => useVisionInput())
+      await act(async () => { await result.current.enableSynthetic() })
+      expect(result.current.enabled).toBe(true)
+      const opens = rgbbox.visionHostOpen.mock.calls.length
+      // silence (FakeHost never beats): checked every 5s, trips past 15s
+      // → exactly one disable→enable restart, session back up
+      await act(async () => { await vi.advanceTimersByTimeAsync(21_000) })
+      expect(rgbbox.visionHostOpen.mock.calls.length).toBe(opens + 1)
+      expect(result.current.enabled).toBe(true)
+      expect(result.current.error).toBe(null)
+      // second silence → NO further auto-retry; the R239 timeout card data
+      await act(async () => { await vi.advanceTimersByTimeAsync(21_000) })
+      expect(rgbbox.visionHostOpen.mock.calls.length).toBe(opens + 1, 'no restart storm')
+      expect(result.current.enabled).toBe(false)
+      expect(result.current.error).toBe('宿主无响应')
+      expect(result.current.errorKind).toBe('timeout')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
+
+// R235 test harness: mounts the real I18nProvider and captures setLang so a
+// test can flip the language mid-session without remounting the hook.
+let switchLang: (l: Lang) => void = () => {}
+function LangProbe(): null {
+  const { setLang, lang } = useI18n()
+  switchLang = setLang
+  void lang
+  return null
+}
+function I18nWrapper({ children }: { children?: ReactNode }): JSX.Element {
+  return (
+    <I18nProvider>
+      <LangProbe />
+      {children}
+    </I18nProvider>
+  )
+}
 

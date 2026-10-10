@@ -33,6 +33,11 @@ export const AUTO_PICK_BASE_VALUE: Record<UpgradeId, number> = {
   regen: 0.45,
   bulletSpeed: 0.25,
   thorns: 0.15,
+  // R260 质变卡:一次形态改变(max:1 无衰减),挂机档视为最高价值
+  eightway: 1.2,
+  laser: 1.15,
+  chain: 1.1,
+  homing: 1.05,
 }
 
 /** 估值衰减:每已取 1 级价值 ×1/(1+DIMINISH)(边际收益递减)。 */

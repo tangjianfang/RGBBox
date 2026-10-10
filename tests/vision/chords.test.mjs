@@ -145,3 +145,21 @@ test('text mode off: the same chords are commands again and the buffer clears', 
   for (let i = 0; i < 6; i++) ev.push(...eng.update(chordHand({ extended: [] })))
   expect(ev.map((e) => e.name)).toEqual(['select'])
 })
+
+// R229: the light chord (thumb+index+middle) — command commits on release,
+// and in TEXT mode it must type NOTHING (all 15 chars are 1-2 finger
+// patterns; a 3-finger thumb-led shape is command-only).
+test('R229: light chord commits as a command and never emits a char', () => {
+  const eng = new ChordEngine()
+  const ev = []
+  for (let i = 0; i < 8; i++) ev.push(...eng.update(chordHand({ extended: ['thumb', 'index', 'middle'] })))
+  for (let i = 0; i < 6; i++) ev.push(...eng.update(chordHand({ extended: [] })))
+  expect(ev.map((e) => e.name)).toEqual(['light'])
+  const text = new ChordEngine()
+  text.setTextMode(true)
+  const ev2 = []
+  for (let i = 0; i < 8; i++) ev2.push(...text.update(chordHand({ extended: ['thumb', 'index', 'middle'] })))
+  for (let i = 0; i < 6; i++) ev2.push(...text.update(chordHand({ extended: [] })))
+  expect(ev2).toEqual([])
+  expect(text.buffer).toBe('')
+})

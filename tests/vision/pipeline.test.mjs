@@ -3,6 +3,7 @@
 // presets, synthetic mode, and the profile-save proxy.
 
 import { test, expect } from 'vitest'
+import assert from 'node:assert/strict'
 import { VisionPipeline, PIPELINE_SENSITIVITY } from '../../src/renderer/src/vision/pipeline.js'
 import { atPalm, CENTER, makeHand } from './helpers.mjs'
 
@@ -156,4 +157,13 @@ test('synthetic mode drives the identical pipeline to active (worker self-timer 
   expect(pipeline.session.state).toBe('active')
   expect(events.some((e) => e.down && e.key)).toBe(true)
   pipeline.stop()
+})
+
+// R230: acquire telemetry must flow through stats() — the host writes it per
+// tick; before this it dead-ended (pad third row / envCoach read empty).
+test('stats() surfaces acquireStats when the host has written them', () => {
+  const pipeline = new VisionPipeline({ loadLandmarkers: async () => ({ hand: null, face: null }) })
+  assert.equal(pipeline.stats().acquire, null)
+  pipeline.acquireStats = { n: 60, p50: 8.2, p95: 21.4, mean: 9.9 }
+  assert.deepEqual(pipeline.stats().acquire, { n: 60, p50: 8.2, p95: 21.4, mean: 9.9 })
 })

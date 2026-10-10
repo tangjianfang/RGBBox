@@ -48,6 +48,7 @@ import { validateChatMessages } from '../shared/aiChatValidation'
 import { initAudioAi, disposeAudioAi, isCached as audioAiIsCached, runVad as audioAiRunVadPcm, runAst as audioAiRunAstPcm, startStream as audioAiStartStream, feedStream as audioAiFeedStream, stopStream as audioAiStopStream } from './audioAiService'
 import { Readable } from 'node:stream'
 import { mediaStreamPlan, parseRangeHeader, resolveAppAssetPath, resolveMediaMime } from './mediaProtocol'
+import { allowPermission } from './permissionGate'
 import { registerDenoiseService } from './denoiseService'
 
 // Initialize file logger — must be done after imports but before app.whenReady
@@ -219,6 +220,10 @@ function createMainWindow(): void {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    // R228: the hidden vision host must not outlive the main window —
+    // window-all-closed never fires while it lingers (zombie app + a
+    // renderer that could still hold the camera open).
+    if (visionHostWindow && !visionHostWindow.isDestroyed()) visionHostWindow.close()
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -414,7 +419,7 @@ function registerIpc(): void {
   let aiStoreQueue: Promise<unknown> = Promise.resolve()
   const runAiStoreOp = <T,>(fn: () => Promise<T>): Promise<T> => {
     const p = aiStoreQueue.then(fn, fn)
-    aiStoreQueue = p.then(() => undefined, () => undefined)
+    aiStoreQueue = p.then(() => undefined, (err) => console.warn('[ai8]', 'store queue:', err))
     return p
   }
   // R89.3: multi-profile store. Normalize (with legacy single-config migration),
@@ -679,6 +684,15 @@ function registerIpc(): void {
     // R129b: the site rejects logins from embedded browsers (works in regular
     // Chrome) — present a clean Chrome UA for this window only.
     win.webContents.setUserAgent(win.webContents.getUserAgent().replace(/\s*Electron\/[\d.]+/i, ''))
+    // R236.2: this partition loads a REMOTE site (https://ai8.rcouyi.com) that
+    // has zero legitimate need for device permissions — camera, microphone,
+    // notifications, geolocation… are denied outright for the whole
+    // 'persist:ai8' session, independent of the default session's origin-gated
+    // whitelist. (Login only needs cookies/localStorage — no device access.)
+    win.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
+      callback(false)
+    })
+    win.webContents.session.setPermissionCheckHandler(() => false)
     ai8LoginWindow = win
     let poller: ReturnType<typeof setInterval> | null = null
     const stopPolling = () => {
@@ -734,10 +748,10 @@ function registerIpc(): void {
       // starts from a clean logged-out state.
       if (fresh) {
         void win.webContents.session.clearStorageData({ storages: ['localstorage', 'cookies', 'indexdb'] })
-          .catch(() => undefined)
-          .then(() => { if (!win.isDestroyed()) win.loadURL('https://ai8.rcouyi.com/').catch(() => undefined) })
+          .catch((err) => console.warn('[main]', err))
+          .then(() => { if (!win.isDestroyed()) win.loadURL('https://ai8.rcouyi.com/').catch((err) => console.warn('[main]', err)) })
       } else {
-        void win.loadURL('https://ai8.rcouyi.com/').catch(() => undefined)
+        void win.loadURL('https://ai8.rcouyi.com/').catch((err) => console.warn('[main]', err))
       }
       win.webContents.on('did-navigate', () => {
         void readState().then(handleState)
@@ -1120,6 +1134,17 @@ function registerIpc(): void {
       },
     })
     visionHostWindow.on('closed', () => { visionHostWindow = null })
+    // R244: the host renderer died (GPU crash / OOM / launch failure) — close
+    // the window so the next visionHostOpen builds a fresh one. The dead
+    // renderer cannot say goodbye: clients sense it via the heartbeat timeout
+    // (useVisionInput's watchdog auto-recovers once, then surfaces the card).
+    {
+      const hostWin = visionHostWindow
+      hostWin.webContents.on('render-process-gone', (_e, details) => {
+        log.warn('VisionHost', `renderer gone (${details.reason}) — closing window; clients self-heal via heartbeat timeout`)
+        if (!hostWin.isDestroyed()) hostWin.close()
+      })
+    }
     if (isDevelopment) {
       void visionHostWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}/visionHost.html`)
     } else {
@@ -1584,12 +1609,17 @@ app.whenReady().then(() => {
   // silently denied (the returned promise never settles), making every
   // in-app "全屏" button visibly do nothing. All other permissions remain
   // denied (tighter than Electron's permissive default).
-  const ALLOWED_PERMISSIONS = new Set(['media', 'audioCapture', 'videoCapture', 'display-capture', 'fullscreen'])
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(ALLOWED_PERMISSIONS.has(permission))
+  //
+  // R236.1: the per-type whitelist now ALSO gates on the requesting origin —
+  // only the app's own surfaces (file:// packaged pages, media:// assets,
+  // http://<loopback> during `yarn dev`) may reach it; about:blank, remote
+  // https origins and unknown schemes are denied before the type check.
+  // Extracted to ./permissionGate so the matrix is unit-testable.
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+    callback(allowPermission(details?.requestingUrl ?? (wc && !wc.isDestroyed() ? wc.getURL() : undefined), permission))
   })
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-    return ALLOWED_PERMISSIONS.has(permission)
+  session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin) => {
+    return allowPermission(requestingOrigin ?? (wc && !wc.isDestroyed() ? wc.getURL() : undefined), permission)
   })
 
   // Modern screen/window capture path. The Video Studio calls

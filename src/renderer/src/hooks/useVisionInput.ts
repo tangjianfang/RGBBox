@@ -9,6 +9,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VisionEvent, VisionFrame } from '../vision/vision_input'
 import { visionAssetBase } from './visionAssetBase'
+import { useI18n, type TranslationKey } from '../i18n'
+import { classifyVisionError, type VisionErrorKind } from '../domain/visionErrors'
 
 export type VisionState = 'idle' | 'searching' | 'calibrating' | 'active' | 'paused'
 export type VisionSensitivity = 'standard' | 'fast' | 'sport'
@@ -37,6 +39,57 @@ function readSensitivity(): VisionSensitivity {
 }
 
 const SENSITIVITY_CONFIRM_MS: Record<VisionSensitivity, number> = { standard: 90, fast: 45, sport: 0 }
+
+// R244: host crash/hang self-healing. The hidden host window beats every 5s
+// (hostMessenger); main closes it on render-process-gone, and a HUNG renderer
+// posts nothing at all — either way the beats stop. The watchdog below checks
+// every 5s and treats >15s of silence as a dead host: ONE silent restart per
+// session (anti-storm), a second silence goes to the R239 error card.
+const HEARTBEAT_CHECK_MS = 5000
+const HEARTBEAT_TIMEOUT_MS = 15000
+const HOST_UNRESPONSIVE = '宿主无响应'
+
+// ── R235: engine message localization ──────────────────────────────────────
+// The session/pipeline render user-facing text from a messages catalog. This
+// hook injects the identity table (key→key) so the engine emits stable CODES
+// over the wire, then localizes them at the consumer via i18n
+// `games.vision.engine.<key>` — per-consumer language, switchable at runtime,
+// zh values byte-identical to the pre-R235 engine strings. Text that hits no
+// key (real error messages — R227) passes through verbatim.
+
+type TFn = (key: TranslationKey) => string
+
+const ENGINE_PREFIX = 'games.vision.engine.'
+const VISION_MSG_KEY_SET: ReadonlySet<string> = new Set(VISION_MSG_KEYS)
+
+/** {param} interpolation over a t() template (params come from the engine). */
+function interpolate(template: string, params: Record<string, unknown> | null | undefined): string {
+  if (!params) return template
+  return template.replace(/\{(\w+)\}/g, (m, name: string) =>
+    params[name] != null ? String(params[name]) : m)
+}
+
+/** A structured engine code → localized text (exact key hit). */
+function translateEngineKey(key: string, params: Record<string, unknown> | null | undefined, t: TFn): string {
+  if (!VISION_MSG_KEY_SET.has(key)) return key
+  return interpolate(t((ENGINE_PREFIX + key) as TranslationKey), params)
+}
+
+/**
+ * Wire text → localized text. Exact code hit → t(); code with a dynamic tail
+ * ('models.gpu-fallback (…)' keeps the raw error detail); anything else is
+ * passed through unchanged (R227: real error messages are the actionable
+ * text — never mangle them).
+ */
+function translateEngineText(text: string, t: TFn): string {
+  if (VISION_MSG_KEY_SET.has(text)) return translateEngineKey(text, null, t)
+  for (const key of VISION_MSG_KEYS) {
+    if (text.startsWith(key) && (text.length === key.length || text[key.length] === ' ' || text[key.length] === '(')) {
+      return translateEngineKey(key, null, t) + text.slice(key.length)
+    }
+  }
+  return text
+}
 
 export interface VisionInputHandle {
   enable(): Promise<void>
@@ -67,6 +120,13 @@ export interface VisionInputHandle {
   sensitivity: VisionSensitivity
   enabled: boolean
   label: string
+  /**
+   * R235: the structured engine status code behind `label` when the engine
+   * reports a calibration gate result (e.g. 'cal.center.jitter.retry') —
+   * null otherwise. Consumers use it for locale-independent decisions (the
+   * retry chip check) instead of matching rendered text.
+   */
+  statusKey: string | null
   state: VisionState
   /** active calibration step while calibrating, else null */
   stepId: 'center' | 'reach' | 'pinch' | null
@@ -77,6 +137,15 @@ export interface VisionInputHandle {
    * VisionPad overlay reads this from its own rAF loop with zero re-renders.
    */
   frameRef: { readonly current: Partial<VisionFrame> | null }
+  /** R230: last enable/init failure message; null while healthy; cleared on retry */
+  error: string | null
+  /**
+   * R239: classifyVisionError(error).kind — the structured kind driving the
+   * recovery card (denied/no-device/occupied/detached/timeout/generic);
+   * null while healthy; cleared on retry. The raw `error` text stays the
+   * actionable detail.
+   */
+  errorKind: VisionErrorKind | null
   /** normalized held keys ('arrowleft' … 'space'), same names as MiniGamesView.normalizeKey */
   heldRef: { readonly current: Set<string> }
   /** discrete commands ('arrowleft'|'arrowright'|'arrowup'|'space') drained per frame by pollVision */
@@ -93,14 +162,42 @@ export interface VisionInputHandle {
  * pattern; the host window is the only IPC surface.
  */
 
-const VISION_CHANNEL = 'rgbbox-vision'
+// R228: protocol constants + per-instance consumer id for the refcounted
+// host session (see vision/hostProtocol.js). R235: VISION_KEY_MESSAGES is
+// the identity table injected into the engine so it emits stable codes.
+import { VISION_CHANNEL, VISION_MSG_KEYS, VISION_KEY_MESSAGES, nextConsumerId } from '../vision/hostProtocol'
 
 export function useVisionInput(): VisionInputHandle {
+  const { t } = useI18n()
+  // handlers close over this ref, so a live language switch re-localizes the
+  // NEXT message without tearing the channel down (t identity changes per lang)
+  const tRef = useRef<TFn>(t)
+  tRef.current = t
   const channelRef = useRef<BroadcastChannel | null>(null)
-  const hostOpenRef = useRef(false)
+  // R227.4: in-flight startup dedupe (double-toggle safety)
+  const startInFlightRef = useRef<Promise<void> | null>(null)
+  // R228: stable per-hook-instance id — the host refcounts consumers so one
+  // view disabling never kills another live consumer's camera session.
+  const consumerIdRef = useRef<string>('')
+  if (!consumerIdRef.current) consumerIdRef.current = nextConsumerId()
   const pausedRef = useRef(false)
+  // R244: mirror of `enabled` for the timer callback (state would be stale in
+  // the interval closure), the last-beat timestamp, and the one-shot restart
+  // budget (per session — one silent restart, never a storm).
+  const enabledRef = useRef(false)
+  const lastHeartbeatRef = useRef(0)
+  const restartsRef = useRef(0)
   const [enabled, setEnabled] = useState(false)
   const [label, setLabel] = useState('')
+  // R235: structured engine status code (published INSTANTLY with the state
+  // tuple — the retry chip must react on the exact frame it happens)
+  const [statusKey, setStatusKey] = useState<string | null>(null)
+  // R230: the REAL last error (a failed enable used to leave `label` holding
+  // a stale status like "models ready", which status chips rendered as the
+  // nonsense "启动失败: models ready" — REVIEW-VISION 07-X1)
+  const [error, setError] = useState<string | null>(null)
+  // R239: the classification of `error` (drives the recovery card's CTA)
+  const [errorKind, setErrorKind] = useState<VisionErrorKind | null>(null)
   const [state, setState] = useState<VisionState>('idle')
   const [stepId, setStepId] = useState<'center' | 'reach' | 'pinch' | null>(null)
   const [handSeen, setHandSeen] = useState(false)
@@ -115,7 +212,7 @@ export function useVisionInput(): VisionInputHandle {
   const lastLabelPublishRef = useRef(0)
   // R138: consecutive handless frames — handSeen loss needs 5 before publish
   const handlessFramesRef = useRef(0)
-  const prevPublishRef = useRef<{ state: string; handSeen: boolean; stepId: string | null }>({ state: 'idle', handSeen: false, stepId: null })
+  const prevPublishRef = useRef<{ state: string; handSeen: boolean; stepId: string | null; statusKey: string | null }>({ state: 'idle', handSeen: false, stepId: null, statusKey: null })
 
   const onEvent = useCallback((event: VisionEvent) => {
     // diagnostics/E2E bus carries EVERY event (offhand pause, hands apart/together…)
@@ -126,7 +223,14 @@ export function useVisionInput(): VisionInputHandle {
       return
     }
     if (!event.key) return
-    const norm = event.key === 'Space' ? 'space' : event.key.toLowerCase()
+    // R230: the engines emit KeyboardEvent-CODE names for face modifiers and
+    // the off-hand pinch ('KeyE'/'ShiftLeft'/'KeyF'), while the consumers'
+    // passthrough table expects 'e'/'shift'/'f' — the mismatch made R135's
+    // face-modifier feature dead on arrival (REVIEW-VISION 08, keye≠e).
+    const norm = event.key === 'Space' ? 'space'
+      : /^Key[A-Z]$/.test(event.key) ? event.key.slice(3).toLowerCase()
+      : /^(Shift|Control|Alt|Meta)(Left|Right)?$/.test(event.key) ? event.key.replace(/(Left|Right)$/, '').toLowerCase()
+      : event.key.toLowerCase()
     if (event.down) {
       heldRef.current.add(norm)
       queueRef.current.push(norm)
@@ -147,22 +251,44 @@ export function useVisionInput(): VisionInputHandle {
     else handlessFramesRef.current++
     const prev = prevPublishRef.current
     const handSeenNext = seen ? true : handlessFramesRef.current >= 5 ? false : prev.handSeen
-    const next = { state: snapshot.state as string, handSeen: handSeenNext, stepId: snapshot.stepId ?? null }
-    if (next.state !== prev.state || next.handSeen !== prev.handSeen || next.stepId !== prev.stepId) {
+    // R235: the structured status code rides the INSTANT tuple (retry/extend
+    // gate results change without any state change while calibrating)
+    const next = {
+      state: snapshot.state as string,
+      handSeen: handSeenNext,
+      stepId: snapshot.stepId ?? null,
+      statusKey: snapshot.statusKey ?? null,
+    }
+    if (next.state !== prev.state || next.handSeen !== prev.handSeen || next.stepId !== prev.stepId || next.statusKey !== prev.statusKey) {
       prevPublishRef.current = next
       setState(next.state as VisionState)
       setHandSeen(next.handSeen)
       setStepId(next.stepId as 'center' | 'reach' | 'pinch' | null)
+      setStatusKey(next.statusKey)
     }
     const now = performance.now()
     if (now - lastLabelPublishRef.current >= 250) {
       lastLabelPublishRef.current = now
-      setLabel(snapshot.label ?? '')
+      // R235: a retry gate result replaces the (code-mode) label with the
+      // localized actionable reason; otherwise map the label code → t()
+      const key = snapshot.statusKey
+      if (key && key.endsWith('.retry')) {
+        setLabel(translateEngineKey(key, snapshot.statusParams, tRef.current))
+      } else {
+        setLabel(translateEngineText(snapshot.label ?? '', tRef.current))
+      }
     }
   }, [])
 
   const start = useCallback(async (mode: 'camera' | 'synthetic') => {
     if (channelRef.current) return
+    setError(null) // R230: a new attempt clears the previous failure
+    setErrorKind(null) // R239
+    // R227.4: rapid double-toggle must share ONE startup — two concurrent
+    // starts each created a BroadcastChannel (double-queued commands, leaked
+    // channel) and the loser's error left the winner's channel behind.
+    if (startInFlightRef.current) return startInFlightRef.current
+    const attempt = (async () => {
     const base = visionAssetBase()
     let storedProfile: unknown = null
     try {
@@ -172,7 +298,6 @@ export function useVisionInput(): VisionInputHandle {
 
     // open the hidden pipeline host window (its own renderer process)
     await window.rgbbox.visionHostOpen()
-    hostOpenRef.current = true
     const channel = new BroadcastChannel(VISION_CHANNEL)
     channelRef.current = channel
 
@@ -182,6 +307,9 @@ export function useVisionInput(): VisionInputHandle {
       // 'host-hello' re-triggers init: BroadcastChannel does not buffer, so an
       // init posted before the host script executed would otherwise be lost.
       let initSent = false
+      // R239: distinguishes init failure (the R227.4 catch rolls back) from
+      // RUNTIME death (ready already arrived; the rollback below must run here)
+      let settled = false
       const sendInit = () => {
         if (initSent) return
         initSent = true
@@ -192,7 +320,10 @@ export function useVisionInput(): VisionInputHandle {
             bundleUrl: new URL('vendor/mediapipe/vision_bundle.js', base).href,
             wasmBase: new URL('vendor/mediapipe', base).href,
             handModel: new URL('models/hand_landmarker.task', base).href,
-            faceModel: new URL('models/face_landmarker.task', base).href,
+            // R249.2 (03-B9): games/assistant paths have ZERO face consumers —
+            // sending faceModel made the host run FaceLandmarker every 3rd
+            // frame (+34.6ms GPU) for nobody. null = faceless pipeline.
+            faceModel: null,
             numHands: 2,
             // R142-L1: 60fps full-frame capture — MJPG at 640×480 is standard
             // webcam fare; the host pipeline (its own renderer process)
@@ -206,6 +337,9 @@ export function useVisionInput(): VisionInputHandle {
               requireFace: false,
               faceEveryN: 3,
               dualHand: { enabled: true, primaryHand, offPinchKey: 'KeyF' }, // R149: persisted primary-hand role
+              // R235: identity catalog — the engine emits stable codes, this
+              // hook localizes them per consumer language (zh = engine defaults)
+              messages: VISION_KEY_MESSAGES,
             },
           },
         })
@@ -213,9 +347,33 @@ export function useVisionInput(): VisionInputHandle {
       channel.onmessage = (ev: MessageEvent) => {
         const msg = ev.data as { type: string; events?: VisionEvent[]; snapshot?: Partial<VisionFrame>; s?: string; profile?: unknown; message?: string }
         if (msg.type === 'ready') {
+          settled = true
+          // R244: the host just proved it is alive — arm the watchdog window
+          lastHeartbeatRef.current = Date.now()
           resolve()
+        } else if (msg.type === 'heartbeat') {
+          // R244: liveness beat (5s) — refresh the watchdog window
+          lastHeartbeatRef.current = Date.now()
         } else if (msg.type === 'error') {
-          reject(new Error(msg.message ?? 'vision host init failed'))
+          // R230: record the REAL reason — label too, so every existing status
+          // chip shows it instead of the stale "models ready" nonsense.
+          // R239: classify it (denied/no-device/…/generic) for the recovery card.
+          const reason = msg.message ?? 'vision host init failed'
+          setError(reason)
+          setErrorKind(classifyVisionError(reason).kind)
+          setLabel(reason)
+          if (settled && channelRef.current === channel) {
+            // R239: RUNTIME death (camera pulled mid-session) — the host already
+            // tore the session down and cleared its registry. Drop our half of
+            // the channel too: a live channelRef turns every later enable()
+            // into a silent no-op (the dead-button bug all over again), and the
+            // recovery card's retry button must truly restart.
+            channel.close()
+            channelRef.current = null
+            setEnabled(false)
+            enabledRef.current = false // R244
+          }
+          reject(new Error(reason))
           return
         } else if (msg.type === 'host-hello') {
           // the hello proves the host just came up — an init posted before
@@ -228,37 +386,65 @@ export function useVisionInput(): VisionInputHandle {
         } else if (msg.type === 'snapshot' && msg.snapshot) {
           onSnapshot(msg.snapshot)
         } else if (msg.type === 'status' && msg.s) {
-          setLabel(msg.s)
+          // R235: pipeline/host lifecycle statuses are codes ('models.ready')
+          // — localize; anything else (real diagnostics) passes through
+          setLabel(translateEngineText(msg.s, tRef.current))
         } else if (msg.type === 'profile-save' && msg.profile) {
           try { localStorage.setItem(PROFILE_KEY, JSON.stringify(msg.profile)) } catch { /* non-fatal */ }
         }
       }
       sendInit()
     })
+    channelRef.current?.postMessage({ type: 'acquire', consumerId: consumerIdRef.current })
     setEnabled(true)
+    enabledRef.current = true // R244
+    })()
+    // R227.4: failure must roll the half-built state back — a leaked
+    // channelRef turned every later enable() into a silent no-op (the
+    // "dead button" bug: retry was impossible without remounting the view).
+    const tracked = attempt.catch((err) => {
+      // R228: our OWN init failed — close our channel only. The host window
+      // may be serving another consumer; it is not ours to close.
+      // R239: failures OUTSIDE the handshake (host window open, channel
+      // constructor) get the same visible + classified treatment.
+      const reason = err instanceof Error ? err.message : String(err)
+      setError(reason)
+      setErrorKind(classifyVisionError(reason).kind)
+      channelRef.current?.close()
+      channelRef.current = null
+      throw err
+    }).finally(() => { startInFlightRef.current = null })
+    startInFlightRef.current = tracked
+    return tracked
   }, [mirror, onEvent, onSnapshot, sensitivity])
 
   const enable = useCallback(() => start('camera'), [start])
   const enableSynthetic = useCallback(() => start('synthetic'), [start])
 
   const disable = useCallback(() => {
-    channelRef.current?.postMessage({ type: 'stop' })
+    // R228: RELEASE, not stop — the host tears the camera down only when the
+    // last consumer leaves (this hook's 'stop' was killing the assistant's
+    // session and vice versa). The hidden host WINDOW stays warm (a hidden
+    // idle renderer is cheap); closing it here would kill every other
+    // consumer's session and defeat the refcount. It dies with the main
+    // window (main/index.ts R228).
+    channelRef.current?.postMessage({ type: 'release', consumerId: consumerIdRef.current })
     channelRef.current?.close()
     channelRef.current = null
-    if (hostOpenRef.current) {
-      hostOpenRef.current = false
-      void window.rgbbox.visionHostClose()
-    }
     pausedRef.current = false
     handlessFramesRef.current = 0
     heldRef.current.clear()
     queueRef.current.length = 0
     frameRef.current = null
     setEnabled(false)
+    enabledRef.current = false // R244
     setState('idle')
     setStepId(null)
     setHandSeen(false)
     setLabel('')
+    setStatusKey(null)
+    setError(null)
+    setErrorKind(null) // R239
   }, [])
 
   const recalibrate = useCallback(() => channelRef.current?.postMessage({ type: 'recalibrate' }), [])
@@ -325,9 +511,42 @@ export function useVisionInput(): VisionInputHandle {
   // leaving the games view unmounts the hook → stop the camera, release keys
   useEffect(() => disable, [disable])
 
+  // R244: host liveness watchdog. `enabled` + >15s since the last beat = the
+  // hidden host renderer died or hung (a hung renderer posts nothing; a
+  // crashed one gets its window closed by main — either way the beats stop).
+  // Recovery is ONE silent disable→enable cycle per session (release
+  // semantics clean the consumer refcount, then a fresh visionHostOpen
+  // rebuilds the window); a second silence surfaces the R239 timeout error
+  // card instead of hammering a host that keeps dying.
+  const enableRef = useRef(enable)
+  enableRef.current = enable
+  const disableRef = useRef(disable)
+  disableRef.current = disable
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!enabledRef.current) return
+      if (Date.now() - lastHeartbeatRef.current <= HEARTBEAT_TIMEOUT_MS) return
+      if (restartsRef.current >= 1) {
+        // second silence — give up quietly into the error card (enabled=false
+        // also stops the watchdog from re-firing)
+        disableRef.current()
+        setError(HOST_UNRESPONSIVE)
+        setErrorKind('timeout')
+        return
+      }
+      restartsRef.current = 1
+      lastHeartbeatRef.current = Date.now() // the rebuilt session gets a fresh window
+      disableRef.current()
+      // start()'s rollback already surfaces a failed rebuild via setError —
+      // swallow only the rejection here so the timer never throws
+      void enableRef.current().catch(() => {})
+    }, HEARTBEAT_CHECK_MS)
+    return () => clearInterval(id)
+  }, [])
+
   return {
     enable, enableSynthetic, disable, recalibrate, setPaused, resumeActive, skipCalibration, applySettings,
     setMirror, mirror, setPrimaryHand, primaryHand, setChordTextMode, chordBackspace, chordBuffer, setCapturePrecision, setSensitivity, sensitivity,
-    enabled, label, state, stepId, handSeen, frameRef, heldRef, queueRef,
+    enabled, label, statusKey, error, errorKind, state, stepId, handSeen, frameRef, heldRef, queueRef,
   }
 }

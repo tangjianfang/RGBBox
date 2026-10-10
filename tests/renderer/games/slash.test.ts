@@ -359,7 +359,8 @@ describe('R218(B3) SLASH_DIFFICULTY_PARAMS + juice', () => {
     s.spawnTimer = 999
     s.blocks.push({ id: 1, dir: 2, t: 0.9, speed: 1, hue: 200, bonus: true })
     expect(slashCut(s, 2)).toBe('hit')
-    expect(s.juice.hitStop).toBeCloseTo(0.03, 5)
+    // R261: 每斩 0.033 通用顿帧(max-merge)抬高了金块下限,0.03 基线并入
+    expect(s.juice.hitStop).toBeGreaterThanOrEqual(0.033)
     expect(s.juice.shake).toBeGreaterThan(0)
     expect(s.ripples).toHaveLength(1)
     for (let i = 0; i < 4; i += 1) {
@@ -379,5 +380,14 @@ describe('R218(B3) SLASH_DIFFICULTY_PARAMS + juice', () => {
     expect(s.juice.floats.some((f) => f.text === '-25')).toBe(true)
     for (let i = 0; i < 60; i += 1) tickSlash(s, 0.016)
     expect(s.juice.floats).toHaveLength(0)
+  })
+  it('R261: 每次成功斩击带 juice 顿帧(≈2 帧打击重量;金块仍叠加更高档)', () => {
+    const s = initialSlashState()
+    startSlash(s)
+    s.spawnTimer = 999
+    s.blocks.push({ id: 1, dir: 0, t: 0.9, speed: 1, hue: 200, bonus: false })
+    expect(s.juice?.hitStop ?? 0).toBe(0)
+    expect(slashCut(s, 0)).toBe('hit')
+    expect(s.juice?.hitStop ?? 0).toBeGreaterThanOrEqual(0.033)
   })
 })

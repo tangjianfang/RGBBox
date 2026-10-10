@@ -231,7 +231,10 @@ function spawnBlock(s: SlashState): void {
   // easier early, denser later — the difficulty curve (scaled to this run's ceiling)
   const run = s.runSeconds ?? RUN_SECONDS
   const hard = Math.min(1, (run - s.timeLeft) / run)
-  const dir = Math.floor(rand(s) * 8)
+  // R257 (F-1 P0): converge to the 4 CARDINAL directions the input actually
+  // reaches — diagonals (1/3/5/7) had no key mapping and were unslashable,
+  // making 50% of spawns guaranteed leaks. 8-way input is a future enhancement.
+  const dir = Math.floor(rand(s) * 4) * 2
   // R218(B2): 新敌型按波次/进度渐进混入(假动作 15s 后;guard 25% / dasher 35% / thrower 45%)
   const r = rand(s)
   let kind: BlockKind | undefined
@@ -338,6 +341,8 @@ export function slash(s: SlashState, dir: number): 'hit' | 'wrong' | 'miss' | 'b
   s.blocks = s.blocks.filter((b) => b.id !== hit!.id)
   s.combo++
   s.bestCombo = Math.max(s.bestCombo, s.combo)
+  // R261: 每次成功斩击带 juice 顿帧(≈2 帧打击重量;max-merge,金块/里程碑更高档仍生效)
+  if (s.juice) juiceHitStop(s.juice, 0.033)
   const mult = 1 + Math.floor(s.combo / 5) * 0.5
   // R200: 金块/每 10 连击 → 顿帧(轻重两档)
   if (hit.bonus || s.combo % 10 === 0) s.hitStop = hit.bonus ? HIT_STOP.medium : HIT_STOP.light

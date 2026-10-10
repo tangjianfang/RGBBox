@@ -58,7 +58,9 @@ export class VisionPipeline {
   /** @param {object} cfg { bundleless landmarkers come from the loader;
    *  sessionCfg, mirror, numHands, sensitivity, storedProfile } */
   async init(cfg = {}) {
-    this.deps.onStatus?.('loading models…');
+    // R235: lifecycle statuses are stable codes (hostProtocol.VISION_MODEL_MSG_KEYS)
+    // — the hook localizes them via i18n games.vision.engine.models.*
+    this.deps.onStatus?.('models.loading');
     const loaded = await this.deps.loadLandmarkers(cfg);
     this.hand = loaded.hand;
     this.face = loaded.face ?? null;
@@ -75,7 +77,7 @@ export class VisionPipeline {
     if (cfg.sensitivity && PIPELINE_SENSITIVITY[cfg.sensitivity]) {
       this.session.applySettings({ confirmMs: PIPELINE_SENSITIVITY[cfg.sensitivity].confirmMs });
     }
-    this.deps.onStatus?.('models ready');
+    this.deps.onStatus?.('models.ready');
   }
 
   start(nowMs) {
@@ -89,7 +91,7 @@ export class VisionPipeline {
       this.synthetic = new SyntheticSource();
       this.running = true;
       this.session.start(performance.now());
-      this.deps.onStatus?.('synthetic source running');
+      this.deps.onStatus?.('models.synthetic');
     });
   }
 
@@ -97,6 +99,18 @@ export class VisionPipeline {
     this.running = false;
     const events = this.session.stop();
     this.deps.onEvents?.(events);
+  }
+
+  /**
+   * R227.6: swap the landmarkers at runtime (GPU delegate died mid-session →
+   * CPU). Reuses the injected loader so the unit-test seam stays intact.
+   */
+  async reloadLandmarkers(cfg = {}) {
+    this.deps.onStatus?.('models.reloading');
+    const loaded = await this.deps.loadLandmarkers(cfg);
+    this.hand = loaded.hand;
+    this.face = loaded.face ?? null;
+    this.deps.onStatus?.('models.ready');
   }
 
   setPaused(p) {
@@ -158,6 +172,25 @@ export class VisionPipeline {
     this.inferMeter.push(performance.now() - t0);
     this.session.faceEveryN = adaptFaceRate(this.session.faceEveryN, this.inferMeter.stats().n > 60 ? this.inferMeter.stats().p95 : 0);
 
+    // R242 / F7: the engines assume 21 finite landmark points. A malformed
+    // hand from the detector (short array / NaN / out-of-range / non-finite
+    // score) is DROPPED and counted — never fed into the session, where one
+    // bad hand could poison cursor/chord state for the rest of the session.
+    this.landmarkRejects = this.landmarkRejects ?? 0;
+    if (hands.length) {
+      const validHands = [];
+      for (const h of hands) {
+        const lm = h?.landmarks;
+        const ok = Array.isArray(lm) && lm.length === 21
+          && lm.every((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)
+            && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1)
+          && Number.isFinite(h.score);
+        if (ok) validHands.push(h)
+        else this.landmarkRejects++
+      }
+      hands = validHands;
+    }
+
     const { events, snapshot } = this.session.onFrame({ nowMs, hands, face: faceMap });
     this.frameCount++;
     // R142-L4: chord events ride the same stream (active tracking only —
@@ -212,6 +245,12 @@ export class VisionPipeline {
       fps: 0, // camera fps is measured on the main thread (rVFC ticks)
       inferFps: this.inferFpsCounter.fps,
       delegate: this.delegate ?? '-',
+      // R230: acquire telemetry FINALLY flows — the host writes acquireStats
+      // every tick (frame age percentiles), but stats() never surfaced it, so
+      // the pad's third row and envCoach's light advice read empty forever
+      // (REVIEW-VISION 06-③ "telemetry dead-ends in the host").
+      acquire: this.acquireStats ?? null,
+      landmarkRejects: this.landmarkRejects ?? 0, // R242/F7: malformed-hand drops
       ...extra,
     };
   }

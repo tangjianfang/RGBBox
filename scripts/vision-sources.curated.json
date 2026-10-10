@@ -1,0 +1,34 @@
+[
+  {
+    "name": "wikimedia_6-7_hand_gesture_2025",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/6/6e/6-7_hand_gesture_2025.webm",
+    "license": "CC0",
+    "author": "Wikimedia Commons contributor",
+    "origin": "wikimedia:File:6-7 hand gesture 2025.webm",
+    "note": "数字手势 6-7 — 手形变化，适合 hand_landmarker 检测烟测"
+  },
+  {
+    "name": "wikimedia_HandWaveExample",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/5/58/HandWaveExample.webm",
+    "license": "CC BY-SA 4.0",
+    "author": "Wikimedia Commons contributor",
+    "origin": "wikimedia:File:HandWaveExample.webm",
+    "note": "挥手示例 — 挥手轨迹，方向引擎相关"
+  },
+  {
+    "name": "wikimedia_Finger-counting_in_Dutch",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/9/97/Finger-counting_in_Dutch.webm",
+    "license": "CC BY-SA 4.0",
+    "author": "Wikimedia Commons contributor",
+    "origin": "wikimedia:File:Finger-counting in Dutch.webm",
+    "note": "手指计数 — 多种手型/指姿，和弦与开合度相关"
+  },
+  {
+    "name": "wikimedia_Hand_rubbing",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/0/0f/Hand_rubbing.webm",
+    "license": "CC0",
+    "author": "Wikimedia Commons contributor",
+    "origin": "wikimedia:File:Hand rubbing.webm",
+    "note": "搓手 — 双手近距离运动"
+  }
+]

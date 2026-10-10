@@ -212,7 +212,7 @@ export function useAudioAnalyzer(enabled: boolean, deviceId = '', shouldAnalyze 
       cancelled = true
       if (intervalRef.current !== null) window.clearInterval(intervalRef.current)
       stream?.getTracks().forEach((t) => t.stop())
-      audioContext?.close().catch(() => undefined)
+      audioContext?.close().catch((err) => console.warn('[audio]', 'close failed:', err))
     }
   }, [enabled, deviceId])
 
