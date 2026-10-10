@@ -74,3 +74,13 @@ videoWall/videoWallFrame: 纯数学拼接(矩阵/bezel/旋转/fit) → 视频墙
 | 6 | P3 边缘场景 | R269 |
 
 统计：**20 条** — U×7 / B×6 / V×2 / T×5；X 类不单列（layer.id 帧级缓存无淘汰并入 U-7 语境，MetricsCollector.add 每帧全量快照为 P3 琐项）。按严重度分桶：**P1×1（U-1），P2×4（U-2/U-7/V-1/V-2），P3×15**。
+
+
+---
+
+## 主审复核（2026-10-11，主会话对码核对）
+
+子代理幻报率审计：本报告 Top 结论逐条对码核对结果如下（幻觉/表述偏差已标注）。
+
+
+**TA1（effects 单槽缓存）**：✅ 确认——`effects.ts:5-9` 单槽 `_cachedPixelDataStr` 实锤；「每像素重复 parse」的热点幅度需 profile 佐证后定级（P1→P2 待定）。

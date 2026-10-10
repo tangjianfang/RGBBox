@@ -90,3 +90,13 @@
 7. W7（X2，P2/P3）——最大工程量，放最后或随 W5 启用路线一起做
 
 > P0：0 条 · P1：2 条（U1, T1）· P2：7 条（U2, U3, U4, V1, T2, X1, X2）· P3：12 条
+
+
+---
+
+## 主审复核（2026-10-11，主会话对码核对）
+
+子代理幻报率审计：本报告 Top 结论逐条对码核对结果如下（幻觉/表述偏差已标注）。
+
+
+**W1（shader 编译失败永久冻结预览）**：❌ **驳回**——`PreviewGrid.tsx:145-147` 的 `new EffectGl(...)` 已被 try/catch 包裹，失败走 `console.warn('[PreviewGrid] EffectGl init failed')` 降级，不会 throw 冻结 rAF 链（报告称路径 gl/PreviewGrid.tsx 亦误，实为 components/PreviewGrid.tsx）。「28 shader 零编译测试」部分可降 P2 备选。**W2（AI8 无 keep-alive）**：✅ 确认——`AiLabView.tsx:543` `{tab === 'ai8' && <AiLabAi8Tab />}` 条件挂载实锤（agent/voice 走 R175 keep-alive，ai8 没有）。W3（splat 缓存零校验）未复核。
