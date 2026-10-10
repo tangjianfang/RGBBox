@@ -2157,6 +2157,22 @@ input:not([type]):focus {
   font-style: normal;
 }
 
+/* R260: 质变卡——形态改变(区别于数值卡):虚线描边+常驻微光+角标 */
+.levelup-card.transform {
+  border-style: dashed;
+  border-width: 2px;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--game-accent, var(--accent)) 25%, transparent);
+}
+
+.levelup-card .transform-tag {
+  color: var(--game-accent, var(--accent));
+  font-size: 0.625rem;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 /* ── R101: swarm setup / roulette / summary / shop ──────────────────────── */
 
 .swarm-setup,

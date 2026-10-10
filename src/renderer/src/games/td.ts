@@ -125,6 +125,8 @@ export interface GameState {
   juice: JuiceState
   /** R218(A3): U1 toast 队列(boss 波开场提示)。 */
   toasts: HudToast[]
+  /** R261: 漏球闪红淡出——路径终点 0.12s 红环(漏球可感知化)。 */
+  leakFlashes: Array<{ x: number; y: number; life: number }>
 }
 
 export interface TowerDefinition {
@@ -268,6 +270,7 @@ export function initialState(difficulty: GameDifficulty = 'standard'): GameState
     difficulty,
     juice: emptyJuice(),
     toasts: [],
+    leakFlashes: [],
   }
 }
 
@@ -477,6 +480,10 @@ export function tickGame(state: GameState, dt: number): void {
   state.clock += dt
   // R218(A3): U1 toast / U8 juice 步进(所有阶段都衰减)
   tickToasts(state.toasts, dt)
+  // R261: 漏球红环淡出步进(与 toast 同拍,所有阶段都衰减)
+  if (!state.leakFlashes) state.leakFlashes = []
+  for (const flash of state.leakFlashes) flash.life -= dt
+  state.leakFlashes = state.leakFlashes.filter((flash) => flash.life > 0)
   tickJuice(state.juice, dt)
   state.shake = Math.max(0, state.shake - dt * 14)
   for (const text of state.texts) {
@@ -525,6 +532,11 @@ export function tickGame(state: GameState, dt: number): void {
   if (escaped.length > 0) {
     state.lives -= escaped.length
     state.balloons = state.balloons.filter((balloon) => balloon.progress < 1)
+    // R261: 漏球闪红淡出——漏球点 0.12s 红环(气球本体瞬间移除的可感知替代)
+    for (const balloon of escaped) {
+      const pos = pointAtProgress(Math.min(1, balloon.progress))
+      state.leakFlashes.push({ x: pos.x, y: pos.y, life: 0.12 })
+    }
     spawnBurst(state, 880, 328, '#f87171', 10, 150)
     state.shake = Math.min(7, 2.5 + escaped.length)
     // R218(A3): 漏球 juice——hitStop 0.02 + 屏震 3 + 飘字(-n)
@@ -791,6 +803,18 @@ export function drawGame(ctx: CanvasRenderingContext2D, state: GameState, select
     ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1)
     ctx.fillStyle = particle.color
     ctx.beginPath(); ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2); ctx.fill()
+    ctx.globalAlpha = 1
+  }
+
+  // R261: 漏球闪红淡出——路径终点扩散红环(0.12s,气球消失的可感知替代)
+  for (const flash of state.leakFlashes ?? []) {
+    const p = 1 - flash.life / 0.12
+    ctx.globalAlpha = clamp(flash.life / 0.12, 0, 1)
+    ctx.strokeStyle = '#f87171'
+    ctx.lineWidth = 3
+    ctx.beginPath(); ctx.arc(flash.x, flash.y, 8 + p * 26, 0, Math.PI * 2); ctx.stroke()
+    ctx.fillStyle = 'rgba(248, 113, 113, 0.5)'
+    ctx.beginPath(); ctx.arc(flash.x, flash.y, 6, 0, Math.PI * 2); ctx.fill()
     ctx.globalAlpha = 1
   }
 

@@ -960,6 +960,16 @@ const EN = {
 
   'games.up.regen': 'Nano Repair',
   'games.up.regen.desc': 'Regenerate 1 HP every 30s (Lv2: faster).',
+  // R260 弹幕质变四卡(形态改变,非数值堆叠)
+  'games.up.eightway': 'Eight-Way Barrage',
+  'games.up.eightway.desc': 'Volley becomes a fixed 8-direction bloom.',
+  'games.up.laser': 'Piercing Laser',
+  'games.up.laser.desc': 'Bullets become lasers: +4 pierce, 1.6x speed, long trails.',
+  'games.up.chain': 'Chain Lightning',
+  'games.up.chain.desc': 'Kills arc lightning to up to 3 nearby enemies.',
+  'games.up.homing': 'Homing Blades',
+  'games.up.homing.desc': 'Bullets curve toward the nearest enemy.',
+  'games.up.tagTransform': 'FORM CHANGE',
   'games.tileTetrisTitle': 'Neon Blocks',
   'games.tileTetrisSummary': 'Neon Tetris with ghost preview and combo scoring.',
   'games.tetrisHint': '← → move · ↑ rotate · ↓ soft drop · Space hard drop',
@@ -2826,6 +2836,16 @@ const ZH: TranslationTable = {
 
   'games.up.regen': '纳米修复',
   'games.up.regen.desc': '每 30 秒回复 1 点生命（2 级更快）。',
+  // R260 弹幕质变四卡(形态改变,非数值堆叠)
+  'games.up.eightway': '八向弹幕',
+  'games.up.eightway.desc': '齐射改为 8 个固定方向扇形开花。',
+  'games.up.laser': '穿透激光',
+  'games.up.laser.desc': '射弹化为激光：穿透 +4、弹速 ×1.6、拖尾加长。',
+  'games.up.chain': '连锁闪电',
+  'games.up.chain.desc': '击杀时电弧跳向附近至多 3 名敌人。',
+  'games.up.homing': '追踪飞刃',
+  'games.up.homing.desc': '射弹自动转向最近的敌人。',
+  'games.up.tagTransform': '形态改变',
   'games.tileTetrisTitle': '霓虹方块',
   'games.tileTetrisSummary': '霓虹俄罗斯方块：落点预览 + 连消计分。',
   'games.tetrisHint': '← → 移动 · ↑ 旋转 · ↓ 软降 · 空格 硬降',

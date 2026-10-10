@@ -659,7 +659,7 @@ export function initialSurvivalState(
     nextId: 1,
     player,
     stats: baseStats(),
-    taken: { fireRate: 0, damage: 0, multishot: 0, pierce: 0, blade: 0, speed: 0, maxHp: 0, magnet: 0, crit: 0, bulletSpeed: 0, thorns: 0, regen: 0 },
+    taken: { fireRate: 0, damage: 0, multishot: 0, pierce: 0, blade: 0, speed: 0, maxHp: 0, magnet: 0, crit: 0, bulletSpeed: 0, thorns: 0, regen: 0, eightway: 0, laser: 0, chain: 0, homing: 0 },
     bonuses: {},
     character,
     difficulty,
@@ -1219,6 +1219,20 @@ export function debugSpawnBoss(state: SurvivalState): void {
   spawnBoss(state)
 }
 
+/** R260 chain 质变:连锁闪电——从直击致死的敌跳 ≤3 个 160px 内最近敌(0.6×伤害)。
+ *  链伤致死不再触发链(单跳,防递归雪崩)。 */
+function chainLightning(state: SurvivalState, from: Enemy, baseDamage: number): void {
+  const targets = state.enemies
+    .filter((e) => e !== from && e.hp > 0 && distance(e, from) <= 160)
+    .sort((a, b) => distance(a, from) - distance(b, from))
+    .slice(0, 3)
+  for (const t of targets) {
+    t.hp -= baseDamage * 0.6
+    t.hitFlash = 0.08
+    spawnBurst(state, t.x, t.y, '#fde047', 5, 110)
+  }
+}
+
 function killEnemy(state: SurvivalState, enemy: Enemy): void {
   state.kills += 1
   // R218 U10: 击杀涟漪(大敌环更大更久)
@@ -1448,14 +1462,26 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       const shots = stats.multishot
       // R220.3 lightspear 进化:弹体成光枪——伤害×1.3/穿透+2/弹速×1.3
       const spear = state.evolved.includes('lightspear')
+      // R260 laser 质变:穿透+4/弹速×1.6/寿命 2.2(与进化乘法叠加)
+      const laser = state.taken.laser > 0
       const dmgMult = spear ? 1.3 : 1
-      const pierceBonus = spear ? 2 : 0
-      const speedMult = spear ? 1.3 : 1
-      for (let i = 0; i < shots; i++) {
-        const spread = (i - (shots - 1) / 2) * (Math.PI / 14)
-        const angle = baseAngle + spread
-        const crit = rand(state) < stats.crit
-        state.bullets.push({ id: state.nextId++, x: player.x, y: player.y, vx: Math.cos(angle) * stats.bulletSpeed * speedMult, vy: Math.sin(angle) * stats.bulletSpeed * speedMult, damage: (crit ? stats.damage * 2 : stats.damage) * dmgMult, pierce: stats.pierce + pierceBonus, crit, life: 1.2 })
+      const pierceBonus = (spear ? 2 : 0) + (laser ? 4 : 0)
+      const speedMult = (spear ? 1.3 : 1) * (laser ? 1.6 : 1)
+      const bulletLife = laser ? 2.2 : 1.2
+      // R260 eightway 质变:齐射改 8 个绝对方向扇形开花(伤害×0.75 平衡 8× 弹量)
+      if (state.taken.eightway > 0) {
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2
+          const crit = rand(state) < stats.crit
+          state.bullets.push({ id: state.nextId++, x: player.x, y: player.y, vx: Math.cos(angle) * stats.bulletSpeed * speedMult, vy: Math.sin(angle) * stats.bulletSpeed * speedMult, damage: (crit ? stats.damage * 2 : stats.damage) * dmgMult * 0.75, pierce: stats.pierce + pierceBonus, crit, life: bulletLife })
+        }
+      } else {
+        for (let i = 0; i < shots; i++) {
+          const spread = (i - (shots - 1) / 2) * (Math.PI / 14)
+          const angle = baseAngle + spread
+          const crit = rand(state) < stats.crit
+          state.bullets.push({ id: state.nextId++, x: player.x, y: player.y, vx: Math.cos(angle) * stats.bulletSpeed * speedMult, vy: Math.sin(angle) * stats.bulletSpeed * speedMult, damage: (crit ? stats.damage * 2 : stats.damage) * dmgMult, pierce: stats.pierce + pierceBonus, crit, life: bulletLife })
+        }
       }
       // R220.3 barrage 进化:齐射追加两翼斜射弹(±0.5rad,0.7×伤害)
       if (state.evolved.includes('barrage')) {
@@ -1590,6 +1616,29 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
   }
 
   for (const bullet of state.bullets) {
+    // R260 homing 质变:追踪飞刃——朝最近敌转向(5rad/s,速率不变)
+    if (state.taken.homing > 0) {
+      let tgt: Enemy | undefined
+      let bestD = Number.POSITIVE_INFINITY
+      for (const enemy of state.enemies) {
+        const d = distance(bullet, enemy)
+        if (d < bestD) {
+          bestD = d
+          tgt = enemy
+        }
+      }
+      if (tgt !== undefined) {
+        const speed = Math.hypot(bullet.vx, bullet.vy)
+        const want = Math.atan2(tgt.y - bullet.y, tgt.x - bullet.x)
+        const cur = Math.atan2(bullet.vy, bullet.vx)
+        let diff = want - cur
+        while (diff > Math.PI) diff -= Math.PI * 2
+        while (diff < -Math.PI) diff += Math.PI * 2
+        const turn = clamp(diff, -5 * dt, 5 * dt)
+        bullet.vx = Math.cos(cur + turn) * speed
+        bullet.vy = Math.sin(cur + turn) * speed
+      }
+    }
     bullet.x += bullet.vx * dt
     bullet.y += bullet.vy * dt
     bullet.life -= dt
@@ -1598,6 +1647,8 @@ export function tickSurvival(state: SurvivalState, dt: number): void {
       if (distance(bullet, enemy) < 4 + hitRadiusOf(enemy.size)) {
         enemy.hp -= bullet.damage
         enemy.hitFlash = 0.1
+        // R260 chain 质变:子弹直击致死时电弧跳 ≤3 邻敌(160px,0.6×伤害,一跳不递归)
+        if (state.taken.chain > 0 && enemy.hp <= 0) chainLightning(state, enemy, bullet.damage)
         // R220.3 手感:击退改固定像素(沿弹道单位向量;普通 12px/tank 3px)——
         // 原「弹速×dt×0.5」在 60fps 仅 ~3.5px 且随帧率/弹速漂移,不可感知。
         const bulletSpeed = Math.hypot(bullet.vx, bullet.vy)
@@ -2019,10 +2070,12 @@ function drawSurvivalBody(ctx: CanvasRenderingContext2D, state: SurvivalState, b
   }
 
   for (const bullet of state.bullets) {
+    // R260 laser 质变:寿命 >1.5s 的弹(laser 2.2s)拖尾 ×3——光枪横扫观感
+    const trail = bullet.life > 1.5 ? 0.06 : 0.02
     ctx.strokeStyle = bullet.crit ? 'rgba(251, 191, 36, 0.6)' : 'rgba(103, 232, 249, 0.5)'
     ctx.lineWidth = 2
     ctx.beginPath()
-    ctx.moveTo(bullet.x - bullet.vx * 0.02, bullet.y - bullet.vy * 0.02)
+    ctx.moveTo(bullet.x - bullet.vx * trail, bullet.y - bullet.vy * trail)
     ctx.lineTo(bullet.x, bullet.y)
     ctx.stroke()
     ctx.fillStyle = bullet.crit ? '#fbbf24' : '#67e8f9'

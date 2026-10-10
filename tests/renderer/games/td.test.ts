@@ -317,4 +317,16 @@ describe('R218(A3) TD juice integration', () => {
     for (let i = 0; i < 200; i++) tickGame(s, 0.016) // 3.2s
     expect(s.toasts).toHaveLength(0)
   })
+  it('R261: 漏球闪红淡出——漏球瞬间 leakFlashes>0,0.13s 后清空', () => {
+    const s = initialState()
+    s.phase = 'running'
+    s.spawnTimer = 999
+    s.waveCooldown = 999
+    s.balloons.push({ id: 1, progress: 0.999, speed: 0.05, hp: 30, maxHp: 30, reward: 10, slowUntil: 0, color: '#fb7185' } as never)
+    tickGame(s, 0.05)
+    expect(s.lives).toBe(19)
+    expect(s.leakFlashes.length).toBeGreaterThan(0)
+    for (let i = 0; i < 10; i += 1) tickGame(s, 0.016) // 60fps 驱动 0.16s(扣 0.02 冻结)>0.12s 寿命
+    expect(s.leakFlashes.length).toBe(0)
+  })
 })

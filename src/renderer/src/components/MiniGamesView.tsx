@@ -79,6 +79,7 @@ import {
   runCoinsFor,
   writeCharacter,
   writeMeta,
+  TRANSFORM_UPGRADE_IDS,
   type AchievementId,
   type ArtifactId,
   type CharacterId,
@@ -2878,10 +2879,13 @@ export function MiniGamesView(): JSX.Element {
                   {survivalSnapshot.offers.map((id) => {
                     const def = UPGRADES.find((upgrade) => upgrade.id === id)
                     const takenCount = survivalSnapshot.taken[id] ?? 0
+                    // R260: 质变卡——「形态改变」标签+虚线描边,区别于数值卡
+                    const isTransform = (TRANSFORM_UPGRADE_IDS as readonly string[]).includes(id)
                     return (
-                      <button className={`levelup-card${autoPickChoice === id ? ' autopick' : ''}`} type="button" key={id} style={{ '--game-accent': RARITY_COLORS[def?.rarity ?? 0] } as CSSProperties} onClick={() => chooseUpgrade(id)}>
+                      <button className={`levelup-card${isTransform ? ' transform' : ''}${autoPickChoice === id ? ' autopick' : ''}`} type="button" key={id} style={{ '--game-accent': isTransform ? (def?.accent ?? RARITY_COLORS[3]) : RARITY_COLORS[def?.rarity ?? 0] } as CSSProperties} onClick={() => chooseUpgrade(id)}>
                         <strong>{t(`games.up.${id}`)}</strong>
                         <small>{t(`games.up.${id}.desc`)}</small>
+                        {isTransform ? <i className="transform-tag">{t('games.up.tagTransform')}</i> : null}
                         <em>{takenCount}/{def?.max ?? 0}</em>
                       </button>
                     )

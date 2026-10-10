@@ -2,7 +2,7 @@
 // rarities, permanent coin upgrades, and roulette rolls. Pure data + pure
 // functions; the engine and UI both consume this, nothing here imports back.
 
-export type UpgradeId = 'fireRate' | 'damage' | 'multishot' | 'pierce' | 'blade' | 'speed' | 'maxHp' | 'magnet' | 'crit' | 'bulletSpeed' | 'thorns' | 'regen'
+export type UpgradeId = 'fireRate' | 'damage' | 'multishot' | 'pierce' | 'blade' | 'speed' | 'maxHp' | 'magnet' | 'crit' | 'bulletSpeed' | 'thorns' | 'regen' | 'eightway' | 'laser' | 'chain' | 'homing'
 export type Rarity = 0 | 1 | 2 | 3
 
 export interface UpgradeDef {
@@ -11,6 +11,9 @@ export interface UpgradeDef {
   max: number
   rarity: Rarity
 }
+
+/** R260 弹幕质变卡——选卡改变弹幕形态而非堆数值(支柱 2)。max:1 一次成型。 */
+export const TRANSFORM_UPGRADE_IDS = ['eightway', 'laser', 'chain', 'homing'] as const
 
 export const UPGRADES: UpgradeDef[] = [
   { id: 'fireRate', accent: '#67e8f9', max: 5, rarity: 1 },
@@ -25,6 +28,11 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'bulletSpeed', accent: '#e879f9', max: 3, rarity: 0 },
   { id: 'thorns', accent: '#f472b6', max: 3, rarity: 0 },
   { id: 'regen', accent: '#34d399', max: 2, rarity: 2 },
+  // R260 质变卡:rarity 3 稀有;accent 用形态主色
+  { id: 'eightway', accent: '#f0abfc', max: 1, rarity: 3 },
+  { id: 'laser', accent: '#22d3ee', max: 1, rarity: 3 },
+  { id: 'chain', accent: '#fde047', max: 1, rarity: 3 },
+  { id: 'homing', accent: '#fb923c', max: 1, rarity: 3 },
 ]
 
 export const RARITY_WEIGHTS = [60, 25, 10, 5]

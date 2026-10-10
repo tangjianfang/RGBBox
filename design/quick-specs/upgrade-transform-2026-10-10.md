@@ -18,3 +18,25 @@
 
 **验证方式**: 模拟 bot 选质变卡→断言弹幕数量/形态参数变化；真机截图对比选卡前后
 **回归锁**: UPGRADES 表质变卡数量断言≥4；引擎单测验证 transform 字段生效
+
+---
+
+## 实施记录（R260, 2026-10-11）
+
+- 落地：`eightway` 八向 / `laser` 穿透 / `chain` 链电 / `homing` 追踪 四张 max:1 rarity:3 质变卡（swarmMeta + survival 引擎 + 卡 UI「形态改变」标签 + zh/en i18n + autoPick 估值 1.05-1.2）。
+- 单测：`tests/renderer/games/swarmTransform.test.ts` 7 用例（注册表/i18n/8 向齐射/laser 参数/链电扩散/追踪转向/applyUpgrade 路径）。
+
+## game-balance-sim 分布表（scripts/r260-balance-sim.mjs，真实引擎 20 局/组，standard，圆周 bot）
+
+| 指标 | baseline（旧版数值流） | transform（质变卡优先） | delta |
+|---|---|---|---|
+| 存活 P25/P50/P75 | 107 / **114** / 142 s | 98 / **296** / 296 s | **+182s** |
+| 等级 P50 | 9 | 34 | +25 |
+| 击杀 P50 | 122 | 2069 | **17×** |
+| 分数 P50 | 4995 | 106486 | 21× |
+| boss 首杀率 | 15% | 65% | +50pp |
+| 质变卡均取 | 0.15 | 2.85 / 4 | — |
+
+- 红线：存活 P50 ≥ 90s **PASS**（skill 判定线）；boss 首杀率 ≥ 20% PASS（transform 组）。
+- **已知失衡（有意保留）**：transform 组 P50/P75 撞 300s cap（玩家几乎不死）——首轮有意把「变强感知」拉满（用户主诉「升级感知为零」）；张力回拉交给 director 调参，由 Phase 5 用户实测反馈驱动，不预先砍强度。
+- baseline 组 boss 首杀率 15% 低于 20% 线（R220.2 遗留，非本卡范围）。

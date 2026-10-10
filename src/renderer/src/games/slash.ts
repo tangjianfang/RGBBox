@@ -341,6 +341,8 @@ export function slash(s: SlashState, dir: number): 'hit' | 'wrong' | 'miss' | 'b
   s.blocks = s.blocks.filter((b) => b.id !== hit!.id)
   s.combo++
   s.bestCombo = Math.max(s.bestCombo, s.combo)
+  // R261: 每次成功斩击带 juice 顿帧(≈2 帧打击重量;max-merge,金块/里程碑更高档仍生效)
+  if (s.juice) juiceHitStop(s.juice, 0.033)
   const mult = 1 + Math.floor(s.combo / 5) * 0.5
   // R200: 金块/每 10 连击 → 顿帧(轻重两档)
   if (hit.bonus || s.combo % 10 === 0) s.hitStop = hit.bonus ? HIT_STOP.medium : HIT_STOP.light
