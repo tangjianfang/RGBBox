@@ -481,6 +481,8 @@ export function drawVUMeter(
   if (normRight > peakHoldRef.right) { peakHoldRef.right = normRight; peakHoldRef.rightDecay = 0 }
   else { peakHoldRef.rightDecay++; if (peakHoldRef.rightDecay > 30) peakHoldRef.right = Math.max(0, peakHoldRef.right - 0.01) }
 
+  const beat = opts?.beat ?? 0 // R286: 拍击脉冲——与其余六视图同一节拍语言
+
   ctx.clearRect(0, 0, width, height)
 
   const meterHeight = (height - 24) / 2
@@ -503,7 +505,15 @@ export function drawVUMeter(
     grad.addColorStop(0.9, '#ef4444')
     grad.addColorStop(1, '#dc2626')
     ctx.fillStyle = grad
+    // R286: 拍击辉光——电平条随乐句呼吸(专业表不做频闪,辉光只随拍温和脉动)
+    if (beat > 0.1 && fillWidth > 0) {
+      ctx.shadowBlur = 4 + beat * 16
+      ctx.shadowColor = `hsla(52, 90%, 62%, ${Math.min(0.85, beat * 0.8)})`
+    } else {
+      ctx.shadowBlur = 0
+    }
     ctx.fillRect(24, y, fillWidth, meterHeight)
+    ctx.shadowBlur = 0
 
     // Art variant: glowing end-dot at the bar tip
     if (opts?.style === 'art') {
@@ -512,10 +522,10 @@ export function drawVUMeter(
       ctx.shadowBlur = 0
     }
 
-    // Peak hold indicator
+    // Peak hold indicator — R286: 拍击时亮度和宽度同步脉冲
     const peakX = 24 + peak * meterWidth
-    ctx.fillStyle = peak > 0.9 ? '#ef4444' : '#ffffff'
-    ctx.fillRect(peakX - 1, y, 2, meterHeight)
+    ctx.fillStyle = peak > 0.9 ? '#ef4444' : beat > 0.2 ? `rgba(255, 255, 255, ${0.7 + beat * 0.3})` : '#ffffff'
+    ctx.fillRect(peakX - 1, y, 2 + beat * 2, meterHeight)
 
     // Scale marks at -40, -20, -10, -6, -3, 0 dB
     ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
