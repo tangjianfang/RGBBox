@@ -161,18 +161,21 @@ function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite, 
     if (!visible) return
     const canvas = canvasRef.current
     if (!canvas) return
-    canvas.width  = 80
-    canvas.height = 44
+    // R288: 80×44→240×135 与 CPU 卡对齐——raymarch 细节在 80 宽下全失,
+    // 是 3D 效果「第一印象糊」的根修(R283 P3)。params 补 preset intensity
+    // (原硬编码 1.0,与 Preview3D 不平价——hologram 的提亮预设现在如实上卡)。
+    canvas.width  = 240
+    canvas.height = 135
     try {
       glRef.current = new Effect3DGl(canvas, preset.kind as Effect3DKind)
     } catch {
       return
     }
     const params: [number, number, number, number] = [
-      (preset.defaults.speed    as number) ?? 0.5,
-      (preset.defaults.hueShift as number) ?? 0,
-      1.0,
-      0.5,
+      (preset.defaults.speed     as number) ?? 0.5,
+      (preset.defaults.hueShift  as number) ?? 0,
+      (preset.defaults.intensity as number) ?? 1,
+      (preset.defaults.density   as number) ?? 0.5,
     ]
     const draw = (): void => {
       const t = (performance.now() - startRef.current) / 1000

@@ -290,20 +290,23 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'lava-sphere',
     label: 'Lava Sphere',
     description: 'Raymarched molten lava globe. Triple-axis domain-warped FBM creates flowing crust patterns with subsurface glow leaking through thin areas.',
-    defaults: { speed: 0.30, hueShift: 0 }
+    // R288: 提速 0.30→0.55——R283 评审「准静态倾向」,熔岩流动肉眼可感
+    defaults: { speed: 0.55, hueShift: 0 }
   },
   {
     kind: 'hologram',
     label: 'Hologram',
     description: 'Data-stream holographic sphere with adaptive wire density, scan packets, signal flicker, edge telemetry particles, and controllable projection depth.',
     defaults: {
-      speed: 0.42,
+      // R288: 提亮提速——R283 评审「机制最全观感最弱」:speed ×1.7 运动
+      // 可感,intensity 0.95→1.30(shader 钳 0..2)亮度抬升,粒子 1.15→1.45
+      speed: 0.72,
       hueShift: 0,
-      intensity: 0.95,
+      intensity: 1.30,
       density: 0.68,
       gridDensity: 0.62,
       scanSpeed: 1.25,
-      particleIntensity: 1.15,
+      particleIntensity: 1.45,
       glitchAmount: 0.18,
       flickerAmount: 0.42,
       hologramDepth: 0.72,
