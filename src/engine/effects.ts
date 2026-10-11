@@ -149,23 +149,6 @@ function pointSegmentDistance(px: number, py: number, ax: number, ay: number, bx
   return Math.sqrt(dx * dx + dy * dy)
 }
 
-const ICOSAHEDRON_VERTICES = (() => {
-  const phi = (1 + Math.sqrt(5)) / 2
-  const scale = 1 / Math.sqrt(1 + phi * phi)
-  return [
-    [-1, phi, 0], [1, phi, 0], [-1, -phi, 0], [1, -phi, 0],
-    [0, -1, phi], [0, 1, phi], [0, -1, -phi], [0, 1, -phi],
-    [phi, 0, -1], [phi, 0, 1], [-phi, 0, -1], [-phi, 0, 1],
-  ].map(([x, y, z]) => [x * scale, y * scale, z * scale] as const)
-})()
-
-const ICOSAHEDRON_EDGES = [
-  [0, 1], [0, 5], [0, 7], [0, 10], [0, 11], [1, 5], [1, 7], [1, 8], [1, 9],
-  [2, 3], [2, 4], [2, 6], [2, 10], [2, 11], [3, 4], [3, 6], [3, 8], [3, 9],
-  [4, 5], [4, 9], [4, 11], [5, 9], [5, 11], [6, 7], [6, 8], [6, 10],
-  [7, 8], [7, 10], [8, 9], [10, 11],
-] as const
-
 const DIGIT_3X5 = [
   0b111101101101111,
   0b010110010010111,
@@ -204,10 +187,9 @@ interface _FireColCache {
 const _fireColCacheMap = new Map<string, _FireColCache>()
 
 // ── R266 TA2: frame-invariant geometry caches (heavy science pack) ─────────
-// solar-system / icosahedral-virus / protein-folding / mitosis-spindle /
+// solar-system / protein-folding / mitosis-spindle /
 // synapse-pulse used to rebuild per-pixel geometry that depends only on
-// (layer, t, shape params): planet positions (8× trig pair), the projected
-// icosahedral shell (12 rotated vertices + pulses), the protein backbone
+// (layer, t, shape params): planet positions (8× trig pair), the protein backbone
 // (47 sampled points), spindle chromosomes (10) and vesicle particles (20).
 // One entry per layerId, invalidated by t (= now·speed — a pure function of
 // the frame) or a shape-parameter change, mirroring _fireColCacheMap. The
@@ -247,29 +229,6 @@ export function getSolarSystemPlanets(layerId: string, t: number, density: numbe
   if (_solarGeomMap.size >= GEOMETRY_CACHE_LIMIT) _solarGeomMap.clear()
   _solarGeomMap.set(layerId, { t, density, planets })
   return planets
-}
-
-export interface VirusVertexGeometry { x: number; y: number; z: number; pulse: number }
-interface _VirusGeom { t: number; vertices: VirusVertexGeometry[] }
-const _virusGeomMap = new Map<string, _VirusGeom>()
-
-/** icosahedral-virus projected shell vertices (yaw/pitch/perspective + spike pulse) for animation time `t`. */
-export function getVirusShellGeometry(layerId: string, t: number): readonly VirusVertexGeometry[] {
-  const hit = _virusGeomMap.get(layerId)
-  if (hit && hit.t === t) return hit.vertices
-  const yaw = t * 1.4
-  const pitch = Math.sin(t * 0.7) * 0.42
-  const vertices = ICOSAHEDRON_VERTICES.map(([vx, vy, vz], vertexIndex) => {
-    const x1 = vx * Math.cos(yaw) - vz * Math.sin(yaw)
-    const z1 = vx * Math.sin(yaw) + vz * Math.cos(yaw)
-    const y1 = vy * Math.cos(pitch) - z1 * Math.sin(pitch)
-    const z2 = vy * Math.sin(pitch) + z1 * Math.cos(pitch)
-    const perspective = 0.42 / Math.max(0.45, 1.35 - z2 * 0.55)
-    return { x: x1 * perspective, y: y1 * perspective, z: z2, pulse: 0.78 + Math.sin(t * 6 + vertexIndex * 1.7) * 0.22 }
-  })
-  if (_virusGeomMap.size >= GEOMETRY_CACHE_LIMIT) _virusGeomMap.clear()
-  _virusGeomMap.set(layerId, { t, vertices })
-  return vertices
 }
 
 export interface ProteinPointGeometry { x: number; y: number; z: number }
@@ -667,29 +626,6 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         g: clampByte((color.g + (255 - color.g) * bloom) * brightness),
         b: clampByte((color.b + (255 - color.b) * bloom) * brightness)
       }
-    }
-
-    case 'spectrum': {
-      const speed      = Number(layer.parameters.speed    ?? 0.25)
-      const saturation = Number(layer.parameters.saturation ?? 0.95)
-      const hueShift   = Number(layer.parameters.hueShift ?? 0)
-      const spread     = Number(layer.parameters.spread   ?? 1.0)
-
-      // Spatial hue gradient along diagonal for smooth spectrum wash
-      const nx = context.x / Math.max(1, context.columns - 1) - 0.5
-      const ny = context.y / Math.max(1, context.rows    - 1) - 0.5
-      const spatialT = (nx + ny) * 0.5 + 0.5           // 0..1 diagonal position
-      const hue = (context.now * speed * 360 + hueShift + spatialT * 120 * spread + 360) % 360
-
-      // Premium: perceptually-uniform lightness compensation across hue wheel
-      // (OKLAB-inspired) — yellows/greens appear brighter to human eye, compensate
-      const hueRad = (hue * Math.PI) / 180
-      const perceptualL = 0.50 - Math.cos(hueRad + 1.05) * 0.04 - Math.cos(hueRad * 2 + 0.3) * 0.025
-
-      // Gentle global brightness pulse — identical for all pixels
-      const pulse = 0.85 + Math.sin(context.now * 0.9) * 0.15   // 0.70..1.0
-
-      return hslToRgb(hue, saturation, perceptualL * pulse)
     }
 
     case 'comet': {
@@ -1416,25 +1352,6 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       return hslToRgb(hue, 0.82, brightness * 0.85)
     }
 
-    case 'orion-nebula': {
-      const speed = Number(layer.parameters.speed ?? 0.16)
-      const intensity = Number(layer.parameters.intensity ?? 0.82)
-      const density = Number(layer.parameters.density ?? 0.58)
-      const hueShift = Number(layer.parameters.hueShift ?? 285)
-      const { nx, ny } = normCoords(context)
-      const time = context.now * speed
-      const cloud = fbm2(nx * 3.4 + time * 0.35, ny * 3.4 - time * 0.25, 5)
-      const fineDust = fbm2(nx * 11.0 - time * 0.22, ny * 11.0 + time * 0.18, 4)
-      const radius = Math.sqrt((nx + 0.05) ** 2 + (ny - 0.02) ** 2)
-      const molecularCloud = clampUnit((cloud - (0.36 - density * 0.14)) * 2.6)
-      const darkDust = smoothstep(0.58, 0.86, fineDust) * smoothstep(0.62, 0.16, radius)
-      const starSeed = hash2(context.x * 31, context.y * 47)
-      const stars = starSeed > 0.985 ? Math.pow(starSeed, 18) : 0
-      const emission = clampUnit((molecularCloud * 0.78 + Math.exp(-radius * radius * 5.5) * 0.4 - darkDust * 0.4) * intensity + stars)
-      const hue = hueShift + cloud * 72 + fineDust * 32
-      return hslToRgb(hue, 0.86, emission * 0.78)
-    }
-
     case 'pulsar-beacon': {
       const speed = Number(layer.parameters.speed ?? 0.82)
       const intensity = Number(layer.parameters.intensity ?? 0.90)
@@ -1476,67 +1393,6 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       let color = colorScale(hslToRgb(205 + hueShift, 0.35, 0.62), cloud)
       color = colorAdd(color, hslToRgb(48, 0.95, 0.72), eye * 0.32)
       color = colorAdd(color, hslToRgb(0, 0, 1.0), eyeWall * intensity * 0.65)
-      return color
-    }
-
-    case 'lightning-leader': {
-      const speed = Number(layer.parameters.speed ?? 0.38)
-      const intensity = Number(layer.parameters.intensity ?? 0.94)
-      const density = Number(layer.parameters.density ?? 0.52)
-      const hueShift = Number(layer.parameters.hueShift ?? 0)
-      const normalizedX = context.x / Math.max(1, context.columns - 1)
-      const normalizedY = context.y / Math.max(1, context.rows - 1)
-      const strikeTime = context.now * speed
-      const cycle = strikeTime - Math.floor(strikeTime)
-      const strikeId = Math.floor(strikeTime)
-      const reveal = smoothstep(0.08, 0.38, cycle)
-      const fade = 1 - smoothstep(0.42, 0.95, cycle)
-      const cloud = fbm2(normalizedX * 4.0 + strikeId, normalizedY * 7.0, 4) * smoothstep(0.28, 0.0, normalizedY) * 0.35
-      const channelCenter = 0.5 + (fbm2(normalizedY * 2.8 + strikeId * 1.7, strikeId * 0.3, 4) - 0.5) * (0.32 + density * 0.18)
-      const mainDistance = Math.abs(normalizedX - channelCenter)
-      const mainBolt = Math.exp(-Math.pow(mainDistance / 0.045, 2)) * smoothstep(normalizedY - 0.06, normalizedY + 0.06, reveal) * fade
-      let branchGlow = 0
-      for (let branchIndex = 0; branchIndex < 4; branchIndex++) {
-        const branchStart = 0.18 + branchIndex * 0.16 + hash(branchIndex + strikeId) * 0.08
-        const branchSide = hash(branchIndex * 17 + strikeId) > 0.5 ? 1 : -1
-        const branchProgress = clampUnit((normalizedY - branchStart) / 0.22)
-        const branchX = channelCenter + branchSide * branchProgress * (0.14 + density * 0.12)
-        const branchYMask = smoothstep(branchStart, branchStart + 0.05, normalizedY) * smoothstep(branchStart + 0.24, branchStart + 0.16, normalizedY)
-        branchGlow += Math.exp(-Math.pow((normalizedX - branchX) / 0.032, 2)) * branchYMask * fade * 0.7
-      }
-      const flash = Math.exp(-Math.pow((cycle - 0.40) / 0.055, 2)) * 0.24
-      let color = colorScale(hslToRgb(218 + hueShift, 0.38, 0.3), cloud * 1.3)
-      color = colorAdd(color, hslToRgb(222 + hueShift, 1.0, 0.78), (mainBolt + branchGlow) * intensity)
-      color = colorAdd(color, hslToRgb(0, 0, 1.0), flash * intensity)
-      return color
-    }
-
-    case 'icosahedral-virus': {
-      const speed = Number(layer.parameters.speed ?? 0.28)
-      const intensity = Number(layer.parameters.intensity ?? 0.88)
-      const density = Number(layer.parameters.density ?? 0.62)
-      const hueShift = Number(layer.parameters.hueShift ?? 135)
-      const { nx, ny } = normCoords(context)
-      const time = context.now * speed
-      // R266 TA2: shell projection + spike pulses are frame-invariant — cached per (layerId, t)
-      const projected = getVirusShellGeometry(layer.id, time)
-      let shell = 0
-      for (const [aIndex, bIndex] of ICOSAHEDRON_EDGES) {
-        const a = projected[aIndex]
-        const b = projected[bIndex]
-        const depth = clampUnit(0.55 + (a.z + b.z) * 0.20)
-        shell += Math.exp(-Math.pow(pointSegmentDistance(nx, ny, a.x, a.y, b.x, b.y) / 0.045, 2)) * depth
-      }
-      let capsid = 0
-      for (let vertexIndex = 0; vertexIndex < projected.length; vertexIndex++) {
-        const vertex = projected[vertexIndex]
-        const distance = Math.sqrt((nx - vertex.x) ** 2 + (ny - vertex.y) ** 2)
-        capsid += Math.exp(-Math.pow(distance / (0.058 + density * 0.018), 2)) * clampUnit(0.55 + vertex.z * 0.28) * vertex.pulse
-      }
-      const envelope = Math.exp(-(nx * nx + ny * ny) / 0.24) * 0.3
-      let color = colorScale(hslToRgb(168 + hueShift, 0.84, 0.52), shell * intensity * 0.6)
-      color = colorAdd(color, hslToRgb(312 + hueShift, 0.92, 0.64), capsid * intensity * 0.85)
-      color = colorAdd(color, hslToRgb(202 + hueShift, 0.62, 0.48), envelope * intensity)
       return color
     }
 
@@ -1700,35 +1556,6 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       return color
     }
 
-    case 'comet-tail': {
-      const speed = Number(layer.parameters.speed ?? 0.30)
-      const intensity = Number(layer.parameters.intensity ?? 0.88)
-      const density = Number(layer.parameters.density ?? 0.58)
-      const hueShift = Number(layer.parameters.hueShift ?? 0)
-      const { nx, ny } = normCoords(context)
-      const time = context.now * speed
-      const orbitAngle = time * Math.PI * 2
-      const headX = Math.cos(orbitAngle) * 0.46
-      const headY = Math.sin(orbitAngle) * 0.26
-      const awayX = headX / Math.max(0.001, Math.sqrt(headX * headX + headY * headY))
-      const awayY = headY / Math.max(0.001, Math.sqrt(headX * headX + headY * headY))
-      const relX = nx - headX
-      const relY = ny - headY
-      const tailAxis = relX * awayX + relY * awayY
-      const cross = Math.abs(relX * awayY - relY * awayX)
-      // R167 (2nd pass): the orbiting comet is the darkest design in the set —
-      // widen both tails further and give the nucleus a glow halo.
-      const tail = Math.exp(-tailAxis * (1.5 - density)) * Math.exp(-Math.pow(cross / (0.17 + tailAxis * 0.22), 2)) * smoothstep(0.0, 0.05, tailAxis)
-      const ionTail = Math.exp(-tailAxis * 1.3) * Math.exp(-Math.pow(cross / 0.095, 2)) * smoothstep(0.02, 0.08, tailAxis)
-      const nucleus = Math.exp(-((relX * relX + relY * relY) / 0.016))
-      const nucleusGlow = Math.exp(-((relX * relX + relY * relY) / 0.06)) * 0.35
-      let color = colorScale(hslToRgb(38 + hueShift, 0.86, 0.62), tail * intensity)
-      color = colorAdd(color, hslToRgb(196 + hueShift, 0.95, 0.58), ionTail * intensity)
-      color = colorAdd(color, hslToRgb(0, 0, 1.0), nucleus * intensity)
-      color = colorAdd(color, hslToRgb(210 + hueShift, 0.6, 0.75), nucleusGlow * intensity)
-      return color
-    }
-
     case 'magnetosphere-aurora': {
       const speed = Number(layer.parameters.speed ?? 0.24)
       const intensity = Number(layer.parameters.intensity ?? 0.86)
@@ -1748,31 +1575,6 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       color = colorAdd(color, hslToRgb(128 + hueShift, 0.96, 0.58), auroraOval * intensity)
       color = colorAdd(color, hslToRgb(194 + hueShift, 0.86, 0.56), bowShock * intensity * 0.7)
       color = colorAdd(color, hslToRgb(36 + hueShift, 0.80, 0.52), earth * intensity * 0.58 + solarWind * intensity)
-      return color
-    }
-
-    case 'wave-diffraction': {
-      const speed = Number(layer.parameters.speed ?? 0.36)
-      const intensity = Number(layer.parameters.intensity ?? 0.84)
-      const density = Number(layer.parameters.density ?? 0.62)
-      const hueShift = Number(layer.parameters.hueShift ?? 0)
-      const { nx, ny } = normCoords(context)
-      const time = context.now * speed
-      const wavelength = 18 + density * 14
-      // R167: wider slits/barrier, softer interference exponent, brighter fringes.
-      const barrier = Math.exp(-Math.pow((nx + 0.12) / 0.02, 2)) * (1 - Math.exp(-Math.pow((Math.abs(ny) - 0.16) / 0.08, 2)))
-      const slitA = { x: -0.12, y: -0.16 }
-      const slitB = { x: -0.12, y: 0.16 }
-      const incident = Math.pow(0.5 + 0.5 * Math.sin((nx + time) * wavelength), 3) * smoothstep(-0.12, -0.68, nx)
-      const distanceA = Math.sqrt((nx - slitA.x) ** 2 + (ny - slitA.y) ** 2)
-      const distanceB = Math.sqrt((nx - slitB.x) ** 2 + (ny - slitB.y) ** 2)
-      const waveA = Math.sin(distanceA * wavelength - time * 9)
-      const waveB = Math.sin(distanceB * wavelength - time * 9)
-      const interference = Math.pow(Math.abs((waveA + waveB) * 0.5), 3) * smoothstep(-0.08, 0.55, nx)
-      const slitGlow = Math.exp(-Math.pow(distanceA / 0.085, 2)) + Math.exp(-Math.pow(distanceB / 0.085, 2))
-      let color = colorScale(hslToRgb(204 + hueShift, 0.86, 0.58), (incident + interference) * intensity)
-      color = colorAdd(color, hslToRgb(46 + hueShift, 1.0, 0.66), slitGlow * intensity * 0.5)
-      color = colorAdd(color, hslToRgb(0, 0, 0.22), barrier * intensity)
       return color
     }
 

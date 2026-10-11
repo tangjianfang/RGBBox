@@ -14,7 +14,7 @@ vi.unmock('../../../src/renderer/src/gl/effectGl')
 
 import { itGl, makeGlCanvas, readCenterPixel } from './glHarness'
 
-const KINDS = ['sphere-pulse', 'warp-portal', 'neon-galaxy', 'lava-sphere', 'laser-show', 'hologram'] as const
+const KINDS = ['sphere-pulse', 'warp-portal', 'neon-galaxy', 'lava-sphere', 'hologram'] as const
 
 describe('renderer/gl/effect3dGl', () => {
   it('module exports Effect3DGl class', async () => {

@@ -154,15 +154,15 @@ describe('renderEffectPixel', () => {
   describe('all effects return valid RGB', () => {
     const effectKinds = [
       'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'fire', 'starlight',
-      'ripple', 'spectrum', 'comet', 'lightning', 'aurora', 'explode',
+      'ripple', 'comet', 'lightning', 'aurora', 'explode',
       'audio-beat', 'audio-equalizer', 'random-color', 'custom-paint', 'image-paint',
       'plasma', 'vortex', 'tunnel', 'crystal', 'glitch',
       'matrix-rain', 'neon-pulse', 'nebula', 'fluid-flow', 'mirror-symmetry',
-      'dna-helix', 'black-hole', 'solar-system', 'spiral-galaxy', 'orion-nebula',
-      'pulsar-beacon', 'hurricane-eye', 'lightning-leader', 'icosahedral-virus',
+      'dna-helix', 'black-hole', 'solar-system', 'spiral-galaxy',
+      'pulsar-beacon', 'hurricane-eye',
       'protein-folding', 'mitosis-spindle', 'synapse-pulse', 'quantum-collapse',
-      'microvilli-field', 'eclipse-alignment', 'comet-tail', 'magnetosphere-aurora',
-      'wave-diffraction', 'vortex-flame', 'tokamak-plasma'
+      'microvilli-field', 'eclipse-alignment', 'magnetosphere-aurora',
+      'vortex-flame', 'tokamak-plasma'
     ]
 
     for (const kind of effectKinds) {

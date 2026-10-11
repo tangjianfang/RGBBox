@@ -18,7 +18,6 @@ export type Effect3DKind =
   | 'warp-portal'
   | 'neon-galaxy'
   | 'lava-sphere'
-  | 'laser-show'
   | 'hologram'
 
 export type EffectKind =
@@ -31,7 +30,6 @@ export type EffectKind =
   | 'fire'
   | 'starlight'
   | 'ripple'
-  | 'spectrum'
   | 'comet'
   | 'lightning'
   | 'aurora'
@@ -55,20 +53,15 @@ export type EffectKind =
   | 'black-hole'
   | 'solar-system'
   | 'spiral-galaxy'
-  | 'orion-nebula'
   | 'pulsar-beacon'
   | 'hurricane-eye'
-  | 'lightning-leader'
-  | 'icosahedral-virus'
   | 'protein-folding'
   | 'mitosis-spindle'
   | 'synapse-pulse'
   | 'quantum-collapse'
   | 'microvilli-field'
   | 'eclipse-alignment'
-  | 'comet-tail'
   | 'magnetosphere-aurora'
-  | 'wave-diffraction'
   | 'vortex-flame'
   | 'tokamak-plasma'
   | Effect3DKind
@@ -79,7 +72,6 @@ export const EFFECT_3D_KINDS = new Set<EffectKind>([
   'warp-portal',
   'neon-galaxy',
   'lava-sphere',
-  'laser-show',
   'hologram',
 ])
 
