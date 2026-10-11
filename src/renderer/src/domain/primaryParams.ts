@@ -6,7 +6,7 @@ import type { EffectKind } from '../../../shared/types'
  * in the advanced drawer (not one parameter is removed).
  *
  * Selection follows the review's guidance: the shared surfaces (speed /
- * intensity / hueShift / density cover 48/28/35/26 of 55 presets) are the
+ * intensity / hueShift / density cover 48/28/35/26 of the pre-R285 55 presets) are the
  * sensible defaults; the overrides table hand-picks the few kinds whose most
  * expressive knob is something else (rainbow's spread/angle, wave's width…).
  */
@@ -24,7 +24,6 @@ const OVERRIDES: Partial<Record<EffectKind, string[]>> = {
   'neon-pulse': ['frequency', 'speed', 'hueShift'],
   'matrix-rain': ['density', 'speed', 'color'],
   glitch: ['intensity', 'speed', 'hueShift'],
-  spectrum: ['spread', 'speed', 'saturation'],
   comet: ['tail', 'speed', 'color'],
   lightning: ['intensity', 'speed', 'color'],
 }

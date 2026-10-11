@@ -3,13 +3,12 @@ import { EFFECT_3D_KINDS, is3DEffect, type EffectKind, type Effect3DKind } from 
 
 describe('shared/types', () => {
   describe('is3DEffect', () => {
-    it('returns true for the 6 known 3D effect kinds', () => {
+    it('returns true for the 5 known 3D effect kinds', () => {
       const kinds: Effect3DKind[] = [
         'sphere-pulse',
         'warp-portal',
         'neon-galaxy',
         'lava-sphere',
-        'laser-show',
         'hologram'
       ]
       for (const k of kinds) {
@@ -28,7 +27,6 @@ describe('shared/types', () => {
         'fire',
         'starlight',
         'ripple',
-        'spectrum',
         'comet',
         'lightning',
         'aurora',
@@ -52,20 +50,15 @@ describe('shared/types', () => {
         'black-hole',
         'solar-system',
         'spiral-galaxy',
-        'orion-nebula',
         'pulsar-beacon',
         'hurricane-eye',
-        'lightning-leader',
-        'icosahedral-virus',
         'protein-folding',
         'mitosis-spindle',
         'synapse-pulse',
         'quantum-collapse',
         'microvilli-field',
         'eclipse-alignment',
-        'comet-tail',
         'magnetosphere-aurora',
-        'wave-diffraction',
         'vortex-flame',
         'tokamak-plasma'
       ]
@@ -76,8 +69,8 @@ describe('shared/types', () => {
   })
 
   describe('EFFECT_3D_KINDS', () => {
-    it('contains exactly 6 kinds', () => {
-      expect(EFFECT_3D_KINDS.size).toBe(6)
+    it('contains exactly 5 kinds', () => {
+      expect(EFFECT_3D_KINDS.size).toBe(5)
     })
 
     it('is a Set<EffectKind>', () => {

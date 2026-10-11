@@ -24,9 +24,9 @@
  *
  * Batch 3 ports 7 more pure-formula effects using the same helpers (no new
  * helpers needed) — the remaining un-ported effects all need either grid
- * `columns`/`rows` uniforms (fire/crystal/lightning/lightning-leader), a
+ * `columns`/`rows` uniforms (fire/crystal/lightning), a
  * click-burst cross-frame uniform (ripple), or per-pixel loops over dozens of
- * sample points + icosahedron constants (icosahedral-virus/protein-folding/
+ * sample points (protein-folding/
  * mitosis-spindle/synapse-pulse/microvilli-field), deferred to a future batch.
  *
  * Deliberately NOT ported (see PRD-0002 R37 for full reasoning):
@@ -36,12 +36,12 @@
  *    not a procedural formula.
  *  - audio-beat / audio-equalizer: need a cross-frame decay envelope computed
  *    from live audio input, not currently plumbed into this GPU path.
- *  - fire / crystal / lightning / lightning-leader: reference the configured
+ *  - fire / crystal / lightning: reference the configured
  *    LED grid's `columns`/`rows` to size features (bolt width, cell count) —
  *    needs `columns`/`rows` threaded through as uniforms, not done yet.
- *  - icosahedral-virus / protein-folding / mitosis-spindle / synapse-pulse /
+ *  - protein-folding / mitosis-spindle / synapse-pulse /
  *    microvilli-field: loop over tens of sample points per pixel with
- *    `pointSegmentDistance`/icosahedron constants — higher translation risk,
+ *    `pointSegmentDistance` — higher translation risk,
  *    deferred to a future batch.
  */
 
@@ -65,7 +65,6 @@ export const GPU_DIRECT_EFFECTS: ReadonlySet<string> = new Set([
   'vortex',
   'tunnel',
   'neon-pulse',
-  'spectrum',
   'comet',
   'explode',
   'breathing',
@@ -76,7 +75,6 @@ export const GPU_DIRECT_EFFECTS: ReadonlySet<string> = new Set([
   'nebula',
   'fluid-flow',
   'spiral-galaxy',
-  'orion-nebula',
   'hurricane-eye',
   'quantum-collapse',
   'black-hole',
@@ -84,9 +82,7 @@ export const GPU_DIRECT_EFFECTS: ReadonlySet<string> = new Set([
   // dependency, no loop-over-many-samples, no click/audio cross-frame state)
   'aurora',
   'eclipse-alignment',
-  'comet-tail',
   'magnetosphere-aurora',
-  'wave-diffraction',
   'vortex-flame',
   'tokamak-plasma'
 ])
@@ -367,30 +363,6 @@ const EFFECT_FS: Record<string, string> = {
       float hue = mod(hueShift + r * 130.0 + t * 42.0 + 720.0, 360.0);
       float bright = ring1 * 0.70 + ring2 * 0.45;
       vec3 col = hslToRgb(hue, 1.0, clamp(bright * 0.65, 0.0, 1.0));
-      gl_FragColor = vec4(col, 1.0);
-    }
-  `,
-
-  // 'spectrum': uP0=speed, uP1=saturation, uP2=hueShift, uP3=spread
-  spectrum: /* glsl */`
-    precision mediump float;
-    uniform float uTime;
-    uniform float uP[12];
-    varying vec2 vUV;
-    ${GLSL_HELPERS}
-    void main() {
-      float speed = uP[0];
-      float saturation = uP[1];
-      float hueShift = uP[2];
-      float spread = uP[3];
-      float nx = vUV.x - 0.5;
-      float ny = vUV.y - 0.5;
-      float spatialT = (nx + ny) * 0.5 + 0.5;
-      float hue = mod(uTime * speed * 360.0 + hueShift + spatialT * 120.0 * spread + 720.0, 360.0);
-      float hueRad = radians(hue);
-      float perceptualL = 0.50 - cos(hueRad + 1.05) * 0.04 - cos(hueRad * 2.0 + 0.3) * 0.025;
-      float pulse = 0.85 + sin(uTime * 0.9) * 0.15;
-      vec3 col = hslToRgb(hue, saturation, perceptualL * pulse);
       gl_FragColor = vec4(col, 1.0);
     }
   `,
@@ -727,36 +699,6 @@ const EFFECT_FS: Record<string, string> = {
     }
   `,
 
-  // 'orion-nebula': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
-  'orion-nebula': /* glsl */`
-    precision mediump float;
-    uniform float uTime;
-    uniform float uAspect;
-    uniform float uP[12];
-    varying vec2 vUV;
-    ${GLSL_HELPERS}
-    void main() {
-      float speed = uP[0];
-      float intensity = uP[1];
-      float density = uP[2];
-      float hueShift = uP[3];
-      vec2 n = normCoords(vUV, uAspect);
-      float t = uTime * speed;
-      float cloud = fbm2(vec2(n.x * 3.4 + t * 0.35, n.y * 3.4 - t * 0.25), 5);
-      float fineDust = fbm2(vec2(n.x * 11.0 - t * 0.22, n.y * 11.0 + t * 0.18), 4);
-      float radius = length(vec2(n.x + 0.05, n.y - 0.02));
-      float molecularCloud = clamp((cloud - (0.42 - density * 0.14)) * 2.2, 0.0, 1.0);
-      float darkDust = ss3(0.58, 0.86, fineDust) * ss3(0.62, 0.16, radius);
-      vec2 cellApprox = floor(vUV * vec2(220.0, 140.0));
-      float starSeed = hash2(cellApprox.x * 31.0, cellApprox.y * 47.0);
-      float stars = starSeed > 0.985 ? pow(starSeed, 18.0) : 0.0;
-      float emission = clamp((molecularCloud * 0.72 + exp(-radius * radius * 5.5) * 0.34 - darkDust * 0.45) * intensity + stars, 0.0, 1.0);
-      float hue = hueShift + cloud * 72.0 + fineDust * 32.0;
-      vec3 col = hslToRgb(hue, 0.86, emission * 0.66);
-      gl_FragColor = vec4(col, 1.0);
-    }
-  `,
-
   // 'hurricane-eye': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
   'hurricane-eye': /* glsl */`
     precision mediump float;
@@ -938,41 +880,6 @@ const EFFECT_FS: Record<string, string> = {
     }
   `,
 
-  // 'comet-tail': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
-  'comet-tail': /* glsl */`
-    precision mediump float;
-    uniform float uTime;
-    uniform float uAspect;
-    uniform float uP[12];
-    varying vec2 vUV;
-    ${GLSL_HELPERS}
-    void main() {
-      float speed = uP[0];
-      float intensity = uP[1];
-      float density = uP[2];
-      float hueShift = uP[3];
-      vec2 n = normCoords(vUV, uAspect);
-      float time = uTime * speed;
-      float orbitAngle = time * 6.28318530718;
-      float headX = cos(orbitAngle) * 0.46;
-      float headY = sin(orbitAngle) * 0.26;
-      float awayLen = max(0.001, length(vec2(headX, headY)));
-      float awayX = headX / awayLen;
-      float awayY = headY / awayLen;
-      float relX = n.x - headX;
-      float relY = n.y - headY;
-      float tailAxis = relX * awayX + relY * awayY;
-      float crossDist = abs(relX * awayY - relY * awayX);
-      float tail = exp(-tailAxis * (3.0 - density)) * exp(-pow(crossDist / (0.055 + tailAxis * 0.12), 2.0)) * ss3(0.0, 0.08, tailAxis);
-      float ionTail = exp(-tailAxis * 2.2) * exp(-pow(crossDist / 0.032, 2.0)) * ss3(0.02, 0.12, tailAxis);
-      float nucleus = exp(-((relX * relX + relY * relY) / 0.003));
-      vec3 col = colorScale3(hslToRgb(38.0 + hueShift, 0.86, 0.62), tail * intensity * 0.56);
-      col = colorAdd3(col, hslToRgb(196.0 + hueShift, 0.95, 0.58), ionTail * intensity * 0.78);
-      col = colorAdd3(col, vec3(1.0), nucleus * intensity);
-      gl_FragColor = vec4(col, 1.0);
-    }
-  `,
-
   // 'magnetosphere-aurora': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
   'magnetosphere-aurora': /* glsl */`
     precision mediump float;
@@ -1000,39 +907,6 @@ const EFFECT_FS: Record<string, string> = {
       col = colorAdd3(col, hslToRgb(128.0 + hueShift, 0.96, 0.58), auroraOval * intensity);
       col = colorAdd3(col, hslToRgb(194.0 + hueShift, 0.86, 0.56), bowShock * intensity * 0.52);
       col = colorAdd3(col, hslToRgb(36.0 + hueShift, 0.80, 0.52), earth * intensity * 0.58 + solarWind * intensity);
-      gl_FragColor = vec4(col, 1.0);
-    }
-  `,
-
-  // 'wave-diffraction': uP0=speed, uP1=intensity, uP2=density, uP3=hueShift
-  'wave-diffraction': /* glsl */`
-    precision mediump float;
-    uniform float uTime;
-    uniform float uAspect;
-    uniform float uP[12];
-    varying vec2 vUV;
-    ${GLSL_HELPERS}
-    void main() {
-      float speed = uP[0];
-      float intensity = uP[1];
-      float density = uP[2];
-      float hueShift = uP[3];
-      vec2 n = normCoords(vUV, uAspect);
-      float time = uTime * speed;
-      float wavelength = 18.0 + density * 14.0;
-      float barrier = exp(-pow((n.x + 0.12) / 0.012, 2.0)) * (1.0 - exp(-pow((abs(n.y) - 0.16) / 0.045, 2.0)));
-      vec2 slitA = vec2(-0.12, -0.16);
-      vec2 slitB = vec2(-0.12, 0.16);
-      float incident = pow(0.5 + 0.5 * sin((n.x + time) * wavelength), 5.0) * ss3(-0.12, -0.68, n.x);
-      float distanceA = length(n - slitA);
-      float distanceB = length(n - slitB);
-      float waveA = sin(distanceA * wavelength - time * 9.0);
-      float waveB = sin(distanceB * wavelength - time * 9.0);
-      float interference = pow(abs((waveA + waveB) * 0.5), 4.0) * ss3(-0.08, 0.55, n.x);
-      float slitGlow = exp(-pow(distanceA / 0.05, 2.0)) + exp(-pow(distanceB / 0.05, 2.0));
-      vec3 col = colorScale3(hslToRgb(204.0 + hueShift, 0.86, 0.50), (incident + interference) * intensity * 0.62);
-      col = colorAdd3(col, hslToRgb(46.0 + hueShift, 1.0, 0.58), slitGlow * intensity * 0.34);
-      col = colorAdd3(col, vec3(0.22), barrier * intensity);
       gl_FragColor = vec4(col, 1.0);
     }
   `,
@@ -1126,8 +1000,6 @@ function paramsFor(layer: EffectLayer): EffectParams {
       return { floats: [Number(p.speed ?? 0.60), Number(p.frequency ?? 6), Number(p.hueShift ?? 0)] }
     case 'neon-pulse':
       return { floats: [Number(p.speed ?? 0.50), Number(p.frequency ?? p.density ?? 3.0), Number(p.hueShift ?? 0)] }
-    case 'spectrum':
-      return { floats: [Number(p.speed ?? 0.25), Number(p.saturation ?? 0.95), Number(p.hueShift ?? 0), Number(p.spread ?? 1.0)] }
     case 'comet':
       return { floats: [Number(p.speed ?? 0.45), Number(p.tail ?? 0.35), Number(p.angle ?? 0)], color0: toUnit(String(p.color ?? '#ffffff')) }
     case 'explode':
@@ -1179,8 +1051,6 @@ function paramsFor(layer: EffectLayer): EffectParams {
       }
     case 'spiral-galaxy':
       return { floats: [Number(p.speed ?? 0.20), Number(p.intensity ?? 0.90), Number(p.density ?? 0.64), Number(p.hueShift ?? 0)] }
-    case 'orion-nebula':
-      return { floats: [Number(p.speed ?? 0.16), Number(p.intensity ?? 0.82), Number(p.density ?? 0.58), Number(p.hueShift ?? 285)] }
     case 'hurricane-eye':
       return { floats: [Number(p.speed ?? 0.32), Number(p.intensity ?? 0.84), Number(p.density ?? 0.58), Number(p.hueShift ?? 0)] }
     case 'quantum-collapse':
@@ -1203,12 +1073,8 @@ function paramsFor(layer: EffectLayer): EffectParams {
       }
     case 'eclipse-alignment':
       return { floats: [Number(p.speed ?? 0.20), Number(p.intensity ?? 0.88), Number(p.density ?? 0.56), Number(p.hueShift ?? 0)] }
-    case 'comet-tail':
-      return { floats: [Number(p.speed ?? 0.30), Number(p.intensity ?? 0.88), Number(p.density ?? 0.58), Number(p.hueShift ?? 0)] }
     case 'magnetosphere-aurora':
       return { floats: [Number(p.speed ?? 0.24), Number(p.intensity ?? 0.86), Number(p.density ?? 0.58), Number(p.hueShift ?? 0)] }
-    case 'wave-diffraction':
-      return { floats: [Number(p.speed ?? 0.36), Number(p.intensity ?? 0.84), Number(p.density ?? 0.62), Number(p.hueShift ?? 0)] }
     case 'vortex-flame':
       return { floats: [Number(p.speed ?? 0.46), Number(p.intensity ?? 0.90), Number(p.density ?? 0.60), Number(p.hueShift ?? 0)] }
     case 'tokamak-plasma':

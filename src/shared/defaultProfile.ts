@@ -57,12 +57,6 @@ export const effectPresets: PresetDefinition[] = [
     defaults: { speed: 0.45, frequency: 3.5, color: '#00e5ff' }
   },
   {
-    kind: 'spectrum',
-    label: 'Spectrum',
-    description: 'Smooth diagonal colour-wash cycling the full hue wheel. Spread controls the spatial gradient range.',
-    defaults: { speed: 0.25, saturation: 0.95, hueShift: 0, spread: 1.0 }
-  },
-  {
     kind: 'comet',
     label: 'Comet',
     description: 'Bright streak races across the grid with a glowing tail.',
@@ -208,12 +202,6 @@ export const effectPresets: PresetDefinition[] = [
     defaults: { speed: 0.20, intensity: 0.90, density: 0.64, hueShift: 0 }
   },
   {
-    kind: 'orion-nebula',
-    label: 'Orion Nebula',
-    description: 'Star-forming molecular cloud using layered dust density, emission gas, young stars, and reflective blue-magenta glow.',
-    defaults: { speed: 0.16, intensity: 0.82, density: 0.58, hueShift: 285 }
-  },
-  {
     kind: 'pulsar-beacon',
     label: 'Pulsar Beacon',
     description: 'Rotating neutron-star lighthouse with opposed radiation beams, bright core pulses, and exponential halo decay.',
@@ -224,18 +212,6 @@ export const effectPresets: PresetDefinition[] = [
     label: 'Hurricane Eye',
     description: 'Satellite-like cyclone projection with a calm eye, bright eyewall, and rotating spiral rain bands shaped by vorticity.',
     defaults: { speed: 0.32, intensity: 0.84, density: 0.58, hueShift: 0 }
-  },
-  {
-    kind: 'lightning-leader',
-    label: 'Lightning Leader',
-    description: 'Branching stepped-leader discharge from storm cloud to ground, followed by a bright return-stroke flash.',
-    defaults: { speed: 0.38, intensity: 0.94, density: 0.52, hueShift: 0 }
-  },
-  {
-    kind: 'icosahedral-virus',
-    label: 'Icosahedral Virus',
-    description: 'Rotating viral capsid projection with icosahedral edges, spike proteins, and depth-shaded shell geometry.',
-    defaults: { speed: 0.28, intensity: 0.88, density: 0.62, hueShift: 135 }
   },
   {
     kind: 'protein-folding',
@@ -274,22 +250,10 @@ export const effectPresets: PresetDefinition[] = [
     defaults: { speed: 0.20, intensity: 0.88, density: 0.56, hueShift: 0 }
   },
   {
-    kind: 'comet-tail',
-    label: 'Comet Tail Physics',
-    description: 'Comet nucleus orbiting the sun with dust and ion tails streaming away from solar radiation.',
-    defaults: { speed: 0.30, intensity: 0.88, density: 0.58, hueShift: 0 }
-  },
-  {
     kind: 'magnetosphere-aurora',
     label: 'Magnetosphere Aurora',
     description: 'Earth dipole field lines, solar-wind bow shock, and auroral ovals glowing near magnetic poles.',
     defaults: { speed: 0.24, intensity: 0.86, density: 0.58, hueShift: 0 }
-  },
-  {
-    kind: 'wave-diffraction',
-    label: 'Wave Diffraction',
-    description: 'Double-slit wave diffraction with incident waves, slit glow, and downstream interference fringes.',
-    defaults: { speed: 0.36, intensity: 0.84, density: 0.62, hueShift: 0 }
   },
   {
     kind: 'vortex-flame',
@@ -327,12 +291,6 @@ export const effectPresets: PresetDefinition[] = [
     label: 'Lava Sphere',
     description: 'Raymarched molten lava globe. Triple-axis domain-warped FBM creates flowing crust patterns with subsurface glow leaking through thin areas.',
     defaults: { speed: 0.30, hueShift: 0 }
-  },
-  {
-    kind: 'laser-show',
-    label: 'Laser Show',
-    description: 'Concert stage laser beams sweeping from the floor in five independent arcs. Volumetric haze and a floor glow complete the show atmosphere.',
-    defaults: { speed: 0.50, hueShift: 0 }
   },
   {
     kind: 'hologram',

@@ -28,19 +28,19 @@ const COLS = 24
 const ROWS = 14
 const SAMPLE_SECS = [0, 0.37, 0.83, 1.21, 1.67, 2.13, 2.59, 3.01, 3.41, 3.89, 4.31, 4.73, 5.21, 5.63, 6.07, 6.49]
 
-const GPU_3D_KINDS = new Set<string>(['sphere-pulse', 'warp-portal', 'neon-galaxy', 'lava-sphere', 'laser-show', 'hologram'])
+const GPU_3D_KINDS = new Set<string>(['sphere-pulse', 'warp-portal', 'neon-galaxy', 'lava-sphere', 'hologram'])
 
 const AMBIENT: EffectKind[] = [
-  'static', 'screen-ambient', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'spectrum', 'random-color',
+  'static', 'screen-ambient', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'random-color',
   'plasma', 'vortex', 'tunnel', 'crystal', 'glitch', 'neon-pulse', 'nebula', 'aurora',
-  'orion-nebula', 'mirror-symmetry', 'ripple', 'solar-system',
+  'mirror-symmetry', 'ripple', 'solar-system',
 ]
 const FEATURE: EffectKind[] = [
   'fire', 'starlight', 'comet', 'explode', 'audio-equalizer', 'fluid-flow', 'dna-helix',
-  'black-hole', 'spiral-galaxy', 'pulsar-beacon', 'hurricane-eye', 'lightning-leader',
-  'icosahedral-virus', 'protein-folding', 'mitosis-spindle', 'synapse-pulse',
-  'quantum-collapse', 'microvilli-field', 'eclipse-alignment', 'comet-tail',
-  'magnetosphere-aurora', 'wave-diffraction', 'vortex-flame', 'tokamak-plasma',
+  'black-hole', 'spiral-galaxy', 'pulsar-beacon', 'hurricane-eye',
+  'protein-folding', 'mitosis-spindle', 'synapse-pulse',
+  'quantum-collapse', 'microvilli-field', 'eclipse-alignment',
+  'magnetosphere-aurora', 'vortex-flame', 'tokamak-plasma',
 ]
 const STROBE: EffectKind[] = ['lightning', 'matrix-rain', 'audio-beat']
 const TOOL: EffectKind[] = ['custom-paint', 'image-paint']

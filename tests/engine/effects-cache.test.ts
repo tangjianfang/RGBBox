@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   renderEffectPixel,
   getSolarSystemPlanets,
-  getVirusShellGeometry,
   getProteinBackboneGeometry,
   getSpindleGeometry,
   getSynapseVesicles,
@@ -17,7 +16,7 @@ import type { EffectLayer, Profile, RgbColor } from '../../src/shared/types'
  * TA1: custom-paint / image-paint 的解析缓存从单槽改为按内容 Map（带上限 FIFO）。
  *      锁两点：①同帧多图层交替时每份内容只 JSON.parse 一次；②渲染结果与
  *      逐层单独渲染完全一致（纯缓存改造，零行为变化）。
- * TA2: 重科学系效果（solar-system / icosahedral-virus / protein-folding /
+ * TA2: 重科学系效果（solar-system / protein-folding /
  *      mitosis-spindle / synapse-pulse）的帧不变几何按 (layerId, t, 形状参数)
  *      缓存。锁两点：①同键二次调用返回同一数组引用（缓存命中）、键变化重建；
  *      ②逐像素输出与 R266 前的原始公式逐位一致（参考实现逐字拷贝自改造前代码）。
@@ -214,14 +213,6 @@ describe('engine/effects frame-geometry caches (R266 TA2)', () => {
     expect(a).toHaveLength(8)
   })
 
-  it('icosahedral-virus: same (layerId, t) → same array reference; changes rebuild', () => {
-    const a = getVirusShellGeometry('geom-virus', 1.23)
-    expect(getVirusShellGeometry('geom-virus', 1.23)).toBe(a)
-    expect(getVirusShellGeometry('geom-virus', 4.56)).not.toBe(a)
-    expect(getVirusShellGeometry('geom-other', 1.23)).not.toBe(a)
-    expect(a).toHaveLength(12)
-  })
-
   it('protein-folding: same (layerId, t, density) → same array reference; changes rebuild', () => {
     const a = getProteinBackboneGeometry('geom-protein', 1.23, 0.56)
     expect(getProteinBackboneGeometry('geom-protein', 1.23, 0.56)).toBe(a)
@@ -297,23 +288,6 @@ function refPointSegmentDistance(px: number, py: number, ax: number, ay: number,
   return Math.sqrt(dx * dx + dy * dy)
 }
 
-const REF_ICOSAHEDRON_VERTICES = (() => {
-  const phi = (1 + Math.sqrt(5)) / 2
-  const scale = 1 / Math.sqrt(1 + phi * phi)
-  return [
-    [-1, phi, 0], [1, phi, 0], [-1, -phi, 0], [1, -phi, 0],
-    [0, -1, phi], [0, 1, phi], [0, -1, -phi], [0, 1, -phi],
-    [phi, 0, -1], [phi, 0, 1], [-phi, 0, -1], [-phi, 0, 1],
-  ].map(([x, y, z]) => [x * scale, y * scale, z * scale] as const)
-})()
-
-const REF_ICOSAHEDRON_EDGES = [
-  [0, 1], [0, 5], [0, 7], [0, 10], [0, 11], [1, 5], [1, 7], [1, 8], [1, 9],
-  [2, 3], [2, 4], [2, 6], [2, 10], [2, 11], [3, 4], [3, 6], [3, 8], [3, 9],
-  [4, 5], [4, 9], [4, 11], [5, 9], [5, 11], [6, 7], [6, 8], [6, 10],
-  [7, 8], [7, 10], [8, 9], [10, 11],
-] as const
-
 function refSolarSystem(intensity: number, density: number, x: number, y: number, columns: number, rows: number, now: number): RgbColor {
   const { nx, ny } = refNormCoords(x, y, columns, rows)
   const time = now * 0.26
@@ -338,40 +312,6 @@ function refSolarSystem(intensity: number, density: number, x: number, y: number
     const planetHalo = Math.exp(-Math.pow(planetDistance / (planetSize * 3.2), 2)) * 0.3
     color = refColorAdd(color, hslToRgb(hues[orbitIndex], 0.7, 0.5), planetHalo * intensity)
   }
-  return color
-}
-
-function refIcosahedralVirus(intensity: number, density: number, hueShift: number, x: number, y: number, columns: number, rows: number, now: number): RgbColor {
-  const { nx, ny } = refNormCoords(x, y, columns, rows)
-  const time = now * 0.28
-  const yaw = time * 1.4
-  const pitch = Math.sin(time * 0.7) * 0.42
-  const projected = REF_ICOSAHEDRON_VERTICES.map(([vx, vy, vz]) => {
-    const x1 = vx * Math.cos(yaw) - vz * Math.sin(yaw)
-    const z1 = vx * Math.sin(yaw) + vz * Math.cos(yaw)
-    const y1 = vy * Math.cos(pitch) - z1 * Math.sin(pitch)
-    const z2 = vy * Math.sin(pitch) + z1 * Math.cos(pitch)
-    const perspective = 0.42 / Math.max(0.45, 1.35 - z2 * 0.55)
-    return { x: x1 * perspective, y: y1 * perspective, z: z2 }
-  })
-  let shell = 0
-  for (const [aIndex, bIndex] of REF_ICOSAHEDRON_EDGES) {
-    const a = projected[aIndex]
-    const b = projected[bIndex]
-    const depth = clampUnit(0.55 + (a.z + b.z) * 0.20)
-    shell += Math.exp(-Math.pow(refPointSegmentDistance(nx, ny, a.x, a.y, b.x, b.y) / 0.045, 2)) * depth
-  }
-  let capsid = 0
-  for (let vertexIndex = 0; vertexIndex < projected.length; vertexIndex++) {
-    const vertex = projected[vertexIndex]
-    const distance = Math.sqrt((nx - vertex.x) ** 2 + (ny - vertex.y) ** 2)
-    const spikePulse = 0.78 + Math.sin(time * 6 + vertexIndex * 1.7) * 0.22
-    capsid += Math.exp(-Math.pow(distance / (0.058 + density * 0.018), 2)) * clampUnit(0.55 + vertex.z * 0.28) * spikePulse
-  }
-  const envelope = Math.exp(-(nx * nx + ny * ny) / 0.24) * 0.3
-  let color = refColorScale(hslToRgb(168 + hueShift, 0.84, 0.52), shell * intensity * 0.6)
-  color = refColorAdd(color, hslToRgb(312 + hueShift, 0.92, 0.64), capsid * intensity * 0.85)
-  color = refColorAdd(color, hslToRgb(202 + hueShift, 0.62, 0.48), envelope * intensity)
   return color
 }
 
@@ -471,12 +411,6 @@ describe('engine/effects cached geometry renders pixel-identical to pre-R266 mat
       parameters: { speed: 0.26, intensity: 0.86, density: 0.55 },
       ref: (d: number, _h: number, x: number, y: number, now: number) =>
         refSolarSystem(0.86, d, x, y, COLS, ROWS, now),
-    },
-    {
-      kind: 'icosahedral-virus' as const,
-      parameters: { speed: 0.28, intensity: 0.88, density: 0.62, hueShift: 135 },
-      ref: (d: number, _h: number, x: number, y: number, now: number) =>
-        refIcosahedralVirus(0.88, d, 135, x, y, COLS, ROWS, now),
     },
     {
       kind: 'protein-folding' as const,

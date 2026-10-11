@@ -411,80 +411,6 @@ void main() {
 `
 
 /**
- * laser-show: Concert laser beams from stage floor sweeping the void.
- * Five coloured beam cones radiate from the bottom-centre and sweep across
- * the frame with independent sinusoidal speed/phase. Volumetric haze fills
- * the background; a floor-mirror glow reflects the base of each beam.
- */
-const LASER_SHOW_FS = COMMON + /* glsl */`
-void main() {
-  float speed    = max(0.05, u_params.x);
-  float hueShift = u_params.y;
-  float t        = u_time * speed;
-
-  vec2 uv = (gl_FragCoord.xy / u_resolution - 0.5);
-  uv.x   *= u_resolution.x / u_resolution.y;
-
-  /* Stage origin: bottom-center */
-  vec2  orig = vec2(0.0, -0.52);
-  vec2  dir  = uv - orig;
-  float len  = length(dir);
-  float ang  = atan(dir.y, dir.x);
-
-  vec3 col = vec3(0.0);
-
-  /* Volumetric haze background — denser near floor */
-  float haze = (fbm(vec3(uv * 2.5, t * 0.15)) * 0.5 + 0.25)
-             * exp(-(uv.y + 0.5) * (uv.y + 0.5) * 3.0);
-  col += hsl(mod(t * 22.0 + hueShift + 720.0, 360.0), 0.38, 0.10) * haze;
-
-  float bw = 0.035;
-  float ba, da, br, bh;
-
-  /* Beam 0 */
-  ba  = sin(t * 1.10 + 0.00) * 1.15 + 1.5708;
-  da  = abs(mod(ang - ba + 3.14159, 6.28318) - 3.14159);
-  br  = exp(-da * da / (bw * bw)) * (0.5 + 0.4 * sin(t * 4.1)) * min(len * 2.0, 1.0);
-  bh  = mod(0.0 + hueShift + 720.0, 360.0);
-  col += hsl(bh, 1.0, 0.72) * br;
-
-  /* Beam 1 */
-  ba  = sin(t * 0.83 + 1.26) * 1.05 + 1.5708;
-  da  = abs(mod(ang - ba + 3.14159, 6.28318) - 3.14159);
-  br  = exp(-da * da / (bw * bw)) * (0.5 + 0.4 * sin(t * 3.7 + 1.1)) * min(len * 2.0, 1.0);
-  bh  = mod(72.0 + hueShift + 720.0, 360.0);
-  col += hsl(bh, 1.0, 0.72) * br;
-
-  /* Beam 2 */
-  ba  = sin(t * 0.71 + 2.51) * 0.95 + 1.5708;
-  da  = abs(mod(ang - ba + 3.14159, 6.28318) - 3.14159);
-  br  = exp(-da * da / (bw * bw)) * (0.5 + 0.4 * sin(t * 3.3 + 2.2)) * min(len * 2.0, 1.0);
-  bh  = mod(144.0 + hueShift + 720.0, 360.0);
-  col += hsl(bh, 1.0, 0.72) * br;
-
-  /* Beam 3 */
-  ba  = sin(t * 0.97 + 3.77) * 1.20 + 1.5708;
-  da  = abs(mod(ang - ba + 3.14159, 6.28318) - 3.14159);
-  br  = exp(-da * da / (bw * bw)) * (0.5 + 0.4 * sin(t * 4.2 + 3.3)) * min(len * 2.0, 1.0);
-  bh  = mod(216.0 + hueShift + 720.0, 360.0);
-  col += hsl(bh, 1.0, 0.72) * br;
-
-  /* Beam 4 */
-  ba  = sin(t * 0.61 + 5.03) * 0.88 + 1.5708;
-  da  = abs(mod(ang - ba + 3.14159, 6.28318) - 3.14159);
-  br  = exp(-da * da / (bw * bw)) * (0.5 + 0.4 * sin(t * 2.9 + 4.4)) * min(len * 2.0, 1.0);
-  bh  = mod(288.0 + hueShift + 720.0, 360.0);
-  col += hsl(bh, 1.0, 0.72) * br;
-
-  /* Floor glow at origin */
-  float floorG = exp(-(uv.y + 0.52) * (uv.y + 0.52) * 60.0);
-  col += hsl(mod(t * 38.0 + hueShift + 720.0, 360.0), 0.9, 0.55) * floorG * 0.7;
-
-  gl_FragColor = vec4(col, 1.0);
-}
-`
-
-/**
  * hologram: Sci-fi holographic wireframe sphere.
  * Raymarched sphere with lat/lon grid lines, animated scan ring, transparency
  * through both hemispheres, and edge data-stream particles.
@@ -596,7 +522,6 @@ export const SHADERS: Record<Effect3DKind, string> = {
   'warp-portal':  WARP_PORTAL_FS,
   'neon-galaxy':  NEON_GALAXY_FS,
   'lava-sphere':  LAVA_SPHERE_FS,
-  'laser-show':   LASER_SHOW_FS,
   'hologram':     HOLOGRAM_FS,
 }
 

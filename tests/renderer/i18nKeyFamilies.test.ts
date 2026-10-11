@@ -16,7 +16,9 @@ const effectKinds = enKeys
 
 describe('i18n effect 键族不变量 (R278)', () => {
   it(`名键族(${effectKinds.length} kind) × zh/en 双语完整非空`, () => {
-    expect(effectKinds.length).toBeGreaterThanOrEqual(55)
+    // R285: 55→48 下限 — 删除批移除 7 个灯效 kind（lightning-leader/spectrum/
+    // orion-nebula/laser-show/wave-diffraction/icosahedral-virus/comet-tail）。
+    expect(effectKinds.length).toBeGreaterThanOrEqual(48)
     for (const kind of effectKinds) {
       expect(translations.en[`effect.${kind}` as keyof typeof translations.zh], `en 缺 effect.${kind}`).toBeTruthy()
       expect(translations.zh[`effect.${kind}` as keyof typeof translations.zh], `zh 缺 effect.${kind}`).toBeTruthy()

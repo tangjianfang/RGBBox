@@ -12,7 +12,7 @@ export interface QuickOption<T extends string> {
   labelKey: string
 }
 
-export const QUICK_EFFECT_KINDS: EffectKind[] = ['screen-ambient', 'aurora', 'fire', 'hologram', 'dna-helix', 'black-hole', 'solar-system', 'spiral-galaxy', 'orion-nebula', 'hurricane-eye', 'icosahedral-virus', 'quantum-collapse', 'magnetosphere-aurora', 'tokamak-plasma']
+export const QUICK_EFFECT_KINDS: EffectKind[] = ['screen-ambient', 'aurora', 'fire', 'hologram', 'dna-helix', 'black-hole', 'solar-system', 'spiral-galaxy', 'hurricane-eye', 'quantum-collapse', 'magnetosphere-aurora', 'tokamak-plasma']
 
 export const QUICK_MOTION_OPTIONS: QuickOption<QuickMotionId>[] = [
   { id: 'slow', labelKey: 'quick.motion.slow' },
