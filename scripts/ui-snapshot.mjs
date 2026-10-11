@@ -14,6 +14,8 @@
 import { chromium, assertFreshOut, launchElectron, connectRenderer } from './lib/cdp.mjs'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import pixelmatch from 'pixelmatch'
 import { PNG } from 'pngjs'
@@ -107,7 +109,10 @@ assertFreshOut()
 mkdirSync(CURRENT, { recursive: true })
 if (mode === 'compare') mkdirSync(DIFFDIR, { recursive: true })
 
-launchElectron({ port: PORT })
+// R281: 隔离 userData——街机档案/效果使用态等用户活动数据不再进入快照
+// (两轮漂移事故根因:R225 走查污染 profile、R281 前游戏档案活数据 0.67%)。
+const SNAPSHOT_UDD = join(tmpdir(), `rgbbox-snap-${Date.now()}`)
+launchElectron({ port: PORT, userDataDir: SNAPSHOT_UDD })
 const { page } = await connectRenderer({ port: PORT })
 
 // R222.3(T5): 注入 prefers-reduced-motion:reduce——app.css:8913 已有全局

@@ -14,7 +14,7 @@ import { createCaptureStore } from './captureStore'
 import { recognizeImage } from './ocrService'
 import { ipcChannels } from '../shared/ipc'
 import { getLogger, initLogger } from '../shared/logger'
-import { MODELS_MANIFEST } from '../shared/modelsManifest'
+import { MODELS_MANIFEST, isCacheSizeOk } from '../shared/modelsManifest'
 import { renderPreviewFrame, type AudioInput } from '../engine/previewEngine'
 import type { AgentEvent, AiProfile, CaptureEntry, DesktopAudioSource, CaptureSource, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, RgbFrame, ScreenCaptureRequest } from '../shared/types'
 import { getDisplayTopology } from './displayTopology'
@@ -24,7 +24,7 @@ import { armShutdown, cancelShutdown, getShutdownStatus } from './shutdownSchedu
 import { closeAllScreensaverWindows, disposeScreensaver, getScreensaverSettings, initScreensaver, setScreensaverSettings } from './screensaverManager'
 import { acknowledgeSnipPainted, cancelSnip, disposeSnipManager, finishSnip, getSnipHotkeyPref, initSnipHotkeyPref, initSnipManager, isPresetSnipHotkey, registerSnipHotkey, setSnipHotkeyPref, startSnip, warmSnipStack } from './snipManager'
 import { asUiLocale, trayMenuLabels, type UiLocale } from './trayMenu'
-import { deleteProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
+import { deleteProfile, importProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
 import { getCaptureProviderStatus, initializeCaptureProviders } from './captureProviders'
 import { initCrashLogging, listCrashLogs, exportCrashLog } from './crashLog'
@@ -50,6 +50,8 @@ import { Readable } from 'node:stream'
 import { mediaStreamPlan, parseRangeHeader, resolveAppAssetPath, resolveMediaMime } from './mediaProtocol'
 import { allowPermission } from './permissionGate'
 import { registerDenoiseService } from './denoiseService'
+import { loadPlaylist, savePlaylist } from './playlistStore'
+import { isMediaPathAllowed } from './mediaAllowlist'
 
 // Initialize file logger — must be done after imports but before app.whenReady
 const log = initLogger(join(app.getPath('userData'), 'logs'), { minLevel: 'debug' })
@@ -1235,8 +1237,17 @@ function registerIpc(): void {
     if (result.canceled || !result.filePaths[0]) return null
     try {
       const raw = await readFile(result.filePaths[0], 'utf-8')
+      // R264: was a bare `JSON.parse(raw) as Profile` — wrong-shaped files
+      // crashed the renderer; same-id files silently overwrote the existing
+      // named slot via auto-save. importProfile validates + migrates + mints
+      // a fresh id on collision; null = reject the file.
+      const imported = await importProfile(raw)
+      if (!imported) {
+        log.error('Profile', `Failed to import profile from: ${result.filePaths[0]}`)
+        return null
+      }
       log.info('Profile', `Profile imported from: ${result.filePaths[0]}`)
-      return JSON.parse(raw) as Profile
+      return imported
     } catch {
       log.error('Profile', `Failed to import profile from: ${result.filePaths[0]}`)
       return null
@@ -1285,8 +1296,11 @@ function registerIpc(): void {
   // partial download (the ECONNRESET saga) previously left a corrupt file that
   // "已就绪" happily reported while every InferenceSession.create failed. A
   // size mismatch deletes the file so the next download starts fresh.
-  const audioModelBytes = new Map<string, number>(
-    MODELS_MANIFEST.filter((e) => e.kind === 'onnx' && e.bytes !== undefined)
+  // R279 (W3): the map now covers EVERY entry with pinned bytes — onnx plus the
+  // canonical Mip-NeRF 360 splats — so getCachedModelUrl validates splats too
+  // (a resume-killed partial used to be served as "cached" forever).
+  const modelExpectedBytes = new Map<string, number>(
+    MODELS_MANIFEST.filter((e) => e.bytes !== undefined)
       .map((e) => [e.file, e.bytes as number])
   )
   initAudioAi({
@@ -1299,11 +1313,11 @@ function registerIpc(): void {
     findCached: async (file) => {
       const filePath = join(modelsDir, file)
       try { await access(filePath) } catch { return null }
-      const expected = audioModelBytes.get(file)
+      const expected = modelExpectedBytes.get(file)
       if (expected !== undefined) {
         try {
           const s = await stat(filePath)
-          if (Math.abs(s.size - expected) > expected * 0.1) {
+          if (!isCacheSizeOk(s.size, expected)) {
             log.warn('Model', `corrupt cache detected (${s.size}/${expected} bytes), deleting: ${file}`)
             await unlink(filePath)
             return null
@@ -1314,15 +1328,31 @@ function registerIpc(): void {
     },
   })
 
-  /** Return a file:// URL if the model is already cached, otherwise undefined. */
+  /** Return a file:// URL if the model is already cached, otherwise undefined.
+   *  R279 (W3): entries with pinned `bytes` (all onnx + canonical splats) get
+   *  the R90.9 ±10% size check — a partial file a killed resume left behind is
+   *  deleted and reported NOT cached, so the UI re-offers the download instead
+   *  of serving a half model forever. Entries without pinned bytes (keyboard_rgb/
+   *  mouse_rgb — no verifiable source, see manifest) keep the existence check. */
   async function getCachedModelUrl(fileName: string): Promise<string | undefined> {
     const filePath = join(modelsDir, fileName)
     try {
       await access(filePath)
-      return pathToFileURL(filePath).toString()
     } catch {
       return undefined
     }
+    const expected = modelExpectedBytes.get(fileName)
+    if (expected !== undefined) {
+      try {
+        const s = await stat(filePath)
+        if (!isCacheSizeOk(s.size, expected)) {
+          log.warn('Model', `corrupt cache detected (${s.size}/${expected} bytes), deleting: ${fileName}`)
+          await unlink(filePath)
+          return undefined
+        }
+      } catch { /* stat failed — treat as cached */ }
+    }
+    return pathToFileURL(filePath).toString()
   }
 
   /** Follow HTTPS/HTTP redirects and stream to dest, pushing progress events.
@@ -1388,19 +1418,11 @@ function registerIpc(): void {
   // ── Audio Studio file path persistence ────────────────────────────────────
   const audioConfigPath = join(app.getPath('userData'), 'config', 'audio-playlist.json')
 
-  ipcMain.handle(ipcChannels.audioGetSavedPaths, async () => {
-    try {
-      const raw = await readFile(audioConfigPath, 'utf-8')
-      return JSON.parse(raw)
-    } catch {
-      return []
-    }
-  })
+  // R267: 裸 writeFile → playlistStore(串行队列 + 原子写 + 坏文件不回空覆盖)
+  ipcMain.handle(ipcChannels.audioGetSavedPaths, () => loadPlaylist(audioConfigPath))
 
-  ipcMain.handle(ipcChannels.audioSavePaths, async (_event, paths: Array<{ id: string; name: string; path: string; group: string }>) => {
-    await mkdir(join(app.getPath('userData'), 'config'), { recursive: true })
-    await writeFile(audioConfigPath, JSON.stringify(paths, null, 2), 'utf-8')
-  })
+  ipcMain.handle(ipcChannels.audioSavePaths, (_event, paths: Array<{ id: string; name: string; path: string; group: string }>) =>
+    savePlaylist(audioConfigPath, paths))
 
   const AUDIO_FILTERS = [{ name: 'Audio', extensions: ['wav', 'flac', 'mp3', 'aac', 'm4a', 'ogg', 'opus', 'weba'] }]
 
@@ -1432,21 +1454,13 @@ function registerIpc(): void {
   // ── Video Studio file path persistence ────────────────────────────────────
   const videoConfigPath = join(app.getPath('userData'), 'config', 'video-playlist.json')
 
-  ipcMain.handle(ipcChannels.videoGetSavedPaths, async () => {
-    try {
-      const raw = await readFile(videoConfigPath, 'utf-8')
-      return JSON.parse(raw)
-    } catch {
-      return []
-    }
-  })
+  // R267: 裸 writeFile → playlistStore(串行队列 + 原子写 + 坏文件不回空覆盖)
+  ipcMain.handle(ipcChannels.videoGetSavedPaths, () => loadPlaylist(videoConfigPath))
 
   // R91.1: entries may carry resume progress (progress/duration/updatedAt) —
   // stored verbatim alongside the structural fields.
-  ipcMain.handle(ipcChannels.videoSavePaths, async (_event, paths: Array<{ id: string; name: string; path: string; group: string; progress?: number; duration?: number; updatedAt?: number }>) => {
-    await mkdir(join(app.getPath('userData'), 'config'), { recursive: true })
-    await writeFile(videoConfigPath, JSON.stringify(paths, null, 2), 'utf-8')
-  })
+  ipcMain.handle(ipcChannels.videoSavePaths, (_event, paths: Array<{ id: string; name: string; path: string; group: string; progress?: number; duration?: number; updatedAt?: number }>) =>
+    savePlaylist(videoConfigPath, paths))
 
   const VIDEO_FILTERS = [{ name: 'Video', extensions: ['mp4', 'webm', 'mkv', 'mov', 'avi', 'flv', 'ts', 'm4v', 'wmv'] }]
 
@@ -1675,14 +1689,19 @@ app.whenReady().then(() => {
         // 不可达),仍按纵深防御收口:仅放行 userData 内的媒体/模型目录与
         // 用户 Downloads/Music/Videos(播放列表/录制的既有来源),其余 403。
         const normalized = resolve(filePath)
-        const allowedRoots = [
-          join(app.getPath('userData'), 'captures'),
-          join(app.getPath('userData'), 'models'),
-          join(app.getPath('home'), 'Downloads'),
-          join(app.getPath('music')),
-          join(app.getPath('videos')),
-        ]
-        const allowed = allowedRoots.some((root) => normalized === root || normalized.startsWith(root + sep))
+        // R268: 白名单抽纯函数(mediaAllowlist)——补 userData/ai8-artifacts(AI8
+        // 缩略图 403 回归)与播放列表登记文件精确路径(用户自选目录全 403 回归)。
+        const [audioList, videoList] = await Promise.all([
+          loadPlaylist(join(app.getPath('userData'), 'config', 'audio-playlist.json')).catch(() => [] as Array<{ path: string }>),
+          loadPlaylist(join(app.getPath('userData'), 'config', 'video-playlist.json')).catch(() => [] as Array<{ path: string }>),
+        ])
+        const playlistPaths = [...audioList, ...videoList].map((item) => resolve(item.path))
+        const allowed = isMediaPathAllowed(normalized, playlistPaths, {
+          userData: app.getPath('userData'),
+          home: app.getPath('home'),
+          music: app.getPath('music'),
+          videos: app.getPath('videos'),
+        })
         if (!allowed) {
           log.warn('MediaProtocol', `blocked non-whitelisted path: ${normalized.slice(0, 120)}`)
           return new Response('Forbidden', { status: 403 })

@@ -1,7 +1,7 @@
 # I18N-AUDIT — 全量审计报告（R240 / F5 族）
 
-> 生成：2026-10-09T16:26:07.929Z（node scripts/i18n-audit.mjs）
-> 语料：zh 1773 键 / en 1773 键
+> 生成：2026-10-10T19:07:26.516Z（node scripts/i18n-audit.mjs）
+> 语料：zh 1782 键 / en 1782 键
 
 | 检查 | 发现 | 处置 |
 |---|---|---|
@@ -9,11 +9,11 @@
 | zh 缺键 | 0 | 必修 |
 | 空值 | 0 | 必修 |
 | 占位符不一致 | 0 | 必修 |
-| zh=en 同文（非中文） | 13 | 人工复核 |
-| en 超长（>3×zh） | 130 | 人工复核（溢出候选） |
+| zh=en 同文（非中文） | 15 | 人工复核 |
+| en 超长（>3×zh） | 131 | 人工复核（溢出候选） |
 | 重复键 | 0 | 必修 |
 
-## zh=en 同文（复核：或为刻意的品牌/术语）（13）
+## zh=en 同文（复核：或为刻意的品牌/术语）（15）
 
 - app.name
 - ai.lab.tab.agent
@@ -23,14 +23,16 @@
 - arch.module.nodejs
 - arch.module.ipc.item1
 - arch.module.ipc.item2
+- games.swarm.label.player
+- games.swarm.label.boss
 - games.rouletteStatResult
 - diag.processCpu.cpu
+
 - video.annotate.engineRapid
 - video.annotate.engineWinrt
-
 - ai.apiKey
 
-## en 超长（复核：布局溢出候选）（130）
+## en 超长（复核：布局溢出候选）（131）
 
 - ai.lab.keyUnreadable (46→161)
 - ai.voice.lexiconEmpty (25→92)
@@ -151,6 +153,7 @@
 
 - games.lan.cmdHint (19→58)
 - games.recap.firstRun (18→55)
+- videowall.singleScreenHint (17→54)
 - games.onboard.tetris.3 (12→41)
 - games.onboard.slash.1 (10→55)
 - games.tetrisControls (13→47)
@@ -160,15 +163,15 @@
 - games.codex.enemy.swarm.lore (19→59)
 - games.codex.enemy.shooter.lore (18→61)
 - games.codex.enemy.splitter.lore (16→55)
-- scene.linkedDisplays.hint (18→60)
 
+- scene.linkedDisplays.hint (18→60)
 - videowall.hint (25→79)
 - audio.emptyPlaylist (13→42)
 - audio.export.desc (26→100)
+- audio.viz.projectUnsupportedWaveform (10→41)
 - video.capture.fail (16→54)
 - video.editor.error (15→52)
 - video.annotate.ocrRegion (16→49)
-- snip.failed (12→45)
 - snip.hotkeyHint (25→94)
 - media.error.decode (22→68)
 - media.error.network (28→86)

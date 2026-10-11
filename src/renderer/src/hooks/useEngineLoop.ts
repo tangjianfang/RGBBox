@@ -1,7 +1,7 @@
 import { useEffect, type RefObject } from 'react'
 import type { DisplayTopology, Profile, RgbFrame, Scene } from '../../../shared/types'
 import { is3DEffect, resolveFrameRenderStyle } from '../../../shared/types'
-import type { WorkerInput, WorkerOutput } from '../workers/previewEngineWorker'
+import type { WorkerErrorOutput, WorkerInput, WorkerOutput } from '../workers/previewEngineWorker'
 import { MetricsCollector } from '../engine/metricsCollector'
 import { activeLayer } from '../domain/profileUtils'
 import { applyParameterAutomation } from '../domain/automation'
@@ -9,6 +9,29 @@ import { applyLayerOverride, type PreviewOverride } from '../domain/previewOverr
 import { distributeFrameToOverlays } from '../domain/overlayDistribution'
 import type { View } from './tabNavigation'
 import type { AudioData } from './useAudioAnalyzer'
+
+/**
+ * R269: worker-failure defenses. tickPending is cleared by worker REPLIES —
+ * a worker that dies mid-tick (uncaught throw inside previewEngineWorker,
+ * hard crash, silenced thread) would latch the gate forever: the classic
+ * silent engine freeze (REVIEW-shell-loop TA6/C U4 + REVIEW-shared #1).
+ * Three layers of defense:
+ *   1. the worker itself catches and posts a { type: 'error' } reply
+ *   2. this loop treats error replies and 'error' events as replies
+ *   3. a watchdog: no reply within the timeout → forced gate reset
+ * Repeated failures flip a degrade flag that throttles retries to one
+ * attempt per cooldown (instead of full-FPS error spam against a poison
+ * profile); the first successful frame clears it — self-healing, no
+ * restart needed.
+ */
+const WORKER_REPLY_TIMEOUT_MS = 2000
+const WORKER_FAIL_LIMIT = 3
+const WORKER_DEGRADED_RETRY_MS = 2000
+
+/** R269: success replies ({ frame, metrics }) carry no `type` — error ones do. */
+function isWorkerErrorOutput(data: WorkerOutput | WorkerErrorOutput): data is WorkerErrorOutput {
+  return 'type' in data && data.type === 'error'
+}
 
 /**
  * R147 P3b: the engine tick loop, moved verbatim from App.tsx. Every piece of
@@ -72,6 +95,42 @@ export function useEngineLoop(args: {
     // otherwise the preview would be left showing a stale, still-lit frame
     // forever instead of going blank.
     let hadEnabledLayersLastTick = true
+
+    // ── R269: reply watchdog + degrade bookkeeping ────────────────────────
+    let watchdogTimer = 0
+    let consecutiveWorkerFailures = 0
+    let workerDegraded = false
+    let lastWorkerFailureAt = 0
+
+    const clearWatchdog = (): void => {
+      if (watchdogTimer !== 0) {
+        window.clearTimeout(watchdogTimer)
+        watchdogTimer = 0
+      }
+    }
+
+    /** A worker reply that signals failure — resets the gate and counts it. */
+    const recordWorkerFailure = (reason: string): void => {
+      tickPending = false
+      clearWatchdog()
+      consecutiveWorkerFailures += 1
+      lastWorkerFailureAt = performance.now()
+      if (!workerDegraded && consecutiveWorkerFailures >= WORKER_FAIL_LIMIT) {
+        workerDegraded = true
+        console.warn(
+          `[RGBBox] engine worker failed ${consecutiveWorkerFailures} times (last: ${reason}) — ` +
+            `degraded: retrying at most once per ${WORKER_DEGRADED_RETRY_MS}ms until a frame succeeds`
+        )
+      }
+    }
+
+    /** A successful worker reply — clears the gate and heals degrade mode. */
+    const recordWorkerReply = (): void => {
+      tickPending = false
+      clearWatchdog()
+      consecutiveWorkerFailures = 0
+      workerDegraded = false
+    }
 
     const tick = async (): Promise<boolean> => {
       if (cancelled) return false
@@ -144,8 +203,14 @@ export function useEngineLoop(args: {
 
     // ── Worker response handler ──────────────────────────────────────────
     // Store the frame in a ref — no React setState, no reconciliation.
-    const onWorkerMessage = (e: MessageEvent<WorkerOutput>): void => {
-      tickPending = false
+    const onWorkerMessage = (e: MessageEvent<WorkerOutput | WorkerErrorOutput>): void => {
+      // R269: structured error reply from the worker's own catch — this IS
+      // a reply (the gate must reset) but there is no frame to consume.
+      if (isWorkerErrorOutput(e.data)) {
+        recordWorkerFailure(`worker error reply: ${e.data.message}`)
+        return
+      }
+      recordWorkerReply()
       if (cancelled) return
       const cfgProfile = engineConfigRef.current.profile
       if (!cfgProfile) return
@@ -163,10 +228,15 @@ export function useEngineLoop(args: {
       // R164.2 (S2): hover-preview frames stay in-app — pushing them to the
       // real overlay projections would paint the user's physical screens with
       // an effect they never chose.
+      metricsCollectorRef.current.recordFrameArrival(frame.generatedAt > 0 ? frame.generatedAt : performance.now())
       if (!engineConfigRef.current.previewOverride) {
+        // R276: outputMs 接真实测量(原恒 0 误导诊断)
+        const outputStartedAt = performance.now()
         distributeFrameToOverlays(frame, cfgScene, topologyRef.current, overlayIdsRef.current, overlayConfigsRef.current)
+        metrics.outputMs = performance.now() - outputStartedAt
+      } else {
+        metrics.outputMs = 0
       }
-      metrics.outputMs = 0
       metrics.roundTripMs = lastPostAt > 0 ? performance.now() - lastPostAt : metrics.workerProcessMs
       metricsCollectorRef.current.add(metrics)
     }
@@ -213,19 +283,41 @@ export function useEngineLoop(args: {
       hadEnabledLayersLastTick = hasEnabledLayers
 
       if (!tickPending) {
+        // R269: in degrade mode, retry at most once per cooldown window —
+        // keeps a poison profile from hammering the failing worker at full
+        // FPS while still self-healing the moment the profile is fixed.
+        if (workerDegraded && performance.now() - lastWorkerFailureAt < WORKER_DEGRADED_RETRY_MS) return
         tickPending = true
         // tick() may cancel mid-way (cancelled flag); if it does WITHOUT posting
         // a message the worker will never reply, so we must unblock the gate here.
-        void tick().catch(() => { tickPending = false }).then((posted) => {
-          if (posted === false) tickPending = false
+        void tick().catch(() => false as const).then((posted) => {
+          if (posted !== true) {
+            tickPending = false
+            return
+          }
+          if (cancelled) return
+          // R269 watchdog: if the worker never comes back (silent death),
+          // the gate would stay latched forever — force a reset + failure.
+          clearWatchdog()
+          watchdogTimer = window.setTimeout(
+            () => recordWorkerFailure('no worker reply (watchdog)'),
+            WORKER_REPLY_TIMEOUT_MS
+          )
         })
       } else {
         droppedTicksSinceLastPost += 1
       }
     }
 
+    // R269: a hard worker crash fires 'error' and never replies — reset the
+    // gate instead of freezing (previously console.warn only).
+    const onWorkerError = (err: ErrorEvent): void => {
+      console.warn('[RGBBox] Worker error', err.message, err.filename, err.lineno)
+      recordWorkerFailure(err.message || 'worker error event')
+    }
+
     worker.addEventListener('message', onWorkerMessage)
-    worker.addEventListener('error', (err) => { console.warn('[RGBBox] Worker error', err.message, err.filename, err.lineno) })
+    worker.addEventListener('error', onWorkerError)
 
     // R147 P2: self-scheduling timeout chain instead of setInterval — the
     // interval is created ONCE for the whole run; the fps is re-read from the
@@ -243,7 +335,11 @@ export function useEngineLoop(args: {
     return () => {
       cancelled = true
       window.clearTimeout(timerId)
+      clearWatchdog()
       worker.removeEventListener('message', onWorkerMessage)
+      // R269: the error listener was previously never removed — every effect
+      // re-run (running toggle) leaked another one onto the same worker.
+      worker.removeEventListener('error', onWorkerError)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- profileReady is the boot boolean (see docblock); all other inputs are stable refs by design (P2).
   }, [running, profileReady])

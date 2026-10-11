@@ -66,7 +66,7 @@ describe('renderer/engine/metricsCollector', () => {
       expect(collector.snapshot().avgFrameMs).toBe(20)
     })
 
-    it('p95FrameMs uses the 95th percentile (sorted)', () => {
+    it('p95FrameMs uses the 95th percentile (nearest-rank, R276 口径)', () => {
       const collector = new MetricsCollector()
       // Add 20 samples: 1..20ms
       for (let i = 1; i <= 20; i++) {
@@ -74,7 +74,8 @@ describe('renderer/engine/metricsCollector', () => {
       }
       const snap = collector.snapshot()
       // floor(20 * 0.95) = 19 → samples[19] = 20
-      expect(snap.p95FrameMs).toBe(20)
+      // R276: nearest-rank ceil(0.95×20)-1=索引18 → 值 19(原 floor 口径偏低一档)
+      expect(snap.p95FrameMs).toBe(19)
     })
 
     it('p95FrameMs clamps to last element when index exceeds length', () => {

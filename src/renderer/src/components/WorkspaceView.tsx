@@ -575,7 +575,7 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                           key={preset.kind}
                           type="button"
                           onClick={() => selectEffect(preset.kind)}
-                          title={preset.description}
+                          title={presetDescription(preset, t)}
                         >
                           {t((`effect.${preset.kind}`) as Parameters<typeof t>[0])}
                         </button>
@@ -891,6 +891,7 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                     {(() => { const eff = previewLayer ?? activeLayer(profile); return is3DEffect(eff.kind) ? (
                       <Preview3D
                         layer={eff}
+                        suppressOverlayPost={previewLayer !== null}
                         columns={profile.sampling.columns}
                         rows={profile.sampling.rows}
                         onFrame={handleFrame3D}
@@ -902,6 +903,7 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                         showGap={profile.sampling.showGap ?? false}
                         renderStyle={resolveFrameRenderStyle(profile.sampling.renderStyle, eff.kind)}
                         gpuLayer={gpuDirectLayer}
+                        suppressOverlayPost={previewLayer !== null}
                         onRippleClick={scene?.layers.some((l) => l.enabled && l.kind === 'ripple') ? handleRippleClick : undefined}
                         displayCount={scene?.linkedDisplays ? topology.displays.length : 1}
                         aspectRatio={previewAspectRatio}
@@ -935,7 +937,8 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                       )}
                     </div>
                   )}
-                  {topology.displays.length > 1 && (
+                  {/* R280(W4): 单屏且墙模式仍 enabled 时也渲染——编辑器自带单屏逃生条 */}
+                  {(topology.displays.length > 1 || scene?.videoWall !== undefined) && (
                     <VideoWallEditor
                       layout={scene?.videoWall}
                       topology={topology}

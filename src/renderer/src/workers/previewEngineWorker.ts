@@ -12,7 +12,7 @@
 import type { AudioInput } from '../../../engine/previewEngine'
 import { renderPreviewFrame } from '../../../engine/previewEngine'
 import type { FrameMetrics, Profile, RgbFrame } from '../../../shared/types'
-import { computeTextMask } from '../canvasTextMask'
+import { staticTextMasks } from '../domain/staticTextMasks'
 
 export interface WorkerInput {
   profile: Profile
@@ -30,12 +30,36 @@ export interface WorkerOutput {
   metrics: FrameMetrics
 }
 
+/**
+ * R269: bail-out reply when the tick handler itself throws. The renderer's
+ * tickPending gate is only cleared by a worker message, so an uncaught
+ * exception (e.g. a malformed profile from an unvalidated import reaching
+ * renderPreviewFrame) would otherwise freeze the engine silently and
+ * permanently. Success replies ({ frame, metrics }) carry no `type` field,
+ * which keeps the two shapes distinguishable.
+ */
+export interface WorkerErrorOutput {
+  type: 'error'
+  message: string
+}
+
 // Retained across frames for temporal smoothing
 let previousFrame: RgbFrame | undefined
 
 self.onmessage = (e: MessageEvent<WorkerInput>): void => {
+  // R269: the whole tick is wrapped so that ANY exception still produces a
+  // reply — see WorkerErrorOutput above.
+  try {
+    handleTick(e.data)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    ;(self as unknown as Worker).postMessage({ type: 'error', message } satisfies WorkerErrorOutput)
+  }
+}
+
+function handleTick(input: WorkerInput): void {
   const startedAt = performance.now()
-  const { profile, audioInput, screenSample, rippleBurst } = e.data
+  const { profile, audioInput, screenSample, rippleBurst } = input
 
   // Compute text masks for static-text layers (OffscreenCanvas works in Workers)
   const scene =
@@ -71,23 +95,8 @@ self.onmessage = (e: MessageEvent<WorkerInput>): void => {
     patchedProfile.scenes.find((s) => s.id === patchedProfile.activeSceneId) ?? patchedProfile.scenes[0]
 
   const textMaskStartedAt = performance.now()
-  const textMasks: Record<string, boolean[]> = {}
-  for (const layer of patchedScene.layers) {
-    if (layer.enabled && layer.kind === 'static') {
-      const text = String(layer.parameters.text ?? '')
-      if (text.trim()) {
-        textMasks[layer.id] = computeTextMask(
-          text,
-          patchedProfile.sampling.columns,
-          patchedProfile.sampling.rows,
-          Number(layer.parameters.textX ?? 0.5),
-          Number(layer.parameters.textY ?? 0.5),
-          Number(layer.parameters.textScale ?? 1),
-          Number(layer.parameters.textWeight ?? 400)
-        )
-      }
-    }
-  }
+  // R277: 抽 staticTextMasks 共享(ScreensaverView 直调 IPC 路径同款)
+  const textMasks = staticTextMasks(patchedProfile, patchedScene)
   const textMaskMs = performance.now() - textMaskStartedAt
 
   const renderStartedAt = performance.now()
@@ -128,10 +137,10 @@ self.onmessage = (e: MessageEvent<WorkerInput>): void => {
       workerProcessMs: now - startedAt,
       textMaskMs,
       renderMs,
-      captureMs: e.data.captureMs ?? 0,
-      roundTripMs: e.data.postedAt ? now - e.data.postedAt : now - startedAt,
+      captureMs: input.captureMs ?? 0,
+      roundTripMs: input.postedAt ? now - input.postedAt : now - startedAt,
       outputMs: 0,
-      droppedTicks: e.data.droppedTicks ?? 0
+      droppedTicks: input.droppedTicks ?? 0
     }
   }
   ;(self as unknown as Worker).postMessage(output, [frame.pixels.buffer])

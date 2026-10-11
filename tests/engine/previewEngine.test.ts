@@ -234,4 +234,39 @@ describe('engine/previewEngine', () => {
       expect(frame.pixels[0]).toBeLessThan(136)
     })
   })
+
+  // R266: computeDisplaySlotMask now receives the pre-parsed numeric slot index
+  // (was String()/parseInt() round-trip per pixel) — equivalence locks for the
+  // numeric guard paths that used to live behind the per-pixel parseInt.
+  describe('display slot mask equivalence (R266)', () => {
+    function slotProfile(slot: string): Profile {
+      const profile = makeProfile()
+      profile.scenes[0].displayIds = [1, 2, 3]
+      profile.scenes[0].linkedDisplays = true
+      profile.scenes[0].layers[0].parameters = { color: '#ff0000', _displaySlot: slot }
+      return profile
+    }
+
+    it('out-of-range slot index lights the full canvas (guard falls back to mask=1)', () => {
+      const frame = renderPreviewFrame(slotProfile('9'))
+      for (let i = 0; i < frame.pixels.length; i += 3) {
+        expect(frame.pixels[i]).toBe(255)
+        expect(frame.pixels[i + 1]).toBe(0)
+        expect(frame.pixels[i + 2]).toBe(0)
+      }
+    })
+
+    it('negative slot index lights the full canvas', () => {
+      const frame = renderPreviewFrame(slotProfile('-1'))
+      expect(frame.pixels[0]).toBe(255)
+      expect(frame.pixels[3]).toBe(255)
+    })
+
+    it('non-numeric slot value is treated as all displays', () => {
+      const frame = renderPreviewFrame(slotProfile('bogus'))
+      for (let i = 0; i < frame.pixels.length; i += 3) {
+        expect(frame.pixels[i]).toBe(255)
+      }
+    })
+  })
 })

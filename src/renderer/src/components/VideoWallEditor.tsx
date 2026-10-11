@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react'
 import type { DisplayTopology, VideoWallFit, VideoWallLayout, VideoWallPanel } from '../../../shared/types'
-import { buildMatrixLayout, getPanelActiveRect, summarizeLayout } from '../../../engine/videoWall'
+import { buildMatrixLayout, getPanelActiveRect, getWallAspect, summarizeLayout } from '../../../engine/videoWall'
 import { useI18n } from '../i18n'
 import type { TranslationKey } from '../i18n'
 
@@ -53,6 +53,9 @@ export function VideoWallEditor({ layout, topology, onChange }: VideoWallEditorP
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null)
   const enabled = Boolean(layout)
   const displays = topology?.displays ?? []
+  // R280(W4): 单显示器 + 墙模式仍在生效(多屏时开启后拔屏)——编辑器矩阵
+  // 不可用,但必须有逃生口,否则持久化的 enabled 无任何 UI 可关(困死)。
+  const singleScreenEscape = displays.length <= 1 && layout !== undefined
 
   const toggleEnabled = (): void => {
     if (enabled) {
@@ -158,9 +161,24 @@ export function VideoWallEditor({ layout, topology, onChange }: VideoWallEditorP
         </div>
       </div>
 
+      {singleScreenEscape ? (
+        <div className="videowall-single-escape" data-field="wall-single-escape">
+          <span>{t('videowall.singleScreenHint')}</span>
+          <button type="button" className="aspect-lock-btn locked" onClick={() => { onChange(undefined); setSelectedPanelId(null) }}>
+            {t('videowall.singleScreenOff')}
+          </button>
+        </div>
+      ) : null}
       <div className="videowall-grid-wrap">
         <span className="videowall-field-label">{t('videowall.panels')}</span>
-        <div className="videowall-grid" role="group" aria-label={t('videowall.panels')}>
+        {/* R280(W6): 容器比例接 getWallAspect(面板物理比例取首屏 bounds 近似)——
+            原 16/9 硬编码把 8×1 墙压扁 */}
+        <div
+          className="videowall-grid"
+          role="group"
+          aria-label={t('videowall.panels')}
+          style={displays.length > 0 ? { aspectRatio: String(getWallAspect(layout, displays[0].bounds.width / displays[0].bounds.height)) } : undefined}
+        >
           {layout.panels.map((panel) => {
             const rect = getPanelActiveRect(panel, layout)
             const active = panel.id === selectedPanelId

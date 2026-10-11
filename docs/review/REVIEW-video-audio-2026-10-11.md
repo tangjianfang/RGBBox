@@ -74,3 +74,9 @@
 
 
 **P1（AudioStudioView 零行为测试）**：⚠️ 表述修正——`tests/renderer/components/AudioStudioView.test.tsx` 存在（18 行/1 用例），非"零测试"而是 **3000 行组件仅 1 用例**；覆盖盲区结论成立，降 P1→P2。W1/W2/W3（VU 冻结/waveform 投影黑屏/FLAC 假导出）未复核，立案前须复现。
+
+
+### P2 池抽验（2026-10-11 主审）
+- **W3 FLAC 假导出**：✅ 实锤——`AudioStudioView.tsx:744` `return encodeWav(audioBuffer, format === 'flac' ? 24 : bitDepth)`，FLAC 选项产出 24-bit WAV。
+- **W1 VU 冻结**：✅ 机制真——`useAudioAnalyzer.ts:69` shouldAnalyze gate + R45 ref mirror 存在；冻结路径（切 tab 后 EMA 不归零）实施时复现确认。
+- W2/W4/W5/W6 断言未逐条复核，按报告立项，实施时 TDD 先行自会验证。

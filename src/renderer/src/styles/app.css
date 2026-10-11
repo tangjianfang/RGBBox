@@ -1223,6 +1223,19 @@ input:not([type]):focus {
   gap: 6px;
 }
 
+/* R280(W4): 单屏墙模式逃生条 */
+.videowall-single-escape {
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-l);
+  color: var(--text-secondary);
+  display: flex;
+  font-size: var(--text-caption-size);
+  gap: var(--space-2);
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
 .videowall-grid-wrap {
   margin-top: 4px;
 }

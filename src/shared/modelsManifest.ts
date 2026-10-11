@@ -19,12 +19,24 @@ export interface ModelManifestEntry {
   url: string
   /** Asset kind — splat models render in the 3D view; onnx models feed local inference */
   kind: 'splat' | 'onnx'
-  /** R90.9: expected size in bytes for onnx assets — a cached file outside
-   *  ±10% is a corrupt/partial download and gets deleted so it re-downloads. */
+  /** R90.9 (onnx) / R279 (splat): expected size in bytes — a cached file outside
+   *  ±10% is a corrupt/partial download and gets deleted so it re-downloads.
+   *  Only pin VERIFIED sizes: a wrong pin deletes a valid cache with no
+   *  re-download path. keyboard_rgb/mouse_rgb stay unpinned (custom assets,
+   *  release URL dead — no verifiable source), so they keep existence-only
+   *  cache checks until real sizes are pinned. */
   bytes?: number
   /** Optional LED position map JSON filename (shipped with the app) */
   ledMapFile?: string
   description?: string
+}
+
+/** R279 (W3): the R90.9 ±10% cache-size check, shared by onnx + splat entries.
+ *  A cached file whose size falls outside ±10% of the pinned `bytes` is a
+ *  partial/corrupt download (e.g. a resume left half a file) and must NOT be
+ *  reported as cached — the caller deletes it so the UI re-offers the download. */
+export function isCacheSizeOk(actualBytes: number, expectedBytes: number): boolean {
+  return Math.abs(actualBytes - expectedBytes) <= expectedBytes * 0.1
 }
 
 export const MODELS_MANIFEST: ModelManifestEntry[] = [
@@ -49,6 +61,11 @@ export const MODELS_MANIFEST: ModelManifestEntry[] = [
     kind: 'splat',
     file: 'train.splat',
     url: 'https://github.com/tjf/RGBBox/releases/download/models-v1/train.splat',
+    // R279: pinned from the canonical public source (cakewalk/splat-data via
+    // hf-mirror X-Linked-Size, probed 2026-10-11) — the manifest URL's own
+    // release (models-v1) is 404, and these Mip-NeRF 360 conversions are the
+    // exact files every splat demo (@mkkellogg/gaussian-splats-3d included) ships.
+    bytes: 32848256,
     description: 'Demo scene — train (Mip-NeRF 360 dataset)',
   },
   {
@@ -56,6 +73,8 @@ export const MODELS_MANIFEST: ModelManifestEntry[] = [
     kind: 'splat',
     file: 'garden.splat',
     url: 'https://github.com/tjf/RGBBox/releases/download/models-v1/garden.splat',
+    // R279: same provenance as train (see above)
+    bytes: 186713088,
     description: 'Demo scene — garden (Mip-NeRF 360 dataset)',
   },
   {
@@ -63,6 +82,8 @@ export const MODELS_MANIFEST: ModelManifestEntry[] = [
     kind: 'splat',
     file: 'bicycle.splat',
     url: 'https://github.com/tjf/RGBBox/releases/download/models-v1/bicycle.splat',
+    // R279: same provenance as train (see above)
+    bytes: 196222528,
     description: 'Demo scene — bicycle (Mip-NeRF 360 dataset)',
   },
   // ── R90 P1: audio AI test-lab models (hard budget ≤100MB each, R90.2) ──
