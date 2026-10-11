@@ -13,6 +13,7 @@ import {
   type RegionPreset,
   type RegionRect,
 } from '../audio/visualizers'
+import { createBeatPulse, feedBeatPulse } from '../audio/beatPulse'
 import { useI18n } from '../i18n'
 import {
   type EqBand, type EqMode, type EqPreset,
@@ -1164,6 +1165,8 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
   }, [])
   const spectrogramBufferRef = useRef<Uint8Array[]>(createSpectrogramBuffer())
   const vuPeakRef = useRef(createVuPeakState())
+  // R286: 节拍引擎——低频能量突变检测,一次计算全视图共享的「跳动」脉冲
+  const beatPulseRef = useRef(createBeatPulse())
   // R29.3 (revised): mirrors `projectDisplayIds` state into a ref so the rAF
   // draw loop (which does not re-subscribe on every projection toggle) always
   // reads the latest targets without needing to restart the whole visualization effect.
@@ -1404,11 +1407,12 @@ export function AudioStudioView({ visible = true }: AudioStudioViewProps): JSX.E
             // R70.8: pass the analyser's real fftSize/sampleRate — the previous
             // hardcoded 2048 against the actual 4096-point FFT made every
             // peak/dominant-frequency readout exactly 2× too high.
-            const vizOpts: VizDrawOpts = { showMetrics: vizShowMetrics, style: vizStyle, sampleRate: analyser.context.sampleRate, fftSize: analyser.fftSize }
+            const beat = feedBeatPulse(beatPulseRef.current, freqData, performance.now())
+            const vizOpts: VizDrawOpts = { showMetrics: vizShowMetrics, style: vizStyle, sampleRate: analyser.context.sampleRate, fftSize: analyser.fftSize, beat }
             drawVisualizerFrame(specCanvas, vizMode, freqData, timeData, spectrogramBufferRef.current, vuPeakRef.current, vizOpts)
           }
           // `waveCanvas` only exists in the DOM for 'oscilloscope' mode (see JSX below).
-          if (waveCanvas) drawWaveform(waveCanvas, timeData, { showMetrics: vizShowMetrics, style: vizStyle })
+          if (waveCanvas) drawWaveform(waveCanvas, timeData, { showMetrics: vizShowMetrics, style: vizStyle, beat: feedBeatPulse(beatPulseRef.current, freqData, performance.now()) })
         }
 
         // R29.3 (revised): while projecting, broadcast the raw analyser data to

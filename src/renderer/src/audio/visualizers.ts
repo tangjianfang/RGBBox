@@ -38,8 +38,12 @@ export interface AudioVizMessage {
 export const EMPTY_FREQ = new Uint8Array(0)
 export const EMPTY_TIME = new Float32Array(0)
 
+import { createSpectrumDynamics, stepSpectrumBar, stepDisplayGain, shapeDisplayValue, type SpectrumDynamics } from './beatPulse'
+
 export interface VizDrawOpts {
   showMetrics?: boolean
+  /** R286: 节拍脉冲 0..1(各视图共享的「跳动」驱动)。 */
+  beat?: number
   style?: 'classic' | 'art'
   sampleRate?: number   // 默认 48000
   fftSize?: number      // 默认 2048
@@ -114,6 +118,10 @@ interface SpectrumGradCache {
   grads: Map<string, [CanvasGradient, CanvasGradient]> // [main, reflection]
 }
 const spectrumGradCache = new WeakMap<CanvasRenderingContext2D, SpectrumGradCache>()
+const spectrumDynCache = new WeakMap<HTMLCanvasElement, SpectrumDynamics>()
+const circularDynCache = new WeakMap<HTMLCanvasElement, SpectrumDynamics>()
+/** R286b: 声谱图显示增益跟踪(canvas 键,只消费 gain 字段)。 */
+const spectrogramGainCache = new WeakMap<HTMLCanvasElement, SpectrumDynamics>()
 
 /** Premium gradient spectrum with glow, rounded caps, and mirror reflection */
 export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, opts?: VizDrawOpts): void {
@@ -137,12 +145,24 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, op
   const mirrorHeight = height * 0.18 // Reflection zone
   const mainHeight = height - mirrorHeight
 
+  // R286: 频谱动力学(attack 快/release 慢 + 峰值保持帽)——canvas 级状态,
+  // 语义同 spectrumGradCache(零调用方改动)
+  let dyn = spectrumDynCache.get(canvas)
+  if (!dyn || dyn.smooth.length !== barCount) {
+    dyn = createSpectrumDynamics(barCount)
+    spectrumDynCache.set(canvas, dyn)
+  }
+  const beat = opts?.beat ?? 0
   let cache = spectrumGradCache.get(ctx)
   if (!cache || cache.width !== width || cache.mainHeight !== mainHeight || cache.barWidth !== barWidth) {
     cache = { width, mainHeight, barWidth, grads: new Map() }
     spectrumGradCache.set(ctx, cache)
   }
 
+  // R286b 第一遍:各条原始峰值 + 本帧最大值 → 显示域自适应增益。
+  // 真机实锤:钢琴衰减尾段条高 ~10% 观感死;增益归一后弱奏段仍居中高。
+  const rawPeaks = new Float32Array(barCount)
+  let frameMax = 0
   for (let i = 0; i < barCount; i++) {
     // Map bar index to FFT bin using logarithmic scale (20Hz–20kHz)
     const loRatio = i / barCount
@@ -153,8 +173,15 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, op
     for (let j = loBin; j < hiBin && j < bufferLength; j++) {
       peak = Math.max(peak, freqData[j] / 255)
     }
+    rawPeaks[i] = peak
+    if (peak > frameMax) frameMax = peak
+  }
+  const gain = stepDisplayGain(dyn, frameMax, performance.now())
 
-    const barH = peak * mainHeight * 0.92
+  for (let i = 0; i < barCount; i++) {
+    const disp = shapeDisplayValue(rawPeaks[i], gain)
+    const { level, peak: capY } = stepSpectrumBar(dyn, i, disp, performance.now())
+    const barH = level * mainHeight * 0.92
     const x = i * (barWidth + gap)
     const y = mainHeight - barH
 
@@ -163,7 +190,7 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, op
     // quantized peak so steady-state frames allocate nothing.
     const hue1 = 190 + (i / barCount) * 80 // cyan → blue
     const hue2 = 220 + (i / barCount) * 100 // blue → violet
-    const qp = Math.min(SPECTRUM_GRAD_LEVELS, Math.round(peak * SPECTRUM_GRAD_LEVELS))
+    const qp = Math.min(SPECTRUM_GRAD_LEVELS, Math.round(disp * SPECTRUM_GRAD_LEVELS))
     const cacheKey = `${i}:${qp}`
     let grads = cache.grads.get(cacheKey)
     if (!grads) {
@@ -183,9 +210,9 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, op
     }
 
     // Glow effect
-    if (peak > 0.3) {
-      ctx.shadowBlur = 6 + peak * 10
-      ctx.shadowColor = `hsla(${hue1}, 90%, 60%, ${peak * 0.6})`
+    if (level > 0.3) {
+      ctx.shadowBlur = (6 + level * 10) * (1 + beat * 0.8) // R286: 拍击瞬亮
+      ctx.shadowColor = `hsla(${hue1}, 90%, 60%, ${Math.min(1, level * 0.6 + beat * 0.35)})`
     } else {
       ctx.shadowBlur = 0
     }
@@ -202,6 +229,12 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, op
     ctx.lineTo(x + barWidth, mainHeight)
     ctx.closePath()
     ctx.fill()
+
+    // R286: 峰值保持帽(重力下落的白帽,拍面比条体慢半拍)
+    const capH = mainHeight - capY * mainHeight * 0.92
+    ctx.shadowBlur = 0
+    ctx.fillStyle = beat > 0.25 ? `hsla(${hue2}, 100%, ${75 + beat * 20}%, ${0.55 + beat * 0.4})` : 'rgba(235, 244, 255, 0.55)'
+    ctx.fillRect(x, Math.max(2, capH - 2), barWidth, 2)
 
     // Art variant: bright top highlight cap
     if (opts?.style === 'art') {
@@ -234,6 +267,7 @@ export function drawSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, op
 }
 
 /** Premium waveform with gradient stroke and subtle fill */
+// R286: beat 脉冲驱动线宽与辉光——音乐重拍时波形「弹」起来
 export function drawWaveform(canvas: HTMLCanvasElement, timeData: Float32Array, opts?: VizDrawOpts): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -256,7 +290,7 @@ export function drawWaveform(canvas: HTMLCanvasElement, timeData: Float32Array, 
   strokeGrad.addColorStop(1, 'rgba(171, 71, 188, 0.8)')
 
   ctx.strokeStyle = strokeGrad
-  ctx.lineWidth = 1.8
+  ctx.lineWidth = 1.8 + (opts?.beat ?? 0) * 1.6 /* R286 beat 脉冲 */
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
 
@@ -346,14 +380,27 @@ export function drawSpectrogram(
   const maxCols = off.width // one column per backing pixel
   while (spectrogramBuffer.length > maxCols) spectrogramBuffer.shift()
 
+  // R286b: 显示域增益——衰减尾段的值 <0.15 在热图上近黑,滚动不可见。
+  // 用与频谱柱同一套慢跟踪增益归一后,弱奏段列也亮,滚动恢复可感。
+  let gainDyn = spectrogramGainCache.get(canvas)
+  if (!gainDyn) {
+    gainDyn = createSpectrumDynamics(1)
+    spectrogramGainCache.set(canvas, gainDyn)
+  }
+  let frameMax = 0
+  for (let j = 0; j < Math.floor(bufferLength * 0.75); j++) {
+    if (freqData[j] / 255 > frameMax) frameMax = freqData[j] / 255
+  }
+  const gain = stepDisplayGain(gainDyn, frameMax, performance.now())
+
   // Paint one spectrogram column (time → x, frequency → y) in backing pixels.
   const drawColumn = (frame: Uint8Array, x: number): void => {
     const binsPerPixel = bufferLength / off.height
     for (let row = 0; row < off.height; row++) {
       // Map bottom of canvas to low frequencies (invert y)
       const binIdx = Math.floor((off.height - 1 - row) * binsPerPixel * 0.75)
-      const value = frame[binIdx] / 255
-      if (value < 0.02) continue
+      const value = shapeDisplayValue(frame[binIdx] / 255, gain)
+      if (value <= 0) continue
       // Art variant: perceptually linear (log-feel) color map.
       const v = opts?.style === 'art' ? Math.pow(value, 0.6) : value
       // Heat map: dark blue → cyan → yellow → red → white
@@ -511,6 +558,7 @@ export function drawVUMeter(
 
 /** Circular spectrum: bars radiate outward from center in a 360° ring */
 export function drawCircularSpectrum(canvas: HTMLCanvasElement, freqData: Uint8Array, opts?: VizDrawOpts): void {
+  // R286: beat 冲击——环半径随拍扩张 + 缓慢旋转(静态环无生命)
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   if (freqData.length === 0) return // R70.10: mode only receives the arrays it draws
@@ -525,14 +573,39 @@ export function drawCircularSpectrum(canvas: HTMLCanvasElement, freqData: Uint8A
 
   const cx = w / 2
   const cy = h / 2
-  const radius = Math.min(w, h) * 0.28
+  const radius = Math.min(w, h) * (0.28 + (opts?.beat ?? 0) * 0.035) // R286: 拍击扩张
+  const rot = (performance.now() / 1000) * 0.15 // R286: 缓慢旋转(每 ~42s 一圈)
   const barCount = 128
   const maxBarH = Math.min(w, h) * 0.22
 
+  // R286b: 线性 bin 映射把音乐能量(几乎全在低 1/10 频段)压进 2/128 条——
+  // 环永远「缺齿」。改对数映射(与 spectrum 同式)+ 显示域增益 + 条动力学
+  // (attack/release),环随乐句呼吸。
+  let circDyn = circularDynCache.get(canvas)
+  if (!circDyn || circDyn.smooth.length !== barCount) {
+    circDyn = createSpectrumDynamics(barCount)
+    circularDynCache.set(canvas, circDyn)
+  }
+  const rawPeaks = new Float32Array(barCount)
+  let frameMax = 0
   for (let i = 0; i < barCount; i++) {
-    const binIdx = Math.floor((i / barCount) * bufferLength * 0.75)
-    const value = freqData[binIdx] / 255
-    const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2
+    const loRatio = i / barCount
+    const hiRatio = (i + 1) / barCount
+    const loBin = Math.floor(Math.pow(loRatio, 2) * bufferLength * 0.75)
+    const hiBin = Math.max(loBin + 1, Math.floor(Math.pow(hiRatio, 2) * bufferLength * 0.75))
+    let peak = 0
+    for (let j = loBin; j < hiBin && j < bufferLength; j++) {
+      peak = Math.max(peak, freqData[j] / 255)
+    }
+    rawPeaks[i] = peak
+    if (peak > frameMax) frameMax = peak
+  }
+  const gain = stepDisplayGain(circDyn, frameMax, performance.now())
+
+  for (let i = 0; i < barCount; i++) {
+    const disp = shapeDisplayValue(rawPeaks[i], gain)
+    const { level: value } = stepSpectrumBar(circDyn, i, disp, performance.now())
+    const angle = rot + (i / barCount) * Math.PI * 2 - Math.PI / 2
     const barH = value * maxBarH
 
     const x1 = cx + Math.cos(angle) * radius
@@ -574,7 +647,16 @@ export function drawCircularSpectrum(canvas: HTMLCanvasElement, freqData: Uint8A
     drawMetricsOverlay(ctx, w, [`${fmtHz(freqHz)}`])
   }
 
-  ctx.restore()
+    // R286: 拍击冲击环(从主环向外扩散的亮环)
+  const beat = opts?.beat ?? 0
+  if (beat > 0.12) {
+    ctx.strokeStyle = `hsla(190, 95%, 70%, ${beat * 0.55})`
+    ctx.lineWidth = 1.5 + beat * 2
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius + beat * Math.min(w, h) * 0.10, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+ctx.restore()
 }
 
 /** Wave ring: oscilloscope waveform drawn as a circle */
@@ -646,7 +728,16 @@ export function drawWaveRing(canvas: HTMLCanvasElement, timeData: Float32Array, 
     drawMetricsOverlay(ctx, w, [`${(r * 100).toFixed(0)}`])
   }
 
-  ctx.restore()
+    // R286: 拍击冲击波(环形波形随拍外扩)
+  const beat2 = opts?.beat ?? 0
+  if (beat2 > 0.12) {
+    ctx.strokeStyle = `hsla(280, 90%, 72%, ${beat2 * 0.5})`
+    ctx.lineWidth = 1.5 + beat2 * 2
+    ctx.beginPath()
+    ctx.arc(cx, cx, baseRadius * (1 + beat2 * 0.10), 0, Math.PI * 2)
+    ctx.stroke()
+  }
+ctx.restore()
 }
 
 /**
