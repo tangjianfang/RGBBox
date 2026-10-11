@@ -8769,6 +8769,37 @@ input[type='range'].video-player-volume {
 .ai-chat-input-row textarea { flex: 1; min-height: 64px; width: 100%; }
 
 /* R142-E4b: app-wide vision assistant — floating toggle, mode badge, radial menu */
+/* ── R282: 右下角悬浮坞 — 半透明自动扩展工具栏 ─────────────────────────── */
+.corner-dock {
+  align-items: flex-end;
+  background: color-mix(in srgb, var(--scrim) 72%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-l);
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  opacity: 0.62;
+  padding: 6px;
+  position: fixed;
+  right: 14px;
+  transition: opacity 140ms;
+  z-index: 60;
+}
+
+.corner-dock:hover { opacity: 1; }
+
+.corner-dock:empty { display: none; }
+
+/* 统一按钮规格:入驻件原定位属性被覆盖 */
+.corner-dock .corner-dock-item {
+  background: transparent;
+  border: none;
+  margin: 0;
+  position: static;
+}
+
 .vision-assistant-pill {
   background: var(--scrim);
   border: 1px solid rgba(103, 232, 249, 0.35);

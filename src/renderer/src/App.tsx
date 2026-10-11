@@ -816,6 +816,8 @@ export function App(): JSX.Element {
       {/* R229: 手势控灯 — the light ring applies an effect WITHOUT switching
           views (unlike the library click): swapping the room's light must
           never steal the screen you're working on. */}
+      {/* R282: 右下角悬浮坞——按钮 portal 入驻,个数自动扩展(半透明,hover 提亮) */}
+      <div className="corner-dock" data-field="corner-dock" />
       <VisionAssistant
         activeView={activeView}
         onNavigate={setActiveView}

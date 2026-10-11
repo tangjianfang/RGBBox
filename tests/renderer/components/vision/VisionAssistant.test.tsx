@@ -35,6 +35,9 @@ beforeEach(() => {
   localStorage.setItem('rgbbox:visionOnboarded', '1')
   host = new FakeHost()
   cleanup()
+  // R282: 右下角悬浮坞(App 层渲染)——测试 DOM 挂同款容器供 portal 落位
+  document.querySelector('.corner-dock')?.remove()
+  document.body.insertAdjacentHTML('beforeend', '<div class="corner-dock"></div>')
 })
 // R223.5: 防御性 teardown——beforeEach 若中途抛错 host 未赋值,这里不再
 // 连环 TypeError 掩盖一手错误
@@ -52,7 +55,7 @@ function mount() {
 describe('renderer/components/vision/VisionAssistant (R142-E4b)', () => {
   it('renders the toggle pill; enabling mounts badge + cursor and opens the host window', async () => {
     const { container } = mount()
-    const pill = container.querySelector('.vision-assistant-pill') as HTMLButtonElement
+    const pill = document.querySelector('.vision-assistant-pill') as HTMLButtonElement
     expect(pill).toBeTruthy()
     expect(container.querySelector('.vision-assistant-badge')).toBeNull()
     await act(async () => { fireEvent.click(pill) })
@@ -67,7 +70,7 @@ describe('renderer/components/vision/VisionAssistant (R142-E4b)', () => {
 
   it('chord menu opens the radial; direction selects; pinch navigates to the view', async () => {
     const { container } = mount()
-    await act(async () => { fireEvent.click(container.querySelector('.vision-assistant-pill') as HTMLButtonElement) })
+    await act(async () => { fireEvent.click(document.querySelector('.vision-assistant-pill') as HTMLButtonElement) })
     await act(async () => { host.send({ type: 'snapshot', snapshot: ACTIVE }) })
     await waitFor(() => expect(container.querySelector('.vision-assistant-badge')).toBeTruthy())
     await act(async () => {
@@ -93,7 +96,7 @@ describe('renderer/components/vision/VisionAssistant (R142-E4b)', () => {
     const { container } = render(
       <VisionAssistant activeView="games" onNavigate={onNavigate} rootRef={{ current: root } as React.RefObject<HTMLElement | null>} />,
     )
-    expect(container.querySelector('.vision-assistant-pill')).toBeNull()
+    expect(document.querySelector('.vision-assistant-pill')).toBeNull()
   })
 
   // R247: 灯效环 v2 E2E over the FakeHost event stream — pinch held ≥600ms
@@ -121,7 +124,7 @@ describe('renderer/components/vision/VisionAssistant (R142-E4b)', () => {
           onUpdateLightLayer={onUpdateLightLayer}
         />,
       )
-      await act(async () => { fireEvent.click(container.querySelector('.vision-assistant-pill') as HTMLButtonElement) })
+      await act(async () => { fireEvent.click(document.querySelector('.vision-assistant-pill') as HTMLButtonElement) })
       const snap = (y: number): void => {
         host.send({ type: 'snapshot', snapshot: { ...ACTIVE, geom: { palm: { x: 0.5, y }, pinch: 1.1, scale: 0.18 } } })
       }
@@ -171,7 +174,7 @@ describe('renderer/components/vision/VisionAssistant (R142-E4b)', () => {
   it('R246: first enable mounts the onboarding wizard; radial suppressed while open; Esc skip persists', async () => {
     localStorage.removeItem('rgbbox:visionOnboarded') // the first-run state
     const { container } = mount()
-    await act(async () => { fireEvent.click(container.querySelector('.vision-assistant-pill') as HTMLButtonElement) })
+    await act(async () => { fireEvent.click(document.querySelector('.vision-assistant-pill') as HTMLButtonElement) })
     await act(async () => { host.send({ type: 'snapshot', snapshot: ACTIVE }) })
     await waitFor(() => expect(document.querySelector('.vision-onboarding')).toBeTruthy())
     // the badge still renders alongside — the wizard is an overlay, not a takeover

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import { BrainCircuit } from 'lucide-react'
 import { useI18n } from '../i18n'
@@ -64,15 +65,19 @@ export function AiListenOverlay(): JSX.Element {
 
   return (
     <div className="ai-listen" data-on={enabled ? 'true' : undefined}>
-      <button
-        type="button"
-        className={`ai-listen-toggle${enabled ? ' active' : ''}`}
-        onClick={() => setEnabled((v) => !v)}
-        title={t('player.aiListen.title')}
-      >
-        <BrainCircuit size={14} />
-        <span>{t('player.aiListen.toggle')}</span>
-      </button>
+      {/* R282: 按钮入驻右下角悬浮坞(自动扩展);面板仍在播放器旁原位展开 */}
+      {createPortal(
+        <button
+          type="button"
+          className={`ai-listen-toggle corner-dock-item${enabled ? ' active' : ''}`}
+          onClick={() => setEnabled((v) => !v)}
+          title={t('player.aiListen.title')}
+        >
+          <BrainCircuit size={14} />
+          <span>{t('player.aiListen.toggle')}</span>
+        </button>,
+        document.querySelector('.corner-dock') ?? document.body,
+      )}
       {enabled && (
         <div className="ai-listen-panel">
           {modelsReady === false && (

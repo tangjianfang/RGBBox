@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { createPortal } from 'react-dom'
 import { useI18n } from '../../i18n'
 import { isViewReachable, type View } from '../../hooks/tabNavigation'
 import { CARD_VIEWS, getTabMeta } from '../shellModules'
@@ -246,18 +247,22 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
 
   return (
     <>
-      {/* floating toggle — always visible outside the games view */}
-      {activeView !== 'games' ? (
-        <button
-          type="button"
-          className={`vision-assistant-pill ${assistantOn ? 'on' : ''}`}
-          aria-label={assistantOn ? t('games.vision.assistantOff') : t('games.vision.assistantOn')}
-          title={assistantOn ? t('games.vision.assistantOff') : t('games.vision.assistantOn')}
-          onClick={toggle}
-        >
-          👁 {t('games.vision.assistant')}
-        </button>
-      ) : null}
+      {/* floating toggle — R282: portal into the corner dock (auto-extending
+          translucent toolbar); state/toggle semantics unchanged */}
+      {activeView !== 'games'
+        ? createPortal(
+            <button
+              type="button"
+              className={`vision-assistant-pill corner-dock-item ${assistantOn ? 'on' : ''}`}
+              aria-label={assistantOn ? t('games.vision.assistantOff') : t('games.vision.assistantOn')}
+              title={assistantOn ? t('games.vision.assistantOff') : t('games.vision.assistantOn')}
+              onClick={toggle}
+            >
+              👁 {t('games.vision.assistant')}
+            </button>,
+            document.querySelector('.corner-dock') ?? document.body,
+          )
+        : null}
 
       {assistantOn && vision.enabled && activeView !== 'games' ? (
         <button
