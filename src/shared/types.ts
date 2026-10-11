@@ -386,7 +386,16 @@ export interface CaptureEntry {
   file: string        // 缓存目录内的绝对文件路径
   name: string
   ts: number
-  kind: 'photo' | 'snip' | 'annotated' | 'imported'
+  kind: 'photo' | 'snip' | 'annotated' | 'imported' | 'window'  // R290.2: 按窗口句柄截图
+}
+
+/** R290.2: 窗口截图结果（snipCaptureWindow 出参）。 */
+export interface WindowSnipResult {
+  ok: boolean
+  /** ok 时携带新条目。 */
+  entry?: CaptureEntry
+  /** 失败码：'not-found'（sourceId 无效/窗口已关）|'empty'（最小化/黑帧）|'error'（底层异常）|'denied'（权限，macOS） */
+  code?: 'not-found' | 'empty' | 'error' | 'denied'
 }
 
 export interface CaptureSource {

@@ -35,6 +35,24 @@ export function containRect(container: Size, native: Size): Rect {
   return { x: (cw - w) / 2, y: (ch - h) / 2, w, h }
 }
 
+/**
+ * R290.1: 「不放大 contain」——k 上限 1:1。大图行为与 containRect 相同
+ * (letterbox 缩小);小图按原生分辨率居中,绝不上采样。截图标注器的初始
+ * 视图用它(用户 363×277 截图曾被 containRect 拉满全屏发虚);视频预览
+ * 保持 containRect 的有意放大语义。坐标系统不变——所有标注/导出坐标
+ * 仍存图像原生像素,缩放只发生在视图层。
+ */
+export function containRectNat(container: Size, native: Size): Rect {
+  const cw = Math.max(1, container.w)
+  const ch = Math.max(1, container.h)
+  const nw = Math.max(1, native.w)
+  const nh = Math.max(1, native.h)
+  const k = Math.min(cw / nw, ch / nh, 1)
+  const w = nw * k
+  const h = nh * k
+  return { x: (cw - w) / 2, y: (ch - h) / 2, w, h }
+}
+
 /** "适应窗口" 时的绝对缩放比。 */
 export function fitAbsScale(container: Size, native: Size): number {
   return containRect(container, native).w / Math.max(1, native.w)

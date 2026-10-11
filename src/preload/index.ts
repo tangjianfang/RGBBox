@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { ipcChannels } from '../shared/ipc'
 import { validateChatMessages } from '../shared/aiChatValidation'
 import type { LanGame } from '../shared/lanProtocol'
-import type { AgentEvent, AgentSendArgs, AgentSessionMeta, TtsEngineStatus, TtsModelProgress, AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, AvatarResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame } from '../shared/types'
+import type { AgentEvent, AgentSendArgs, AgentSessionMeta, TtsEngineStatus, TtsModelProgress, AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile, AudioAiAstResult, AudioAiStatus, AudioAiStreamTick, AudioAiVadResult, AvatarResult, CaptureEntry, CaptureProviderStatus, CaptureSource, CrashRecord, DesktopAudioSource, DisplayTopology, EngineStatus, ModelDownloadProgress, OverlayConfig, Profile, ProcessCpuSample, ProfileMeta, RgbFrame, ScreenCaptureRequest, OverlayFrameTiming, SnipPushFrame, WindowSnipResult } from '../shared/types'
 
 export interface AudioInput {
   bass: number
@@ -162,6 +162,9 @@ const api = {
   capturesList: (): Promise<CaptureEntry[]> => ipcRenderer.invoke(ipcChannels.capturesList),
   capturesAdd: (dataUrl: string, kind: CaptureEntry['kind']): Promise<CaptureEntry | null> =>
     ipcRenderer.invoke(ipcChannels.capturesAdd, dataUrl, kind),
+  /** R290.2: 按窗口句柄截图（sourceId 来自 getCaptureSources 的 window 源）。 */
+  snipCaptureWindow: (sourceId: string): Promise<WindowSnipResult> =>
+    ipcRenderer.invoke(ipcChannels.snipCaptureWindow, sourceId),
   capturesDelete: (id: string): Promise<boolean> =>
     ipcRenderer.invoke(ipcChannels.capturesDelete, id),
   capturesRead: (id: string): Promise<string | null> =>

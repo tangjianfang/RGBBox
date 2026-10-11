@@ -597,6 +597,22 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     }
   }, [])
 
+  // R290.2: 按窗口句柄截图——主进程 desktopCapturer 直出原生分辨率 PNG 落
+  // captureStore（不经 getDisplayMedia 流,不占用当前预览源）
+  const snipWindowShot = useCallback(async (s: CaptureSource) => {
+    try {
+      const r = await window.rgbbox.snipCaptureWindow(s.id)
+      if (r.ok) {
+        refreshCaptures()
+        editorToast(`${t('video.snipWindowOk')} · ${s.name}`)
+      } else {
+        editorToast(t(r.code === 'empty' ? 'video.snipWindowEmpty' : 'video.snipWindowFail'))
+      }
+    } catch {
+      editorToast(t('video.snipWindowFail'))
+    }
+  }, [refreshCaptures, editorToast, t])
+
   const startScreenCapture = useCallback(async (sourceId: string) => {
     stopStream()
     setActiveSourceId(sourceId)
@@ -1955,21 +1971,38 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                 {loadingSources && <p className="video-hint">{t('video.loadingSources')}</p>}
                 {!loadingSources && filteredSources.length === 0 && <p className="video-hint">{t('video.noSources')}</p>}
                 {filteredSources.map((s) => (
-                  <button
+                  <div
                     key={s.id}
-                    type="button"
                     className={`video-source-card ${activeSourceId === s.id ? 'active' : ''}`}
-                    onClick={() => void startScreenCapture(s.id)}
                     title={s.name}
                   >
-                    {s.thumbnail
-                      ? <img src={s.thumbnail} alt="" />
-                      : <div className="video-source-thumb-empty"><Monitor size={24} /></div>}
-                    <span className="video-source-name">
-                      {s.appIcon && <img className="video-source-icon" src={s.appIcon} alt="" />}
-                      {s.name}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      className="video-source-pick"
+                      aria-label={s.name}
+                      onClick={() => void startScreenCapture(s.id)}
+                    >
+                      {s.thumbnail
+                        ? <img src={s.thumbnail} alt="" />
+                        : <div className="video-source-thumb-empty"><Monitor size={24} /></div>}
+                      <span className="video-source-name">
+                        {s.appIcon && <img className="video-source-icon" src={s.appIcon} alt="" />}
+                        {s.name}
+                      </span>
+                    </button>
+                    {/* R290.2: 窗口源专属——按窗口句柄截一张原生分辨率静态图 */}
+                    {s.type === 'window' && (
+                      <button
+                        type="button"
+                        className="video-source-shot"
+                        aria-label={t('video.snipWindow')}
+                        title={t('video.snipWindow')}
+                        onClick={() => void snipWindowShot(s)}
+                      >
+                        <Camera size={13} />
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             </section>

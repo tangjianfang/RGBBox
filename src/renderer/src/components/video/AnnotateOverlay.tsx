@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import type { AiErrorHint } from '../../../../shared/types'
-import { clampPan, clampScale, containRect, zoomAtPoint, type Pt, type Rect, type Size } from './previewTransform'
+import { clampPan, clampScale, containRectNat, zoomAtPoint, type Pt, type Rect, type Size } from './previewTransform'
 import {
   canRedo, canUndo, commit, handlesFor, hitShapeBorder, hitTestRotated, makeShape, moveShape,
   redo, reorderShape, resizeShape, rotatePt, shapeBBox, undo,
@@ -131,8 +131,10 @@ export function AnnotateOverlay({ source, onClose, onSave, onCopy }: AnnotateOve
   const selectedShape = shapes.find(s => s.id === selectedId) ?? null
 
   // R77.3: 视图 = contain-fit 矩形绕容器中心缩放 z + 平移 offset（zoom=null 即 fit）
+  // R290.1: fit 用「不放大 contain」——小尺寸截图 1:1 居中,根修标注器放大失真
+  // (containRect 会把 363×277 拉满全屏 3.97×;缩放/标注/导出坐标仍存原生像素)
   const fit: Rect = useMemo(
-    () => (natural.w > 0 && wrapSize.w > 0 ? containRect(wrapSize, natural) : { x: 0, y: 0, w: 0, h: 0 }),
+    () => (natural.w > 0 && wrapSize.w > 0 ? containRectNat(wrapSize, natural) : { x: 0, y: 0, w: 0, h: 0 }),
     [natural, wrapSize],
   )
   const view: Rect = useMemo(() => {

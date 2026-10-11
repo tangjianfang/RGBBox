@@ -154,6 +154,10 @@ export const ipcChannels = {
   snipFramePainted: 'rgbbox:snip:frame-painted',
   snipFinish: 'rgbbox:snip:finish',
   snipCancel: 'rgbbox:snip:cancel',
+  // R290.2: 按窗口句柄截图——sourceId 入参（desktopCapturer 窗口源），
+  // 主进程直出原生分辨率 PNG 落 captureStore；{ok,code} 出参（denied 码
+  // 不堵死跨平台——macOS ScreenCaptureKit 权限拒也可表达）。
+  snipCaptureWindow: 'rgbbox:snip:capture-window',
   // R80.12: renderer i18n → main (tray menu follows UI language)
   uiSetLocale: 'rgbbox:ui:set-locale',
   // R224.3: renderer → main, fire-and-forget. Pushes the resolved UI theme so

@@ -74,6 +74,8 @@ export function nextCaptureFile(kind: CaptureEntry['kind'], now: number): { id: 
 
 export function createCaptureStore(userDataDir: string): {
   list(): CaptureEntry[]
+  /** R290.2: 主进程直落 PNG（窗口截图链路）。 */
+  addBuffer(buf: Buffer, kind: CaptureEntry['kind'], name: string): CaptureEntry | null
   addPng(dataUrl: string, kind: CaptureEntry['kind']): CaptureEntry | null
   delete(id: string): boolean
   read(id: string): string | null
@@ -115,6 +117,9 @@ export function createCaptureStore(userDataDir: string): {
 
   return {
     list: loadIndex,
+    // R290.2: 主进程直落 PNG（窗口截图链路——thumbnail.toPNG() 已是完整
+    // PNG 缓冲,无需绕 dataUrl 解码）。实现自 R77 就存在,此前仅内部使用。
+    addBuffer,
     addPng: (dataUrl, kind) => {
       const buf = decodePngDataUrl(dataUrl)
       if (!buf) return null

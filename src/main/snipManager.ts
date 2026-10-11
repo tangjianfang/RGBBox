@@ -208,8 +208,9 @@ export async function startSnip(): Promise<boolean> {
 }
 
 /** R112.3: desktopCapturer 在 Windows 上有已知卡死（销毁窗口后立刻再捕获，
- *  实测单次 stall 51s）——3s 超时 + 最多 3 次尝试，失败快速返回让用户重按。 */
-async function getSourcesWithRetry(opts: Electron.SourcesOptions): Promise<Electron.DesktopCapturerSource[]> {
+ *  实测单次 stall 51s）——3s 超时 + 最多 3 次尝试，失败快速返回让用户重按。
+ *  R290.2: 导出供 windowSnip 复用（窗口源捕获同走此重试器）。 */
+export async function getSourcesWithRetry(opts: Electron.SourcesOptions): Promise<Electron.DesktopCapturerSource[]> {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const result = await Promise.race([
       desktopCapturer.getSources(opts),

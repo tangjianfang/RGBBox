@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  clampScale, containRect, fitAbsScale, zoomAtPoint, clampPan,
+  clampScale, containRect, containRectNat, fitAbsScale, zoomAtPoint, clampPan,
   screenToContent, contentRectToScreen, contentToNative, nativeSelectionRect,
   MIN_ABS_SCALE, MAX_ABS_SCALE,
 } from '../../../src/renderer/src/components/video/previewTransform'
@@ -78,5 +78,35 @@ describe('previewTransform', () => {
   it('nativeSelectionRect normalizes, rounds and clamps to frame', () => {
     const r = nativeSelectionRect({ x: 1900, y: -20 }, { x: 100, y: 50 }, { w: 1920, h: 1080 })
     expect(r).toEqual({ x: 100, y: 0, w: 1800, h: 50 })
+  })
+})
+
+// R290.1: 截图标注器的「不放大 contain」——小图 1:1 居中,根修放大失真
+// (用户 363×277 截图曾被 containRect 拉满全屏 3.97×)。
+describe('containRectNat (R290.1)', () => {
+  it('小图(363×277)在 800×600 容器:原生 1:1 居中,绝不放大', () => {
+    const r = containRectNat({ w: 800, h: 600 }, { w: 363, h: 277 })
+    expect(r.w).toBe(363)
+    expect(r.h).toBe(277)
+    expect(r.x).toBeCloseTo((800 - 363) / 2)
+    expect(r.y).toBeCloseTo((600 - 277) / 2)
+  })
+
+  it('大图(1920×1080)在 800×600 容器:与 containRect 相同的 letterbox 缩小', () => {
+    const r = containRectNat({ w: 800, h: 600 }, { w: 1920, h: 1080 })
+    const base = containRect({ w: 800, h: 600 }, { w: 1920, h: 1080 })
+    expect(r).toEqual(base)
+  })
+
+  it('恰等容器尺寸:1:1 无缩放', () => {
+    const r = containRectNat({ w: 800, h: 600 }, { w: 800, h: 600 })
+    expect(r).toEqual({ x: 0, y: 0, w: 800, h: 600 })
+  })
+
+  it('与 containRect 的分歧只在放大方向(k>1 时 containRect 上采样)', () => {
+    const small = { w: 200, h: 100 }
+    const big = { w: 1200, h: 900 }
+    expect(containRect(big, small).w).toBeGreaterThan(200) // 原语义:拉满
+    expect(containRectNat(big, small).w).toBe(200)         // 新语义:1:1
   })
 })

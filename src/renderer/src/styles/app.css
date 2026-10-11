@@ -6323,6 +6323,7 @@ input[type='range'].audio-slider {
 }
 
 .video-source-card {
+  position: relative; /* R290.2: 截图角标定位锚 */
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -6333,6 +6334,44 @@ input[type='range'].audio-slider {
   cursor: pointer;
   transition: all 0.15s;
   text-align: left;
+}
+
+/* R290.2: 卡片改 div 容器后,原按钮语义移到内部全幅 pick 层 */
+.video-source-pick {
+  all: unset;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  cursor: pointer;
+}
+
+/* R290.2: 窗口源专属「按窗口句柄截图」角标——悬停浮现,不遮缩略图主体 */
+.video-source-shot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--overlay-soft);
+  border-radius: var(--radius-s);
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--accent-soft-text);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.video-source-card:hover .video-source-shot,
+.video-source-shot:focus-visible {
+  opacity: 1;
+}
+
+.video-source-shot:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .video-source-card:hover {

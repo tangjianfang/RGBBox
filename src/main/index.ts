@@ -23,6 +23,7 @@ import { closeAllAudioVizWindows, closeAllOverlays, closeAudioVizWindow, closeOv
 import { armShutdown, cancelShutdown, getShutdownStatus } from './shutdownScheduler'
 import { closeAllScreensaverWindows, disposeScreensaver, getScreensaverSettings, initScreensaver, setScreensaverSettings } from './screensaverManager'
 import { acknowledgeSnipPainted, cancelSnip, disposeSnipManager, finishSnip, getSnipHotkeyPref, initSnipHotkeyPref, initSnipManager, isPresetSnipHotkey, registerSnipHotkey, setSnipHotkeyPref, startSnip, warmSnipStack } from './snipManager'
+import { captureWindowBySourceId } from './windowSnip'
 import { asUiLocale, trayMenuLabels, type UiLocale } from './trayMenu'
 import { deleteProfile, importProfile, listProfiles, loadProfile, loadProfileById, saveProfile, saveProfileAs } from './profileStore'
 import { captureScreenFrame, captureVirtualScreenFrame } from './screenCapture'
@@ -355,6 +356,12 @@ function registerIpc(): void {
   })
   // R130.3: 渲染端冻结帧绘制完成回执 —— 唤醒对应窗口的 show 等待（按 sender 关联）
   ipcMain.on(ipcChannels.snipFramePainted, (event) => acknowledgeSnipPainted(event.sender))
+  // R290.2: 按窗口句柄截图——渲染层从窗口源选择器传入 sourceId
+  ipcMain.handle(ipcChannels.snipCaptureWindow, (_event, p: unknown) => {
+    const sourceId = typeof p === 'string' ? p : ''
+    if (!sourceId) return { ok: false, code: 'not-found' as const }
+    return captureWindowBySourceId(sourceId, captureStore)
+  })
   ipcMain.handle(ipcChannels.snipFinish, (_event, p: unknown) => {
     const q = p as { dataUrl?: unknown; action?: unknown } | null
     return finishSnip(

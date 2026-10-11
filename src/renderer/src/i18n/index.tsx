@@ -1806,6 +1806,11 @@ const EN = {
   'video.device': 'Device',
   'video.noCamera': 'No camera found',
   'video.refresh': 'Refresh',
+  // R290.2: 按窗口句柄截图
+  'video.snipWindow': 'Capture window (full resolution)',
+  'video.snipWindowOk': 'Window capture saved',
+  'video.snipWindowFail': 'Window capture failed',
+  'video.snipWindowEmpty': 'Window minimized or blank — restore it first',
   'video.resolution': 'Resolution',
   'video.frameRate': 'Frame rate',
   'video.hwControls': 'Hardware Controls',
@@ -3653,6 +3658,11 @@ const ZH: TranslationTable = {
   'video.device': '设备',
   'video.noCamera': '未找到摄像头',
   'video.refresh': '刷新',
+  // R290.2: 按窗口句柄截图
+  'video.snipWindow': '按窗口句柄截图（原生分辨率）',
+  'video.snipWindowOk': '窗口截图已存入拍摄缓存',
+  'video.snipWindowFail': '窗口截图失败',
+  'video.snipWindowEmpty': '窗口最小化或黑帧——请先还原窗口',
   'video.resolution': '分辨率',
   'video.frameRate': '帧率',
   'video.hwControls': '硬件参数',
