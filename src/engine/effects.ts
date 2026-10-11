@@ -776,7 +776,8 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
     }
 
     case 'aurora': {
-      const speed     = Number(layer.parameters.speed     ?? 0.12)
+      // R284: 0.12→0.75——50s 一轮肉眼以为死了(sweep 1s 差分 0%),~8s 尺度
+      const speed     = Number(layer.parameters.speed     ?? 0.75)
       const intensity = Number(layer.parameters.intensity ?? 0.88)
       const hueShift  = Number(layer.parameters.hueShift  ?? 0)
       const curtainHeight = Number(layer.parameters.curtainHeight ?? 1.0)
@@ -880,8 +881,9 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       // Fast attack (~2 frames) + slow decay (~0.80/frame ≈ 200ms at 30fps).
       let env = _beatEnvMap.get(layer.id)
       if (!env || env.lastNow !== context.now) {
+        // R284: idle 楼层 0.2+0.14→0.34+0.20(基线 lit 0%=「灯坏了」观感)
         const rawPulse = noPipeline
-          ? 0.2 + 0.14 * (0.5 + 0.5 * Math.sin(context.now * 1.9))
+          ? 0.34 + 0.20 * (0.5 + 0.5 * Math.sin(context.now * 1.9))
           : clampUnit((bass * 0.70 + beat * 0.30) * sensitivity)
         const prev = env?.pulse ?? 0
         const newPulse = rawPulse > prev
@@ -897,7 +899,10 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const dx = (context.x - cx) / Math.max(1, context.columns / 2)
       const dy = (context.y - cy) / Math.max(1, context.rows / 2)
       const dist = Math.sqrt(dx * dx + dy * dy)
-      const radial = Math.max(0, 1 - dist * (1 - pulse * 0.6))
+      // R284: idle 态全屏呼吸(原中心微光连中心都低于可见线)
+      const radial = noPipeline
+        ? Math.max(0.4, 1 - dist * 0.5)
+        : Math.max(0, 1 - dist * (1 - pulse * 0.6))
       const brightness = pulse * radial
 
       return {
@@ -1354,7 +1359,9 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const keplerTwist = angle * 2.0 + 1.7 / Math.max(0.08, radius) - time * (1.2 + 2.2 / Math.max(0.2, radius))
       const spiralBands = Math.pow(0.5 + 0.5 * Math.sin(keplerTwist * 3.0), 1.8)
       const turbulence = fbm2(nx * 5.2 + time * 0.7, diskY * 4.0 - time * 0.35, 4)
-      const temperature = diskMask * clampUnit((0.88 - radius) * (1.6 + density) + spiralBands * 0.5 + turbulence * 0.35)
+      // R284: 去饱和——原 (0.88-radius)*(1.6+density) 内侧恒 >2 → clampUnit 全饱和成
+      // 大片均匀白热(1s 差分 0%);归一化径向梯度保内亮外暗且随螺旋/湍流运动。
+      const temperature = diskMask * clampUnit(clampUnit((0.88 - radius) / 0.88) * (0.78 + density * 0.3) + spiralBands * 0.45 + turbulence * 0.3)
       const lensRing = Math.exp(-Math.pow((radius - 0.145) / 0.042, 2)) * 1.1
       const jet = Math.exp(-Math.pow(nx / 0.085, 2)) * smoothstep(0.03, 0.46, Math.abs(ny)) * smoothstep(0.62, 0.16, Math.abs(ny)) * 0.75
       let color = colorScale(thermalColor(temperature), intensity)
@@ -1644,7 +1651,8 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
     }
 
     case 'microvilli-field': {
-      const speed = Number(layer.parameters.speed ?? 0.18)
+      // R284: 0.18→0.4(sweep 1s 差分 1.5% 近静止)
+      const speed = Number(layer.parameters.speed ?? 0.4)
       const intensity = Number(layer.parameters.intensity ?? 0.82)
       const density = Number(layer.parameters.density ?? 0.64)
       const hueShift = Number(layer.parameters.hueShift ?? 0)
@@ -1655,7 +1663,7 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const cell = Math.floor(normalizedX * columns)
       const localX = normalizedX * columns - cell
       const seed = hash(cell * 41.3)
-      const sway = Math.sin(time * 4 + cell * 0.83) * 0.06
+      const sway = Math.sin(time * 4 + cell * 0.83) * 0.13 // R284: 摆幅 2×
       const center = 0.5 + sway
       const height = 0.42 + seed * 0.32 + density * 0.12
       const top = 1 - height

@@ -203,13 +203,51 @@ export function renderPreviewFrame(
     }
   }
 
+  // R284③: 帧级暗谷地板(worker tick 与屏保 IPC 两条渲染路径共用本出口)
+  const lifted = liftDarkFloor({ columns, rows, pixels, generatedAt: Date.now() })
   return {
     columns,
     rows,
-    pixels,
+    pixels: lifted.pixels,
     generatedAt: Date.now()
   }
 }
 
 /** R221.3: 屏幕采样像素的复用载体(免 56k 次对象分配)。 */
 const SP0: RgbColor = { r: 0, g: 0, b: 0 }
+
+/**
+ * R284③: 帧级暗谷地板——周期低谷 lit 跌到 3-8% 的效果观感=「灯坏了」。
+ * R167 的 avgLum 地板拦不住瞬时低谷(峰值拉高均值);这里对整帧 lit% 做
+ * 下限:低于 floor(8%) 时全帧提亮至地板——8% 是「不迷失」温和下限而非 12%
+ * (12% 会破坏 eclipse/lightning 类深空效果的刻意暗对比;那些效果的低谷是
+ * 设计意图,归属删除裁决而非地板强制)。
+ * 纯函数:不修改入参,返回提升后的帧(亮帧原样返回引用)。
+ */
+export const DARK_FLOOR_LIT = 0.08
+const DARK_FLOOR_MAX_BOOST = 2.3
+
+export function liftDarkFloor(frame: RgbFrame): RgbFrame {
+  const total = frame.columns * frame.rows
+  let lit = 0
+  let anyLuma = 0
+  for (let i = 0; i < frame.pixels.length; i += 4) {
+    const l = 0.299 * frame.pixels[i] + 0.587 * frame.pixels[i + 1] + 0.114 * frame.pixels[i + 2]
+    if (l > 60) lit++
+    anyLuma += l
+  }
+  // 全黑帧(tool 空态/custom-paint 无内容)不 lift——保持「空=纯黑」语义
+  if (anyLuma === 0) return frame
+  const litRatio = lit / total
+  if (litRatio >= DARK_FLOOR_LIT) return frame
+  // 乘法提亮(有内容的暗像素)+加性微光(纯黑像素乘法救不了,给均匀夜光底)
+  const deficit = 1 - litRatio / DARK_FLOOR_LIT
+  const boost = Math.min(DARK_FLOOR_MAX_BOOST, 1 + deficit * 1.3)
+  const ambient = Math.round(34 * deficit)
+  const pixels = new Uint8ClampedArray(frame.pixels.length)
+  for (let i = 0; i < frame.pixels.length; i++) {
+    // 纯黑像素保持纯黑(disabled 层/空场景语义);微光只给已有内容的暗像素
+    pixels[i] = frame.pixels[i] === 0 ? 0 : frame.pixels[i] * boost + ambient * 0.5
+  }
+  return { ...frame, pixels }
+}

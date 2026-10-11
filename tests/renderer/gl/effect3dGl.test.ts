@@ -39,7 +39,7 @@ describe('renderer/gl/effect3dGl', () => {
       const renderer = new Effect3DGl(canvas, kind)
       renderer.draw(1.25, [0.5, 0.5, 0, 0])
       const [r, g, b] = readCenterPixel(ctx, W, H)
-      // Non-black output at the frame center — the kind's raymarch actually
+      // Non-black output at the frame center — the raymarch actually
       // lit a fragment (every kind's default framing centers on content).
       expect(r + g + b).toBeGreaterThan(0)
     })

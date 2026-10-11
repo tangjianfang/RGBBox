@@ -79,7 +79,8 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'aurora',
     label: 'Aurora',
     description: 'Northern lights curtain sweeping across the top edge.',
-    defaults: { speed: 0.14, intensity: 0.92, hueShift: 0, curtainHeight: 1.08, ribbonFrequency: 1.18, shimmerIntensity: 0.52, baseHue: 132, colorSpread: 112, softEdge: 0.68 }
+    // R284: speed 0.14→0.75——50s 一轮观感近静止(sweep 1s 差分 0%)
+    defaults: { speed: 0.75, intensity: 0.92, hueShift: 0, curtainHeight: 1.08, ribbonFrequency: 1.18, shimmerIntensity: 0.52, baseHue: 132, colorSpread: 112, softEdge: 0.68 }
   },
   {
     kind: 'explode',
@@ -319,7 +320,7 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'neon-galaxy',
     label: 'Neon Galaxy',
     description: '3D galaxy disc with perspective. Orbiting camera, volumetric spiral arms, galactic core bulge, and rotating point stars.',
-    defaults: { speed: 0.40, hueShift: 0 }
+    defaults: { speed: 1.4, hueShift: 0 } /* R284: 0.40→1.4 — 相机 52s→~15s/圈 */
   },
   {
     kind: 'lava-sphere',
