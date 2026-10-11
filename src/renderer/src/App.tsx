@@ -713,6 +713,7 @@ export function App(): JSX.Element {
             frameRef={frameRef}
             gpuDirectLayer={gpuDirectLayer}
             handleFrame3D={handleFrame3D}
+            audio3dRef={audio.ref}
             handleRippleClick={handleRippleClick}
             statusOutput={status.output}
             performanceLabels={performanceLabels}

@@ -33,6 +33,13 @@ const VIEWS = ['dashboard', 'workspace', 'effects', 'video', 'audio', 'games', '
 // (Record threshold changes here AND in the PRD.)
 const DIFF_LIMITS = {
   _default: 0.001,
+  // R287: diagnostics 是活数据仪表盘——时延值/条宽(引擎实测 ms 的函数)、
+  // 进程 PID/CPU%(每次启动必变)、CPU 表行数(子进程增减→下方面板整体位移,
+  // 视口内外漂移,union rect 也无法稳定覆盖)。R285 前 0.1682%、R287 期
+  // 0.118-0.139% 三案同族。0.1%→0.35% 放宽:布局真回归(元素错位/溢出)
+  // 通常 >>1%,该余量只容纳活数据抖动,不掩真伤。时延条/CPU 面板已尽量
+  // volatile 遮罩,放宽只兜遮不住的残余。
+  diagnostics: 0.0035,
 }
 
 // Canvas rects recorded at capture time (*.boxes.json) are zeroed in BOTH
@@ -58,7 +65,18 @@ const VOLATILE_TEXT_SELECTORS = ['.video-source-name', '.workspace-header .metri
 // workspace diff (6x6 grid: right column rows 1-4 + bottom rows) while the
 // rest of the view was pixel-identical run-to-run. Selectors exist only in
 // WorkspaceView (grep-verified), so the other 8 views get zero extra mask.
-const VOLATILE_REGION_SELECTORS = ['.panel.map-panel', '.panel.sampling-panel']
+// R287: diagnostics 活数据入 volatile——①时延条(dd.diag-dd-bar):bar 宽度是
+// 引擎实测 ms 的函数,随每次重建确定性平移(R285 前 0.1682%、0.1181% 两案同族);
+//②进程 CPU 面板整块(.panel:has(.process-cpu-table)):PID 每启动必变 + CPU% 实时
+// 波动 + 行数随 Electron 子进程增减 → 表高变化会把下方崩溃面板整体推移,单遮
+// 表格救不了布局移位,须连同崩溃面板(.panel:has(.diag-crash-list,.diag-crash-empty))
+// 一起入列,靠 union rect 覆盖两侧最大延展。快照门禁只守布局回归,不守活数据。
+const VOLATILE_REGION_SELECTORS = [
+  '.panel.map-panel', '.panel.sampling-panel', '.diag-dd-bar',
+  '.panel:has(.diag-dd-bar)', // R287: pipeline 面板整块——时延「值文本」在 dd 外围,单遮 bar 不够
+  '.panel:has(.process-cpu-table)', '.panel:has(.diag-crash-list)',
+  '.panel:has(.diag-crash-empty)',
+]
 const CANVAS_MASK_ALL = true
 
 /** Zero out canvas rects (±2px edge slack) in a PNG in place. */
@@ -151,6 +169,9 @@ for (let i = 0; i < VIEWS.length; i++) {
   try {
     await page.locator('.module-rail .rail-item').nth(i).click()
     await sleep(650) // lazy chunk fetch + first paint
+    // R287: diagnostics 的进程 CPU 表行是流式抵达的——rect 抓小了会在
+    // 比对时露出未遮罩的行(PID 每启动必变)。沉淀到表满员再截图+抓 rect。
+    if (view === 'diagnostics') await sleep(2200)
     await page.screenshot({ path: `${shotDir}/${view}.png` })
     // Canvas rects in viewport coords (DPR-independent: the shot is CSS-sized).
     // Recorded for every view; consumed only where CANVAS_MASK says so.

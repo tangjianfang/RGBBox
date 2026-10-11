@@ -1,8 +1,10 @@
-import { useEffect, useRef, type JSX } from 'react'
+import { useEffect, useRef, type JSX, type RefObject } from 'react'
 import type { EffectLayer, RgbFrame } from '../../../shared/types'
 import { is3DEffect } from '../../../shared/types'
 import { EFFECT3D_CHANNEL, Effect3DGl } from '../gl/effect3dGl'
 import { startFrameDriver, stopFrameDriver } from '../domain/frameDriver'
+import { createDrive3D, feedDrive3D, modulateParams3D } from '../gl/audioDrive3d'
+import type { AudioData } from '../hooks/useAudioAnalyzer'
 import type { Effect3DKind } from '../../../shared/types'
 
 interface Preview3DProps {
@@ -14,6 +16,12 @@ interface Preview3DProps {
   columns: number
   /** LED grid height — used for readLEDs sampling. */
   rows: number
+  /**
+   * R287: 灯效音频引擎同源数据(App 的 useAudioAnalyzer ref,60Hz)。
+   * 每帧读取 {active, beat, level} 做 u_params 调制——节拍加速/色相跳跃/
+   * 响度提亮;音频关/静音时驱动=0,行为与现状逐位一致。不传则完全不调制。
+   */
+  audioRef?: RefObject<AudioData | null>
   /**
    * Called once per rendered frame with sampled LED colors.
    * The caller stores this in a ref and pushes it to overlay windows.
@@ -39,10 +47,14 @@ interface Preview3DProps {
  *
  * Replaces PreviewGrid when `is3DEffect(layer.kind)` is true.
  */
-export function Preview3D({ layer, suppressOverlayPost = false, columns, rows, onFrame, aspectRatio = 16 / 9 }: Preview3DProps): JSX.Element {
+export function Preview3D({ layer, suppressOverlayPost = false, columns, rows, onFrame, aspectRatio = 16 / 9, audioRef }: Preview3DProps): JSX.Element {
   const canvasRef  = useRef<HTMLCanvasElement | null>(null)
   const glRef      = useRef<Effect3DGl | null>(null)
   const rafRef     = useRef<number | null>(null)
+  // R287: 音频驱动包络状态(节拍脉冲),帧循环独占,不进 React 状态
+  const driveRef   = useRef(createDrive3D())
+  const audioInRef = useRef(audioRef)
+  audioInRef.current = audioRef
   // R271: overlay 投递抑制(loop 每帧读 ref)
   const suppressOverlayPostRef = useRef(suppressOverlayPost)
   useEffect(() => { suppressOverlayPostRef.current = suppressOverlayPost }, [suppressOverlayPost])
@@ -111,8 +123,13 @@ export function Preview3D({ layer, suppressOverlayPost = false, columns, rows, o
           (p.saturation    as number) ?? 1,
           (p.scanWidth     as number) ?? 0.5,
         ]
-        gl.draw(t, params, detail, extra)
-        if (!suppressOverlayPostRef.current) channel.postMessage({ kind: layerRef.current.kind as Effect3DKind, t, params, detail, extra })
+        // R287: 音频调制 u_params(纯 JS 侧,零 GLSL)——广播携带调制后值,
+        // overlay 窗(参数透传)自动随拍。音频关 → 驱动 0 → 恒等返回。
+        const ad = audioInRef.current?.current ?? null
+        const pulse = feedDrive3D(driveRef.current, ad && ad.active ? ad : null, performance.now())
+        const driven = modulateParams3D(params, { pulse, energy: ad && ad.active ? ad.level : 0 })
+        gl.draw(t, driven, detail, extra)
+        if (!suppressOverlayPostRef.current) channel.postMessage({ kind: layerRef.current.kind as Effect3DKind, t, params: driven, detail, extra })
         const pixels = gl.readLEDs(colsRef.current, rowsRef.current)
         onFrameRef.current({ columns: colsRef.current, rows: rowsRef.current, pixels, generatedAt: Date.now() })
         // R270: rAF 改 setTimeout 自调度——最小化/遮挡时 rAF 停摆,overlay 激活的

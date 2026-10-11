@@ -9,6 +9,7 @@ import { effectPresets, defaultProfile } from '../../../shared/defaultProfile'
 import type { BlendMode, DisplayTopology, EffectKind, EffectLayer, OverlayConfig, Profile, ProfileMeta, RgbFrame, Scene } from '../../../shared/types'
 import { is3DEffect, resolveFrameRenderStyle } from '../../../shared/types'
 import { renderPreviewFrame } from '../../../engine/previewEngine'
+import type { AudioData } from '../hooks/useAudioAnalyzer'
 import { AMBIENT_PRESETS } from '../domain/ambientPresets'
 import type { AmbientPreset } from '../domain/ambientPresets'
 import { presetDescription, presetLabel } from '../domain/presetI18n'
@@ -182,6 +183,8 @@ interface WorkspaceViewProps {
   frameRef: RefObject<RgbFrame | null>
   gpuDirectLayer: EffectLayer | null
   handleFrame3D: (frame: RgbFrame) => void
+  /** R287: 灯效音频引擎同源 ref(60Hz AudioData)——Preview3D u_params 音频调制。 */
+  audio3dRef?: RefObject<AudioData | null>
   handleRippleClick: (nx: number, ny: number) => void
   statusOutput: string
   performanceLabels: Record<string, string>
@@ -221,7 +224,7 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
     topology, overlayDisplayIds, overlayConfigs, handleToggleOverlay,
     handleOverlayConfigChange, toggleLinkedDisplays, updateVideoWall,
     previewFullscreen, togglePreviewFullscreen, previewFullscreenWrapRef,
-    previewAspectRatio, frameRef, gpuDirectLayer, handleFrame3D, handleRippleClick,
+    previewAspectRatio, frameRef, gpuDirectLayer, handleFrame3D, handleRippleClick, audio3dRef,
     statusOutput, performanceLabels,
     samplingCollapsed, setSamplingCollapsed, samplingTab, setSamplingTab,
     gridAdvanced, setGridAdvanced, aspectLocked, toggleAspectLock,
@@ -895,6 +898,7 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                         columns={profile.sampling.columns}
                         rows={profile.sampling.rows}
                         onFrame={handleFrame3D}
+                        audioRef={audio3dRef}
                         aspectRatio={previewAspectRatio}
                       />
                     ) : (
