@@ -6,6 +6,8 @@ import {
   regionFitFor,
 } from '../../../src/renderer/src/domain/overlayDistribution'
 import type { DisplayTopology, OverlayConfig, RgbFrame, Scene } from '../../../src/shared/types'
+import { buildMatrixLayout } from '../../../src/engine/videoWall'
+import { extractWallPanelFrame } from '../../../src/engine/videoWallFrame'
 
 function frame8x4(): RgbFrame {
   const pixels = new Uint8ClampedArray(8 * 4 * 3)
@@ -127,5 +129,36 @@ describe('overlayDistribution extractSubFrame 竖屏 clamp (R273)', () => {
     for (let i = 0; i < Math.min(sub!.columns, 8) * 3; i++) {
       expect(sub!.pixels[dstLast + i]).toBe(frame.pixels[srcRow3 + Math.min(7, i / 3 | 0) * 3 + (i % 3)])
     }
+  })
+})
+
+
+// ── R280(承 R273 承诺): wall 分发分支守护 ────────────────────────────────
+describe('overlayDistribution wall 分支 (R280)', () => {
+  const pushFrameToDisplay = vi.fn()
+  const pushFrameToOverlays = vi.fn()
+  beforeEach(() => {
+    pushFrameToDisplay.mockClear()
+    pushFrameToOverlays.mockClear()
+    ;(globalThis as unknown as { window: unknown }).window = { rgbbox: { pushFrameToDisplay, pushFrameToOverlays } }
+  })
+
+  it('wall 生效:面板映射的 overlay 收逐面板帧,未映射 overlay 优雅降级 subFrame', () => {
+    const wall = buildMatrixLayout(2, 1, { displayIds: [1, 7] }) // 面板→display 1/7
+    const scene = { videoWall: wall } as never
+    const topo = twoDisplays // display 1/2 各 960×540
+    distributeFrameToOverlays(frame8x4(), scene, topo, [1, 2], {})
+    // display 1:面板映射 → 帧与 extractWallPanelFrame 直调结果逐字节一致(对拍)
+    const first = pushFrameToDisplay.mock.calls[0]
+    expect(first[0]).toBe(1)
+    const direct = extractWallPanelFrame(frame8x4(), wall.panels[0], wall, { panelAspect: 960 / 540 })
+    expect(first[1].columns).toBe(direct.columns)
+    expect(first[1].rows).toBe(direct.rows)
+    expect(first[1].pixels).toEqual(direct.pixels)
+    // display 2:未映射 → 降级 extractSubFrame(topology 切半,contain 前 4 列)
+    const second = pushFrameToDisplay.mock.calls[1]
+    expect(second[0]).toBe(2)
+    expect(second[1].columns).toBe(4)
+    expect(pushFrameToOverlays).not.toHaveBeenCalled() // wall 分支不走广播快路
   })
 })
