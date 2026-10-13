@@ -525,7 +525,10 @@ const TB_STARS = /* glsl */`
 vec3 tbEnv(vec3 d, float t, float dim) {
   // R292 真机校准:首版近黑虚空(0.012-0.06)让水滴的镜面反射=黑球融黑幕
   // (实测 meanLum 16/亮区 0%)。抬到深蓝紫夜空+星×1.8——反射面有内容可反。
+  // R293: 方向空间 fbm 星云层——反射/背景从此有「宇宙质感」而非纯色。
   vec3 col = mix(vec3(0.045, 0.06, 0.14), vec3(0.10, 0.07, 0.20), d.y * 0.5 + 0.5);
+  col += vec3(0.09, 0.07, 0.17) * fbm(d * 2.2 + vec3(0.0, t * 0.012, 0.0)) * 0.6 * dim;
+  col += vec3(0.05, 0.09, 0.13) * fbm(d * 4.7 + vec3(t * 0.02, 0.0, 0.0)) * 0.35 * dim;
   float a = t * 0.05;
   vec3 rrd = vec3(d.x * cos(a) - d.z * sin(a), d.y, d.x * sin(a) + d.z * cos(a));
   vec2 sv = vec2(atan(rrd.z, rrd.x) * 2.547, asin(clamp(rrd.y, -1.0, 1.0)) * 3.819);
@@ -570,6 +573,10 @@ void main() {
   float disc = rb * rb - rc;
 
   vec3 col;
+  // R293 掠过事件:每 7s 一颗炽亮体从前景横掠+尾迹,水滴表面响应闪耀
+  float fly = mod(t * 0.55, 7.0);
+  float flyOn = 0.0, flyK = 0.0;
+  if (fly > 4.6 && fly < 6.2) { flyOn = 1.0; flyK = (fly - 4.6) / 1.6; }
   if (disc > 0.0) {
     float dist = -rb - sqrt(disc);
     vec3 pos = roS + rdS * dist;            // 单位球面(缩放空间)
@@ -583,9 +590,34 @@ void main() {
     // 方向光高光周期扫过
     vec3 ld = normalize(vec3(cos(t * 1.1), 0.55, sin(t * 1.1)));
     col += vec3(1.0, 0.98, 0.92) * pow(max(0.0, dot(n, ld)), 90.0) * 3.0;
+    // 掠过响应:朝向掠过体的半球爆亮(末日之战前的掠影)
+    if (flyOn > 0.5) {
+      vec3 fpDir = normalize(vec3(mix(-3.5, 3.5, flyK), 0.35, 1.4));
+      float resp = max(0.0, dot(n, fpDir));
+      col += vec3(0.7, 0.85, 1.0) * resp * resp * (0.9 + 0.9 * sin(flyK * 3.1416));
+    }
   } else {
     // 球外:同一片星空,暗一级(滴与幕的对比=「完美之形」)
     col = tbEnv(rd, t, 0.7);
+  }
+  // 掠过体本体+尾迹(画在两分支之后——近景飞掠横穿整幅)
+  if (flyOn > 0.5) {
+    vec3 fp = vec3(mix(-3.5, 3.5, flyK), 0.35 + 0.45 * sin(flyK * 3.1416), 1.5);
+    vec3 toF = fp - ro;
+    float alongF = dot(toF, rd);
+    if (alongF > 0.0) {
+      float dF = length(toF - rd * alongF);
+      col += vec3(0.85, 0.92, 1.0) * exp(-dF * dF * 34.0) * (1.3 + 0.7 * sin(flyK * 3.1416));
+    }
+    for (int j = 1; j <= 4; j++) {
+      vec3 tp = fp - vec3(0.34 * float(j), 0.10 * float(j) * sin(flyK * 3.1416), 0.06 * float(j));
+      vec3 toT = tp - ro;
+      float aT = dot(toT, rd);
+      if (aT > 0.0) {
+        vec3 off = toT - rd * aT;
+        col += vec3(0.5, 0.65, 1.0) * exp(-dot(off, off) * 52.0) * (0.32 - 0.065 * float(j));
+      }
+    }
   }
 
   gl_FragColor = vec4(col, 1.0);
@@ -639,6 +671,38 @@ void main() {
     }
   }
   col += vec3(0.55, 0.75, 1.0) * acc * 0.5;
+
+  // R293 天体编舞:四颗行星横在对角路径上,被锋面逐个压成平面上的亮线,
+  // 压扁瞬间闪光——「太阳系被二维化」的编舞感。
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i);
+    vec3 bp = vec3(-1.7 + fi * 1.1, 0.42 - fi * 0.36, -1.2 - fi * 1.05);
+    float br = 0.24 + 0.09 * hash(fi * 7.3 + 1.0);
+    vec3 toB = bp - ro;
+    float alongB = dot(toB, rd);
+    if (alongB <= 0.0) continue;
+    float dPerp = length(toB - rd * alongB);
+    float bSide = dot(bp, pn) + pd;            // ≥0 三维态;<0 已降维
+    if (bSide >= 0.0) {
+      // 行星本体:fbm 表面纹理 + 轮廓环,箔光越近照得越亮
+      float body = exp(-pow((dPerp - br) / (br * 0.16), 2.0));
+      float fill = exp(-pow(dPerp / br, 2.0)) * 0.5;
+      float surf = fbm(bp * 3.2 + fi * 11.0) * 0.7 + 0.3;
+      float litByFoil = exp(-bSide * 0.7);
+      col += (vec3(0.30, 0.42, 0.85) * (body + fill) * surf) * (0.22 + litByFoil * 1.1);
+    } else {
+      // 已降维:压在平面上的一枚亮斑(行星的二维残骸),刚被压时炽闪
+      vec3 projP = bp - pn * bSide;            // 投影到降维平面
+      vec3 toPj = projP - ro;
+      float alongP = dot(toPj, rd);
+      if (alongP > 0.0) {
+        float dPj = length(toPj - rd * alongP);
+        float flatGlow = exp(-pow(dPj / (br * 0.30), 2.0));
+        float crush = exp(bSide * 3.2);        // bSide→0⁻ ≈1(刚压);越负越暗
+        col += vec3(1.0, 0.82, 0.5) * flatGlow * (0.25 + crush * 1.8);
+      }
+    }
+  }
 
   // 箔本体:平面上一片炽白矩形微光
   if (tHit > 0.0) {
@@ -740,8 +804,21 @@ void main() {
     if (along > 0.0) { float dP = length(toS - rd * along);
       col += (vec3(1.0, 0.97, 0.88) * exp(-dP * dP * 55.0) * 2.2 + scol2 * exp(-dP * dP * 3.2) * 0.35) * (1.0 + syzygy * 1.4); }
   }
-  // 凌空全幕白热脉冲
-  col += vec3(1.0, 0.96, 0.9) * syzygy * syzygy * 0.16;
+  // R293 地面视角:画面下方弧形行星剪影地平线——三日 rim 光描边,
+  // 「凌空=灾难」的地面读法;凌空时地表过曝白热。
+  float hz = -0.36 - 0.13 * uv.x * uv.x;
+  if (uv.y < hz) {
+    vec3 ground = vec3(0.006, 0.008, 0.018);
+    vec3 rim = scol0 * clamp(0.2 + s0p.y, 0.0, 1.0) * 0.4
+             + scol1 * clamp(0.2 + s1p.y, 0.0, 1.0) * 0.4
+             + scol2 * clamp(0.2 + s2p.y, 0.0, 1.0) * 0.4;
+    float rimBand = exp(-pow((uv.y - hz) / 0.014, 2.0));
+    col = ground + rim * rimBand * (1.0 + syzygy * 2.2);
+    // 地表微弱的三日漫射(随聚度抬升)
+    col += rim * 0.04 * (0.5 + syzygy);
+  }
+  // 凌空全幕白热脉冲(R293: 过曝级——灾难不该温吞)
+  col += vec3(1.0, 0.96, 0.9) * syzygy * syzygy * syzygy * 0.42;
 
   gl_FragColor = vec4(col, 1.0);
 }
@@ -775,12 +852,48 @@ function buildProgram(gl: WebGLRenderingContext, fsSrc: string): WebGLProgram {
   const p = gl.createProgram()!
   gl.attachShader(p, compileShader(gl, gl.VERTEX_SHADER, VS))
   gl.attachShader(p, compileShader(gl, gl.FRAGMENT_SHADER, fsSrc))
+  // R293: a_pos 钉到 location 0——场景/bloom 双 program 共用同一顶点缓冲状态
+  gl.bindAttribLocation(p, 0, 'a_pos')
   gl.linkProgram(p)
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
     throw new Error(`GL program link: ${gl.getProgramInfoLog(p)}`)
   }
   return p
 }
+
+// ── R293: bloom 后处理(电影感的最大单项杠杆) ────────────────────────────────
+// 单 pass 近似:FBO 场景纹理 → 亮部提取+两圈盒式模糊 → 叠加回屏 + ACES
+// 调色 + 饱和度提升。全部 8 个 GPU 3D 效果免费升级;readLEDs 在 post 后
+// 采样 = LED 输出同样带辉光。
+const POST_FS = /* glsl */`
+precision mediump float;
+uniform sampler2D u_scene;
+uniform vec2  u_texel;
+uniform float u_bloom;
+vec3 bright(vec3 c) {
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  return c * smoothstep(0.45, 0.9, l);
+}
+vec3 aces(vec3 x) {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+void main() {
+  vec2 uv = gl_FragCoord.xy * u_texel;
+  vec3 base = texture2D(u_scene, uv).rgb;
+  vec3 bl = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    float a = 0.785 + 1.5708 * float(i);
+    vec2 dir = vec2(cos(a), sin(a));
+    bl += bright(texture2D(u_scene, uv + dir * 2.2 * u_texel).rgb) * 0.5;
+    bl += bright(texture2D(u_scene, uv + dir * 5.0 * u_texel).rgb) * 0.25;
+  }
+  bl /= 3.0;
+  vec3 col = base + bl * u_bloom;
+  float l = dot(col, vec3(0.299, 0.587, 0.114));
+  col = mix(vec3(l), col, 1.18);           // 轻饱和度提升
+  gl_FragColor = vec4(aces(col * 1.12), 1.0); // ACES 调色(电影感 rolloff)
+}
+`
 
 // ── Public class ────────────────────────────────────────────────────────────
 
@@ -801,6 +914,13 @@ export class Effect3DGl {
   private readonly uParams:     WebGLUniformLocation
   private readonly uDetail:     WebGLUniformLocation | null
   private readonly uExtra:      WebGLUniformLocation | null
+  /** R293: bloom 后处理(场景→FBO→亮部模糊叠加;FBO 不可用时优雅降级直渲)。 */
+  private postProg: WebGLProgram | null = null
+  private fbo:      WebGLFramebuffer | null = null
+  private fboTex:   WebGLTexture | null = null
+  private uScene:   WebGLUniformLocation | null = null
+  private uTexel:   WebGLUniformLocation | null = null
+  private uBloom:   WebGLUniformLocation | null = null
   /** Reused pixel readback buffer — avoids GC churn each frame. */
   private pixelBuf:    Uint8Array | null = null
   private pixelBufW  = 0
@@ -829,9 +949,10 @@ export class Effect3DGl {
       new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
       gl.STATIC_DRAW
     )
-    const aPos = gl.getAttribLocation(this.prog, 'a_pos')
-    gl.enableVertexAttribArray(aPos)
-    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0)
+    // R293: a_pos 绑 location 0(buildProgram 内 bindAttribLocation 保证)——
+    // bloom post program 共用同一顶点状态,无需重设 pointer。
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
 
     this.uResolution = gl.getUniformLocation(this.prog, 'u_resolution')!
     this.uTime       = gl.getUniformLocation(this.prog, 'u_time')!
@@ -841,12 +962,51 @@ export class Effect3DGl {
 
     gl.uniform2f(this.uResolution, canvas.width, canvas.height)
     gl.viewport(0, 0, canvas.width, canvas.height)
+
+    // R293: bloom 管线(FBO+post)。失败(极端环境)→ 置空,draw() 走直渲。
+    try {
+      this.postProg = buildProgram(gl, POST_FS)
+      this.uScene = gl.getUniformLocation(this.postProg, 'u_scene')
+      this.uTexel = gl.getUniformLocation(this.postProg, 'u_texel')
+      this.uBloom = gl.getUniformLocation(this.postProg, 'u_bloom')
+      this.fbo    = gl.createFramebuffer()
+      this.fboTex = gl.createTexture()
+      this.allocFbo(canvas.width, canvas.height)
+    } catch {
+      this.postProg = null
+      this.fbo = null
+      this.fboTex = null
+    }
+  }
+
+  /** (Re)allocate the bloom scene texture at the given size. */
+  private allocFbo(w: number, h: number): void {
+    const gl = this.gl
+    if (!this.fbo || !this.fboTex || !this.postProg) return
+    gl.bindTexture(gl.TEXTURE_2D, this.fboTex)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.fboTex, 0)
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      // 不完整(尺寸超限等)→ 降级直渲
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+      this.postProg = null
+      this.fbo = null
+      this.fboTex = null
+      return
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
   }
 
   /** Call after canvas is physically resized. */
   resize(w: number, h: number): void {
     this.gl.viewport(0, 0, w, h)
     this.gl.uniform2f(this.uResolution, w, h)
+    if (this.fbo) this.allocFbo(w, h)
     this.pixelBuf = null  // invalidate readback buffer
   }
 
@@ -864,11 +1024,25 @@ export class Effect3DGl {
     extra: [number, number, number, number] = [0.35, 0.5, 1, 0.5]
   ): void {
     const gl = this.gl
+    // R293 pass 1: 场景 → FBO(bloom 管线就绪时)
+    gl.useProgram(this.prog)
+    if (this.fbo && this.postProg) gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo)
     gl.uniform1f(this.uTime,   time)
     gl.uniform4fv(this.uParams, params)
     if (this.uDetail) gl.uniform4fv(this.uDetail, detail)
     if (this.uExtra) gl.uniform4fv(this.uExtra, extra)
     gl.drawArrays(gl.TRIANGLES, 0, 6)
+    // R293 pass 2: bloom 后处理 → 屏幕(亮部模糊叠加+ACES;失败即直渲跳过)
+    if (this.fbo && this.postProg && this.uScene && this.uTexel && this.uBloom) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+      gl.useProgram(this.postProg)
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.fboTex)
+      gl.uniform1i(this.uScene, 0)
+      gl.uniform2f(this.uTexel, 1 / gl.drawingBufferWidth, 1 / gl.drawingBufferHeight)
+      gl.uniform1f(this.uBloom, 0.85)
+      gl.drawArrays(gl.TRIANGLES, 0, 6)
+    }
   }
 
   /**
