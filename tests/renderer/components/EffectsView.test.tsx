@@ -64,10 +64,11 @@ describe('renderer/components/EffectsView', () => {
     const { container } = render(<EffectsView {...baseProps} />)
     const search = container.querySelector('input.effects-search') as HTMLInputElement
     expect(search).not.toBeNull()
-    // Classic tab is the default: its 7 cards are mounted before searching.
+    // R289: 三体主题库是默认 tab(新主题置顶)——its 4 cards are mounted
+    // before searching. Classic tab is second now.
     const before = container.querySelectorAll('.effects-card-grid')[1].querySelectorAll('.effect-card-main').length
-    expect(before).toBe(7)
-    // Searching "black-hole" mounts the science card even though the classic
+    expect(before).toBe(4)
+    // Searching "black-hole" mounts the science card even though the three-body
     // tag is active — search overrides the tag filter.
     fireEvent.change(search, { target: { value: 'black-hole' } })
     const after = container.querySelectorAll('.effects-card-grid')[1].querySelectorAll('.effect-card-main').length

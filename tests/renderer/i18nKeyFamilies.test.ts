@@ -29,4 +29,16 @@ describe('i18n effect 键族不变量 (R278)', () => {
     // 结构自检:若词表被清空该断言红(防测试被静默绕过)
     expect(effectKinds.length).toBeGreaterThan(0)
   })
+
+  // R289 Phase 0(架构评审雷②):反向锁——每个 effect.* 名键必须对应真实
+  // 效果 kind(effectPresets 权威表)。死键(删除批漏清/R285 前残留)→ 红。
+  // 此前头注声称反向校验但测试体从未实现(注释-代码漂移,主审复核实锤)。
+  it('反向:每个 effect.* 名键对应 effectPresets 里的真实 kind(死键 → 红)', async () => {
+    const { effectPresets } = await vi.importActual<typeof import('../../src/shared/defaultProfile')>('../../src/shared/defaultProfile')
+    const presetKinds = new Set(effectPresets.map((p) => p.kind))
+    expect(presetKinds.size).toBeGreaterThanOrEqual(48)
+    for (const m of effectKinds) {
+      expect(presetKinds.has(m as never), `死键 effect.${m} 不对应任何 preset`).toBe(true)
+    }
+  })
 })

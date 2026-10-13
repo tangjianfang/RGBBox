@@ -8,6 +8,31 @@ export const effectPresets: PresetDefinition[] = [
     defaults: { saturation: 1.1, contrast: 1.05 }
   },
   {
+    kind: 'three-body',
+    label: 'Three-Body Orbit',
+    description: 'Three suns chase each other along the figure-eight periodic solution — the Trisolaran dance that created and destroyed civilizations.',
+    // R289: 三体主题库首批 — figure-8 周期解(Gerono 双纽线近似),T/3 构型对称
+    defaults: { speed: 0.55, spread: 0.85, intensity: 1 },
+  },
+  {
+    kind: 'trisolaran-suns',
+    label: 'Three Suns in the Sky',
+    description: 'Three suns on incommensurable orbits — syzygy brings the incandescent dawn, separation brings the long night of chaotic eras.',
+    defaults: { speed: 0.22, era: 0.5, intensity: 1 },
+  },
+  {
+    kind: 'droplet-mirror',
+    label: 'Droplet Mirror',
+    description: 'The strong-interaction probe: an absolutely smooth mirror sphere sweeping a sliding highlight through a star field.',
+    defaults: { speed: 0.4, intensity: 1 },
+  },
+  {
+    kind: 'gravity-wave',
+    label: 'Gravity-Wave Broadcast',
+    description: 'A tight binary rings the last bell — quadrupole spiral arms and expanding rings broadcast the star system’s coordinates.',
+    defaults: { speed: 0.6, intensity: 1 },
+  },
+  {
     kind: 'static',
     label: 'Static',
     description: 'All zones hold a single calibrated color. Optionally render dot-matrix text.',

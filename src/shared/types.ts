@@ -21,6 +21,10 @@ export type Effect3DKind =
   | 'hologram'
 
 export type EffectKind =
+  | 'three-body'
+  | 'trisolaran-suns'
+  | 'droplet-mirror'
+  | 'gravity-wave'
   | 'screen-ambient'
   | 'static'
   | 'breathing'

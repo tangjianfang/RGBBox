@@ -309,7 +309,11 @@ interface EffectsViewProps {
   onToggleFavorite: (kind: EffectKind) => void
 }
 
+// R289 Phase 0: kinds 收编译期守卫——裸 string 数组里拼错 kind 只会静默
+// 从 tab 消失(架构评审雷①);satisfies 钉到 EffectKind 联合,typo 即 TS 红。
 const CATEGORIES = [
+  // R289: 三体主题库——《三体》三部曲高光场景(REVIEW_2026-10-12 任务一)
+  { labelKey: 'effects.threebody' as const, kinds: ['three-body', 'trisolaran-suns', 'droplet-mirror', 'gravity-wave'] },
   { labelKey: 'effects.classic'  as const, kinds: ['screen-ambient', 'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'random-color'] },
   { labelKey: 'effects.custom'   as const, kinds: ['custom-paint', 'image-paint'] },
   { labelKey: 'effects.advanced' as const, kinds: ['fire', 'aurora', 'nebula', 'fluid-flow', 'mirror-symmetry', 'starlight', 'ripple', 'comet', 'lightning', 'explode', 'glitch', 'matrix-rain', 'neon-pulse'] },
@@ -317,7 +321,7 @@ const CATEGORIES = [
   { labelKey: 'effects.threed'   as const, kinds: ['plasma', 'vortex', 'tunnel', 'crystal'] },
   { labelKey: 'effects.gpu3d'    as const, kinds: ['sphere-pulse', 'warp-portal', 'neon-galaxy', 'lava-sphere', 'hologram'] },
   { labelKey: 'effects.audio'    as const, kinds: ['audio-beat', 'audio-equalizer'] },
-] as const
+] as const satisfies ReadonlyArray<{ labelKey: string; kinds: readonly EffectKind[] }>
 
 export function EffectsView({ activeKind, favoriteKinds, curatedKinds, onPreviewEffect, onInspire, onSelectEffect, onToggleFavorite }: EffectsViewProps): JSX.Element {
   const { t } = useI18n()

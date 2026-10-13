@@ -1663,6 +1663,191 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       return lerpColor(colorCurrent, colorNext, blend)
     }
 
+    // ── 三体主题灯效库 (R289, REVIEW_2026-10-12) ─────────────────────────────
+
+    case 'three-body': {
+      // 三体运动 — Chenciner-Montgomery figure-8 周期解的 Gerono 双纽线近似:
+      // 三颗等质量恒星相位差 T/3 沿「8」字互相追逐。周期对称性是硬签名——
+      // 整体推进 T/3 后构型不变(三体完全相同),单测以此锁真伪。
+      const speed = Number(layer.parameters.speed ?? 0.55)
+      const spread = Number(layer.parameters.spread ?? 0.85)
+      const wx = (context.x / Math.max(1, context.columns - 1) - 0.5) * 2 * (context.columns / context.rows) * 0.58 * spread
+      const wy = (context.y / Math.max(1, context.rows - 1) - 0.5) * 2 * 0.58 * spread
+      const t = context.now * speed
+
+      let bright = 0
+      let white = 0
+      // 三颗星 × 头亮尾宽的追逐尾迹
+      for (let k = 0; k < 3; k++) {
+        const base = t + k * (Math.PI * 2 / 3)
+        for (let j = 0; j < 9; j++) {
+          const th = base - j * 0.055
+          const sx = Math.sin(th)
+          const sy = Math.sin(th) * Math.cos(th)
+          const dx = wx - sx
+          const dy = wy - sy
+          const core = Math.exp(-(dx * dx + dy * dy) * (j === 0 ? 300 : 70)) * Math.exp(-j * 0.42)
+          if (j === 0 && core > white) white = core
+          bright += core
+        }
+      }
+      // 轨道幽灵线:整条双纽线的极淡可感轨迹(稳态结构,不参与跳动)
+      let path = 1
+      for (let j = 0; j < 26; j++) {
+        const th = (j / 26) * Math.PI * 2
+        const dx = wx - Math.sin(th)
+        const dy = wy - Math.sin(th) * Math.cos(th)
+        path = Math.min(path, dx * dx + dy * dy)
+      }
+      bright += Math.exp(-path * 700) * 0.06
+      bright = clampUnit(bright)
+
+      return {
+        r: clampByte((255 * 0.95 + 0) * bright + 255 * white * 0.05),
+        g: clampByte((224) * bright),
+        b: clampByte((170 + 85 * white) * bright),
+      }
+    }
+
+    case 'trisolaran-suns': {
+      // 三日凌空 — 三颗太阳共享慢速公转,相位扇区随「纪元相位」呼吸:
+      // 扇区收拢(≈30°)=凌空白热灾难,张开(120°)=乱纪元长夜。era 参数
+      // 控制收拢深度(轨道混沌度)。纪元周期 ~14s——节律是设计保证而非涌现。
+      const speed = Number(layer.parameters.speed ?? 0.22)
+      const era = Number(layer.parameters.era ?? 0.5)
+      const t = context.now * speed
+      const eraPhase = context.now * 0.45
+      const wx = (context.x / Math.max(1, context.columns - 1) - 0.5) * 2 * (context.columns / context.rows) * 0.5
+      const wy = (context.y / Math.max(1, context.rows - 1) - 0.5) * 2 * 0.5
+
+      // 纪元扇区:spread∈[1-depth, 1]——depth 随 era 参数(0.55~0.95)。
+      // 凌空相(cos=1)三日扇区收拢到 depth 倍 → 重叠白热;长夜相全开 120°。
+      const depth = 0.55 + era * 0.4
+      const spread = 1 - depth * (0.5 + 0.5 * Math.cos(eraPhase))
+      const suns: Array<{ x: number; y: number; r: number; g: number; b: number }> = []
+      for (let k = 0; k < 3; k++) {
+        const ang = t * 0.9 + k * (Math.PI * 2 / 3) * spread
+        const rad = 0.52 + 0.22 * Math.sin(t * (0.9 + k * 0.37) + k * 2.1)
+        suns.push({
+          x: Math.cos(ang) * rad,
+          y: Math.sin(ang) * rad * 0.68,
+          r: 255, g: 196 - k * 62, b: 96 - k * 34,
+        })
+      }
+      // 聚度(凌空指数):最近 pair 距离越小越亮
+      let minD = 9
+      for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) {
+        const dx = suns[a].x - suns[b].x, dy = suns[a].y - suns[b].y
+        minD = Math.min(minD, Math.hypot(dx, dy))
+      }
+      const syzygy = clampUnit(1 - minD / 0.6)
+
+      // 深空底色(微弱垂直梯度,纯函数无噪声)——凌空时整幕抬亮。
+      // 单星 glow 增益 0.55:单颗日心 ~150(不饱和),三颗凌空叠加 3×→255
+      // 饱和白热——「凌空 vs 长夜」的层次差是节律可感的根。
+      const night = 1 - syzygy * 0.55
+      let r = (2.5 + 3.5 * (1 - (context.y / Math.max(1, context.rows - 1)))) * night
+      let g = (3 + 4 * (1 - (context.y / Math.max(1, context.rows - 1)))) * night
+      let b = (8 + 11 * (1 - (context.y / Math.max(1, context.rows - 1)))) * night
+      for (const s of suns) {
+        const dx = wx - s.x, dy = wy - s.y
+        const glow = Math.exp(-(dx * dx + dy * dy) * 26) * 0.55 * (1 + syzygy * 0.9)
+        r += s.r * glow; g += s.g * glow; b += s.b * glow
+      }
+      return { r: clampByte(r), g: clampByte(g), b: clampByte(b) }
+    }
+
+    case 'droplet-mirror': {
+      // 水滴·镜面 — 强互作用力探体的signature:绝对光滑(零 fbm/零噪声的
+      // 纯镜面反射)+周期掠过的滑动高光。三体舰队的完美之形。
+      const speed = Number(layer.parameters.speed ?? 0.4)
+      const t = context.now * speed
+      const wx = (context.x / Math.max(1, context.columns - 1) - 0.5) * 2 * (context.columns / context.rows) * 0.5
+      const wy = (context.y / Math.max(1, context.rows - 1) - 0.5) * 2 * 0.5
+      const R = 0.3 + 0.012 * Math.sin(t * 0.8)
+      const d = Math.hypot(wx, wy + 0.03)
+
+      // 共用环境星场(反射与背景同一片星空;自转由 env 相位随 t 漂移)。
+      // 星密度 0.9 起步——镜面主体是平滑渐变+滑动高光,星只是稀疏锚点,
+      // 「绝对光滑」的读法优先。
+      const env = (u: number, v: number, dim: number): RgbColor => {
+        const rot = t * 0.35
+        const eu = u * Math.cos(rot) - v * Math.sin(rot)
+        const ev = u * Math.sin(rot) + v * Math.cos(rot)
+        let r = 8 + 14 * (0.5 - v), g = 9 + 16 * (0.5 - v), b = 22 + 30 * (0.5 - v)
+        const cu = Math.floor((eu + 2) * 4), cv = Math.floor((ev + 2) * 4)
+        const h = hash2(cu, cv)
+        if (h > 0.9) {
+          const tw = 0.55 + 0.45 * Math.sin(t * 3 + h * 40)
+          r += 190 * h * tw * dim; g += 200 * h * tw * dim; b += 255 * h * tw * dim
+        }
+        return { r, g, b }
+      }
+
+      if (d < R) {
+        // 球内:法线反射的环境(×2.4 提亮——镜面反射率高于暗幕,盘体才
+        // 读得出来) + 中心到边缘的径向光泽 + 掠面滑动高光 + 边缘掠射光
+        const nx = wx / R, ny = (wy + 0.03) / R
+        const base = env(nx, ny, 1)
+        const sheen = 1 - (d / R) * (d / R)
+        const thetaN = Math.atan2(ny, nx)
+        const sweep = t * 5.5
+        const dAng = Math.atan2(Math.sin(thetaN - sweep), Math.cos(thetaN - sweep))
+        const spec = Math.exp(-dAng * dAng * 28) * Math.exp(-d * d * 3)
+        // AI 复核反馈:轮廓对比不足读作「发光圆盘」——rim ×1.6 + σ 收窄 2×
+        // (锐利轮廓线),球外 0.5R 处一圈微光晕衬托边界(轮廓不融背景)。
+        const rim = Math.exp(-Math.pow(d / R - 0.97, 2) * 1000)
+        return {
+          r: clampByte(base.r * 2.4 + 46 * sheen + 255 * spec + 320 * rim),
+          g: clampByte(base.g * 2.4 + 50 * sheen + 252 * spec + 340 * rim),
+          b: clampByte(base.b * 2.4 + 62 * sheen + 255 * spec + 360 * rim),
+        }
+      }
+      // 球外:暗一级同片星空 + 距球缘 0~0.5R 的冷调微光晕(勾出「完美之形」)
+      const bg = env(wx * 1.4, wy * 1.4, 0.35)
+      const halo = Math.exp(-Math.pow((d - R) / (R * 0.55), 2)) * 0.16
+      return {
+        r: clampByte(bg.r * 0.5 + 60 * halo),
+        g: clampByte(bg.g * 0.5 + 90 * halo),
+        b: clampByte(bg.b * 0.5 + 150 * halo),
+      }
+    }
+
+    case 'gravity-wave': {
+      // 引力波广播 — 双星致密绕转 + 2θ 四极辐射螺旋臂 + 外扩波纹环:
+      // 歌者掷出二向箔前的最后一声「铃」。
+      const speed = Number(layer.parameters.speed ?? 0.6)
+      const t = context.now * speed
+      const wx = (context.x / Math.max(1, context.columns - 1) - 0.5) * 2 * (context.columns / context.rows) * 0.5
+      const wy = (context.y / Math.max(1, context.rows - 1) - 0.5) * 2 * 0.5
+      const r = Math.hypot(wx, wy)
+      const theta = Math.atan2(wy, wx)
+
+      // 四极螺旋臂:cos(2θ - kr + ωt) 的双臂旋转
+      const arm = Math.pow(0.5 + 0.5 * Math.cos(2 * theta - r * 9.5 + t * 4), 1.8)
+      // 外扩次波纹(独立的慢径向速度——双频呼吸)
+      const ring = (0.5 + 0.5 * Math.cos(r * 13 - t * 2.6)) * 0.3
+      // 中心遮罩:双星轨道 r∈[0.05,0.16] 是主舞台
+      const env = Math.exp(-r * 1.15) * Math.min(1, Math.max(0, (r - 0.05) / 0.11))
+      let bright = (arm + ring) * env
+
+      // 双星:紧致轨道上的白金两点(角速度远高于臂旋)
+      let white = 0
+      for (let k = 0; k < 2; k++) {
+        const a = t * 7 + k * Math.PI
+        const bx = Math.cos(a) * 0.085
+        const by = Math.sin(a) * 0.085 * 0.85
+        white = Math.max(white, Math.exp(-((wx - bx) * (wx - bx) + (wy - by) * (wy - by)) * 420))
+      }
+      bright = clampUnit(bright + white)
+
+      return {
+        r: clampByte((90 * arm * env + 40 * ring + 255 * white) * 1.05),
+        g: clampByte((140 * arm * env + 60 * ring + 250 * white) * 0.95),
+        b: clampByte((255 * arm * env + 150 * ring + 255 * white)),
+      }
+    }
+
     // ── Screen Ambient ────────────────────────────────────────────────────────
 
     case 'screen-ambient':

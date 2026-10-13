@@ -521,6 +521,15 @@ const EN = {
   'effects.preset.screen-ambient.label': 'Screen Ambient',
   'effects.preset.screen-ambient.desc': 'Maps the display region into a virtual RGB grid using edge colors.',
   'effects.preset.static.label': 'Static',
+  // R289: 三体主题灯效库
+  'effects.preset.three-body.label': 'Three-Body Orbit',
+  'effects.preset.three-body.desc': 'Three suns chase along the figure-eight periodic solution — the Trisolaran dance.',
+  'effects.preset.trisolaran-suns.label': 'Three Suns in the Sky',
+  'effects.preset.trisolaran-suns.desc': 'Incommensurable orbits: syzygy brings the incandescent dawn, separation the long chaotic night.',
+  'effects.preset.droplet-mirror.label': 'Droplet Mirror',
+  'effects.preset.droplet-mirror.desc': 'The strong-interaction probe — an absolutely smooth mirror sphere under a sliding highlight.',
+  'effects.preset.gravity-wave.label': 'Gravity-Wave Broadcast',
+  'effects.preset.gravity-wave.desc': 'A tight binary rings the last bell — quadrupole spiral arms broadcast the coordinates.',
   'effects.preset.static.desc': 'All zones hold a single calibrated color. Optionally render dot-matrix text.',
   'effects.preset.breathing.label': 'Breathing',
   'effects.preset.breathing.desc': 'Pulses brightness smoothly on a single hue.',
@@ -615,6 +624,8 @@ const EN = {
   'effects.preset.hologram.label': 'Hologram',
   'effects.preset.hologram.desc': 'Data-stream holographic sphere with adaptive wire density, scan packets, signal flicker, edge telemetry particles, and controllable projection depth.',
   'effects.classic': 'Classic',
+  // R289: 三体主题灯效库
+  'effects.threebody': 'Three-Body',
   'effects.advanced': 'Advanced',
   'effects.science': 'Science',
   'effects.audio': 'Audio Reactive',
@@ -1425,6 +1436,11 @@ const EN = {
   // Effect kind labels
   'effect.screen-ambient': 'Screen Ambient',
   'effect.static': 'Static',
+  // R289: 三体主题灯效库
+  'effect.three-body': 'Three-Body Orbit',
+  'effect.trisolaran-suns': 'Three Suns in the Sky',
+  'effect.droplet-mirror': 'Droplet Mirror',
+  'effect.gravity-wave': 'Gravity-Wave Broadcast',
   'effect.breathing': 'Breathing',
   'effect.rainbow': 'Rainbow',
   'effect.wave': 'Wave',
@@ -2381,6 +2397,15 @@ const ZH: TranslationTable = {
   'effects.preset.screen-ambient.label': '屏幕环境光',
   'effects.preset.screen-ambient.desc': '将显示区域按边缘色彩映射为虚拟 RGB 网格。',
   'effects.preset.static.label': '静态单色',
+  // R289: 三体主题灯效库
+  'effects.preset.three-body.label': '三体运动',
+  'effects.preset.three-body.desc': '三颗恒星沿「8」字周期解互相追逐——诞生又毁灭文明的三体之舞。',
+  'effects.preset.trisolaran-suns.label': '三日凌空',
+  'effects.preset.trisolaran-suns.desc': '周期互不通约的三颗太阳：会聚是毁灭性的白热凌空，离散是乱纪元长夜。',
+  'effects.preset.droplet-mirror.label': '水滴·镜面',
+  'effects.preset.droplet-mirror.desc': '强互作用力探体——绝对光滑的镜面球体掠过一道滑动高光。',
+  'effects.preset.gravity-wave.label': '引力波广播',
+  'effects.preset.gravity-wave.desc': '致密双星敲响最后的钟声——四极螺旋臂向外广播星系坐标。',
   'effects.preset.static.desc': '所有区域保持同一校准色，可选渲染点阵文字。',
   'effects.preset.breathing.label': '呼吸',
   'effects.preset.breathing.desc': '单一色相上的亮度平滑脉动。',
@@ -2475,6 +2500,8 @@ const ZH: TranslationTable = {
   'effects.preset.hologram.label': '全息投影',
   'effects.preset.hologram.desc': '数据流全息球体：自适应线框密度、扫描数据包、信号闪烁、边缘遥测粒子与可调投影深度。',
   'effects.classic': '经典',
+  // R289: 三体主题灯效库
+  'effects.threebody': '三体',
   'effects.advanced': '进阶',
   'effects.science': '科学可视化',
   'effects.audio': '音频响应',
@@ -3279,6 +3306,11 @@ const ZH: TranslationTable = {
   // Effect kind labels
   'effect.screen-ambient': '屏幕采样',
   'effect.static': '静态色',
+  // R289: 三体主题灯效库
+  'effect.three-body': '三体运动',
+  'effect.trisolaran-suns': '三日凌空',
+  'effect.droplet-mirror': '水滴·镜面',
+  'effect.gravity-wave': '引力波广播',
   'effect.breathing': '呼吸灯',
   'effect.rainbow': '彩虹',
   'effect.wave': '波浪',

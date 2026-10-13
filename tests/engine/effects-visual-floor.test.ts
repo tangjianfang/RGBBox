@@ -36,6 +36,8 @@ const AMBIENT: EffectKind[] = [
   'mirror-symmetry', 'ripple', 'solar-system',
 ]
 const FEATURE: EffectKind[] = [
+  // R289: 三体主题库——暗场上的结构/点/线(feature 语义)
+  'three-body', 'trisolaran-suns', 'droplet-mirror', 'gravity-wave',
   'fire', 'starlight', 'comet', 'explode', 'audio-equalizer', 'fluid-flow', 'dna-helix',
   'black-hole', 'spiral-galaxy', 'pulsar-beacon', 'hurricane-eye',
   'protein-folding', 'mitosis-spindle', 'synapse-pulse',

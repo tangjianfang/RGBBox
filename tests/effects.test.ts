@@ -153,6 +153,8 @@ describe('renderEffectPixel', () => {
 
   describe('all effects return valid RGB', () => {
     const effectKinds = [
+      // R289: 三体主题灯效库
+      'three-body', 'trisolaran-suns', 'droplet-mirror', 'gravity-wave',
       'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'fire', 'starlight',
       'ripple', 'comet', 'lightning', 'aurora', 'explode',
       'audio-beat', 'audio-equalizer', 'random-color', 'custom-paint', 'image-paint',
