@@ -517,12 +517,246 @@ void main() {
 
 // ── Shader map ─────────────────────────────────────────────────────────────
 
+// ── R292: 三体王座场景 GPU 3D ────────────────────────────────────────────────
+
+/* 共用程序化星空环境(R292 三体组):方向采样——深空梯度+网格星+缓慢自转。
+ * 水滴的镜面反射、二向箔的星场、三日的背景共用同一片「三体宇宙」。 */
+const TB_STARS = /* glsl */`
+vec3 tbEnv(vec3 d, float t, float dim) {
+  // R292 真机校准:首版近黑虚空(0.012-0.06)让水滴的镜面反射=黑球融黑幕
+  // (实测 meanLum 16/亮区 0%)。抬到深蓝紫夜空+星×1.8——反射面有内容可反。
+  vec3 col = mix(vec3(0.045, 0.06, 0.14), vec3(0.10, 0.07, 0.20), d.y * 0.5 + 0.5);
+  float a = t * 0.05;
+  vec3 rrd = vec3(d.x * cos(a) - d.z * sin(a), d.y, d.x * sin(a) + d.z * cos(a));
+  vec2 sv = vec2(atan(rrd.z, rrd.x) * 2.547, asin(clamp(rrd.y, -1.0, 1.0)) * 3.819);
+  vec2 cell = floor(sv);
+  float h = hash(cell.x * 3.7 + cell.y * 91.3);
+  if (h > 0.75) {
+    vec2 f = fract(sv) - 0.5 - (vec2(hash(h * 7.1), hash(h * 13.7)) - 0.5) * 0.6;
+    float star = exp(-dot(f, f) * 60.0);
+    float tw = 0.6 + 0.4 * sin(t * 2.2 + h * 50.0);
+    col += vec3(0.8, 0.88, 1.0) * star * tw * (0.5 + h * 0.5) * dim * 1.8;
+  }
+  return col;
+}
+`
+
+/* 水滴·镜面 (R292):强互作用力探体——绝对光滑的镜面椭球,反射整片
+ * 三体星空,菲涅尔边缘掠射出冷白轮廓,方向光高光周期扫过。解析
+ * ray-ellipsoid 求交(零 march,性能与精度双优)。 */
+const DROPLET_MIRROR_FS = COMMON + TB_STARS + /* glsl */`
+void main() {
+  float speed    = max(0.05, u_params.x);
+  float hueShift = u_params.y;
+  float t        = u_time * speed;
+
+  vec2 uv = (gl_FragCoord.xy / u_resolution - 0.5);
+  uv.x *= u_resolution.x / u_resolution.y;
+
+  // 环绕相机(缓慢绕滴水滴飞行)
+  float ca = cos(t * 0.22), sa = sin(t * 0.22);
+  vec3 ro = vec3(ca * 2.6, 0.18 * sin(t * 0.4), sa * 2.6);
+  vec3 ww = normalize(-ro);
+  vec3 uu = normalize(cross(vec3(0.0, 1.0, 0.0), ww));
+  vec3 vv = cross(ww, uu);
+  vec3 rd = normalize(uv.x * uu + uv.y * vv + 1.9 * ww);
+
+  // 镜面椭球(竖向长——水滴的 signature 轮廓)
+  vec3 s = vec3(0.62, 0.85, 0.62);
+  vec3 roS = ro / s;
+  vec3 rdS = normalize(rd / s);
+  float rb = dot(roS, rdS);
+  float rc = dot(roS, roS) - 1.0;
+  float disc = rb * rb - rc;
+
+  vec3 col;
+  if (disc > 0.0) {
+    float dist = -rb - sqrt(disc);
+    vec3 pos = roS + rdS * dist;            // 单位球面(缩放空间)
+    vec3 n = normalize(vec3(pos.x / (s.x * s.x), pos.y / (s.y * s.y), pos.z / (s.z * s.z)));
+    vec3 refl = reflect(rd, n);
+    // 完美镜面:反射整片三体星空(R292 校准:×2.2——镜面反射率)
+    col = tbEnv(refl, t, 1.0) * 2.2;
+    // 银灰底光泽(金属反射率的视觉锚——暗宇宙里「绝对光滑体」的读法)
+    float fres = pow(1.0 - max(0.0, dot(-rd, n)), 3.5);
+    col += vec3(0.14, 0.19, 0.30) * (1.0 - fres) + vec3(0.75, 0.85, 1.0) * fres * 1.2;
+    // 方向光高光周期扫过
+    vec3 ld = normalize(vec3(cos(t * 1.1), 0.55, sin(t * 1.1)));
+    col += vec3(1.0, 0.98, 0.92) * pow(max(0.0, dot(n, ld)), 90.0) * 3.0;
+  } else {
+    // 球外:同一片星空,暗一级(滴与幕的对比=「完美之形」)
+    col = tbEnv(rd, t, 0.7);
+  }
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`
+
+/* 二向箔降维 (R292):歌者的小纸片——自发光降维平面从深处推来,
+ * 锋面炽白,掠过的星被压平到平面上,最后扫过镜头全屏白热,归寂后
+ * 新星场淡入。8s 周期,扫掠占 60%(全程有事做——R291 CPU 版 12s 里
+ * 10s 近黑暗的教训)。 */
+const DUAL_VECTOR_FOIL_FS = COMMON + TB_STARS + /* glsl */`
+void main() {
+  float speed = max(0.05, u_params.x);
+  float t     = u_time * speed;
+  const float T = 8.0;
+  float ct = mod(t, T);
+
+  vec2 uv = (gl_FragCoord.xy / u_resolution - 0.5);
+  uv.x *= u_resolution.x / u_resolution.y;
+  vec3 ro = vec3(0.0, 0.0, 4.5);
+  vec3 rd = normalize(vec3(uv, -2.0));
+
+  // 降维平面:法线斜向(扫掠有对角戏剧感),从远推近
+  vec3 pn = normalize(vec3(0.35, 0.2, 1.0));
+  float k = clamp((ct - 0.8) / 4.5, 0.0, 1.0);
+  k = k * k * (3.0 - 2.0 * k);            // smoothstep:先慢后快(坍缩加速)
+  float pd = mix(-18.0, 6.5, k);          // 平面点积偏移
+  float denom = dot(rd, pn);
+  float tHit = -1.0;
+  if (abs(denom) > 1e-4) tHit = -(dot(ro, pn) + pd) / denom;
+
+  // 基底:未降维侧的星空
+  vec3 col = tbEnv(rd, t, 1.0);
+
+  // 体积尘埃星(march 24 步;已降维区的采样点压到平面上=被压扁)
+  float acc = 0.0;
+  for (int i = 0; i < 24; i++) {
+    float z = 0.3 + float(i) * 0.28;
+    vec3 p = ro + rd * z;
+    float side = dot(p, pn) + pd;
+    if (side < 0.0) p -= pn * side;       // 降维:投影到平面
+    vec3 cell = floor(p * 3.1);
+    float h = hash(cell.x * 17.0 + cell.y * 91.0 + cell.z * 47.0);
+    if (h > 0.86) {
+      vec3 f = fract(p * 3.1) - 0.5;
+      float dotStar = exp(-dot(f, f) * 26.0);
+      float sideNow = dot(p, pn) + pd;
+      // 锋面前的星被拉亮(物质挣扎),锋面后是死平面纹
+      if (sideNow >= 0.0 && sideNow < 1.6) dotStar *= 1.0 + 2.2 * exp(-sideNow * 2.2);
+      acc += dotStar * (0.25 + 0.3 * h);
+    }
+  }
+  col += vec3(0.55, 0.75, 1.0) * acc * 0.5;
+
+  // 箔本体:平面上一片炽白矩形微光
+  if (tHit > 0.0) {
+    vec3 hp = ro + rd * tHit;
+    vec2 fu = vec2(hp.x * 1.7 + hp.y, hp.y * 2.3 - hp.x);
+    float foil = exp(-max(abs(fu.x) - 0.55, 0.0) * 6.0) * exp(-max(abs(fu.y) - 0.4, 0.0) * 6.0);
+    float near = exp(-max(0.0, -(dot(ro, pn) + pd)) * 0.55);
+    col += vec3(0.95, 0.98, 1.0) * foil * (0.5 + near * 1.6);
+    // 锋面炽白:视线与平面交点越近整幅越亮(扫过瞬间)
+    col += vec3(1.0, 0.97, 0.9) * exp(-tHit * 0.35) * 0.55;
+  }
+
+  // 掠镜白热(5.3-6.0)→ 归寂(6-8:平面残光衰减,新星场淡入)
+  if (ct > 5.3 && ct < 6.0) {
+    float flash = exp(-pow((ct - 5.62) / 0.22, 2.0));
+    col += vec3(1.0) * flash * 1.6;
+    col = mix(col, vec3(0.9, 0.93, 1.0), flash * 0.5);
+  } else if (ct >= 6.0) {
+    float fade = clamp(1.0 - (ct - 6.0) / 2.0, 0.0, 1.0);
+    col = mix(col, col * 0.25 + vec3(0.05, 0.06, 0.1), fade * 0.7);
+  }
+  // 入场期:远处的箔是一颗安静的小亮点
+  if (ct < 0.8 && tHit > 0.0) col += vec3(0.9, 0.95, 1.0) * exp(-tHit * 0.8) * 0.3;
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`
+
+/* 三日凌空 (R292):三颗体积发光太阳(金/橙/红)照亮 FBM 尘埃云;
+ * 纪元扇区呼吸(与 CPU 版同语义):凌空相三星聚拢合并炽白+云层爆亮。 */
+const TRISOLARAN_SUNS_FS = COMMON + TB_STARS + /* glsl */`
+void main() {
+  float speed = max(0.05, u_params.x);
+  float era   = clamp(u_detail.x, 0.0, 1.0);  // gridDensity 槽位复用作 era
+  float t     = u_time * speed;
+
+  vec2 uv = (gl_FragCoord.xy / u_resolution - 0.5);
+  uv.x *= u_resolution.x / u_resolution.y;
+  vec3 ro = vec3(0.0, 0.35, 5.0);
+  vec3 rd = normalize(vec3(uv, -2.0));
+
+  // 纪元扇区(R291 CPU 版同式):spread∈[1-depth,1]
+  float depth = 0.55 + era * 0.4;
+  float eraPhase = u_time * 0.85;
+  float spread = 1.0 - depth * (0.5 + 0.5 * cos(eraPhase));
+
+  vec3 s0p, s1p, s2p;
+  {
+    float ang = t * 0.9;
+    float rad = 1.35 + 0.5 * sin(t * 0.9);
+    s0p = vec3(cos(ang) * rad, sin(ang) * rad * 0.42, sin(ang) * 1.1 - 0.3);
+  }
+  {
+    float ang = t * 0.9 + 2.094 * spread;
+    float rad = 1.35 + 0.5 * sin(t * 1.27 + 2.1);
+    s1p = vec3(cos(ang) * rad, sin(ang) * rad * 0.42, sin(ang) * 1.1 - 0.3);
+  }
+  {
+    float ang = t * 0.9 + 4.189 * spread;
+    float rad = 1.35 + 0.5 * sin(t * 1.64 + 4.2);
+    s2p = vec3(cos(ang) * rad, sin(ang) * rad * 0.42, sin(ang) * 1.1 - 0.3);
+  }
+  vec3 scol0 = vec3(1.0, 0.85, 0.45);
+  vec3 scol1 = vec3(1.0, 0.55, 0.25);
+  vec3 scol2 = vec3(1.0, 0.3, 0.22);
+
+  // 聚度(凌空指数)
+  float minD = min(min(distance(s0p, s1p), distance(s0p, s2p)), distance(s1p, s2p));
+  float syzygy = clamp(1.0 - minD / 2.2, 0.0, 1.0);
+
+  // 尘埃云 march:每步累积 三日光照(距离衰减)× FBM 密度× 距离消光。
+  // R292 实测校准:首版增益让全帧 5184/5184 像素>450(白糊)——密度×0.35/
+  // 光照×0.45/加 z 消光,恢复「暗空+被照亮的云丝+炽亮日核」的层次。
+  vec3 col = tbEnv(rd, t, 0.6);
+  for (int i = 0; i < 28; i++) {
+    float z = 0.6 + float(i) * 0.22;
+    vec3 p = ro + rd * z;
+    float dens = fbm(p * 1.4 + vec3(0.0, t * 0.05, 0.0)) * 0.055;
+    if (dens < 0.006) continue;
+    vec3 lit = scol0 * (0.9 / (1.0 + dot(p - s0p, p - s0p) * 1.4))
+             + scol1 * (0.9 / (1.0 + dot(p - s1p, p - s1p) * 1.4))
+             + scol2 * (0.9 / (1.0 + dot(p - s2p, p - s2p) * 1.4));
+    lit *= 1.0 + syzygy * 1.6;                // 凌空时云层整体爆亮
+    col += lit * dens * exp(-z * 0.16) * 1.1; // 距离消光——远云不糊幕
+  }
+  // 太阳本体:亮核+光晕(解析叠加)
+  {
+    vec3 toS = s0p - ro; float along = dot(toS, rd);
+    if (along > 0.0) { float dP = length(toS - rd * along);
+      col += (vec3(1.0, 0.97, 0.88) * exp(-dP * dP * 55.0) * 2.2 + scol0 * exp(-dP * dP * 3.2) * 0.35) * (1.0 + syzygy * 1.4); }
+  }
+  {
+    vec3 toS = s1p - ro; float along = dot(toS, rd);
+    if (along > 0.0) { float dP = length(toS - rd * along);
+      col += (vec3(1.0, 0.97, 0.88) * exp(-dP * dP * 55.0) * 2.2 + scol1 * exp(-dP * dP * 3.2) * 0.35) * (1.0 + syzygy * 1.4); }
+  }
+  {
+    vec3 toS = s2p - ro; float along = dot(toS, rd);
+    if (along > 0.0) { float dP = length(toS - rd * along);
+      col += (vec3(1.0, 0.97, 0.88) * exp(-dP * dP * 55.0) * 2.2 + scol2 * exp(-dP * dP * 3.2) * 0.35) * (1.0 + syzygy * 1.4); }
+  }
+  // 凌空全幕白热脉冲
+  col += vec3(1.0, 0.96, 0.9) * syzygy * syzygy * 0.16;
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`
+
 export const SHADERS: Record<Effect3DKind, string> = {
   'sphere-pulse': SPHERE_PULSE_FS,
   'warp-portal':  WARP_PORTAL_FS,
   'neon-galaxy':  NEON_GALAXY_FS,
   'lava-sphere':  LAVA_SPHERE_FS,
   'hologram':     HOLOGRAM_FS,
+  // R292: 三体王座场景
+  'droplet-mirror':   DROPLET_MIRROR_FS,
+  'dual-vector-foil': DUAL_VECTOR_FOIL_FS,
+  'trisolaran-suns':  TRISOLARAN_SUNS_FS,
 }
 
 // ── WebGL helpers ───────────────────────────────────────────────────────────

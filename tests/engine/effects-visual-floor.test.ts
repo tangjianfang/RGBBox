@@ -28,7 +28,9 @@ const COLS = 24
 const ROWS = 14
 const SAMPLE_SECS = [0, 0.37, 0.83, 1.21, 1.67, 2.13, 2.59, 3.01, 3.41, 3.89, 4.31, 4.73, 5.21, 5.63, 6.07, 6.49]
 
-const GPU_3D_KINDS = new Set<string>(['sphere-pulse', 'warp-portal', 'neon-galaxy', 'lava-sphere', 'hologram'])
+const GPU_3D_KINDS = new Set<string>(['sphere-pulse', 'warp-portal', 'neon-galaxy', 'lava-sphere', 'hologram',
+  // R292: 三体王座迁移 GPU(渲染在 Preview3D,不经 renderEffectPixel)
+  'droplet-mirror', 'dual-vector-foil', 'trisolaran-suns'])
 
 const AMBIENT: EffectKind[] = [
   'static', 'screen-ambient', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'random-color',
@@ -36,10 +38,8 @@ const AMBIENT: EffectKind[] = [
   'mirror-symmetry', 'ripple', 'solar-system',
 ]
 const FEATURE: EffectKind[] = [
-  // R289: 三体主题库——暗场上的结构/点/线(feature 语义)
-  // R291: 震撼批两名场面(事件驱动,同为暗场结构)
-  'three-body', 'trisolaran-suns', 'droplet-mirror', 'gravity-wave',
-  'dual-vector-foil', 'dark-forest-strike',
+  // R289: 三体主题库(R292 起 droplet/trisolaran/dual-vector 迁 GPU)
+  'three-body', 'gravity-wave', 'dark-forest-strike',
   'fire', 'starlight', 'comet', 'explode', 'audio-equalizer', 'fluid-flow', 'dna-helix',
   'black-hole', 'spiral-galaxy', 'pulsar-beacon', 'hurricane-eye',
   'protein-folding', 'mitosis-spindle', 'synapse-pulse',

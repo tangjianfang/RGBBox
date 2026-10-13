@@ -153,9 +153,8 @@ describe('renderEffectPixel', () => {
 
   describe('all effects return valid RGB', () => {
     const effectKinds = [
-      // R289: 三体主题灯效库 / R291: 震撼批两名场面
-      'three-body', 'trisolaran-suns', 'droplet-mirror', 'gravity-wave',
-      'dual-vector-foil', 'dark-forest-strike',
+      // R289: 三体主题灯效库 / R292 起三王座走 GPU(不在 CPU 扫描列)
+      'three-body', 'gravity-wave', 'dark-forest-strike',
       'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'fire', 'starlight',
       'ripple', 'comet', 'lightning', 'aurora', 'explode',
       'audio-beat', 'audio-equalizer', 'random-color', 'custom-paint', 'image-paint',

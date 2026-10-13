@@ -18,7 +18,8 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'trisolaran-suns',
     label: 'Three Suns in the Sky',
     description: 'Three suns on incommensurable orbits — syzygy brings the incandescent dawn, separation brings the long night of chaotic eras.',
-    defaults: { speed: 0.22, era: 0.5, intensity: 1 },
+    // R292 GPU 3D 化:era 语义走 u_detail.x(Preview3D 的 gridDensity 槽位)
+    defaults: { speed: 0.4, gridDensity: 0.5, intensity: 1 },
   },
   {
     kind: 'droplet-mirror',

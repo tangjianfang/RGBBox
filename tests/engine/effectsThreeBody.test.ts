@@ -60,64 +60,6 @@ describe('R289 三体主题灯效签名锁', () => {
     expect(frameDiffPct(frameAt('three-body', 0), frameAt('three-body', 1))).toBeGreaterThan(2)
   })
 
-  it('trisolaran-suns: 凌空/长夜节律——白热亮区数随纪元呼吸', () => {
-    // R291 戏剧化后日核恒白热(单颗也有 ~7 白热格);凌空相三核重叠+全幕
-    // 闪光把白热区放大到 ~30 格。呼吸比(白热区面积)≥2.5× 是节律锁。
-    const counts = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24, 26].map((t) => {
-      const f = frameAt('trisolaran-suns', t)
-      let c = 0
-      for (let i = 0; i < f.pixels.length; i += 3) {
-        if (f.pixels[i] + f.pixels[i + 1] + f.pixels[i + 2] > 540) c++
-      }
-      return c
-    })
-    const max = Math.max(...counts), min = Math.min(...counts)
-    expect(max).toBeGreaterThanOrEqual(25)      // 凌空相:白热核群+闪光
-    expect(min).toBeLessThanOrEqual(10)         // 长夜相:仅三颗分离日核
-    expect(max / Math.max(1, min)).toBeGreaterThanOrEqual(2.5)
-  })
-
-  it('trisolaran-suns: 1s 帧差 >1.5%(三日本身游走)', () => {
-    expect(frameDiffPct(frameAt('trisolaran-suns', 0), frameAt('trisolaran-suns', 1))).toBeGreaterThan(1.5)
-  })
-
-  it('droplet-mirror: 镜面圆盘结构——中心行存在亮盘区+暗背景读法', () => {
-    const f = frameAt('droplet-mirror', 1.0)
-    const lum = (x: number, y: number) => {
-      const i = (y * COLS + x) * 3
-      return f.pixels[i] + f.pixels[i + 1] + f.pixels[i + 2]
-    }
-    // 中心行:找最长连续亮段(lum>150)——镜面盘体应在 3-10 格宽,
-    // 且两端外侧有暗格(盘外背景 ≤130)——「暗幕上的完美之形」
-    let bestRun = 0
-    for (const row of [6, 7, 8]) {
-      let run = 0
-      for (let x = 0; x < COLS; x++) {
-        if (lum(x, row) > 150) { run++; bestRun = Math.max(bestRun, run) }
-        else run = 0
-      }
-    }
-    expect(bestRun).toBeGreaterThanOrEqual(3)
-    expect(bestRun).toBeLessThanOrEqual(14) // R291: 球体 0.30→0.36 加大
-    // 暗背景存在(盘外仍有 ≤130 的暗格——不是全亮幕)
-    let dark = 0
-    for (let x = 0; x < COLS; x++) if (lum(x, 7) <= 130) dark++
-    expect(dark).toBeGreaterThanOrEqual(6)
-  })
-
-  it('droplet-mirror: lit ≥ 3%(球体+星场可见)', () => {
-    let best = 0
-    for (const t of [0, 1, 2, 3]) {
-      const f = frameAt('droplet-mirror', t)
-      let lit = 0
-      for (let i = 0; i < f.pixels.length; i += 3) {
-        if (f.pixels[i] + f.pixels[i + 1] + f.pixels[i + 2] > 90) lit++
-      }
-      best = Math.max(best, (lit / (COLS * ROWS)) * 100)
-    }
-    expect(best).toBeGreaterThan(3)
-  })
-
   it('gravity-wave: 四极双臂 2 重旋转对称(θ 与 θ+π 等亮)', () => {
     const f = frameAt('gravity-wave', 1.0)
     const lum = (x: number, y: number) => {

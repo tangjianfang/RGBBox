@@ -70,7 +70,7 @@ describe('shared/types', () => {
 
   describe('EFFECT_3D_KINDS', () => {
     it('contains exactly 5 kinds', () => {
-      expect(EFFECT_3D_KINDS.size).toBe(5)
+      expect(EFFECT_3D_KINDS.size).toBe(8) // R292: +droplet-mirror/dual-vector-foil/trisolaran-suns
     })
 
     it('is a Set<EffectKind>', () => {

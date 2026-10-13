@@ -19,6 +19,10 @@ export type Effect3DKind =
   | 'neon-galaxy'
   | 'lava-sphere'
   | 'hologram'
+  // R292: 三体王座场景 GPU 3D 化(同名升级,CPU 版退役)
+  | 'droplet-mirror'
+  | 'dual-vector-foil'
+  | 'trisolaran-suns'
 
 export type EffectKind =
   | 'three-body'
@@ -79,6 +83,10 @@ export const EFFECT_3D_KINDS = new Set<EffectKind>([
   'neon-galaxy',
   'lava-sphere',
   'hologram',
+  // R292: 三体王座场景 GPU 3D 化
+  'droplet-mirror',
+  'dual-vector-foil',
+  'trisolaran-suns',
 ])
 
 /** True when the effect is rendered via GPU shaders (Preview3D) rather than the CPU worker. */
