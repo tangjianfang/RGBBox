@@ -1677,7 +1677,7 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
 
       let bright = 0
       let white = 0
-      // 三颗星 × 头亮尾宽的追逐尾迹
+      // 三颗星 × 头亮尾宽的追逐尾迹(R291 戏剧化:头核 ×1.5 打白热)
       for (let k = 0; k < 3; k++) {
         const base = t + k * (Math.PI * 2 / 3)
         for (let j = 0; j < 9; j++) {
@@ -1687,11 +1687,24 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
           const dx = wx - sx
           const dy = wy - sy
           const core = Math.exp(-(dx * dx + dy * dy) * (j === 0 ? 300 : 70)) * Math.exp(-j * 0.42)
-          if (j === 0 && core > white) white = core
-          bright += core
+          if (j === 0) { white = Math.max(white, core * 1.5); bright += core * 1.5 }
+          else bright += core
         }
       }
-      // 轨道幽灵线:整条双纽线的极淡可感轨迹(稳态结构,不参与跳动)
+      // 近点脉冲:任意两星靠拢时头核爆增(引力弹弓的戏剧时刻)
+      let minHead = 9
+      const hx = [0, 0, 0], hy = [0, 0, 0]
+      for (let k = 0; k < 3; k++) {
+        const th = t + k * (Math.PI * 2 / 3)
+        hx[k] = Math.sin(th); hy[k] = Math.sin(th) * Math.cos(th)
+      }
+      for (let a = 0; a < 3; a++) for (let bb = a + 1; bb < 3; bb++) {
+        minHead = Math.min(minHead, Math.hypot(hx[a] - hx[bb], hy[a] - hy[bb]))
+      }
+      const prox = Math.exp(-minHead * 7)
+      white = Math.min(1.6, white + white * prox * 0.8)
+
+      // 轨道幽灵线(R291: 0.06→0.035 压灰雾——近黑幕+亮结构)
       let path = 1
       for (let j = 0; j < 26; j++) {
         const th = (j / 26) * Math.PI * 2
@@ -1699,13 +1712,14 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         const dy = wy - Math.sin(th) * Math.cos(th)
         path = Math.min(path, dx * dx + dy * dy)
       }
-      bright += Math.exp(-path * 700) * 0.06
+      bright += Math.exp(-path * 700) * 0.035
       bright = clampUnit(bright)
 
+      // 白热头核 + 琥珀尾迹(近黑幕上的高对比)
       return {
-        r: clampByte((255 * 0.95 + 0) * bright + 255 * white * 0.05),
-        g: clampByte((224) * bright),
-        b: clampByte((170 + 85 * white) * bright),
+        r: clampByte(255 * Math.min(1, bright) + 255 * white * 0.55),
+        g: clampByte(214 * Math.min(1, bright) + 250 * white * 0.5),
+        b: clampByte(150 * Math.min(1, bright) + 255 * white * 0.45),
       }
     }
 
@@ -1716,7 +1730,8 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const speed = Number(layer.parameters.speed ?? 0.22)
       const era = Number(layer.parameters.era ?? 0.5)
       const t = context.now * speed
-      const eraPhase = context.now * 0.45
+      // R291 戏剧化:纪元 14s→7.4s(用户等不到 14s 的灾难)
+      const eraPhase = context.now * 0.85
       const wx = (context.x / Math.max(1, context.columns - 1) - 0.5) * 2 * (context.columns / context.rows) * 0.5
       const wy = (context.y / Math.max(1, context.rows - 1) - 0.5) * 2 * 0.5
 
@@ -1742,19 +1757,23 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       }
       const syzygy = clampUnit(1 - minD / 0.6)
 
-      // 深空底色(微弱垂直梯度,纯函数无噪声)——凌空时整幕抬亮。
-      // 单星 glow 增益 0.55:单颗日心 ~150(不饱和),三颗凌空叠加 3×→255
-      // 饱和白热——「凌空 vs 长夜」的层次差是节律可感的根。
-      const night = 1 - syzygy * 0.55
+      // 深空底色(微弱垂直梯度,纯函数无噪声)——凌空时整幕灾难性抬亮。
+      const night = 1 - syzygy * 0.6
       let r = (2.5 + 3.5 * (1 - (context.y / Math.max(1, context.rows - 1)))) * night
       let g = (3 + 4 * (1 - (context.y / Math.max(1, context.rows - 1)))) * night
       let b = (8 + 11 * (1 - (context.y / Math.max(1, context.rows - 1)))) * night
       for (const s of suns) {
         const dx = wx - s.x, dy = wy - s.y
-        const glow = Math.exp(-(dx * dx + dy * dy) * 26) * 0.55 * (1 + syzygy * 0.9)
-        r += s.r * glow; g += s.g * glow; b += s.b * glow
+        // R291 戏剧化:大 glow 域(26→15) + 恒白热日核(任何相位都打白)
+        const glow = Math.exp(-(dx * dx + dy * dy) * 15) * 0.6 * (1 + syzygy * 1.1)
+        const core = Math.exp(-(dx * dx + dy * dy) * 180) * (0.75 + syzygy * 0.7)
+        r += s.r * glow + 255 * core
+        g += s.g * glow + 250 * core
+        b += s.b * glow + 235 * core
       }
-      return { r: clampByte(r), g: clampByte(g), b: clampByte(b) }
+      // 凌空闪光:三日重合瞬间的全幕白热脉冲(syzygy² 抬升整幕)
+      const flash = syzygy * syzygy * 42
+      return { r: clampByte(r + flash), g: clampByte(g + flash * 0.92), b: clampByte(b + flash * 0.8) }
     }
 
     case 'droplet-mirror': {
@@ -1764,8 +1783,18 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const t = context.now * speed
       const wx = (context.x / Math.max(1, context.columns - 1) - 0.5) * 2 * (context.columns / context.rows) * 0.5
       const wy = (context.y / Math.max(1, context.rows - 1) - 0.5) * 2 * 0.5
-      const R = 0.3 + 0.012 * Math.sin(t * 0.8)
+      // R291 戏剧化:球体加大(0.30→0.36)+周期「掠过」事件——每 7s 一道
+      // 炽亮掠痕横扫全幕,球体在掠过瞬间全反射闪耀(末日之战前的掠影)。
+      const R = 0.36 + 0.012 * Math.sin(t * 0.8)
       const d = Math.hypot(wx, wy + 0.03)
+      const flyT = (context.now * 0.55) % 7
+      let streak = 0
+      if (flyT > 5.9) {
+        const k = (flyT - 5.9) / 1.1
+        const bandPos = k * 3.2 - 0.9
+        streak = Math.exp(-Math.pow((wy + 0.15 - bandPos) / 0.07, 2)) * Math.sin(k * Math.PI)
+      }
+      const sphereFlare = d < R ? streak * 1.5 : 0
 
       // 共用环境星场(反射与背景同一片星空;自转由 env 相位随 t 漂移)。
       // 星密度 0.9 起步——镜面主体是平滑渐变+滑动高光,星只是稀疏锚点,
@@ -1798,18 +1827,18 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
         // (锐利轮廓线),球外 0.5R 处一圈微光晕衬托边界(轮廓不融背景)。
         const rim = Math.exp(-Math.pow(d / R - 0.97, 2) * 1000)
         return {
-          r: clampByte(base.r * 2.4 + 46 * sheen + 255 * spec + 320 * rim),
-          g: clampByte(base.g * 2.4 + 50 * sheen + 252 * spec + 340 * rim),
-          b: clampByte(base.b * 2.4 + 62 * sheen + 255 * spec + 360 * rim),
+          r: clampByte(base.r * 2.4 + 46 * sheen + 255 * (spec + sphereFlare) + 320 * rim + 235 * streak),
+          g: clampByte(base.g * 2.4 + 50 * sheen + 252 * (spec + sphereFlare) + 340 * rim + 240 * streak),
+          b: clampByte(base.b * 2.4 + 62 * sheen + 255 * (spec + sphereFlare) + 360 * rim + 255 * streak),
         }
       }
       // 球外:暗一级同片星空 + 距球缘 0~0.5R 的冷调微光晕(勾出「完美之形」)
       const bg = env(wx * 1.4, wy * 1.4, 0.35)
       const halo = Math.exp(-Math.pow((d - R) / (R * 0.55), 2)) * 0.16
       return {
-        r: clampByte(bg.r * 0.5 + 60 * halo),
-        g: clampByte(bg.g * 0.5 + 90 * halo),
-        b: clampByte(bg.b * 0.5 + 150 * halo),
+        r: clampByte(bg.r * 0.5 + 60 * halo + 235 * streak),
+        g: clampByte(bg.g * 0.5 + 90 * halo + 240 * streak),
+        b: clampByte(bg.b * 0.5 + 150 * halo + 255 * streak),
       }
     }
 
@@ -1823,29 +1852,162 @@ export function renderEffectPixel(layer: EffectLayer, context: EffectContext): R
       const r = Math.hypot(wx, wy)
       const theta = Math.atan2(wy, wx)
 
-      // 四极螺旋臂:cos(2θ - kr + ωt) 的双臂旋转
-      const arm = Math.pow(0.5 + 0.5 * Math.cos(2 * theta - r * 9.5 + t * 4), 1.8)
+      // 四极螺旋臂:cos(2θ - kr + ωt) 的双臂旋转(R291: ×1.6 打白热)
+      const arm = Math.pow(0.5 + 0.5 * Math.cos(2 * theta - r * 9.5 + t * 4), 1.8) * 1.6
       // 外扩次波纹(独立的慢径向速度——双频呼吸)
       const ring = (0.5 + 0.5 * Math.cos(r * 13 - t * 2.6)) * 0.3
+      // R291 戏剧化:广播脉冲环——每 6s 一道炽亮波前从双星炸开向外扫过
+      const pulseT = (context.now * speed) % 6
+      const pulseR = pulseT * 0.42
+      const pulse = Math.exp(-Math.pow((r - pulseR) / 0.06, 2)) * Math.max(0, 1 - pulseR / 2.3)
       // 中心遮罩:双星轨道 r∈[0.05,0.16] 是主舞台
       const env = Math.exp(-r * 1.15) * Math.min(1, Math.max(0, (r - 0.05) / 0.11))
-      let bright = (arm + ring) * env
+      let bright = (arm + ring) * env + pulse * 1.3
 
-      // 双星:紧致轨道上的白金两点(角速度远高于臂旋)
+      // 双星:紧致轨道上的白金两点(角速度远高于臂旋;R291 ×1.5 白热)
       let white = 0
       for (let k = 0; k < 2; k++) {
         const a = t * 7 + k * Math.PI
         const bx = Math.cos(a) * 0.085
         const by = Math.sin(a) * 0.085 * 0.85
-        white = Math.max(white, Math.exp(-((wx - bx) * (wx - bx) + (wy - by) * (wy - by)) * 420))
+        white = Math.max(white, Math.exp(-((wx - bx) * (wx - bx) + (wy - by) * (wy - by)) * 420) * 1.5)
       }
       bright = clampUnit(bright + white)
 
       return {
-        r: clampByte((90 * arm * env + 40 * ring + 255 * white) * 1.05),
-        g: clampByte((140 * arm * env + 60 * ring + 250 * white) * 0.95),
-        b: clampByte((255 * arm * env + 150 * ring + 255 * white)),
+        r: clampByte((90 * Math.min(1, arm) * env + 40 * ring + 255 * pulse + 255 * white) * 1.05),
+        g: clampByte((140 * Math.min(1, arm) * env + 60 * ring + 252 * pulse + 250 * white) * 0.95),
+        b: clampByte((255 * Math.min(1, arm) * env + 150 * ring + 255 * pulse + 255 * white)),
       }
+    }
+
+    case 'dual-vector-foil': {
+      // 二向箔降维 (R291 震撼批) — 歌者文明的小纸片:微光箔入场 → 炽白降维
+      // 锋面对角扫过 → 三维星场被压成亮线随锋面坍缩 → 死寂的二维平面微光。
+      // 12s 一轮:0-1.5 箔入场 / 1.5-8.5 锋面扫掠 / 8.5-10.5 完成闪光 / 10.5-12 归寂。
+      const speed = Number(layer.parameters.speed ?? 1)
+      const T = 12
+      const ct = (context.now * speed) % T
+      const px = context.x / Math.max(1, context.columns - 1)
+      const py = context.y / Math.max(1, context.rows - 1)
+      // 对角坐标:u 沿扫掠方向(左上→右下),v 垂直
+      const u = (px + py) / 2
+      const v = (py - px) / 2 + 0.5
+
+      // 三维星场(锋面前才存在;死亡平面无星)
+      const star = (() => {
+        const h = hash2(Math.floor(px * 12), Math.floor(py * 7) + Math.floor(context.now * 0.3))
+        if (h < 0.72) return 0
+        return 0.35 + 0.3 * Math.sin(context.now * 2 + h * 40)
+      })()
+
+      // 平面微光(降维后的二维残骸——均匀冷调+微shimmer)
+      const plane = 0.09 + 0.05 * Math.sin(u * 30 + context.now * 1.2) * Math.sin(v * 24 - context.now * 0.8)
+
+      let r: number, g: number, b: number
+      if (ct < 1.5) {
+        // 箔入场:左上角一片小亮矩形(脉冲呼吸)+静谧星空
+        const foil = Math.exp(-Math.pow((u - 0.07) / 0.05, 2)) * Math.exp(-Math.pow((v - 0.5) / 0.12, 2))
+        const pulse = 0.6 + 0.4 * Math.sin(ct * 9)
+        r = star * 90 + foil * 220 * pulse
+        g = star * 100 + foil * 230 * pulse
+        b = star * 130 + foil * 255 * pulse
+      } else if (ct < 8.5) {
+        // 锋面扫掠:s 从 0.05→0.98(smoothstep——先慢后快,坍缩加速)
+        const k = (ct - 1.5) / 7
+        const s = 0.05 + 0.93 * (k * k * (3 - 2 * k))
+        const edge = Math.exp(-Math.pow((u - s) / 0.028, 2))
+        // 锋面前方的物质被拉平:靠近锋面的星带被拉亮压向锋面
+        const du = u - s
+        const pulled = du > 0 && du < 0.2 ? star * Math.exp(-du * 26) * 3.2 : 0
+        const ahead = du >= 0 ? star * 90 : 0
+        const behind = du < 0 ? plane * 255 : 0
+        r = ahead + behind + pulled * 1.0 + edge * 255
+        g = ahead + behind * 1.05 + pulled * 1.1 + edge * 252
+        b = ahead + behind * 1.25 + pulled * 1.3 + edge * 255
+      } else if (ct < 10.5) {
+        // 完成闪光:全幕白闪后衰减
+        const flash = Math.exp(-Math.pow((ct - 8.7) / 0.55, 2))
+        r = plane * 255 * 0.9 + flash * 255
+        g = plane * 255 * 0.95 + flash * 250
+        b = plane * 255 * 1.1 + flash * 255
+      } else {
+        // 归寂:死亡平面缓缓熄灭
+        const fade = 1 - (ct - 10.5) / 1.5
+        r = plane * 255 * 0.5 * fade
+        g = plane * 255 * 0.55 * fade
+        b = plane * 255 * 0.65 * fade
+      }
+      return { r: clampByte(r), g: clampByte(g), b: clampByte(b) }
+    }
+
+    case 'dark-forest-strike': {
+      // 黑暗森林打击 (R291 震撼批) — 光粒:静谧星场 → 0.3s 光粒掠入 →
+      // 恒星爆闪致盲 → 毁灭壳层膨胀扫灭群星(灭前回光) → 归于死黑。
+      // 9s 一轮,每轮 hash(cyc) 选新目标与入射方向——黑暗森林的随机死神。
+      const speed = Number(layer.parameters.speed ?? 1)
+      const T = 9
+      const tc = (context.now * speed) % T
+      const cyc = Math.floor((context.now * speed) / T)
+      const px = context.x / Math.max(1, context.columns - 1)
+      const py = context.y / Math.max(1, context.rows - 1)
+      const tx = 0.25 + 0.5 * hash(cyc * 3.1 + 1)
+      const ty = 0.3 + 0.4 * hash(cyc * 5.7 + 2)
+      const ang0 = hash(cyc * 7.3 + 3) * Math.PI * 2
+      // 光粒入射线段:从画面边缘射向目标
+      const sx0 = tx + Math.cos(ang0) * 1.3
+      const sy0 = ty + Math.sin(ang0) * 1.3
+
+      // 群星(每颗有位置与亮度;离打击点近的先死)
+      const h = hash2(Math.floor(px * 13) + 1, Math.floor(py * 8) + 1)
+      const isStar = h > 0.7
+      const starTw = 0.4 + 0.35 * Math.sin(context.now * 1.7 + h * 50)
+      const dTarget = Math.hypot(px - tx, py - ty)
+
+      // 点到光粒线段的距离(线段 sx0,sy0 → tx,ty)
+      const abx = tx - sx0, aby = ty - sy0
+      const apx = px - sx0, apy = py - sy0
+      const ab2 = abx * abx + aby * aby
+      const tt = Math.max(0, Math.min(1, (apx * abx + apy * aby) / Math.max(1e-6, ab2)))
+      const dSeg = Math.hypot(px - (sx0 + abx * tt), py - (sy0 + aby * tt))
+
+      let r = 0, g = 0, b = 0
+      if (tc < 3) {
+        // 静谧星场(微漂移)
+        if (isStar) { r = g = 130 * starTw; b = 160 * starTw }
+      } else if (tc < 3.3) {
+        // 光粒掠入:炽亮细线(段上近端渐亮——先头后尾)
+        const head = (tc - 3) / 0.3
+        const segT = 1 - tt // 1=目标端
+        const litLine = segT > head ? 0 : Math.exp(-dSeg * dSeg * 900) * 255
+        if (isStar) { r = g = 130 * starTw; b = 160 * starTw }
+        r += litLine; g += litLine; b += litLine * 0.95
+      } else if (tc < 3.55) {
+        // 恒星爆闪(致盲)
+        const flash = Math.exp(-Math.pow((tc - 3.42) / 0.1, 2))
+        const bloom = Math.exp(-dTarget * dTarget * 12)
+        r = 255 * Math.max(flash, bloom * 0.95)
+        g = 252 * Math.max(flash, bloom * 0.92)
+        b = 235 * Math.max(flash, bloom)
+      } else if (tc < 5.8) {
+        // 毁灭壳层:R 膨胀扫过;壳内星已死,壳外近处的星「灭前回光」
+        const R = (tc - 3.55) / 2.25 * 1.25
+        const ring = Math.exp(-Math.pow((dTarget - R) / 0.07, 2))
+        const alive = dTarget > R + 0.02
+        const deathGlow = alive && dTarget < R + 0.22 && isStar ? Math.exp(-(dTarget - R) * 12) * 3 : 0
+        if (alive && isStar) { r = g = 130 * starTw; b = 160 * starTw }
+        r += deathGlow * 140 + ring * 235
+        g += deathGlow * 130 + ring * 240
+        b += deathGlow * 100 + ring * 255
+      } else {
+        // 归寂:幸存远星微弱呼吸,壳层余辉散尽
+        const fade = Math.max(0, 1 - (tc - 5.8) / 2.2)
+        if (isStar && dTarget > 1.05) { r = g = 130 * starTw * 0.5; b = 160 * starTw * 0.55 }
+        r += fade * fade * 18
+        g += fade * fade * 20
+        b += fade * fade * 30
+      }
+      return { r: clampByte(r), g: clampByte(g), b: clampByte(b) }
     }
 
     // ── Screen Ambient ────────────────────────────────────────────────────────

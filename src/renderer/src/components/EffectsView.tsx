@@ -312,8 +312,9 @@ interface EffectsViewProps {
 // R289 Phase 0: kinds 收编译期守卫——裸 string 数组里拼错 kind 只会静默
 // 从 tab 消失(架构评审雷①);satisfies 钉到 EffectKind 联合,typo 即 TS 红。
 const CATEGORIES = [
-  // R289: 三体主题库——《三体》三部曲高光场景(REVIEW_2026-10-12 任务一)
-  { labelKey: 'effects.threebody' as const, kinds: ['three-body', 'trisolaran-suns', 'droplet-mirror', 'gravity-wave'] },
+  // R289: 三体主题库——《三体》三部曲高光场景(REVIEW_2026-10-12 任务一);
+  // R291 震撼批 +二向箔降维/黑暗森林打击
+  { labelKey: 'effects.threebody' as const, kinds: ['three-body', 'trisolaran-suns', 'droplet-mirror', 'gravity-wave', 'dual-vector-foil', 'dark-forest-strike'] },
   { labelKey: 'effects.classic'  as const, kinds: ['screen-ambient', 'static', 'breathing', 'rainbow', 'wave', 'zone-gradient', 'random-color'] },
   { labelKey: 'effects.custom'   as const, kinds: ['custom-paint', 'image-paint'] },
   { labelKey: 'effects.advanced' as const, kinds: ['fire', 'aurora', 'nebula', 'fluid-flow', 'mirror-symmetry', 'starlight', 'ripple', 'comet', 'lightning', 'explode', 'glitch', 'matrix-rain', 'neon-pulse'] },

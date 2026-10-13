@@ -25,6 +25,8 @@ export type EffectKind =
   | 'trisolaran-suns'
   | 'droplet-mirror'
   | 'gravity-wave'
+  | 'dual-vector-foil'
+  | 'dark-forest-strike'
   | 'screen-ambient'
   | 'static'
   | 'breathing'

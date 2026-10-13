@@ -41,7 +41,7 @@ const cards = await page.locator('.effect-card').count()
 console.log(`三体 tab 截图卡片(含精选区): ${cards}`)
 
 // 逐效果:点卡 → 自动跳工作台 → 预览 2 帧
-const NAMES = { '三体运动': 'three-body', '三日凌空': 'trisolaran-suns', '水滴': 'droplet-mirror', '引力波': 'gravity-wave' }
+const NAMES = { '三体运动': 'three-body', '三日凌空': 'trisolaran-suns', '水滴': 'droplet-mirror', '引力波': 'gravity-wave', '二向箔': 'dual-vector-foil', '黑暗森林': 'dark-forest-strike' }
 /** Playwright 写的 PNG 偶带尾部残留字节——按 IEND 截断后再解析。 */
 function readPngSafe(f) {
   const raw = readFileSync(f)

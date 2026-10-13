@@ -33,6 +33,19 @@ export const effectPresets: PresetDefinition[] = [
     defaults: { speed: 0.6, intensity: 1 },
   },
   {
+    kind: 'dual-vector-foil',
+    label: 'Dual Vector Foil',
+    description: 'The Singer’s little slip of paper: a blazing collapse front sweeps the star field flat into a dead, shimmering plane.',
+    // R291 震撼批:12s 一轮(箔入场→锋面扫掠→完成闪光→归寂)
+    defaults: { speed: 1 },
+  },
+  {
+    kind: 'dark-forest-strike',
+    label: 'Dark Forest Strike',
+    description: 'A photoid crosses the void in silence — the star ignites, a death shell expands, and the forest goes dark.',
+    defaults: { speed: 1 },
+  },
+  {
     kind: 'static',
     label: 'Static',
     description: 'All zones hold a single calibrated color. Optionally render dot-matrix text.',

@@ -61,9 +61,9 @@ describe('R289 三体主题灯效签名锁', () => {
   })
 
   it('trisolaran-suns: 凌空/长夜节律——白热亮区数随纪元呼吸', () => {
-    // 单颗日心 ~150 不饱和;三颗凌空叠加 → 255 白热。亮区(>180)计数
-    // 在凌空相显著多于长夜相——节律是保证性设计(eraPhase ~14s 周期)。
-    const counts = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26].map((t) => {
+    // R291 戏剧化后日核恒白热(单颗也有 ~7 白热格);凌空相三核重叠+全幕
+    // 闪光把白热区放大到 ~30 格。呼吸比(白热区面积)≥2.5× 是节律锁。
+    const counts = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24, 26].map((t) => {
       const f = frameAt('trisolaran-suns', t)
       let c = 0
       for (let i = 0; i < f.pixels.length; i += 3) {
@@ -72,9 +72,9 @@ describe('R289 三体主题灯效签名锁', () => {
       return c
     })
     const max = Math.max(...counts), min = Math.min(...counts)
-    expect(max).toBeGreaterThanOrEqual(4)       // 凌空相:白热核出现
-    expect(min).toBeLessThanOrEqual(2)          // 长夜相:白热核消失
-    expect(max / (min + 1)).toBeGreaterThan(2)  // 呼吸比 ≥2×
+    expect(max).toBeGreaterThanOrEqual(25)      // 凌空相:白热核群+闪光
+    expect(min).toBeLessThanOrEqual(10)         // 长夜相:仅三颗分离日核
+    expect(max / Math.max(1, min)).toBeGreaterThanOrEqual(2.5)
   })
 
   it('trisolaran-suns: 1s 帧差 >1.5%(三日本身游走)', () => {
@@ -98,7 +98,7 @@ describe('R289 三体主题灯效签名锁', () => {
       }
     }
     expect(bestRun).toBeGreaterThanOrEqual(3)
-    expect(bestRun).toBeLessThanOrEqual(10)
+    expect(bestRun).toBeLessThanOrEqual(14) // R291: 球体 0.30→0.36 加大
     // 暗背景存在(盘外仍有 ≤130 的暗格——不是全亮幕)
     let dark = 0
     for (let x = 0; x < COLS; x++) if (lum(x, 7) <= 130) dark++
