@@ -6322,6 +6322,44 @@ input[type='range'].audio-slider {
   overflow-y: auto;
 }
 
+/* R297 录制控制包:码率档位 + 系统声开关 */
+.video-rec-opts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: var(--text-caption-size);
+  color: var(--accent-soft-text);
+}
+
+.video-rec-opts-label {
+  opacity: 0.8;
+}
+
+.video-rec-opts-tiers {
+  display: flex;
+  gap: 4px;
+}
+
+.video-rec-opts-audio {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  cursor: pointer;
+  user-select: none;
+}
+
+.video-rec-opts-audio input {
+  accent-color: var(--accent);
+}
+
+/* REC 徽章暂停态 */
+.video-badge-rec.paused {
+  opacity: 0.65;
+}
+
 .video-source-card {
   position: relative; /* R290.2: 截图角标定位锚 */
   display: flex;

@@ -25,6 +25,7 @@ import fixWebmDuration from 'fix-webm-duration'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useI18n } from '../i18n'
 import type { CaptureSource } from '../../../shared/types'
+import { REC_BITRATE_TIERS, buildRecorderOptions, captureConstraintsWithAudio, type RecBitrateTier } from '../domain/recorderOptions'
 import { formatMediaTime } from '../../../shared/timeFormat'
 import { usePreviewZoom } from './video/usePreviewZoom'
 import { PreviewZoomBar } from './video/PreviewZoomBar'
@@ -342,6 +343,26 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
   const [recElapsed, setRecElapsed] = useState(0)
   const recStartRef = useRef(0)
   const recTimerRef = useRef<number | null>(null)
+  // R297 录制控制包:码率档位/系统声(持久化 rgbbox:videoRecOpts)+暂停态。
+  // 暂停计时 = 累计模式:pause 冻结已录时长到 recAccumRef,resume 重设基准。
+  const [recPaused, setRecPaused] = useState(false)
+  const recAccumRef = useRef(0)
+  const [recBitrate, setRecBitrate] = useState<RecBitrateTier>(() => {
+    try {
+      const t = localStorage.getItem('rgbbox:videoRecOpts')
+      const tier = t ? JSON.parse(t).bitrate : null
+      return tier in REC_BITRATE_TIERS ? tier as RecBitrateTier : 'high'
+    } catch { return 'high' }
+  })
+  const [recSystemAudio, setRecSystemAudio] = useState<boolean>(() => {
+    try {
+      const t = localStorage.getItem('rgbbox:videoRecOpts')
+      return t ? JSON.parse(t).systemAudio === true : false
+    } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('rgbbox:videoRecOpts', JSON.stringify({ bitrate: recBitrate, systemAudio: recSystemAudio })) } catch { /* storage unavailable */ }
+  }, [recBitrate, recSystemAudio])
 
   // ── Video Playlist ──────────────────────────────────────────────────────────
   const videoCache = useMemo(() => loadVideoCache(), [])
@@ -637,17 +658,26 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     // (browsers, etc.) that the legacy chromeMediaSource constraint often dropped.
     try {
       await window.rgbbox.selectCaptureSource(sourceId)
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 60 } },
-        audio: false,
-      })
+      // R297: 系统声按开关请求(Windows loopback);不支持的环境整个调用会拒,
+      // 由外层 catch 的 legacy 路径兜底继续(legacy 同样带开关,失败再降级)。
+      const stream = await navigator.mediaDevices.getDisplayMedia(
+        captureConstraintsWithAudio({ frameRate: { ideal: 60 } }, recSystemAudio))
       attachStream(stream, capGen)
       return
     } catch (modernErr) {
+      // R297 降级:请求系统声被拒时去掉 audio 重试一次(不等 5s legacy 超时)
+      if (recSystemAudio) {
+        try {
+          const retry = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60 } }, audio: false })
+          attachStream(retry, capGen)
+          editorToast(t('video.recSysAudioUnavailable'))
+          return
+        } catch { /* 落到 legacy 路径 */ }
+      }
       // Fall back to the legacy desktop constraint if getDisplayMedia is unavailable.
       try {
         const constraints = {
-          audio: false,
+          audio: recSystemAudio, // R297: 系统声开关(legacy 路径同样可配)
           video: {
             mandatory: {
               chromeMediaSource: 'desktop',
@@ -664,7 +694,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
         setStreaming(false)
       }
     }
-  }, [stopStream, attachStream])
+  }, [stopStream, attachStream, recSystemAudio, editorToast, t])
 
   // ── Apply a hardware track constraint ───────────────────────────────────────
   const applyTrackControl = useCallback((key: TrackControl, value: number) => {
@@ -711,6 +741,26 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     }
   }, [])
 
+  /** R297: 已录总时长(累计+当前段)——暂停模式下的真实时长,供计时器与 onstop 元数据共用。 */
+  const recElapsedTotal = useCallback((): number =>
+    recAccumRef.current + (recStartRef.current ? Date.now() - recStartRef.current : 0), [])
+
+  /** R297: 暂停/续录——pause 冻结累计,resume 重设基准;计时器读 recElapsedTotal。 */
+  const toggleRecPause = useCallback(() => {
+    const r = recorderRef.current
+    if (!r || !recording) return
+    if (r.state === 'recording') {
+      try { r.pause() } catch { return }
+      recAccumRef.current = recAccumRef.current + Date.now() - recStartRef.current
+      recStartRef.current = 0
+      setRecPaused(true)
+    } else if (r.state === 'paused') {
+      try { r.resume() } catch { return }
+      recStartRef.current = Date.now()
+      setRecPaused(false)
+    }
+  }, [recording])
+
   const startRecording = useCallback(() => {
     const stream = streamRef.current
     if (!stream) return
@@ -718,7 +768,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     chunksRef.current = []
     let recorder: MediaRecorder
     try {
-      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      // R297: 码率档位进构造(评审发现 videoBitsPerSecond 全仓 0 命中)
+      recorder = new MediaRecorder(stream, buildRecorderOptions(mimeType, recBitrate))
     } catch (err) {
       setStreamError(err instanceof Error ? err.message : String(err))
       return
@@ -727,6 +778,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     // R296(X-1): 录制失败回执——源被撤/编码器错误此前完全静默
     recorder.onerror = () => {
       setRecording(false)
+      setRecPaused(false)
       if (recTimerRef.current) { window.clearInterval(recTimerRef.current); recTimerRef.current = null }
       editorToast(t('video.recFail'))
     }
@@ -735,13 +787,13 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
       // fix 后处理的 .then,停止后 REC 徽标继续走表、大文件后处理期间按钮
       // 僵死、fix 挂起则录制永久锁死。复位先行,下载异步等待。
       setRecording(false)
+      setRecPaused(false)
       if (recTimerRef.current) { window.clearInterval(recTimerRef.current); recTimerRef.current = null }
       const raw = new Blob(chunksRef.current, { type: mimeType || 'video/webm' })
       // R295: Chromium MediaRecorder 的 webm 流式写出缺 Duration 元数据
-      // (时长=∞)→播放器禁用拖动条。用实际录制时长在 EBML 级补写 Duration
-      // 后再下载;修复失败兜底原样下载(不因后处理毁录制)。
-      const elapsed = recStartRef.current ? Date.now() - recStartRef.current : 0
-      void fixWebmDuration(raw, elapsed, { logger: false })
+      // (时长=∞)→播放器禁用拖动条。用实际录制时长(暂停感知)在 EBML 级
+      // 补写 Duration 后再下载;修复失败兜底原样下载(不因后处理毁录制)。
+      void fixWebmDuration(raw, recElapsedTotal(), { logger: false })
         .catch(() => raw)
         .then((blob: Blob) => {
           const url = URL.createObjectURL(blob)
@@ -756,11 +808,13 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     }
     recorder.start(100)
     recorderRef.current = recorder
+    recAccumRef.current = 0
     recStartRef.current = Date.now()
     setRecElapsed(0)
+    setRecPaused(false)
     setRecording(true)
-    recTimerRef.current = window.setInterval(() => setRecElapsed(Date.now() - recStartRef.current), 250)
-  }, [editorToast, t])
+    recTimerRef.current = window.setInterval(() => setRecElapsed(recElapsedTotal()), 250)
+  }, [editorToast, t, recBitrate, recElapsedTotal])
 
   // ── Player sources (local file + network stream) ────────────────────────────
   /** Tear down any active player source (blob URL or hls.js instance). */
@@ -1816,7 +1870,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
               {streaming && (
                 <div className="video-badges">
                   {streamInfo && <span className="video-badge">{streamInfo}</span>}
-                  {recording && <span className="video-badge video-badge-rec"><Circle size={9} fill="currentColor" /> REC {formatElapsed(recElapsed)}</span>}
+                  {recording && <span className={`video-badge video-badge-rec${recPaused ? ' paused' : ''}`}><Circle size={9} fill="currentColor" /> {recPaused ? 'PAUSED' : 'REC'} {formatElapsed(recElapsed)}</span>}
                 </div>
               )}
 
@@ -1932,12 +1986,50 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                 <button type="button" className="video-btn" onClick={startSnip} disabled={snipActive} title={t('video.snip.hint')} aria-label={t('video.snip.hint')}><Frame size={15} /> {t('video.snip.button')}</button>
                 {mode !== 'player' && (
                   recording
-                    ? <button type="button" className="video-btn video-btn-rec" onClick={stopRecording}><Square size={15} /> {t('video.recStop')}</button>
+                    ? <>
+                      {/* R297: 暂停/续录——暂停时冻结计时,文件时长感知暂停 */}
+                      <button type="button" className="video-btn" onClick={toggleRecPause} disabled={recorderRef.current === null}>
+                        {recPaused ? <Play size={13} /> : <Pause size={13} />} {recPaused ? t('video.recResume') : t('video.recPause')}
+                      </button>
+                      <button type="button" className="video-btn video-btn-rec" onClick={stopRecording}><Square size={15} /> {t('video.recStop')}</button>
+                    </>
                     : <button type="button" className="video-btn" onClick={startRecording}><Circle size={13} fill="currentColor" /> {t('video.rec')}</button>
                 )}
               </>
             )}
           </div>
+
+          {/* R297 录制控制包:码率档位 + 系统声(仅直播模式;持久化 rgbbox:videoRecOpts) */}
+          {mode !== 'player' && streaming && (
+            <div className="video-rec-opts">
+              <span className="video-rec-opts-label">{t('video.recBitrateLabel')}</span>
+              <div className="video-rec-opts-tiers">
+                {(Object.keys(REC_BITRATE_TIERS) as RecBitrateTier[]).map((tier) => (
+                  <button
+                    key={tier}
+                    type="button"
+                    className={`video-chip ${recBitrate === tier ? 'active' : ''}`}
+                    onClick={() => setRecBitrate(tier)}
+                    disabled={recording}
+                    title={t(`video.recBitrate.${tier}`)}
+                  >
+                    {t(`video.recBitrate.${tier}`)}
+                  </button>
+                ))}
+              </div>
+              {mode === 'screen' && (
+                <label className="video-rec-opts-audio" title={t('video.recSysAudioHint')}>
+                  <input
+                    type="checkbox"
+                    checked={recSystemAudio}
+                    onChange={(e) => setRecSystemAudio(e.target.checked)}
+                    disabled={recording}
+                  />
+                  {t('video.recSysAudio')}
+                </label>
+              )}
+            </div>
+          )}
 
 
           {/* R76: in-place annotator（局部截图确认 / 缩略图编辑入口；绝对定位覆盖全舞台） */}

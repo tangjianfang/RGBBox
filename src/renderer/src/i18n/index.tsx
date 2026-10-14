@@ -1831,6 +1831,17 @@ const EN = {
   // R296: 录制回执
   'video.recSaved': 'Recording saved',
   'video.recFail': 'Recording failed',
+  // R297: 录制控制包
+  'video.recPause': 'Pause',
+  'video.recResume': 'Resume',
+  'video.recBitrateLabel': 'Recording bitrate',
+  'video.recBitrate.low': 'Smooth',
+  'video.recBitrate.balanced': 'Balanced',
+  'video.recBitrate.high': 'HD',
+  'video.recBitrate.max': 'Max',
+  'video.recSysAudio': 'System audio',
+  'video.recSysAudioHint': 'Capture system sound with the screen (Windows loopback; falls back to silent on unsupported systems)',
+  'video.recSysAudioUnavailable': 'System audio unavailable — recording without sound',
   // R290.2: 按窗口句柄截图
   'video.snipWindow': 'Capture window (full resolution)',
   'video.snipWindowOk': 'Window capture saved',
@@ -3708,6 +3719,17 @@ const ZH: TranslationTable = {
   // R296: 录制回执
   'video.recSaved': '录制完成已保存',
   'video.recFail': '录制失败',
+  // R297: 录制控制包
+  'video.recPause': '暂停',
+  'video.recResume': '继续',
+  'video.recBitrateLabel': '录制码率',
+  'video.recBitrate.low': '流畅',
+  'video.recBitrate.balanced': '均衡',
+  'video.recBitrate.high': '高清',
+  'video.recBitrate.max': '极致',
+  'video.recSysAudio': '录制系统声音',
+  'video.recSysAudioHint': '屏幕录制同时捕获系统声音（Windows 回环；不支持的系统自动降级为无声）',
+  'video.recSysAudioUnavailable': '系统声音不可用——已降级为无声录制',
   // R290.2: 按窗口句柄截图
   'video.snipWindow': '按窗口句柄截图（原生分辨率）',
   'video.snipWindowOk': '窗口截图已存入拍摄缓存',
