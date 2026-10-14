@@ -49,6 +49,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
+    "fix-webm-duration": "^1.0.6",
     "kokoro-js": "^1.2.1",
     "onnxruntime-node": "^1.29.0",
     "pinyin-pro": "^3.29.4",

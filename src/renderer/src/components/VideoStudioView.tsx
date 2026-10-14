@@ -21,6 +21,7 @@ import {
   SkipForward, SlidersHorizontal, Sparkles, Square, Trash2, Video, Volume2, VolumeX,
 } from 'lucide-react'
 import Hls from 'hls.js'
+import fixWebmDuration from 'fix-webm-duration'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useI18n } from '../i18n'
 import type { CaptureSource } from '../../../shared/types'
@@ -710,16 +711,24 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     }
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
     recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: mimeType || 'video/webm' })
-      const url = URL.createObjectURL(blob)
-      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `rgbbox-recording-${Date.now()}.${ext}`
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(url), 10_000)
-      setRecording(false)
-      if (recTimerRef.current) { window.clearInterval(recTimerRef.current); recTimerRef.current = null }
+      const raw = new Blob(chunksRef.current, { type: mimeType || 'video/webm' })
+      // R295: Chromium MediaRecorder 的 webm 流式写出缺 Duration 元数据
+      // (时长=∞)→播放器禁用拖动条。用实际录制时长在 EBML 级补写 Duration
+      // 后再下载;修复失败兜底原样下载(不因后处理毁录制)。
+      const elapsed = recStartRef.current ? Date.now() - recStartRef.current : 0
+      void fixWebmDuration(raw, elapsed, { logger: false })
+        .catch(() => raw)
+        .then((blob: Blob) => {
+          const url = URL.createObjectURL(blob)
+          const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `rgbbox-recording-${Date.now()}.${ext}`
+          a.click()
+          setTimeout(() => URL.revokeObjectURL(url), 10_000)
+          setRecording(false)
+          if (recTimerRef.current) { window.clearInterval(recTimerRef.current); recTimerRef.current = null }
+        })
     }
     recorder.start(100)
     recorderRef.current = recorder

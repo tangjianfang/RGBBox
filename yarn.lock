@@ -2913,6 +2913,11 @@ filelist@^1.0.4:
   dependencies:
     minimatch "^5.0.1"
 
+fix-webm-duration@^1.0.6:
+  version "1.0.6"
+  resolved "https://registry.yarnpkg.com/fix-webm-duration/-/fix-webm-duration-1.0.6.tgz#c2de812c5207ba01e0f0b3ae497e64edc45e6c1e"
+  integrity sha512-zVAqi4gE+8ywxJuAyV/rlJVX6CMtvyapEbQx6jyoeX9TMjdqAlt/FdG5d7rXSSkDVzTvS0H7CtwzHcH/vh4FPA==
+
 flatbuffers@^25.1.24:
   version "25.9.23"
   resolved "https://registry.yarnpkg.com/flatbuffers/-/flatbuffers-25.9.23.tgz#346811557fe9312ab5647535e793c761e9c81eb1"
