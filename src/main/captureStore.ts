@@ -10,6 +10,7 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { writeJsonQueued } from './atomicJson'
 import type { CaptureEntry } from '../shared/types'
 
 export type { CaptureEntry }
@@ -84,18 +85,31 @@ export function createCaptureStore(userDataDir: string): {
   const dir = join(userDataDir, 'captures')
   const indexPath = join(dir, INDEX_FILE)
 
+  // R296(M-5): 索引改 内存权威+原子落盘。旧版同步 writeFileSync 在写入中
+  // 崩溃/断电=半截 JSON,下次启动 parseIndex 全弃→整库索引丢失(文件还在但
+  // 胶片条全空)。内存缓存同时消除「排队写未落盘时紧随的 loadIndex 读旧盘」
+  // 竞态(那是把写异步化后必然出现的读己之写问题)。
+  let entriesCache: CaptureEntry[] | null = null
+
   const loadIndex = (): CaptureEntry[] => {
+    if (entriesCache) return entriesCache
     try {
       // review-fix: 索引只存相对文件名，加载时按当前 captures 目录解析——
       // userData 迁移/改名后不再产生指向旧绝对路径的幽灵条目
-      return parseIndex(readFileSync(indexPath, 'utf-8'))
+      const parsed = parseIndex(readFileSync(indexPath, 'utf-8'))
         .map(e => ({ ...e, file: join(dir, basename(e.file)) }))
+      entriesCache = parsed
+      return parsed
     } catch {
       return []
     }
   }
   const saveIndex = (entries: CaptureEntry[]): void => {
-    writeFileSync(indexPath, JSON.stringify(entries.map(e => ({ ...e, file: basename(e.file) }))), 'utf-8')
+    entriesCache = entries
+    // R267 原子写(tmp+rename)+同路径串行队列;失败不回滚内存态(下次写重试,
+    // 极端情况下次启动从盘恢复旧一拍索引——可接受的降级,优于全丢)
+    void writeJsonQueued(indexPath, entries.map(e => ({ ...e, file: basename(e.file) })))
+      .catch(() => { /* best-effort 落盘 */ })
   }
   const evict = (evicted: CaptureEntry[]): void => {
     for (const e of evicted) {

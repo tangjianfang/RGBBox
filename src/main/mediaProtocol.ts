@@ -52,7 +52,10 @@ export function resolveAppAssetPath(rendererRoot: string, pathname: string): str
     .map((segment) => decodeURIComponent(segment))
     .filter((segment) => segment.length > 0 && segment !== '.')
   if (segments.length === 0) return null
-  if (segments.some((segment) => segment === '..' || segment.includes('\\') || /^[a-zA-Z]:$/.test(segment))) return null
+  // R296(T-1): 段内正斜杠一并拒绝——decode 发生在 split 之后,单个段解出
+  // "..%2F..%2F"(即 ../../)时旧守卫(只查 === '..'/反斜杠/盘符)会放行,
+  // join 后逃逸 renderer 根(评审 05 实测可读安装盘任意文件)。
+  if (segments.some((segment) => segment === '..' || segment.includes('\\') || segment.includes('/') || /^[a-zA-Z]:$/.test(segment))) return null
   return `${rendererRoot.replace(/[\\/]+$/, '')}/${segments.join('/')}`
 }
 

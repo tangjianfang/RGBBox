@@ -39,9 +39,10 @@ describe('CaptureFilmstrip', () => {
     expect(onImport).toHaveBeenCalledTimes(1)
   })
 
-  it('renders nothing for an empty list', () => {
-    const { container } = render(<CaptureFilmstrip {...stripProps()} />)
-    expect(container.querySelector('.video-filmstrip')).toBeNull()
+  it('R296(X-2): 空列表保留头行+导入入口(不再整体消失),仅折叠时空态渲染 null', () => {
+    const { container } = render(<CaptureFilmstrip {...stripProps()} items={[]} />)
+    expect(container.querySelector('.video-filmstrip-add')).toBeTruthy() // 导入入口在
+    expect(container.querySelectorAll('.video-filmstrip-item').length).toBe(0)
   })
 
   it('computeCanNav: no overflow → both false; at left edge → left false; middle → both true', () => {

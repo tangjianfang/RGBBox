@@ -1828,6 +1828,9 @@ const EN = {
   'video.device': 'Device',
   'video.noCamera': 'No camera found',
   'video.refresh': 'Refresh',
+  // R296: 录制回执
+  'video.recSaved': 'Recording saved',
+  'video.recFail': 'Recording failed',
   // R290.2: 按窗口句柄截图
   'video.snipWindow': 'Capture window (full resolution)',
   'video.snipWindowOk': 'Window capture saved',
@@ -3702,6 +3705,9 @@ const ZH: TranslationTable = {
   'video.device': '设备',
   'video.noCamera': '未找到摄像头',
   'video.refresh': '刷新',
+  // R296: 录制回执
+  'video.recSaved': '录制完成已保存',
+  'video.recFail': '录制失败',
   // R290.2: 按窗口句柄截图
   'video.snipWindow': '按窗口句柄截图（原生分辨率）',
   'video.snipWindowOk': '窗口截图已存入拍摄缓存',

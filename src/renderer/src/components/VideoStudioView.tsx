@@ -335,6 +335,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
 
   // ── Recording ──────────────────────────────────────────────────────────────
   const recorderRef = useRef<MediaRecorder | null>(null)
+  /** R296(M-1): 流代际令牌——stopStream 递增,异步落地流比对后决定 attach 或丢弃。 */
+  const streamGenRef = useRef(0)
   const chunksRef = useRef<Blob[]>([])
   const [recording, setRecording] = useState(false)
   const [recElapsed, setRecElapsed] = useState(0)
@@ -492,6 +494,10 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   const stopStream = useCallback(() => {
+    // R296(M-1): 流代际令牌——在途的 getUserMedia/getDisplayMedia 慢返回时,
+    // 若期间已 stopStream/切走视图,落地流按过期代际直接停轨丢弃(否则摄像头
+    // 灯常亮/捕获线程常驻——R91.2 隐私目标被异步时序击穿)。
+    streamGenRef.current += 1
     if (recorderRef.current && recorderRef.current.state !== 'inactive') {
       try { recorderRef.current.stop() } catch { /* noop */ }
     }
@@ -504,7 +510,13 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     setTrackVals({})
   }, [])
 
-  const attachStream = useCallback((stream: MediaStream) => {
+  const attachStream = useCallback((stream: MediaStream, gen: number) => {
+    // R296(M-1): 过期代际的流直接停轨丢弃,不 attach 不点亮 UI
+    if (gen !== streamGenRef.current) {
+      stream.getTracks().forEach((tr) => tr.stop())
+      return
+    }
+    streamRef.current?.getTracks().forEach((tr) => tr.stop()) // R296(R-3): 覆盖前先停旧轨
     streamRef.current = stream
     if (videoRef.current) {
       videoRef.current.srcObject = stream
@@ -551,6 +563,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
   // ── Start camera ──────────────────────────────────────────────────────────
   const startCamera = useCallback(async () => {
     stopStream()
+    const camGen = streamGenRef.current // R296(M-1): 捕获代际,慢返回时比对
     const res = RESOLUTIONS[resIndex]
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -562,7 +575,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
           frameRate: { ideal: fps },
         },
       })
-      attachStream(stream)
+      attachStream(stream, camGen)
       // Labels become available only after permission is granted.
       void refreshDevices()
     } catch (err) {
@@ -616,6 +629,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
 
   const startScreenCapture = useCallback(async (sourceId: string) => {
     stopStream()
+    const capGen = streamGenRef.current // R296(M-1): 捕获代际,慢返回时比对
     setActiveSourceId(sourceId)
     setStreamError(null)
     // Preferred (modern) path: pre-select the source in the main process, then use
@@ -627,7 +641,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
         video: { frameRate: { ideal: 60 } },
         audio: false,
       })
-      attachStream(stream)
+      attachStream(stream, capGen)
       return
     } catch (modernErr) {
       // Fall back to the legacy desktop constraint if getDisplayMedia is unavailable.
@@ -643,7 +657,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
           },
         } as unknown as MediaStreamConstraints
         const stream = await navigator.mediaDevices.getUserMedia(constraints)
-        attachStream(stream)
+        attachStream(stream, capGen)
       } catch (legacyErr) {
         const err = legacyErr ?? modernErr
         setStreamError(err instanceof Error ? err.message : String(err))
@@ -710,7 +724,18 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
       return
     }
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+    // R296(X-1): 录制失败回执——源被撤/编码器错误此前完全静默
+    recorder.onerror = () => {
+      setRecording(false)
+      if (recTimerRef.current) { window.clearInterval(recTimerRef.current); recTimerRef.current = null }
+      editorToast(t('video.recFail'))
+    }
     recorder.onstop = () => {
+      // R296(M-2): 状态复位必须同步——R295 曾把 setRecording/计时器清理挂进
+      // fix 后处理的 .then,停止后 REC 徽标继续走表、大文件后处理期间按钮
+      // 僵死、fix 挂起则录制永久锁死。复位先行,下载异步等待。
+      setRecording(false)
+      if (recTimerRef.current) { window.clearInterval(recTimerRef.current); recTimerRef.current = null }
       const raw = new Blob(chunksRef.current, { type: mimeType || 'video/webm' })
       // R295: Chromium MediaRecorder 的 webm 流式写出缺 Duration 元数据
       // (时长=∞)→播放器禁用拖动条。用实际录制时长在 EBML 级补写 Duration
@@ -726,8 +751,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
           a.download = `rgbbox-recording-${Date.now()}.${ext}`
           a.click()
           setTimeout(() => URL.revokeObjectURL(url), 10_000)
-          setRecording(false)
-          if (recTimerRef.current) { window.clearInterval(recTimerRef.current); recTimerRef.current = null }
+          editorToast(t('video.recSaved')) // R296(X-1): 录制完成回执——此前静默下载
         })
     }
     recorder.start(100)
@@ -736,13 +760,16 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
     setRecElapsed(0)
     setRecording(true)
     recTimerRef.current = window.setInterval(() => setRecElapsed(Date.now() - recStartRef.current), 250)
-  }, [])
+  }, [editorToast, t])
 
   // ── Player sources (local file + network stream) ────────────────────────────
   /** Tear down any active player source (blob URL or hls.js instance). */
   const clearPlayerSource = useCallback(() => {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
     setUsingHls(false)
+    // R296(R-2): 换片复位导出态——trim 的 seeked 等待若挂在旧元素上永不
+    // 触发,不复位则播放/进度被 trimExporting 永久锁死(keep-alive 下仅重启可解)
+    setTrimExporting(false)
     // R91.1: the outgoing item's progress was already noted 1Hz; detach tracking
     // and drop any unanswered resume prompt before the next source settles.
     activeItemIdRef.current = null
@@ -794,7 +821,14 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
       const hls = new Hls({ enableWorker: true, lowLatencyMode: true })
       hlsRef.current = hls
       hls.on(Hls.Events.ERROR, (_evt, data) => {
-        if (data.fatal) setStreamError(`HLS: ${data.details}`)
+        // R296(M-3/X-4): fatal 必须翻 usingHls——否则 mediaLoaded 恒真,
+        // streamError 只在空态浮层渲染=黑屏静默;实例同步 destroy 防泄漏。
+        if (data.fatal) {
+          setStreamError(`HLS: ${data.details}`)
+          setUsingHls(false)
+          hls.destroy()
+          if (hlsRef.current === hls) hlsRef.current = null
+        }
       })
       hls.loadSource(url)
       hls.attachMedia(el)
@@ -1040,7 +1074,10 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
       const el = playerRef.current
       if (!el) return
       // Don't steal from input elements
-      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT') return
+      // R296(R-1): 豁免补 TEXTAREA+contenteditable——标注器打字时空格被劫持
+      // 触发播放暂停/箭头键乱跳(评审 R-1/X 交叉实锤)
+      const tgt = e.target as HTMLElement
+      if (tgt.tagName === 'INPUT' || tgt.tagName === 'SELECT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable) return
       switch (e.key) {
         case ' ': e.preventDefault(); togglePlayerPlay(); break
         case 'ArrowLeft': e.preventDefault(); playerSeek(Math.max(0, el.currentTime - 10)); break
@@ -1209,10 +1246,20 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
         : 'video/webm'
 
       el.currentTime = start
-      await new Promise<void>(resolve => {
-        const onSeeked = () => { el.removeEventListener('seeked', onSeeked); resolve() }
+      // R296(R-2): seeked 等待加超时+换片守卫——旧版无超时无 catch,导出中
+      // 换片(clearPlayerSource)则 seeked 永不触发,trimExporting 卡死整播放器。
+      await new Promise<void>((resolve, reject) => {
+        const onSeeked = () => { cleanup(); resolve() }
+        const onErr = () => { cleanup(); reject(new Error('seek failed')) }
+        const timeout = window.setTimeout(() => { cleanup(); reject(new Error('seek timeout')) }, 5000)
+        const cleanup = () => {
+          window.clearTimeout(timeout)
+          el.removeEventListener('seeked', onSeeked)
+          el.removeEventListener('error', onErr)
+        }
         el.addEventListener('seeked', onSeeked)
-      })
+        el.addEventListener('error', onErr)
+      }).catch(() => { throw new Error('seek aborted') })
       // Capture the video element's stream for recording
       const canvas = document.createElement('canvas')
       canvas.width = el.videoWidth || 1280

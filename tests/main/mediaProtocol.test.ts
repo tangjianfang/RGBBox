@@ -62,6 +62,15 @@ describe('main/mediaProtocol (R70.1)', () => {
       expect(resolveAppAssetPath('/app/out/renderer', '/')).toBeNull()
       expect(resolveAppAssetPath('/app/out/renderer', '')).toBeNull()
     })
+
+    // R296(T-1): 段内 %2F 解码逃逸——先 split 后 decode 的顺序 bug,单个
+    // 段解码出 "../../../windows" 时整段通过守卫(守卫只查 === '..' 与反斜杠,
+    // 不查段内正斜杠),join 后逃逸 renderer 根。评审 05 实测可读安装盘任意文件。
+    it('R296: rejects segments whose DECODED content contains slashes (..%2F escape)', () => {
+      expect(resolveAppAssetPath('/app/out/renderer', '/..%2F..%2F..%2Fwindows/system32/config')).toBeNull()
+      expect(resolveAppAssetPath('/app/out/renderer', '/vendor/%2E%2E%2Fmain%2Findex.js')).toBeNull()
+      expect(resolveAppAssetPath('/app/out/renderer', '/a%2F..%2F..%2Fetc/passwd')).toBeNull()
+    })
   })
 
   describe('parseRangeHeader', () => {

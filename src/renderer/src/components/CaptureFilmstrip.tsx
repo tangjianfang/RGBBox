@@ -59,7 +59,10 @@ export function CaptureFilmstrip({ items, onEdit, onDelete, onImport, collapsed,
     return () => ro.disconnect()
   }, [measure, items.length, collapsed])
 
-  if (items.length === 0) return null
+  // R296(X-2): 空态不再整体消失——旧版 return null 连「截图预览 (0)」头行和
+  // 导入入口一起蒸发,新用户找不到截图功能的入口(R290 评审遗留)。空态渲染
+  // 头行+导入按钮,只是没有缩略图带。
+  if (items.length === 0 && collapsed) return null
 
   const nav = (dir: 1 | -1): void => {
     scrollRef.current?.scrollBy({ left: dir * STEP_PX, behavior: 'smooth' })
