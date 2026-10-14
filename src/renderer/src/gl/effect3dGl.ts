@@ -540,6 +540,19 @@ vec3 tbEnv(vec3 d, float t, float dim) {
     float tw = 0.6 + 0.4 * sin(t * 2.2 + h * 50.0);
     col += vec3(0.8, 0.88, 1.0) * star * tw * (0.5 + h * 0.5) * dim * 1.8;
   }
+  // R294: HDR 环境映照——远恒星(镜面上的一枚锐利强反射光斑)+行星暗影
+  // 圆盘横移(反射面里的「大物体存在感」)。恒星不乘 dim(HDR 亮源恒显形)。
+  vec3 sunDir = normalize(vec3(cos(t * 0.04) * 0.8, 0.42, sin(t * 0.04) * 0.8));
+  float sunDot = max(0.0, dot(d, sunDir));
+  col += vec3(1.0, 0.92, 0.78) * (pow(sunDot, 900.0) * 3.2 + pow(sunDot, 60.0) * 0.28);
+  vec3 plDir = normalize(vec3(cos(t * 0.021 + 2.0), 0.12, sin(t * 0.021 + 2.0)));
+  float plDot = dot(d, plDir);
+  if (plDot > 0.9982) {
+    // 行星暗影圆盘(遮星 82%)+ 大气边缘亮环(边缘处 inside≈0 → 环亮)
+    float inside = smoothstep(0.9988, 0.9994, plDot);
+    col *= 1.0 - inside * 0.82;
+    col += vec3(0.35, 0.5, 0.9) * pow(1.0 - inside, 3.0) * 0.5 * dim;
+  }
   return col;
 }
 `
@@ -556,9 +569,13 @@ void main() {
   vec2 uv = (gl_FragCoord.xy / u_resolution - 0.5);
   uv.x *= u_resolution.x / u_resolution.y;
 
-  // 环绕相机(缓慢绕滴水滴飞行)
+  // 环绕相机(缓慢绕滴水滴飞行);R294:掠过事件最近点 dolly 推近——
+  // 炽亮体掠过时镜头被「拽」向水滴,事件感随镜头语言放大。
   float ca = cos(t * 0.22), sa = sin(t * 0.22);
-  vec3 ro = vec3(ca * 2.6, 0.18 * sin(t * 0.4), sa * 2.6);
+  float flyDolly = mod(t * 0.55, 7.0);
+  float dolly = 1.0;
+  if (flyDolly > 4.6 && flyDolly < 6.2) dolly = 1.0 - 0.14 * sin((flyDolly - 4.6) / 1.6 * 3.1416);
+  vec3 ro = vec3(ca * 2.6, 0.18 * sin(t * 0.4), sa * 2.6) * dolly;
   vec3 ww = normalize(-ro);
   vec3 uu = normalize(cross(vec3(0.0, 1.0, 0.0), ww));
   vec3 vv = cross(ww, uu);
@@ -642,6 +659,22 @@ void main() {
 
   // 降维平面:法线斜向(扫掠有对角戏剧感),从远推近
   vec3 pn = normalize(vec3(0.35, 0.2, 1.0));
+  // R294 镜头语言:行星压扁瞬间的震颤——四颗行星的 bSide 接近 0 时
+  // 各贡献一次衰减抖动(hash 噪声做高频位移)。
+  float kShake = clamp((ct - 0.8) / 4.5, 0.0, 1.0);
+  kShake = kShake * kShake * (3.0 - 2.0 * kShake);
+  float pdShake = mix(-18.0, 6.5, kShake);
+  float shakeEnv = 0.0;
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i);
+    vec3 bpS = vec3(-1.7 + fi * 1.1, 0.42 - fi * 0.36, -1.2 - fi * 1.05);
+    float bSideS = dot(bpS, pn) + pdShake;
+    shakeEnv += exp(-abs(bSideS) * 7.0);
+  }
+  if (shakeEnv > 0.15 && ct > 0.8 && ct < 5.5) {
+    ro += vec3(hash(floor(t * 47.0)) - 0.5, hash(floor(t * 53.0) + 7.0) - 0.5, 0.0)
+        * 0.05 * clamp(shakeEnv - 0.15, 0.0, 1.5);
+  }
   float k = clamp((ct - 0.8) / 4.5, 0.0, 1.0);
   k = k * k * (3.0 - 2.0 * k);            // smoothstep:先慢后快(坍缩加速)
   float pd = mix(-18.0, 6.5, k);          // 平面点积偏移
@@ -668,6 +701,17 @@ void main() {
       // 锋面前的星被拉亮(物质挣扎),锋面后是死平面纹
       if (sideNow >= 0.0 && sideNow < 1.6) dotStar *= 1.0 + 2.2 * exp(-sideNow * 2.2);
       acc += dotStar * (0.25 + 0.3 * h);
+    }
+    // R294 尘埃吸入:锋面前的尘埃朝锋面拉出拖影(吸入轨迹)——独立于本格
+    // 是否有星:拖影来自移向锋面路径上的星被视线积分(AI 两轮点名的粒子层)
+    if (side >= 0.0 && side < 1.6) {
+      vec3 p2 = p - pn * min(side, 1.2) * 0.45;
+      vec3 cell2 = floor(p2 * 3.1);
+      float h2 = hash(cell2.x * 17.0 + cell2.y * 91.0 + cell2.z * 47.0);
+      if (h2 > 0.86) {
+        vec3 f2 = fract(p2 * 3.1) - 0.5;
+        acc += exp(-dot(f2, f2) * 26.0) * (0.2 + 0.25 * h2) * exp(-side * 1.8);
+      }
     }
   }
   col += vec3(0.55, 0.75, 1.0) * acc * 0.5;
@@ -748,11 +792,18 @@ void main() {
   float depth = 0.55 + era * 0.4;
   float eraPhase = u_time * 0.85;
   float spread = 1.0 - depth * (0.5 + 0.5 * cos(eraPhase));
+  // R294 镜头语言:凌空相聚时的高频震颤(灾难临头的镜头不稳感)
+  float shakePre = pow(0.5 + 0.5 * cos(eraPhase), 6.0);
+  if (shakePre > 0.02) {
+    ro += vec3(hash(floor(u_time * 43.0)) - 0.5, hash(floor(u_time * 51.0) + 7.0) - 0.5, 0.0)
+        * 0.10 * shakePre;
+  }
 
   vec3 s0p, s1p, s2p;
   {
+    // R294 凌空主星:s0 半径×1.35——主次分明的「长序之星」
     float ang = t * 0.9;
-    float rad = 1.35 + 0.5 * sin(t * 0.9);
+    float rad = (1.35 + 0.5 * sin(t * 0.9)) * 1.35;
     s0p = vec3(cos(ang) * rad, sin(ang) * rad * 0.42, sin(ang) * 1.1 - 0.3);
   }
   {
@@ -792,7 +843,7 @@ void main() {
   {
     vec3 toS = s0p - ro; float along = dot(toS, rd);
     if (along > 0.0) { float dP = length(toS - rd * along);
-      col += (vec3(1.0, 0.97, 0.88) * exp(-dP * dP * 55.0) * 2.2 + scol0 * exp(-dP * dP * 3.2) * 0.35) * (1.0 + syzygy * 1.4); }
+      col += (vec3(1.0, 0.97, 0.88) * exp(-dP * dP * 42.0) * 2.9 + scol0 * exp(-dP * dP * 2.1) * 0.5) * (1.0 + syzygy * 1.4); }  // R294 凌空主星:核更亮σ更宽
   }
   {
     vec3 toS = s1p - ro; float along = dot(toS, rd);
