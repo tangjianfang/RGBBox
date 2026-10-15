@@ -153,10 +153,10 @@ describe('renderer/gl/effect3dGl 三体王座 (R292)', () => {
 
   itGl('trisolaran-suns: 三日亮核存在+纪元呼吸(凌空相亮区>长夜相)', async () => {
     const { Effect3DGl } = await import('../../../src/renderer/src/gl/effect3dGl')
-    // eraPhase=u_time*0.85:凌空峰在 cos=1 → u_time=2πn/0.85;长夜在 cos=-1
+    // 单上下文复用(负载下多上下文建得慢曾致超时假红);eraPhase=u_time*0.85
+    const { canvas, ctx } = makeGlCanvas(W, H)
+    const r = new Effect3DGl(canvas, 'trisolaran-suns')
     const at = (ut: number) => {
-      const { canvas, ctx } = makeGlCanvas(W, H)
-      const r = new Effect3DGl(canvas, 'trisolaran-suns')
       r.draw(ut, [0.4, 0, 1, 0.5])
       return frameLums(readAllPixels(ctx, W, H))
     }
@@ -165,5 +165,5 @@ describe('renderer/gl/effect3dGl 三体王座 (R292)', () => {
     const brightCount = (lums: number[]) => lums.filter((l) => l > 450).length
     expect(brightCount(peak), `凌空亮格=${brightCount(peak)}`).toBeGreaterThanOrEqual(3)
     expect(brightCount(peak)).toBeGreaterThan(brightCount(night) + 3)
-  })
+  }, 20000)
 })
