@@ -39,6 +39,20 @@ export function useVideoAudioEnhance(videoRef: RefObject<HTMLVideoElement | null
     return /^https?:\/\//i.test(el.currentSrc) && !el.crossOrigin
   }, [videoRef])
 
+  // R298(R-4) 追补:换源检测——图已存在时加载远程 no-CORS 源,被
+  // MediaElementSource 永久接管的元素将整段静音(建图守卫只保护首次)。
+  // 无法程序化回退(createMediaElementSource 不可撤销),只能如实报错,
+  // 让静音从「神秘消失」变成「可感知的取舍提示」。
+  useEffect(() => {
+    const el = videoRef.current
+    if (!el) return
+    const onLoad = (): void => {
+      if (srcRef.current && isRemoteNoCors()) setEnhanceError('ERR_REMOTE')
+    }
+    el.addEventListener('loadstart', onLoad)
+    return () => el.removeEventListener('loadstart', onLoad)
+  }, [videoRef, isRemoteNoCors])
+
   const ensureGraph = useCallback((): boolean => {
     const el = videoRef.current
     if (!el) return false

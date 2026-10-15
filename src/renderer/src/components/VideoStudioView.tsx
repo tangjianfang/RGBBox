@@ -22,10 +22,11 @@ import {
 } from 'lucide-react'
 import Hls from 'hls.js'
 import fixWebmDuration from 'fix-webm-duration'
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type RefObject } from 'react'
 import { useI18n } from '../i18n'
-import type { CaptureSource } from '../../../shared/types'
+import type { CaptureSource, RgbFrame } from '../../../shared/types'
 import { REC_BITRATE_TIERS, buildRecorderOptions, captureConstraintsWithAudio, type RecBitrateTier } from '../domain/recorderOptions'
+import { rgbFrameFromImageData } from '../domain/videoAmbient'
 import { formatMediaTime } from '../../../shared/timeFormat'
 import { usePreviewZoom } from './video/usePreviewZoom'
 import { PreviewZoomBar } from './video/PreviewZoomBar'
@@ -231,11 +232,15 @@ function parseSubtitle(text: string, filename: string): SubCue[] {
 // R71.8: player timestamps use the shared formatMediaTime (this local copy
 // was the video-side twin of the audio view's hour-less formatter).
 
-export function VideoStudioView({ visible = true, onReturnToVideo }: {
+export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameRef, ambientGrid }: {
   /** R91.2: false while the keep-alive wrapper hides this view — capture and
    * hotkeys pause, playback continues, MiniPlayerCard takes over. */
   visible?: boolean
   onReturnToVideo?: () => void
+  /** R299 video-ambient:采样帧写入处(useEngineLoop 优先消费喂给灯墙)。 */
+  ambientFrameRef?: RefObject<RgbFrame | null>
+  /** R299: 灯墙网格尺寸(engine 消费端校验相等才吃帧)。 */
+  ambientGrid?: { columns: number; rows: number }
 }): JSX.Element {
   const { t } = useI18n()
 
@@ -363,6 +368,29 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
   useEffect(() => {
     try { localStorage.setItem('rgbbox:videoRecOpts', JSON.stringify({ bitrate: recBitrate, systemAudio: recSystemAudio })) } catch { /* storage unavailable */ }
   }, [recBitrate, recSystemAudio])
+
+  // ── R299 video-ambient:预览/播放器画面 → 灯墙同步 ────────────────────────
+  // 10Hz 从当前视频元素(直播 videoRef / 播放器 playerRef)drawImage 到
+  // 灯墙网格尺寸的离屏 canvas(一次 drawImage 即降采样),转 RGB 写
+  // ambientFrameRef——useEngineLoop 在「屏幕氛围」效果激活时优先消费,
+  // 免整屏捕获。开关会话级(不持久化——离开视图应自然停)。
+  const [ambientSync, setAmbientSync] = useState(false)
+  useEffect(() => {
+    if (!ambientSync || !visible || !ambientFrameRef || !ambientGrid) return
+    const canvas = document.createElement('canvas')
+    canvas.width = ambientGrid.columns
+    canvas.height = ambientGrid.rows
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const timer = window.setInterval(() => {
+      const el = mode === 'player' ? playerRef.current : videoRef.current
+      if (!el || !el.videoWidth) return
+      ctx.drawImage(el, 0, 0, canvas.width, canvas.height)
+      const frame = rgbFrameFromImageData(ctx.getImageData(0, 0, canvas.width, canvas.height), Date.now())
+      if (frame) ambientFrameRef.current = frame
+    }, 100)
+    return () => window.clearInterval(timer)
+  }, [ambientSync, visible, mode, ambientGrid, ambientFrameRef, playerRef, videoRef])
 
   // ── Video Playlist ──────────────────────────────────────────────────────────
   const videoCache = useMemo(() => loadVideoCache(), [])
@@ -1969,7 +1997,9 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                   disabled={!mediaLoaded}
                   onClick={() => { setSuperresPanelOpen((v) => !v); setAudioPanelOpen(false) }}
                 ><Sparkles size={15} /> {t('video.superres.button')}</button>
-                <input ref={playerFileInputRef} type="file" accept="video/*,.mkv,.mov,.avi,.flv,.ts" style={{ display: 'none' }} onChange={onPlayerFile} />
+                {/* R298: accept 收窄——.avi/.flv/.ts Chromium 解封装器必拒(评审 08:
+                    宣称与实际差距),选错文件的挫败不如不显示;mkv/mov 大多可播保留 */}
+                <input ref={playerFileInputRef} type="file" accept="video/*,.mkv,.mov" style={{ display: 'none' }} onChange={onPlayerFile} />
                 <input ref={videoFileInputRef} type="file" style={{ display: 'none' }} />
                 <input ref={videoFolderInputRef} type="file" style={{ display: 'none' }} />
                 {subFilename && (
@@ -1984,6 +2014,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo }: {
                 <span className="video-transport-sep" />
                 <button type="button" className="video-btn" onClick={capturePhoto}><ImageIcon size={15} /> {t('video.photo')}</button>
                 <button type="button" className="video-btn" onClick={startSnip} disabled={snipActive} title={t('video.snip.hint')} aria-label={t('video.snip.hint')}><Frame size={15} /> {t('video.snip.button')}</button>
+                {/* R299 video-ambient:当前画面驱动灯墙(需工作台选「屏幕氛围」效果) */}
+                <button type="button" className={`video-btn ${ambientSync ? 'active' : ''}`} onClick={() => setAmbientSync(v => !v)} title={t('video.ambientHint')} aria-pressed={ambientSync}><MonitorPlay size={15} /> {t('video.ambient')}</button>
                 {mode !== 'player' && (
                   recording
                     ? <>

@@ -1842,6 +1842,9 @@ const EN = {
   'video.recSysAudio': 'System audio',
   'video.recSysAudioHint': 'Capture system sound with the screen (Windows loopback; falls back to silent on unsupported systems)',
   'video.recSysAudioUnavailable': 'System audio unavailable — recording without sound',
+  // R299: video-ambient
+  'video.ambient': 'Wall sync',
+  'video.ambientHint': 'Drive the LED wall with the current picture (select the “Screen ambient” effect in the workspace)',
   // R290.2: 按窗口句柄截图
   'video.snipWindow': 'Capture window (full resolution)',
   'video.snipWindowOk': 'Window capture saved',
@@ -3730,6 +3733,9 @@ const ZH: TranslationTable = {
   'video.recSysAudio': '录制系统声音',
   'video.recSysAudioHint': '屏幕录制同时捕获系统声音（Windows 回环；不支持的系统自动降级为无声）',
   'video.recSysAudioUnavailable': '系统声音不可用——已降级为无声录制',
+  // R299: video-ambient
+  'video.ambient': '灯墙同步',
+  'video.ambientHint': '用当前画面驱动 LED 灯墙（需在工作台选择「屏幕氛围」效果）',
   // R290.2: 按窗口句柄截图
   'video.snipWindow': '按窗口句柄截图（原生分辨率）',
   'video.snipWindowOk': '窗口截图已存入拍摄缓存',

@@ -6119,7 +6119,8 @@ input[type='range'].audio-slider {
 .video-filmstrip-del { right: 3px; }
 .video-filmstrip-del:hover { border-color: var(--status-error); color: var(--status-error); }
 .video-filmstrip-edit:hover { border-color: var(--accent); color: var(--text-primary); }
-.video-filmstrip-item:hover .video-filmstrip-act { display: flex; }
+.video-filmstrip-item:hover .video-filmstrip-act,
+.video-filmstrip-act:focus-visible { display: flex; } /* R298(X-5): 键盘可达 */
 
 .video-filmstrip-add {
   flex: 0 0 auto;

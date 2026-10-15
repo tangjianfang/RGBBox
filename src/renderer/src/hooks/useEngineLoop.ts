@@ -70,8 +70,10 @@ export function useEngineLoop(args: {
   ledColorsRef: RefObject<Uint8Array>
   metricsCollectorRef: RefObject<MetricsCollector>
   rippleBurstRef: RefObject<{ cx: number; cy: number; clickedAt: number } | null>
+  /** R299: 视频站自采帧(video-ambient)——非 null 时优先于整屏捕获。 */
+  videoAmbientFrameRef?: RefObject<RgbFrame | null>
 }): void {
-  const { profile, running, workerRef, engineConfigRef, audioRef, overlayIdsRef, overlayConfigsRef, topologyRef, activeViewRef, windowVisibleRef, frameRef, ledColorsRef, metricsCollectorRef, rippleBurstRef } = args
+  const { profile, running, workerRef, engineConfigRef, audioRef, overlayIdsRef, overlayConfigsRef, topologyRef, activeViewRef, windowVisibleRef, frameRef, ledColorsRef, metricsCollectorRef, rippleBurstRef, videoAmbientFrameRef } = args
   const profileReady = profile != null
 
   useEffect(() => {
@@ -154,15 +156,23 @@ export function useEngineLoop(args: {
       let screenSample: RgbFrame | undefined
       let captureMs = 0
       if (needsCapture) {
-        const captureStartedAt = performance.now()
-        const captured = await window.rgbbox.captureScreenSample({
-          columns: cfgProfile.sampling.columns,
-          rows: cfgProfile.sampling.rows,
-          hasOverlays: false,
-          linkedDisplays: Boolean(cfgScene.linkedDisplays),
-        })
-        captureMs = performance.now() - captureStartedAt
-        screenSample = captured ?? undefined
+        // R299 video-ambient:视频站自采帧优先(免整屏捕获的 IPC/复制成本;
+        // 帧由采样方每拍新分配,transfer 安全)。无外部帧才走整屏捕获。
+        const external = videoAmbientFrameRef?.current
+        if (external && external.columns === cfgProfile.sampling.columns && external.rows === cfgProfile.sampling.rows) {
+          screenSample = external
+          videoAmbientFrameRef!.current = null // 单次消费——buffer 将被 transfer
+        } else {
+          const captureStartedAt = performance.now()
+          const captured = await window.rgbbox.captureScreenSample({
+            columns: cfgProfile.sampling.columns,
+            rows: cfgProfile.sampling.rows,
+            hasOverlays: false,
+            linkedDisplays: Boolean(cfgScene.linkedDisplays),
+          })
+          captureMs = performance.now() - captureStartedAt
+          screenSample = captured ?? undefined
+        }
       }
 
       if (cancelled) return false

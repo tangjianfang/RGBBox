@@ -1,7 +1,7 @@
 # I18N-AUDIT — 全量审计报告（R240 / F5 族）
 
-> 生成：2026-10-14T18:23:52.012Z（node scripts/i18n-audit.mjs）
-> 语料：zh 1796 键 / en 1796 键
+> 生成：2026-10-15T14:02:05.647Z（node scripts/i18n-audit.mjs）
+> 语料：zh 1798 键 / en 1798 键
 
 | 检查 | 发现 | 处置 |
 |---|---|---|
@@ -10,7 +10,7 @@
 | 空值 | 0 | 必修 |
 | 占位符不一致 | 0 | 必修 |
 | zh=en 同文（非中文） | 15 | 人工复核 |
-| en 超长（>3×zh） | 126 | 人工复核（溢出候选） |
+| en 超长（>3×zh） | 127 | 人工复核（溢出候选） |
 | 重复键 | 0 | 必修 |
 
 ## zh=en 同文（复核：或为刻意的品牌/术语）（15）
@@ -32,7 +32,7 @@
 - video.annotate.engineWinrt
 - ai.apiKey
 
-## en 超长（复核：布局溢出候选）（126）
+## en 超长（复核：布局溢出候选）（127）
 
 - ai.lab.keyUnreadable (46→161)
 - ai.voice.lexiconEmpty (25→92)
@@ -168,6 +168,7 @@
 - video.editor.error (15→52)
 - video.annotate.ocrRegion (16→49)
 - snip.hotkeyHint (25→94)
+- video.ambientHint (31→97)
 - media.error.decode (22→68)
 - media.error.network (28→86)
 

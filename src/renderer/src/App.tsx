@@ -326,6 +326,8 @@ export function App(): JSX.Element {
 
   /** Ripple burst: set on canvas click, cleared after 2.5 s (matches burstDuration in effects.ts). */
   const rippleBurstRef = useRef<{ cx: number; cy: number; clickedAt: number } | null>(null)
+  /** R299 video-ambient:视频站自采帧——useEngineLoop 优先于整屏捕获消费。 */
+  const videoAmbientFrameRef = useRef<RgbFrame | null>(null)
   const rippleBurstTimerRef = useRef<number | null>(null)
 
   /**
@@ -442,7 +444,7 @@ export function App(): JSX.Element {
     overlayIdsRef: overlayTopology.overlayIdsRef,
     overlayConfigsRef: overlayTopology.overlayConfigsRef,
     topologyRef, activeViewRef, windowVisibleRef,
-    frameRef, ledColorsRef, metricsCollectorRef, rippleBurstRef,
+    frameRef, ledColorsRef, metricsCollectorRef, rippleBurstRef, videoAmbientFrameRef,
   })
 
   // R87: same consumer condition as the tick-loop gate (R42/R43) — used by the
@@ -783,7 +785,7 @@ export function App(): JSX.Element {
             take over. Heavy views (3D/games) keep the old unmount behavior. */}
         {videoVisited && (
           <div className="video-view-anchor" style={{ display: activeView === 'video' ? undefined : 'none' }}>
-            <Suspense fallback={null}><VideoStudioView visible={activeView === 'video'} onReturnToVideo={() => setActiveView('video')} /></Suspense>
+            <Suspense fallback={null}><VideoStudioView visible={activeView === 'video'} onReturnToVideo={() => setActiveView('video')} ambientFrameRef={videoAmbientFrameRef} ambientGrid={profile ? { columns: profile.sampling.columns, rows: profile.sampling.rows } : undefined} /></Suspense>
             {activeView === 'video' && <AiListenOverlay />}
           </div>
         )}
