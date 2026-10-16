@@ -8,6 +8,19 @@ import { Effect3DGl } from '../gl/effect3dGl'
 import { EffectGl, isGpuDirectEffect } from '../gl/effectGl'
 import { useI18n } from '../i18n'
 import { presetDescription, presetLabel } from '../domain/presetI18n'
+import {
+  cardFpsForMode,
+  composeCardFramePixels,
+  enterVisibleCard,
+  exitVisibleCard,
+  getVisibleCardCount,
+  shouldDrawCardFrame,
+  CARD_CANVAS_H,
+  CARD_CANVAS_W,
+  CARD_GRID_COLS,
+  CARD_GRID_ROWS,
+  type CardPerformanceMode
+} from '../domain/cardAnimation'
 
 /**
  * R41: each card owns its own canvas/WebGL context and `requestAnimationFrame`
@@ -39,6 +52,14 @@ function useCardVisible(): [RefObject<HTMLDivElement | null>, boolean] {
     return () => observer.disconnect()
   }, [])
 
+  // R301: 可见卡进出全局计数 —— 同屏动画卡超预算时所有可见卡按比例降帧
+  // （effectiveCardFps 的数据源），而非冻结一部分卡片。
+  useEffect(() => {
+    if (!visible) return undefined
+    enterVisibleCard()
+    return () => exitVisibleCard()
+  }, [visible])
+
   return [containerRef, visible]
 }
 
@@ -46,13 +67,15 @@ interface EffectCardProps {
   preset: (typeof effectPresets)[number]
   selected: boolean
   favorite: boolean
+  /** R301: 帧率预算（performanceMode 映射，见 domain/cardAnimation.ts）。 */
+  fps: number
   onSelect: (kind: EffectKind) => void
   onToggleFavorite: (kind: EffectKind) => void
   /** R164.2 (S2): pointer enters/leaves the card — debounced into hover preview by the view. */
   onHover: (kind: EffectKind | null) => void
 }
 
-function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite, onHover }: EffectCardProps): JSX.Element {
+function EffectCard({ preset, selected, favorite, fps, onSelect, onToggleFavorite, onHover }: EffectCardProps): JSX.Element {
   const { t } = useI18n()
   const [containerRef, visible] = useCardVisible()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -67,8 +90,8 @@ function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite, on
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const W = 240
-    const H = 135
+    const W = CARD_CANVAS_W
+    const H = CARD_CANVAS_H
     canvas.width = W
     canvas.height = H
 
@@ -82,30 +105,35 @@ function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite, on
       parameters: preset.defaults
     }
 
+    // R301: ImageData 直写路径 —— 网格色算入数组后按 AA 权重表单次 putImageData，
+    // 取代每帧 1296 次 fillRect + 1296 个 `rgb()` 字符串（fillRect 路径的像素几何
+    // 由 CARD_CELL_WEIGHTS 逐位复刻——0.25px 偏移 + 4.5px cell + 0.5px gap 的 AA）。
+    const cols = CARD_GRID_COLS
+    const rows = CARD_GRID_ROWS
+    const image = ctx.createImageData(W, H)
+    const grid: Array<{ r: number; g: number; b: number }> = new Array(cols * rows)
+    for (let i = 0; i < grid.length; i++) grid[i] = { r: 0, g: 0, b: 0 }
+
+    let lastDraw = 0
     const draw = () => {
-      const now = (performance.now() - startRef.current) / 1000
-      ctx.fillStyle = '#080d11'
-      ctx.fillRect(0, 0, W, H)
+      const wall = performance.now()
+      // R301: 时间门跳帧 —— 缩略图不需要刷新率级流畅度；可见卡超预算时
+      // shouldDrawCardFrame 内部按 effectiveCardFps 自动放宽间隔。
+      if (!shouldDrawCardFrame(lastDraw, wall, fps, getVisibleCardCount())) {
+        animRef.current = requestAnimationFrame(draw)
+        return
+      }
+      lastDraw = wall
+      const now = (wall - startRef.current) / 1000
 
-      const cols = 48
-      const rows = 27
-      // Full-coverage: each cell = W/cols × H/rows
-      const cw = W / cols
-      const ch = H / rows
-      const gap = Math.max(0.5, Math.min(cw, ch) * 0.06)
-
+      let i = 0
       for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
-          const color = renderEffectPixel(layer, { x, y, columns: cols, rows, now })
-          const rx = x * cw + gap / 2
-          const ry = y * ch + gap / 2
-          const rw = cw - gap
-          const rh = ch - gap
-
-          ctx.fillStyle = `rgb(${color.r},${color.g},${color.b})`
-          ctx.fillRect(rx, ry, rw, rh)
+          grid[i++] = renderEffectPixel(layer, { x, y, columns: cols, rows, now })
         }
       }
+      composeCardFramePixels(grid, image.data)
+      ctx.putImageData(image, 0, 0)
 
       animRef.current = requestAnimationFrame(draw)
     }
@@ -115,7 +143,7 @@ function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite, on
     return () => {
       if (animRef.current !== null) cancelAnimationFrame(animRef.current)
     }
-  }, [preset, visible])
+  }, [preset, visible, fps])
 
   return (
     <div
@@ -149,7 +177,7 @@ function EffectCard({ preset, selected, favorite, onSelect, onToggleFavorite, on
  * Thumbnail card for GPU 3D effects — renders the GLSL shader directly in
  * the card canvas using a dedicated WebGL context.
  */
-function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite, onHover }: EffectCardProps): JSX.Element {
+function EffectCard3D({ preset, selected, favorite, fps, onSelect, onToggleFavorite, onHover }: EffectCardProps): JSX.Element {
   const { t } = useI18n()
   const [containerRef, visible] = useCardVisible()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -177,9 +205,16 @@ function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite, 
       (preset.defaults.intensity as number) ?? 1,
       (preset.defaults.density   as number) ?? 0.5,
     ]
+    let lastDraw = 0
     const draw = (): void => {
-      const t = (performance.now() - startRef.current) / 1000
-      glRef.current?.draw(t, params)
+      // R301: 与 CPU 卡同款时间门（raymarch 是最贵的卡型，节流收益最大）。
+      const wall = performance.now()
+      if (!shouldDrawCardFrame(lastDraw, wall, fps, getVisibleCardCount())) {
+        animRef.current = requestAnimationFrame(draw)
+        return
+      }
+      lastDraw = wall
+      glRef.current?.draw((wall - startRef.current) / 1000, params)
       animRef.current = requestAnimationFrame(draw)
     }
     animRef.current = requestAnimationFrame(draw)
@@ -188,7 +223,7 @@ function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite, 
       glRef.current?.dispose()
       glRef.current = null
     }
-  }, [preset, visible])
+  }, [preset, visible, fps])
 
   return (
     <div
@@ -226,7 +261,7 @@ function EffectCard3D({ preset, selected, favorite, onSelect, onToggleFavorite, 
  * main thread (the colour maths runs on the GPU instead of once per grid
  * cell in JS), which is what makes it safe to animate many cards at once.
  */
-function EffectCardGpu({ preset, selected, favorite, onSelect, onToggleFavorite, onHover }: EffectCardProps): JSX.Element {
+function EffectCardGpu({ preset, selected, favorite, fps, onSelect, onToggleFavorite, onHover }: EffectCardProps): JSX.Element {
   const { t } = useI18n()
   const [containerRef, visible] = useCardVisible()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -255,9 +290,16 @@ function EffectCardGpu({ preset, selected, favorite, onSelect, onToggleFavorite,
       blendMode: 'normal',
       parameters: preset.defaults
     }
+    let lastDraw = 0
     const draw = (): void => {
-      const now = (performance.now() - startRef.current) / 1000
-      glRef.current?.render(layer, now)
+      // R301: 与 CPU 卡同款时间门。
+      const wall = performance.now()
+      if (!shouldDrawCardFrame(lastDraw, wall, fps, getVisibleCardCount())) {
+        animRef.current = requestAnimationFrame(draw)
+        return
+      }
+      lastDraw = wall
+      glRef.current?.render(layer, (wall - startRef.current) / 1000)
       animRef.current = requestAnimationFrame(draw)
     }
     animRef.current = requestAnimationFrame(draw)
@@ -266,7 +308,7 @@ function EffectCardGpu({ preset, selected, favorite, onSelect, onToggleFavorite,
       glRef.current?.dispose()
       glRef.current = null
     }
-  }, [preset, visible])
+  }, [preset, visible, fps])
 
   return (
     <div
@@ -307,6 +349,9 @@ interface EffectsViewProps {
   onInspire: () => void
   onSelectEffect: (kind: EffectKind) => void
   onToggleFavorite: (kind: EffectKind) => void
+  /** R301: performanceMode → 卡片帧率预算（battery 10 / balanced 20 / extreme 不限）。
+   *  profile.performanceMode 此前仅作仪表盘展示，这是它首次驱动真实行为。 */
+  performanceMode?: CardPerformanceMode
 }
 
 // R289 Phase 0: kinds 收编译期守卫——裸 string 数组里拼错 kind 只会静默
@@ -324,9 +369,11 @@ const CATEGORIES = [
   { labelKey: 'effects.audio'    as const, kinds: ['audio-beat', 'audio-equalizer'] },
 ] as const satisfies ReadonlyArray<{ labelKey: string; kinds: readonly EffectKind[] }>
 
-export function EffectsView({ activeKind, favoriteKinds, curatedKinds, onPreviewEffect, onInspire, onSelectEffect, onToggleFavorite }: EffectsViewProps): JSX.Element {
+export function EffectsView({ activeKind, favoriteKinds, curatedKinds, onPreviewEffect, onInspire, onSelectEffect, onToggleFavorite, performanceMode }: EffectsViewProps): JSX.Element {
   const { t } = useI18n()
   const favoriteSet = useMemo(() => new Set(favoriteKinds), [favoriteKinds])
+  // R301: 三档帧率预算下发给全部卡片（渲染循环内再做同屏计数自适应降帧）。
+  const cardFps = useMemo(() => cardFpsForMode(performanceMode ?? 'balanced'), [performanceMode])
 
   // ── R164.2 (S2) + R225.2: hover preview — 300ms debounce on ENTER so a
   //    pointer sweep across the grid doesn't churn the canvas, and a 300ms
@@ -389,12 +436,12 @@ export function EffectsView({ activeKind, favoriteKinds, curatedKinds, onPreview
 
   const renderCard = (p: (typeof effectPresets)[number]): JSX.Element => {
     if (EFFECT_3D_KINDS.has(p.kind)) {
-      return <EffectCard3D key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} onSelect={applyFromPreview} onToggleFavorite={onToggleFavorite} onHover={hoverKind} />
+      return <EffectCard3D key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} fps={cardFps} onSelect={applyFromPreview} onToggleFavorite={onToggleFavorite} onHover={hoverKind} />
     }
     if (isGpuDirectEffect(p.kind)) {
-      return <EffectCardGpu key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} onSelect={applyFromPreview} onToggleFavorite={onToggleFavorite} onHover={hoverKind} />
+      return <EffectCardGpu key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} fps={cardFps} onSelect={applyFromPreview} onToggleFavorite={onToggleFavorite} onHover={hoverKind} />
     }
-    return <EffectCard key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} onSelect={applyFromPreview} onToggleFavorite={onToggleFavorite} onHover={hoverKind} />
+    return <EffectCard key={p.kind} preset={p} selected={activeKind === p.kind} favorite={favoriteSet.has(p.kind)} fps={cardFps} onSelect={applyFromPreview} onToggleFavorite={onToggleFavorite} onHover={hoverKind} />
   }
 
   // R164.1 (S1): the curated strip — up to 12 data-driven picks (default

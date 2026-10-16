@@ -741,6 +741,7 @@ export function App(): JSX.Element {
             activeKind={selectedLayer?.kind ?? 'static'}
             favoriteKinds={favoriteEffectKinds}
             curatedKinds={curatedKinds}
+            performanceMode={profile?.performanceMode ?? 'balanced'}
             onSelectEffect={(kind) => {
               const prevKind = selectedLayer?.kind
               selectEffect(kind)
