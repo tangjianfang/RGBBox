@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type Dispat
 import { defaultProfile } from '../../../../shared/defaultProfile'
 import type { BlendMode, EffectKind, EffectLayer, Profile, ProfileMeta } from '../../../../shared/types'
 import { nextLayerId } from '../../domain/profileUtils'
+import { showAlert } from '../../domain/appDialog'
 import type { TranslationKey } from '../../i18n'
 
 /**
@@ -188,7 +189,8 @@ export function useProfileManager(args: {
         })
         setSelectedLayerId(imported.id)
       } catch {
-        alert(t('pack.importError'))
+        // R302: 应用内对话框（原 alert 系统白底弹框）
+        void showAlert({ message: t('pack.importError') })
       }
     }
     reader.readAsText(file)

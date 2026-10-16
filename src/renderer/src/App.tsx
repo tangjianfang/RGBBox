@@ -14,6 +14,7 @@ import { UI_THEME_DEFAULT, applyTheme } from './domain/uiTheme'
 /** R164.1: what a fresh install actually layers — the curated strip's first source. */
 const DEFAULT_PROFILE_LAYER_KINDS = defaultProfile.scenes.flatMap((s) => s.layers.map((l) => l.kind))
 import { EffectsView } from './components/EffectsView'
+import { AppDialogHost } from './components/AppDialog'
 import { ShutdownTimerPanel } from './components/ShutdownTimerPanel'
 // R147 P4: heavy views load on demand — three.js (via MiniGames/3D previews),
 // the AI lab, the media studios and their dependency trees no longer sit in
@@ -546,6 +547,9 @@ export function App(): JSX.Element {
   return (
     <>
       <main className="app-shell" ref={appRootRef}>
+      {/* R302: 应用内样式化对话框 Host —— 消费 showConfirm/showAlert 队列，
+          替换全部 window.confirm/alert（系统白底弹框）。 */}
+      <AppDialogHost />
       {/* R164.2 (S2): applied-effect toast with a 5s undo window. */}
       {appliedToast && (() => {
         const preset = effectPresets.find((p) => p.kind === appliedToast.kind)

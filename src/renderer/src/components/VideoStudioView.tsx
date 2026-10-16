@@ -23,6 +23,7 @@ import {
 import Hls from 'hls.js'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type RefObject } from 'react'
 import { useI18n } from '../i18n'
+import { showAlert, showConfirm } from '../domain/appDialog'
 import type { CaptureSource, RgbFrame } from '../../../shared/types'
 import { REC_BITRATE_TIERS, captureConstraintsWithAudio, type RecBitrateTier } from '../domain/recorderOptions'
 import { rgbFrameFromImageData } from '../domain/videoAmbient'
@@ -1200,7 +1201,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     if (!el || !mediaLoaded) return
     const start = Math.min(trimStart, trimEnd)
     const end = Math.max(trimStart, trimEnd)
-    if (end - start < 0.5) { alert('Please select at least 0.5 seconds'); return }
+    // R302: 应用内对话框（原 alert 英文硬编码，一并 i18n 化）
+    if (end - start < 0.5) { void showAlert({ message: t('video.trimMinDuration') }); return }
 
     setTrimExporting(true)
     // R70.6: stop the canvas-capture tracks even if the export path throws —
@@ -1830,9 +1832,10 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
             items={captures}
             collapsed={!filmstripVisible}
             onToggleCollapsed={() => setFilmstripVisible((v) => !v)}
-            onClearAll={() => {
+            onClearAll={async () => {
               // R170: destructive — confirm with the count before mass delete.
-              if (!window.confirm(t('video.filmstrip.clearAllConfirm').replace('{count}', String(captures.length)))) return
+              // R302: 应用内 danger 对话框（原 window.confirm 系统白底弹框）。
+              if (!(await showConfirm({ message: t('video.filmstrip.clearAllConfirm').replace('{count}', String(captures.length)), danger: true }))) return
               void Promise.allSettled(captures.map((it) => window.rgbbox.capturesDelete(it.id)))
                 .then(refreshCaptures)
                 .catch(() => { /* best-effort */ })

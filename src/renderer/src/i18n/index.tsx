@@ -1828,6 +1828,12 @@ const EN = {
   'video.device': 'Device',
   'video.noCamera': 'No camera found',
   'video.refresh': 'Refresh',
+  // R302: trim 导出区间校验（原 alert 英文硬编码，i18n 化）
+  'video.trimMinDuration': 'Please select a range of at least 0.5 seconds',
+  // R302: 应用内对话框通用按钮
+  'dialog.confirm': 'Confirm',
+  'dialog.cancel': 'Cancel',
+  'dialog.ok': 'OK',
   // R296: 录制回执
   'video.recSaved': 'Recording saved',
   'video.recFail': 'Recording failed',
@@ -3719,6 +3725,12 @@ const ZH: TranslationTable = {
   'video.device': '设备',
   'video.noCamera': '未找到摄像头',
   'video.refresh': '刷新',
+  // R302: trim 导出区间校验（原 alert 英文硬编码，i18n 化）
+  'video.trimMinDuration': '请至少选择 0.5 秒的区间',
+  // R302: 应用内对话框通用按钮
+  'dialog.confirm': '确定',
+  'dialog.cancel': '取消',
+  'dialog.ok': '知道了',
   // R296: 录制回执
   'video.recSaved': '录制完成已保存',
   'video.recFail': '录制失败',

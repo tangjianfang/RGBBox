@@ -1475,6 +1475,53 @@ input:not([type]):focus {
   padding: 2px 10px;
 }
 
+/* ── R302: 应用内样式化对话框（替换 window.confirm/alert 的系统白底弹框）──
+   纯 R148 token：scrim 遮罩 + surface-raised 面板 + btn-* 原型按钮。 */
+.app-dialog-scrim {
+  align-items: center;
+  background: var(--scrim);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: fixed;
+  z-index: 9500; /* 在 toast/pill (9000) 之上 */
+}
+.app-dialog {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-l);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  max-width: min(400px, calc(100vw - 48px));
+  padding: var(--space-5);
+}
+.app-dialog-message {
+  color: var(--text-primary);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-lh);
+  margin: 0 0 var(--space-5);
+  white-space: pre-line;
+  word-break: break-word;
+}
+.app-dialog-buttons {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+.app-dialog-btn {
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  font-size: var(--text-body-size);
+  min-width: 88px;
+  padding: var(--space-2) var(--space-4);
+}
+/* danger 确认钮：btn-danger 原型显式重申（同贴 btn-primary，防类顺序漂移） */
+.app-dialog-btn.btn-danger {
+  background: var(--btn-danger-bg);
+  border: 1px solid var(--btn-danger-border);
+  color: var(--btn-danger-fg);
+}
+
+
 .effects-curated-section {
   background: var(--surface-deep);
   border: 1px solid var(--surface-raised);

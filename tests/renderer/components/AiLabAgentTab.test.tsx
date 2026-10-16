@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { AiLabAgentTab } from '../../../src/renderer/src/components/AiLabAgentTab'
+import { AppDialogHost } from '../../../src/renderer/src/components/AppDialog'
 import { setupRendererMocks } from '../_helpers'
 
 // R174.6: the public chat template fetch — stubbed (no network in tests)
@@ -388,7 +389,8 @@ describe('AiLabAgentTab (R172-S2)', () => {
       { id: 's-a', title: '会话甲', updatedAt: Date.now(), events: 3 },
     ])
     rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([{ kind: 'user', text: '甲的内容' }])
-    const { container } = render(<AiLabAgentTab />)
+    // R302: showConfirm 的消费端——Host 与被测视图同挂（App 层的真实装配关系）
+    const { container } = render(<><AiLabAgentTab /><AppDialogHost /></>)
     const loadBtn = await waitFor(() => {
       const el = container.querySelector('[data-action="agent-load"]') as HTMLButtonElement
       expect(el).toBeTruthy()
@@ -409,14 +411,18 @@ describe('AiLabAgentTab (R172-S2)', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => expect(rgbbox.agentSessionRename).toHaveBeenCalledWith('s-a', '新名字'))
 
-    // delete flow (confirm stubbed — happy-dom has no native confirm)
-    const confirmMock = vi.fn().mockReturnValue(true)
-    window.confirm = confirmMock as unknown as typeof window.confirm
+    // delete flow (R302: 应用内对话框——同挂 AppDialogHost，点 danger 确认钮走通)
     fireEvent.click(container.querySelector('[data-action="agent-delete"]')!)
+    const dlgConfirm = await waitFor(() => {
+      const el = document.querySelector('.app-dialog-buttons .btn-danger') as HTMLButtonElement
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.click(dlgConfirm)
     await waitFor(() => expect(rgbbox.agentSessionDelete).toHaveBeenCalledWith('s-a'))
     // deleting the OPEN conversation resets to the empty state
     await waitFor(() => expect(container.querySelector('[data-field="agent-empty"]')).not.toBeNull())
-    expect(confirmMock).toHaveBeenCalled()
+    await waitFor(() => expect(document.querySelector('.app-dialog')).toBeNull())
 
     // new-session button lands on the empty state too and clears the pref
     rgbbox.agentSessionLoad = vi.fn().mockResolvedValue([{ kind: 'user', text: 'again' }])

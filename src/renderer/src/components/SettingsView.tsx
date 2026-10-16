@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Pause, Play } from 'lucide-react'
 import { useI18n } from '../i18n'
+import { showConfirm } from '../domain/appDialog'
 import { PRESET_SNIP_HOTKEYS } from '../../../shared/snipHotkeys'
 import { UI_FONT_SCALE_TIERS } from '../domain/uiFontScale'
 import { UI_THEME_OPTIONS } from '../domain/uiTheme'
@@ -157,11 +158,12 @@ export function SettingsView(props: SettingsViewProps) {
               type="button"
               className="video-btn"
               data-setting="games-clear-data"
-              onClick={() => {
+              onClick={async () => {
                 // 两段确认:先清遥测(保留最高分);再问是否连最高分一起清
-                if (!window.confirm(t('settings.games.clearConfirm'))) return
+                // R302: 应用内 danger 对话框（原 window.confirm 系统白底弹框）
+                if (!(await showConfirm({ message: t('settings.games.clearConfirm'), danger: true }))) return
                 clearAllGameData(localStorage, false, (id: GameId) => `rgbbox:gamesBest:${id === 'td' ? 'balloon' : id}`)
-                if (window.confirm(t('settings.games.clearBestConfirm'))) {
+                if (await showConfirm({ message: t('settings.games.clearBestConfirm'), danger: true })) {
                   clearAllGameData(localStorage, true, (id: GameId) => `rgbbox:gamesBest:${id === 'td' ? 'balloon' : id}`)
                 }
                 setGamesClearedAt(Date.now())

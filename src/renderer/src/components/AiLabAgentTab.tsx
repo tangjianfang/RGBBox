@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { Bot, CheckCheck, FolderOpen, History, Pencil, Play, Plus, Send, ShieldCheck, Square, Trash2, TriangleAlert, X } from 'lucide-react'
 import { useI18n } from '../i18n'
+import { showConfirm } from '../domain/appDialog'
 import { MarkdownView } from '../ai8/markdown'
 import { groupModelsByProvider, matchCurated } from '../ai8/localStore'
 import { Ai8Client, readStoredToken, type Ai8Model } from '../../../shared/ai8Client'
@@ -407,8 +408,9 @@ export function AiLabAgentTab(): JSX.Element {
     }).catch((err) => console.warn('[agent]', err))
   }
 
-  const deleteSession = (id: string): void => {
-    if (!window.confirm(t('ai.agent.deleteConfirm'))) return
+  const deleteSession = async (id: string): Promise<void> => {
+    // R302: 应用内 danger 对话框（原 window.confirm 系统白底弹框）
+    if (!(await showConfirm({ message: t('ai.agent.deleteConfirm'), danger: true }))) return
     void window.rgbbox.agentSessionDelete(id).then((out) => {
       if (!out.ok) { setError(out.error ?? 'delete'); return }
       // deleting the open conversation → back to a fresh empty workbench
