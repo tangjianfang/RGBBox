@@ -7676,7 +7676,7 @@ input[type='range'].video-player-volume {
 }
 .app-content > .workspace { flex: 1; }
 
-/* ══ R86 P1: dashboard（折叠分组 + 状态卡 + 磁贴） ═════════════════ */
+/* ══ R303: dashboard 舞台条布局（取代 R86 折叠组 + 5 等权状态卡） ═════ */
 .dashboard {
   display: flex;
   flex: 1;
@@ -7685,68 +7685,114 @@ input[type='range'].video-player-volume {
   overflow-y: auto;
   padding: 20px 24px;
 }
-.dash-group > summary {
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: var(--text-caption-size);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  list-style: none;
-  margin: 0 0 14px;
-  text-transform: uppercase;
-}
-.dash-group > summary::-webkit-details-marker { display: none; }
-.dash-group > summary:hover { color: var(--text-primary); }
-.dash-group[open] > summary { color: var(--text-primary); }
-.dash-group-arrow {
-  display: inline-block;
-  font-size: var(--text-caption-size);
-  transition: transform 150ms ease;
-}
-.dash-group:not([open]) .dash-group-arrow { transform: rotate(-90deg); }
 
-.dash-cards {
-  display: grid;
-  gap: var(--gap-grid);
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-}
-.dash-card {
+/* ── 舞台条 Hero：当前灯效的实时颜色带 + 引擎主开关 ─────────────────── */
+.dash-stage {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-l);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: 14px 16px;
-  transition: background 150ms ease, border-color 150ms ease;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
 }
-/* R86 review fix: only cards with interactive descendants (engine button /
-   audio select) get the interactive hover treatment — fps/effect/overlay
-   cards are static and must not read as clickable. */
-.dash-card:has(button):hover,
-.dash-card:has(select):hover { background: var(--bg-card-hover); border-color: var(--border-hover); }
-.dash-card-label {
+.dash-stage-head {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+}
+.dash-stage-dot {
+  background: var(--text-muted);
+  border-radius: 50%;
+  height: 8px;
+  width: 8px;
+}
+.dash-stage-dot.on {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+.dash-stage-state {
+  color: var(--text-primary);
+  font-size: var(--text-title-size);
+  font-weight: var(--text-title-weight);
+  line-height: var(--text-title-lh);
+}
+.dash-stage-toggle {
+  align-items: center;
+  background: var(--btn-secondary-bg);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-s);
+  color: var(--btn-secondary-fg);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--text-body-size);
+  gap: var(--space-2);
+  margin-left: auto;
+  padding: var(--space-2) var(--space-4);
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.dash-stage-toggle:hover { background: var(--btn-secondary-bg-hover); }
+.dash-stage-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.dash-stage-band {
+  background: var(--stage-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  padding: var(--space-2); /* 舞台留边——LED 色带不顶框 */
+}
+.dash-stage-strip {
+  display: block;
+  height: 72px;
+  image-rendering: pixelated; /* LED 格位图拉伸保持锐利 */
+  width: 100%;
+}
+.dash-stage-idle { min-height: 72px; } /* profile 未就绪的空舞台 */
+
+/* ── 仪表读数行：细分隔线簇（label 上、值下） ──────────────────────── */
+.dash-readouts {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-5);
+  padding: 0 var(--space-1);
+}
+.dash-readout {
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--space-4);
+}
+.dash-readout:first-child { border-left: none; padding-left: 0; }
+.dash-readout-k {
   color: var(--text-muted);
   font-size: var(--text-caption-size);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  line-height: var(--text-caption-lh);
 }
-/* R189 Q-5: values (and the trailing select/button clusters) hug the shared
-   RIGHT edge of every card, so the row of cards reads as one aligned grid
-   instead of ragged left-aligned content of varying width. min-height keeps
-   the engine-card's 34px button row and the plain-text rows on the same
-   baseline band. */
-.dash-card-value {
-  align-items: center;
+.dash-readout-v {
   color: var(--text-primary);
-  display: flex;
-  font-size: 0.875rem;
-  gap: var(--space-2);
-  justify-content: flex-end;
-  min-height: 34px;
-  text-align: right;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-lh);
 }
-.dash-card .audio-device-select { width: auto; max-width: 180px; }
+.dash-readout-v.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.dash-readout .audio-device-select { max-width: 220px; width: auto; }
+
+/* ── 模块索引（磁贴 + 描述 + 9 色 tint 图标） ──────────────────────── */
+.dash-modules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.dash-section-title {
+  color: var(--text-secondary);
+  font-size: var(--text-caption-size);
+  font-weight: 600;
+  margin: 0;
+}
 
 .dash-tiles {
   display: grid;
@@ -7809,6 +7855,13 @@ input[type='range'].video-player-volume {
   font-size: var(--text-caption-size);
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+/* R303: 模块描述（dash.desc.* 首次上屏）——一行 caption，磁贴不再只是图标+名 */
+.dash-tile-desc {
+  color: var(--text-secondary);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-lh);
+  text-align: center;
 }
 
 /* R86 review fix: narrow-screen rail collapse must come AFTER the base

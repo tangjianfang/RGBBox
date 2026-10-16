@@ -603,6 +603,8 @@ export function App(): JSX.Element {
           <DashboardView
             onOpen={setActiveView}
             model3dEnabled={MODEL3D_VIEW_ENABLED}
+            effect={selectedLayer ? { kind: selectedLayer.kind, parameters: selectedLayer.parameters } : null}
+            performanceMode={profile?.performanceMode ?? 'balanced'}
             status={{
               running: status.running,
               onToggleEngine: toggleEngine,

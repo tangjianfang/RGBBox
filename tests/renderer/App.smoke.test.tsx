@@ -39,9 +39,10 @@ describe('renderer/App smoke (R147 P0)', () => {
     // its view buttons (ai reachable by default, model3d filtered by flag).
     // "nav.workspace" matches twice by design: rail item + dashboard tile —
     // the tile is the proof the initial VIEW rendered, not just the chrome.
+    // R303: 磁贴可访问名现在含描述行（读屏器获得更多上下文）→ 正则子串匹配。
     const nav = await screen.findByRole('navigation', { name: 'a11y.moduleNav' })
     expect(nav).toBeInTheDocument()
-    const workspaceButtons = await screen.findAllByRole('button', { name: 'nav.workspace' })
+    const workspaceButtons = await screen.findAllByRole('button', { name: /nav\.workspace/ })
     expect(workspaceButtons.length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByRole('button', { name: 'nav.ai' }).length).toBeGreaterThanOrEqual(1)
     // Boot fan-out consumed: IPC version landed in the shell brand tooltip.
