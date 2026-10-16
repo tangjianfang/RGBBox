@@ -71,7 +71,8 @@ export function DashboardView({ onOpen, model3dEnabled, status, effect, performa
         <div className="dash-readouts">
           <div className="dash-readout">
             <span className="dash-readout-k">{t('dash.card.effect')}</span>
-            <strong className="dash-readout-v">{status.effectName}</strong>
+            {/* R303.6: lead 变体——效果名是读数行的主角，升 title 档压回一点 Hero 断层 */}
+            <strong className="dash-readout-v lead">{status.effectName}</strong>
           </div>
           <div className="dash-readout">
             <span className="dash-readout-k">{t('dash.card.fps')}</span>
@@ -118,10 +119,14 @@ export function DashboardView({ onOpen, model3dEnabled, status, effect, performa
             const meta = MODULE_META[view]
             const Icon = meta.icon
             return (
+              /* R303.6: 横向磁贴——图标圆片居左 + 右侧文字块（label 升 body 档
+                 sentence-case + desc 左对齐），模块区读作索引而非启动器网格。 */
               <button key={view} type="button" className="dash-tile" onClick={() => onOpen(view)}>
-                <span className="dash-tile-icon" data-tint={meta.tint}><Icon size={24} /></span>
-                <span className="dash-tile-label">{t(meta.labelKey)}</span>
-                <span className="dash-tile-desc">{t(meta.descKey)}</span>
+                <span className="dash-tile-icon" data-tint={meta.tint}><Icon size={22} /></span>
+                <span className="dash-tile-text">
+                  <span className="dash-tile-label">{t(meta.labelKey)}</span>
+                  <span className="dash-tile-desc">{t(meta.descKey)}</span>
+                </span>
               </button>
             )
           })}

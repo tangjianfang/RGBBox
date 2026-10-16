@@ -7772,8 +7772,14 @@ input[type='range'].video-player-volume {
 }
 .dash-readout-v {
   color: var(--text-primary);
-  font-size: var(--text-body-size);
+  font-size: 0.875rem;
   line-height: var(--text-body-lh);
+}
+/* R303.6: 效果名 lead 变体——读数行的主角，压回 Hero 与正文的断层 */
+.dash-readout-v.lead {
+  font-size: var(--text-title-size);
+  font-weight: 600;
+  line-height: var(--text-title-lh);
 }
 .dash-readout-v.mono {
   font-family: var(--font-mono);
@@ -7814,11 +7820,10 @@ input[type='range'].video-player-volume {
   border-radius: var(--radius-l);
   cursor: pointer;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  justify-content: center;
-  min-height: 150px;
-  padding: 18px 12px;
+  flex-direction: row;
+  gap: var(--space-4);
+  padding: 14px 16px;
+  text-align: left;
   transition: background 150ms ease, border-color 150ms ease;
 }
 .dash-tile:hover { background: var(--bg-card-hover); border-color: var(--accent); }
@@ -7829,9 +7834,17 @@ input[type='range'].video-player-volume {
   border-radius: 50%;
   color: var(--text-primary);
   display: flex;
-  height: 56px;
+  flex: none;
+  height: 40px;
   justify-content: center;
-  width: 56px;
+  width: 40px;
+}
+/* R303.6: 横向磁贴的文字块（label + desc 左对齐堆叠） */
+.dash-tile-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 .dash-tile:hover .dash-tile-icon { filter: brightness(1.08); }
 
@@ -7852,16 +7865,18 @@ input[type='range'].video-player-volume {
 .dash-tile:hover .dash-tile-icon { background: var(--border-hover); border-color: var(--border-hover); }
 .dash-tile-label {
   color: var(--text-primary);
-  font-size: var(--text-caption-size);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--text-body-size);
+  font-weight: 500;
+  line-height: var(--text-body-lh);
 }
 /* R303: 模块描述（dash.desc.* 首次上屏）——一行 caption，磁贴不再只是图标+名 */
 .dash-tile-desc {
   color: var(--text-secondary);
   font-size: var(--text-caption-size);
   line-height: var(--text-caption-lh);
-  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* R86 review fix: narrow-screen rail collapse must come AFTER the base

@@ -24,6 +24,25 @@ const W = COLS * CELL // 640
 const H = ROWS * CELL // 80
 /** 舞台底色 = tokens.css --stage-bg 的字面量（canvas 读不到 CSS 变量；卡片侧 #080d11 同款先例）。 */
 const STAGE_BG = '#0a0f13'
+const STAGE_BG_RGB: readonly [number, number, number] = [10, 15, 19]
+
+/**
+ * R303.6: 列聚光权重（spotlight vignette）——两端 15% 平滑升至距边 25% 处
+ * 的 100%。满铺全饱和读作「校准色卡」；两端向舞台底色渐暗后读作「被灯
+ * 照亮的一截舞台」。导出供单测锁定（边缘<中心、中心=1）。
+ */
+export function spotlightColumnWeights(): readonly number[] {
+  const w: number[] = []
+  for (let x = 0; x < COLS; x++) {
+    const vx = x / (COLS - 1)
+    const edge = Math.min(vx, 1 - vx) // 边缘 0 → 中心 0.5
+    const t = Math.min(1, edge / 0.25) // 距边 25% 即到全亮
+    const s = t * t * (3 - 2 * t) // smoothstep
+    w.push(0.15 + 0.85 * s)
+  }
+  return w
+}
+const COL_WEIGHTS = spotlightColumnWeights()
 
 export interface DashStageStripProps {
   kind: EffectKind
@@ -60,9 +79,10 @@ export function DashStageStrip({ kind, parameters, running, performanceMode }: D
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
           const c = renderEffectPixel(layer, { x, y, columns: COLS, rows: ROWS, now: t })
-          ctx.fillStyle = dim
-            ? `rgb(${(c.r * 0.3) | 0},${(c.g * 0.3) | 0},${(c.b * 0.3) | 0})`
-            : `rgb(${c.r},${c.g},${c.b})`
+          // R303.6: 聚光渐隐——列亮度向舞台底色 blend（暂停态再整体压暗）
+          const b = dim ? COL_WEIGHTS[x] * 0.3 : COL_WEIGHTS[x]
+          const inv = 1 - b
+          ctx.fillStyle = `rgb(${(c.r * b + STAGE_BG_RGB[0] * inv) | 0},${(c.g * b + STAGE_BG_RGB[1] * inv) | 0},${(c.b * b + STAGE_BG_RGB[2] * inv) | 0})`
           ctx.fillRect(x * CELL, y * CELL, CELL - GAP, CELL - GAP)
         }
       }
