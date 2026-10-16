@@ -1338,15 +1338,7 @@ input:not([type]):focus {
 
 /* ── R164.1 (S1): curated strip + search/tag filter bar ─────────────────── */
 /* ── R164.2 (S2): hover-preview pill + applied toast ────────────────────── */
-/* ── R164.3 (S3): primary-parameter band above the advanced drawer ──────── */
-
-.primary-params {
-  border-bottom: 1px solid var(--surface-raised);
-  display: grid;
-  gap: 6px;
-  margin-bottom: 10px;
-  padding-bottom: 10px;
-}
+/* R304: 主参数带(.primary-params)随感觉台退役——语义盘覆盖其场景。 */
 
 .fx-reset-defaults {
   margin-bottom: 10px;
@@ -3007,6 +2999,126 @@ input:not([type]):focus {
   padding: 10px 10px 6px;
 }
 
+/* ── R304: 感觉台——表头两标签 + 三列对齐表格体 ─────────────────────────── */
+
+.feel-console {
+  display: flex;
+  flex-direction: column;
+}
+.feel-tabs {
+  display: grid;
+  gap: 2px;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 10px;
+}
+.feel-tab {
+  background: var(--surface-deep);
+  border: 1px solid var(--surface-raised);
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  height: 28px;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.feel-tab.active {
+  background: var(--surface-raised);
+  color: var(--accent-bright-text);
+}
+.feel-body {
+  display: grid;
+  gap: 8px;
+}
+.feel-expert {
+  max-height: 320px;
+  overflow-y: auto;
+}
+/* 三列对齐表格体：标签 | 控件 | 值（表格的秩序感） */
+.feel-row {
+  align-items: center;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(52px, max-content) minmax(0, 1fr) max-content;
+}
+.feel-row > span:first-child {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  white-space: nowrap;
+}
+.feel-row input[type='range'] {
+  min-width: 0;
+  width: 100%;
+}
+.feel-value {
+  align-items: center;
+  color: var(--text-primary);
+  display: inline-flex;
+  font-size: var(--text-caption-size);
+  font-variant-numeric: tabular-nums;
+  gap: 4px;
+  justify-content: flex-end;
+  min-width: 44px;
+  white-space: nowrap;
+}
+.feel-swatch {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  display: inline-block;
+  height: 16px;
+  width: 26px;
+}
+.feel-empty {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  margin: 0;
+}
+
+/* 色相条：hsl 彩虹轨道（保留原色饱和度/明度，只换色相） */
+.hue-strip {
+  background: linear-gradient(
+    to right,
+    hsl(0, 100%, 50%),
+    hsl(60, 100%, 50%),
+    hsl(120, 100%, 50%),
+    hsl(180, 100%, 50%),
+    hsl(240, 100%, 50%),
+    hsl(300, 100%, 50%),
+    hsl(360, 100%, 50%)
+  );
+  border-radius: 999px;
+  height: 10px;
+}
+
+/* R304.2 ④: 图层区——基础控制常驻 */
+.layer-basics {
+  border-top: 1px solid var(--surface-raised);
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+/* R304: 玩法区（定时/自动化）折叠 */
+.ws-tools-collapsible > summary {
+  border-top: 1px solid var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--text-caption-size);
+  font-weight: 600;
+  list-style: none;
+  margin-top: 10px;
+  padding-top: 10px;
+}
+.ws-tools-collapsible > summary::-webkit-details-marker { display: none; }
+.ws-tools-collapsible > summary::before { content: '▸ '; }
+.ws-tools-collapsible[open] > summary::before { content: '▾ '; }
+.ws-tools-collapsible > summary:hover { color: var(--text-primary); }
+.ws-tools-collapsible { margin-bottom: 6px; }
+
+/* R304.2 ⑤: 画板舞台面板（content-grid 全宽行） */
+.paint-stage-panel {
+  grid-column: 1 / -1;
+}
+
 .layer-tools-row {
   display: grid;
   gap: var(--space-2);
@@ -3311,54 +3423,8 @@ input:not([type]):focus {
   color: var(--accent-bright-text);
 }
 
-.quick-tune-stack {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.quick-segment-row {
-  display: grid;
-  gap: 5px;
-}
-
-.quick-segment-row > span {
-  color: var(--text-muted);
-  font-size: var(--text-caption-size);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.quick-segment-control {
-  background: var(--surface-deep);
-  border: 1px solid var(--surface-raised);
-  border-radius: var(--radius-s);
-  display: grid;
-  gap: 2px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding: 2px;
-}
-
-.quick-segment-control button {
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-s);
-  color: var(--text-muted);
-  font-size: var(--text-caption-size);
-  height: 26px;
-  min-width: 0;
-  overflow: hidden;
-  padding: 0 4px;
-  text-overflow: ellipsis;
-  transition: background 120ms, color 120ms;
-  white-space: nowrap;
-}
-
-.quick-segment-control button:hover,
-.quick-segment-control button.active {
-  background: var(--surface-raised);
-  color: var(--accent-bright-text);
-}
+/* R304: 语义 4 档 chips（quick-tune-stack/quick-segment-*）随感觉台退役——
+   被 FeelConsole 的连续语义盘取代。 */
 
 .compact-effect-grid {
   margin: 8px 0 8px;
@@ -3403,11 +3469,6 @@ input:not([type]):focus {
   font-size: var(--text-caption-size);
 }
 
-.layer-params-panel .advanced-toggle-row {
-  margin-bottom: 4px;
-}
-
-.layer-params-panel .advanced-toggle-row + .layer-tools-row,
 .layer-params-panel .layer-tools-row {
   margin-top: 10px;
 }

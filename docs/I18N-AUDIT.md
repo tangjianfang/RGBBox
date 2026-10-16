@@ -1,7 +1,7 @@
 # I18N-AUDIT — 全量审计报告（R240 / F5 族）
 
-> 生成：2026-10-16T17:56:18.666Z（node scripts/i18n-audit.mjs）
-> 语料：zh 1805 键 / en 1805 键
+> 生成：2026-10-16T18:56:19.532Z（node scripts/i18n-audit.mjs）
+> 语料：zh 1818 键 / en 1818 键
 
 | 检查 | 发现 | 处置 |
 |---|---|---|
@@ -10,7 +10,7 @@
 | 空值 | 0 | 必修 |
 | 占位符不一致 | 0 | 必修 |
 | zh=en 同文（非中文） | 15 | 人工复核 |
-| en 超长（>3×zh） | 128 | 人工复核（溢出候选） |
+| en 超长（>3×zh） | 130 | 人工复核（溢出候选） |
 | 重复键 | 0 | 必修 |
 
 ## zh=en 同文（复核：或为刻意的品牌/术语）（15）
@@ -32,7 +32,7 @@
 - video.annotate.engineWinrt
 - ai.apiKey
 
-## en 超长（复核：布局溢出候选）（128）
+## en 超长（复核：布局溢出候选）（130）
 
 - ai.lab.keyUnreadable (46→161)
 - ai.voice.lexiconEmpty (25→92)
@@ -56,10 +56,12 @@
 - ai.lab.audio.errStream (14→44)
 - ai.lab.audio.vad.hint (21→76)
 - ai.lab.audio.ast.hint (26→88)
+- feel.noDials (18→57)
+- feel.paintHint (17→59)
 - settings.games.clearHint (20→67)
+
 - settings.games.clearConfirm (17→52)
 - settings.vision.replayHint (17→67)
-
 - shutdown.hint (18→66)
 - shutdown.err.spawn-failed (24→77)
 - effects.preset.droplet-mirror.desc (27→92)
@@ -70,9 +72,9 @@
 - effects.preset.wave.desc (12→45)
 - effects.preset.fire.desc (26→106)
 - effects.preset.starlight.desc (12→50)
+
 - effects.preset.ripple.desc (12→43)
 - effects.preset.comet.desc (15→56)
-
 - effects.preset.lightning.desc (11→50)
 - effects.preset.aurora.desc (10→53)
 - effects.preset.explode.desc (13→54)
@@ -83,9 +85,9 @@
 - effects.preset.vortex.desc (30→91)
 - effects.preset.tunnel.desc (30→104)
 - effects.preset.crystal.desc (38→117)
+
 - effects.preset.glitch.desc (33→109)
 - effects.preset.matrix-rain.desc (25→94)
-
 - effects.preset.neon-pulse.desc (20→85)
 - effects.preset.nebula.desc (28→90)
 - effects.preset.fluid-flow.desc (27→97)
@@ -96,9 +98,9 @@
 - effects.preset.spiral-galaxy.desc (28→114)
 - effects.preset.pulsar-beacon.desc (26→110)
 - effects.preset.hurricane-eye.desc (29→118)
+
 - effects.preset.protein-folding.desc (26→91)
 - effects.preset.mitosis-spindle.desc (29→101)
-
 - effects.preset.synapse-pulse.desc (25→102)
 - effects.preset.quantum-collapse.desc (17→88)
 - effects.preset.microvilli-field.desc (27→99)
@@ -109,9 +111,9 @@
 - effects.preset.sphere-pulse.desc (39→139)
 - effects.preset.warp-portal.desc (30→116)
 - effects.preset.neon-galaxy.desc (33→120)
+
 - effects.preset.lava-sphere.desc (37→139)
 - effects.preset.hologram.desc (41→149)
-
 - games.help (25→87)
 - games.ruleEarn (16→55)
 - games.tileSlashSummary (24→73)
@@ -122,9 +124,9 @@
 - games.vision.chordPosture (31→99)
 - games.vision.ob.envRaise (24→87)
 - games.vision.ob.envMirrorQ (12→52)
+
 - games.vision.ob.gesture.pinch.how (9→44)
 - games.vision.ob.gesture.menu.how (14→46)
-
 - games.vision.ob.doneHint (18→61)
 - games.vision.env.dim-light (18→56)
 - games.vision.env.low-fps (18→60)
@@ -135,9 +137,9 @@
 - games.vision.engine.cal.center.no-hand.extend (20→61)
 - games.vision.engine.cal.reach.range.retry (23→77)
 - games.vision.engine.cal.pinch.samples.retry (21→68)
+
 - games.swarmControls (21→66)
 - games.swarmRule3 (16→50)
-
 - games.up.barrage.desc (16→49)
 - games.coach.td.coinsIdle (13→41)
 - games.coach.td.earlyStart (17→64)
@@ -148,9 +150,9 @@
 - games.lan.cmdHint (19→58)
 - games.recap.firstRun (18→55)
 - videowall.singleScreenHint (17→54)
+
 - games.onboard.tetris.3 (12→41)
 - games.onboard.slash.1 (10→55)
-
 - games.tetrisControls (13→47)
 - games.tetrisRule3 (9→42)
 - games.codex.char.bulwark.lore (17→53)
@@ -161,9 +163,9 @@
 - scene.linkedDisplays.hint (18→60)
 - videowall.hint (25→79)
 - audio.emptyPlaylist (13→42)
+
 - audio.export.desc (26→100)
 - audio.viz.projectUnsupportedWaveform (10→41)
-
 - video.capture.fail (16→54)
 - video.editor.error (15→52)
 - video.annotate.ocrRegion (16→49)

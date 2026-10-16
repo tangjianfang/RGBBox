@@ -1,7 +1,7 @@
 import {
-  Activity, ChevronDown, ChevronUp, Clock, Download, FilePlus, Gauge, Link2, Link2Off,
-  Lock, Maximize2, Minimize2, Monitor, MoreVertical, Pencil, Plus, RotateCcw, Sparkles, Star,
-  Shuffle, Trash2, Unlock, Upload,
+  Activity, ChevronDown, ChevronUp, Clock, Download, FilePlus, Link2, Link2Off,
+  Maximize2, Minimize2, Monitor, MoreVertical, Pencil, Plus, Sparkles, Star,
+  Shuffle, Trash2, Upload,
 } from 'lucide-react'
 import { useEffect, useRef, type ChangeEvent, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import type { JSX } from 'react'
@@ -13,18 +13,17 @@ import type { AudioData } from '../hooks/useAudioAnalyzer'
 import { AMBIENT_PRESETS } from '../domain/ambientPresets'
 import type { AmbientPreset } from '../domain/ambientPresets'
 import { presetDescription, presetLabel } from '../domain/presetI18n'
-import { primaryParamsFor } from '../domain/primaryParams'
 import type { AutomationMode } from '../domain/automation'
 import type { RandomizerMode } from '../domain/randomizer'
-import type { QuickDimensionId } from '../domain/quickDimensions'
 import type { ScheduleBlockId } from '../domain/schedule'
 import { PARAM_META } from '../domain/paramMeta'
 import { activeLayer } from '../domain/profileUtils'
-import { QUICK_DETAIL_OPTIONS, QUICK_ENERGY_OPTIONS, QUICK_EFFECT_KINDS, QUICK_MOTION_OPTIONS, QUICK_PALETTE_OPTIONS } from '../domain/quickDimensions'
+import { QUICK_EFFECT_KINDS } from '../domain/quickDimensions'
 import { SCHEDULE_BLOCKS } from '../domain/schedule'
 import { useI18n } from '../i18n'
 import { CustomPaintEditor } from './CustomPaintEditor'
 import { DisplayMap } from './DisplayMap'
+import { FeelConsole } from './FeelConsole'
 import { ImagePaintEditor } from './ImagePaintEditor'
 import { Preview3D } from './Preview3D'
 import { PreviewGrid } from './PreviewGrid'
@@ -137,12 +136,9 @@ interface WorkspaceViewProps {
   /** R164.2 (S2): hovered-effect synthetic layer — drives the preview canvas while hover-previewing, null when idle. */
   previewLayer: EffectLayer | null
   applyAmbientPreset: (preset: AmbientPreset) => void
-  applyQuickDimension: (dimension: QuickDimensionId, option: string) => void
   randomizeSelectedLayer: () => void
   allEffectsOpen: boolean
   setAllEffectsOpen: Dispatch<SetStateAction<boolean>>
-  advancedControlsOpen: boolean
-  setAdvancedControlsOpen: Dispatch<SetStateAction<boolean>>
   // layer pack import/export
   importLayerPackRef: RefObject<HTMLInputElement | null>
   handleImportLayerPack: (e: ChangeEvent<HTMLInputElement>) => void
@@ -213,8 +209,8 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
     handleProfileDelete, handleProfileImport, handleProfileExport, refreshProfiles,
     addLayer, toggleLayerEnabled, deleteLayer, selectEffect, updateSelectedLayer,
     setLayerParameter, setSelectedLayerValue,
-    favoriteEffectPresets, previewLayer, applyAmbientPreset, applyQuickDimension, randomizeSelectedLayer,
-    allEffectsOpen, setAllEffectsOpen, advancedControlsOpen, setAdvancedControlsOpen,
+    favoriteEffectPresets, previewLayer, applyAmbientPreset, randomizeSelectedLayer,
+    allEffectsOpen, setAllEffectsOpen,
     importLayerPackRef, handleImportLayerPack, exportLayerPack,
     randomizerMode, setRandomizerMode, randomizerLockedParams, toggleRandomizerParamLock,
     scheduleEnabled, setScheduleEnabled, scheduleEffects, setScheduleEffect,
@@ -233,71 +229,9 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
   void refreshProfiles
   const { t } = useI18n()
 
-  // R164.3 (S3): one parameter row renderer shared by the primary band and the
-  // advanced drawer's long tail (extracted verbatim from the old inline map).
-  // Call sites guarantee selectedLayer is non-null.
-  const renderParamLine = (name: string, value: unknown): JSX.Element | null => {
-    if (!selectedLayer || name.startsWith('_')) return null
-    const meta = PARAM_META[name]
-    const labelKey = meta?.labelKey ?? name
-    const label = (labelKey.includes('.') ? t(labelKey as Parameters<typeof t>[0]) : labelKey)
-    const unit = meta?.unit ?? ''
-    const locked = randomizerLockedParams.includes(name)
-    const lockTitle = locked ? t('effects.unlockParam') : t('effects.lockParam')
-    const lockButton = (
-      <button
-        className={`parameter-lock-btn ${locked ? 'locked' : ''}`}
-        type="button"
-        aria-pressed={locked}
-        title={lockTitle}
-        onClick={() => toggleRandomizerParamLock(name)}
-      >
-        {locked ? <Lock size={12} /> : <Unlock size={12} />}
-      </button>
-    )
-    if (typeof value === 'string' && !value.startsWith('#')) {
-      return (
-        <div className="parameter-line text-param" key={name}>
-          <span>{name === 'text' ? t('param.text') : label}</span>
-          <input
-            className="text-param-input"
-            type="text"
-            value={value}
-            placeholder={name === 'text' ? t('param.textPlaceholder') : ''}
-            onChange={(e) => setLayerParameter(name, e.target.value)}
-          />
-          {lockButton}
-        </div>
-      )
-    }
-    return (
-      <div className="parameter-line" key={name}>
-        <span>{name === 'color' ? t('param.bgColor') : name === 'textColor' ? t('param.textColor') : label}</span>
-        {typeof value === 'string' && value.startsWith('#') ? (
-          <input type="color" value={value}
-            onChange={(e) => setLayerParameter(name, e.target.value)} />
-        ) : typeof value === 'number' ? (
-          <input
-            min={meta?.min ?? 0}
-            max={meta?.max ?? 2}
-            step={meta?.step ?? 0.05}
-            type="range"
-            value={value}
-            onChange={(e) => setLayerParameter(name, Number(e.target.value))}
-          />
-        ) : (
-          <input checked={Boolean(value)} type="checkbox"
-            onChange={(e) => setLayerParameter(name, e.target.checked)} />
-        )}
-        {lockButton}
-        <strong>
-          {typeof value === 'number'
-            ? `${meta?.step && meta.step >= 1 ? Math.round(value) : value.toFixed(2)}${unit}`
-            : String(value)}
-        </strong>
-      </div>
-    )
-  }
+  // R304: renderParamLine（主参数带/长尾共用行渲染器）已随主参数带退役——
+  // 参数行渲染整体迁入 FeelConsole 的「专家参数」页（三列对齐表格体）。
+
   return (
           <div className="workspace-inner">
 
@@ -503,44 +437,8 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                       />
                     ))}
                   </div>
-                  <div className="quick-tune-stack">
-                    <div className="quick-segment-row">
-                      <span>{t('quick.motion')}</span>
-                      <div className="quick-segment-control">
-                        {QUICK_MOTION_OPTIONS.map((option) => {
-                          const active = String(selectedLayer.parameters._quickMotion ?? 'flow') === option.id
-                          return <button key={option.id} className={active ? 'active' : ''} type="button" onClick={() => applyQuickDimension('motion', option.id)}>{t(option.labelKey as Parameters<typeof t>[0])}</button>
-                        })}
-                      </div>
-                    </div>
-                    <div className="quick-segment-row">
-                      <span>{t('quick.energy')}</span>
-                      <div className="quick-segment-control">
-                        {QUICK_ENERGY_OPTIONS.map((option) => {
-                          const active = String(selectedLayer.parameters._quickEnergy ?? 'balanced') === option.id
-                          return <button key={option.id} className={active ? 'active' : ''} type="button" onClick={() => applyQuickDimension('energy', option.id)}>{t(option.labelKey as Parameters<typeof t>[0])}</button>
-                        })}
-                      </div>
-                    </div>
-                    <div className="quick-segment-row">
-                      <span>{t('quick.detail')}</span>
-                      <div className="quick-segment-control">
-                        {QUICK_DETAIL_OPTIONS.map((option) => {
-                          const active = String(selectedLayer.parameters._quickDetail ?? 'balanced') === option.id
-                          return <button key={option.id} className={active ? 'active' : ''} type="button" onClick={() => applyQuickDimension('detail', option.id)}>{t(option.labelKey as Parameters<typeof t>[0])}</button>
-                        })}
-                      </div>
-                    </div>
-                    <div className="quick-segment-row">
-                      <span>{t('quick.palette')}</span>
-                      <div className="quick-segment-control">
-                        {QUICK_PALETTE_OPTIONS.map((option) => {
-                          const active = String(selectedLayer.parameters._quickPalette ?? 'cool') === option.id
-                          return <button key={option.id} className={active ? 'active' : ''} type="button" onClick={() => applyQuickDimension('palette', option.id)}>{t(option.labelKey as Parameters<typeof t>[0])}</button>
-                        })}
-                      </div>
-                    </div>
-                  </div>
+                  {/* R304.2 ③: 语义 4 档 chips 行退役——被感觉台的连续语义盘取代
+                      （FeelConsole，见 layer-params-panel）。 */}
                 </div>
               )}
 
@@ -587,60 +485,24 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                 )}
               </div>
 
-              {/* Per-layer parameters — R164.3 (S3) three-band layout:
-                  ① primary ≤3 sliders above the fold, ② semantic fine-tune
-                  lives in the quick-customize rows above, ③ advanced drawer
-                  holds the long tail (nothing removed). */}
+              {/* R304: 参数交互一套语言——感觉台（调感觉/专家参数两标签）+
+                  图层区（基础控制常驻，从「高级」抽屉出狱）+ 玩法区（定时/
+                  自动化折叠）。取代 R164.3 三带布局（主参数带/语义 chips/
+                  高级抽屉）与 R304.1 诊断的全部乱源。 */}
               {selectedLayer && (
                 <div className="layer-params-panel">
-                  {(() => {
-                    const primaries = primaryParamsFor(selectedLayer.kind, selectedLayer.parameters)
-                    return primaries.length > 0 ? (
-                      <div className="primary-params">
-                        {primaries.map((name) => renderParamLine(name, selectedLayer.parameters[name]))}
-                      </div>
-                    ) : null
-                  })()}
-                  <button className="advanced-toggle-row" type="button" onClick={() => setAdvancedControlsOpen((open) => !open)}>
-                    <Gauge size={13} />
-                    <span>{t('quick.advanced')}</span>
-                    <strong>{advancedControlsOpen ? t('quick.hide') : t('quick.show')}</strong>
-                  </button>
-                  {advancedControlsOpen && (
-                    <>
-                      {/* R164.3: one-tap reset to this effect's preset defaults —
-                          kills the "tuned it into ugliness, no way back" trap. */}
-                      {(() => {
-                        const preset = effectPresets.find((p) => p.kind === selectedLayer.kind)
-                        if (!preset) return null
-                        return (
-                          <button
-                            className="layer-action-btn fx-reset-defaults"
-                            type="button"
-                            onClick={() => updateSelectedLayer({ parameters: { ...preset.defaults } })}
-                          >
-                            <RotateCcw size={12} />
-                            <span>{t('fx.resetDefaults')}</span>
-                          </button>
-                        )
-                      })()}
-                      <div className="layer-tools-row">
-                        <select
-                          className="randomizer-select"
-                          value={randomizerMode}
-                          title={t('effects.randomizeMode')}
-                          onChange={(e) => setRandomizerMode(e.target.value as RandomizerMode)}
-                        >
-                          <option value="subtle">{t('effects.randomize.subtle')}</option>
-                          <option value="bold">{t('effects.randomize.bold')}</option>
-                          <option value="calm">{t('effects.randomize.calm')}</option>
-                          <option value="energy">{t('effects.randomize.energy')}</option>
-                        </select>
-                        <button className="layer-action-btn" type="button" onClick={randomizeSelectedLayer} title={t('effects.randomize')}>
-                          <Shuffle size={13} />
-                          <span>{t('effects.randomize')}</span>
-                        </button>
-                      </div>
+                  <FeelConsole
+                    layer={selectedLayer}
+                    setLayerParameter={setLayerParameter}
+                    updateSelectedLayer={updateSelectedLayer}
+                    randomizerMode={randomizerMode}
+                    setRandomizerMode={setRandomizerMode}
+                    randomizerLockedParams={randomizerLockedParams}
+                    toggleRandomizerParamLock={toggleRandomizerParamLock}
+                    randomizeSelectedLayer={randomizeSelectedLayer}
+                  />
+                  <details className="ws-tools-collapsible">
+                    <summary>{t('fx.toolsSection')}</summary>
                       <div className="schedule-panel">
                     <button
                       className={`schedule-toggle ${scheduleEnabled ? 'active' : ''}`}
@@ -720,6 +582,10 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                       </div>
                     </div>
                   )}
+                  </details>
+                  {/* R304.2 ④: 图层区——基础控制常驻（不透明度/混合/区域蒙版/
+                      显示槽位，全部从「高级」抽屉出狱）。 */}
+                  <div className="layer-basics">
                   {/* ── Zone Mask ────────────────────────────────────────── */}
                   <div className="zone-mask-panel">
                     <span className="zone-mask-label">{t('mask.title')}</span>
@@ -780,58 +646,8 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                       <option value="multiply">{t('blend.multiply')}</option>
                     </select>
                   </label>
-                  {/* Custom Paint editor */}
-                  {selectedLayer.kind === 'custom-paint' && (
-                    <CustomPaintEditor
-                      columns={profile?.sampling.columns ?? 24}
-                      rows={profile?.sampling.rows ?? 14}
-                      pixelData={(() => {
-                        try {
-                          const raw = String(selectedLayer.parameters.pixelData ?? '')
-                          return raw ? JSON.parse(raw) as string[] : []
-                        } catch { return [] }
-                      })()}
-                      onChange={(pixels) => setLayerParameter('pixelData', JSON.stringify(pixels))}
-                    />
-                  )}
-                  {/* Image Paint editor */}
-                  {selectedLayer.kind === 'image-paint' && (
-                    <ImagePaintEditor
-                      columns={profile?.sampling.columns ?? 24}
-                      rows={profile?.sampling.rows ?? 14}
-                      imageDataList={(() => {
-                        try {
-                          const raw = String(selectedLayer.parameters.imageDataList ?? '')
-                          return raw ? JSON.parse(raw) as string[][] : []
-                        } catch { return [] }
-                      })()}
-                      activeImageIndex={Number(selectedLayer.parameters.activeImageIndex ?? 0)}
-                      transitionSpeed={Number(selectedLayer.parameters.transitionSpeed ?? 3)}
-                      animateTransition={selectedLayer.parameters.animateTransition !== false}
-                      onChange={(data) => {
-                        updateSelectedLayer({
-                          parameters: {
-                            ...selectedLayer.parameters,
-                            imageDataList: JSON.stringify(data.imageDataList),
-                            activeImageIndex: data.activeImageIndex,
-                            transitionSpeed: data.transitionSpeed,
-                            animateTransition: data.animateTransition,
-                          }
-                        })
-                      }}
-                    />
-                  )}
-                  {/* R164.3 (S3): long tail — everything EXCEPT the ≤3 primary
-                      parameters promoted above the fold (renderParamLine is
-                      the shared row renderer). */}
-                  {selectedLayer.kind !== 'custom-paint' && selectedLayer.kind !== 'image-paint' && (() => {
-                    const primaries = new Set(primaryParamsFor(selectedLayer.kind, selectedLayer.parameters))
-                    return Object.entries(selectedLayer.parameters)
-                      .filter(([name]) => !name.startsWith('_') && !primaries.has(name))
-                      .map(([name, value]) => renderParamLine(name, value))
-                  })()}
-                    </>
-                  )}
+                  </div>
+                  {/* R304.2 ⑤: paint 编辑器迁舞台（见 workspace-main 画板面板）。 */}
                 </div>
               )}
             </aside>
@@ -915,6 +731,58 @@ export function WorkspaceView(p: WorkspaceViewProps): JSX.Element {
                     ) })()}
                   </div>
                 </section>
+
+                {/* R304.2 ⑤: 画板舞台面板——内容编辑属于舞台（预览下方全宽，
+                    画板得回舞台宽度；侧栏回归参数职责）。 */}
+                {selectedLayer && (selectedLayer.kind === 'custom-paint' || selectedLayer.kind === 'image-paint') && (
+                  <section className="panel paint-stage-panel">
+                    <div className="panel-header">
+                      <div>
+                        <p className="eyebrow">{t('paint.stageEyebrow')}</p>
+                        <h3>{t('paint.stageTitle')}</h3>
+                      </div>
+                    </div>
+                    {selectedLayer.kind === 'custom-paint' && (
+                      <CustomPaintEditor
+                        columns={profile?.sampling.columns ?? 24}
+                        rows={profile?.sampling.rows ?? 14}
+                        pixelData={(() => {
+                          try {
+                            const raw = String(selectedLayer.parameters.pixelData ?? '')
+                            return raw ? JSON.parse(raw) as string[] : []
+                          } catch { return [] }
+                        })()}
+                        onChange={(pixels) => setLayerParameter('pixelData', JSON.stringify(pixels))}
+                      />
+                    )}
+                    {selectedLayer.kind === 'image-paint' && (
+                      <ImagePaintEditor
+                        columns={profile?.sampling.columns ?? 24}
+                        rows={profile?.sampling.rows ?? 14}
+                        imageDataList={(() => {
+                          try {
+                            const raw = String(selectedLayer.parameters.imageDataList ?? '')
+                            return raw ? JSON.parse(raw) as string[][] : []
+                          } catch { return [] }
+                        })()}
+                        activeImageIndex={Number(selectedLayer.parameters.activeImageIndex ?? 0)}
+                        transitionSpeed={Number(selectedLayer.parameters.transitionSpeed ?? 3)}
+                        animateTransition={selectedLayer.parameters.animateTransition !== false}
+                        onChange={(data) => {
+                          updateSelectedLayer({
+                            parameters: {
+                              ...selectedLayer.parameters,
+                              imageDataList: JSON.stringify(data.imageDataList),
+                              activeImageIndex: data.activeImageIndex,
+                              transitionSpeed: data.transitionSpeed,
+                              animateTransition: data.animateTransition,
+                            }
+                          })
+                        }}
+                      />
+                    )}
+                  </section>
+                )}
 
                 <section className="panel map-panel">
                   <div className="panel-header">

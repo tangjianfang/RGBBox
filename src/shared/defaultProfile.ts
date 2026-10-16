@@ -144,7 +144,8 @@ export const effectPresets: PresetDefinition[] = [
     kind: 'custom-paint',
     label: 'Custom Paint',
     description: 'Paint each LED pixel individually. Drag to select regions and fill with solid, gradient, or rainbow colors.',
-    defaults: { pixelData: '', animateSpeed: 0 }
+    // R304.2 ⑥: animateSpeed 幽灵参数移除——engine 零消费（R304.1 事故根因）。
+    defaults: { pixelData: '' }
   },
   {
     kind: 'image-paint',

@@ -131,7 +131,8 @@ export function App(): JSX.Element {
   const [audioVisited, setAudioVisited] = useState<boolean>(() => activeView === 'audio')
   useEffect(() => { if (activeView === 'audio') setAudioVisited(true) }, [activeView])
   const [allEffectsOpen, setAllEffectsOpen] = usePersistedFlag('rgbbox:allEffectsOpen', false)
-  const [advancedControlsOpen, setAdvancedControlsOpen] = usePersistedFlag('rgbbox:advancedControlsOpen', false)
+  // R304: advancedControlsOpen 持久化标志随「高级」抽屉退役——感觉台的
+  // 「专家参数」标签是即时切换，无需持久化（localStorage 残键无害）。
   const [audioEnabled, setAudioEnabled] = usePersistedFlag('rgbbox:audio', false)
   const [audioDeviceId, setAudioDeviceId] = usePersistedState('rgbbox:audioDevice', '', { raw: true })
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
@@ -681,12 +682,9 @@ export function App(): JSX.Element {
             favoriteEffectPresets={favoriteEffectPresets}
             previewLayer={previewLayer}
             applyAmbientPreset={applyAmbientPreset}
-            applyQuickDimension={layerActions.applyQuickDimension}
             randomizeSelectedLayer={layerActions.randomizeSelectedLayer}
             allEffectsOpen={allEffectsOpen}
             setAllEffectsOpen={setAllEffectsOpen}
-            advancedControlsOpen={advancedControlsOpen}
-            setAdvancedControlsOpen={setAdvancedControlsOpen}
             importLayerPackRef={profileManager.importLayerPackRef}
             handleImportLayerPack={profileManager.handleImportLayerPack}
             exportLayerPack={profileManager.exportLayerPack}
