@@ -77,6 +77,13 @@ for (let i = 0; i < 30 && !running; i++) {
   running = await page.evaluate(() => document.querySelector('.ai-vision-lab')?.getAttribute('data-running') === '1')
 }
 check('calibration wizard completed → running (synthetic hand)', running)
+// R306/T1: the demo recorder button rides the header row — present while off
+// (disabled), enabled once the session runs
+const recordBtn = await page.evaluate(() => {
+  const b = document.querySelector('[data-action="vision-record"]')
+  return b ? { on: !b.disabled, label: b.textContent } : null
+})
+check('record button present + enabled while running', recordBtn?.on === true && !!recordBtn?.label, JSON.stringify(recordBtn))
 await page.screenshot({ path: `${OUT}/r144-vision-lab.png`, fullPage: false }).catch(() => {})
 check('VisionPad mounted with the session', !!(await page.evaluate(() => document.querySelector('.vision-pad'))))
 

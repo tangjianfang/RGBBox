@@ -203,6 +203,51 @@ describe('AiLabVisionTab (R144)', () => {
     expect(h.vision.resumeActive).toHaveBeenCalledTimes(1)
   })
 
+  it('R306/T1: record captures channel snapshots + events, stop exports a versioned JSON recording', async () => {
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fake')
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    try {
+      h.vision.enabled = true
+      h.vision.state = 'active'
+      const { container } = render(<AiLabVisionTab />)
+      const recordBtn = container.querySelector('[data-action="vision-record"]') as HTMLButtonElement
+      expect(recordBtn.disabled).toBe(false)
+      fireEvent.click(recordBtn)
+      expect(container.querySelector('.ai-vision-lab')!.getAttribute('data-recording')).toBe('1')
+      // the hidden host posts one snapshot + one event while recording
+      const chan = new BroadcastChannel('rgbbox-vision')
+      chan.postMessage({
+        type: 'snapshot',
+        snapshot: {
+          state: 'active', score: 0.9, faceBlend: null,
+          allHands: [{ landmarks: landmarks(['index']), role: 'primary', handedness: 'Right' }],
+        },
+      })
+      chan.postMessage({ type: 'events', events: [{ kind: 'pinch', key: 'Space', down: true }] })
+      chan.close()
+      await act(async () => { await new Promise((r) => { setTimeout(r, 20) }) })
+      fireEvent.click(container.querySelector('[data-action="vision-record"]') as HTMLElement)
+      await waitFor(() => { expect(anchorClick).toHaveBeenCalledTimes(1) })
+      const blob = createObjectURL.mock.calls[0][0] as Blob
+      expect(blob.type).toBe('application/json')
+      const rec = JSON.parse(await blob.text()) as { version: number; frames: Array<{ hands: Array<{ lm: number[][] }> }>; events: unknown[] }
+      expect(rec.version).toBe(1)
+      expect(rec.frames.length).toBe(1)
+      expect(rec.frames[0].hands[0].lm.length).toBe(21)
+      expect(rec.events.length).toBe(1)
+      expect(container.querySelector('.ai-vision-lab')!.getAttribute('data-recording')).toBe('0')
+      expect(revokeObjectURL).toHaveBeenCalled()
+      // vision off → the record button disables again
+      h.vision.enabled = false
+      cleanup()
+      const c2 = render(<AiLabVisionTab />).container
+      expect((c2.querySelector('[data-action="vision-record"]') as HTMLButtonElement).disabled).toBe(true)
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
   it('live signals: pinch gauge, finger extension, chord preview/buffer, geom-active rows', async () => {
     h.vision.enabled = true
     h.vision.state = 'active'

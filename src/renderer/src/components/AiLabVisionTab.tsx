@@ -3,6 +3,8 @@ import { useI18n } from '../i18n'
 import { useVisionInput, type VisionSensitivity } from '../hooks/useVisionInput'
 import { VisionPad } from './vision/VisionPad'
 import { fingerStates } from '../vision/fingerChords.js'
+import { DemoRecorder, recordingToJson } from '../vision/demoRecorder'
+import { VISION_CHANNEL } from '../vision/hostProtocol'
 import type { VisionStats } from '../vision/vision_input'
 
 // R144: AI Lab vision capability bench — the single place to CHECK every
@@ -264,6 +266,11 @@ export function AiLabVisionTab(): JSX.Element {
   const [rows, setRows] = useState<Record<string, RowLive>>({})
   const [live, setLive] = useState<LiveSignals>(EMPTY_LIVE)
   const [busy, setBusy] = useState(false)
+  // R306/T1: the demo recorder — a second channel tap at INFERENCE rate (the
+  // 120ms ticker would decimate the frame stream), local-clock timestamps so
+  // frames and events share one timeline (hostNowMs is a different epoch).
+  const [recording, setRecording] = useState(false)
+  const recorderRef = useRef<DemoRecorder>(new DemoRecorder())
   const [precise, setPrecise] = useState(false)
   const [textMode, setTextMode] = useState(false)
   // R151.3: groups start collapsed (24 rows → 7 headers on first paint) and
@@ -401,6 +408,67 @@ export function AiLabVisionTab(): JSX.Element {
     } catch { /* camera denied — the state chip tells the story */ } finally { setBusy(false) }
   }
 
+  // R306/T1: record tap — snapshots (allHands landmarks + faceBlend) and the
+  // ENGINE-original event stream from the wire; the window bus is a
+  // normalized duplicate and would double-count.
+  const toggleRecord = useCallback((): void => {
+    const rec = recorderRef.current
+    if (!rec.recording) {
+      rec.start(performance.now(), { source: 'camera' })
+      setRecording(true)
+      return
+    }
+    const out = rec.finish()
+    setRecording(false)
+    if (!out) return
+    const blob = new Blob([recordingToJson(out)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `vision-recording-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [])
+
+  // the record tap lives only while a recording is in flight
+  useEffect(() => {
+    if (!recording || !vision.enabled) return
+    const chan = new BroadcastChannel(VISION_CHANNEL)
+    chan.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as { type: string; events?: Array<Record<string, unknown>>; snapshot?: Record<string, unknown> }
+      const now = performance.now()
+      if (msg.type === 'snapshot' && msg.snapshot) {
+        const s = msg.snapshot
+        const allHands = (s.allHands as Array<{ landmarks: Array<{ x: number; y: number; z?: number }>; handedness?: string }> | undefined) ?? []
+        const picked = (s.pickedLandmarks as Array<{ x: number; y: number; z?: number }> | null) ?? null
+        const hands = allHands.length ? allHands : (picked ? [{ landmarks: picked }] : [])
+        recorderRef.current.frame(
+          now,
+          hands,
+          (s.faceBlend as Record<string, number> | null) ?? null,
+          typeof s.score === 'number' ? s.score : 0.9,
+        )
+      } else if (msg.type === 'events' && Array.isArray(msg.events)) {
+        for (const e of msg.events) {
+          recorderRef.current.event(now, e as unknown as { kind: string; name?: string; dir?: string; key?: string | null; down: boolean })
+        }
+      }
+    }
+    return () => { chan.close() }
+  }, [recording, vision.enabled])
+
+  // vision stopped/unmounted mid-recording → discard silently (a surprise
+  // download on teardown would be worse than losing the buffer)
+  useEffect(() => {
+    if (!vision.enabled && recorderRef.current.recording) {
+      recorderRef.current.finish()
+      setRecording(false)
+    }
+  }, [vision.enabled])
+  useEffect(() => {
+    return () => { if (recorderRef.current.recording) recorderRef.current.finish() }
+  }, [])
+
   // R144.7 E2E seam (games __rgbboxVision precedent): packaged-app
   // verification starts the camera-free synthetic pipeline and asserts the
   // bench from outside. No user-visible behavior; unregisters on unmount.
@@ -432,7 +500,7 @@ export function AiLabVisionTab(): JSX.Element {
   const anyCounts = Object.keys(rows).length > 0
 
   return (
-    <div className="ai-vision-lab" data-running={vision.enabled ? '1' : '0'}>
+    <div className="ai-vision-lab" data-running={vision.enabled ? '1' : '0'} data-recording={recording ? '1' : '0'}>
       <div className="ai-vision-head">
         <strong>{t('ai.lab.vision.title')}</strong>
         <button type="button" data-action="vision-start" onClick={() => void start()} disabled={vision.enabled || busy}>
@@ -446,6 +514,9 @@ export function AiLabVisionTab(): JSX.Element {
         </button>
         <button type="button" data-action="vision-skip" onClick={() => vision.skipCalibration()} disabled={!vision.enabled}>
           {t('ai.lab.vision.skip')}
+        </button>
+        <button type="button" data-action="vision-record" onClick={toggleRecord} disabled={!vision.enabled}>
+          {recording ? t('ai.lab.vision.recordStop') : t('ai.lab.vision.record')}
         </button>
         <button type="button" data-action="vision-reset" onClick={() => setRows({})} disabled={!anyCounts}>
           {t('ai.lab.vision.reset')}
