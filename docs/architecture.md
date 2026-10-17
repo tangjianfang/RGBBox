@@ -3,7 +3,7 @@
 > **基线**:main @ `f82ef25`(v0.3.82,2026-09-24;R150–R164 增量刷新,首版 2026-09-22 @ `c01095c`)
 > **范围**:Electron 桌面 RGB 灯效客户端全系统(主进程 / preload / renderer / engine / 构建打包)
 > **方法**:三路代码事实采集(main / renderer / engine+shared+build),未经代码确认的推断一律标注 `(推断)` 并汇总到 §14
-> **配套**:流程与需求见 [AI_WORKFLOW](./AI_WORKFLOW.md) 与 [PRD-0002](./prd/PRD-0002-rgbbox-project-catalog.md);渲染层拆分设计见 [R147 设计文档](./superpowers/specs/2026-09-21-r147-renderer-architecture-design.md)
+> **配套**:流程与需求见 [AI_WORKFLOW](./AI_WORKFLOW.md) 与 [PRD-0002](./prd/PRD-0002-rgbbox-project-catalog.md);渲染层拆分设计见 [R147 设计文档](./superpowers/specs/2026-09-21-r147-renderer-architecture-design.md);体感输入子系统深潜见 [architecture-vision](./architecture-vision.md)
 
 ---
 
