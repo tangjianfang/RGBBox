@@ -33,7 +33,7 @@
 //   scheduleInterval/clearTimer/scheduleTimeout — timer seams (globals)
 //   initTimeoutMs              — init watchdog, default 20000 (R227.2)
 
-import { createSessionRegistry } from './hostProtocol.js'
+import { createSessionRegistry, PROTO_VERSION } from './hostProtocol.js'
 
 export function createHostMessenger(deps) {
   const {
@@ -173,7 +173,7 @@ export function createHostMessenger(deps) {
           lastCfg = { ...lastCfg, ...msg.cfg }
         } catch { /* best-effort upgrade — the session survives without face */ }
       }
-      post({ type: 'ready', delegate: pipeline.delegate })
+      post({ type: 'ready', delegate: pipeline.delegate, v: PROTO_VERSION }) // R306/T18: protocol version on the handshake
       return
     }
     try {
@@ -201,7 +201,7 @@ export function createHostMessenger(deps) {
       } else {
         await openCamera(msg.cfg.camera)
       }
-      post({ type: 'ready', delegate: pipeline.delegate })
+      post({ type: 'ready', delegate: pipeline.delegate, v: PROTO_VERSION }) // R306/T18: protocol version on the handshake
       // R244: the session is live — start beating (camera sessions already
       // started it in openCamera; synthetic sessions start it here).
       startHeartbeat()

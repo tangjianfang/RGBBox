@@ -8,6 +8,7 @@ import { act, cleanup, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { useVisionInput } from '../../../src/renderer/src/hooks/useVisionInput'
 import { visionAssetBase } from '../../../src/renderer/src/hooks/visionAssetBase'
+import { PROTO_VERSION } from '../../../src/renderer/src/vision/hostProtocol'
 import { I18nProvider, useI18n, type Lang } from '../../../src/renderer/src/i18n'
 import type { VisionEvent, VisionFrame } from '../../../src/renderer/src/vision/vision_input'
 import { setupRendererMocks } from '../_helpers'
@@ -27,7 +28,7 @@ class FakeHost {
     this.channel.onmessage = (ev: MessageEvent) => {
       const msg = ev.data as HostMessage
       this.received.push(msg)
-      if (msg.type === 'init') this.send({ type: 'ready', delegate: 'GPU' })
+      if (msg.type === 'init') this.send({ type: 'ready', delegate: 'GPU', v: PROTO_VERSION })
     }
   }
   send(msg: unknown): void {
@@ -223,7 +224,7 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     failing.channel.onmessage = (ev: MessageEvent) => {
       const msg = ev.data as HostMessage
       failing.received.push(msg)
-      if (msg.type === 'init') failing.send({ type: 'ready', delegate: 'GPU' })
+      if (msg.type === 'init') failing.send({ type: 'ready', delegate: 'GPU', v: PROTO_VERSION })
     }
     await act(async () => {
       await result.current.enableSynthetic()
@@ -231,6 +232,57 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     expect(result.current.enabled).toBe(true)
     expect(failing.received.filter((m) => m.type === 'init').length).toBeGreaterThanOrEqual(2)
     failing.dispose()
+  })
+
+  it('R306/T18: a protocol-version mismatch on ready rejects enable() with the structured kind — and a matching host still works', async () => {
+    host.dispose()
+    const bad = new FakeHost()
+    bad.channel.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as HostMessage
+      bad.received.push(msg)
+      if (msg.type === 'init') bad.send({ type: 'ready', delegate: 'GPU', v: 99 })
+    }
+    const { result } = renderHook(() => useVisionInput())
+    let caught: unknown = null
+    await act(async () => {
+      try {
+        await result.current.enableSynthetic()
+      } catch (err) {
+        caught = err
+      }
+    })
+    // explicit, versioned diagnosis — not a silent no-op and not a generic timeout
+    expect((caught as Error).message).toContain('protocol-mismatch')
+    expect((caught as Error).message).toContain('99')
+    expect((caught as Error).message).toContain(String(PROTO_VERSION))
+    expect(result.current.enabled).toBe(false)
+    expect(result.current.errorKind).toBe('proto-mismatch')
+    // a versionless ready (a stale pre-version host) is ALSO a mismatch
+    bad.channel.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as HostMessage
+      bad.received.push(msg)
+      if (msg.type === 'init') bad.send({ type: 'ready', delegate: 'GPU' })
+    }
+    caught = null
+    await act(async () => {
+      try {
+        await result.current.enableSynthetic()
+      } catch (err) {
+        caught = err
+      }
+    })
+    expect((caught as Error).message).toContain('protocol-mismatch')
+    // retry against a MATCHING host recovers (the state rolled back cleanly)
+    bad.channel.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as HostMessage
+      bad.received.push(msg)
+      if (msg.type === 'init') bad.send({ type: 'ready', delegate: 'GPU', v: PROTO_VERSION })
+    }
+    await act(async () => {
+      await result.current.enableSynthetic()
+    })
+    expect(result.current.enabled).toBe(true)
+    bad.dispose()
   })
 
   it('R227.4: rapid double-enable shares ONE startup (single init, single channel)', async () => {
@@ -381,7 +433,7 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     failing.channel.onmessage = (ev: MessageEvent) => {
       const msg = ev.data as HostMessage
       failing.received.push(msg)
-      if (msg.type === 'init') failing.send({ type: 'ready', delegate: 'GPU' })
+      if (msg.type === 'init') failing.send({ type: 'ready', delegate: 'GPU', v: PROTO_VERSION })
     }
     await act(async () => { await result.current.enable() })
     expect(result.current.enabled).toBe(true)

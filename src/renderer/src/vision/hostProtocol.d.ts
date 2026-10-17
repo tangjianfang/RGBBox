@@ -22,6 +22,8 @@ export interface SessionRegistry {
 export declare function createSessionRegistry(): SessionRegistry
 export interface VocabEntry { readonly id: string; readonly zh: string; readonly en: string }
 export declare const USER_VOCAB: ReadonlyArray<Readonly<VocabEntry>>
+/** R306/T18: channel protocol version carried on hello/ready (see hostProtocol.js) */
+export declare const PROTO_VERSION: number
 export declare function nextConsumerId(): string
 // R235: engine message-catalog contract (see hostProtocol.js — tests lock the
 // list against session.js DEFAULT_SESSION_MESSAGES)

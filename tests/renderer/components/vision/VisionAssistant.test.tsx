@@ -7,6 +7,7 @@ import { render, cleanup, fireEvent, act, waitFor } from '@testing-library/react
 import { VisionAssistant } from '../../../../src/renderer/src/components/vision/VisionAssistant'
 import { setupRendererMocks } from '../../_helpers'
 import type { EffectLayer } from '../../../../../src/shared/types'
+import { PROTO_VERSION } from '../../../../src/renderer/src/vision/hostProtocol'
 
 class FakeHost {
   channel: BroadcastChannel
@@ -16,7 +17,7 @@ class FakeHost {
     this.channel.onmessage = (ev: MessageEvent) => {
       const msg = ev.data as { type: string }
       this.received.push(msg)
-      if (msg.type === 'init') this.channel.postMessage({ type: 'ready', delegate: 'GPU' })
+      if (msg.type === 'init') this.channel.postMessage({ type: 'ready', delegate: 'GPU', v: PROTO_VERSION })
     }
   }
   send(msg: unknown): void { this.channel.postMessage(msg) }

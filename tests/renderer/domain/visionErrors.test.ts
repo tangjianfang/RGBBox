@@ -30,6 +30,11 @@ describe('renderer/domain/visionErrors (R239 classify)', () => {
     expect(classifyVisionError('camera-ended')).toEqual({ kind: 'detached', cta: 'retry' })
   })
 
+  it("R306/T18: 'protocol-mismatch' (stale/mixed host build) → proto-mismatch / retry", () => {
+    expect(classifyVisionError('vision-protocol-mismatch (host=99 client=1)').kind).toBe('proto-mismatch')
+    expect(classifyVisionError('vision-protocol-mismatch (host=99 client=1)').cta).toBe('retry')
+  })
+
   it("the init watchdog's message → timeout / retry", () => {
     expect(classifyVisionError('vision init timeout (20s)')).toEqual({ kind: 'timeout', cta: 'retry' })
   })

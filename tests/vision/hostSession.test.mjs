@@ -8,6 +8,7 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { createHostMessenger } from '../../src/renderer/src/vision/hostMessenger.js'
+import { PROTO_VERSION } from '../../src/renderer/src/vision/hostProtocol.js'
 
 /** Fake <video>: the rVFC slot is a manually pumped callback (test = clock). */
 function makeVideo () {
@@ -87,14 +88,16 @@ test('init: succeeds with a ready reply; duplicate init re-replies ready WITHOUT
   const h = makeHarness()
   await h.messenger.handle({ type: 'init', cfg: { camera: M1 } })
   assert.equal(h.created.length, 1)
-  assert.deepEqual(h.posted.at(-1), { type: 'ready', delegate: 'GPU' })
+  // R306/T18: ready carries the channel protocol version (the client-side
+  // contract — a host/client build mix is detected, not silently ignored)
+  assert.deepEqual(h.posted.at(-1), { type: 'ready', delegate: 'GPU', v: PROTO_VERSION })
   assert.deepEqual(h.camCalls, [M1])
   // R228: a hello-triggered second init MUST still get a ready (swallowing
   // it left enable() awaiting a reply that never came).
   await h.messenger.handle({ type: 'init', cfg: { camera: M2 } })
   assert.equal(h.created.length, 1, 'duplicate init must not rebuild')
   assert.deepEqual(h.camCalls, [M1], 'duplicate init must not touch the camera')
-  assert.deepEqual(h.posted.at(-1), { type: 'ready', delegate: 'GPU' })
+  assert.deepEqual(h.posted.at(-1), { type: 'ready', delegate: 'GPU', v: PROTO_VERSION })
 })
 
 test('acquire/release: only the LAST consumer out tears down; double-release is a no-op (R228 refcount)', async () => {
@@ -232,7 +235,7 @@ test('R305 duplicate init: a face-requesting consumer upgrades a faceless sessio
   assert.equal(h.created.length, 1, 'the upgrade must not rebuild the session')
   assert.equal(h.stops.reloads.length, 1)
   assert.equal(h.stops.reloads[0].faceModel, 'models/face_landmarker.task')
-  assert.deepEqual(h.posted.at(-1), { type: 'ready', delegate: 'GPU' })
+  assert.deepEqual(h.posted.at(-1), { type: 'ready', delegate: 'GPU', v: PROTO_VERSION })
   // a later face joiner on a pipeline that already has face → no further reload
   h.created[0].face = {}
   await h.messenger.handle({ type: 'init', cfg: { camera: M1, faceModel: 'models/face_landmarker.task' } })
@@ -241,7 +244,7 @@ test('R305 duplicate init: a face-requesting consumer upgrades a faceless sessio
   h.created[0].face = null
   h.created[0].reloadLandmarkers = async () => { throw new Error('model gone') }
   await h.messenger.handle({ type: 'init', cfg: { camera: M1, faceModel: 'models/face_landmarker.task' } })
-  assert.deepEqual(h.posted.at(-1), { type: 'ready', delegate: 'GPU' })
+  assert.deepEqual(h.posted.at(-1), { type: 'ready', delegate: 'GPU', v: PROTO_VERSION })
   assert.equal(h.posted.filter((m) => m.type === 'error').length, 0)
 })
 

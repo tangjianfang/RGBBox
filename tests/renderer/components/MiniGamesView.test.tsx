@@ -11,6 +11,7 @@ import {
   type Tower,
 } from '../../../src/renderer/src/games/td'
 import { setupRendererMocks } from '../_helpers'
+import { PROTO_VERSION } from '../../../src/renderer/src/vision/hostProtocol'
 
 // R141-A: capture gesture-feedback sounds without an AudioContext. NOTE:
 // must stay a plain vi.mock call — an aliased 'viSfx.mock' is NOT hoisted and
@@ -31,7 +32,7 @@ class FakeHost {
     this.channel.onmessage = (ev: MessageEvent) => {
       const msg = ev.data as { type: string }
       this.sent.push(msg)
-      if (msg.type === 'init') this.channel.postMessage({ type: 'ready', delegate: 'GPU' })
+      if (msg.type === 'init') this.channel.postMessage({ type: 'ready', delegate: 'GPU', v: PROTO_VERSION })
     }
   }
   send(msg: unknown): void {

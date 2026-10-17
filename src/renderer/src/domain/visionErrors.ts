@@ -9,7 +9,7 @@
 // (the host posts `err.message`, which drops the name — "Permission denied
 // by system" carries no "NotAllowed").
 
-export type VisionErrorKind = 'denied' | 'no-device' | 'occupied' | 'detached' | 'timeout' | 'generic'
+export type VisionErrorKind = 'denied' | 'no-device' | 'occupied' | 'detached' | 'proto-mismatch' | 'timeout' | 'generic'
 export type VisionErrorCta = 'open-settings' | 'retry' | 'enumerate'
 
 /** kind → the CTA the recovery card offers (single source; kept in sync with classify). */
@@ -18,6 +18,7 @@ export const VISION_ERROR_CTA: Readonly<Record<VisionErrorKind, VisionErrorCta>>
   'no-device': 'enumerate',
   occupied: 'retry',
   detached: 'retry',
+  'proto-mismatch': 'retry',
   timeout: 'retry',
   generic: 'retry',
 })
@@ -32,6 +33,8 @@ const MATCHERS: ReadonlyArray<readonly [VisionErrorKind, readonly string[]]> = [
   ['occupied', ['notreadableerror', 'could not start video source', 'camera in use', 'in use by']],
   // the R239 host watchdog's stable code (track.onended / dead-stream devicechange)
   ['detached', ['camera-ended']],
+  // R306/T18: the channel-handshake version code (stale/mixed host build)
+  ['proto-mismatch', ['protocol-mismatch']],
   // the R227.2 init watchdog
   ['timeout', ['init timeout']],
 ]

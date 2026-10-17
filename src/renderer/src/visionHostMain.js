@@ -23,6 +23,7 @@
 
 import { VisionPipeline } from './vision/pipeline.js'
 import { createHostMessenger } from './vision/hostMessenger.js'
+import { PROTO_VERSION } from './vision/hostProtocol.js'
 
 const channel = new BroadcastChannel('rgbbox-vision')
 let video = null
@@ -35,7 +36,7 @@ function post(msg) {
 // Announce readiness BEFORE anything else: the game window may open its
 // channel and post 'init' before this module script executes — BroadcastChannel
 // does not buffer, so the client (re)sends init when it hears this hello.
-post({ type: 'host-hello' })
+post({ type: 'host-hello', v: PROTO_VERSION }) // R306/T18: advertise the protocol version up front
 
 async function loadLandmarkers(cfg) {
   const { FilesetResolver, HandLandmarker, FaceLandmarker } = await import(/* @vite-ignore */ cfg.bundleUrl)

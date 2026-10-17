@@ -42,6 +42,14 @@ export const HOST_REPLY = Object.freeze({
 })
 
 /**
+ * R306/T18: the channel protocol version. ready/hello carry it; the client
+ * rejects a mismatched handshake with an explicit proto-mismatch error (a
+ * stale host window or mixed build is diagnosed, never silently ignored).
+ * Bump on ANY breaking change to the message shapes in this file.
+ */
+export const PROTO_VERSION = 1
+
+/**
  * Refcounted consumer set. All operations idempotent — a double-release from
  * a racing teardown must never take the camera down for someone else.
  */

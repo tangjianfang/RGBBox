@@ -173,7 +173,7 @@ export interface VisionInputHandle {
 // R228: protocol constants + per-instance consumer id for the refcounted
 // host session (see vision/hostProtocol.js). R235: VISION_KEY_MESSAGES is
 // the identity table injected into the engine so it emits stable codes.
-import { VISION_CHANNEL, VISION_MSG_KEYS, VISION_KEY_MESSAGES, nextConsumerId } from '../vision/hostProtocol'
+import { VISION_CHANNEL, VISION_MSG_KEYS, VISION_KEY_MESSAGES, nextConsumerId, PROTO_VERSION } from '../vision/hostProtocol'
 
 export function useVisionInput(): VisionInputHandle {
   const { t } = useI18n()
@@ -354,8 +354,19 @@ export function useVisionInput(): VisionInputHandle {
         })
       }
       channel.onmessage = (ev: MessageEvent) => {
-        const msg = ev.data as { type: string; events?: VisionEvent[]; snapshot?: Partial<VisionFrame>; s?: string; profile?: unknown; message?: string }
+        const msg = ev.data as { type: string; v?: number; events?: VisionEvent[]; snapshot?: Partial<VisionFrame>; s?: string; profile?: unknown; message?: string }
         if (msg.type === 'ready') {
+          // R306/T18: a stale/mixed host build is diagnosed explicitly, never
+          // silently ignored — a versionless ready (pre-version host) matches
+          // nothing and is treated the same as a wrong version
+          if (msg.v !== PROTO_VERSION) {
+            const reason = `vision-protocol-mismatch (host=${String(msg.v)} client=${PROTO_VERSION})`
+            setError(reason)
+            setErrorKind(classifyVisionError(reason).kind)
+            setLabel(reason)
+            reject(new Error(reason))
+            return
+          }
           settled = true
           // R244: the host just proved it is alive — arm the watchdog window
           lastHeartbeatRef.current = Date.now()
