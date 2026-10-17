@@ -131,6 +131,22 @@ check('reset clears counters', badgesAfterReset === 0, `${badgesAfterReset} badg
 await page.locator('select[data-param="sensitivity"]').selectOption('sport').catch(() => {})
 check('quick params interactive (no crash)', errors.length === 0)
 
+// ── 4b. R306/T2: the deep bench walks a FAST plan (1 window/word) on the
+//         synthetic pipeline and renders the 6-word your-setup-vs-lab report
+const benchStarted = await page.evaluate(() => window.__rgbboxVisionLab?.startBench({ windowsPerWord: 1, windowMs: 1500, restMs: 300, leadMs: 500 }) ?? Promise.resolve(false))
+check('deep bench started through the seam', benchStarted === true)
+let benchDone = false
+for (let i = 0; i < 40 && !benchDone; i++) {
+  await sleep(700)
+  benchDone = await page.evaluate(() => document.querySelector('.vision-bench')?.getAttribute('data-bench') === 'done')
+}
+const benchReport = await page.evaluate(() => ({
+  rows: document.querySelectorAll('[data-bench-word]').length,
+  recallCells: Array.from(document.querySelectorAll('[data-bench-word] td:nth-child(3)')).filter((td) => /\d+%/.test(td.textContent ?? '')).length,
+  exportBtn: !!document.querySelector('[data-action="vision-bench-export"]'),
+}))
+check('deep bench report rendered — 6 words × recall × lab baseline', benchDone && benchReport.rows === 6 && benchReport.recallCells === 6 && benchReport.exportBtn, JSON.stringify(benchReport))
+
 await page.locator('.ai-tab[data-tab="config"]').click()
 await sleep(600)
 check('leaving the tab unmounts the bench', !(await page.evaluate(() => document.querySelector('.ai-vision-lab'))))

@@ -8340,6 +8340,20 @@ input[type='range'].video-player-volume {
 .ai-vision-head { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; grid-column: 1 / -1; }
 .ai-vision-head strong { font-size: 0.875rem; }
 .ai-vision-hint { color: var(--text-muted); font-size: var(--text-caption-size); grid-column: 1 / -1; margin: 0; }
+/* R306/T2: deep bench card — fixed-timeline walk + your-setup-vs-lab report. */
+.vision-bench { border: 1px solid var(--border-color); border-radius: 8px; display: flex; flex-direction: column; gap: 8px; grid-column: 1 / -1; padding: 10px 12px; }
+.vision-bench-head { align-items: center; display: flex; gap: 10px; justify-content: space-between; }
+.vision-bench-head strong { font-size: 0.8125rem; }
+.vision-bench-prompt { background: var(--bg-hover, rgba(127, 127, 127, 0.12)); border-radius: 6px; font-size: 0.9375rem; margin: 0; padding: 10px 12px; }
+.vision-bench-prompt b { font-size: 1.0625rem; }
+.vision-bench-round { color: var(--text-muted); float: right; font-size: var(--text-caption-size); }
+.vision-bench-table { border-collapse: collapse; font-size: 0.8125rem; width: 100%; }
+.vision-bench-table th { color: var(--text-muted); font-weight: 500; padding: 4px 8px; text-align: left; }
+.vision-bench-table td { border-top: 1px solid var(--border-color); padding: 4px 8px; }
+.vision-bench-verdict { font-size: var(--text-caption-size); margin: 0; }
+.vision-bench-verdict.pass { color: var(--ok, #3fb950); }
+.vision-bench-verdict.fail { color: var(--danger, #f85149); }
+.vision-bench-actions { display: flex; gap: 8px; }
 /* R153.1: core board — nine always-visible command cards above the fold. */
 .vision-board { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); margin: 10px 0 4px; }
 .vision-card {

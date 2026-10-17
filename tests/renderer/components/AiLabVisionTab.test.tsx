@@ -248,6 +248,61 @@ describe('AiLabVisionTab (R144)', () => {
     }
   })
 
+  it('R306/T2: deep bench walks the plan, scores against it, exports the marked recording + report', async () => {
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:bench')
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    try {
+      h.vision.enabled = true
+      h.vision.state = 'active'
+      const { container } = render(<AiLabVisionTab />)
+      const seam = (window as unknown as { __rgbboxVisionLab?: { startBench(o?: Record<string, number>): Promise<boolean> } }).__rgbboxVisionLab
+      expect(seam?.startBench).toBeTruthy()
+      await act(async () => {
+        await seam!.startBench!({ windowsPerWord: 1, windowMs: 700, restMs: 100, leadMs: 100 })
+      })
+      expect(container.querySelector('.vision-bench')!.getAttribute('data-bench')).toBe('run')
+      // while running, the bench entry button is disabled
+      expect((container.querySelector('[data-action="vision-bench"]') as HTMLButtonElement).disabled).toBe(true)
+      // wait for the pinch prompt (word #2) and land one hit on the wire
+      await waitFor(() => {
+        expect(container.querySelector('.vision-bench')!.getAttribute('data-bench-step')).toBe('pinch')
+      }, { timeout: 4000 })
+      const chan = new BroadcastChannel('rgbbox-vision')
+      chan.postMessage({ type: 'events', events: [{ kind: 'pinch', key: 'Space', down: true }] })
+      chan.close()
+      await waitFor(() => {
+        expect(container.querySelector('.vision-bench')!.getAttribute('data-bench')).toBe('done')
+      }, { timeout: 6000 })
+      // report: 6 word rows side-by-side with the R237 lab baseline
+      const rowsX = container.querySelectorAll('[data-bench-word]')
+      expect(rowsX.length).toBe(6)
+      const pinchRow = container.querySelector('[data-bench-word="pinch"]')!
+      expect(pinchRow.textContent).toContain('1/1')
+      expect(pinchRow.textContent).toContain('100%')
+      expect(pinchRow.textContent).toContain('162') // lab baseline cells
+      // export: marked recording (T1 shape, marks filled) + the report itself
+      fireEvent.click(container.querySelector('[data-action="vision-bench-export"]') as HTMLElement)
+      await waitFor(() => { expect(anchorClick).toHaveBeenCalledTimes(1) })
+      const blob = createObjectURL.mock.calls[0][0] as Blob
+      const exported = JSON.parse(await blob.text()) as {
+        version: number; marks: Array<{ gesture: string }>; report: { words: Array<{ word: string }>; overall: { recall: number } }
+      }
+      expect(exported.version).toBe(1)
+      expect(exported.marks.length).toBe(6)
+      expect(exported.marks[1].gesture).toBe('pinch')
+      expect(exported.report.words.length).toBe(6)
+      expect(exported.report.overall.recall).toBeCloseTo(1 / 6)
+      // vision off → the bench entry disables again
+      h.vision.enabled = false
+      cleanup()
+      const c2 = render(<AiLabVisionTab />).container
+      expect((c2.querySelector('[data-action="vision-bench"]') as HTMLButtonElement).disabled).toBe(true)
+    } finally {
+      vi.restoreAllMocks()
+    }
+  }, 15000)
+
   it('live signals: pinch gauge, finger extension, chord preview/buffer, geom-active rows', async () => {
     h.vision.enabled = true
     h.vision.state = 'active'

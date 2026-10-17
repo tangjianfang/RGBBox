@@ -4,6 +4,9 @@ import { useVisionInput, type VisionSensitivity } from '../hooks/useVisionInput'
 import { VisionPad } from './vision/VisionPad'
 import { fingerStates } from '../vision/fingerChords.js'
 import { DemoRecorder, recordingToJson } from '../vision/demoRecorder'
+import type { Recording } from '../vision/demoRecorder'
+import { planBench, scoreBench, WORD_HINTS, BENCH_WORDS } from '../domain/visionBench'
+import type { BenchPlan, BenchReport, BenchOpts } from '../domain/visionBench'
 import { VISION_CHANNEL } from '../vision/hostProtocol'
 import type { VisionStats } from '../vision/vision_input'
 
@@ -259,6 +262,37 @@ const FLASH_MS = 1200
 const TICK_MS = 120
 const GAUGE_MAX = 1.2
 
+/**
+ * R306: one channel tap feeding one DemoRecorder — shared by the T1 manual
+ * record button and the T2 deep bench. Snapshots land at inference rate and
+ * events keep their wire-original shape (the window bus is a normalized
+ * duplicate — double-tapping it would double-count).
+ */
+function attachRecorder(rec: DemoRecorder): BroadcastChannel {
+  const chan = new BroadcastChannel(VISION_CHANNEL)
+  chan.onmessage = (ev: MessageEvent) => {
+    const msg = ev.data as { type: string; events?: Array<Record<string, unknown>>; snapshot?: Record<string, unknown> }
+    const now = performance.now()
+    if (msg.type === 'snapshot' && msg.snapshot) {
+      const s = msg.snapshot
+      const allHands = (s.allHands as Array<{ landmarks: Array<{ x: number; y: number; z?: number }>; handedness?: string }> | undefined) ?? []
+      const picked = (s.pickedLandmarks as Array<{ x: number; y: number; z?: number }> | null) ?? null
+      const hands = allHands.length ? allHands : (picked ? [{ landmarks: picked }] : [])
+      rec.frame(
+        now,
+        hands,
+        (s.faceBlend as Record<string, number> | null) ?? null,
+        typeof s.score === 'number' ? s.score : 0.9,
+      )
+    } else if (msg.type === 'events' && Array.isArray(msg.events)) {
+      for (const e of msg.events) {
+        rec.event(now, e as unknown as { kind: string; name?: string; dir?: string; key?: string | null; down: boolean })
+      }
+    }
+  }
+  return chan
+}
+
 export function AiLabVisionTab(): JSX.Element {
   const vision = useVisionInput()
   const { t, lang } = useI18n()
@@ -404,6 +438,7 @@ export function AiLabVisionTab(): JSX.Element {
       // live the moment the camera does; 重新校准 re-enters the wizard. Face
       // on: the bench's face rows (张嘴/微笑 board cards) are try-it-now.
       await vision.enable({ face: true })
+      sourceRef.current = 'camera'
       vision.resumeActive()
     } catch { /* camera denied — the state chip tells the story */ } finally { setBusy(false) }
   }
@@ -414,7 +449,7 @@ export function AiLabVisionTab(): JSX.Element {
   const toggleRecord = useCallback((): void => {
     const rec = recorderRef.current
     if (!rec.recording) {
-      rec.start(performance.now(), { source: 'camera' })
+      rec.start(performance.now(), { source: sourceRef.current })
       setRecording(true)
       return
     }
@@ -433,27 +468,7 @@ export function AiLabVisionTab(): JSX.Element {
   // the record tap lives only while a recording is in flight
   useEffect(() => {
     if (!recording || !vision.enabled) return
-    const chan = new BroadcastChannel(VISION_CHANNEL)
-    chan.onmessage = (ev: MessageEvent) => {
-      const msg = ev.data as { type: string; events?: Array<Record<string, unknown>>; snapshot?: Record<string, unknown> }
-      const now = performance.now()
-      if (msg.type === 'snapshot' && msg.snapshot) {
-        const s = msg.snapshot
-        const allHands = (s.allHands as Array<{ landmarks: Array<{ x: number; y: number; z?: number }>; handedness?: string }> | undefined) ?? []
-        const picked = (s.pickedLandmarks as Array<{ x: number; y: number; z?: number }> | null) ?? null
-        const hands = allHands.length ? allHands : (picked ? [{ landmarks: picked }] : [])
-        recorderRef.current.frame(
-          now,
-          hands,
-          (s.faceBlend as Record<string, number> | null) ?? null,
-          typeof s.score === 'number' ? s.score : 0.9,
-        )
-      } else if (msg.type === 'events' && Array.isArray(msg.events)) {
-        for (const e of msg.events) {
-          recorderRef.current.event(now, e as unknown as { kind: string; name?: string; dir?: string; key?: string | null; down: boolean })
-        }
-      }
-    }
+    const chan = attachRecorder(recorderRef.current)
     return () => { chan.close() }
   }, [recording, vision.enabled])
 
@@ -469,6 +484,82 @@ export function AiLabVisionTab(): JSX.Element {
     return () => { if (recorderRef.current.recording) recorderRef.current.finish() }
   }, [])
 
+  // R306/T2: the deep bench — a fixed-timeline walk over the six USER_VOCAB
+  // words, captured with its own recorder and scored against the plan (per-
+  // word recall / confirm latency / confusion pairs, R237 lab baseline
+  // alongside). The marks land in the exported recording, so a bench run IS
+  // self-describing test data for W1 tuning.
+  const benchRecRef = useRef(new DemoRecorder())
+  const benchStartRef = useRef(0)
+  const sourceRef = useRef<'camera' | 'synthetic'>('camera')
+  const startBenchRef = useRef<(opts: BenchOpts) => boolean>(() => false)
+  const [bench, setBench] = useState<{
+    phase: 'idle' | 'run' | 'done'
+    plan?: BenchPlan
+    step?: { word: string; round: number }
+    report?: BenchReport
+    recording?: Recording
+  }>({ phase: 'idle' })
+  startBenchRef.current = (opts: BenchOpts): boolean => {
+    if (!vision.enabled || bench.phase === 'run') return false
+    const plan = planBench(opts)
+    benchStartRef.current = performance.now()
+    benchRecRef.current.start(benchStartRef.current, { source: sourceRef.current })
+    setBench({ phase: 'run', plan })
+    return true
+  }
+
+  // walk the plan on the same clock the recorder stamps with
+  useEffect(() => {
+    if (bench.phase !== 'run' || !bench.plan) return
+    const plan = bench.plan
+    const id = window.setInterval(() => {
+      const now = performance.now() - benchStartRef.current
+      if (now >= plan.totalMs + 100) {
+        window.clearInterval(id)
+        const rec = benchRecRef.current.finish()
+        if (!rec) { setBench({ phase: 'idle' }); return }
+        rec.marks = plan.marks
+        setBench({ phase: 'done', plan, report: scoreBench({ frames: rec.frames, events: rec.events, marks: rec.marks }), recording: rec })
+        return
+      }
+      const step = plan.steps.find((s) => now >= s.from && now <= s.to) ?? null
+      setBench((b) => {
+        if ((b.step?.word ?? null) === (step?.word ?? null) && (b.step?.round ?? 0) === (step?.round ?? 0)) return b
+        return step ? { ...b, step: { word: step.word, round: step.round } } : { ...b, step: undefined }
+      })
+    }, 100)
+    return () => { window.clearInterval(id) }
+  }, [bench.phase, bench.plan])
+
+  // bench frames/events come off the same wire as T1 (inference-rate snapshots)
+  useEffect(() => {
+    if (bench.phase !== 'run' || !vision.enabled) return
+    const chan = attachRecorder(benchRecRef.current)
+    return () => { chan.close() }
+  }, [bench.phase, vision.enabled])
+
+  // vision stopped mid-bench → discard (same silent-drop rule as T1)
+  useEffect(() => {
+    if (!vision.enabled && bench.phase === 'run') {
+      benchRecRef.current.finish()
+      setBench({ phase: 'idle' })
+    }
+  }, [vision.enabled, bench.phase])
+
+  const exportBench = useCallback((): void => {
+    if (bench.phase !== 'done' || !bench.report || !bench.recording) return
+    // the export = the T1 recording WITH marks filled + the report itself —
+    // parseRecording keeps accepting it (extra root fields are ignored)
+    const blob = new Blob([JSON.stringify({ ...bench.recording, report: bench.report })], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `vision-bench-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [bench.phase, bench.report, bench.recording])
+
   // R144.7 E2E seam (games __rgbboxVision precedent): packaged-app
   // verification starts the camera-free synthetic pipeline and asserts the
   // bench from outside. No user-visible behavior; unregisters on unmount.
@@ -478,7 +569,16 @@ export function AiLabVisionTab(): JSX.Element {
     const w = window as unknown as { __rgbboxVisionLab?: unknown }
     w.__rgbboxVisionLab = {
       async startSynthetic(): Promise<boolean> {
-        try { await visionRef.current.enableSynthetic(); return true } catch { return false }
+        try {
+          await visionRef.current.enableSynthetic()
+          sourceRef.current = 'synthetic'
+          return true
+        } catch { return false }
+      },
+      // R306/T2: packaged-app E2E runs a FAST bench (1 window/word) and
+      // asserts the report from outside
+      async startBench(opts: BenchOpts): Promise<boolean> {
+        return startBenchRef.current(opts)
       },
     }
     return () => { w.__rgbboxVisionLab = undefined }
@@ -528,6 +628,67 @@ export function AiLabVisionTab(): JSX.Element {
         </span>
       </div>
       <p className="ai-vision-hint">{t('ai.lab.vision.hint')}</p>
+
+      {/* R306/T2: deep bench — your environment vs the R237 lab baseline */}
+      <div className="vision-bench" data-bench={bench.phase} data-bench-step={bench.step?.word ?? ''}>
+        <div className="vision-bench-head">
+          <strong>{t('ai.lab.vision.bench.title')}</strong>
+          <button type="button" data-action="vision-bench" onClick={() => { startBenchRef.current({}) }} disabled={!vision.enabled || bench.phase === 'run'}>
+            {t('ai.lab.vision.bench.start')}
+          </button>
+        </div>
+        {bench.phase === 'run' && bench.plan && bench.step != null && (
+          <p className="vision-bench-prompt">
+            <b>{BENCH_WORDS.find((w) => w.id === bench.step?.word)?.[L]}</b>
+            {' — '}
+            {WORD_HINTS[bench.step.word]?.[L] ?? ''}
+            <span className="vision-bench-round">{bench.step.round}/{bench.plan.opts.windowsPerWord}</span>
+          </p>
+        )}
+        {bench.phase === 'run' && (bench.step == null) && <p className="vision-bench-prompt">{t('ai.lab.vision.bench.lead')}</p>}
+        {bench.phase === 'done' && bench.report != null && (
+          <>
+            <table className="vision-bench-table" data-bench-report="1">
+              <thead>
+                <tr>
+                  <th>{t('ai.lab.vision.bench.col.word')}</th>
+                  <th>{t('ai.lab.vision.bench.col.hits')}</th>
+                  <th>{t('ai.lab.vision.bench.col.recall')}</th>
+                  <th>{t('ai.lab.vision.bench.col.latency')}</th>
+                  <th>{t('ai.lab.vision.bench.col.baseline')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bench.report.words.map((w) => {
+                  const meta = BENCH_WORDS.find((x) => x.id === w.word)
+                  return (
+                    <tr key={w.word} data-bench-word={w.word}>
+                      <td>{meta?.[L] ?? w.word}</td>
+                      <td>{w.hits}/{w.windows}</td>
+                      <td>{Math.round(w.recall * 100)}%</td>
+                      <td>{w.latencyMean == null ? '—' : `${w.latencyMean} ms`}</td>
+                      <td>{Math.round(w.baseline.recall * 100)}% · {w.baseline.cells}{t('ai.lab.vision.bench.cells')}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <p className={bench.report.pass ? 'vision-bench-verdict pass' : 'vision-bench-verdict fail'}>
+              {bench.report.pass ? t('ai.lab.vision.bench.pass') : t('ai.lab.vision.bench.fail')}
+              {bench.report.failures.length > 0 && ` — ${bench.report.failures.join('；')}`}
+              {` · ${t('ai.lab.vision.bench.extra')} ${bench.report.extraFires}`}
+            </p>
+            <div className="vision-bench-actions">
+              <button type="button" data-action="vision-bench-export" onClick={exportBench}>
+                {t('ai.lab.vision.bench.export')}
+              </button>
+              <button type="button" data-action="vision-bench-again" onClick={() => setBench({ phase: 'idle' })}>
+                {t('ai.lab.vision.bench.again')}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* R153.1: core board — the nine user-picked highest-value commands,
           always visible; face cards onboarded to fix discoverability. */}
