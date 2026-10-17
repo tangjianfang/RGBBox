@@ -45,7 +45,8 @@
     "smoke:games": "node scripts/smoke-games.mjs",
     "predist:win": "node scripts/verify-release.mjs --quick --dist-hook",
     "predist:mac": "node scripts/verify-release.mjs --quick --dist-hook",
-    "predist:dir": "node scripts/verify-release.mjs --quick --dist-hook"
+    "predist:dir": "node scripts/verify-release.mjs --quick --dist-hook",
+    "docs:changelog": "node scripts/gen-changelog.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

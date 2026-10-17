@@ -69,13 +69,15 @@ describe('R188 approval "always" memory (kernel end-to-end)', () => {
     const svc = makeSvc('standard')
     const sendP = svc.send({ text: 'run commands', workspace: ws, mode: 'standard' })
     // first approval → ALWAYS (prefix "echo ")
-    await vi.waitFor(() => expect(events.filter((e) => e.kind === 'approval').length).toBe(1))
+    // R306: waitFor's 1s default flakes under a fully-loaded parallel suite
+    // (the test's own budget is 20s) — the async kernel hops exceed 1s then
+    await vi.waitFor(() => expect(events.filter((e) => e.kind === 'approval').length).toBe(1), { timeout: 10_000 })
     const [ap1] = events.filter((e) => e.kind === 'approval') as Extract<AgentEvent, { kind: 'approval' }>[]
     svc.respondApproval(ap1.approval.id, 'always')
     // second command: same "echo " prefix → NO approval, runs directly
-    await vi.waitFor(() => expect(events.filter((e) => e.kind === 'tool-result').length).toBe(2))
+    await vi.waitFor(() => expect(events.filter((e) => e.kind === 'tool-result').length).toBe(2), { timeout: 10_000 })
     // third command: different first word → a NEW approval appears
-    await vi.waitFor(() => expect(events.filter((e) => e.kind === 'approval').length).toBe(2))
+    await vi.waitFor(() => expect(events.filter((e) => e.kind === 'approval').length).toBe(2), { timeout: 10_000 })
     const [, ap2] = events.filter((e) => e.kind === 'approval') as Extract<AgentEvent, { kind: 'approval' }>[]
     svc.respondApproval(ap2.approval.id, 'once')
     const out = await sendP
@@ -105,7 +107,7 @@ describe('R188 approval "always" memory (kernel end-to-end)', () => {
     }))
     const svc = makeSvc('standard')
     const sendP = svc.send({ text: 'write a.txt twice', workspace: ws, mode: 'standard' })
-    await vi.waitFor(() => expect(events.filter((e) => e.kind === 'approval').length).toBe(1))
+    await vi.waitFor(() => expect(events.filter((e) => e.kind === 'approval').length).toBe(1), { timeout: 10_000 })
     const [ap1] = events.filter((e) => e.kind === 'approval') as Extract<AgentEvent, { kind: 'approval' }>[]
     svc.respondApproval(ap1.approval.id, 'always')
     const out = await sendP

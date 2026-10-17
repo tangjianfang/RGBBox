@@ -1,0 +1,616 @@
+# Changelog
+
+All notable changes to RGBBox. Generated from the repo's conventional commits
+(`[PRD-0002] <type>: <subject>`); regenerate with `yarn docs:changelog`.
+
+## feat
+
+- R306/T18 通道协议 protoVersion——握手版本+显式不匹配 — `71c4063` 2026-10-18
+- R306/T16 CSP 生产注入 + E2E seam 生产门禁 — `9dddbf5` 2026-10-18
+- R306/T3 体感健康卡——funnel 真值外化+soak 同口径延迟分段 — `9a119b7` 2026-10-18
+- R306/T2 深度体检报告——你的环境 vs 实验室基线 — `64ee8fe` 2026-10-18
+- R306/T1 体感演示记录器——真机测量底座 — `3ded0d7` 2026-10-18
+- R304 工作区「感觉台」— 参数交互一套语言重构 — `985f2a5` 2026-10-17
+- R303.6 仪表盘二轮 review 增补 — 聚光渐隐+读数 lead+磁贴横向重构 — `8d2ab90` 2026-10-17
+- R303 仪表盘「舞台条」视觉重塑 — 灯效实时色带 Hero — `a458f3e` 2026-10-17
+- R298 P2 小修批 + R299 video-ambient 直连 — 视频→灯墙同步 — `d90aead` 2026-10-15
+- R297 录制控制包 — 码率四档+暂停续录+系统声开关 — `ef9a7c0` 2026-10-15
+- R294 三体视效纵深批 — 尘埃吸入流+凌空主星+HDR 环境映照+镜头语言 — `cadd6e3` 2026-10-15
+- R293 三体视效 90 分冲刺 — bloom 辉光管线+天体编舞+掠过事件+地面视角 — `461e0a7` 2026-10-14
+- R292 三体王座 GPU 3D raymarch 化 — 水滴镜面/二向箔降维/三日凌空全分辨率重制 — `86326db` 2026-10-14
+- R291 三体震撼批 — 二向箔降维+黑暗森林打击两名场面+原四效果戏剧化+震撼指标门禁 — `84ffb64` 2026-10-14
+- R289 三体主题灯效库 — Phase 0 机制加固+首批 4 效果(figure-8/三日凌空/水滴/引力波) — `7b2a236` 2026-10-13
+- R290 窗口句柄截图+截图显示自适应 — containRectNat 根修+desktopCapturer 窗口源直出 — `34c83ef` 2026-10-12
+- R287 GPU 3D 组音频联动 — uniform 节拍调制零 GLSL + diagnostics 快照活数据根修 — `ca8291b` 2026-10-12
+- R286 收口补齐 — VU 表拍击辉光+峰值条脉冲(七视图 7/7 全覆盖) — `31f36b6` 2026-10-11
+- R286 音频可视化灵魂动感批 — 节拍引擎+频谱动力学+显示增益+冻结根修 — `7ce9ddc` 2026-10-11
+- R246 首用向导 funnel 验收闭环 — walkthrough ALL PASS + AI 复核 4/4 — `58aca24` 2026-10-11
+- R262/R263 死亡钩子+画布中文化+进化可视化+击退节流+空间哈希 — 4-skill 二轮 — `5986b25` 2026-10-11
+- R260/R261 弹幕质变四卡+击杀反馈收尾 — 4-skill 首轮卡#2/#4 — `06ed2d2` 2026-10-11
+- R258/R259 LED联动+Boss预警+中文横幅 — 4-skill 灵魂修复首轮 — `df0d30a` 2026-10-11
+- R258 LED 联动 v1——游戏事件→物理 LED 灯效输出 — `8b2854d` 2026-10-11
+- verify:env 环境健康门禁——补上测试金字塔的盲区 — `bc7d243` 2026-10-10
+- R246 首用向导四步 funnel——环境预检+校准+三手势教学+灯效首任务 — `f78c17e` 2026-10-10
+- R247 灯效环v2——亮度连续调节+定格+双捏撤销 — `1834fd8` 2026-10-10
+- R255 双主题视觉复核(F4 首档)——20 截图零失效零控制台错误 — `189509b` 2026-10-10
+- R254 手势场景决策矩阵(F14)——48 格地基+冲突校验+闭集注册表 — `ef42102` 2026-10-10
+- R253 IPC 契约测试基建(F6 首档)——全名册 137 通道命名/去重/零游离串 — `e05a396` 2026-10-10
+- R252 soak 长跑门禁(T15)——60s 实测全绿, 夜档 1800s 待跑 — `44de4ab` 2026-10-10
+- R249 五游戏体感审计(F9)——台账+Tetris 硬降确认窗+face 白付清零 — `53496bd` 2026-10-10
+- R241 性能台账快速档(F15 首档)——10 视图红线 0 项 — `b50ccfd` 2026-10-09
+- R240 i18n 全量审计引擎(F5 族)——首跑抓真 bug 并清零 — `fab55dd` 2026-10-09
+- R238 任务族 F11 首批——旅程 E2E 骨架+5 条稳定旅程全绿 — `d9fccb6` 2026-10-09
+- R237 任务族 F2 合成变体识别边界门禁(972 格全绿) — `7b66c1a` 2026-10-09
+- R229 手势控灯 v1「灯效环」——修价值链断裂(控一切唯独不控灯) — `0c43e57` 2026-10-09
+- R226.9/10 线上抓取测试视频 + 语料覆盖矩阵(100% 数据覆盖的度量) — `8d77003` 2026-10-09
+- R226 体感测试视频数据集与回放测试基建 — `c6f7cd2` 2026-10-09
+- R218 四分支合并适配——shim 块移除改四作真实参数表(TD 首波直写 lives=TD_DIFFICULTY_PARAMS+coins=BASE+delta/ready 态覆写恢复;Tetris ready|lost 重建 initialTetrisState(seed,d)删手工 level;Survival initialSurvivalState 第4参+setSurvivalDifficulty ready 态改档;Slash startSlash 第3参)/头像大世界 worldToViewport+zoom 缩放(SV 警告的视口层接线)/测试断言对齐真实表(hard 金币 187→180);154 文件 1483 用例 0 失败,typecheck 双绿 — `76f9da8` 2026-09-30
+- R218-SV 任务6 U8 juice接入——SurvivalState.juice:JuiceState(emptyJuice 初始化);tick 头部 juice 冻结(hitStop>0 时 dt=0 全静止渲染继续,tickJuice 按真实dt衰减shake/飘字);击杀大敌顿帧: tank/splitter母体 hitStop 0.03s(boss 沿用 R200 重档 0.06);boss 死亡 shake 由旧 state.shake=8 改 hud shake(6)(两路屏震并存于 draw: legacy translate+applyShake);玩家受击伤害数字 addText→hud floatText(juice.floats 世界层 drawFloats);+4用例(冻结期time静止与恢复/母体顿帧小体不触发/boss juice.shake/受击-1飘字),同步修正两处受冻结影响的旧断言(伤害数字位置/splitter小体越过冻结窗) — `5c128ad` 2026-09-30
+- R218 U7 多人 shell 接线收尾——survival 进行态画布外框人数徽章(NP 追加进 canvas-status,随 U9 半透明化);ready 态 ≥2P 键位席位摘要行已随 U3 落地(每玩家方向键+assignGamepads 分得手柄 id);画布内 HUD 归 sv 分支、画布外 chrome 归 shell 的分工边界维持;+1 用例,44 用例绿 — `b344d15` 2026-09-30
+- R218 U9 画面占比提升+专注模式——进行态隐藏标题行(HUD 内信息替代;TD 提前开波入口移 td-ctl-row,Esc 暂停浮层承载 hub/重开)收窄 games-screen 边距,stat-grid/canvas-status 半透明化(U7 外框让位);「画面大小」三档 rgbbox:gamesFocusMode(标准/大=进行态隐藏侧栏 ~95% 画幅/专注=开局自动满幅)设置项入 ready 抽屉;专注模式瞬时态:games 区域 position fixed 满窗口+半透明退出角标(Esc/点击退出),与 OS 级 fs 全屏正交;进入路径=按钮/双击画布(非 TD,防双击落塔)/偏好自动;runActive 门含 survival levelup/roulette 中场不掉专注;i18n 6 键+CSS;+3 用例(进出+Esc+角标/偏好持久化+自动进入/双击进入),43 用例绿 — `7e90e43` 2026-09-30
+- R218-SV 任务5 U11大世界+摄像机跟随——WORLD_W/H=1800×1040(2×视口)+SurvivalState.camera{x,y,zoom}(初始世界中心);playersBBox(存活凸包外接盒/排除倒下)+cameraZoomFor(clamp(min(vw/(w+160),vh/(h+160)),0.7,1.0),1P点盒自然钳1)+updateCamera(包围盒中心目标/死区视口20%/0.1指数平滑dt×60归一/世界边界钳[450,1350]×[260,780])+worldToViewport(代数变换,供HUD/头像叠加)+softPushForce(出屏(视口/2-40)/zoom向心120px/s);spawnRingPoint敌/boss改摄像机视口外环生成(钳世界±60),玩家/复活珠/门/子弹/弹幕滤界全部世界坐标化,移动钳世界边界,deployPlayers世界中心分侧;绘制重构:世界实体(弹幕/门/珠/刀光/子弹/敌/粒子/涟漪/玩家/飘字)包进translate(视口中心)scale(zoom)translate(-cam)层,HUD/血条/toast/banner在restore后恒视口坐标,背景offset由摄像机派生(与U10合一);+10用例(bbox/zoom-fit/死区静止/平滑收敛进死区带/世界钳制/软推力方向/worldToViewport/世界中心部署/外环spawn距离/2P拉远zoom下降P2倒下回1),axes测试锚点WIDTH/2→WORLD_W/2 — `15b79b8` 2026-09-30
+- R218 U3 ready 态信息架构精简(四作统一)——统一 ready-panel:大号「开局」主按钮(Fitts)+一行核心胶囊(难度四档×倍率/survival 战机·人数·场景压缩为 chip 与 select/TD 无尽)+手柄提示行+≥2P 键位席位摘要(U7)+「更多设置」details 抽屉(短局词缀/双人开关/BGM/输入配置/自动预选/头像/artifact 全部折叠);上次选择全记忆 rgbbox:gamesReady:<game> JSON 按作持久化+进作恢复 effect,抽屉展开态 rgbbox:gamesReady:drawer;移除 swarmCoopOn 冗余开关(人数≥2 即合作)与 survival 旧 swarm-setup 大面板(内容并入);levelup 期不再穿出 ready 面板(raw phase 门);fs 态 ready 面板让位画布 HUD;i18n 1 键+CSS 全套;+4 用例(首屏≤5 组结构/抽屉折叠展开+持久化/选择记忆往返/主按钮开局+席位行),40 用例绿 — `a191732` 2026-09-30
+- R218-SV 任务4 U10质心视差动态背景——scene.ts SceneCtx 增 offset(归一化±1)/darken(0-1) 可选参,PARALLAX_LAYERS 0.05/0.10/0.15 三档系数+PARALLAX_AMP 80+parallaxShift 纯函数,六场景各自挂层(station星场96+星尘漂移/行星远层+舱段近层,desert落日远层+三沙丘分档,雪极光远/山mid/雪near,草树线远+草浪mid-near,海光柱caustic远+水草气泡near,fusion星72+漂移/极光mid/气泡near),drawScene 中心化 darken 暗罩;survival 增 bgOffset(质心→centroidToOffset±1→smoothOffsetTo 0.1指数平滑,playersCentroid 排除倒下)+ripples 击杀涟漪环(大敌0.6s)+boss 在场 darken 0.32;+8用例(parallaxShift/三档系数/六场景offset响应/darken全幅罩/质心/归一化钳制/平滑收敛/tick集成bgOffset+涟漪) — `5277320` 2026-09-30
+- R218 Slash 改造——心制→血条 100HP(SlashState 增 hp/maxHp 权威字段,hearts=ceil(hp/25) 派生兼容读+syncHeartsCompat 镜像旧直写,damageSlash 按敌型 25/30/35×难度 dmgMult 受击/飘字/归零判负)+敌型扩 3 种行为正交(guard 正面格挡一次返 blocked 断盾不断连击/背面绕后直杀,dasher 蓄力0.5s定住-3.2×速冲刺-撞墙0.8s硬直可斩-未斩判漏,thrower 停判定圈外投2刀后逼近/knife 飞刀1.02到核心-35可斩落;按进度25%/35%/45%渐进混入)+U5 左上连续血条+低血 vignette+U8 juice(完美斩 hitStop0.03/屏震/每5连击飘字/击杀涟漪)+道场背景渐变+两层轻视差(远层斜纹0.05/近层光尘0.10,纯绘制不动 scene.ts);SLASH_DIFFICULTY_PARAMS 0.85/1/1.15/1.25×0.7/1/1.2/1.4,startSlash 第三参 difficulty 可选兼容旧二参;slash.test 旧三心断言等价改写+11 新用例,全量 154 文件 1415 绿 — `465e40e` 2026-09-30
+- R218-SV 任务3 尺寸重校+宽容判定——玩家14→11/chaser14→11/sprinter11→9/brute20→15/boss34→28(sprinter飞镖形随size缩放);hitRadiusOf(size)=×0.8纯函数,玩家受击/玩家子弹/刀光/敌弹四路判定全部改hitRadius(视觉绘制尺寸不变);子弹判定5→4/刀光16→13/敌弹size×0.8(6-7→5-6);拾取+8→+6/复活珠+10→+8/基础磁吸70→56(magnetWell=116);+4用例(hitRadius公式/九种种群尺寸表/视觉重叠0.8-1.0带不受击+深重叠受击/磁吸基数),swarmMeta磁吸预期130→116 — `b0e85e7` 2026-09-30
+- R218-SV 任务2 敌人8种行为正交矩阵——新增tank堡垒(22px/hp×6于brute/速22/子弹击退0.08/接触后撤8px阻挡感)/swarm虫群(一次8-12个6px小体hp1/速度散布0.75-1.25)/shooter炮手(220-300风筝带死区+切向游走/2.2s瞄准弹,elite 1.5s)/splitter分裂体(母体死裂2个7px小体gen1不再裂)/healer医疗者(6s脉冲半径90友军+30%maxHp有上限,elite 4s,治疗光环视觉);ENEMY_UNLOCK_SECONDS(swarm45/tank60/shooter75/splitter90/healer105)+ENEMY_NOMINAL_STATS/threatOf(hp×dps/speed)+ENEMY_SPAWN_WEIGHTS(归一化逆威胁,swarm按整包计)+pickSpawnKindFrom纯函数;spawnEnemyKind可注入投放;boss弹幕修三型轮转bug(原floor(timer)%3永不触环形)改bossBulletPattern显式计数+新增第4型双螺旋;+9用例(威胁/权重和=1/解锁单调/roll覆盖8种/虫群数量/tank下界与hp×6/shooter带死区与开火/healer治疗钳制/splitter裂变计数/boss四型轮转) — `e754874` 2026-09-30
+- R218 U4 难度四档全作接入——Difficulty 类型升级为 hud.ts GameDifficulty(读 localStorage 兼容旧二档值,非法回落 standard);picker 四档胶囊+分数倍率角标 1×/1.5×/2×/3×;开局写各作 state.difficulty(TD 参数表 lives30/20/14/10×起始金/Tetris 起始等级 1/5/9/13 按契约先行 shim 集中一块 TODO(r218-merge) 标注来源分支);settleBest 结算分 ×DIFFICULTY_SCORE_MULT 挂街机档案(best/daily/遥测/recap 一致乘后呈现);Slash 移除开局前 hearts 死代码写入(startSlash Object.assign 会重置,R204 casual 5 心从未生效——难度语义整体移交 tdsl 分支);i18n hard/insane 2 键+mult CSS;+4 用例(四档渲染+持久化/旧值映射+非法回落/TD hard 参数生效 LV13 起始等级),36 用例绿 — `9e69795` 2026-09-30
+- R218 TD 改造——难度四档参数化(TD_DIFFICULTY_PARAMS 30/20/14/10 命×敌HP 0.8/1/1.25/1.5×起始金 +60/0/-40/-80,initialState(difficulty) 可选参兼容旧零参/直写调用,分数结算×DIFFICULTY_SCORE_MULT)+词缀扩 5 种(regen 每3s回8%绿色脉冲环/armored 格挡<2伤灰甲描边,波13-24保持旧三循环、≥25确定性加权池新词缀占6/10,applyBalloonDamage 统一弹丸/陨石入口)+U5 基地生命条(顶部居中260/低命≤25% vignette)+U1 胶囊顶栏(金币/波次贴边半透明)+U8 juice(漏球 hitStop0.02+shake3+飘字)与 boss 波 toast;i18n 增 regen/armored 两键;顺带恢复 d52a6c1 误删的 R206 hud.ts 五导出(与 shell 分支 406c441 同内容,基线 typecheck 即红问题);td.test +11 用例全绿(22/22) — `22fd693` 2026-09-30
+- R218 U2 手柄 Start/Options 四作通用化——pollGamepad 提升到四作共用循环顶部;Start 边沿检测改为任何已分配手柄(assignGamepads 映射全遍历,修 PS5 Options 仅 pi===0 卡点),非 standard mapping 兜底 buttons[16];运行态 Start=暂停/恢复(复用 R206 fsPaused dt=0 冻结,非 fs 态生效,暂停浮层「退出全屏」仅 fs 显示);Esc 分层迁独立 effect(非 fs 运行态也可呼出暂停,不受 TD 早退门影响);ready 态新增手柄在场提示行(count+id 截断,逐帧去抖);LAN TD 客端 Start 禁用与 DOM 同源;i18n 2 键+CSS;+5 组件用例(多柄开局/边沿防连发/运行态暂停切换/非 standard 兜底/TD 共用通路),32 用例绿 — `e438080` 2026-09-30
+- R218-SV 任务1 难度eHP四档+血条化——SurvivalState.difficulty(GameDifficulty,默认standard)+SURVIVAL_DIFFICULTY_PARAMS(休闲10×0.65/标准7×1.0/困难5×1.35/炼狱3×1.6,敌速1/1/1.08/1.15,scoreMult挂DIFFICULTY_SCORE_MULT)+setSurvivalDifficulty(ready态改档平移maxHp,玻璃跳过);接触/弹幕伤害×难度取整≥1(炼狱=2)+受击闪白+伤害飘字;敌速/分数接难度乘法;HUD:心数行→drawHealthBar连续血条(1-4P左上堆叠)+波次/时间/分数/COMBO/LV胶囊化+boss血条胶囊+低血≤25%呼吸vignette;+7数值模拟用例(四档maxHp矩阵/敌伤取整/容错10>7>5>2反推/倍率一致性/炼狱接触-2/敌速1.08/改档平移) — `03800f3` 2026-09-30
+- R218 Tetris 难度四档起始等级+危险压力条+方块质感与HUD半透明 — `2f0a51e` 2026-09-30
+- R218 开工——共享骨架 games/hud.ts(U1 胶囊 8-14% 半透明/U5 血条渐变脉冲分段/U1 警示 vignette/toast 队列/U8 juice 四件套:hit-stop/屏震衰减/飘字)纯绘制 helper+GameDifficulty 四档类型+分数倍率 1/1.5/2/3 表;R218.6 实施映射(四 worktree 按游戏切分 sv/tdsl/shell/tet+验收链)——状态 🔄 — `d52a6c1` 2026-09-30
+- R217 游戏画布高清渲染——根因=四作共用画布 backing 固定 900×520 被 CSS/DPR 放大 1.5-3×致锯齿;games/hdCanvas.ts computeHdSize(cssW,dpr) 纯函数(dpr 钳制≤2/900 逻辑下限防缩小重采样/900:520 比例锁定)+MiniGamesView effect 改造(ResizeObserver 跟踪 CSS 盒与 dpr,每帧 setTransform 映射逻辑坐标,smoothing=high);绘制函数/输入/LAN 插值零改动;+6 用例,154 文件 1393 绿(连续两次),快照重立 9/9,CDP 实测 backing 950 生效+fps~64+放大截图 AI 复核边缘锐利无锯齿(docs/ui-review/r217/) — `c38150d` 2026-09-30
+- R148 S5 亮色主题+token 化 overlay/scrim 体系——①tokens.css 增主题可翻转层:--overlay-hair/weak/soft/medium/strong(白 alpha 五档吸历史 0.02-0.2 离散)+--scrim-weak/-/strong(近黑半透明面板底)+--scrollbar-thumb(-hover)+舞台不变量 --stage-bg(LED 预览/播放器/游戏画布/3D 场景双主题恒暗,R148.2 舞台逻辑)+--fx-warn-fg;:root 声明 color-scheme:dark。②app.css 字面迁移 259 处:死 fallback var(--text-*,rgba)×26 删、白 alpha overlay 131 处(底 55/边 76)→band token、chrome 白字 16+蓝灰字 53+灰字 8→四阶 text token(0.8+/primary,0.5-0.79/secondary,<0.5/muted;12 处舞台白字保留:audio-viz 投影/全屏播放器/snip/arch 场景)、chrome 近黑 scrim 50 处→scrim token(游戏内遮罩按舞台保留)、scrollbar-color 13 处+base.css 滚动条→token。③[data-theme='light'] 全量语义覆盖:中性阶反转(card=白,chrome 退后)、accent 深绿 #09734b(4.62:1 on rail)/muted #4d6875/faint #556e7c、status 族降一档(#0369a1/#92400e/#b45309/#b91c1c)、tint 八色深化、overlay/scrim 镜像暗 alpha;舞台/fx/white/black 不翻转。④主题机制:domain/uiTheme.ts(dark 默认——舞台优先设计语言+基线确定性/light/system 三档,prefers-color-scheme 实时监听),main.tsx bootTheme() 首帧前应用(无暗闪),App.tsx usePersistedState('rgbbox:theme')+mq 监听,设置页外观组加主题选择(data-setting=ui-theme),i18n 中英 7 键。⑤对比度双主题配对审计(ui-audit-contrast 思路扩展):初检亮色 20 违例全修——muted/faint/accent/accent-soft 数值迭代定档、chrome 白字 14 处→text token(preset/annotate/filmstrip/ocr/profile select)、fx 粉橙金作 chrome 文本 9 处→status token(fx 系内容层语义归位)、danger 控件 fx-danger 字面→btn-danger token 翻转、spin-fab 舞台文字→--fx-warn-fg 不翻转;配对注册表退役 13 对不再渲染组合(fx-on-content×6/error-on-danger/fx-warn-danger×3/white-on-control/-raised,注释如实记录);终态 55 对 dark 0 违例+light 0 违例。门禁:typecheck 双绿;hex audit exit 0;ui-audit-contrast 0 违例;vitest 153 文件 1386 过+1 既有环境 flake(crashLog rotates:本机计时器分辨率粗化致 22 连写同毫秒文件名碰撞,git stash 验证与本轮改动无关,本轮前后各三次复现一致);亮色走查 9 view+settings 截图 AI 视觉复核全 PASS(dashboard 磁贴白卡彩色图标/workspace LED 舞台恒暗/effects 色板鲜艳/video 黑舞台+浅 chrome/audio 频谱深色舞台/games 卡片可读/diagnostics 数值清晰/architecture 3D 场景恒暗无渗透/ai 表单可读含琥珀提示);暗色基线 audio 0.15%/video 0.098% 文字簇漂移→按 R216.5 规则一次重立→9/9 GATE PASS 0.0000% — `668db3f` 2026-09-30
+- R148 S3-e 间距 census+gap token 收敛——全量 gap census(4px 粒 token 阶 4/8/12/16/24/32/48/64+语义 20/28 vs 实际 2px 粒子节奏 6px×89/10px×51/14px×21):①token 同值 gap 字面 168 处纯别名映射(8px→--space-2×94/4px→--space-1×36/12px→--space-3×27/16px→--space-4×7/20px→--gap-grid/28px→--gap-block,像素零变化,gap 属性 token 采纳率 ~1%→~60%);②2px 子节奏(2/5/6/7/10/14/18)如实保留——census 修正 q5「10px=离群」假设:10px×51+6px×89 已是事实子档,盲映射 4px 阶(6→8/10→12)将无视觉收益地松动全应用密度,违反 q5 §5 反 churn 条款,留档待用户拍板是否引入 --space 半步;padding/margin 复合值为主不强制收编(q5 §5 同款理由)。门禁:typecheck 双绿;hex audit exit 0;vitest 152 文件 1380 用例全过 — `6571cdc` 2026-09-30
+- R148 S3-d 圆角收敛两档(q5 §4 census 销案)——全量 326 处 border-radius 归档:3/4/5/6/7px→var(--radius-s) 170 处(小元素 6px 被盒高截断与 3px 同形,像素不变)、8px 79 处按元素角色二分(卡/面板/舞台/消息容器 33 类→--radius-l:preview-frame/display-map/parameter-panel/videowall-grid/sections/profile-menu/splat-wrapper/led-mapper-canvas/paint wrappers/source-card/arch-legend/eq-curve-plot/md-code-block/fs-pause-overlay/ai-msg/ai8-session/agent-approval/toast/banner/notice/ask-answer/ai-svg-stage 等;控件/输入/按钮/chip→--radius-s)、9/10/12/14/16px→var(--radius-l) 133 处(.game-tile/.profile-modal/16px 玻璃模态并 10px,同 q5 dash-tile 12→10 先例);复合值 4 处逐分量映射(8px 8px 0 0/6px 0 0 6px/0 6px 6px 0/12px 12px 4px 12px);50%×11 圆与 999px×30 胶囊为形状原语不动,1/2px 发丝线 5 处不动;终态 census:radius-s 170+radius-l 133+原语 48,字面档位归零。门禁:typecheck 双绿;hex audit exit 0;全量 vitest 见批次链 — `e85b598` 2026-09-30
+- R148 S3-c 字阶四档收敛(q5 census 三行一次销案)——①px 形态残留 74 处(px→rem 值不变,像素级同效,R160.1 外观字号缩放漏网补齐,app.css px 字号归零;base.css boot-screen 16px→1rem);②12px 阴影层 208 处按角色归档:辅助说明/标签/meta/紧凑控件 168 处→var(--text-caption-size),正文内容(消息/歌词/词句列表/面板正文/OCR 文本/代码块等 40 处)→var(--text-body-size),9/10/10.5px 微字含 0.625rem×30 全部归 caption(下方无第五档);③既有同值别名统一 180 处(0.6875rem→caption/0.8125rem→body/0.9375rem→title/1.25rem→display);留存离群=内容层游戏大字(1.625rem 转盘数字/swarm 结算标题、1.375rem 结算分等)与 14px strong 强调层 10 处(q5 表未列,如实记档)。字阶分布:caption/body/title/display 四簇+内容层大字。门禁:typecheck 双绿;vitest 152 文件 1380 用例全过;hex audit exit 0 — `a3a9872` 2026-09-30
+- R148 S3-b ARCH-1 修复+r216 轻微项——①architecture 标签防重叠:每帧投影后 7 标签矩形碰撞检测,命中即翻转至球体下方/再退一档(轨道周期性将 Electron×React 投到同点的历史重叠消除);②标签对比度:ModuleSpec 增 labelColor(DOM 展示色,3D 材质保品牌色)——Electron #0066FF→#6FA0FF/React #8B5CF6→#A78BFA/Node.js #6B7280→#AEB8C2(原 Node.js 灰在暗玻璃上 ~2.4:1),基础透明度 0.65→0.85,labelColor 同步用于 legend 圆点/信息面板标题与色条/依赖 chip;③eyebrow 全局 --text-muted→--text-secondary(Q-5 后 eyebrow 即 view 唯一头部行,video 面包屑偏暗销案);④workspace 轻微项:automation-toolbar 模式下拉列 86px→112px(下拉拥挤)、metric-row gap 10px→var(--space-3)(徽章间距不一)。门禁:typecheck 双绿;vitest 全过;hex audit exit 0 — `11d1a55` 2026-09-30
+- R189 Q-5 设计系统统一轮——①模块卡中性化:磁贴图标圆底 9 色 14% 彩底→--bg-control 中性+border-subtle 描边,图标字形保留 --tint-* 九色相(mint=--accent,tint 族入 tokens.css),hover 彩底升格改中性 border-hover;②绿收敛单 token:旧双绿 rgba(70,198,168)×39+第三绿 #6ee7a0 fallback×29+rgba(110,231,160)×14 全部→rgba(var(--accent-rgb))/var(--accent),--status-success #86efac→var(--accent),success pill 底→--accent-dim,glow 字面×2→--accent-glow-50,mint tint 重复定义删除——app.css 绿色字面值归零;③dashboard 状态卡右缘对齐:.dash-card-value justify-flex-end+min-height 34px+text-align right,数值/尾部控件统一贴右缘;④顶栏与 H1 去重:effects(26px 离群 h2+CSS 规则)/video/audio/games hub/diagnostics 删重复 h2 留 eyebrow,model3d 删重复 eyebrow 留技术名 h2,settings 删空 header,workspace profile 名保留;圆角 token 3→2(--radius-m 并入 -s=6px,消费者 10 处重映射,dash 卡/磁贴挂 --radius-l)。门禁:typecheck 双绿;vitest 151 文件 1347 用例全过(0 失败;happy-dom canvas addColorStop 未处理错误为基线同款既有噪声,基线复跑核实);hex audit exit 0;contrast audit 170 对 0 违例;build 后 ui-snapshot 预期漂移(effects 14.5% h2 删除上移/games 2.3%/workspace 2.1% 绿收敛/dashboard 0.15% 中性化)→基线一次重立→复跑 9/9 GATE PASS,9 张新基线逐张目检四项落地无回归 — `d215853` 2026-09-30
+- R93 画质增强 MVP——档位①动画实时超分(RealESRGAN-AnimeVideo-v3 xs ×4 ONNX) — `ed802f5` 2026-09-30
+- R209 三期 LAN Tetris 对战(FR-LN05,事件同步)——双方各跑本地引擎非快照:①协议 lanProtocol LanGame 加 tetris,LanCommand 加 garbage(消行攻击)/result(结算互显),welcome 加 seed(开局种子下发,undefined 序列化自动丢弃保一期字节形状);②lanService host(name,game,seed) 存种子随 welcome 下发(join 返回透传),sendCmd 双向化(房主也可向全部 peer 广播下行),客端 data 处理器补 cmd 事件上抛;③tetris 引擎 initialTetrisState(seed?) 注入 mulberry32 rng(refillBag 洗牌确定性,无种子走 Math.random 单机不变);④LanPanel 房间类型选择(TD 合作/Tetris 对战)+建房生成种子;MiniGamesView LAN tetris 分支:种子开局/本地消行 garbageFor 折算发对方/收对方 garbage applyGarbage/终局互发 result 比分面板互显(duel-panel 复用)/客端 tetris 可自行开局(仅 TD 快照合作禁用控件);i18n 双语 5 键;+5 用例(garbage/result/welcome-seed 编解码/同种子序列一致+异种子相异/无种子不变/garbage 往返固定洞列),games 域 147 绿;断线不恢复重开即新局,观战 tetris 不做 — `60a41da` 2026-09-30
+- R177 P-4 KERNEL/REACT 提示词工程二轮——规划/工具选择分级/单调用等待/禁编造 — `505c8fc` 2026-09-30
+- R177 P-2 Agent 工具卡折叠收尾——字符阈值折叠+diff 配色 token 化+孤 tool-result 恢复修复 — `2fa2f92` 2026-09-30
+- R209 三期客端插值渲染——LAN guest 收 15Hz 快照后气球位置两帧间跳变问题:td.ts 新增纯函数 extrapolateBalloons(恒速 progress 线性外推,0.56 减速因子+AFFIX_PARAMS.speed 词缀放大,progress 钳 1 之下防客端制造逃逸事件,输入快照零改动逐帧重算不叠加);MiniGamesView snap 事件存 balloons 深拷贝基准+到达时间戳(lanSnapExRef/lanSnapAtRef,防与快照同对象互染),绘制帧按 now-snapAt 外推(dt 钳 0.3s 防挂起后整段跳跃),塔/弹等复杂实体不做;+4 用例(线性外推+纯函数性/dt 单调/减速因子/钳制),td 11 绿 — `f39c9d3` 2026-09-30
+- R213 二期 P2-P4 手柄摇杆轴控——pollGamepad 遍历全部已连接手柄经 assignGamepads(显式绑定优先+余柄补位)得玩家→手柄映射,每玩家左摇杆写引擎 axes[pi];survival.ts 新增 axes 数组(长度随 deployPlayers 人数,tick/draw 入口 syncRoster 对齐),P2+ 移动段读 axes[pi] 与 P1 legacy axis 同语义(0.18 死区/模拟幅度缩放/过阈值覆盖键池向量),P1 仍双写 legacy axis 保 vision 叠加路径不变;+4 用例(槽伸缩/P2 右移零串轴/P3 上移+死区/半倾幅度缩放),survival 30 绿 — `38f0a68` 2026-09-30
+- R213 新星蜂群五项扩展(TA/TB/TC worktree三分支并行+TD主干接线)——①4P合作:survival.ts players/inputs数组化(构造期别名引用,legacy字段零改动;deployPlayers(1-4)幂等,P3粉/P4青;复活珠target扩1-4+revivesUsedN双写;全员倒判负/索敌/磁吸全名册化);②场景系统:scene.ts六场景程序绘制(渐变+视差+t动画,粒子确定性公式零Math.random,fusion按岛屿轮换),survival.ts场景钩(undefined=原星空兼容),ready态场景下拉;③头像:avatarStore(文件→nativeImage解码→BGRA中心裁128²→userData/avatars)+IPC三件套+AvatarPicker,loop存活玩家28²圆形贴图(无敌闪烁同步);④输入配置中心:inputConfig.ts四玩家键位(默认wasd/ijkl/tfgh/小键盘16键零冲突+冲突检测+手柄分配)+InputConfigPanel(按键捕获/手柄绑定/冲突提示),keydown 4P通用路由(P1配置键→箭头标准键恒定手感,P2-P4池名→inputs[]);⑤升级自动预选:autoPick三档(off/list优先清单/best智能:hp<40%救急+taken最少),levelup瞬间自动拍板;+39用例(12+18+9),151文件1334绿,快照9/9,CDP双截图(ready-4P配置行+海底场景/运行态四色实体四行HP)图像复核通过;worktree已清理;P2-P4手柄轴控记二期 — `473ffa7` 2026-09-30
+- R213 4P引擎数组化+六场景模块——survival新增players/inputs名册(1-4人,player/keys/player2/keys2保持同引用别名,视图直置player2=null由tick/draw入口syncRoster镜像回名册)+deployPlayers(1-4,分侧偏移P2左下/P3右下/P4上方,P2位与R208字节级一致,deployPlayer2=别名)+tick泛化players[1..n](pNup/pNdown/pNleft/pNright键池/无敌帧/索敌开火)+复活珠target扩1|2|3|4(救援者=最近存活队友,revivesUsedN按索引计数与legacy{p1,p2}双写,缺失视为全0)+绘制泛化(P2琥珀#fbbf24/P3粉#f472b6/P4青#4ade80,HP行P1行下依次30+22i);新scene.ts六场景纯绘制模块(station/desert/snow/grass/ocean/fusion,零素材全程序绘制:底色渐变+2-3层视差(≤0.05)+t时间动画,sin哈希确定性伪随机无Math.random无模块状态,未知id抛错);+12用例(survival 6:别名不变量/deployPlayers(4)四实体互距>30/P3键池独立移动/三人倒不判负全员倒lost/target3复活计数/legacy置null截断;scene 6:六id可绘制调用充足/确定性/随t动画/视差/未知id抛错),1307绿全量148文件,typecheck node+web双绿 — `5407115` 2026-09-30
+- R213 角色头像模块——主进程avatarStore(扩展/≤8MB校验+nativeImage等比缩短边128+toBitmap手动BGRA中心裁128×128→PNG落盘userData/avatars/avatar-<slot>.png,lazy import electron使node单测零mock)+IPC三通道(avatarGet/Set(主进程开原生选图对话框)/Clear,registerAvatarIpc导出主干一行接线)+preload白名单avatarGet/Set/Clear+AvatarPicker纯展示组件(48×48圆预览/slot占位/更换清除/错误行,内联样式不动app.css)+i18n双语4键(games.avatar.*);types加AvatarResult稳定错误码;+9用例(get/clear/校验分支/纯裁切函数/IPC注册,node环境不触electron),typecheck双绿,tests/main 283绿+preload/games/i18n/shared 202绿 — `ee71bed` 2026-09-30
+- R213 输入配置中心+升级自动预选域模块——inputConfig.ts(四玩家键位/手柄绑定:默认表P1 wasd/P2 ijkl对齐引擎/P3 tfgh/P4小键盘十字16键零冲突,normalizeKey规范小写+space,rgbbox:gameInputs持久化损坏回默认,findKeyConflicts撞键检出,buildKeyToPoolMap仅P2-P4(P1直写keys兼容),assignGamepads显式绑定优先+余柄顺序补位);swarmAutoPick.ts三档模式(off手动/list优先级清单/best确定性启发:hp<40%救急maxHp|regen→taken最少者优先并列取offer序);+10+8用例,typecheck绿,全量1313绿 — `e3a75b7` 2026-09-30
+- R215 短局矩阵+BGM张力+LAN二期集成批次(R214关机错误透传)——T1/T2/T3 worktree无交叉并行→主干合并(T1旧基点cherry-pick冲突语义重放:td双if头合一保endless豁免/tetris类型去重保hold/测试闭合修复)+UI接线:四作ready态短局开关(闪电6波/冲刺90s/竞速40行双板同步/爆发30s);BGM危险态去抖张力(TD命≤8/Swarm hp≤2或boss/Slash心≤1/栈高≥13,default档字节级兼容);LAN seq对账+resync补发+断线重连resume+观战IPC三件套;R214:关机失败码透传(invalid-seconds/spawn-failed独立文案,不再全显"仅支持Windows";CDP实测arm→armed→cancel全通,真机挂起计时器系用户此前arm成功);147文件1295绿,快照9/9,worktree已清理 — `5bfd5ff` 2026-09-30
+- R209 LAN二期主进程——快照seq对账+断线重连续传+观战态+hash异常检测(FR-LN03) — `2c0d05f` 2026-09-30
+- R205短局矩阵引擎层——四作短局模式状态字段+判定逻辑(纯引擎层,视图接线主干统一做):TD blitz 6波闪电赛(GameState.blitz+BLITZ_WAVES=6/targetWaves(),launchWave守卫/胜利判定/自动开波三处经targetWaves收敛);Swarm sprint秒冲刺(SurvivalState.sprintSeconds,running段time达限走既有lost结算=时间到,分数保留);Tetris 40行竞速(TetrisPhase加'won'+raceLines,lockPiece消行达标即胜且在spawnPiece前结算防顶板覆写lost,播levelup不触发gameover震屏,drawTetris won走lost暗化overlay+TetrisLabels可选wonTitle);Slash可选时长爆发(startSlash(state,seconds=RUN_SECONDS)+SlashState.runSeconds,timeLeft按传入上限初始化,难度曲线spawnBlock/tickSlash两处按runSeconds归一);+10用例(新建td.test.ts 4+survival 2+tetris 2+slash 2,均含默认无尽回归),typecheck node+web双绿,yarn test tests/renderer/games/ 52用例全绿,MiniGamesView 17用例回归绿 — `1708227` 2026-09-30
+- R205 BGM二期张力变奏——BgmPreset新增可选tension同构覆盖层(BgmTensionFields=Partial<Omit>全字段可选,未指定继承基线),td/swarm/tetris/slash四档各配变奏(arp八度上移×2+stepMs加密340→250/190→150/240→180/300→215,bassDiv×2低音锚回原八度,td/slash triangle→square);setBgmTension(0|1)热切,下一拍生效(重挂步进定时器,AudioContext与已排程音符不打断),getBgmTension/getActiveBgmPreset导出供视图;default档无tension恒no-op(字节级兼容锚点);setBgmPreset切曲时张力复位0;+4用例(切换回切/default no-op/部分覆盖继承/切曲复位),sfx 6/6绿,既有BGM用例保持绿,games目录94绿,typecheck双配置绿 — `0876583` 2026-09-30
+- R212 中文TTS Piper本地引擎(用户试听R197反馈"没什么区别一点情感也没有")——诊断:英文版Kokoro phoneme空间错配+自创声调符号+60音节分块硬拼,且phonemizer包espeak为裁剪版无cmn;方案:piper-phonemize(纯wasm,内置完整espeak-ng cmn,IPA+调值1-5即Piper训练格式)+zh_CN-huayan-medium 63MB(sha256固化)+onnxruntime-node已有,整句端到端VITS韵律;ttsSynthesize三路由(纯piper/混合逐句22k→24k插值/纯kokoro),voice=piper-zh选择器,UI中文音色下拉Piper置顶+独立下载,新用户默认piper-zh;Edge档探针三变体403+官方库2026-01同挂(微软收紧)如实未集成;+6用例,R196用例更新,147文件1275绿,快照9/9,产品内实测22050Hz/328KB WAV,桌面"r212-产品内-Piper中文.wav"待对比试听 — `0afc2fd` 2026-09-30
+- R209 M4 LAN联机一期(TD合作首发,零新增依赖)——shared/lanProtocol(长度前缀帧+FrameDecoder粘半包/beacon解析+版本校验/超限断连);main/lanService(dgram广播+TCP直连+hello/welcome/reject版本握手先行+2s心跳5s判死,修listening前address()=null崩溃);IPC七通道+preload白名单(渲染层不触网);LanPanel建房/发现/手输兜底;TD合作:房主权威15Hz快照(hash附带)直落tdStateRef复用渲染通路,客端建塔/升级/出售/选塔/陨石指令上行(buildTowerAt共享),guest死控件禁用;+4协议用例,1282绿,快照9/9(games 0.028%阈值内);双实例回环E2E:建房→加入→快照渲染→peers/指令上行全通;beacon本机未命中记已知限制(手输兜底,真双机待验) — `744b430` 2026-09-29
+- R208 M4本地双人四作齐发——①Slash轮换对决(2P开关+judgeDuel判定+回合浮层/对照结算;顺手修slash结算守卫:闭包snapshot判首次lost失效→每帧重复settle刷满遥测环);②Swarm合作(player2独立实体/keys2 IJKL零串键/敌人追最近存活/复活珠队友拾取救回[各1次/局]/全员倒才判负/双人禁手势/琥珀实体+双HP行);③Tetris双板对战(boardX偏移+noClear叠绘+garbageFor guideline比例+applyGarbage带洞行上推;任一板topout整局止,P2键位jli/k//.);④TD分工明示(P1鼠标建塔/P2 Q陨石);+11用例,1278绿,快照9/9,CDP实测双实体/双板/开关渲染+截图复核通过 — `cecb4dd` 2026-09-29
+- M3每日挑战+假动作块——daily.ts(mulberry32种子RNG/dailySeed FNV/loadDaily跨日重置/recordDaily best+attempts);hub今日挑战行(每作当日best chip);结算双写daily;Slash假动作块(>15s后10%概率,t≈0.85单次方向翻转诱导);+4用例,1262绿,快照games基线重立9/9 — `65dbf1e` 2026-09-29
+- R204难度预设+R205 BGM分曲——ready态画布难度选择器(休闲/标准按作持久化,TD 30命300金/Slash 5心开局应用);BgmPreset五档(default字节级兼容/td Dm沉稳/swarm Em急促/tetris C上行/slash E小调强拍)热切换+进作自动切;1258绿,快照9/9 — `5ff1ec8` 2026-09-29
+- R203 Slash三心制+连锁块——hearts 3/休闲5,漏块-1心+震屏归零失败,画布♥HUD;连锁块同向|Δt|<0.18连爆+5/块不计连击;+2用例,1258绿,快照9/9 — `55d919d` 2026-09-29
+- R202 Swarm进化配方+boss弹幕——EVOLUTIONS 4条纯数据配方(斩月/弹幕/光矛/荆棘,前置精确判定+已进化过滤);boss弹幕三型循环(放射12向/瞄准扇形5发/环形16发,1.2s节拍,EnemyBullet池+命中无敌窗+发光绘制);+3用例,1256绿,快照9/9 — `cae8c94` 2026-09-29
+- R201 TD无尽/词缀/陨石/放置预览——endless解除12波判胜,词缀循环(swift 1.45×速/tough 2.2×血/phantom)banner+chip,castMeteor全屏40伤45s冷却Q键+状态行,悬停射程圈有效性配色(F6);+3用例,1253绿,快照9/9 — `76d4339` 2026-09-29
+- R206 全屏沉浸纯画布(阶段一)——共享hud.ts(画布按钮+hitTest+底板+退出角标);fs态CSS面板清零(顶栏/统计/教练/recap/侧栏/浮层)画布100vh;Esc分层(fs内呼出暂停浮层:继续/重开/退全屏/回hub,fsPaused冻结dt);i18n 5键;1250绿,快照9/9;TD商店/Swarm三选一画布化随M2灰度 — `f265b12` 2026-09-29
+- R207 手势指示器全局开关——默认关(rgbbox:visionPadVisible),vision-pad双条件门控,Banner/Cursor不受影响,游戏顶栏Eye临时呼出;vision测试改先开开关;1250绿,快照9/9 — `f48a89e` 2026-09-29
+- R200 Juice补强+统一run recap——共享juice.ts(hit-stop冻结dt=0恢复不补帧,40/50/60ms三档)四作接线(四消/T-spin/金块/十连/整波清空/boss击杀);Swarm出生预警0.5s边缘红箭头;Slash刀光轨迹渐隐光带+炸弹充能环(F5修复);统一结算面板(得分/delta%/best/高光/教练回顾)结算落遥测;i18n 12键×双语;+6用例,1250绿,快照9/9 — `24465d7` 2026-09-29
+- R198 教练引擎+首局引导+arcade profile+清空入口——四作hints()纯函数(key制,coach.test 6组触发断言)+pickHint 30s去重;教练条DOM(引导期静默/一键关闭持久化)+三步引导(按作持久化,跳过永不再现);hub档案面板(局数/时长/streak);设置页游戏组两段确认清空(默认保best);i18n 45键×双语;1244绿,快照games基线重立9/9 — `aa62bba` 2026-09-29
+- R199 Tetris现代化——SRS标准踢墙表(JLSTZ+I独立,双向8转换)+Hold槽(C键单块一次,板左暗显)+lock delay 0.5s(15次重置预算,降行清零)+T-spin四角判定/TSS800·TSD1200·TST1600×lv/B2B×1.5/combo+50×n×lv/HUD+放置提示启发式✦星标;+13用例,1238绿,快照9/9;真机手感待用户 — `09540b3` 2026-09-29
+- R198.1 FR-G02遥测域层——环形缓冲(20局/作,损坏回退)+arcade profile聚合(局数/时长/best合并/delta%/streak日历日连续)+一键清空(bests默认保留);零网络纯本地;+9用例 — `cc79cec` 2026-09-29
+- R197.6 中文声调映射机器迭代——F0探针证实首版箭头后缀韵律驱动弱(四声单字轮廓无区分);9组映射实验矩阵自动评分(期望方向命中+两两区分度),选定:阴平=ː长音/阳平=↗/上声=ˌ+↓(F0最低)/去声=ˈ+↘(-79Hz强降);长句60音节分块防tokenizer 510静默截尾;v2试听已生成桌面;1223绿,快照9/9 — `3c29396` 2026-09-29
+- R197 真·Kokoro中文(拼音→音素桥)——取证:phonemizer WASM有cmn清单但无cmn_dict词典(espeak路线死)、词表115字符含音调箭头、generate_from_ids不校验音色名;自建汉字→带调拼音(pinyin-pro多音字)→IPA表(声韵母/送气对/glide/平翘ɨ/声调箭头)全字符词表内;ttsSynthesize按zf_/zm_前缀路由tokenizer+generate_from_ids直喂,导出perSegmentVoices中英混排单WAV;真机端到端zf_xiaobei 6.95s音频/3.1s计算;目录恢复8中文音色+中文音色下拉;+5用例,1223绿,快照9/9;听感迭代待用户 — `b6c9976` 2026-09-27
+- R196 声文中英混读——句级路由(英文句Kokoro合成/中文句系统引擎zh-CN,同队列无缝衔接,跳读/进度/停止沿用,预取仅英文句)+混读提示;取证副产物:英文句点.此前不参与分句(R173只按中文标点),已修(.后跟空白/行尾才切,3.14/v1.2不误切);kokoro-js上游无中文确认(1.2.1最新),真Kokoro中文列实验项;+3用例,1218绿,快照9/9 — `4bee9b9` 2026-09-27
+- R194 Q-4 Agent流式增强——AI8桥onDelta逐chunk透传+内核围栏扣留式流式(围栏前直出/围栏后扣留/3字符holdback/无围栏冲刷/纠偏轮气泡收束不串泡);助手气泡回合元数据(字数·首token延迟·总时长,双档受益);+4用例;1213绿,快照9/9;AI8真机流式观感待用户复验 — `696c768` 2026-09-27
+- R193 AI8桥上下文记忆连贯——站点会话改per-Agent会话Map(LRU 8,弃contextCount:0单例,消跨会话串味);新建会话自动前置压缩历史回放(重启/换会话/崩溃重建不再失忆,buildReplayContext纯函数9K截断保首尾);工具失明自纠一次(「无法访问文件系统」类空谈纠偏);未闭合think剥离;工具卡显示上限4000→20000;真实会话JSONL+站点对照实验取证;+5用例,1204绿,快照9/9 — `aa1d66c` 2026-09-26
+- R191 Q-2 Agent会话管理——新建会话/重命名(index.json持久化,跨服务实例生效)/删除(confirm+活跃会话busy守卫);列表相对时间+事件数+悬停行内操作;prefs.lastSessionId自动恢复(Claude Code resume式,真机重开验证通过);运行中禁切换防事件交叉污染;+6用例,1198绿,快照9/9 — `6f61162` 2026-09-26
+- R190 Q-1滚动/杂项快修——fx-sidebar与diagnostics底部渐隐统一(「调节」「环境」截断有延续信号);games-hub纵向居中(263/269)消下半屏失衡+卡面描述/ghost占位对比度提档;ai-config面板788px居中(L290/R290);DOM断言4/4,1192用例绿,快照3视图预期漂移核对后基线重立,9/9 PASS — `c231876` 2026-09-26
+- R187 P-5声文增强——Kokoro句级流式合成(播i预合成i+1/停止即掐断/点句续跑)+N/M合成进度;全量55音色目录(mirror API实测,含中文zf/zm)下拉+缺失音色行内按需下载(~8MB,复用downloadOneFile)+voices盘上扫描;词典JSON导出导入(原生对话框,导入按词合并);+7用例;1187绿,快照9/9;实机合成观感待用户复验 — `3cbba5c` 2026-09-26
+- R186 P-4提示词工程——KERNEL/REACT按Claude Code风格重写(先读后写/最小变更/失败换路子2次即停/短bullet收尾/JSON合法性约束);AI8桥重试轮自适应(空回复或坏tool块→协议纠正重问≤2次,耗尽报错收束不再静默完成);轮注入补先读后写要点;+4用例(约束断言/纠正成功/耗尽error/纯文本零重试);1180用例绿,快照9/9;实机冒烟待用户复验 — `8d675d1` 2026-09-26
+- R185 P-3下载体验——3路并发池(单文件失败不再中断批次)+IPC only收窄+行内「重试此文件」;✓完成徽标弹出动画(reduced-motion降级);磁盘占用统计行+已用/共总进度文案;AI8下拉剔除本地停用模型(已知问题#2);1176用例绿(含并发实测),冒烟mirror 200/44B,快照9/9 — `0190568` 2026-09-26
+- R184 P-2 Agent工具卡——>12行默认折叠(展开/收起+行数)+状态徽标(✓✕⚠●)+耗时徽标(live到达间隔/恢复JSONL ts差,emit落盘补ts);diff统一红before/绿after带标签;done全reason收敛流式气泡移除光标;会话恢复补审批卡;1172用例绿,快照9/9零影响 — `18a5ac3` 2026-09-26
+- R183 P-1视觉走查轮——17份真机评审(Agent/声文8态+9 view),16缺陷归零/10入档;Agent布局撑满+错误终态横幅+会话恢复回放;声文模型行截断修复+formatBytes+分句可供性;顶栏绝对居中+rail 11px+效果库渐隐+音频空态;1170用例绿,DOM断言10/10,快照9/9(基线重立a6bbc1d) — `916f8e3` 2026-09-26
+- R180 声文/Agent深度review+自动化测试——修3真缺陷(并发send交叉污染/run生命周期泄漏/glob越界)+cancel真掐断;内核端到端4例+206续传+状态完备性+416恢复;真网络冒烟(config44B合法/官方源DNS污染实证);响应式布局;1168用例绿,快照9/9 — `2659bc6` 2026-09-26
+- R175.7 界面优化轮——声文模型依赖栏(自建下载器修复 hf-mirror q8 404:文件清单/URL/总进度/逐文件续传重试,本地加载零网络)+Agent Tab 默认折叠为🤖切换;1161用例绿,快照9/9 — `26f84b8` 2026-09-26
+- R175 Agent/声文体验轮——内核stream:true SSE流式(Claude式,组装器纯函数+单测)+流式气泡光标;提示词历史↑↓缓存+草稿持久化;agent/voice keep-alive后台运行;128文件/1159用例绿,快照9/9 — `e0bd75a` 2026-09-26
+- R174.9 Agent设置持久化+会话模型记忆+站点停用模型自动标记禁用+错误原文直显;测试+1,127文件/1154用例绿 — `ef2f47e` 2026-09-26
+- R174.6 Agent 可选 AI8 模型——无档案自动补建(复用存储token)+站点模型分组下拉(公开chat模板/模块缓存)+modelOverride 贯通内核;测试+2,127文件/1153用例绿 — `5081f59` 2026-09-26
+- R172+R173 A1-A6 一步到位——声文Tab(系统引擎朗读+词典钉音+Kokoro离线引擎IPC+WAV导出)与Agent Tab(kernel内核+6门禁工具+审批三档+bak/审计/会话JSONL+AI8 ReAct桥);pi S0静态实证(zai-coding-cn=bigmodel coding端点,glm-5.3/flash在目录)+spike harness;127文件/1151用例绿;快照9/9×2确定性 — `5a9fc6f` 2026-09-26
+- R173-S1 ⌀ 声文 TextPipeline 纯函数层(规范化/中英分句/词典钉音替换/语言检测) — `c43683c` 2026-09-26
+- R171 AI实验室新增SVG动画Tab——纯SVG+CSS鹈鹕骑自行车场景(轮转/曲柄/链条/路面滚动/鹈鹕起伏摆翅),prefers-reduced-motion 冻结,i18n 三键,测试 6→7tab+组件2例,基线重拍(漂移对照入档) — `1f63271` 2026-09-26
+- R169+R170 视频工作站体验修复——全屏进入重置缩放铺满画面+:fullscreen 去圆角;截图胶片栏头行(标题计数/清空全部带确认/折叠持久化);组件测试 6→9 例;基线重拍 — `89a4e10` 2026-09-25
+- R168 播放失败用户提示——video/audio 元素 error 事件接线,MediaError code→i18n 文案映射(domain/mediaError 纯函数+单测),坏文件不再静默黑屏 — `9db437b` 2026-09-25
+- R166+R167 灯效修复与视觉优化轮——幽灵选中图层对账+starlight NaN 修复;55 效果全保留,27 款交付层提亮(科学包 avgLum/lit 2-5×)+音频 idle+四档视觉地板常设门禁;基线重拍(漂移对照实验入档) — `380b5c5` 2026-09-24
+- R164 灯效三层漏斗（场景→精选→深调）——S1-S4 实施于 ui/r164-effects-funnel — `f82ef25` 2026-09-24
+- R160+R161 可及性双批——文字缩放 rem 化/设置五档/aria 语义面 — `a5d39d1` 2026-09-23
+- R158+R159 苹果标尺自动化可达批次——探针资产化/对比度激活/本地崩溃日志/内容 i18n — `c9c38a2` 2026-09-23
+- R154 remove R119 selection-AI — full-chain teardown, gate caught collateral CSS loss — `a47e8bc` 2026-09-22
+- R153 vision-lab core board — 9 pinned cards + 5 collapsed groups + face discoverability + snapshot localStorage hygiene — `977d19c` 2026-09-22
+- R152 gate toolchain — playwright repo-wide + stale-out fail-fast + baseline protect + pixelmatch hard gate — `93bd94e` 2026-09-22
+- R151 review §12 四项 — 仪表盘图标色相/音频transport三簇/体感分组折叠/诊断四卡 — `116fdf8` 2026-09-22
+- R148 S3+S4 system layer — state matrix, focus ring, motion tokens — `bd1aca5` 2026-09-21
+- R148 S2 typography — 4-step ramp + tabular numeric track — `eb71707` 2026-09-21
+- R148 S1 color system — 733 bare hexes → 0, dual-green dead, CSS split — `7d51eac` 2026-09-21
+- R148 S0 UI audit toolchain + 9-view visual baseline — `0965412` 2026-09-21
+- R145 AI lab AWS Bedrock provider — SigV4 + encrypted AK/SK + full pipeline — `0bba5d0` 2026-09-21
+- R144 E2E — vision-lab CDP verify (26/26) + pad flow fix + seam — `21048d7` 2026-09-20
+- R144 AI lab vision tab — 24-capability bench (live check + explore) — `394d41d` 2026-09-20
+- R130 global snip <500ms — BGRA binary IPC + capture warm-up + hidden window pool + shutter flash ×2 — `a4eda75` 2026-09-20
+- R142-E4b app-wide gesture assistant + E5 chord text entry — `8e0bb50` 2026-09-20
+- R142-E4 Blade Slash — the gesture-native game + momentum — `92ecb3f` 2026-09-20
+- R142-E3 finger-chord command layer — `30e4855` 2026-09-20
+- R142-E2 relative cursor with dynamic gain + clutch — `13c8895` 2026-09-20
+- R142-E1 60fps full-frame capture + predicted rendering — `cbc4519` 2026-09-20
+- R141-E0 perceived-latency feedback + posture & environment coach — `ebb31e9` 2026-09-20
+- R139 gesture roulette selection + double-pinch confirm; R140 app-wide assistant plan — `8cf10ab` 2026-09-20
+- R138 open-palm start + handSeen re-render storm fix — `9c0fd6e` 2026-09-19
+- R136 vision standard scheme — dedicated-process pipeline, visible closed loop, tunable latency — `d3a7b99` 2026-09-19
+- R135 research P0 — analog movement, face modifiers, dual-hand — `f4e5939` 2026-09-19
+- R134 sync vision module upstream v2 (perf research) — `d378ce1` 2026-09-19
+- R132 vision perf budget + joystick pad + live status — `1a48828` 2026-09-19
+- vision gesture input for mini games — `3d9ccc4` 2026-09-19
+- R129 AI8 积分余额显示 + 凭据输入框放大 — `bd0211a` 2026-09-19
+- R128 AI8 绘画平台模型族接入——GPT-Image/Nano-Banana/MJ/Grok 等 10 家进下拉 — `869246a` 2026-09-19
+- R126 AI8 绘画文件夹批量模式——MD 场景资产一键成图流水线 — `f11c0f8` 2026-09-19
+- R121 AI8 凭据记住与自动登录——官网窗口不再每次要账号密码 — `d39d5a2` 2026-09-18
+- R120 AI8 绘画任务接管与恢复——上限错误自动接收最新结果+cms模板适配 — `4d32e8a` 2026-09-18
+- R121 AI8 视频生成（内测）+ R120 绘画模型列表线上结构修复 — `67fec76` 2026-09-17
+- R119 全局划词 AI——任意应用选中文字→Alt+Q→AI 浮窗 — `a85e42e` 2026-09-17
+- R118 AI8 作为底层 AI 能力 provider——配置档案直连+截图问 AI — `30d643d` 2026-09-17
+- R117 AI8 深度优化批次——并发会话/绘画v2/产物文件化/输入体验/表格+review迭代 — `f3aa2cf` 2026-09-17
+- R116 第三轮——<think> 思维链折叠面板（推理模型排版） — `04449a3` 2026-09-17
+- R115 AI8 最强模型推荐分组+图片粘贴/附件输入+实验室全控件统一样式 — `c7ebf95` 2026-09-17
+- R114 AI8 消息 Markdown 渲染——标题/列表/代码块排版+消息与代码块复制 — `d602b19` 2026-09-17
+- R113 AI8 工作台化——多会话+本地历史+模型分组+自动保存+绘画入口+样式统一 — `30b1268` 2026-09-17
+- R111 AI8 官网内嵌登录——自适应开窗+登录成功自动抓取 token — `675a0a7` 2026-09-16
+- R110 AI 实验室第五 Tab「AI8」——欧亿 AI 站点直连集成 — `335c71a` 2026-09-16
+- R109 迷你游戏清档终章——U7 画布文案收口+长局真机终验+C6 关账 — `59fdbe3` 2026-09-16
+- R108 迷你游戏 BGM——WebAudio 程序化琶音循环+音乐开关 — `3c19663` 2026-09-16
+- R107 Nova Swarm 百科图鉴——角色/敌人/强化/神器四区 Codex — `d05a208` 2026-09-16
+- R106 Nova Swarm 岛屿推进——boss 掉传送门+五主题岛屿+阶梯难度 — `26c1aa5` 2026-09-16
+- R105 Nova Swarm 成就系统——战绩驱动 12 成就+面板+达成提示 — `66ed2c4` 2026-09-16
+- R104 Nova Swarm 神器系统——规则改变器+分数风险系数 — `40152dd` 2026-09-16
+- R101 Nova Swarm 对标 Goobies FRD——角色/稀有度/轮盘/局外经济/连击/战报 — `6c0ebdd` 2026-09-16
+- R100 迷你游戏第三轮扩展——Swarm boss 波+双强化 / TD 双新塔 / Tetris 新模块 — `6c9d769` 2026-09-16
+- R99 迷你游戏平台化——hub 磁贴+全屏模式+Nova Swarm 生存竞技场+全局合成音效 — `2175a0f` 2026-09-16
+- R97 迷你游戏三作可玩性翻倍——通用目标层+塔防策略化+直升机难度曲线+钻井多层经济 — `75abe53` 2026-09-15
+- R91.3b DTLN AI 降噪本体——utilityProcess 推理 + AudioWorklet 中继链 — `c8dc5a0` 2026-09-15
+- R91.3a 电影 EQ DSP 预设链（影院/对白增强/夜间 + 增益） — `8b29735` 2026-09-15
+- R91.1+R91.2 视频站模式记忆/断点续播 + keep-alive 悬浮 Mini 播放器 — `2c20c82` 2026-09-15
+- R90.9 AudioSet 527 类中文对照——界面语言为中文时显示中文标签 — `8830bdb` 2026-09-14
+- R90.9 音频 Tab 四层重构——L1 纯函数重采样/测试音（6 测试）、L2 PcmSource 三适配器、L3 管线状态机、L4 单卡管线 UI + 五项自检 — `e91e8bd` 2026-09-14
+- R90.8 检测实时性强化——feed 串行化/输入电平仪表/AST 状态行/cadence 1.2s — `9141745` 2026-09-14
+- R90.8 AI 实验室实时检测 + 播放器 AI 听音浮层（desktop 采集提取共享） — `bc875da` 2026-09-14
+- R90.8 流式检测会话（start/feed/stop + VAD context 跨 feed + AST 3s 滑窗 2s 节奏） — `2df1623` 2026-09-14
+- R90 P1 AI 实验室音频 Tab（录音采集 + VAD/AST 测试卡 + i18n/样式） — `dc2e0de` 2026-09-13
+- R90 P1 audio-ai IPC（status/run-vad/run-ast + preload 白名单） — `d9fa8c2` 2026-09-13
+- R90 P1 audioAiService（Silero VAD 分块推理 + AST softmax Top-5） — `aa222a8` 2026-09-13
+- R90 P1 AST mel 前处理纯函数（512 点 FFT + 128 mel + AST 归一化） — `d99c020` 2026-09-13
+- R90 P1 模型清单扩展 + audioset 527 标签资产 — `9d0a418` 2026-09-13
+- R89 T5/T6——AiLabView 三 Tab 化 + 多配置档案 UI（自动保存/按档案测试/设为当前） — `6458ddc` 2026-09-13
+- R89 T3/T4——aiProfileStore（迁移/自动命名/镜像）+ 4 档案 IPC + aiTestConnection 按档案测试 — `b14d332` 2026-09-13
+- R89 T1/T2——AiProfile 类型/通道 + chatCompletion probe 判据（连接测试不再被空 content 误判 parse） — `7383ad7` 2026-09-13
+- R88 App 接线 + 设置页 AI 组迁走（原子） — `c5ed2e6` 2026-09-13
+- R88 AiLabView 四区（连接/配置/会话/OCR 试玩） — `3251437` 2026-09-13
+- R88 渲染接入准备——i18n/Bot 桩/ai 模块注册 — `7675c91` 2026-09-13
+- R88 IPC 接线——aiTestConnection/aiChat + safeStorage 编解码 — `9b6299d` 2026-09-13
+- R88 chatCompletion 通用管线 + aiSecretCodec + 默认模型 glm-5.3-flash — `8e0f390` 2026-09-13
+- R88 shared 层——chat 类型/校验/厂商预设/通道 — `d65bddf` 2026-09-13
+- R87 诊断页 Frame age 三态语义（waiting/idle 原因/毫秒） — `7a74c3c` 2026-09-13
+- R86 P1 设计 token + rail/工具条/Dashboard 磁贴样式 — `da97327` 2026-09-13
+- R86 P1 导航模型切换——左 rail 直切，移除 TabBar/多 Tab（含 i18n 增删） — `6b62130` 2026-09-13
+- R86 P1 ModuleRail 左侧模块图标栏组件 — `35440ed` 2026-09-13
+- R85 App 壳替换——sidebar 移除，接入 AppShell/Dashboard/Settings (R85) — `506c520` 2026-09-13
+- R85 SettingsView（运行/屏保/快捷键/AI 四组，控件迁自 sidebar） — `2901849` 2026-09-13
+- R85 DashboardView（状态区 + 固定三分区模块卡片） — `39ee745` 2026-09-13
+- R85 AppShell 顶栏（品牌/Tab/全局控件/设置菜单/预留用户菜单） — `27d1932` 2026-09-13
+- R85 模块元数据 + TabBar 组件（测试图标桩补 LayoutGrid/Timer） — `d4a8dd0` 2026-09-13
+- R85 useTabNavigation hook（持久化 + 旧 view 迁移） — `ae5423c` 2026-09-13
+- R85 Tab 导航纯函数核心（sanitize/migrate/open/close） — `b6acb09` 2026-09-13
+- R85 壳层 i18n 文案（dashboard/tab/settings/menu，zh+en） — `34c6f73` 2026-09-13
+- OCR dual entries + repeat region + LLM translate (R84) — `19bf45c` 2026-09-13
+- bundle RapidOCR models into the installer (R82.6) — `1c37387` 2026-09-13
+- OCR AI cleanup — OpenAI-compatible LLM post-process (R83) — `798b738` 2026-09-13
+- local RapidOCR (PP-OCRv4 ONNX) with WinRT fallback (R82) — `00cd446` 2026-09-13
+- customizable snip hotkey (preset whitelist of five) (R81) — `8ea95ac` 2026-09-13
+- SnipView frozen-frame select phase + annotator handoff (R80.5/R80.6) — `1ff6b17` 2026-09-12
+- snip IPC wiring + tray menu + Alt+A hotkey + renderer route (R80.3/R80.4/R80.7) — `cfe3321` 2026-09-12
+- snipManager session layer (windows / hotkey / lifecycle) (R80.2/R80.3) — `466c074` 2026-09-12
+- snipManager pure helpers + snip IPC channels (R80.2/R80.4) — `8ce24f5` 2026-09-12
+- smart gesture switch — border-band drag-resize without tool change (R79.12) — `7e57299` 2026-09-12
+- text commits on click-away + palette recolors selection (R79.11) — `1e2cfdb` 2026-09-12
+- R79.3/R79.4 dark scrollbars + thumbnail dblclick-to-edit — `35c74d0` 2026-09-12
+- R79.2/R79.5 region-OCR (drag → release → recognize) + hover gesture cursors — `1fa783b` 2026-09-12
+- R78.1/R78.2/R78.3 annotator interactions (IME fix, text toolbar, layers, copy/paste, rotate, OCR panel) — `1e24abd` 2026-09-12
+- R78.1/R78.3 clipboard-text + ocr IPC, winrt ocr service — `3786641` 2026-09-12
+- R78.1/R78.2 rotated + aligned/bold text rendering — `341caca` 2026-09-12
+- R78.1/R78.2 annotation model extensions (rotation/align/bold/reorder/proportional resize) — `e8096ca` 2026-09-12
+- R77.1 capture filmstrip wiring (auto-capture 3 sources, import/delete, replace lastShot panel) — `9aa0fa3` 2026-09-12
+- R77.2/R77.3 annotator esc fix + wheel zoom (×1.06) + pan + dblclick reset — `7bb3dc4` 2026-09-12
+- R77.1 captures IPC (list/add/delete/read/import) + preload + shared type — `355c668` 2026-09-12
+- R77.1 capture store (main-process persistent cache, FIFO 200) — `eb2e179` 2026-09-12
+- R76.3/R76.5 snip-to-annotate flow, photo direct-download, snip UX polish — `843091b` 2026-09-12
+- R76.2 AnnotateOverlay in-place WeChat-style annotator — `6a95990` 2026-09-12
+- R76.4 native clipboard write-image IPC (main + preload) — `386ebdc` 2026-09-12
+- R76.1 annotation shape model + history (pure functions) — `7df39e5` 2026-09-12
+- R75.4/R75.5 WeChat-style snapshot editor (photo no longer auto-downloads) — `71434a9` 2026-09-11
+- R75.3 freeze-frame region snip (all three modes, S hotkey) — `43e44e5` 2026-09-11
+- R75.1 wire preview zoom into all three video studio modes — `218b251` 2026-09-11
+- R75.1 usePreviewZoom hook (ctrl+wheel / pan / fit / 1:1) — `9baea04` 2026-09-11
+- R75.1 preview zoom pure math module (previewTransform) — `5a44fce` 2026-09-11
+- R73 scheduled shutdown HUD + R74 light-effect screensaver — `acc1c05` 2026-09-11
+- R52.7 projection region picker (8 presets + custom) + projector region layout — `5eeb680` 2026-07-07
+- R52.5/R52.6 visualizer metrics overlay + art style variants + opts threading — `7e7505c` 2026-07-07
+- R52.5 audioMetrics pure functions + tests (peak/RMS/dominant/LUFS/BPM) — `c802d03` 2026-07-07
+- R51.9 EQ drawer JSX 接入 t() — 完成 i18n 双语 UI — `92240dc` 2026-07-06
+- R51.9 EQ/transport i18n 中英文文案 — `156b7ff` 2026-07-06
+- R51.1 AudioStudio 顶部快按 transport cluster（保留底部完整控制） — `6bec6b5` 2026-07-06
+- R51.2/R51.4/R51.7/R51.8 EQ drawer 双模式 + 频率响应曲线图 + 预设库 + 自定义 — `0825eef` 2026-07-06
+- R51.3 audio graph EQ chain 动态化（EqBand[] 驱动 + diff 增删 + setTargetAtTime） — `06332e2` 2026-07-06
+- R51.6 EQ 预设库（9 graphic 经典 + 5 parametric 参考，附中英文说明） — `e85441b` 2026-07-06
+- R51.5 EQ 频率响应纯函数 + 单测（Biquad 二阶节系数） — `e98861a` 2026-07-06
+- R50.1-R50.2 侧栏响应式 clamp + 内容区黄金分割 1.618:1 — `9d842a1` 2026-07-06
+- R46 add objective per-process CPU diagnostics, acknowledge unverified prior fixes — `acc7209` 2026-07-05
+- R39 effects library category tabs + GPU card previews, R40 collapsible/tabbed sampling panel — `ddd0fef` 2026-07-05
+- R37 batch 3 GPU-direct port (7 effects) + R38 fix minimize stutter — `2acb852` 2026-07-05
+- R37 batch 2 - GPU-direct port 10 more effects (noise-based) — `370cb0f` 2026-07-05
+- R37 batch-port 10 more effects to GPU-direct rendering — `c99697e` 2026-07-05
+- R36 project 3D effects (sphere-pulse etc.) at full resolution too — `4ea741d` 2026-07-05
+- R35 POC - GPU-direct per-pixel effect rendering (rainbow) — `d3a8cbc` 2026-07-05
+- R32 smooth LED render style (default), pixel style kept for special effects — `2862683` 2026-07-04
+- R29 audio studio rework + R30 workspace preview/push/drag fixes — `aa67f1f` 2026-07-04
+- R22 video-wall UI config panel (rows/cols/bezel/rotation) — `4e1d65e` 2026-06-24
+- R21 wire video-wall engine into live render pipeline — `b3da59e` 2026-06-24
+- R20 video-wall stitching engine + landing section — `7b9f178` 2026-06-24
+- per-effect unique preview animations in demo panel (R19) — `54fd04a` 2026-06-24
+- R17 demo page full effects + R18 higher-fidelity preview — `22961fa` 2026-06-24
+
+## fix
+
+- R305 体感台只有握拳能测——会话卡校准全静默+表情行永不可测 — `8ac1490` 2026-10-17
+- R302 应用内样式化对话框替换全部 6 处原生弹框 — `ddd379d` 2026-10-17
+- R296 视频站 P0 修复批 — 评审 7 路 0 幻报后的九项根修 — `2e7fcfc` 2026-10-15
+- R295 录制 webm 补 Duration 元数据 — 播放器可拖动进度条 — `1643532` 2026-10-15
+- R288 灯效 P2/P3 收尾 — hologram/lava 提亮提速+3D 卡缩略图高清+warp-portal 首份实拍 — `5b861c8` 2026-10-12
+- R285 灯效删除批 — 7 kind 全链路删除+快照基线重立 — `54b86dc` 2026-10-11
+- R284 灯效救活批 — black-hole bug 修复+暗谷地板+提速 — `96e3405` 2026-10-11
+- R282 右下角悬浮坞 — 按钮重叠根修+半透明自动扩展工具栏 — `7568aab` 2026-10-11
+- R277/R280 终局视觉批补齐 — 屏保 CJK 实拍 + wall 分支守护 — `e815c3f` 2026-10-11
+- R281 快照门禁隔离 userData — 两轮漂移事故根因治本 — `502147d` 2026-10-11
+- R279 splat 缓存 ±10% 校验 + TTS 队列 onerror 收束兜底 — `2352a92` 2026-10-11
+- R278 i18n 死键清理 + 键族不变量 — 49 键×2 删除,词表 CI 红灯化 — `a968bcf` 2026-10-11
+- R276 诊断数字修正包 — p95 口径/真实帧率/outputMs 计时 — `3ae0c5e` 2026-10-11
+- R274 paramMeta i18n 补齐 — 24 裸键迁移 + 键位完整性锁 — `0d69659` 2026-10-11
+- R265 AI8 tab keep-alive + writeSessions 移出 setState updater — `a4bdda4` 2026-10-11
+- R264 Profile 导入校验 + 迁移统一 — `c7f61bd` 2026-10-11
+- R277 屏保中文位图 — staticTextMasks 随 IPC 传入 — `053f05f` 2026-10-11
+- R280 单屏墙模式逃生 + 墙预览保真 — `305e267` 2026-10-11
+- R275 文本掩码缓存治理 — 双侧 LRU + cellPx 自适应降采样 — `578a374` 2026-10-11
+- R268 media://local 白名单补缺 — ai8-artifacts + 播放列表精确路径 — `d7f32db` 2026-10-11
+- R269 worker 引擎冻结双修 + useEngineLoop 直接测试 — `1d75a23` 2026-10-11
+- R271 hover GPU 预览泄漏防护 — suppressOverlayPost — `620be9f` 2026-10-11
+- R267 atomicJson 失败路径 + 写盘串行化 + 播放列表坏文件防护 — `e1b067d` 2026-10-11
+- R272 音频三修 FLAC 标注/投影黑屏/VU 冻结 — `4571abc` 2026-10-11
+- R270/R273 Preview3D 停帧 + overlay 回读/竖屏钳制 — `7554838` 2026-10-11
+- R257 游戏P0四修——Slash不可斩/fs拉伸/重开fallthrough/丢难度 — `203735e` 2026-10-10
+- R256 方向释放快路径——死区回返确认 90→30ms 省 60ms 人工等待 — `dec2015` 2026-10-10
+- R251 协议 fuzz 66 格——畸形消息零抛出/会话不毒化/契约行为 — `8c87fff` 2026-10-10
+- R250 games 层最小化摄像头收敛(不自动恢复,游戏会话态防误入) — `5b76630` 2026-10-10
+- R244 宿主崩溃/挂死自愈——host 心跳+客户端看门狗一次自愈 — `c8a1e9a` 2026-10-10
+- R245 任务族 F10 吞错清理——41 处真吞错全清零 — `3db7682` 2026-10-09
+- R243 径向菜单数据驱动修全——MENU_SLOTS 由模块可达性生成 — `c881aad` 2026-10-09
+- R239 摄像头故障全恢复——分类纯函数+宿主看门狗+错误卡 CTA — `39e4eb6` 2026-10-09
+- R242 任务族 F7 landmark 注入健壮性(105 格) — `20e269f` 2026-10-09
+- R233 快照门禁 workspace 活动区遮罩 — `5572992` 2026-10-09
+- R236 商业合规包——origin 权限门禁+ai8 分区拒权+隐私声明+签名评估 — `75e8512` 2026-10-09
+- R235 引擎 i18n 化——360 汉字出引擎 — `acea7b7` 2026-10-09
+- R231 词汇收敛——USER_VOCAB 6 词权威表 + 死键清理 — `dc09b0e` 2026-10-09
+- R230 失败路径 UX + 遥测接通——假错误/死亡键名/采集遥测断链 — `8e0e788` 2026-10-09
+- R228 视觉宿主会话管理器——引用计数修连坐死锁与第二消费者永挂 — `9b43ca0` 2026-10-09
+- R227 体感栈止血包——异常防御/竞态回滚/摄像头收敛/GPU降级 — `193a4dd` 2026-10-09
+- R225 效果库预览 pill 闪烁 + 应用按钮可达性 — `539115a` 2026-10-09
+- R224 WCO 控制条跟随主题 + 顶栏上移合并拖拽带 — `6d602a6` 2026-10-09
+- R223.6 node26 原生 localStorage 空壳挡住 happy-dom 安装——setup.ts 兜底 polyfill — `64302da` 2026-10-07
+- R223.5 修 dist:win 门禁实测两发现——helpers window 守卫+删 L2 目录 mtime 跳过 — `3924ad9` 2026-10-01
+- R223 合作局共享血量池+回血通道全员化——修 P2 零回血 — `f30a2e6` 2026-10-01
+- R222.2 CI 实测修正——glHarness 守卫加真实上下文探针 — `9ebc270` 2026-10-01
+- R221.7 修 R220.1⑨ 回归——vision 关闭每帧清键致 WASD/方向键全失效 — `fe9cd9d` 2026-10-01
+- R221 应用面评审修复轮——配置清空链三道闸+agent 门禁精确匹配+引擎帧级化(-81%)+稳定性观测 — `2270ac4` 2026-10-01
+- R220.4+R220.5 渲染卫生+种子 RNG+杂项——R220 游戏评审修复轮收尾 — `bb705ea` 2026-10-01
+- R220.2+R220.3 死亡墙拆除+autoPick 双修+进化接线+手感六件 — `c59d402` 2026-10-01
+- R220.1 C1 玩法正确性批——冻结语义/结算/引导/键池/悬停/BGM 十一项 — `14801a4` 2026-10-01
+- R219.9 增补——单人局固定视口(相机钉死画面零滚动),2P+ 保留跟镜头 — `93d365f` 2026-10-01
+- R219.8 增补——移动卡顿三项减负(不透明上下文/静态背景离屏缓存/假发光)+开始瞬间画布一步到位 — `dafa3b1` 2026-10-01
+- R219.7 增补——fs 真铺满(可变纵横比)+HUD 按钮运行中隐藏+动态背景停用 — `7f937d5` 2026-09-30
+- R219 游戏表现层修复轮——R218 合并回归 P0 清零+画布自适应/全屏黑边+ready 信息架构 — `7d089b4` 2026-09-30
+- R218-SV 附——共享 hud.ts 渐变防御(happy-dom noop ctx): drawHealthBar/drawAlertVignette 的 createLinearGradient/createRadialGradient 返回 undefined 时退纯色/低透明度平涂(对齐 scene.ts vgrad 既有防御模式);根因=R218-SV 血条化后 survival 渲染路径进入 MiniGamesView.test.tsx 的 all-noop Proxy ctx,未防御的 addColorStop 抛错杀死 rAF 循环连带 R137/R138/R139 三用例失败;修后该文件 17/17 绿,全量 154 文件 1434 绿 0 失败 — `59a2f4b` 2026-09-30
+- R148 S5 收尾——标注调色板 swatch 圆环白色字面→可翻转 token(静止环 rgba(255,255,255,0.25)→--overlay-strong,选中环 var(--white)→--text-primary;标注工具条 scrim 随主题翻转,白环在亮色下不可见的隐患消除;色板填充色仍为内容层持久化色不动);桌面原生质感项如实裁剪:Mica 试验——Electron 41×Windows Server 2022(20348)实测 backgroundMaterial API 面缺失(仅 backgroundThrottling 族,probe 脚本临跑未入库),按 R216 尾部条款降级为「试验+记录」不落产品代码;系统 accent 联动需新增 IPC 通道(systemPreferences.getAccentColor),CLAUDE.md 规定新通道必须 PR-1 加 R-N 而本轮无权改 PRD,如实留待主干立项;本轮已落地的原生质感=color-scheme 随主题声明(原生滚动条/select 弹层/表单控件跟随明暗)+prefers-color-scheme 实时联动。门禁:hex audit 0;contrast 156 对 0 违例;typecheck 双绿;build 后暗色 9/9 GATE PASS 0.0000%(swatch 修复不影响默认视图) — `ebf7987` 2026-09-30
+- R148 S3-a ui-audit-hex 指向拆分后三文件+历史裸 hex 清零——DEFAULT_FILES 由聚合入口 styles.css(现仅 3 行 @import,审计空转)改为 styles/{tokens,base,app}.css 三层;改后暴露 27 处历史违例全清:mask-image #000×8→var(--black),死 fallback var(--text-primary,#fff)×6/var(--status-error,#f87171)×4/var(--status-warn,#fbbf24)×6 删 fallback(:root 恒定义,死值),裸色 #f87171/#fbbf24/#fca5a5→var(--status-error)/var(--status-warn-strong)/var(--status-error),#e2f8ff→var(--info-text)(S1 簇归并口径),AI SVG 舞台底 #101724→tokens.css 内容层新 token --fx-stage-bg(像素不变);audit exit 0;typecheck 双绿;vitest 152 文件 1380 用例全过 — `8e24a41` 2026-09-30
+- R213 scene.ts vgrad 渐变 API 防御——happy-dom 测试环境 createLinearGradient 返回 undefined 时 g.addColorStop 抛 TypeError 成 uncaught error(不 fail 测试但污染全量输出);vgrad 改为返回 CanvasGradient|string,假值退回首 stop 纯色(渐变缺失只损失层次不中断绘制,真机 canvas 恒有渐变对象零影响) — `3c8c1bd` 2026-09-30
+- T1短局矩阵cherry-pick冲突收尾——双if头合并(endless豁免+targetWaves统一胜利判定/launchWave守卫),tetris重复类型声明去重(TetrisCommand保hold),四测试文件describe闭合补齐;games 11文件97用例绿 — `37f6f3d` 2026-09-30
+- R211 游戏内视觉review 4项P0修复——CDP 10截图+图像模型走查+DOM实测:①onboard键名暴露(sw/te/sl→survival/tetris/slash,Swarm/Tetris/Slash三作引导显示键名原文);②recapCoachKey双前缀(games.recap.recap.firstRun→完整键直t);③fs侧栏类名不匹配(.games-side-panel→games-control-panel从未命中,fs从未隐藏侧栏)+td-ctl-row补漏;④fs画布HUD接线(hud.ts建成但零调用点)——状态面板/主按钮条(Enter/R)/TD商店1-5/U/X/Swarm三选一1-3(补齐引导文案承诺的键盘等价)/Esc角标3s自隐,hitTest优先+ref桥接;coach-off-btn对比度提亮;+5守卫用例(键存在性×双表),1267绿,快照9/9,CDP复测+图像复核通过 — `5373a91` 2026-09-29
+- R210 hub视觉走查修复——CDP截图+图像模型走查4条反馈,DOM实测核实3真1误报:①移除R190垂直居中(档案区出现后悬空,186/190px空隙→顶对齐18/22px);②档案栅格minmax(180→280px)+gap14(7列错位→与卡片同4×319.5px);③今日挑战chip描边提亮;误报(箭头基线)实测401==401排除;1262绿,快照games 2.46%有意变更基线重立9/9,复核通过;PRD R198-R205证据回写补欠账 — `a408df4` 2026-09-29
+- R195 AI8卡死治理——首token看门狗30s(零delta主动中止,同会话立即重试一次,再超时快速失败不再吃满180s);超时/abort不再触发会话重建(重建对生成卡住无益只会翻倍死等);Agent输入行运行秒表(走字代替死寂);独立探针验证流量1create+2completions+671ms;+3用例,1216绿,快照9/9 — `7a68161` 2026-09-27
+- R192.9 Agent bash工具Windows双修——exec()恒走cmd.exe致cat/grep全灭+GBK按UTF-8解成乱码;改pickBashPath解析GitBash(常见安装位+RGBBOX_AGENT_BASH注入seam+缓存)spawn -c真bash执行,UTF-8严格解失败回退GBK解码,无bash回落cmd并在结果注明让模型改写命令风格;超时手动kill;+3用例(含真GitBash集成中文管道),1209绿,快照9/9 — `c4ceb36` 2026-09-26
+- R192.7 已缓存文件本地哈希校验——R179的size>1024跳过启发式让44字节config.json每次点下载都重拉(一次网络抖动即面板假报fetch failed,缓存实际全在);manifest 8文件钉死sha256(LFS取tree API oid/小文件镜像实算),downloadOneFile改本地校验:尺寸+哈希全对→零网络跳过,同尺寸错哈希→重拉自愈;+2用例,1206绿,快照9/9 — `3fb6ed1` 2026-09-26
+- R192.5 Agent标签常驻——R179的默认隐藏+🤖翻转开关让用户以为功能被删;改为tab条第9个常驻成员,移除开关及i18n/CSS/localStorage持久化;1200用例绿,快照ai视图0.016%限内9/9(基线零影响) — `309b556` 2026-09-26
+- R192.2 Kokoro播放无声双根因——①kokoro-js导出的env是{wasmPaths}壳非transformers env(R179的离线配置从未生效,缺tokenizer_config.json时直连HF被DNS污染10s报fetch failed);改从@huggingface/transformers真身设env(声明直接依赖)+manifest补113B;②音色目录收敛为引擎注册表28英语音色(kokoro-js@1.2.1不认zf/zm);真机端到端:美式79KB/英式87KB WAV✓;模型面板完成后默认折叠一行摘要(持久化);1200用例绿,快照9/9 — `3b40adc` 2026-09-26
+- R192.1 tokenizer尺寸根因修复——实测取证推翻HTML污染论:上游tokenizer.json本就是3497B字符级小文件(manifest预估2.6MB自R179起即错,对账把完整文件反复拒收);KOKORO_FILES全改API实测值(总293MB与磁盘吻合);修received=have双计数(200忽略Range时永mismatch);+2回归;1200用例绿,快照9/9 — `61a03fb` 2026-09-26
+- R182 下载HTML页检测+?download=true+字节取整修复size mismatch;Agent空态三步引导/声文模型栏内联进度条优化;R182优化总结与新打磨方案文档;1168用例绿,快照9/9 — `a6bbc1d` 2026-09-26
+- R175.9 模型下载416死循环——补rmSync导入(416删分片重试被ReferenceError吞)+content-length精确对账+毒分片清理;回归测试416→全量重下,1162用例绿 — `ff69669` 2026-09-26
+- R175.8 模型下载走 Electron net.fetch 跟随系统代理(Node fetch 不走代理是 fetch failed 根因)+Range 断点续传+每源2次退避重试;1161用例绿 — `887af79` 2026-09-26
+- R178 AI8桥工具可见性——工具清单+工作区注入用户消息(站点systemPrompt对部分模型不生效),buildAi8TurnPrompt纯函数+单测;1160用例绿 — `54faa46` 2026-09-26
+- R176 C1加固——pi SDK 移 devDeps(运行时零引用,省26MB+依赖链);denylist 补 Windows 盘根三态(rm -rf C:/Remove-Item -Recurse/rd /s /q);MiniGames R138 flake 复跑确认与本轮无关 — `e130ac2` 2026-09-26
+- R174.11 Agent的AI8模型列表对齐AI8页——精选四档置顶(matchCurated)+积分成本标注;1154用例绿 — `81e309b` 2026-09-26
+- R174.8 AI8桥错误可见性——AiChatOutcome.detail带出站点原文(积分/模型/审核不再统一吞成network)+code-2归auth+SSE 180s硬超时防挂起;1153用例绿 — `ebe6ece` 2026-09-26
+- R174 AI8登录修复(UA剥离Electron标识+fresh清分区防死token抢跑关窗,探针实证入档)+Agent回复Markdown渲染+AI8桥传输层接ai8Provider(A3遗留缺口);127文件/1151用例绿 — `ce5d994` 2026-09-26
+- R150 视觉review修复批 — workspace双P1 + 状态容器/文案/色彩纪律 — `035a7a5` 2026-09-22
+- R149 bare AI-lab buttons + vision bench left-hand paralysis — `dea8b98` 2026-09-21
+- R148 audit clean — last 2 contrast violations + dist 0.6.x — `410cc55` 2026-09-21
+- R146 screensaver unexitable — 1s any-input poll + app.focus steal — `b5d257e` 2026-09-21
+- R136/R143 leftovers — preload visionHost API + chordPosture i18n key — `34075fe` 2026-09-20
+- R143 deep review — cursor client-side prediction + fist clutch + chord commit-on-release — `a387fdc` 2026-09-20
+- R137 analog up/down polarity + continuous-direction pad — `e13283e` 2026-09-19
+- R133 vision latency + survival axis merge + pad smoothing — `fb3e5e0` 2026-09-19
+- R127 AI8 绘画缩略图本地优先渲染——会话图片不再依赖 CDN 瞬态 — `820d40f` 2026-09-19
+- R125 AI8 绘画防卡死三件套——args 提交体 + 270s 轮询 + 超时 DELETE 逃生阀 — `2a83dd4` 2026-09-18
+- R124 AI8 绘画结果字段协议修复——线上响应图片字段迁至 outImages/imgUrl — `7117e32` 2026-09-18
+- R116 第四轮——一键复制结构化文档+复制失效修复（原生剪贴板 IPC） — `060e8cc` 2026-09-17
+- R116 二轮修复——对齐官网真实协议（抓线上 bundle 实证） — `a431149` 2026-09-17
+- R116 AI8 三项修复——chat 补 model 字段+消息样式 ChatGPT 化+AI 智能会话标题 — `1b80d19` 2026-09-17
+- R113 UI 排版修复+模型版本排序——输入行挤扁/消息换行丢失/每厂家最新 6 个 — `7457cf1` 2026-09-17
+- R113 样式截断事故修复——恢复被误删的 AI Lab 标签栏等全套样式 — `76152c6` 2026-09-17
+- R112 补丁——startSnip 防重入闸门死锁/双开孤儿窗口/desktopCapturer 卡死兜底 — `8e77eb8` 2026-09-17
+- R112 截图会话 Esc 取消修复（主进程全局 Esc）+ 提示条 X 关闭按钮 — `138f97d` 2026-09-16
+- R111 AI8 内嵌登录两轮实测修复——token 晚落盘自动重载+sessionId 数字类型 — `df3215b` 2026-09-16
+- R102/R103 真·全屏（铺满显示器）+ Nova Swarm 手柄支持 — `ed1d866` 2026-09-16
+- R94 视频站回归四连修——重启恢复现场/缩放条自动隐藏+计时器武装/free模式重钳制/降噪旁路声道对称 — `e3eaff1` 2026-09-15
+- R92 播放器拍照/局部截图双根因修复——media:// 跨源 canvas 污染 + 框选 SVG 0×0 — `c1f5e5a` 2026-09-14
+- R70.15 media:// 大文件播放整应用崩溃——全量区间 fs.read 物化改 createReadStream 流式响应 — `bb0f6ae` 2026-09-14
+- R90.9 AST 节奏 1.2s→3s（CPU 推理 1.4s/窗口，原节奏背靠背阻塞主线程）+ P2-P4 用户决定无限期搁置入档 — `5395653` 2026-09-14
+- R90 Silero 改 512 步分块协议——1536 样本触发图内 STFT 多帧导致 LSTM 维度爆炸 — `2625ea7` 2026-09-14
+- R90 根因修复——onnxruntime-node 无法加载 file:// URL，audioAi findCached 改返回普通路径 — `00c0941` 2026-09-14
+- R90.9 模型完整性自愈（±10% 字节校验，坏缓存自动删除重下）+ 音频页网格布局修正（介绍/解读跨列，卡片归位显式列） — `5372054` 2026-09-14
+- R90.9 会话引用计数（结构性消灭 Stop/Start 竞态）+ AST 失败隔离退避 + 真实错误上浮 + 双卡布局 — `cc3ad67` 2026-09-14
+- R90.9 code-review 修复 10 条（rms过IPC/自检re-arm/切换乱序/230MB音源/截断丢样/radio关停/track泄漏/失败出口/自检真实化/PRD状态） — `0f0a080` 2026-09-14
+- R90.8 模型状态并入各功能卡头部（去除独立模型卡）+ 默认麦克风音源 + 卡内输出解读说明 — `f25c247` 2026-09-14
+- R90.8 静音心跳——loopback 静音无回调时补零帧继续喂 VAD，面板不再空转 — `2e6bf56` 2026-09-14
+- R90.8 模型源统一 hf-mirror（GitHub 主进程直连超时）+ AI 实验室模型管理卡 + 浮层移至右下 — `1e229ae` 2026-09-14
+- R90 模型下载加固——ECONNRESET 指数退避重试 4 次 + Range 断点续传 + 失败/重试状态浮层可见 — `3b0b2a1` 2026-09-14
+- R90.8 AI 听音浮层增强——Top-3 列表/模型未下载指引与下载入口/采集错误本地化 — `07fe535` 2026-09-14
+- R90 P1 code-review 修复 10 条（录音done时序/Silero协议context/AST feed名/kaldi fbank/真进度推送/session粘滞/错误区分/manifest隔离/AST时长/资源释放） — `d813ab7` 2026-09-13
+- R89 code-review 修复 10+2 条（密文保留/写竞态串行/卸载保存/空baseUrl守卫/probe收紧/id后缀/名称回填/单次解密/镜像复用/死key/FALLBACK_MODEL） — `9a241f8` 2026-09-13
+- R89 SHELL_KEYS 清单同步 Tab/档案 key（删 group.*） — `17313c3` 2026-09-13
+- R88 code-review 修复 10 条（竞态/IME/重放裁剪/key防毁损/Ollama免key/状态模型/条件隐私/死builders/hint单一源） — `9a8d6d0` 2026-09-13
+- R86 P1 code-review 修复 10 条（媒体顺序/防御/无障碍/持久化测试/token/单一门控/箭头/hover/注释顺序） — `1ab58de` 2026-09-13
+- R85 code-review 修复 10 条（关机入口/fps实时/菜单关闭/audio门控/媒体查询/HUD锚点/单一源/文案） — `6c328d5` 2026-09-13
+- RapidOCR download 403 (no User-Agent) + retry cooldown (R82) — `65a9996` 2026-09-13
+- tray menu follows UI language via ui:set-locale IPC (R80.12) — `484f954` 2026-09-13
+- filmstrip scrollbar falls back to gray (pair scrollbar-color with width, Chromium 121+ ignores webkit pseudo rules) (R79.13) — `a5705a3` 2026-09-13
+- annotator text input focus race (R79.10) — `21d9b3d` 2026-09-12
+- R79 code-review findings (10 confirmed) — `f117385` 2026-09-12
+- R79.1 ocr script decoder via stream+reflection (proven on zh-CN), cjk space merge — `775c763` 2026-09-12
+- R78 code-review findings (10 confirmed) — `82a0874` 2026-09-12
+- R78.4 filmstrip width constraint + scrollbar/prev-next/wheel navigation — `2cef729` 2026-09-12
+- R78.3 ocrService execFile callback typing (ExecFileException) — `6cc9dbe` 2026-09-12
+- R77 code-review findings (10 confirmed) — `8277c5c` 2026-09-12
+- R77.2 annotator text/mosaic rendering (font token, mosaic tile coords) + render module extraction — `e86a827` 2026-09-12
+- R72 volume sliders stretched full-width by global range rule — `2b1b626` 2026-09-11
+- R70+R71 player soundness and progress/time display fixes — `baff20a` 2026-09-11
+- R69 persist power save blocker to system.json and restore on launch — `d2b597d` 2026-07-31
+- align projection rendering and hide 3d viewer — `0e40d0d` 2026-07-18
+- R52.3 make visualizer area fill right-panel height in normal mode — `d4df4ae` 2026-07-07
+- R52.7 add projector error guard, cancel picker clears overlay, Escape exits custom pick — `eae55df` 2026-07-07
+- R52.2 drag-drop add files/folders (blob URL fallback) + independent playlist height — `0c7c314` 2026-07-07
+- R52.1 pin top-transport progress bar width (override base flex:1) — `2e0770c` 2026-07-07
+- R52.1 scope audio-value CSS to top-controls to avoid duplicate selector — `f82d6be` 2026-07-07
+- R52.1/R52.8 merge transport to top, fix time 0:00, add volume/balance values — `f579d69` 2026-07-07
+- R52.5b reset shadowBlur before center-line in drawWaveform art variant — `5374df9` 2026-07-07
+- R50.4 采样面板收起/展开高度不同 — 提升采样面板 CSS 特异性（根因由 R50.3 .panel min-height→0 修复） — `da3ff79` 2026-07-06
+- R50.3 底部自适应 — panel min-height→0 + flex，消除内容截断 — `11b6f5c` 2026-07-06
+- R48 perf-selftest harness — frame-timing metric, tightened verdict, multi-sample stats, module extraction, rerun stability — `e0466de` 2026-07-06
+- R47 diagnostics layout + automated perf self-test harness with real measured results — `7bdbf01` 2026-07-05
+- R45 eliminate residual idle CPU/IO, disable Windows native window occlusion, document GPU-overlay architecture follow-up — `d39eb1d` 2026-07-05
+- R44 close-to-tray still didn't lower CPU (hide event unreliable from close handler) — `4a12543` 2026-07-05
+- R43 fix R42 minimize detection, gate on enabled layers, throttle audio state updates — `1f07da3` 2026-07-05
+- R42 pause frame computation when nothing consumes it — `d106bbc` 2026-07-05
+- R41 eliminate atan2 seam in hurricane-eye/nebula, gate effect card GL rendering by visibility — `6f107f8` 2026-07-05
+- R35.9 GPU-direct gate checked the wrong layer, never actually triggered — `384307f` 2026-07-05
+- R34 quintic smootherstep interpolation for smooth render style — `7837ff5` 2026-07-05
+- R33 unify preview/overlay grid layout (stretch-fill for both) — `f79f6a5` 2026-07-04
+- R31 project audio visualizers at full resolution (replaces LED-grid downsample) — `6dfb94e` 2026-07-04
+- R23-R28 packaging config, icon embedding, and dependency updates — `ce6eb3b` 2026-07-04
+
+## perf
+
+- R301 效果库卡片渲染资源预算 — 帧率节流+活跃卡降帧+ImageData 渲染 — `899e71a` 2026-10-16
+- R266 引擎像素数据缓存上界 + 重几何帧级缓存 — `b54800d` 2026-10-11
+- R147 P4 view-level lazy loading — main chunk 2.08MB → 441KB — `b56e1f6` 2026-09-21
+- R147 P2 audio ref channel + engine tick stabilization — `d13231c` 2026-09-21
+- R95 发布包瘦身——体积 -29%（zip）/ -52%（7z） — `ffc63d5` 2026-09-15
+
+## refactor
+
+- R300 拆分批第一阶段 — 录制域迁 useRecorderDomain hook — `1d43c1b` 2026-10-15
+- R234 宿主编排抽 hostMessenger——注入式会话编排+11 单测+覆盖率纳入 — `32c951d` 2026-10-09
+- R147 P5 cleanup — usePersistedState + CLAUDE.md convention revision — `7d1d031` 2026-09-21
+- R147 P3b domain hooks — App.tsx to 700-line orchestration layer — `236f8e7` 2026-09-21
+- R147 P3a workspace extraction — 840-line inline JSX → WorkspaceView — `8abfc7f` 2026-09-21
+- R147 P1 domain extraction — 620 lines out of App.tsx + 44 unit tests — `17370f0` 2026-09-21
+- R98 迷你游戏收敛为塔防单作+表现层重做——布局硬伤修复/升级出售面板/粒子炮管横幅 — `3b8eb91` 2026-09-16
+- R96 迷你游戏裁切至 3 作——删 7 游戏 + ArcadeState 瘦身 — `4a981e0` 2026-09-15
+- R52.4 harden genSubTab fallback labels before i18n keys — `864301f` 2026-07-07
+- R52.3/R52.4 remove audio-tabs, move scenes/export into Generator drawer sub-tab — `e6a869b` 2026-07-07
+
+## docs
+
+- R306/T7 跟踪模式核查闭环——VIDEO 全参零缺口 — `dc251d7` 2026-10-18
+- R306 体感商业级 9+ 冲刺立项——22 任务五波战役 — `acbf5a5` 2026-10-17
+- 体感子系统多角色深度评审报告（R306 初评基线） — `2b9de53` 2026-10-17
+- R305 附带 — 体感子系统架构文档 — `62d87d6` 2026-10-17
+- R303 附带 — i18n 审计报告刷新至 1805 平价 — `9ae7139` 2026-10-17
+- R283 灯效美学专项评审 — 三线合成+删除候选待裁决 — `ebf5d79` 2026-10-11
+- R277 PRD 状态闭环 — `15af7da` 2026-10-11
+- R252 soak 30min 全档闭环 — ALL PASS(fps 降幅 0.1%/heap -1.0MB) — `5baaf88` 2026-10-11
+- 全模块 review 补齐 2/3 + 主审裁决(主进程/Shell 层) — `50652c5` 2026-10-11
+- 清理 R234/R235/R236 僵尸 ⏳ 条款(合并冲突残留) — `4855336` 2026-10-11
+- 体感/手势商业化 9 维复评 — 2.2→4.0/5 — `377c667` 2026-10-11
+- B 线 4 模块 review 主审复核 + R264-R266 立案交接 — `b44df30` 2026-10-11
+- R260 弹幕形态实机视觉证据 — 八向开花复核 PASS — `35b92af` 2026-10-11
+- R258/R259 自动化视觉复核闭环 + PRD 条款补录 — `9745077` 2026-10-11
+- 游戏灵魂诊断闭环——4-skill 业务流程首轮执行 — `0717899` 2026-10-11
+- R257 游戏P0四修立项 — `65cc9cf` 2026-10-10
+- 迷你游戏第二轮深度评审(4 路并行+真实引擎 bot 模拟) — `582d65d` 2026-10-10
+- R255 双主题视觉复核立项(F4 首档) — `dc19dc7` 2026-10-10
+- R254 手势场景决策矩阵立项(F14 族) — `bfc7870` 2026-10-10
+- R252 soak 门禁立项(T15) — `b9a8355` 2026-10-10
+- R251 协议 fuzz 立项(F8 族) — `b50d46b` 2026-10-10
+- R249 五游戏体感接入审计立项(F9 族) — `754001d` 2026-10-10
+- R248 视觉栈架构文档对码重写(hostProtocol 契约+分层图+7 关注点) — `df07dd4` 2026-10-09
+- R248 视觉栈架构文档立项 — `4b99f80` 2026-10-09
+- R246/R247 首用向导+灯效环v2 立项 — `c481a45` 2026-10-09
+- R244/R245 宿主自愈+吞错清理立项 — `4320cff` 2026-10-09
+- R244/R245 宿主自愈+吞错清理立项 — `3e50d3a` 2026-10-09
+- R227.9 workspace 快照已知问题销案(R233 修复) — `bc9bb42` 2026-10-09
+- R242 landmark 注入健壮性立项(F7 族) — `8b2d558` 2026-10-09
+- R241 性能台账立项(F15 首档) — `f273c00` 2026-10-09
+- R240 i18n 审计引擎立项(F5 族) — `c0c7cb8` 2026-10-09
+- R239 摄像头故障全恢复立项(Wave2-T6) — `169d1c7` 2026-10-09
+- R233-R236 Wave1 四任务立项(快照遮罩/hostMessenger/i18n/合规) — `8b080c8` 2026-10-09
+- 商业就绪 22 旗舰任务计划 + 2401 实例任务宇宙(15 族系统枚举) — `b46182a` 2026-10-09
+- 体感/手势助手商业就绪度多角色深度评审(7 路并行+主审复核) — `46a01a4` 2026-10-09
+- R219 轮两份多角色深度评审报告入库(应用面+游戏专项) — `c133196` 2026-10-01
+- R218 ✅ 终回写——四分支merge+适配收尾;U1-U11全落地(共享HUD体系/血条四作/难度四档×倍率/手柄Start四作/ready精简/占比专注/视差动态背景/大世界摄像机/juice)+敌矩阵8种/词缀5种/敌型3新/Tetris压力条质感;154文件1483用例0失败+快照9/9+CDP四作fps64+AI视觉双通过;worktree清理;真机项(PS5/档案端到端)如实保留——含 r218 验证脚本与截图入库 — `e9c3431` 2026-09-30
+- R218 v3 增补——用户追加画面更大/动态背景/多玩家背景跟随:头脑风暴三方案(视差联动质心/大世界摄像机/占比提升)定组合C+A立即(U9占比85%+专注模式三档+U10视差动态背景scene.ts offset零侵入,并入S2)+B为S4期权仅Survival(世界2×/死区平滑/zoom-to-fit,玩法级变更待用户裁决) — `fcb5f5e` 2026-09-30
+- R218 范围修订 v2——用户指示适用所有游戏:方案重生成四作通用版(通用层U1-U8:HUD规范/手柄Start四作/ready精简/难度四档框架×倍率/血条框架各作语义挂接/宽容判定/多人自适应/juice)+各作特化(Survival敌矩阵+eHP/TD词缀+2/Tetris起始等级/Slash血条+敌型+3)+S1-S3分期——状态 ⏳ 待review — `be69979` 2026-09-30
+- R218 规划条款(⏳待批)——蜂群生存战质感与可玩性升级:方案文档 A-H 八模块(HUD半透明/实体缩+宽容判定/背景三层景深/敌人8种行为正交矩阵/血条+四档难度eHP数值依据/手柄Start四作通用化修PS5/多人HUD自适应/ready态Hick≤5精简)+juice扩展+S1-S3分期——待用户review批准后实施 — `1341f8f` 2026-09-30
+- R217 游戏画布高清渲染轮条款——根因(900×520 backing 被 CSS/DPR 放大 1.5-3×致锯齿)/方案(computeHdSize 纯函数+setTransform 映射+ResizeObserver,绘制层零改动)/性能护栏(DPR≤2 钳制,不加昂贵后处理)——状态 🔄 — `d796d38` 2026-09-30
+- R216.6 ✅+R192.11 ✅ 终回写——R216 批量实施轮全收官:五分支merge/E段42条闭环/最终验证链153文件1387绿快照9/9全0.0000%/发版段(dist:dir冒烟✅+R130预热✅热键轮测留真机+merge main ad657a9+0.3.84 zip 280.7MB体积核查逐项背书+6项真机保留);v0.3.84发版完成(AI审核gate口径) — `30f56e1` 2026-09-30
+- TODO 清单 v3 终版——A 类 7 任务全 ✅(R216 五分支证据表)+B 发版 ✅(merge main ad657a9+0.3.84 出包)+C 段 AI 审核闭环明细与 6 项真机保留+E 段闭环+D 段 9 项拍板/搁置保留(含 ui/r164-effects-funnel 分支未合流发现)+F 段备忘扩充(electron 缓存坑/LAN Tetris 开局语义/SendKeys 无人值守限制);清单转为遗留备忘录 — `c81349d` 2026-09-30
+- R148.8 ✅ 终回写(S3五批:hex工具修复27违例清零/ARCH-1销案碰撞翻转+labelColor/字阶四档208阴影归档/圆角326处/间距census修正q5假设)+S5亮色主题(三档259处迁移双主题0违例/亮色10截图全PASS/Mica如实裁剪);R216.6进度更新(开发段收官:最终验证链153文件1387绿+快照9/9全0.0000%+hex 0;发版段进行中) — `720a1f7` 2026-09-30
+- R216 中间回写——R93 ✅(档位①MVP:vendor wasm/模型sha256/15用例/待真机5项如实保留)/R189.1 ✅(Q-5五批全落地)/R209 ✅(三期Tetris事件同步+插值外推+lanService双向化偏差如实记录)/R213 ✅(二期axes数组化轴控)/R177批次收口(P-2/P-4 ✅+P-5/P-6/P-7未承接如实注明);R216.6进度更新(四分支merge完成+组合验证1380绿+快照9/9+UI交互探针三处命中);merge-gate交互取证入库(games-lan/video-player/ai-agent三截图+探针脚本) — `33c9f29` 2026-09-30
+- R189 Q-5 token 方案一页——中性阶分层/单一强调色绿收敛(before-after 84处绿字面)/字号4档census/圆角3档收敛2档/间距阶核对——docs/design/q5-design-tokens.md — `2544bcb` 2026-09-30
+- R216.3 E段历史积压批量闭环——42条2026-06~07待验收🔄条款+R52标题⏳改✅(每条附AI审核注记);证据链=v0.3.17~v0.3.83多轮发版使用史+缺包修复后干净全量基线151文件/1347用例0失败+9view CDP截图AI视觉复核0功能性回归(docs/ui-review/r216/,含review.md逐view结论)+诊断页运行时指标健康;发现项ARCH-1(architecture 3D页标签重叠/低对比,非阻塞)转R148 S3待修清单;取证/回写脚本入库 — `f4f810f` 2026-09-30
+- R216 总控条款——TODO v2 批量实施轮(worktree 四分支 g/u/ai/v 并行+AI 审核授权:代码=review agent+验证链,视觉=CDP 截图 AI review,听感=程序化指标,不可自动化项保留待用户)+E 段批量闭环口径+发版 AI gate——状态 🔄 — `57c780d` 2026-09-30
+- 待完成任务清单 v2——对照 PRD 全量 ⏳/🔄 条款复核扩充——新增 A4 R148 UI 美化收尾(S3 逐 view 批次+S5 亮色主题)/A5 R189 Q-5 设计系统统一轮/Q-4 已由 R194 承接标注;A7 R177 剩余收窄为 P-2 工具卡折叠+P-4 提示词工程(P-3 已由 R194 ✅);新增 D 规划拍板表(R160 三层漏斗/R13 部分落地/R14 阶段1-2 与不做硬件集成裁决冲突需处置/R15 被 R148 吸收/R16 待选/R90 P2-P4 无限期搁置/R173-B 需核对);新增 E 历史待验收积压段(~45 条 2026-06~07 🔄 状态未闭环+批量处置建议+R52 标题滞后);C 验收清单增补 R130 截图取证/R91.3b 降噪听感/R145 Bedrock 真机三项欠账;F 备忘补 Agent denylist 边界/pi spike 待跑两条 — `1116920` 2026-09-30
+- 待完成任务清单文档(跨机交接版)——A开发任务(R213二期手柄轴控/R209三期LAN Tetris对战+插值/R93画质增强/R177打磨)+B发版里程碑(合并main+v0.3.84)+C用户验收清单+D已知限制备忘;含基点/验证链/worktree并行惯例供另一台机器接手 — `84630fb` 2026-09-30
+- R213追加⑤场景背景系统——太空站/沙漠/雪地/草丛/海底/融合六场景程序化绘制(零素材)+视差+每场景专属元素(气泡光柱/飘雪极光/草浪萤火虫/沙丘落日),岛屿轮换制+本地图片自定义背景 — `2d6eebb` 2026-09-30
+- R213入册——Swarm 4P/角色头像自定义/输入配置中心/升级自动预选(排期于短局矩阵与LAN二期合并后,避开survival.ts并行冲突) — `cec6b90` 2026-09-30
+- R198/R199/R200/R206/R207 M1条款入册——SRS游戏升级获批(OD-01~13按默认方案),分支feat/games-upgrade;M2+条款按里程碑追加,M4带gate — `34f70ea` 2026-09-29
+- 迷你游戏升级需求规格说明(SRS)正式版——docs/prd/PRD-0002-SRS-games-upgrade.md:12章+3附录,32条FR(平台通用9+各作14+双人4+LAN5)+9条NFR+4里程碑(M1单机内核9.3d→M2深度9d→M3长线3d→M4社交gate后11d)+R198-R209追踪映射+13条待决策(OD-01-13);每FR含描述/验收标准(标注单测/E2E/遥测/用户实测口径)/依赖;定位为PRD-0002下位规格细化不开新PRD,批准后按模板追加R-N;旧brainstorm文档加指引注记降为过程记录 — `49fefc1` 2026-09-29
+- 游戏方案第三轮深化——§9 内容全面review(会话形态审计/新取证6条:Slash炸弹CD不绘制F5+TD放置无悬停预览F6+提速曲线F7等/跨游戏meta断层/bloat自审裁3项:TD利息+任务墙独立系统+Swarm新角色/增量提案N1-N6:run recap+arcade profile+短局矩阵+首局引导);§10 市场调研映射(休闲基准D1~30-35%/D7≥7%/10min→本地化阈值;VS解开后无聊→TD无尽词缀;BTD6长尾三支柱;guideline技能语言;Beat Saber输入即游戏);§11 小而美最终形态(北极星+三代理指标+四波次矩阵~32.75人日);§12 全功能OKR(12.0测量基建+北极星+13组功能OKR,每KR标注度量来源);+3裁决点(11-13) — `0bfbf78` 2026-09-29
+- 游戏方案第二轮补充(用户四条)——§8 全屏沉浸纯画布(现状取证:.fs仍内嵌顶栏侧栏+画布仅100vh-210px,共享hud.ts+TD商店/Swarm卡片画布化,R206)、手势指示器全局开关默认关(SettingsView localStorage 门控VisionPad,R207)、本地双人(Swarm共屏合作/Tetris双板对战/Slash轮换/TD分工,R208)、局域网联机(RA2式建房:主进程dgram广播发现+TCP会话零依赖,host权威+指令中继+快照hash对账,TD合作首发,R209);手势稳定性归属R142单列裁决 — `681fecc` 2026-09-29
+- 迷你游戏多维升级头脑风暴——四作诊断(TD无情报/无长线、Swarm构筑无量变+boss零威胁、Tetris无Hold/SRS/T-spin、Slash块种单一+零失败压力)+五维框架(可玩性/休闲/有趣/审美/提示策略)+P0三项(策略教练引擎/Tetris现代化/Juice补强包)+P1五项+P2补遗,共约17人日;含R198-R205立项建议与5个裁决点,未动代码 — `b53177c` 2026-09-29
+- R189 B阶段第二批规划——五批圈定(Q-1滚动快修/Q-2 Agent会话管理增强[用户新增,仿Claude Code]/Q-3发版v0.3.84/Q-4 Agent流式增强[R177原P-3]/Q-5设计系统统一[方向已拍板:中性化+单强调色]),排期Q-1→Q-5 — `af8f5fc` 2026-09-26
+- P-1~P-6批次执行状态回写方案文档(R183-R188 ✅/P-7待排期)+已知问题#2/#4销项 — `94ca0a4` 2026-09-26
+- R180 深度review+自动化测试条款补录(3缺陷修复/7用例/真网络冒烟/响应式布局) — `ad14505` 2026-09-26
+- R172 四决策拍板回写方案文档——A案/独立Agent Tab/.bak要/AI8实验标识;R173 声文Tab立项条款(P1骨架切片) — `88793ad` 2026-09-26
+- R172 pi coding agent 集成评估与技术方案——pi 事实链/三方案对比(A 引 SDK 推荐+spike 为门/B 自研兜底)/安全审批层/五期路线/八风险,AI8 ReAct 桥关键结论(只读 0 diff) — `70939e5` 2026-09-26
+- 架构文档增量刷新至 f82ef25——R150-R164 结构变化(domain 8→13/i18n/crashLog)、悬停预览数据流、R163 分层覆盖率阈值、ADR-015~017 — `8a8064c` 2026-09-24
+- R160 灯效体验深度 review——三层漏斗方案（场景→精选→深调，49 参数量化 + 三分类法收敛 + S1-S4 路线，只读 0 diff） — `53c0868` 2026-09-24
+- R157.9 证据回写——视觉复核轮 v3=79/100 全记录 — `6183c7c` 2026-09-23
+- R157.8 苹果标尺重评分 v2——72/100（v1 81 偏高收回：主题剔除+已验证才记分+自动化边界三段结构） — `2558613` 2026-09-23
+- R157 苹果标准重评分 81/100（内部 91 对照）+ 可及性/遥测/主题/内容翻译四缺口 + A1-A6 修订路线（只读研究，src 0 diff） — `d766584` 2026-09-23
+- R156 测试结果评分 91/100 + 低分八维深度 review/头脑风暴 + S1-S6 冲刺 99+ 路线（只读研究，src 0 diff） — `39a20d2` 2026-09-23
+- 架构文档 — 全系统 14 节(上下文/分层/运行时/IPC 契约/状态机/数据模型/ADR) — `9be134b` 2026-09-22
+- R148 UI redesign master plan — 98/100 commercial-grade roadmap — `3135821` 2026-09-21
+- R147 phase evidence P0-P3a — `c1feccf` 2026-09-21
+- UI deep-research notes — Linear/Raycast/Fluent deconstruction — `7239a85` 2026-09-21
+- UI baseline facts for the upcoming UI redesign research — `9dbf40e` 2026-09-21
+- R147 renderer architecture modernization — design + PRD clause — `e54684e` 2026-09-21
+- R144 evidence — CDP E2E 26/26 + pad flow fix + seam clause — `3817a66` 2026-09-20
+- R142 Engine 2.0 brainstorm — five-lever path toward 95 — `1a5ee15` 2026-09-20
+- R141 amendment — vision-only as the standing constraint — `29b7bd5` 2026-09-20
+- R141 deep review — 70→80 recovery plan for lost points — `6d624c4` 2026-09-20
+- R130 截图秒开+白闪 设计文档/实施计划/PRD 条款追加 — `94667fc` 2026-09-19
+- R96 调研——迷你游戏 10 作 review 报告 + 21 张真机截图 — `e3f7e69` 2026-09-15
+- R90.9 音频 Tab 分层重构条款 + 恢复 R14 标题（R90.8 去重时误删） — `98ca686` 2026-09-14
+- R90.8 验收证据（修复重复条款） — `0b741e0` 2026-09-14
+- R90.8 流式实时检测条款（AI Tab 实时化 + 播放器 AI 听音验证） — `7a2380b` 2026-09-14
+- R90 P1 验收完成（P1 ✅，P2-P4 待启动） — `b408c9d` 2026-09-13
+- R90 P1 实施计划（7 任务，URL 已实测） — `682a8b4` 2026-09-13
+- R90 增补模型硬预算 ≤100MB 条款（歌词/对话专项 ASR 全线放弃，P3 缩为 moonshine+whisper-tiny） — `bfce7bf` 2026-09-13
+- 追加 R90 音频 AI 模型集成条款（P1 AI 实验室测试场：AST+VAD，⏳） — `52d946c` 2026-09-13
+- R89 验收完成，状态 ✅ + 证据 — `168461f` 2026-09-13
+- R89 实施计划（8 任务） — `61c1774` 2026-09-13
+- R89 AI 实验室优化条款（probe 判据/Tab 化/多档案）+ 设计文档 — `2940238` 2026-09-13
+- R88 验收完成，状态 ✅ + 证据 — `171788b` 2026-09-13
+- R88 实施计划（8 任务，TDD） — `98574b9` 2026-09-13
+- R88 补厂商与模型预设（智谱 glm-5.3 系/DeepSeek V4/OpenAI 5.2/Kimi K3/通义/Ollama/自定义） — `ead1f25` 2026-09-13
+- R88 AI 实验室条款（⏳）+ 设计文档（四区/2 IPC/safeStorage 加密落盘） — `23876d2` 2026-09-13
+- 追加 R87 诊断页 Frame age 语义修正条款（⏳） — `e85bf0e` 2026-09-13
+- R86 P1 验收完成（P1 ✅，P2/P3 待启动） — `1e40d8b` 2026-09-13
+- R86 P1 实施计划（6 任务，TDD）+ spec 补 model3dEnabled — `b9c5126` 2026-09-13
+- R86 P1 设计文档（Synapse 式左 rail + token + Dashboard 磁贴重排） — `ad1bf9b` 2026-09-13
+- 追加 R86 UI 全面重设计条款（Synapse 式布局，三期分期，⏳） — `0a58dd5` 2026-09-13
+- R85 验收完成，状态 ✅ + 证据 — `41bbd1d` 2026-09-13
+- R85 实施计划（10 任务，TDD） — `e2181e5` 2026-09-13
+- R85 设计文档（dashboard + Tab 壳层 + 设置 Tab + 预留用户菜单） — `62bc286` 2026-09-13
+- 追加 R85 主界面重设计条款（dashboard + Tab 导航，⏳） — `f68ed1a` 2026-09-13
+- R81 hotkey presets / R82 RapidOCR / R83 AI cleanup clauses (⏳) — `bcbca6a` 2026-09-13
+- R80 self-check evidence + status ✅ (revert smoke hook) — `1c1ade0` 2026-09-12
+- R80 clause detail (snip manager / hotkey / IPC / SnipView acceptance) — `e8677d7` 2026-09-12
+- R80 implementation plan (7 tasks, TDD) — `794eb2f` 2026-09-12
+- R80 global snip tool design spec (brainstorm approved) — `79f1b56` 2026-09-12
+- R79 self-check evidence + review record (status ✅) — `6e4f6f7` 2026-09-12
+- R79 implementation plan — `c30e78e` 2026-09-12
+- add R79 clause (OCR fix proven + region OCR + polish) and R80 placeholder (global snip tool) — `47f9420` 2026-09-12
+- R78 self-check evidence + review record (status ✅) — `7d41583` 2026-09-12
+- R78 implementation plan (text system + gestures + OCR + filmstrip) — `4672fa2` 2026-09-12
+- add R78 clause (text system redo + gesture editing + OCR + filmstrip constraints) — `db4a63c` 2026-09-12
+- R77 self-check evidence + review record (status ✅) — `b0aef5e` 2026-09-12
+- R77 implementation plan (capture filmstrip + fixes + zoom) — `dbff4ad` 2026-09-12
+- add R77 clause (capture filmstrip + annotator fixes + viewer zoom) — `c1c84f7` 2026-09-12
+- R76 self-check evidence (status ✅, manual verification pending) — `af64429` 2026-09-12
+- R76 implementation plan (in-place annotator) — `525a3f2` 2026-09-12
+- add R76 clause (WeChat-style in-place annotation, replaces filerobot modal) — `92e9664` 2026-09-12
+- R75 self-check evidence (status ✅, manual verification pending) — `f92c75b` 2026-09-11
+- R75 implementation plan (zoom + snip + editor) — `7a99aeb` 2026-09-11
+- add R75 clause (video studio preview zoom + region snip + WeChat-style image editor) — `0648269` 2026-09-11
+- R52.9-12 i18n keys + style/metrics toggle + mark R52 ✅ — `f322154` 2026-07-07
+- R52 append audio-studio round-2 requirements (R52.1–R52.12) — `d9111eb` 2026-07-07
+- R52 AudioStudio 第二轮优化设计稿（布局重构+图表数值+投票区域+时间修复） — `608724c` 2026-07-06
+- R51 自检通过 — AudioStudio transport + EQ 双模式验收点 ✅ — `dae0f3c` 2026-07-06
+- R50 代码自检通过 — R50.1/2/3/4 标 ✅，GUI 验收点待统一人工验收 — `1975c99` 2026-07-06
+- R50.3 标记底部自适应为已实施并更新 R50 状态 — `a7e41ce` 2026-07-06
+- R50/R51 UI 优化实施计划（11 任务，两阶段） — `526a4fa` 2026-07-06
+- 追加 R50/R51 UI 优化 R-N（布局基础设施 + AudioStudio transport + EQ 双模式） — `0dc41e8` 2026-07-06
+- UI 优化设计稿（R50 布局基础设施 + R51 AudioStudio transport + EQ 双模式） — `5f06ffa` 2026-07-06
+- R49 sync README + GitHub Pages to v0.3.43 (R38–R48 cumulative) — `0157474` 2026-07-06
+- add R22 video-wall UI config panel spec — `4571f4b` 2026-06-24
+- implement R13 open-source readiness (community files, CI, SEO) — `c2880d6` 2026-06-22
+- append R13–R16 (quality roadmap) + Claude execution task list — `e4a7fc5` 2026-06-22
+
+## test
+
+- R300 附带 — 三日凌空 gl 用例单上下文复用+20s 超时(负载假红根修) — `fe67093` 2026-10-15
+- R222 发布门禁体系轮——verify:release 六层门禁+CI 修复+质量批 — `b6cc9a6` 2026-10-01
+- R188 P-6测试补齐——审批always记忆端到端(bash首词前缀免审/同路径write免审,全程单次approval断言);损坏JSONL边界(list跳坏行/load全坏→[]/续跑不崩);词典上限200(domain双向截断+组件超限提示/满额替换仍可);分层覆盖率回归64.35%行/52.51%分支全达标;1192用例绿,快照9/9 — `ab1e9a4` 2026-09-26
+- R163 门禁恢复（R156-S1）——GL 条件化真跑 15 用例 + coverage 分层阈值 + video 掩膜 — `b9f4eab` 2026-09-23
+- R162 视觉复核轮——R160+R161 独立复验全过 + 环境漂移根因定位 + 苹果尺 v4=81/100 — `3614324` 2026-09-23
+- R157.9 视觉复核轮——R158+R159 九 view 目检 + 陈旧基线事故处置（T1 镜像拦截→HEAD 重拍 GATE PASS）+ 苹果尺 v3=79/100 — `d44208b` 2026-09-23
+- R155 全量自动化测试轮——八项门禁跑批 + 9 view 只读复核 + 测试报告/建议书（src 0 diff；coverage 阈值失守立 B1） — `b1609ec` 2026-09-23
+- R147 P0 baseline — App smoke test + measured baseline — `c2b3db0` 2026-09-21
+- SnipView annotate finish flows (save/copy/dismiss) (R80.6) — `053c25b` 2026-09-12
+- R51.5 补全 EQ 响应单测覆盖（highshelf/bandpass/lowpass + logFreqPoints + 空 bands）+ 穷尽性守卫 — `d6acfc8` 2026-07-06
+
+## chore
+
+- .verify-artifacts 门禁截图目录入 gitignore(产物不入库) — `8498fcf` 2026-10-01
+- R148 S5 走查证据——亮色主题 9 view+settings 截图入库 docs/ui-review/r148-s5-light/(CDP 9295 错峰,rgbbox:theme=light 经真实持久化键→bootTheme 首帧前应用,走查后键清除);AI 视觉逐张复核全 PASS:dashboard 白卡磁贴+彩色图标/workspace LED 舞台恒暗/effects 色板鲜艳/video 黑舞台浅 chrome/audio 频谱深色舞台/games 可读/diagnostics 清晰/architecture 3D 场景恒暗无亮色渗透/ai 表单含琥珀提示可读+settings 主题选择器渲染正常;暗色基线 S5 轮重立(audio 0.15%/video 0.098% 文字簇漂移→9/9 GATE PASS 后入档) — `63e3a86` 2026-09-30
+- R148 S3 批次视觉基线一次重立——S3-a~e 五批(hex 清零/ARCH-1+轻微项/字阶四档/圆角两档/gap 别名)后预期漂移:workspace 1.84%/effects 2.78%/ai 1.50%/dashboard 0.95%/video 0.57%/audio 0.58%/games 0.51%/diagnostics 0.19%/architecture 0.02%(标签防重叠+提对比落地,但 DOM 标签面积小)→--update-baseline 重立→复跑 9/9 GATE PASS(全部 0.0000%);9 张新基线 AI 视觉逐张目检全过:effects 网格均匀文字无裁剪/architecture 七标签无重叠且 Node.js 清晰可读/workspace 三 metric 徽章均匀+模式下拉不拥挤/ai 表单与 10 Tab 完好/dashboard 磁贴与右对齐状态卡完好/video eyebrow 可读性达标/audio transport 与等宽读数完好/games 卡片与档案行完好/diagnostics 表格对齐;基线 stamp 6571cdc — `45c6a5e` 2026-09-30
+- R163 补充——coverage 报告产物入 .gitignore（b9f4eab 误提交 135 文件撤销跟踪） — `9bfcb60` 2026-09-23
+- v0.3.47 — `e8331d6` 2026-09-15
+- R91.3b AI 降噪 spike 完成 GO——选型 DTLN 替代 RNNoise — `bf83fda` 2026-09-15
+- Playwright 视觉验证/审查开发脚本入库 + 忽略 release-v* 构建产物目录 — `b6c7840` 2026-09-14
+- R89 清理 ai.lab.group.* 死 key（折叠组被 Tab 取代） — `1fc77e2` 2026-09-13
+- R85 清理 sidebar 死代码（CSS 规则，JSX/imports 已在集成时清） — `0304598` 2026-09-13
+- release v0.3.45 — `37cb259` 2026-07-31
+- release v0.3.44 — `170d8a8` 2026-07-18
+- bootstrap PRD-0002 workflow + R11/R12 test suites + coverage — `6faf8cf` 2026-06-13
+
+## style
+
+- R148 S3 batch-1 — vision-lab structural polish — `c01095c` 2026-09-21
+
+## build
+
+- R76.6 remove react-filerobot-image-editor + react-konva + styled-components — `6af5d7f` 2026-09-12
+- R75 add react-filerobot-image-editor 5.0.0-beta.159 (+ peer react-konva/styled-components) — `4071898` 2026-09-11
