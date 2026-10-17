@@ -200,6 +200,51 @@ test('capture: restart uses the current mode when none is given; a FAILED switch
   assert.equal(h.stops.teardown, 2, 'the failed restart still tore the old stream down')
 })
 
+// ── R305: capture preserves an active session; duplicate-init face upgrade ─
+
+test('R305 capture: a precision switch PRESERVES an active session (forceReady back); non-active restarts to the wizard as before', async () => {
+  const h = makeHarness()
+  await h.messenger.handle({ type: 'init', cfg: { camera: M1 } })
+  const p = h.created[0]
+  const frCalls = []
+  p.forceReady = (profile) => { frCalls.push(profile); p.session.state = 'active' }
+  // active → the switch re-opens the stream, then forceReadys the SAME profile back
+  p.session = { state: 'active', profile: { center: { x: 0.5, y: 0.55 }, pinchOn: 0.5, pinchOff: 0.9 } }
+  await h.messenger.handle({ type: 'capture', camera: M2 })
+  assert.deepEqual(h.camCalls.at(-1), M2, 'the new mode opened')
+  assert.equal(frCalls.length, 1, 'an ACTIVE session is forceReady\'d back after the restart')
+  assert.deepEqual(frCalls[0], { center: { x: 0.5, y: 0.55 }, pinchOn: 0.5, pinchOff: 0.9 })
+  // calibrating → NOT force-ready: the wizard restarts (pre-R305 behavior)
+  p.session = { state: 'calibrating', profile: null }
+  await h.messenger.handle({ type: 'capture', camera: M1 })
+  assert.equal(frCalls.length, 1, 'only ACTIVE sessions are preserved across a capture switch')
+})
+
+test('R305 duplicate init: a face-requesting consumer upgrades a faceless session in place; faceless joiners never downgrade', async () => {
+  const h = makeHarness()
+  await h.messenger.handle({ type: 'init', cfg: { camera: M1, faceModel: null } })
+  assert.equal(h.created.length, 1)
+  // faceless joiner → ready re-reply, no model reload
+  await h.messenger.handle({ type: 'init', cfg: { camera: M1, faceModel: null } })
+  assert.equal(h.stops.reloads.length, 0)
+  // face-requesting joiner → ONE in-place reload carrying the face model
+  await h.messenger.handle({ type: 'init', cfg: { camera: M1, faceModel: 'models/face_landmarker.task' } })
+  assert.equal(h.created.length, 1, 'the upgrade must not rebuild the session')
+  assert.equal(h.stops.reloads.length, 1)
+  assert.equal(h.stops.reloads[0].faceModel, 'models/face_landmarker.task')
+  assert.deepEqual(h.posted.at(-1), { type: 'ready', delegate: 'GPU' })
+  // a later face joiner on a pipeline that already has face → no further reload
+  h.created[0].face = {}
+  await h.messenger.handle({ type: 'init', cfg: { camera: M1, faceModel: 'models/face_landmarker.task' } })
+  assert.equal(h.stops.reloads.length, 1)
+  // a FAILING upgrade must not kill the session: ready still goes out
+  h.created[0].face = null
+  h.created[0].reloadLandmarkers = async () => { throw new Error('model gone') }
+  await h.messenger.handle({ type: 'init', cfg: { camera: M1, faceModel: 'models/face_landmarker.task' } })
+  assert.deepEqual(h.posted.at(-1), { type: 'ready', delegate: 'GPU' })
+  assert.equal(h.posted.filter((m) => m.type === 'error').length, 0)
+})
+
 // ── R227.2/R227.6: the frame loop ──────────────────────────────────────────
 
 test('tick: 8 straight frame errors escalate to a CPU rebuild; recovery resets the streak, ended video stops the chain', async () => {

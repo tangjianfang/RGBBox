@@ -391,7 +391,14 @@ export function AiLabVisionTab(): JSX.Element {
 
   const start = async (): Promise<void> => {
     setBusy(true)
-    try { await vision.enable() } catch { /* camera denied — the state chip tells the story */ } finally { setBusy(false) }
+    try {
+      // R305: the bench is a DIAGNOSTIC tool — skip the 3-step wizard (stored
+      // profile if any, defaults otherwise) so every event-driven row goes
+      // live the moment the camera does; 重新校准 re-enters the wizard. Face
+      // on: the bench's face rows (张嘴/微笑 board cards) are try-it-now.
+      await vision.enable({ face: true })
+      vision.resumeActive()
+    } catch { /* camera denied — the state chip tells the story */ } finally { setBusy(false) }
   }
 
   // R144.7 E2E seam (games __rgbboxVision precedent): packaged-app

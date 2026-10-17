@@ -161,6 +161,18 @@ export function createHostMessenger(deps) {
     if (pipeline) {
       // R228: already running — the second consumer's init MUST get a ready
       // (swallowing it left enable() awaiting a reply that never came).
+      // R305: a FACE-requesting consumer joining a FACELESS session upgrades
+      // it in place (the AI Lab bench's face rows are try-it-now cards, they
+      // must light whenever the bench starts — even when a faceless games
+      // session created the host first). One-way: a faceless joiner never
+      // downgrades. A failed upgrade keeps the session alive (face rows stay
+      // dark) — it must not kill the host for the other consumers.
+      if (msg.cfg?.faceModel && !pipeline.face) {
+        try {
+          await pipeline.reloadLandmarkers({ ...msg.cfg })
+          lastCfg = { ...lastCfg, ...msg.cfg }
+        } catch { /* best-effort upgrade — the session survives without face */ }
+      }
       post({ type: 'ready', delegate: pipeline.delegate })
       return
     }
@@ -248,9 +260,16 @@ export function createHostMessenger(deps) {
           // R141-B: precision mode switch — restart the stream with new constraints
           if (!msg.synthetic && video != null) {
             const prevMode = cameraMode
+            // R305: the stream rebuild re-runs session.start() (→ searching,
+            // full wizard again). An ACTIVE session is forceReady'd back with
+            // its own profile once the new stream is up (R133.4's "never
+            // re-calibrate for a transport change" principle, extended to
+            // capture switches); calibrating/searching keep the old behavior.
+            const wasActive = pipeline.session?.state === 'active'
             try {
               fullTeardown()
               await openCamera(msg.camera)
+              if (wasActive) pipeline.forceReady(pipeline.session.profile)
             } catch (err) {
               cameraMode = prevMode // a failed switch must not poison the next restart
               throw err

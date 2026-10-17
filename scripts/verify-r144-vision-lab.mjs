@@ -47,7 +47,7 @@ page.on('pageerror', (e) => errors.push(String(e).slice(0, 200)))
 await page.locator('.rail-item').filter({ hasText: 'AI' }).first().click()
 await sleep(700)
 const tabCount = await page.locator('.ai-tab').count()
-check('AI lab offers six tabs', tabCount === 6, `got ${tabCount}`)
+check('AI lab offers nine tabs', tabCount === 9, `got ${tabCount}`) // R305: svg/voice/agent joined after R144 wrote the six-tab count
 await page.locator('.ai-tab[data-tab="vision"]').click()
 await sleep(400)
 

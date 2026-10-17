@@ -14,6 +14,14 @@ import { classifyVisionError, type VisionErrorKind } from '../domain/visionError
 
 export type VisionState = 'idle' | 'searching' | 'calibrating' | 'active' | 'paused'
 export type VisionSensitivity = 'standard' | 'fast' | 'sport'
+/**
+ * R305: camera-enable options. `face` loads the face landmarker so
+ * expression capabilities are testable — only the AI Lab bench passes it
+ * today; games/assistant stay faceless (the R249.2 inference budget).
+ */
+export interface VisionEnableOpts {
+  face?: boolean
+}
 
 const PROFILE_KEY = 'vgi-profile-v2'
 const MIRROR_KEY = 'rgbbox:visionMirror'
@@ -92,7 +100,7 @@ function translateEngineText(text: string, t: TFn): string {
 }
 
 export interface VisionInputHandle {
-  enable(): Promise<void>
+  enable(opts?: VisionEnableOpts): Promise<void>
   /** Camera-free variant for tests/E2E — synthetic landmarks, identical pipeline. */
   enableSynthetic(): Promise<void>
   disable(): void
@@ -280,7 +288,7 @@ export function useVisionInput(): VisionInputHandle {
     }
   }, [])
 
-  const start = useCallback(async (mode: 'camera' | 'synthetic') => {
+  const start = useCallback(async (mode: 'camera' | 'synthetic', opts?: VisionEnableOpts) => {
     if (channelRef.current) return
     setError(null) // R230: a new attempt clears the previous failure
     setErrorKind(null) // R239
@@ -323,7 +331,8 @@ export function useVisionInput(): VisionInputHandle {
             // R249.2 (03-B9): games/assistant paths have ZERO face consumers —
             // sending faceModel made the host run FaceLandmarker every 3rd
             // frame (+34.6ms GPU) for nobody. null = faceless pipeline.
-            faceModel: null,
+            // R305: the bench opts in (its face rows are try-it-now cards).
+            faceModel: opts?.face ? new URL('models/face_landmarker.task', base).href : null,
             numHands: 2,
             // R142-L1: 60fps full-frame capture — MJPG at 640×480 is standard
             // webcam fare; the host pipeline (its own renderer process)
@@ -418,7 +427,7 @@ export function useVisionInput(): VisionInputHandle {
     return tracked
   }, [mirror, onEvent, onSnapshot, sensitivity])
 
-  const enable = useCallback(() => start('camera'), [start])
+  const enable = useCallback((opts?: VisionEnableOpts) => start('camera', opts), [start])
   const enableSynthetic = useCallback(() => start('synthetic'), [start])
 
   const disable = useCallback(() => {

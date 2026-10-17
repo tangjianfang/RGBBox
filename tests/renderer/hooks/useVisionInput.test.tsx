@@ -82,6 +82,19 @@ describe('renderer/hooks/useVisionInput (R136 host client)', () => {
     expect(rgbbox.visionHostClose).not.toHaveBeenCalled()
   })
 
+  it('R305: enable({face:true}) ships the face model; the default enable stays faceless (R249.2 default intact)', async () => {
+    const { result } = renderHook(() => useVisionInput())
+    await act(() => result.current.enable({ face: true }))
+    const init = host.received.find((m) => m.type === 'init') as { cfg: Record<string, unknown> }
+    expect(String(init.cfg.faceModel)).toContain('face_landmarker.task')
+    await act(() => result.current.disable())
+    host.received.length = 0
+    await act(() => result.current.enable())
+    const init2 = host.received.find((m) => m.type === 'init') as { cfg: Record<string, unknown> }
+    expect(init2.cfg.faceModel).toBeNull()
+    await act(() => result.current.disable())
+  })
+
   it('host events normalize into held/queue + window bus (keyless events reach the bus only)', async () => {
     const bus = vi.fn()
     window.addEventListener('vision-input', bus)

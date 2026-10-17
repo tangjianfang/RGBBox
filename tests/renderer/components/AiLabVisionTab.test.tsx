@@ -185,6 +185,24 @@ describe('AiLabVisionTab (R144)', () => {
     expect(countOf(row(c2, 'chord-select'))).toBe('')
   })
 
+  it('R305: start skips the wizard — enable({face:true}) then resumeActive, in order; synthetic seam stays untouched', async () => {
+    const { container } = render(<AiLabVisionTab />)
+    fireEvent.click(container.querySelector('[data-action="vision-start"]') as HTMLElement)
+    await waitFor(() => expect(h.vision.enable).toHaveBeenCalledWith({ face: true }))
+    await waitFor(() => expect(h.vision.resumeActive).toHaveBeenCalledTimes(1))
+    // enable resolves BEFORE resumeActive fires (order matters: forceReady on a live session)
+    expect(h.vision.enable.mock.invocationCallOrder[0]).toBeLessThan(h.vision.resumeActive.mock.invocationCallOrder[0])
+    // a FAILED enable must not resumeActive (camera denied → no silent forceReady)
+    h.vision.enable.mockRejectedValueOnce(new Error('denied'))
+    h.vision.enabled = false
+    cleanup()
+    const c2 = render(<AiLabVisionTab />).container
+    fireEvent.click(c2.querySelector('[data-action="vision-start"]') as HTMLElement)
+    await waitFor(() => expect(h.vision.enable).toHaveBeenCalledTimes(2))
+    await act(async () => { await Promise.resolve() })
+    expect(h.vision.resumeActive).toHaveBeenCalledTimes(1)
+  })
+
   it('live signals: pinch gauge, finger extension, chord preview/buffer, geom-active rows', async () => {
     h.vision.enabled = true
     h.vision.state = 'active'
