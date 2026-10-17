@@ -88,6 +88,15 @@ The `docs/index.html` page is a bilingual (zh/en) product showcase deployed to G
 
 To deploy: Settings → Pages → Source: **GitHub Actions**, then push any change to `docs/`.
 
+### Accessibility & assistive input
+
+RGBBox's vision gestures are **camera-only** (no wearables) and can serve as an
+assistive input path for users who prefer to reduce keyboard/mouse reliance.
+Conservative positioning: RGBBox is **not a medical device** and holds **no
+accessibility conformance certification**; main navigation is verified
+keyboard-reachable as an ongoing baseline. Details:
+[`docs/PRIVACY.md`](docs/PRIVACY.md) (data handling + accessibility statement).
+
 ### Roadmap
 
 - Native capture providers for Windows (DXGI) / macOS (ScreenCaptureKit)
@@ -179,6 +188,11 @@ src/renderer  React UI — 工作区、显示器映射、分层特效控制、
 `docs/index.html` 是支持中英文切换的产品展示页，通过 GitHub Actions 自动部署到 GitHub Pages。
 
 部署方式：仓库 Settings → Pages → Source 选择 **GitHub Actions**，然后推送对 `docs/` 目录的任何更改即可。
+
+### 无障碍与辅助输入
+
+体感手势为**纯视觉方案**（无需任何穿戴设备），可作为希望减少键盘/鼠标依赖的用户的辅助输入方式。保守声明：RGBBox **不是医疗器械**，亦**未持有无障碍一致性认证**；主导航键盘可达性已经实测核查并作为持续改进基线。数据与无障碍声明详见
+[`docs/PRIVACY.md`](docs/PRIVACY.md)。
 
 ### 开发路线图
 
