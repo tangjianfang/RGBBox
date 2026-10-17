@@ -303,6 +303,53 @@ describe('AiLabVisionTab (R144)', () => {
     }
   }, 15000)
 
+  it('R306/T3: the health card externalizes the funnel truth + soak-aligned latency segments', async () => {
+    // persisted funnel truth (onboarding.ts owns the key)
+    localStorage.setItem('rgbbox:visionFunnel', JSON.stringify({ opened: 5, calDone: 3, firstCmd: 2 }))
+    h.vision.enabled = true
+    h.vision.state = 'active'
+    h.vision.frameRef.current = {
+      stats: {
+        infer: { n: 10, p50: 12, p95: 42, mean: 13 },
+        hand: { n: 10, p50: 12, p95: 20, mean: 13 },
+        face: { n: 0, p50: 0, p95: 0, mean: 0 },
+        acquire: { n: 10, p50: 5, p95: 8, mean: 6 },
+        fps: 60, inferFps: 57, delegate: 'GPU', lowFps: false, cam: { w: 640, h: 480, fps: 60 },
+      },
+    }
+    const { container } = render(<AiLabVisionTab />)
+    await waitFor(() => {
+      expect(container.querySelector('[data-field="health-funnel-opened"]')?.textContent).toBe('5')
+      expect(container.querySelector('[data-field="health-funnel-caldone"]')?.textContent).toBe('3')
+      expect(container.querySelector('[data-field="health-funnel-firstcmd"]')?.textContent).toBe('2')
+    })
+    // conversion readout: calDone/opened
+    expect(container.querySelector('[data-field="health-funnel-rate"]')?.textContent).toBe('60%')
+    // latency segments — SAME fields/units the soak ledger watches (inferFps,
+    // infer p95, acquire p95, delegate), verbatim; the 120ms ticker copies
+    // frameRef → live, so wait for the first tick
+    await waitFor(() => {
+      expect(container.querySelector('[data-field="health-infer-fps"]')?.textContent).toContain('57')
+      expect(container.querySelector('[data-field="health-infer-p95"]')?.textContent).toContain('42')
+      expect(container.querySelector('[data-field="health-acquire-p95"]')?.textContent).toContain('8')
+      expect(container.querySelector('[data-field="health-delegate"]')?.textContent).toContain('GPU')
+    })
+    expect(container.querySelector('[data-field="health-lowfps"]')).toBeNull()
+    // the low-fps badge flips on when the stats flag says so
+    const stats = h.vision.frameRef.current.stats as { lowFps: boolean }
+    stats.lowFps = true
+    act(() => { window.dispatchEvent(new CustomEvent('vision-input', { detail: { kind: 'chord', name: 'select', down: true } })) })
+    await waitFor(() => {
+      expect(container.querySelector('[data-field="health-lowfps"]')).not.toBeNull()
+    })
+    // funnel renders from storage even with the pipeline off
+    cleanup()
+    h.vision.enabled = false
+    const c2 = render(<AiLabVisionTab />).container
+    expect(c2.querySelector('[data-field="health-funnel-opened"]')?.textContent).toBe('5')
+    expect(c2.querySelector('[data-field="health-infer-p95"]')?.textContent).toContain('—')
+  })
+
   it('live signals: pinch gauge, finger extension, chord preview/buffer, geom-active rows', async () => {
     h.vision.enabled = true
     h.vision.state = 'active'

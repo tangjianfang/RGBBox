@@ -7,6 +7,7 @@ import { DemoRecorder, recordingToJson } from '../vision/demoRecorder'
 import type { Recording } from '../vision/demoRecorder'
 import { planBench, scoreBench, WORD_HINTS, BENCH_WORDS } from '../domain/visionBench'
 import type { BenchPlan, BenchReport, BenchOpts } from '../domain/visionBench'
+import { readFunnel } from '../vision/onboarding'
 import { VISION_CHANNEL } from '../vision/hostProtocol'
 import type { VisionStats } from '../vision/vision_input'
 
@@ -560,6 +561,11 @@ export function AiLabVisionTab(): JSX.Element {
     URL.revokeObjectURL(url)
   }, [bench.phase, bench.report, bench.recording])
 
+  // R306/T3: the health card's funnel half — persisted truth, re-read on every
+  // session transition so a wizard completed mid-session reflects on stop/start
+  const [funnel, setFunnel] = useState(() => readFunnel())
+  useEffect(() => { setFunnel(readFunnel()) }, [vision.enabled])
+
   // R144.7 E2E seam (games __rgbboxVision precedent): packaged-app
   // verification starts the camera-free synthetic pipeline and asserts the
   // bench from outside. No user-visible behavior; unregisters on unmount.
@@ -688,6 +694,26 @@ export function AiLabVisionTab(): JSX.Element {
             </div>
           </>
         )}
+      </div>
+
+      {/* R306/T3: the health card — persisted funnel truth + the latency
+          segments the soak ledger watches, verbatim (inferFps / infer p95 /
+          acquire p95 / delegate + the engine's own lowFps badge). */}
+      <div className="vision-health">
+        <div className="vision-health-head"><strong>{t('ai.lab.vision.health.title')}</strong></div>
+        <div className="vision-health-grid">
+          <span>{t('ai.lab.vision.health.funnel.opened')} <b data-field="health-funnel-opened">{funnel.opened}</b></span>
+          <span>{t('ai.lab.vision.health.funnel.caldone')} <b data-field="health-funnel-caldone">{funnel.calDone}</b></span>
+          <span>{t('ai.lab.vision.health.funnel.firstcmd')} <b data-field="health-funnel-firstcmd">{funnel.firstCmd}</b></span>
+          <span>{t('ai.lab.vision.health.funnel.rate')} <b data-field="health-funnel-rate">{funnel.opened ? `${Math.round((funnel.calDone / funnel.opened) * 100)}%` : '—'}</b></span>
+          <span>{t('ai.lab.vision.health.inferfps')} <b data-field="health-infer-fps">{live.stats ? Math.round(live.stats.inferFps) : '—'}</b></span>
+          <span>{t('ai.lab.vision.health.inferp95')} <b data-field="health-infer-p95">{live.stats ? `${Math.round(live.stats.infer.p95)} ms` : '—'}</b></span>
+          <span>{t('ai.lab.vision.health.acquirep95')} <b data-field="health-acquire-p95">{live.stats?.acquire ? `${Math.round(live.stats.acquire.p95)} ms` : '—'}</b></span>
+          <span>{t('ai.lab.vision.health.delegate')} <b data-field="health-delegate">{live.stats?.delegate ?? '—'}</b></span>
+          {live.stats?.lowFps === true && (
+            <span className="vision-health-warn" data-field="health-lowfps">{t('ai.lab.vision.health.lowfps')}</span>
+          )}
+        </div>
       </div>
 
       {/* R153.1: core board — the nine user-picked highest-value commands,

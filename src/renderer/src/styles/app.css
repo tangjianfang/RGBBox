@@ -8354,6 +8354,13 @@ input[type='range'].video-player-volume {
 .vision-bench-verdict.pass { color: var(--ok, #3fb950); }
 .vision-bench-verdict.fail { color: var(--danger, #f85149); }
 .vision-bench-actions { display: flex; gap: 8px; }
+/* R306/T3: the health card — funnel truth + soak-aligned latency segments. */
+.vision-health { border: 1px solid var(--border-color); border-radius: 8px; display: flex; flex-direction: column; gap: 6px; grid-column: 1 / -1; padding: 10px 12px; }
+.vision-health-head strong { font-size: 0.8125rem; }
+.vision-health-grid { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: var(--text-caption-size); }
+.vision-health-grid span { color: var(--text-muted); }
+.vision-health-grid b { color: var(--text-normal, inherit); font-weight: 600; }
+.vision-health-warn { border: 1px solid var(--danger, #f85149); border-radius: 4px; color: var(--danger, #f85149); padding: 0 6px; }
 /* R153.1: core board — nine always-visible command cards above the fold. */
 .vision-board { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); margin: 10px 0 4px; }
 .vision-card {

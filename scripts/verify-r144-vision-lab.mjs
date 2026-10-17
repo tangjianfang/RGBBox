@@ -84,7 +84,6 @@ const recordBtn = await page.evaluate(() => {
   return b ? { on: !b.disabled, label: b.textContent } : null
 })
 check('record button present + enabled while running', recordBtn?.on === true && !!recordBtn?.label, JSON.stringify(recordBtn))
-await page.screenshot({ path: `${OUT}/r144-vision-lab.png`, fullPage: false }).catch(() => {})
 check('VisionPad mounted with the session', !!(await page.evaluate(() => document.querySelector('.vision-pad'))))
 
 // ── 3. bus events light rows in the real DOM ───────────────────────────────
@@ -146,6 +145,21 @@ const benchReport = await page.evaluate(() => ({
   exportBtn: !!document.querySelector('[data-action="vision-bench-export"]'),
 }))
 check('deep bench report rendered — 6 words × recall × lab baseline', benchDone && benchReport.rows === 6 && benchReport.recallCells === 6 && benchReport.exportBtn, JSON.stringify(benchReport))
+
+// ── 4c. R306/T3: the health card externalizes the funnel truth + the soak-
+//         aligned latency segments (inferFps / infer p95 / acquire p95)
+const health = await page.evaluate(() => ({
+  card: !!document.querySelector('.vision-health'),
+  funnelOpened: document.querySelector('[data-field="health-funnel-opened"]')?.textContent ?? null,
+  inferFps: document.querySelector('[data-field="health-infer-fps"]')?.textContent ?? null,
+  inferP95: document.querySelector('[data-field="health-infer-p95"]')?.textContent ?? null,
+  delegate: document.querySelector('[data-field="health-delegate"]')?.textContent ?? null,
+}))
+check('health card renders funnel + soak-aligned latency fields', health.card && health.funnelOpened != null && health.inferFps != null && health.inferP95 != null && health.delegate != null, JSON.stringify(health))
+
+// doc screenshot AFTER the bench/health cards are populated (report table,
+// health segments, board and pad all in frame)
+await page.screenshot({ path: `${OUT}/r144-vision-lab.png`, fullPage: false }).catch(() => {})
 
 await page.locator('.ai-tab[data-tab="config"]').click()
 await sleep(600)
