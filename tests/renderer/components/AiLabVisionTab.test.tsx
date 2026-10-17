@@ -303,6 +303,36 @@ describe('AiLabVisionTab (R144)', () => {
     }
   }, 15000)
 
+  it('R306/T16: the E2E seam mounts only in dev or when launched with the e2e flag', async () => {
+    const w = window as unknown as { rgbbox?: { isE2e?: boolean }; __rgbboxVisionLab?: unknown }
+    const originalRgbbox = w.rgbbox
+    try {
+      // production build, no e2e flag → NO seam on window
+      vi.stubEnv('DEV', false)
+      w.rgbbox = { isE2e: false }
+      const { unmount } = render(<AiLabVisionTab />)
+      expect((window as unknown as { __rgbboxVisionLab?: unknown }).__rgbboxVisionLab).toBeUndefined()
+      unmount()
+      // production build + e2e launch flag (main passes it via the CDP port) → seam
+      cleanup()
+      w.rgbbox = { isE2e: true }
+      render(<AiLabVisionTab />)
+      expect((window as unknown as { __rgbboxVisionLab?: unknown }).__rgbboxVisionLab).not.toBeUndefined()
+      unmount()
+      cleanup()
+      // dev keeps the seam for interactive debugging
+      vi.stubEnv('DEV', true)
+      w.rgbbox = { isE2e: false }
+      render(<AiLabVisionTab />)
+      expect((window as unknown as { __rgbboxVisionLab?: unknown }).__rgbboxVisionLab).not.toBeUndefined()
+      unmount()
+    } finally {
+      vi.unstubAllEnvs()
+      w.rgbbox = originalRgbbox
+      cleanup()
+    }
+  })
+
   it('R306/T3: the health card externalizes the funnel truth + soak-aligned latency segments', async () => {
     // persisted funnel truth (onboarding.ts owns the key)
     localStorage.setItem('rgbbox:visionFunnel', JSON.stringify({ opened: 5, calDone: 3, firstCmd: 2 }))

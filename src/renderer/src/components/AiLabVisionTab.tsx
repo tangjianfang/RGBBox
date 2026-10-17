@@ -569,9 +569,12 @@ export function AiLabVisionTab(): JSX.Element {
   // R144.7 E2E seam (games __rgbboxVision precedent): packaged-app
   // verification starts the camera-free synthetic pipeline and asserts the
   // bench from outside. No user-visible behavior; unregisters on unmount.
+  // R306/T16: production gate — dev builds and CDP-launched E2E contexts
+  // only; a real user's launch never mounts this on window.
   const visionRef = useRef(vision)
   visionRef.current = vision
   useEffect(() => {
+    if (!import.meta.env.DEV && window.rgbbox?.isE2e !== true) return
     const w = window as unknown as { __rgbboxVisionLab?: unknown }
     w.__rgbboxVisionLab = {
       async startSynthetic(): Promise<boolean> {

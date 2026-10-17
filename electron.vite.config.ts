@@ -1,6 +1,33 @@
 import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import type { Plugin } from 'vite'
+
+/**
+ * R306/T16: production-only CSP — injected into every renderer html entry at
+ * build time (dev keeps vite HMR unblocked). Locked to self + the app's own
+ * media:// protocol (vision bundle + models) + the blob/data URLs the app
+ * legitimately produces (workers, canvas exports, recording downloads) +
+ * 'wasm-unsafe-eval' for MediaPipe (wasm only — no JS eval is allowed).
+ */
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' media: 'wasm-unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "connect-src 'self' media: blob:",
+  "media-src 'self' blob:",
+  "worker-src 'self' blob:",
+  "font-src 'self' data:",
+  "object-src 'none'",
+].join('; ')
+const prodCspPlugin: Plugin = {
+  name: 'rgbbox-prod-csp',
+  apply: 'build',
+  transformIndexHtml(html) {
+    return html.replace('<head>', `<head>\n    <meta http-equiv="Content-Security-Policy" content="${CSP}">`)
+  },
+}
 
 export default defineConfig({
   main: {
@@ -27,7 +54,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
-    plugins: [react()],
+    plugins: [react(), prodCspPlugin],
     build: {
       rollupOptions: {
         input: {

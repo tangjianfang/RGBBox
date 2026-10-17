@@ -14,6 +14,9 @@ export interface AudioInput {
 
 
 const api = {
+  // R306/T16: read-only launch context — true only when main forwarded the
+  // CDP diagnostic launch (gates renderer E2E seams; see main window creation)
+  isE2e: process.argv.includes('--rgbbox-e2e'),
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(ipcChannels.appVersion),
   getDisplayTopology: (): Promise<DisplayTopology> => ipcRenderer.invoke(ipcChannels.getDisplayTopology),
   getDefaultProfile: (): Promise<Profile> => ipcRenderer.invoke(ipcChannels.getDefaultProfile),

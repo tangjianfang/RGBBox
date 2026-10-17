@@ -627,7 +627,9 @@ export function MiniGamesView(): JSX.Element {
 
   // R109: E2E seam for the verification scripts — local single-player debug
   // surface only (see PRD R109.2). Removed on unmount.
+  // R306/T16: production gate — dev builds and CDP-launched E2E contexts only.
   useEffect(() => {
+    if (!import.meta.env.DEV && window.rgbbox?.isE2e !== true) return
     const seam = {
       spawnBoss: () => debugSpawnBoss(survivalRef.current),
       // force the level-up roulette regardless of game state (test/E2E only)

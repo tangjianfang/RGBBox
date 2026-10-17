@@ -167,6 +167,12 @@ function createMainWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // R306/T16: an app launched with a CDP port is a diagnostic/E2E context
+      // — forward that fact to the preload so renderer E2E seams stay OFF in
+      // real production launches (users never pass --remote-debugging-port)
+      additionalArguments: process.argv.some((a) => a.startsWith('--remote-debugging-port'))
+        ? ['--rgbbox-e2e']
+        : [],
       // Prevent Chromium from throttling timers when the window is occluded
       // by the overlay (otherwise the render loop drops to ~1 fps)
       backgroundThrottling: false
