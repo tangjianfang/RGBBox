@@ -36,3 +36,25 @@ jobs:
           cache: yarn
       - run: yarn install --frozen-lockfile
       - run: yarn test
+
+  # R306/T12: L2 构建档——typecheck 只看类型,这里证明三入口(main/preload/
+  # renderer×3 html)在干净 runner 上真的打得出来;并锁 R306/T16 的 CSP
+  # 注入回归(三个 html 入口必须各带一条 Content-Security-Policy meta)。
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn build
+      - name: build artifacts + CSP injection sanity (R306/T16)
+        run: |
+          test -f out/main/index.js
+          test -f out/preload/index.mjs
+          for h in out/renderer/index.html out/renderer/snip.html out/renderer/visionHost.html; do
+            grep -c 'http-equiv="Content-Security-Policy"' "$h" | grep -q '^1$' \
+              || { echo "CSP meta missing/duplicated in $h"; exit 1; }
+          done
