@@ -75,6 +75,13 @@ async function denoiseBlock(block: Float32Array): Promise<Float32Array> {
   return Float32Array.from(out.data as Float32Array)
 }
 
+// R310b (evolve #8): frames batches are SERIALIZED through one promise chain.
+// The relay upstream (denoiseService ipcMain.on) is fire-and-forget and audio
+// arrives on its own cadence — two batches in flight would interleave their
+// `await s1.run()` turns and race the SHARED LSTM state tensors (in1/in2),
+// silently desyncing denoise quality. One chain = one batch at a time.
+let framesChain: Promise<void> = Promise.resolve()
+
 process.parentPort.on('message', (e: { data: InMsg }) => {
   const msg = e.data
   if (msg.type === 'init') {
@@ -95,25 +102,27 @@ process.parentPort.on('message', (e: { data: InMsg }) => {
     return
   }
   if (msg.type === 'frames') {
-    void (async () => {
-      if (!s1 || !s2 || !in1 || !in2) {
-        process.parentPort.postMessage({ type: 'error', message: 'not initialized' })
-        return
-      }
-      const ola = new DtlnOlaAccumulator()
-      const outBlocks: Float32Array[] = []
-      try {
-        for (const blk of msg.blocks) {
-          ola.add(await denoiseBlock(blk))
-          const hop = new Float32Array(128)
-          ola.drainHop(hop)
-          outBlocks.push(hop)
+    // R310b inspector hole #4-adjacent: pre-'ready' frames are STALE audio —
+    // dropping them silently beats posting an error, which startSession's
+    // listener treats as an INIT failure and kills the fresh child
+    if (!s1 || !s2 || !in1 || !in2) return
+    framesChain = framesChain.then(() => (async () => {
+        const ola = new DtlnOlaAccumulator()
+        const outBlocks: Float32Array[] = []
+        try {
+          for (const blk of msg.blocks) {
+            ola.add(await denoiseBlock(blk))
+            const hop = new Float32Array(128)
+            ola.drainHop(hop)
+            outBlocks.push(hop)
+          }
+          process.parentPort.postMessage({ type: 'frames', id: msg.id, blocks: outBlocks })
+        } catch (err: unknown) {
+          process.parentPort.postMessage({ type: 'error', message: err instanceof Error ? err.message : String(err) })
         }
-        process.parentPort.postMessage({ type: 'frames', id: msg.id, blocks: outBlocks })
-      } catch (err: unknown) {
-        process.parentPort.postMessage({ type: 'error', message: err instanceof Error ? err.message : String(err) })
-      }
-    })()
+      })()).catch(() => { /* R310b inspector hole #1: never poison the chain —
+      a rejection here would skip every later batch AND (Node default) kill
+      the utility process as an unhandled rejection */ })
     return
   }
   if (msg.type === 'stop') {
