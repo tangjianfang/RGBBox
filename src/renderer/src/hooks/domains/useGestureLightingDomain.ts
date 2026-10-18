@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { EffectKind, EffectLayer } from '../../../../shared/types'
 import type { VisionFrame } from '../../vision/vision_input'
+import { loadMacroMap, resolveMacro } from '../../domain/gestureMacro'
 import { PARAM_META } from '../../domain/paramMeta'
 import { playSfx } from '../../games/sfx'
 
@@ -59,7 +60,7 @@ export function palmYToBrightness(y: number, min: number, max: number): number {
   return Math.round((min + t * (max - min)) * 1000) / 1000
 }
 
-interface BusDetail { kind: string; key: string | null; name?: string; down: boolean }
+interface BusDetail { kind: string; key: string | null; name?: string; down: boolean; dir?: string }
 
 export function useGestureLightingDomain(args: {
   /** 灯效驾驶模式 gate — assistant on + vision live + no competing gesture UI */
@@ -74,8 +75,11 @@ export function useGestureLightingDomain(args: {
   frameRef: { readonly current: Partial<VisionFrame> | null }
   /** vision host pause (挂起渲流) */
   setPaused: (p: boolean) => void
+  /** R306/T9: the macro table's scene column this domain resolves against
+   *  (the active view mapped to a SCENES id; games never mounts this hook) */
+  sceneId?: string
 }): { adjustPercent: number | null; frozen: boolean } {
-  const { enabled, selectedLayer, selectEffect, updateSelectedLayer, curatedKinds, frameRef, setPaused } = args
+  const { enabled, selectedLayer, selectEffect, updateSelectedLayer, curatedKinds, frameRef, setPaused, sceneId = 'workspace' } = args
   const [adjustPercent, setAdjustPercent] = useState<number | null>(null)
   const [frozen, setFrozen] = useState(false)
 
@@ -88,6 +92,10 @@ export function useGestureLightingDomain(args: {
   updateRef.current = updateSelectedLayer
   const setPausedRef = useRef(setPaused)
   setPausedRef.current = setPaused
+  // R306/T9: discrete macro reader state — scene + per-gesture cooldowns
+  const sceneIdRef = useRef(sceneId)
+  sceneIdRef.current = sceneId
+  const macroCoolRef = useRef<Record<string, number>>({})
   const curatedRef = useRef(curatedKinds)
   curatedRef.current = curatedKinds
 
@@ -180,6 +188,34 @@ export function useGestureLightingDomain(args: {
     window.setTimeout(() => { st.current.freezeCooling = false }, ACTION_COOLDOWN_MS)
   }, [])
 
+  // R306/T9: execute a discrete macro action. v1 executes the three the
+  // lighting domain can honestly perform — curated paging (next/prev through
+  // curatedKinds via selectEffect) and brightness stepping (±0.1 into the
+  // layer's brightness-like param, clamped; swipe side gives the sign).
+  // Any other action is a no-op here: the default table never binds one to
+  // dir8/张合, and neither do the shipped v1 presets.
+  const fireMacroAction = useCallback((action: string, dir?: string): void => {
+    const layer = layerRef.current
+    const kinds = curatedRef.current
+    if (action === 'nextCurated' || action === 'prevCurated') {
+      if (!layer || kinds.length === 0) return
+      const idx = kinds.indexOf(layer.kind)
+      const base = idx === -1 ? 0 : idx
+      const next = action === 'nextCurated' ? (base + 1) % kinds.length : (base - 1 + kinds.length) % kinds.length
+      selectRef.current(kinds[next])
+      return
+    }
+    if (action === 'brightnessStep' && layer) {
+      const bp = resolveBrightnessParam(layer)
+      if (!bp) return
+      const sign = dir != null && (dir.includes('left') || dir.includes('down')) ? -1 : 1
+      const curRaw = layer.parameters[bp.key]
+      const cur = typeof curRaw === 'number' ? curRaw : bp.min
+      const value = Math.min(bp.max, Math.max(bp.min, cur + 0.1 * sign))
+      updateRef.current({ parameters: { ...layer.parameters, [bp.key]: value } })
+    }
+  }, [])
+
   useEffect(() => {
     if (!enabled) return
     const onVisionEvent = (ev: Event): void => {
@@ -204,6 +240,24 @@ export function useGestureLightingDomain(args: {
           if (s.pairTimer !== null) { window.clearTimeout(s.pairTimer); s.pairTimer = null }
           if (s.holdTimer !== null) { window.clearTimeout(s.holdTimer); s.holdTimer = null }
           if (s.adjusting) exitAdjust()
+        }
+        return
+      }
+      // ── R306/T9: the discrete macro reader ────────────────────────────────
+      // dir8 + 双手张合 resolve through the STORED macro table (presets change
+      // behavior, the default table preserves it exactly — its cells are none).
+      // pinch/palm/chords deliberately keep their existing owners: pinch is the
+      // analog adjust + ring confirm, palm has no engine event (deferred),
+      // chords are the menu/ring UI. 'explicit-mode' guard passes because this
+      // hook only runs with the assistant (the explicit mode) enabled.
+      const macroGesture = detail.kind === 'direction' ? 'dir8' : detail.kind === 'hands' ? 'double-pinch' : null
+      if (macroGesture && detail.down === true) {
+        const cell = resolveMacro(loadMacroMap(), macroGesture, sceneIdRef.current)
+        const now = performance.now()
+        if (cell.action !== 'none'
+          && now - (macroCoolRef.current[macroGesture] ?? Number.NEGATIVE_INFINITY) >= cell.cooldownMs) {
+          macroCoolRef.current[macroGesture] = now
+          fireMacroAction(cell.action, detail.dir)
         }
         return
       }
@@ -233,7 +287,7 @@ export function useGestureLightingDomain(args: {
       setAdjustPercent(null)
       if (s.frozen) { s.frozen = false; setFrozen(false); setPausedRef.current(false) }
     }
-  }, [enabled, enterAdjust, exitAdjust, fireUndo, toggleFreeze])
+  }, [enabled, enterAdjust, exitAdjust, fireUndo, toggleFreeze, fireMacroAction])
 
   return { adjustPercent, frozen }
 }

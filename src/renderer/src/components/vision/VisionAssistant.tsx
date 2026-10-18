@@ -38,6 +38,13 @@ function radialSlots(model3dEnabled: boolean): Array<{ view: View | null }> {
     ...Array.from({ length: Math.max(0, 8 - uniq.length) }, () => ({ view: null }))]
 }
 
+/** R306/T9: view → macro-table scene column (unknown views fall back to the
+ *  neutral workspace column; games never mounts the domain at all). */
+const MACRO_SCENE_BY_VIEW: Partial<Record<string, string>> = {
+  workspace: 'workspace', effects: 'effects', audio: 'audio', video: 'video',
+  ai: 'ai', settings: 'settings', overlay: 'overlay',
+}
+
 export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds = [], onApplyLight = () => {}, model3dEnabled = false, selectedLayer = null, onUpdateLightLayer = () => {} }: {
   activeView: View
   onNavigate: (view: View) => void
@@ -83,6 +90,7 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
   // as the light ring itself (assistant on, vision live, outside games), plus
   // the two competing gesture UIs (radial menu picks, chord text typing)
   // suspend it so their pinch/palm vocabulary is never double-consumed.
+  // R306/T9: sceneId names the macro-table column dir8/张合 resolve against.
   const gesture = useGestureLightingDomain({
     enabled: assistantOn && vision.enabled && activeView !== 'games' && !menuOpen && !textMode,
     selectedLayer,
@@ -91,6 +99,7 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
     curatedKinds,
     frameRef: vision.frameRef,
     setPaused: vision.setPaused,
+    sceneId: MACRO_SCENE_BY_VIEW[activeView] ?? 'workspace',
   })
 
   const toggleTextMode = useCallback(() => {

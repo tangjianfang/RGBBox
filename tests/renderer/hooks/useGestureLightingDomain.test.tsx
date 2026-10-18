@@ -12,6 +12,7 @@ import {
   palmYToBrightness,
 } from '../../../src/renderer/src/hooks/domains/useGestureLightingDomain'
 import type { EffectKind, EffectLayer } from '../../../src/shared/types'
+import { buildPresetMap, persistMacroMap } from '../../../src/renderer/src/domain/gestureMacro'
 import type { VisionFrame } from '../../../src/renderer/src/vision/vision_input'
 
 beforeEach(() => {
@@ -45,7 +46,7 @@ interface Harness {
   frameRef: { current: Partial<VisionFrame> | null }
 }
 
-function mountHook(initial: EffectLayer | null, enabled = true): Harness & { result: { current: { adjustPercent: number | null; frozen: boolean } } } {
+function mountHook(initial: EffectLayer | null, enabled = true, sceneId = 'workspace'): Harness & { result: { current: { adjustPercent: number | null; frozen: boolean } } } {
   const selectEffect = vi.fn()
   const updateSelectedLayer = vi.fn()
   const setPaused = vi.fn()
@@ -54,6 +55,7 @@ function mountHook(initial: EffectLayer | null, enabled = true): Harness & { res
     ({ layer: l, on }: { layer: EffectLayer | null; on: boolean }) =>
       useGestureLightingDomain({
         enabled: on,
+        sceneId,
         selectedLayer: l,
         selectEffect,
         updateSelectedLayer,
@@ -269,5 +271,61 @@ describe('renderer/hooks/domains/useGestureLightingDomain (R247 灯效环 v2)', 
       expect(h.updateSelectedLayer).toHaveBeenCalledTimes(calls)
       expect(h.result.current.adjustPercent).toBeNull()
     })
+  })
+
+  // ── R306/T9: the discrete macro reader — dir8 + 张合 resolve through the
+  // stored macro table (presets change behavior; the default table preserves
+  // it exactly), cooldowns enforced, games scenes exempt. ──────────────────
+  it('R306/T9: present preset — dir8 pages next through curated, 张合 pages back, cooldown enforced', () => {
+    persistMacroMap(buildPresetMap('present')) // dir8=nextCurated(600), double-pinch=prevCurated(600)
+    try {
+      const h = mountHook(layer('aurora', { brightness: 0.5 }))
+      fireVision({ kind: 'direction', key: 'ArrowRight', dir: 'right', down: true })
+      expect(h.selectEffect).toHaveBeenCalledWith('rainbow')
+      fireVision({ kind: 'direction', key: 'ArrowRight', dir: 'right', down: true })
+      expect(h.selectEffect).toHaveBeenCalledTimes(1) // inside the 600ms cooldown
+      advance(700)
+      fireVision({ kind: 'direction', key: 'ArrowRight', dir: 'right', down: true })
+      // the harness layer is static ('aurora' — selectEffect is a mock), so
+      // paging is base-anchored: next → rainbow again
+      expect(h.selectEffect).toHaveBeenLastCalledWith('rainbow')
+      advance(700)
+      fireVision({ kind: 'hands', name: 'together', key: null, down: true })
+      expect(h.selectEffect).toHaveBeenLastCalledWith('wave') // prev from base 0 wraps to the last
+    } finally { localStorage.clear() }
+  })
+
+  it('R306/T9: brightnessStep maps swipe side onto the layer param (right/up +0.1, left/down −0.1)', () => {
+    persistMacroMap(buildPresetMap('light-drive')) // dir8=brightnessStep(400)
+    try {
+      const h = mountHook(layer('aurora', { brightness: 0.5 }))
+      fireVision({ kind: 'direction', key: 'ArrowRight', dir: 'right', down: true })
+      expect(h.updateSelectedLayer).toHaveBeenCalledWith(expect.objectContaining({
+        parameters: expect.objectContaining({ brightness: 0.6 }),
+      }))
+      advance(500)
+      fireVision({ kind: 'direction', key: 'ArrowLeft', dir: 'left', down: true })
+      // static harness layer: steps are anchored at 0.5 → left writes 0.4
+      expect(h.updateSelectedLayer).toHaveBeenLastCalledWith(expect.objectContaining({
+        parameters: expect.objectContaining({ brightness: 0.4 }),
+      }))
+    } finally { localStorage.clear() }
+  })
+
+  it('R306/T9: the DEFAULT table fires nothing (behavior preservation) and games scenes are exempt', () => {
+    persistMacroMap(buildPresetMap('party'))
+    try {
+      const games = mountHook(layer('aurora', { brightness: 0.5 }), true, 'games')
+      fireVision({ kind: 'direction', key: 'ArrowRight', dir: 'right', down: true })
+      fireVision({ kind: 'hands', name: 'apart', key: null, down: true })
+      expect(games.selectEffect).not.toHaveBeenCalled()
+      expect(games.updateSelectedLayer).not.toHaveBeenCalled()
+    } finally { localStorage.clear() }
+    // no stored table at all → the shipped default: dir8/张合 are inert
+    const h = mountHook(layer('aurora', { brightness: 0.5 }))
+    fireVision({ kind: 'direction', key: 'ArrowRight', dir: 'right', down: true })
+    fireVision({ kind: 'hands', name: 'apart', key: null, down: true })
+    expect(h.selectEffect).not.toHaveBeenCalled()
+    expect(h.updateSelectedLayer).not.toHaveBeenCalled()
   })
 })

@@ -33,15 +33,18 @@ describe('domain/gestureMacro (R306/T8)', () => {
     const light = buildPresetMap('light-drive')
     const present = buildPresetMap('present')
     const party = buildPresetMap('party')
-    // signature: what pinch does (confirm / page back / favorite)
-    expect(light.pinch.workspace.action).toBe('selectEffect')
-    expect(present.pinch.workspace.action).toBe('prevCurated')
-    expect(party.pinch.workspace.action).toBe('toggleFavorite')
-    // present is the paging preset: any direction event pages forward
+    // R306/T9 v1 signature: the migrated discrete gestures (dir8 + 张合)
+    // light-drive steps brightness; present pages next on swipe / prev on 张合;
+    // party fast-cycles curated on 张合
+    expect(light.dir8.workspace.action).toBe('brightnessStep')
     expect(present.dir8.workspace.action).toBe('nextCurated')
+    expect(present['double-pinch'].workspace.action).toBe('prevCurated')
+    expect(party['double-pinch'].workspace.action).toBe('nextCurated')
     // default keeps everything none except chord-light → presets really change behavior
-    expect(GESTURE_SCENE_MAP.pinch.workspace.action).toBe('none')
-    expect(light.palm.workspace.action).toBe('togglePause')
+    expect(GESTURE_SCENE_MAP.dir8.workspace.action).toBe('none')
+    // pinch/palm stay unclaimed in presets (their owners are analog/deferred)
+    expect(party.pinch.workspace.action).toBe('none')
+    expect(party.palm.workspace.action).toBe('none')
     // games scenes stay exempt in every preset (R131 games mapping owns them)
     for (const m of [light, present, party]) {
       expect(m.dir8.games.action).toBe('none')

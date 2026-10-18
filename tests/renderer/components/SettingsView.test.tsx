@@ -46,13 +46,13 @@ describe('SettingsView', () => {
     expect(presetSel.options.length).toBe(4)
     fireEvent.change(presetSel, { target: { value: 'party' } })
     const stored = () => JSON.parse(localStorage.getItem('rgbbox:gestureMacros') ?? 'null')
-    expect(stored().pinch.workspace.action).toBe('toggleFavorite')
+    expect(stored().dir8.workspace.action).toBe('brightnessStep')
     // shipped preset → zero conflicts
     expect(section.querySelector('[data-field="macro-conflicts"]')!.textContent).toContain('0')
     // editing one cell through the matrix round-trips the same storage
-    const cell = section.querySelector('[data-cell="pinch:workspace"]') as HTMLSelectElement
-    fireEvent.change(cell, { target: { value: 'selectEffect' } })
-    expect(stored().pinch.workspace.action).toBe('selectEffect')
+    const cell = section.querySelector('[data-cell="dir8:workspace"]') as HTMLSelectElement
+    fireEvent.change(cell, { target: { value: 'nextCurated' } })
+    expect(stored().dir8.workspace.action).toBe('nextCurated')
     // games scenes stay exempt — no games column in the matrix
     expect(section.querySelector('[data-cell="pinch:games"]')).toBeNull()
   })

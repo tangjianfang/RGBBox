@@ -30,14 +30,15 @@ interface PresetSpec {
 
 export const MACRO_PRESETS: ReadonlyArray<PresetSpec> = Object.freeze([
   {
+    // R306/T9 v1 migration set: dir8 + 双手张合 are the discrete gestures the
+    // macro layer executes at runtime (unclaimed by the analog domain);
+    // pinch/palm/chords keep their existing owners — see PRD T9 for the
+    // non-migration rationale.
     id: 'light-drive',
     zh: '灯效驾驶',
     en: 'Light driving',
     cells: {
-      pinch: { action: 'selectEffect', cooldownMs: 300, guard: 'always' },
-      palm: { action: 'togglePause', cooldownMs: 500, guard: 'always' },
       dir8: { action: 'brightnessStep', cooldownMs: 400, guard: 'always' },
-      'double-pinch': { action: 'nextScene', cooldownMs: 900, guard: 'always' },
       'chord-light': { action: 'openMenu', cooldownMs: 800, guard: 'explicit-mode' },
     },
   },
@@ -47,11 +48,8 @@ export const MACRO_PRESETS: ReadonlyArray<PresetSpec> = Object.freeze([
     en: 'Presentation paging',
     cells: {
       dir8: { action: 'nextCurated', cooldownMs: 600, guard: 'always' },
-      pinch: { action: 'prevCurated', cooldownMs: 600, guard: 'always' },
-      palm: { action: 'togglePause', cooldownMs: 500, guard: 'always' },
-      'double-pinch': { action: 'nextScene', cooldownMs: 900, guard: 'always' },
+      'double-pinch': { action: 'prevCurated', cooldownMs: 600, guard: 'always' },
       'chord-light': { action: 'openMenu', cooldownMs: 800, guard: 'explicit-mode' },
-      'chord-menu': { action: 'openMenu', cooldownMs: 0, guard: 'always' },
     },
   },
   {
@@ -59,10 +57,8 @@ export const MACRO_PRESETS: ReadonlyArray<PresetSpec> = Object.freeze([
     zh: '音乐派对',
     en: 'Music party',
     cells: {
-      dir8: { action: 'brightnessStep', cooldownMs: 400, guard: 'always' },
-      pinch: { action: 'toggleFavorite', cooldownMs: 700, guard: 'always' },
-      palm: { action: 'togglePause', cooldownMs: 500, guard: 'always' },
-      'double-pinch': { action: 'nextScene', cooldownMs: 300, guard: 'always' },
+      dir8: { action: 'brightnessStep', cooldownMs: 300, guard: 'always' },
+      'double-pinch': { action: 'nextCurated', cooldownMs: 300, guard: 'always' },
       'chord-light': { action: 'openMenu', cooldownMs: 800, guard: 'explicit-mode' },
     },
   },
