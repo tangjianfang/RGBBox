@@ -6,6 +6,7 @@ import { MarkdownView } from '../ai8/markdown'
 import { groupModelsByProvider, matchCurated } from '../ai8/localStore'
 import { Ai8Client, readStoredToken, type Ai8Model } from '../../../shared/ai8Client'
 import type { AgentApprovalRequest, AgentEvent, AgentMode, AgentSessionMeta, AiProfile } from '../../../shared/types'
+import { useTemplateRetry } from '../hooks/useTemplateRetry'
 
 /**
  * Agent 工作台 — R172-S2(独立 Tab,决策 ②)。
@@ -90,7 +91,9 @@ function saveHistory(list: string[]): void {
 }
 
 /** AI8 聊天模型模板(公开、无需 token)——成功后模块级缓存,切页秒开。 */
-let ai8ModelCache: Ai8Model[] | null = null
+// R307: plain let became a cache BOX owned by useTemplateRetry — failures
+// now recover (backoff/online/manual retry) instead of dying until remount
+const ai8ModelBox: { current: Ai8Model[] | null } = { current: null }
 
 /** R191: 相对时间(会话列表)——刚刚 / N 分钟前 / 今天 HH:MM / M-D。 */
 function formatRelativeTime(ms: number, t: ReturnType<typeof useI18n>['t']): string {
@@ -142,8 +145,6 @@ export function AiLabAgentTab(): JSX.Element {
   const [pendingApproval, setPendingApproval] = useState<AgentApprovalRequest | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sessions, setSessions] = useState<AgentSessionMeta[]>([])
-  const [ai8Models, setAi8Models] = useState<Ai8Model[]>(ai8ModelCache ?? [])
-  const [ai8ModelError, setAi8ModelError] = useState(false)
   const [ai8ModelValue, setAi8ModelValue] = useState(prefs.ai8Model ?? '')
   const [inputHistory, setInputHistory] = useState<string[]>(loadHistory)
   const historyIdxRef = useRef<number | null>(null)
@@ -219,19 +220,16 @@ export function AiLabAgentTab(): JSX.Element {
   const activeProfile = useMemo(() => profiles.find((p) => p.id === profileId) ?? null, [profiles, profileId])
   const isAi8 = activeProfile?.baseUrl.startsWith('ai8://') === true
 
-  // R174.6: AI8 模型下拉的数据源(公开模板,与 AI8 页同一缓存策略)
-  useEffect(() => {
-    if (!isAi8 || ai8ModelCache !== null) return
-    let cancelled = false
-    new Ai8Client({ token: '' }).getChatTemplate()
-      .then((tmpl) => {
-        if (cancelled) return
-        ai8ModelCache = (tmpl.models ?? []).filter((m) => m.attr?.modelType === 'chat')
-        setAi8Models(ai8ModelCache)
-      })
-      .catch(() => { if (!cancelled) setAi8ModelError(true) })
-    return () => { cancelled = true }
-  }, [isAi8])
+  // R307: the AI8 model list loads through the recovering retry hook
+  const ai8Tmpl = useTemplateRetry<Ai8Model[]>({
+    cache: ai8ModelBox,
+    enabled: activeProfile?.baseUrl.startsWith('ai8://') === true,
+    fetcher: () => new Ai8Client({ token: '' })
+      .getChatTemplate()
+      .then((tmpl) => (tmpl.models ?? []).filter((m) => m.attr?.modelType === 'chat')),
+  })
+  const ai8Models = ai8Tmpl.value ?? []
+  const ai8ModelError = ai8Tmpl.failed
 
   const ai8Groups = useMemo(() => groupModelsByProvider(ai8Models), [ai8Models])
   // R174.11: mirror the AI8 page picker — curated groups (flagship/fast/free/budget)
@@ -500,6 +498,12 @@ export function AiLabAgentTab(): JSX.Element {
                 </optgroup>
               ))}
             </select>
+            {/* R307: failure parks a real retry button beside the picker */}
+            {ai8Groups.length === 0 && ai8ModelError && (
+              <button type="button" className="video-btn" data-action="agent-ai8-models-retry" onClick={ai8Tmpl.retry}>
+                {t('ai.ai8.retry')}
+              </button>
+            )}
           </label>
         )}
         <div className="agent-sessions">

@@ -5,6 +5,7 @@ import { MarkdownView, ThinkPanel, copyRichText, markdownToHtml, splitThinkBlock
 import { AI8_VIDEO_PROVIDERS, Ai8Client, Ai8Error, isDrawDone, isDrawLimitError, parseDrawImages, parseDrawTemplate, parseVideoTemplate, readStoredToken, writeStoredToken, type Ai8DrawModelGroup, type Ai8Model, type Ai8VideoProvider } from '../../../shared/ai8Client'
 import { cleanGeneratedTitle, groupModelsByProvider, matchCurated, pushInputHistory, readActiveId, readInputHistory, readPrefs, readSessions, titleFromContent, writeActiveId, writePrefs, writeSessions, type Ai8Prefs, type Ai8Session, type Ai8Turn } from '../ai8/localStore'
 import { extractPromptFromMd, naturalCompare } from '../ai8/mdPrompt'
+import { useTemplateRetry } from '../hooks/useTemplateRetry'
 
 /** R113: AI8 workbench — two-pane layout (session sidebar + chat), multiple
  *  concurrent sessions, ChatGPT-style local history, auto-saved prefs, draw
@@ -126,11 +127,14 @@ function MessageCopyButton({ text, label }: { text: string; label: string }): JS
 
 /** R117.7/P2-8: module-level template caches — remounting the tab (every page
  *  switch) must not refetch; one fetch per app session is enough. R120: the
- *  draw cache holds the parsed group structure; a FAILED fetch is not cached
- *  (so re-entering the tab retries) and surfaces an error placeholder.
- *  R121: the video template needs the token and is fetched once per session. */
-let chatTmplCache: Ai8Model[] | null = null
-let drawTmplCache: Ai8DrawModelGroup[] | null = null
+ *  draw cache holds the parsed group structure. R307: the plain lets became
+ * cache BOXES owned by useTemplateRetry — a failed fetch still writes nothing
+ * (every retry is a real fetch) but now RECOVERS on its own: backoff
+ * 2s/6s/15s + window-online + a manual 重试 button, instead of dying on the
+ * first network blip until the user left the tab and came back.
+ * R121: the video template needs the token and is fetched once per session. */
+const chatTmplBox: { current: Ai8Model[] | null } = { current: null }
+const drawTmplBox: { current: Ai8DrawModelGroup[] | null } = { current: null }
 let drawTmplDefault = ''
 let videoTmplCache: { providers: Ai8VideoProvider[]; notice: string } | null = null
 
@@ -153,10 +157,29 @@ export function AiLabAi8Tab(): JSX.Element {
     window.clearTimeout(credTimer.current)
     credTimer.current = window.setTimeout(() => setCredHint(''), 3200)
   }
-  const [models, setModels] = useState<Ai8Model[]>(chatTmplCache ?? [])
-  const [modelsError, setModelsError] = useState('')
-  const [drawGroups, setDrawGroups] = useState<Ai8DrawModelGroup[]>(drawTmplCache ?? [])
-  const [drawModelsError, setDrawModelsError] = useState('')
+  // R307: chat + draw model lists load through the recovering retry hook —
+  // module-cache on success, backoff/online/manual retry on failure
+  const chatTmpl = useTemplateRetry<Ai8Model[]>({
+    cache: chatTmplBox,
+    fetcher: () => new Ai8Client({ token: '' })
+      .getChatTemplate()
+      .then((tmpl) => (tmpl.models ?? []).filter((m) => m.attr?.modelType === 'chat')),
+  })
+  const models = chatTmpl.value ?? []
+  const modelsError = chatTmpl.failed ? 'network' : ''
+  const drawTmpl = useTemplateRetry<Ai8DrawModelGroup[]>({
+    cache: drawTmplBox,
+    fetcher: () => new Ai8Client({ token: '' })
+      .getDrawTemplate<unknown>()
+      .then((tmpl) => {
+        const parsed = parseDrawTemplate(tmpl)
+        if (parsed.groups.length === 0) throw new Error('empty draw template')
+        drawTmplDefault = parsed.defaultModel
+        return parsed.groups
+      }),
+  })
+  const drawGroups = drawTmpl.value ?? []
+  const drawModelsError = drawTmpl.failed ? 'network' : ''
   // R121: video provider catalog — the full hardcoded mirror is the base; the
   //  authed template narrows it to the live providers when available.
   const [videoProviders, setVideoProviders] = useState<Ai8VideoProvider[]>(videoTmplCache?.providers ?? AI8_VIDEO_PROVIDERS)
@@ -200,38 +223,13 @@ export function AiLabAi8Tab(): JSX.Element {
     })
   }, [])
 
-  // R113/R117.7: the model template is PUBLIC and cached at module level —
-  // switching pages and back must render instantly (no refetch).
+  // R120 (via R307): once the draw template lands, adopt its default model —
+  // kept as a watcher so the retry hook's fetcher stays side-effect-light
   useEffect(() => {
-    if (chatTmplCache !== null) return
-    const client = new Ai8Client({ token: '' })
-    client.getChatTemplate()
-      .then((tmpl) => {
-        chatTmplCache = (tmpl.models ?? []).filter((m) => m.attr?.modelType === 'chat')
-        setModels(chatTmplCache)
-      })
-      .catch(() => setModelsError('network'))
-  }, [])
-
-  // R120: the draw template is public; parse the live cms-grouped shape (the
-  // flat `models[]` era is gone — that misread is what kept the picker at
-  // 「模型加载中…」forever). Cached at module level on SUCCESS only.
-  useEffect(() => {
-    if (drawTmplCache !== null) return
-    new Ai8Client({ token: '' }).getDrawTemplate<unknown>()
-      .then((tmpl) => {
-        const parsed = parseDrawTemplate(tmpl)
-        if (parsed.groups.length === 0) {
-          setDrawModelsError('network')
-          return
-        }
-        drawTmplCache = parsed.groups
-        drawTmplDefault = parsed.defaultModel
-        setDrawGroups(parsed.groups)
-        if (drawTmplDefault !== '' && prefs.drawModel === '') patchPrefs({ drawModel: drawTmplDefault })
-      })
-      .catch(() => setDrawModelsError('network'))
-  }, [prefs.drawModel])
+    if (drawTmpl.value != null && drawTmplDefault !== '' && prefs.drawModel === '') {
+      patchPrefs({ drawModel: drawTmplDefault })
+    }
+  }, [drawTmpl.value, prefs.drawModel, patchPrefs])
 
   // R121: video template (auth) — one fetch per app session; failures fall
   //  back to the hardcoded catalog silently (video still works, just shows
@@ -1058,7 +1056,9 @@ export function AiLabAi8Tab(): JSX.Element {
       <section className="ai8-main">
         <div className="ai8-controls">
           {prefs.mode === 'draw' ? (
-            // R117.3: draw mode swaps the picker to the draw-model namespace
+            // R117.3: draw mode swaps the picker to the draw-model namespace;
+            // R307: failure parks a real 重试 button next to the picker
+            <>
             <select
               className="ai8-select"
               data-field="ai8-draw-model"
@@ -1080,6 +1080,12 @@ export function AiLabAi8Tab(): JSX.Element {
                 ),
               )}
             </select>
+            {drawModels.length === 0 && drawModelsError !== '' && (
+              <button type="button" className="ai8-btn" data-action="ai8-draw-models-retry" onClick={drawTmpl.retry}>
+                {t('ai.ai8.retry')}
+              </button>
+            )}
+            </>
           ) : prefs.mode === 'video' ? (
             // R121: video mode — provider + version pickers (catalog narrowed
             // by the authed template when available)
@@ -1106,6 +1112,7 @@ export function AiLabAi8Tab(): JSX.Element {
               </select>
             </>
           ) : (
+            <>
             <select
               className="ai8-select"
               data-field="ai8-model"
@@ -1130,6 +1137,12 @@ export function AiLabAi8Tab(): JSX.Element {
                 </optgroup>
               ))}
             </select>
+            {models.length === 0 && modelsError !== '' && (
+              <button type="button" className="ai8-btn" data-action="ai8-models-retry" onClick={chatTmpl.retry}>
+                {t('ai.ai8.retry')}
+              </button>
+            )}
+            </>
           )}
           {prefs.mode === 'draw' ? (
             // R126: folder-batch draw — pick a folder of scene MDs and run

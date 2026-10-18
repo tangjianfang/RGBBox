@@ -9,13 +9,22 @@ import type { Plugin } from 'vite'
  * media:// protocol (vision bundle + models) + the blob/data URLs the app
  * legitimately produces (workers, canvas exports, recording downloads) +
  * 'wasm-unsafe-eval' for MediaPipe (wasm only — no JS eval is allowed).
+ *
+ * R307 correction (T16 regression): the AI8 workbench is renderer-direct BY
+ * DESIGN ("site CORS is `*`", Ai8Tab header) — the first cut omitted its
+ * origin from connect-src and silently killed every AI8 fetch in packaged
+ * builds (model lists, chat, draw, login). connect-src now names it
+ * explicitly; img-src allows remote https because chat markdown embeds
+ * arbitrary user-content images (passive content — script-src stays locked).
+ * Everything else stays main-process IPC (generic AI providers, model
+ * downloads) and is unaffected by this policy.
  */
 const CSP = [
   "default-src 'self'",
   "script-src 'self' media: 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "connect-src 'self' media: blob:",
+  "img-src 'self' data: blob: https:",
+  "connect-src 'self' media: blob: https://ai8.rcouyi.com",
   "media-src 'self' blob:",
   "worker-src 'self' blob:",
   "font-src 'self' data:",
