@@ -189,6 +189,19 @@ export function VisionAssistant({ activeView, onNavigate, rootRef, curatedKinds 
       else if (detail.kind === 'chord' && detail.name === 'back') {
         setMenuOpen(false)
         onNavigate('dashboard')
+      }
+      // R306/T11: the reserved chords land real consumers — pause (middle
+      // only) toggles the session's gesture emission (a coffee break; the
+      // offhand palm FREEZE only locks brightness adjust, this stops ALL
+      // events); next (index+pinky) pages the radial selection; cancel
+      // (pinky only) dismisses the topmost overlay. Command-mode only — in
+      // text mode the same shapes type characters (engine-level).
+      else if (detail.kind === 'chord' && detail.down === true && detail.name === 'pause') {
+        visionProbeRef.current.setPaused(!visionProbeRef.current.paused)
+      } else if (detail.kind === 'chord' && detail.down === true && detail.name === 'cancel') {
+        if (menuOpen) setMenuOpen(false)
+      } else if (detail.kind === 'chord' && detail.down === true && detail.name === 'next') {
+        if (menuOpen) setMenuSel((s) => (s + 1) % MENU_SLOTS.length)
       } else if (menuOpen && detail.kind === 'pinch' && detail.key === 'Space' && detail.down) {
         // R143.4: event-driven confirm (cursor clicks suppressed while open)
         const slot = MENU_SLOTS[menuSel].view

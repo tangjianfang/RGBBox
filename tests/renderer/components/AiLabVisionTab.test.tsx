@@ -16,6 +16,7 @@ const h = vi.hoisted(() => {
     disable: vi.fn(),
     recalibrate: vi.fn(),
     setPaused: vi.fn(),
+    paused: false,
     resumeActive: vi.fn(),
     skipCalibration: vi.fn(),
     applySettings: vi.fn(),

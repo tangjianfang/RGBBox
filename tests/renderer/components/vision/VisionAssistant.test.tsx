@@ -91,6 +91,26 @@ describe('renderer/components/vision/VisionAssistant (R142-E4b)', () => {
     await waitFor(() => expect(container.querySelector('.vision-radial')).toBeNull())
   })
 
+  it('R306/T11: reserved chords land real consumers — pause toggles the session, next pages the radial, cancel dismisses it', async () => {
+    const { container } = mount()
+    await act(async () => { fireEvent.click(document.querySelector('.vision-assistant-pill') as HTMLButtonElement) })
+    await act(async () => { host.send({ type: 'snapshot', snapshot: ACTIVE }) })
+    await waitFor(() => expect(container.querySelector('.vision-assistant-badge')).toBeTruthy())
+    // pause → the host receives {type:'pause', p:true}; again → resume
+    await act(async () => { host.send({ type: 'events', events: [{ kind: 'chord', key: null, name: 'pause', down: true }] }) })
+    await waitFor(() => expect(host.received.filter((m) => m.type === 'pause' && m.p === true).length).toBe(1))
+    await act(async () => { host.send({ type: 'events', events: [{ kind: 'chord', key: null, name: 'pause', down: true }] }) })
+    await waitFor(() => expect(host.received.filter((m) => m.type === 'pause' && m.p === false).length).toBe(1))
+    // open the radial; next advances the selection (default 4 → 5)
+    await act(async () => { host.send({ type: 'events', events: [{ kind: 'chord', key: null, name: 'menu', down: true }] }) })
+    await waitFor(() => expect(container.querySelector('.vision-radial')).toBeTruthy())
+    await act(async () => { host.send({ type: 'events', events: [{ kind: 'chord', key: null, name: 'next', down: true }] }) })
+    await waitFor(() => expect(container.querySelectorAll('.vision-radial-item')[5].className).toContain('sel'))
+    // cancel dismisses the radial (topmost overlay)
+    await act(async () => { host.send({ type: 'events', events: [{ kind: 'chord', key: null, name: 'cancel', down: true }] }) })
+    await waitFor(() => expect(container.querySelector('.vision-radial')).toBeNull())
+  })
+
   it('no pill inside the games view (the games hook owns the lifecycle there)', () => {
     const root = document.createElement('main')
     document.body.appendChild(root)

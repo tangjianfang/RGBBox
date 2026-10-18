@@ -105,6 +105,8 @@ export interface VisionInputHandle {
   enableSynthetic(): Promise<void>
   disable(): void
   recalibrate(): void
+  /** R306/T11: local pause truth (single source for toggle consumers) */
+  paused: boolean
   setPaused(paused: boolean): void
   /** Unpause without re-running the calibration wizard (TD round-trip). */
   resumeActive(): void
@@ -189,6 +191,7 @@ export function useVisionInput(): VisionInputHandle {
   const consumerIdRef = useRef<string>('')
   if (!consumerIdRef.current) consumerIdRef.current = nextConsumerId()
   const pausedRef = useRef(false)
+  const [paused, setPausedState] = useState(false) // R306/T11
   // R244: mirror of `enabled` for the timer callback (state would be stale in
   // the interval closure), the last-beat timestamp, and the one-shot restart
   // budget (per session — one silent restart, never a storm).
@@ -452,6 +455,7 @@ export function useVisionInput(): VisionInputHandle {
     channelRef.current?.close()
     channelRef.current = null
     pausedRef.current = false
+    setPausedState(false) // R306/T11
     handlessFramesRef.current = 0
     heldRef.current.clear()
     queueRef.current.length = 0
@@ -471,11 +475,13 @@ export function useVisionInput(): VisionInputHandle {
 
   const setPaused = useCallback((p: boolean) => {
     pausedRef.current = p
+    setPausedState(p)
     channelRef.current?.postMessage({ type: 'pause', p })
   }, [])
 
   const resumeActive = useCallback(() => {
     pausedRef.current = false
+    setPausedState(false) // R306/T11
     const channel = channelRef.current
     if (!channel) return
     channel.postMessage({ type: 'pause', p: false })
@@ -565,7 +571,7 @@ export function useVisionInput(): VisionInputHandle {
   }, [])
 
   return {
-    enable, enableSynthetic, disable, recalibrate, setPaused, resumeActive, skipCalibration, applySettings,
+    enable, enableSynthetic, disable, recalibrate, paused, setPaused, resumeActive, skipCalibration, applySettings,
     setMirror, mirror, setPrimaryHand, primaryHand, setChordTextMode, chordBackspace, chordBuffer, setCapturePrecision, setSensitivity, sensitivity,
     enabled, label, statusKey, error, errorKind, state, stepId, handSeen, frameRef, heldRef, queueRef,
   }

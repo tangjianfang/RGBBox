@@ -110,7 +110,7 @@ const CAPS: CapRow[] = [
     id: 'chord-pause', group: 'chordCmd',
     name: { zh: '和弦 pause', en: 'Chord pause' },
     how: { zh: '只伸中指', en: 'Middle only' },
-    where: { zh: '预留：暂停', en: 'Reserved: pause' },
+    where: { zh: '助手内：暂停/恢复体感会话（R306/T11）', en: 'Assistant: pause/resume the session (R306/T11)' },
     match: (e) => e.kind === 'chord' && e.name === 'pause',
   },
   {
@@ -124,7 +124,7 @@ const CAPS: CapRow[] = [
     id: 'chord-cancel', group: 'chordCmd',
     name: { zh: '和弦 cancel', en: 'Chord cancel' },
     how: { zh: '只伸小指', en: 'Pinky only' },
-    where: { zh: '预留：取消', en: 'Reserved: cancel' },
+    where: { zh: '助手内：收起径向菜单（R306/T11）', en: 'Assistant: dismiss the radial menu (R306/T11)' },
     match: (e) => e.kind === 'chord' && e.name === 'cancel',
   },
   {
@@ -138,7 +138,7 @@ const CAPS: CapRow[] = [
     id: 'chord-next', group: 'chordCmd',
     name: { zh: '和弦 next', en: 'Chord next' },
     how: { zh: '食指+小指', en: 'Index + pinky' },
-    where: { zh: '预留：列表翻页', en: 'Reserved: list paging' },
+    where: { zh: '助手内：径向菜单选择下移（R306/T11）', en: 'Assistant: page the radial selection (R306/T11)' },
     match: (e) => e.kind === 'chord' && e.name === 'next',
   },
   // ── finger chords: text ──
