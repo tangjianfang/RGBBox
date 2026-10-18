@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState, type JSX } from 're
 import { useI18n } from '../i18n'
 import { useVisionInput, type VisionSensitivity } from '../hooks/useVisionInput'
 import { VisionPad } from './vision/VisionPad'
+import { VisionReplayCard } from './vision/VisionReplayCard'
 import { fingerStates } from '../vision/fingerChords.js'
 import { DemoRecorder, recordingToJson } from '../vision/demoRecorder'
 import type { Recording } from '../vision/demoRecorder'
@@ -718,6 +719,10 @@ export function AiLabVisionTab(): JSX.Element {
           )}
         </div>
       </div>
+
+      {/* R306/T10: replay a T1 recording — half speed + the shared skeleton,
+          events re-fire on the live bus so the whole table lights up */}
+      <VisionReplayCard />
 
       {/* R153.1: core board — the nine user-picked highest-value commands,
           always visible; face cards onboarded to fix discoverability. */}

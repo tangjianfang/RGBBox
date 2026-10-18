@@ -161,6 +161,41 @@ check('health card renders funnel + soak-aligned latency fields', health.card &&
 // health segments, board and pad all in frame)
 await page.screenshot({ path: `${OUT}/r144-vision-lab.png`, fullPage: false }).catch(() => {})
 
+// ── 4d. R306/T10: the replay card — load a synthetic recording FILE through
+//         the real file input, play it, and watch the recorded events light
+//         the capability rows through the LIVE bus (packaged app, no camera)
+import { writeFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { SyntheticSource } from '../src/renderer/src/vision/synthetic.js'
+const src = new SyntheticSource({ noise: 0 })
+const frames = []
+for (let t = 0; t <= 600; t += 40) {
+  const s = src.sample(t, 'active')
+  frames.push({ t, hands: [{ lm: s.hand.map((p) => [+p.x.toFixed(5), +p.y.toFixed(5)]), score: 0.9, h: 'Right' }], face: null })
+}
+const recJson = JSON.stringify({
+  version: 1, meta: { app: 'rgbbox', source: 'synthetic', startedAt: new Date().toISOString() },
+  frames, events: [{ t: 200, kind: 'pinch', key: 'Space', down: true }, { t: 210, kind: 'pinch', key: 'Space', down: false }], marks: [],
+})
+const tmpRec = join(process.cwd(), 'node_modules', '.tmp-r306t10-rec.json')
+writeFileSync(tmpRec, recJson, 'utf8')
+await page.locator('input[data-action="vision-replay-file"]').setInputFiles(tmpRec)
+let replayReady = false
+for (let i = 0; i < 10 && !replayReady; i++) {
+  await sleep(300)
+  replayReady = await page.evaluate(() => document.querySelector('.vision-replay')?.getAttribute('data-replay') === 'ready')
+}
+check('replay card loaded the recording file', replayReady)
+await page.locator('[data-action="vision-replay-play"]').click()
+let replayDone = false
+for (let i = 0; i < 40 && !replayDone; i++) {
+  await sleep(300)
+  replayDone = await page.evaluate(() => document.querySelector('.vision-replay')?.getAttribute('data-replay') === 'done')
+}
+const pinchAfterReplay = await page.locator('[data-cap="pinch"] .cap-count').textContent().catch(() => null)
+check('replay played to done + bus events lit the pinch row', replayDone && pinchAfterReplay != null && pinchAfterReplay !== '', `pinch=${pinchAfterReplay}`)
+try { rmSync(tmpRec) } catch {}
+
 await page.locator('.ai-tab[data-tab="config"]').click()
 await sleep(600)
 check('leaving the tab unmounts the bench', !(await page.evaluate(() => document.querySelector('.ai-vision-lab'))))
