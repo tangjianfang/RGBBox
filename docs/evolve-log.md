@@ -1,17 +1,19 @@
 # evolve log — RGBBox
 
 - verify: yarn typecheck && yarn test
-- pointer: #10 (next round)
-- rounds done: 9
+- pointer: #11 (next round)
+- rounds done: 10
 - status: active
-- metrics: findings 14 | fixes 11 | regressions 0
+- metrics: findings 15 | fixes 12 | regressions 0
 - checkpoint (2026-10-18, after round #8): 8 rounds green+progress in ONE session; context deep — next session resumes at pointer #9. In-flight: none (all committed). Priority order for #9+: Tier-1 denoise backlog (backpressure > pairing-skew > double-fork), then Tier-3 gl rotation. Palm = epic candidate (user decision).
 
 ## Target pool
 
 - Tier 1 (known defects):
   - [done #1] ai8Client bare fetch — no timeout on short JSON endpoints (hung network pends for minutes; R307 retry waits forever) → R308
-  - denoise backpressure (R310b inspector hole #2): unpaced relay + unbounded chain backlog under sustained overload → memory growth + head-of-line block on a hung ORT run; needs queue cap / drop-stale / timeout design
+  - [done #10] denoise backpressure (hole #2) → R310d (cap 4 + shed-newest over the proven id-error path)
+  - denoise overload UX: shed/hang invisible to the user (queue-full error stream is the symptom; needs telemetry surface + reply-age watchdog + auto-recovery consideration)
+  - denoiseProcessor/drop-path: still zero direct test coverage (needs an ORT-mock harness or worklet-logic extraction — candidate epic)
   - [done #9] denoise batch-failure pairing skew (hole #3) → R310c (id-precise resync after a two-pass inspector convergence)
   - denoiseStart double-fork (inspector nit): two concurrent invokes can both pass the session check → leaked child
   - palm gesture has NO engine event — chord-pause/palm cells in the macro table are inert at runtime (documented in PRD T9; needs an event source in gesture_engine/pipeline first — likely epic-sized)
@@ -57,3 +59,5 @@
 #8 | denoiseProcessor rotation (Tier 3) | findings(7) | actions(2) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~30) | REAL race: fire-and-forget relay × fire-and-forget IIFE → concurrent batches race shared LSTM tensors; serialized via promise chain; inspector verdict: core holds + holes #1 (poisoned chain → process death, FIXED .catch guard) and pre-ready frames killing init (FIXED silent drop); holes #2 (backpressure) #3 (pairing skew) + double-fork nit → Tier-1 backlog (round-sized pieces cannot close honestly)
 
 #9 | denoise pairing-skew (Tier 1, inspector hole #3) | findings(3) | actions(1) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~70) | first cut = inspector prescription (id relay + positional drop); re-inspection REFUTED common-case-only: same-window race + epoch-crossing drop + id-dead-weight; final = worklet pending-id queue, drop located at wet.length+indexOf(id)*BATCH — both races closed BY CONSTRUCTION, cross-epoch id miss = safe no-op
+
+#10 | denoise backpressure (Tier 1, inspector hole #2) | findings(4) | actions(2) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~20) | cap 4 waiting + shed-newest over the R310c id-error path; third-pass verdict HOLDS (no counter leak, chain-safe, id-precise makes shed deterministic); applied its (c)3 one-liner (seq time-offset kills remount id collision); documented policy trade (order-continuity vs T_s-scaled audio age) + hang-no-timeout rationale (only policy consistent with serialization)

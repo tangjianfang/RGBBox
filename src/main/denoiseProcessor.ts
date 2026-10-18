@@ -82,6 +82,14 @@ async function denoiseBlock(block: Float32Array): Promise<Float32Array> {
 // silently desyncing denoise quality. One chain = one batch at a time.
 let framesChain: Promise<void> = Promise.resolve()
 
+// R310d (evolve #10): backpressure. Serialization alone turned overload into
+// an UNBOUNDED backlog (memory growth + diverging latency). Shed the NEWEST
+// batch once MAX_QUEUED are waiting: backlog never exceeds the cap, the queue
+// drains toward real time, and the shed rides the R310c error path — the
+// batch id reaches the worklet, which resyncs precisely. 4 batches ≈ 64ms.
+const MAX_QUEUED_BATCHES = 4
+let queuedBatches = 0
+
 process.parentPort.on('message', (e: { data: InMsg }) => {
   const msg = e.data
   if (msg.type === 'init') {
@@ -106,7 +114,14 @@ process.parentPort.on('message', (e: { data: InMsg }) => {
     // dropping them silently beats posting an error, which startSession's
     // listener treats as an INIT failure and kills the fresh child
     if (!s1 || !s2 || !in1 || !in2) return
+    // R310d: overload shed — same proven error path as a failed batch
+    if (queuedBatches >= MAX_QUEUED_BATCHES) {
+      process.parentPort.postMessage({ type: 'error', id: msg.id, message: 'denoise queue full' })
+      return
+    }
+    queuedBatches += 1
     framesChain = framesChain.then(() => (async () => {
+      queuedBatches -= 1
         const ola = new DtlnOlaAccumulator()
         const outBlocks: Float32Array[] = []
         try {

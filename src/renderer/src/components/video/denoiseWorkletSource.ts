@@ -65,7 +65,10 @@ class DtlmRelayProcessor extends AudioWorkletProcessor {
     this.hopBuf = new Float32Array(HOP)
     this.hopFill = 0
     this.batch = []
-    this.seq = 1
+    // R310d inspector (c)3: time-offset the id sequence — a fresh worklet
+    // (view remount) restarting at 1 could collide with a stale in-flight
+    // drop from the old instance and splice the WRONG batch's hops
+    this.seq = (Date.now() % 100000) + 1
     this.pending = []       // R310c: ids of in-flight batches (send order)
     this.wet = []           // processed hops from the utility process
     this.dry = []           // original hops, 1:1 pairing with wet
