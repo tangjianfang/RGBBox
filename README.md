@@ -88,6 +88,17 @@ The `docs/index.html` page is a bilingual (zh/en) product showcase deployed to G
 
 To deploy: Settings → Pages → Source: **GitHub Actions**, then push any change to `docs/`.
 
+### Vision gestures (camera-only)
+
+Drive the app with **six hand gestures** — no wearables, ever: 8-way wave
+(analog steering), pinch (confirm), open palm (freeze/pause), view ring
+(3-finger radial menu), light ring (thumb-led effect swap), two-hand spread
+(paging). Frames are inferred **locally** (MediaPipe wasm), never uploaded,
+never auto-written to disk — see [`docs/PRIVACY.md`](docs/PRIVACY.md). The
+AI Lab vision bench ships a **deep bench**: measure per-gesture recall /
+latency / confusions on your own camera against the lab baseline, and swap
+gesture meanings with one click in *Settings → Gesture Macros*.
+
 ### Accessibility & assistive input
 
 RGBBox's vision gestures are **camera-only** (no wearables) and can serve as an
@@ -188,6 +199,15 @@ src/renderer  React UI — 工作区、显示器映射、分层特效控制、
 `docs/index.html` 是支持中英文切换的产品展示页，通过 GitHub Actions 自动部署到 GitHub Pages。
 
 部署方式：仓库 Settings → Pages → Source 选择 **GitHub Actions**，然后推送对 `docs/` 目录的任何更改即可。
+
+### 体感手势（纯视觉）
+
+用**六个手势**驱动应用——永不依赖任何穿戴设备：八向挥手（连续模拟转向）、
+捏合（确认）、张掌（定格/暂停）、视图环（三指径向菜单）、灯效环（拇指系换灯效）、
+双手张合（翻页/换景）。画面**仅本地推理**（MediaPipe wasm）、零上传、零自动落盘——
+详见 [`docs/PRIVACY.md`](docs/PRIVACY.md)。AI 实验室体感台内置**深度体检**：
+在你的摄像头上实测每手势召回/延迟/混淆对并与实验室基线并排；
+「设置 → 手势宏」一键切换三套手势语义预设。
 
 ### 无障碍与辅助输入
 

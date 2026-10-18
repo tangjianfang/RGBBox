@@ -10947,3 +10947,9 @@ input:disabled {
 .macro-table thead th { color: var(--text-muted); font-weight: 500; }
 .macro-table select.macro-cell { font-size: var(--text-caption-size); max-width: 108px; padding: 2px 4px; }
 .macro-conflict-list { color: var(--danger, #f85149); font-size: var(--text-caption-size); margin: 4px 0 0; padding-left: 18px; }
+/* R306/T19: the one-time first-boot vision hint on the dashboard. */
+.vision-first-hint { align-items: center; background: linear-gradient(90deg, rgba(103, 232, 249, 0.10), rgba(124, 152, 220, 0.08)); border: 1px solid var(--border-color); border-radius: 10px; display: flex; gap: 12px; margin-bottom: 14px; padding: 10px 14px; }
+.vision-first-hint-icon { font-size: 1.3rem; }
+.vision-first-hint-body { display: flex; flex-direction: column; flex: 1; gap: 2px; }
+.vision-first-hint-body b { font-size: 0.875rem; }
+.vision-first-hint-body span { color: var(--text-muted); font-size: var(--text-caption-size); }

@@ -367,6 +367,33 @@
       line-height: 1.65;
     }
 
+    /* R306/T19: vision gestures section — vocabulary + CSS-only compass demo */
+    .gestures-demo-wrap { align-items: center; display: flex; flex-wrap: wrap; gap: 36px; justify-content: center; margin: 26px auto 10px; max-width: 980px; }
+    .gesture-compass { border-radius: 50%; height: 210px; position: relative; width: 210px; flex: 0 0 auto; }
+    .gesture-ring { border: 2px solid rgba(124, 152, 220, 0.45); border-radius: 50%; inset: 14px; position: absolute; }
+    .gesture-sector { background: linear-gradient(180deg, rgba(103, 232, 249, 0.85), rgba(103, 232, 249, 0.25)); border-radius: 3px; height: 26px; left: 50%; margin-left: -2px; position: absolute; top: 6px; transform-origin: 2px 99px; width: 4px; animation: gesture-sector-pulse 6s infinite; }
+    .gesture-sector.s1 { animation-delay: 1.5s; }
+    .gesture-sector.s2 { animation-delay: 3s; }
+    .gesture-sector.s3 { animation-delay: 4.5s; }
+    .gesture-dot { background: #e2e8f0; border-radius: 50%; box-shadow: 0 0 0 7px rgba(226, 232, 240, 0.18), 0 0 0 14px rgba(103, 232, 249, 0.14); height: 16px; left: 50%; margin: -8px 0 0 -8px; position: absolute; top: 50%; width: 16px; animation: gesture-orbit 6s cubic-bezier(.45,.05,.55,.95) infinite; }
+    @keyframes gesture-orbit {
+      0% { transform: rotate(0deg) translateX(78px) scale(0.72); }
+      12.5% { transform: rotate(45deg) translateX(78px) scale(1); }
+      25% { transform: rotate(90deg) translateX(78px) scale(0.72); }
+      37.5% { transform: rotate(135deg) translateX(78px) scale(1); }
+      50% { transform: rotate(180deg) translateX(78px) scale(0.72); }
+      62.5% { transform: rotate(225deg) translateX(78px) scale(1); }
+      75% { transform: rotate(270deg) translateX(78px) scale(0.72); }
+      87.5% { transform: rotate(315deg) translateX(78px) scale(1); }
+      100% { transform: rotate(360deg) translateX(78px) scale(0.72); }
+    }
+    @keyframes gesture-sector-pulse { 0%, 100% { opacity: 0.25; } 12.5% { opacity: 1; } 25% { opacity: 0.25; } }
+    .gesture-vocab { display: grid; gap: 8px 22px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); flex: 1 1 420px; min-width: 280px; text-align: left; }
+    .gesture-word { align-items: baseline; border-left: 2px solid rgba(124, 152, 220, 0.4); display: flex; flex-wrap: wrap; gap: 0 8px; padding-left: 10px; }
+    .gesture-word b { color: var(--fg, #e6edf3); font-size: 0.95rem; }
+    .gesture-word span { color: var(--muted, #8b949e); flex-basis: 100%; font-size: 0.8rem; }
+    .gesture-footnote { color: var(--muted, #8b949e); font-size: 0.88rem; margin: 18px auto 0; max-width: 860px; }
+    @media (max-width: 980px) { .gestures-demo-wrap { flex-direction: column; } }
     .feature-tag {
       background: rgba(6,182,212,0.1);
       border: 1px solid rgba(6,182,212,0.25);
@@ -1718,6 +1745,7 @@
     </a>
     <ul class="topbar-nav">
       <li><a href="#features" class="zh">功能特性</a><a href="#features" class="en">Features</a></li>
+      <li><a href="#gestures" class="zh">体感手势</a><a href="#gestures" class="en">Gestures</a></li>
       <li><a href="#videowall" class="zh">视频墙</a><a href="#videowall" class="en">Video Wall</a></li>
       <li><a href="#effects" class="zh">特效库</a><a href="#effects" class="en">Effects</a></li>
       <li><a href="#demo" class="zh">效果预览</a><a href="#demo" class="en">Preview</a></li>
@@ -1963,6 +1991,35 @@
       </div>
     </div>
   </div>
+
+  <!-- R306/T19: vision gestures — vocabulary + CSS-only live demo + privacy -->
+  <section class="section" id="gestures">
+    <div class="section-title">
+      <p class="eyebrow zh">纯视觉体感</p>
+      <p class="eyebrow en">Camera-only Gestures</p>
+      <h2>🖐️ <span class="zh">六个手势，驱动一切</span><span class="en">Six Gestures Drive Everything</span></h2>
+      <p class="zh">纯视觉方案——无需任何穿戴设备。画面仅本地推理、零上传、零自动落盘（<a href="https://github.com/tangjianfang/RGBBox/blob/main/docs/PRIVACY.md" target="_blank" rel="noopener">隐私承诺</a>）。</p>
+      <p class="en">Camera-only — no wearables, ever. Frames stay on-device: local inference, zero upload, zero automatic disk writes (<a href="https://github.com/tangjianfang/RGBBox/blob/main/docs/PRIVACY.md" target="_blank" rel="noopener">privacy promise</a>).</p>
+    </div>
+    <div class="gestures-demo-wrap">
+      <div class="gesture-compass" aria-hidden="true">
+        <div class="gesture-ring"></div>
+        <div class="gesture-sector s0"></div><div class="gesture-sector s1"></div>
+        <div class="gesture-sector s2"></div><div class="gesture-sector s3"></div>
+        <div class="gesture-dot"></div>
+      </div>
+      <div class="gesture-vocab">
+        <div class="gesture-word"><b class="zh">八向挥手</b><b class="en">8-way wave</b><span class="zh">掌移选向，连续模拟</span><span class="en">palm steers, fully analog</span></div>
+        <div class="gesture-word"><b class="zh">捏合</b><b class="en">pinch</b><span class="zh">确认 / 灯环选定</span><span class="en">confirm / ring select</span></div>
+        <div class="gesture-word"><b class="zh">张掌</b><b class="en">open palm</b><span class="zh">定格 / 暂停</span><span class="en">freeze / pause</span></div>
+        <div class="gesture-word"><b class="zh">视图环</b><b class="en">view ring</b><span class="zh">三指呼出径向菜单</span><span class="en">3-finger radial menu</span></div>
+        <div class="gesture-word"><b class="zh">灯效环</b><b class="en">light ring</b><span class="zh">拇指系三指换灯效</span><span class="en">thumb-led ring swaps effects</span></div>
+        <div class="gesture-word"><b class="zh">双手张合</b><b class="en">two-hand spread</b><span class="zh">翻页 / 换景</span><span class="en">page / swap scenes</span></div>
+      </div>
+    </div>
+    <p class="gesture-footnote zh">AI 实验室·体感台内置<b>深度体检</b>：六个手势逐一实测召回 / 延迟 / 混淆对，与实验室基线并排——你的环境，数字说话。手势语义可在「设置 → 手势宏」三套预设间一键切换。</p>
+    <p class="gesture-footnote en">The AI Lab vision bench ships a <b>deep bench</b>: measure per-gesture recall / latency / confusions on YOUR camera, side-by-side with the lab baseline. Swap gesture meanings via one click in Settings → Gesture Macros.</p>
+  </section>
 
   <!-- Effect previews -->
   <div class="section-full section-alt" id="demo">

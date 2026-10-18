@@ -1,5 +1,6 @@
 import { Pause, Play } from 'lucide-react'
 import { useI18n } from '../i18n'
+import { VisionFirstHint } from './vision/VisionFirstHint'
 import { isViewReachable, type View } from '../hooks/tabNavigation'
 import { CARD_VIEWS, MODULE_META } from './shellModules'
 import { DashStageStrip } from './DashStageStrip'
@@ -42,6 +43,8 @@ export function DashboardView({ onOpen, model3dEnabled, status, effect, performa
   const { t } = useI18n()
   return (
     <div className="dashboard">
+      {/* R306/T19: one-time pointer at the vision bench (dismiss persists) */}
+      <VisionFirstHint onOpenVision={() => onOpen('ai')} />
       <section className="dash-stage" aria-label={t('dash.stage.ariaLabel')}>
         <div className="dash-stage-head">
           <span className={`dash-stage-dot ${status.running ? 'on' : ''}`} aria-hidden="true" />
