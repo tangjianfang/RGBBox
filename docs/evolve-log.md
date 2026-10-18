@@ -1,10 +1,10 @@
 # evolve log — RGBBox
 
 - verify: yarn typecheck && yarn test
-- pointer: #4 (next round)
-- rounds done: 3
+- pointer: #5 (next round)
+- rounds done: 4
 - status: active
-- metrics: findings 4 | fixes 4 | regressions 0
+- metrics: findings 4 | fixes 5 | regressions 0
 
 ## Target pool
 
@@ -21,7 +21,7 @@
 - Tier 4 (backlog):
   - replay card: scrub/seek slider on the progress readout
   - settings macro matrix: preset "diff vs current" preview before applying
-  - deep-bench: remember last report in localStorage for tab re-entry
+  - [done #4] deep-bench: remember last report in localStorage for tab re-entry → R309b
 
 ## Rounds
 
@@ -41,3 +41,5 @@
   (skeleton.ts direct test) / Tier 4 backlog.
 
 #3 | skeleton direct tests (Tier 2) | findings(0) | actions(1) | result(green+progress, 211 files / 1911 passed / 45 skipped) | diff(~70) | baseline-grew +3: HAND_BONES graph integrity (21 bones, all 21 landmarks connected, no out-of-range) + rect mapping (recorder-ctx stub, one stroke path, 21 arcs, origin/corner math) + malformed-hand no-op; red phase caught MY test's own arithmetic before green — the code was right
+
+#4 | bench report persistence (Tier 4) | findings(0) | actions(1) | result(green+progress, 211 files / 1912 passed / 45 skipped) | diff(~60) | red-first (tab re-entry loses a finished 90s measurement); numbers-only persisted (frames NEVER touch storage — MBs); hydrated view read-only (export hidden, again available); E2E 33/33

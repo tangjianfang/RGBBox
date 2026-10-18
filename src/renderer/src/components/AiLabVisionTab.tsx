@@ -501,7 +501,21 @@ export function AiLabVisionTab(): JSX.Element {
     step?: { word: string; round: number }
     report?: BenchReport
     recording?: Recording
-  }>({ phase: 'idle' })
+    /** R309b/evolve #4: hydrated from storage — read-only (no export; the
+     *  recording behind the report is NOT persisted, only the numbers) */
+    restored?: boolean
+  }>(() => {
+    // the last bench report survives tab re-entry (switching tabs unmounts
+    // the bench; losing a finished 90-second measurement to a tab switch
+    // was pure waste). Frames never touch storage — a recording can be MBs.
+    try {
+      const raw = localStorage.getItem('rgbbox:visionBenchLast')
+      if (!raw) return { phase: 'idle' } as { phase: 'idle' | 'run' | 'done'; restored?: boolean }
+      const stored = JSON.parse(raw) as { report?: BenchReport }
+      if (stored?.report?.words?.length) return { phase: 'done', report: stored.report, restored: true }
+    } catch { /* damaged entry → fresh idle */ }
+    return { phase: 'idle' }
+  })
   startBenchRef.current = (opts: BenchOpts): boolean => {
     if (!vision.enabled || bench.phase === 'run') return false
     const plan = planBench(opts)
@@ -522,7 +536,9 @@ export function AiLabVisionTab(): JSX.Element {
         const rec = benchRecRef.current.finish()
         if (!rec) { setBench({ phase: 'idle' }); return }
         rec.marks = plan.marks
-        setBench({ phase: 'done', plan, report: scoreBench({ frames: rec.frames, events: rec.events, marks: rec.marks }), recording: rec })
+        const report = scoreBench({ frames: rec.frames, events: rec.events, marks: rec.marks })
+        try { localStorage.setItem('rgbbox:visionBenchLast', JSON.stringify({ report, finishedAt: new Date().toISOString() })) } catch { /* non-fatal */ }
+        setBench({ phase: 'done', plan, report, recording: rec })
         return
       }
       const step = plan.steps.find((s) => now >= s.from && now <= s.to) ?? null
@@ -689,9 +705,11 @@ export function AiLabVisionTab(): JSX.Element {
               {` · ${t('ai.lab.vision.bench.extra')} ${bench.report.extraFires}`}
             </p>
             <div className="vision-bench-actions">
-              <button type="button" data-action="vision-bench-export" onClick={exportBench}>
-                {t('ai.lab.vision.bench.export')}
-              </button>
+              {!bench.restored && (
+                <button type="button" data-action="vision-bench-export" onClick={exportBench}>
+                  {t('ai.lab.vision.bench.export')}
+                </button>
+              )}
               <button type="button" data-action="vision-bench-again" onClick={() => setBench({ phase: 'idle' })}>
                 {t('ai.lab.vision.bench.again')}
               </button>

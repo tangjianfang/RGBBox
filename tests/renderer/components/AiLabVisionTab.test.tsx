@@ -334,6 +334,34 @@ describe('AiLabVisionTab (R144)', () => {
     }
   })
 
+  it('R309b/evolve #4: the finished bench report survives tab re-entry (persisted, export-less)', async () => {
+    // run a FAST bench to completion (the synthetic path from the R306/T2 case)
+    h.vision.enabled = true
+    h.vision.state = 'active'
+    const { container } = render(<AiLabVisionTab />)
+    const seam = (window as unknown as { __rgbboxVisionLab?: { startBench(o?: Record<string, number>): Promise<boolean> } }).__rgbboxVisionLab
+    await act(async () => { await seam!.startBench!({ windowsPerWord: 1, windowMs: 300, restMs: 50, leadMs: 50 }) })
+    await waitFor(() => {
+      expect(container.querySelector('.vision-bench')!.getAttribute('data-bench')).toBe('done')
+    }, { timeout: 6000 })
+    expect(container.querySelectorAll('[data-bench-word]').length).toBe(6)
+    // the report landed in storage…
+    const stored = JSON.parse(localStorage.getItem('rgbbox:visionBenchLast') ?? 'null')
+    expect(stored?.report?.words?.length).toBe(6)
+    // …so a tab re-entry (fresh mount, idle pipeline) shows the LAST report
+    cleanup()
+    h.vision.enabled = false
+    const c2 = render(<AiLabVisionTab />).container
+    expect(c2.querySelector('.vision-bench')!.getAttribute('data-bench')).toBe('done')
+    expect(c2.querySelectorAll('[data-bench-word]').length).toBe(6)
+    // hydrated view is read-only: no export (no recording behind it); the
+    // start button stays gated by the pipeline (vision off), rerun via again
+    expect(c2.querySelector('[data-action="vision-bench-export"]')).toBeNull()
+    expect((c2.querySelector('[data-action="vision-bench"]') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(c2.querySelector('[data-action="vision-bench-again"]') as HTMLElement)
+    expect(c2.querySelector('.vision-bench')!.getAttribute('data-bench')).toBe('idle')
+  })
+
   it('R306/T3: the health card externalizes the funnel truth + soak-aligned latency segments', async () => {
     // persisted funnel truth (onboarding.ts owns the key)
     localStorage.setItem('rgbbox:visionFunnel', JSON.stringify({ opened: 5, calDone: 3, firstCmd: 2 }))
