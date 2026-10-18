@@ -1,6 +1,60 @@
 import { describe, it, expect } from 'vitest'
 import { AI8_APP_VERSION, AI8_VIDEO_PROVIDERS, Ai8Client, Ai8Error, buildChatBody, buildVideoBody, isDrawDone, isDrawLimitError, parseAi8SseLine, parseDrawImages, parseDrawTemplate, parseVideoTemplate } from '../../../src/shared/ai8Client'
 
+describe('renderer/ai8 client R308 — request timeout (hung network never pends forever)', () => {
+  it('short JSON endpoints abort after the injected timeout; a signal is passed to fetch', async () => {
+    const origFetch = globalThis.fetch
+    let sawSignal = false
+    globalThis.fetch = ((_url: unknown, init?: { signal?: AbortSignal }) => {
+      if (init?.signal) sawSignal = true
+      return new Promise((_res, rej) => {
+        init?.signal?.addEventListener('abort', () => rej(init.signal?.reason ?? new Error('aborted')))
+      })
+    }) as typeof fetch
+    try {
+      const client = new Ai8Client({ timeoutMs: 120 })
+      const winner = await Promise.race([
+        client.getChatTemplate().then(
+          () => 'resolved',
+          (e: unknown) => `rejected:${(e as Error)?.name ?? 'Error'}`,
+        ),
+        (async () => {
+          await new Promise((r) => setTimeout(r, 600))
+          return 'still-pending'
+        })(),
+      ])
+      // the hung fetch must ABORT (TimeoutError), never resolve, never pend
+      expect(winner).toBe('rejected:TimeoutError')
+      expect(sawSignal).toBe(true)
+    } finally {
+      globalThis.fetch = origFetch
+    }
+  })
+
+  it('R308 inspector hole #1: the stuck-draw recovery DELETE also aborts in bounded time', async () => {
+    const origFetch = globalThis.fetch
+    globalThis.fetch = ((_u: unknown, init?: { signal?: AbortSignal }) => new Promise((_res, rej) => {
+      init?.signal?.addEventListener('abort', () => rej(init.signal?.reason ?? new Error('aborted')))
+    })) as typeof fetch
+    try {
+      const client = new Ai8Client({ token: 't', timeoutMs: 120 })
+      const winner = await Promise.race([
+        client.drawDelete(123).then(
+          () => 'resolved',
+          (e: unknown) => `rejected:${(e as Error)?.name ?? 'Error'}`,
+        ),
+        (async () => {
+          await new Promise((r) => setTimeout(r, 600))
+          return 'still-pending'
+        })(),
+      ])
+      expect(winner).toBe('rejected:TimeoutError')
+    } finally {
+      globalThis.fetch = origFetch
+    }
+  })
+})
+
 describe('renderer/ai8 client (R110)', () => {
   it('parses delta payloads and accumulates the full text', () => {
     let full = ''

@@ -374,11 +374,26 @@ export class Ai8Client {
   token: string
   baseUrl: string
   onTokenExpired?: (msg: string) => void
+  /** R308: short-request timeout (ms). A half-dead network must ABORT into
+   *  the retry/error paths — never leave a fetch pending for the browser's
+   *  multi-minute socket timeout. Injected for tests; 15s in production. */
+  private readonly timeoutMs: number
 
-  constructor({ token = '', baseUrl = AI8_BASE, onTokenExpired }: { token?: string; baseUrl?: string; onTokenExpired?: (msg: string) => void } = {}) {
+  constructor({ token = '', baseUrl = AI8_BASE, onTokenExpired, timeoutMs = 15_000 }: { token?: string; baseUrl?: string; onTokenExpired?: (msg: string) => void; timeoutMs?: number } = {}) {
     this.token = token
     this.baseUrl = baseUrl.replace(/\/$/, '')
     this.onTokenExpired = onTokenExpired
+    this.timeoutMs = timeoutMs
+  }
+
+  /** abort signal for SHORT JSON round-trips — ALL 8 of them in this file
+   *  (get/post/login/templates/drawDelete/updateSession/deleteSession/…).
+   *  The ONE streaming endpoint (chat completions) deliberately does NOT use
+   *  it — long generations are legitimate there. */
+  private timeoutSignal(): AbortSignal | undefined {
+    return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(this.timeoutMs)
+      : undefined
   }
 
   setToken(token: string): void {
@@ -398,7 +413,14 @@ export class Ai8Client {
   private async unwrap<T>(res: Response): Promise<T> {
     // typed explicitly: the node tsconfig types res.json() as unknown (the
     // web one says any) — this file compiles under BOTH now (R118 shared move)
-    const body = (await res.json().catch(() => ({}))) as { code?: number; data?: T; msg?: string }
+    // R308 (inspector hole #4): a timeout firing DURING the body read must
+    // stay a TimeoutError — swallowing it into {} here misclassifies a network
+    // fault as the "-2 not activated" business code
+    const body = (await res.json().catch((e: unknown) => {
+      const name = (e as { name?: string })?.name
+      if (name === 'TimeoutError' || name === 'AbortError') throw e
+      return {}
+    })) as { code?: number; data?: T; msg?: string }
     if (body.code === 0) return body.data as T
     if (body.code === 2) {
       this.onTokenExpired?.(body.msg ?? '')
@@ -409,7 +431,7 @@ export class Ai8Client {
 
   private async get<T>(path: string, params?: Record<string, string | number>): Promise<T> {
     const qs = params ? '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])) : ''
-    const res = await fetch(this.baseUrl + path + qs, { headers: this.headers() })
+    const res = await fetch(this.baseUrl + path + qs, { headers: this.headers(), signal: this.timeoutSignal() })
     return this.unwrap<T>(res)
   }
 
@@ -418,6 +440,7 @@ export class Ai8Client {
       method: 'POST',
       headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(data ?? {}),
+      signal: this.timeoutSignal(),
     })
     return this.unwrap<T>(res)
   }
@@ -425,6 +448,7 @@ export class Ai8Client {
   /** Account+password login; `.token` on the returned auth object is the header token. */
   async login(account: string, password: string): Promise<{ token?: string } & Record<string, unknown>> {
     const res = await fetch(this.baseUrl + '/user/login', {
+      signal: this.timeoutSignal(),
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-APP-VERSION': AI8_APP_VERSION, 'X-Locale': 'zh-CN' },
       body: JSON.stringify({ account, password }),
@@ -446,6 +470,7 @@ export class Ai8Client {
   async getChatTemplate(): Promise<Ai8ChatTemplate> {
     const res = await fetch(this.baseUrl + '/chat/tmpl', {
       headers: { 'X-APP-VERSION': AI8_APP_VERSION, 'X-Locale': 'zh-CN' },
+      signal: this.timeoutSignal(),
     })
     return this.unwrap<Ai8ChatTemplate>(res)
   }
@@ -454,6 +479,7 @@ export class Ai8Client {
   async getDrawTemplate<T>(): Promise<T> {
     const res = await fetch(this.baseUrl + '/draw/template', {
       headers: { 'X-APP-VERSION': AI8_APP_VERSION, 'X-Locale': 'zh-CN' },
+      signal: this.timeoutSignal(),
     })
     return this.unwrap<T>(res)
   }
@@ -478,7 +504,9 @@ export class Ai8Client {
   /** R125.3: delete a draw task — the site's own escape hatch for a stuck
    *  "running" task (it occupies the account's ONE running slot). */
   drawDelete<T>(taskId: string | number): Promise<T> {
-    return fetch(this.baseUrl + `/draw/${taskId}`, { method: 'DELETE', headers: this.headers() }).then((res) => this.unwrap<T>(res))
+    // R308 (inspector hole #1): the stuck-task ESCAPE HATCH must never hang on
+    // a half-dead network — a pended DELETE starves the one-retry recovery
+    return fetch(this.baseUrl + `/draw/${taskId}`, { method: 'DELETE', headers: this.headers(), signal: this.timeoutSignal() }).then((res) => this.unwrap<T>(res))
   }
 
   /** R117.3/R124: poll a draw task — parse with `parseDrawImages` (live
@@ -535,10 +563,13 @@ export class Ai8Client {
   }
 
   updateSession<T>(sessionId: string | number, patch: Record<string, unknown>): Promise<T> {
+    // R308 (inspector hole #2): chat-send critical path — a pended PUT swallows
+    // the send permanently (input already cleared, no Stop button exists yet)
     return fetch(this.baseUrl + `/chat/session/${sessionId}`, {
       method: 'PUT',
       headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(patch ?? {}),
+      signal: this.timeoutSignal(),
     }).then((res) => this.unwrap<T>(res))
   }
 
@@ -550,7 +581,8 @@ export class Ai8Client {
   }
 
   deleteSession(sessionId: string | number): Promise<unknown> {
-    return fetch(this.baseUrl + `/chat/session/${sessionId}`, { method: 'DELETE', headers: this.headers() }).then((res) => this.unwrap<unknown>(res))
+    // R308 (inspector hole #3): fire-and-forget still needs a bounded failure
+    return fetch(this.baseUrl + `/chat/session/${sessionId}`, { method: 'DELETE', headers: this.headers(), signal: this.timeoutSignal() }).then((res) => this.unwrap<unknown>(res))
   }
 
   listRecords<T>(sessionId: string | number, page = 1): Promise<T> {
