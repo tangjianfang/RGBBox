@@ -1,8 +1,8 @@
 # evolve log — RGBBox
 
 - verify: yarn typecheck && yarn test
-- pointer: #3 (next round)
-- rounds done: 2
+- pointer: #4 (next round)
+- rounds done: 3
 - status: active
 - metrics: findings 4 | fixes 4 | regressions 0
 
@@ -12,7 +12,7 @@
   - [done #1] ai8Client bare fetch — no timeout on short JSON endpoints (hung network pends for minutes; R307 retry waits forever) → R308
   - palm gesture has NO engine event — chord-pause/palm cells in the macro table are inert at runtime (documented in PRD T9; needs an event source in gesture_engine/pipeline first — likely epic-sized)
 - Tier 2 (coverage gaps):
-  - vision/skeleton.ts drawHandSkeleton has no direct unit test (covered indirectly via VisionReplayCard/VisionPad suites)
+  - [done #3] vision/skeleton.ts drawHandSkeleton direct unit test → R309
   - domain/visionReplay.ts ReplayPlayer.durationMs edge (events past last frame) is tested; setSpeed-after-done path untested
 - Tier 3 (module rotation):
   - src/engine/videoWallFrame.ts (no dedicated suite beyond videoWall)
@@ -39,3 +39,5 @@
   (timeout every renderer fetch) — all new this run.
 - Next: pointer #3 — palm-gesture-event epic candidate (Tier 1), else Tier 2
   (skeleton.ts direct test) / Tier 4 backlog.
+
+#3 | skeleton direct tests (Tier 2) | findings(0) | actions(1) | result(green+progress, 211 files / 1911 passed / 45 skipped) | diff(~70) | baseline-grew +3: HAND_BONES graph integrity (21 bones, all 21 landmarks connected, no out-of-range) + rect mapping (recorder-ctx stub, one stroke path, 21 arcs, origin/corner math) + malformed-hand no-op; red phase caught MY test's own arithmetic before green — the code was right
