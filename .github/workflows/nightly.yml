@@ -1,0 +1,43 @@
+name: nightly
+
+# R306/T13 + T14: the L3 snapshot tier and the verify chain's CI carry.
+#
+# T13 — the pixel gate (yarn ui:snapshot, pixelmatch vs git-tracked
+#   docs/ui-baseline) runs on windows-latest: the baselines are captured on
+#   the Windows dev machine, and font AA differs per OS — a linux runner
+#   would red the gate on rendering, not regressions. Cross-platform
+#   baselines land when a fleet capture exists per OS (follow-up).
+# T14 — the six-layer verify chain (typecheck → test → build → snapshot →
+#   soak) runs nightly + on demand; the pre-dist hooks already carry the
+#   quick tier locally (predist:win/mac/dir). First run is verification-
+#   Likely per the R221 lesson (CI never green until it runs once).
+#
+# The soak here is the compressed 60s window (scenario sweep) — the full
+# 30min windows remain the local release gate.
+
+on:
+  schedule:
+    - cron: '23 17 * * *' # 01:23 Asia/Shanghai, off the :00 fleet minute
+  workflow_dispatch:
+
+jobs:
+  verify-chain:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn typecheck
+      - run: yarn test
+      - run: yarn build
+      - name: L3 pixel snapshot gate (windows baseline parity)
+        run: yarn ui:snapshot
+      - name: soak scenario sweep (compressed 60s windows)
+        run: |
+          node scripts/vision-soak.mjs --seconds 60 --scenario base
+          node scripts/vision-soak.mjs --seconds 60 --scenario face
+          node scripts/vision-soak.mjs --seconds 60 --scenario precision
+          node scripts/vision-soak.mjs --seconds 60 --scenario macro

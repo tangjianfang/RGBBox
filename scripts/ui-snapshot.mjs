@@ -157,6 +157,11 @@ await page.evaluate(() => {
 }).catch(() => {})
 await page.reload()
 await page.waitForSelector('.module-rail', { timeout: 15000 })
+// R306/T19: the one-time first-boot vision hint lives on the dashboard — a
+// fresh capture profile is always "first boot", so the card would land in
+// every snapshot. Dismiss it once: baselines capture the STEADY state (the
+// pre-T19 baselines stay valid, no re-baseline needed).
+await page.locator('[data-action="vision-hint-dismiss"]').click({ timeout: 4000 }).catch(() => {})
 await sleep(700) // boot fan-out + dashboard settle
 
 // Rail order at runtime = ['dashboard', ...CARD_VIEWS] which matches VIEWS
