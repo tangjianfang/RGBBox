@@ -10941,3 +10941,9 @@ input:disabled {
 .duel-verdict { margin: 0; font-size: var(--text-body-size); color: var(--accent); }
 /* 对决开启时隐藏 fs 态的 DOM 面板规则同样适用(duel-panel 在 fs 下也隐藏,画布 HUD 承载) */
 .games-screen.fs .duel-panel { display: none !important; }
+/* R306/T8: the gesture macro matrix — 6 words × 7 scenes of action selects. */
+.macro-table { border-collapse: collapse; font-size: var(--text-caption-size); width: 100%; }
+.macro-table th, .macro-table td { border-top: 1px solid var(--border-color); padding: 3px 5px; text-align: left; }
+.macro-table thead th { color: var(--text-muted); font-weight: 500; }
+.macro-table select.macro-cell { font-size: var(--text-caption-size); max-width: 108px; padding: 2px 4px; }
+.macro-conflict-list { color: var(--danger, #f85149); font-size: var(--text-caption-size); margin: 4px 0 0; padding-left: 18px; }

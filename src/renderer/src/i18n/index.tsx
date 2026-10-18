@@ -416,6 +416,11 @@ const EN = {
   // R160.4: appearance — Dynamic-Type-equivalent font scale tiers.
   'settings.group.appearance': 'Appearance',
   'settings.group.games': 'Games',
+  'settings.group.gestures': 'Gesture macros',
+  'settings.macro.preset': 'Preset',
+  'settings.macro.default': 'Default table',
+  'settings.macro.conflicts': 'Conflicts',
+  'settings.macro.col.gesture': 'Gesture',
   'settings.games.clearLabel': 'Clear game data',
   'settings.games.clearHint': 'Clears local run history and profile (keeps best scores by default)',
   'settings.games.clearBtn': 'Clear',
@@ -2385,6 +2390,11 @@ const ZH: TranslationTable = {
   // R160.4：外观——文字缩放档位（Dynamic Type 等价）。
   'settings.group.appearance': '外观',
   'settings.group.games': '游戏',
+  'settings.group.gestures': '手势宏',
+  'settings.macro.preset': '预设',
+  'settings.macro.default': '默认表',
+  'settings.macro.conflicts': '冲突',
+  'settings.macro.col.gesture': '手势',
   'settings.games.clearLabel': '清空游戏数据',
   'settings.games.clearHint': '清空本地对局历史与档案(默认保留最高分)',
   'settings.games.clearBtn': '清空',

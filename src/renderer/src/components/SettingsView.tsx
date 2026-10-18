@@ -7,6 +7,9 @@ import { UI_FONT_SCALE_TIERS } from '../domain/uiFontScale'
 import { UI_THEME_OPTIONS } from '../domain/uiTheme'
 import { clearAllGameData, type GameId } from '../domain/gamesTelemetry'
 import { resetOnboarding } from '../vision/onboarding'
+import { MACRO_PRESETS, buildPresetMap, persistMacroMap, loadMacroMap, validateMacroMap } from '../domain/gestureMacro'
+import { GESTURE_SCENE_MAP, GESTURES, SCENES, ACTIONS } from '../vision/gestureActions'
+import { USER_VOCAB } from '../vision/hostProtocol'
 
 export interface SettingsViewProps {
   // Runtime
@@ -33,9 +36,28 @@ export interface SettingsViewProps {
 }
 
 export function SettingsView(props: SettingsViewProps) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [gamesClearedAt, setGamesClearedAt] = useState<number | null>(null)
   const [visionReplayAt, setVisionReplayAt] = useState<number | null>(null)
+  // R306/T8: gesture macros — preset picker + the 6×7 matrix + the shared
+  // conflict gate. Games scenes stay exempt (R131 owns that surface).
+  const L = lang === 'zh' ? 'zh' : 'en'
+  const [macroMap, setMacroMap] = useState(() => loadMacroMap())
+  const [macroPreset, setMacroPreset] = useState('default')
+  const macroConflicts = validateMacroMap(macroMap)
+  const MACRO_SCENES = SCENES.filter((s) => s !== 'games')
+  const applyMacroPreset = (id: string): void => {
+    const map = id === 'default' ? GESTURE_SCENE_MAP : buildPresetMap(id)
+    if (persistMacroMap(map).length) return // shipped presets always clean
+    setMacroMap(map)
+    setMacroPreset(id)
+  }
+  const editMacroCell = (g: string, s: string, action: string): void => {
+    const next = { ...macroMap, [g]: { ...macroMap[g], [s]: { ...macroMap[g][s], action } } }
+    if (persistMacroMap(next).length) return // closed action set — unreachable, gate anyway
+    setMacroMap(next)
+    setMacroPreset('') // a hand-edited table is no longer a shipped preset
+  }
   return (
     <div className="settings-view">
       {/* R189 Q-5: topbar already shows '设置' — the duplicate in-view header
@@ -184,6 +206,59 @@ export function SettingsView(props: SettingsViewProps) {
             >{t('settings.vision.replayBtn')}</button>
           </div>
           {visionReplayAt !== null && <p className="ai-hint-line" data-field="vision-replay">{t('settings.vision.replayDone')}</p>}
+        </section>
+
+        {/* R306/T8: 手势宏 — 三套预设 + 6×7 映射表编辑 + 共享冲突校验。 */}
+        <section className="panel settings-group" data-macro="gestures">
+          <h3>{t('settings.group.gestures')}</h3>
+          <div className="status-panel">
+            <span>{t('settings.macro.preset')}</span>
+            <select
+              className="settings-select"
+              data-setting="macro-preset"
+              value={macroPreset}
+              onChange={(e) => applyMacroPreset(e.target.value)}
+            >
+              <option value="default">{t('settings.macro.default')}</option>
+              {MACRO_PRESETS.map((p) => <option key={p.id} value={p.id}>{p[L]}</option>)}
+            </select>
+            <span data-field="macro-conflicts">{t('settings.macro.conflicts')} {macroConflicts.length}</span>
+          </div>
+          {macroConflicts.length > 0 && (
+            <ul className="macro-conflict-list">
+              {macroConflicts.map((c) => <li key={c}>{c}</li>)}
+            </ul>
+          )}
+          <table className="macro-table">
+            <thead>
+              <tr>
+                <th>{t('settings.macro.col.gesture')}</th>
+                {MACRO_SCENES.map((s) => <th key={s}>{s}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {GESTURES.map((g) => {
+                const label = USER_VOCAB.find((w) => w.id === g)
+                return (
+                  <tr key={g}>
+                    <th scope="row">{label ? label[L] : g}</th>
+                    {MACRO_SCENES.map((s) => (
+                      <td key={s}>
+                        <select
+                          className="settings-select macro-cell"
+                          data-cell={`${g}:${s}`}
+                          value={macroMap[g][s].action}
+                          onChange={(e) => editMacroCell(g, s, e.target.value)}
+                        >
+                          {ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+                        </select>
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </section>
       </div>
     </div>
