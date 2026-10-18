@@ -23,6 +23,11 @@ import { chromium } from './lib/cdp.mjs'
 const PORT = 9305
 const SECONDS = Number(process.argv.includes('--seconds')
   ? process.argv[process.argv.indexOf('--seconds') + 1] : 180)
+// R306/T22: scenario tiers — base (as shipped) + face (face landmarker live on
+// the synthetic source) + precision (hi capture tier) + macro (preset table
+// cycling every 15s to soak the T9 per-event table loads)
+const SCENARIO = process.argv.includes('--scenario')
+  ? process.argv[process.argv.indexOf('--scenario') + 1] : 'base'
 
 const udd = join(tmpdir(), `rgbbox-soak-${Date.now()}`)
 mkdirSync(udd, { recursive: true })
@@ -69,20 +74,86 @@ const bench = await page.evaluate(() => {
   tab?.click(); return !!tab
 })
 await sleep(600)
-await page.evaluate(() => window.__rgbboxVisionLab?.startSynthetic?.())
+const started = SCENARIO === 'face'
+  ? await page.evaluate(() => window.__rgbboxVisionLab?.startSynthetic?.({ face: true }))
+  : await page.evaluate(() => window.__rgbboxVisionLab?.startSynthetic?.())
+if (SCENARIO === 'face' && started !== true) { console.error('face scenario: synthetic+face start failed'); process.exit(1) }
 await sleep(1500)
+if (SCENARIO === 'precision') {
+  await page.locator('select[data-param="precision"]').selectOption('hi').catch(() => {})
+  await sleep(600)
+}
+
+// R306/T22: sample the ENGINE's inference throughput (inferFps — the health
+// card's data-field), not the rAF render rate: the gate's own doc says "fps
+// slope — inference throughput"; rAF wobbles with UI load and manufactured
+// every "drop" so far. Falls back to rAF only when stats have not landed.
+const inferFpsSample = async () => {
+  const v = await page.evaluate(() => {
+    const el = document.querySelector('[data-field="health-infer-fps"]')
+    return el?.textContent ?? ''
+  })
+  const n = Number(String(v).replace(/[^0-9.]/g, ''))
+  return Number.isFinite(n) && n > 0 ? n : await fpsSample()
+}
 
 // ── phase 1: baseline ───────────────────────────────────────────────────────
+// R306/T22 harness fix: a CONDITION-stable baseline — the rAF idles at
+// 200fps while models load and ramps as the engine loop spins up, so any
+// fixed-wait sample catches the idle→loaded transition and every "drop"
+// from it is pure artifact. Sample until two consecutive reads agree within
+// 5% (max 30s), THEN take the baseline: the gate measures DECAY from the
+// working steady state, never warm-up.
+let fpsPrev = await inferFpsSample()
+let fps0 = fpsPrev
+for (let i = 0; i < 15; i++) {
+  await sleep(2000)
+  const next = await inferFpsSample()
+  if (Math.abs(next - fpsPrev) / fpsPrev < 0.05) { fps0 = next; break }
+  fpsPrev = next
+}
 const heap0 = (await metrics()).heap
-const fps0 = await fpsSample()
 console.log(`baseline: fps=${fps0.toFixed(1)} heap=${(heap0 / 1048576).toFixed(1)}MB (${SECONDS}s soak starting)`)
 
 // ── phase 2: the soak window ────────────────────────────────────────────────
-await sleep(SECONDS * 1000)
+// macro scenario: cycle the three presets every 15s + poke the T9 reader with
+// a direction event — it loads the table PER EVENT; a leak there lands in the
+// heap verdict exactly like any other
+if (SCENARIO === 'macro') {
+  const cycle = ['light-drive', 'present', 'party']
+  const until = Date.now() + SECONDS * 1000
+  let i = 0
+  while (Date.now() < until) {
+    const id = cycle[i++ % cycle.length]
+    await page.evaluate((preset) => {
+      const G = ['dir8', 'pinch', 'palm', 'chord-menu', 'chord-light', 'double-pinch']
+      const SC = ['workspace', 'effects', 'audio', 'video', 'ai', 'settings', 'overlay', 'games']
+      const cells = {
+        'light-drive': { dir8: 'brightnessStep', 'chord-light': 'openMenu' },
+        present: { dir8: 'nextCurated', 'double-pinch': 'prevCurated', 'chord-light': 'openMenu' },
+        party: { dir8: 'brightnessStep', 'double-pinch': 'nextCurated', 'chord-light': 'openMenu' },
+      }[preset]
+      const table = {}
+      for (const g of G) {
+        table[g] = {}
+        for (const sc of SC) table[g][sc] = sc === 'games' || !cells[g]
+          ? { action: 'none', cooldownMs: 0, guard: 'always' }
+          : { action: cells[g], cooldownMs: 500, guard: g === 'chord-light' ? 'explicit-mode' : 'always' }
+      }
+      window.localStorage.setItem('rgbbox:gestureMacros', JSON.stringify(table))
+    }, id)
+    await page.evaluate(() => {
+      window.dispatchEvent(new CustomEvent('vision-input', { detail: { kind: 'direction', key: 'ArrowRight', dir: 'right', down: true } }))
+    })
+    await sleep(15000)
+  }
+} else {
+  await sleep(SECONDS * 1000)
+}
 
 // ── phase 3: verdicts ───────────────────────────────────────────────────────
 const heap1 = (await metrics()).heap
-const fps1 = await fpsSample()
+const fps1 = await inferFpsSample()
 const heapDelta = (heap1 - heap0) / 1048576
 const fpsDrop = 1 - fps1 / fps0
 record('inferFps 降幅 <10%', fpsDrop < 0.10, `${(fpsDrop * 100).toFixed(1)}% (${fps0.toFixed(1)}→${fps1.toFixed(1)})`)
@@ -111,7 +182,7 @@ const chipEnd = await page.evaluate(() => document.querySelector('.ai-status')?.
 record('退出清理（bench stop）', !/运行中|running|active/i.test(chipEnd), `chip="${chipEnd.slice(0, 40)}"`)
 
 // ledger
-let md = `# SOAK-LEDGER — 长跑门禁台账（R252 / T15）\n\n> ${new Date().toISOString()} · ${SECONDS}s 窗口 · synthetic 源（无摄像头）\n\n`
+let md = `# SOAK-LEDGER — 长跑门禁台账（R252 / T15；R306/T22 场景档）\n\n> ${new Date().toISOString()} · ${SECONDS}s 窗口 · synthetic 源（无摄像头） · scenario=${SCENARIO}\n\n`
 md += `| 检查 | 结果 | 明细 |\n|---|---|---|\n`
 for (const r of results) md += `| ${r.n} | ${r.ok ? '✓' : '✗'} | ${r.d} |\n`
 md += `\n基线 fps=${fps0.toFixed(1)} heap=${(heap0 / 1048576).toFixed(1)}MB → 终值 fps=${fps1.toFixed(1)} heap=${(heap1 / 1048576).toFixed(1)}MB\n`

@@ -102,7 +102,7 @@ function translateEngineText(text: string, t: TFn): string {
 export interface VisionInputHandle {
   enable(opts?: VisionEnableOpts): Promise<void>
   /** Camera-free variant for tests/E2E — synthetic landmarks, identical pipeline. */
-  enableSynthetic(): Promise<void>
+  enableSynthetic(opts?: VisionEnableOpts): Promise<void>
   disable(): void
   recalibrate(): void
   /** R306/T11: local pause truth (single source for toggle consumers) */
@@ -442,7 +442,9 @@ export function useVisionInput(): VisionInputHandle {
   }, [mirror, onEvent, onSnapshot, sensitivity])
 
   const enable = useCallback((opts?: VisionEnableOpts) => start('camera', opts), [start])
-  const enableSynthetic = useCallback(() => start('synthetic'), [start])
+  // R306/T22: opts pass through (the soak's face scenario runs the synthetic
+  // source WITH the face landmarker — synthetic.js already provides faceBlend)
+  const enableSynthetic = useCallback((opts?: VisionEnableOpts) => start('synthetic', opts), [start])
 
   const disable = useCallback(() => {
     // R228: RELEASE, not stop — the host tears the camera down only when the

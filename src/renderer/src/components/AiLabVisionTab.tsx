@@ -578,9 +578,9 @@ export function AiLabVisionTab(): JSX.Element {
     if (!import.meta.env.DEV && window.rgbbox?.isE2e !== true) return
     const w = window as unknown as { __rgbboxVisionLab?: unknown }
     w.__rgbboxVisionLab = {
-      async startSynthetic(): Promise<boolean> {
+      async startSynthetic(opts?: { face?: boolean }): Promise<boolean> {
         try {
-          await visionRef.current.enableSynthetic()
+          await visionRef.current.enableSynthetic(opts)
           sourceRef.current = 'synthetic'
           return true
         } catch { return false }
