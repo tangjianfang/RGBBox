@@ -5,7 +5,7 @@
 - rounds done: 10
 - status: active
 - metrics: findings 15 | fixes 12 | regressions 0
-- checkpoint (2026-10-18, after round #8): 8 rounds green+progress in ONE session; context deep — next session resumes at pointer #9. In-flight: none (all committed). Priority order for #9+: Tier-1 denoise backlog (backpressure > pairing-skew > double-fork), then Tier-3 gl rotation. Palm = epic candidate (user decision).
+- checkpoint (2026-10-18, after round #10): 10 rounds green+progress, ALL in one session; context deep — next session resumes at pointer #11. In-flight: none (all committed). Done this stretch: denoise triple (serialization R310b / pairing-skew R310c / backpressure R310d — one inspector agent, three adversarial passes, all verdicts hold). Priority for #11+: Tier-1 denoiseStart double-fork (small), overload-UX telemetry; Tier-3 gl rotation; denoiseProcessor test-harness = epic candidate (zero direct coverage); palm event = epic candidate (user decision).
 
 ## Target pool
 
