@@ -1,22 +1,25 @@
 # evolve log — RGBBox
 
 - verify: yarn typecheck && yarn test
-- pointer: #8 (next round)
-- rounds done: 7
+- pointer: #9 (next round)
+- rounds done: 8
 - status: active
-- metrics: findings 4 | fixes 8 | regressions 0
+- metrics: findings 11 | fixes 10 | regressions 0
 
 ## Target pool
 
 - Tier 1 (known defects):
   - [done #1] ai8Client bare fetch — no timeout on short JSON endpoints (hung network pends for minutes; R307 retry waits forever) → R308
+  - denoise backpressure (R310b inspector hole #2): unpaced relay + unbounded chain backlog under sustained overload → memory growth + head-of-line block on a hung ORT run; needs queue cap / drop-stale / timeout design
+  - denoise batch-failure pairing skew (hole #3): error replies carry no batch id + worklet pairs wet/dry positionally → one failed batch = permanent ~16ms comb-filter skew until toggle; needs id-tagged errors + renderer reset signaling
+  - denoiseStart double-fork (inspector nit): two concurrent invokes can both pass the session check → leaked child
   - palm gesture has NO engine event — chord-pause/palm cells in the macro table are inert at runtime (documented in PRD T9; needs an event source in gesture_engine/pipeline first — likely epic-sized)
 - Tier 2 (coverage gaps):
   - [done #3] vision/skeleton.ts drawHandSkeleton direct unit test → R309
   - domain/visionReplay.ts ReplayPlayer.durationMs edge (events past last frame) is tested; setSpeed-after-done path untested
 - Tier 3 (module rotation):
   - [done #7] src/engine/videoWallFrame.ts — reviewed clean (math + defenses sound); +2 edge tests → R310
-  - src/main/denoiseProcessor.ts (utility-process entry, tested via denoiseService suites only)
+  - [done #8] src/main/denoiseProcessor.ts — REAL race found (concurrent frames batches interleave shared LSTM state); serialized + inspector-hardened → R310b
   - src/renderer/src/gl/* (GPU shaders — node+headless-gl harness exists)
 - Tier 4 (backlog):
   - [done #5] replay card: scrub/seek slider on the progress readout → R309c
@@ -49,3 +52,5 @@
 #6 | macro preset diff preview (Tier 4) | findings(0) | actions(1) | result(green+progress, 212 files / 1916 passed / 45 skipped) | diff(~120) | macroDiff() domain red-first (changed cells only, both directions, empty=no-op); settings two-step: select→exact-diff preview→apply/cancel (blind preset apply was sight-unseen rewiring); no-op presets confirm directly; packaged probe: 15 diffs listed, nothing stored until apply, AI review clean
 
 #7 | videoWallFrame rotation (Tier 3) | findings(0) | actions(1) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~40) | 87-line module reviewed clean (double-clamped UVs, edge sampling, degenerate sizes — all tested); +2 edge tests: renderStyle passthrough + truncated-pixel-buffer defensive lock (reads past end clamp to black, never throws); red phase = my own sampling-math slip in the test (4×4 first out-pixel samples (1,0) not (0,0)), fixed to 2×2
+
+#8 | denoiseProcessor rotation (Tier 3) | findings(7) | actions(2) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~30) | REAL race: fire-and-forget relay × fire-and-forget IIFE → concurrent batches race shared LSTM tensors; serialized via promise chain; inspector verdict: core holds + holes #1 (poisoned chain → process death, FIXED .catch guard) and pre-ready frames killing init (FIXED silent drop); holes #2 (backpressure) #3 (pairing skew) + double-fork nit → Tier-1 backlog (round-sized pieces cannot close honestly)
