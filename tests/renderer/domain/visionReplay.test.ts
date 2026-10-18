@@ -80,6 +80,32 @@ describe('domain/visionReplay (R306/T10)', () => {
     expect(empty.tick(0).frame).toBeNull()
   })
 
+
+  it('R309c/evolve #5: seek(t) repositions both pointers — skipped events are NOT re-delivered, frames jump', () => {
+    const r = new ReplayPlayer(rec([{ t: 0 }, { t: 1000 }, { t: 2000 }, { t: 3000 }], [{ t: 500, kind: 'pinch' }, { t: 2500, kind: 'direction' }]))
+    r.start(0)
+    r.tick(300) // recT 300, before the first event
+    // jump FORWARD past both events
+    const f = r.seek(2600)
+    expect(f.frame?.t).toBe(2000)
+    expect(f.dueEvents).toEqual([]) // the pinch@500 was skipped by the seek — never re-delivered
+    const n = r.tick(2601) // +1ms
+    expect(n.frame?.t).toBe(2000)
+    expect(n.dueEvents).toEqual([], 'the @2500 event was CROSSED by the seek — skipped, not delivered')
+    // jump BACKWARD to the start: pointers reset, replay delivers from there
+    // (anchor semantics: the first tick after a seek re-anchors the clock,
+    //  playback then advances in wall time from the sought position)
+    const b = r.seek(0)
+    expect(b.frame?.t).toBe(0)
+    r.tick(1000) // re-anchor
+    const n2 = r.tick(1600) // +600ms of playback from recT 0
+    expect(n2.dueEvents.map((e) => e.kind)).toEqual(['pinch'], 'seeking back re-arms earlier events')
+    // clamping + done state survives seek
+    const end = r.seek(999999)
+    expect(end.frame?.t).toBe(3000)
+    expect(end.done).toBe(true)
+  })
+
   it('syncClock: a paused player resumes WITHOUT jumping across the paused wall time', () => {
     const r = new ReplayPlayer(rec([{ t: 0 }, { t: 1000 }, { t: 2000 }], []))
     r.start(0)

@@ -87,4 +87,34 @@ describe('components/vision/VisionReplayCard (R306/T10)', () => {
     fireEvent.click(container.querySelector('[data-action="vision-replay-speed"]') as HTMLElement)
     expect(container.querySelector('.vision-replay')!.getAttribute('data-speed')).toBe('0.5')
   })
+
+  it('R309c: the seek slider scrubs — progress jumps, crossed events are not re-fired', async () => {
+    const { container } = render(<VisionReplayCard />)
+    loadFile(container, makeRecording())
+    await waitFor(() => {
+      expect(container.querySelector('.vision-replay')!.getAttribute('data-replay')).toBe('ready')
+    })
+    const slider = container.querySelector('input[data-action="vision-replay-seek"]') as HTMLInputElement
+    expect(slider).toBeTruthy()
+    expect(slider.max).toBe('900') // recording duration = 600 + 300 tail
+    const busEvents: Array<Record<string, unknown>> = []
+    const onBus = (ev: Event): void => { busEvents.push((ev as CustomEvent).detail as Record<string, unknown>) }
+    window.addEventListener('vision-input', onBus)
+    try {
+      fireEvent.change(slider, { target: { value: '500' } })
+      await waitFor(() => {
+        expect(container.querySelector('.vision-replay-progress')?.textContent).toContain('0.5s')
+      })
+      // scrubbed PAST the pinch@120/130 and direction@400 — none re-fired
+      expect(busEvents.filter((e) => e.kind === 'pinch' || e.kind === 'direction')).toEqual([])
+      // scrubbing back to 0 re-arms them (play from there delivers)
+      fireEvent.change(slider, { target: { value: '0' } })
+      fireEvent.click(container.querySelector('[data-action="vision-replay-play"]') as HTMLElement)
+      await waitFor(() => {
+        expect(busEvents.filter((e) => e.kind === 'pinch').length).toBeGreaterThanOrEqual(1)
+      }, { timeout: 4000 })
+    } finally {
+      window.removeEventListener('vision-input', onBus)
+    }
+  })
 })

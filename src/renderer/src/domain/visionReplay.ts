@@ -56,6 +56,21 @@ export class ReplayPlayer {
     this.lastWall = wallNowMs
   }
 
+  /** R309c/evolve #5: jump to a recording time (scrub). Both pointers
+   *  reposition to the target — events CROSSED by the jump are skipped,
+   *  never re-delivered; seeking backward re-arms earlier events. The wall
+   *  anchor is CLEARED so the next tick starts accumulating from the sought
+   *  position (scrubbing never fast-forwards wall time). */
+  seek(recT: number): ReplayTick {
+    this.recT = Math.min(this.durationMs, Math.max(0, recT))
+    this.frameIdx = 0
+    while (this.frameIdx < this.rec.frames.length - 1 && this.rec.frames[this.frameIdx + 1].t <= this.recT) this.frameIdx++
+    this.eventIdx = 0
+    while (this.eventIdx < this.rec.events.length && this.rec.events[this.eventIdx].t <= this.recT) this.eventIdx++
+    this.lastWall = null
+    return this.snapshot([])
+  }
+
   get playbackSpeed(): number {
     return this.speed
   }
@@ -66,6 +81,17 @@ export class ReplayPlayer {
   get durationMs(): number {
     if (this.rec.frames.length) return this.lastFrameT + TAIL_MS
     return this.lastEventT > -1 ? this.lastEventT + TAIL_MS : 0
+  }
+
+  /** Build the tick view from the CURRENT pointers (shared by tick/seek). */
+  private snapshot(dueEvents: RecordedEvent[]): ReplayTick {
+    const frame = this.rec.frames.length && this.rec.frames[this.frameIdx].t <= this.recT
+      ? this.rec.frames[this.frameIdx]
+      : this.rec.frames.length && this.frameIdx === 0 && this.rec.frames[0].t > this.recT
+        ? this.rec.frames[0] // before the first frame stamp (t=0 lead) → hold the first
+        : null
+    const done = this.recT >= this.durationMs
+    return { recT: this.recT, frame, dueEvents, done }
   }
 
   /** Advance to a wall clock; returns what to render/dispatch for THIS tick. */
@@ -83,12 +109,6 @@ export class ReplayPlayer {
       dueEvents.push(this.rec.events[this.eventIdx])
       this.eventIdx++
     }
-    const frame = this.rec.frames.length && this.rec.frames[this.frameIdx].t <= this.recT
-      ? this.rec.frames[this.frameIdx]
-      : this.rec.frames.length && this.frameIdx === 0 && this.rec.frames[0].t > this.recT
-        ? this.rec.frames[0] // before the first frame stamp (t=0 lead) → hold the first
-        : null
-    const done = this.recT >= this.durationMs
-    return { recT: this.recT, frame, dueEvents, done }
+    return this.snapshot(dueEvents)
   }
 }

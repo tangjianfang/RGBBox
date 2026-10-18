@@ -20,6 +20,9 @@ export function VisionReplayCard(): JSX.Element {
   const [phase, setPhase] = useState<Phase>('idle')
   const [speed, setSpeed] = useState<0.5 | 1>(1)
   const [progress, setProgress] = useState('0.0s / 0.0s')
+  // R309c: the scrub position (gated to the same 0.1s cadence as the text —
+  // the slider must not force a re-render per animation frame)
+  const [recT, setRecT] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const playerRef = useRef<ReplayPlayer | null>(null)
   const recRef = useRef<Recording | null>(null)
@@ -64,7 +67,11 @@ export function VisionReplayCard(): JSX.Element {
       }))
     }
     const text = `${(tick.recT / 1000).toFixed(1)}s / ${(player.durationMs / 1000).toFixed(1)}s`
-    setProgress((prev) => (prev === text ? prev : text))
+    setProgress((prev) => {
+      if (prev === text) return prev
+      setRecT(tick.recT)
+      return text
+    })
     if (tick.done) { stopLoop(); setPhase('done'); return }
     rafRef.current = requestAnimationFrame(loop)
   }, [drawFrame])
@@ -107,6 +114,21 @@ export function VisionReplayCard(): JSX.Element {
     setPhase('ready')
   }, [])
 
+  // R309c: scrub — crossed events are skipped by design (ReplayPlayer.seek),
+  // seeking off the end flips done → ready so play RESUMES from the position
+  const seekTo = useCallback((t: number): void => {
+    const player = playerRef.current
+    if (!player) return
+    const tick = player.seek(t)
+    drawFrame(tick.frame?.hands ?? [])
+    for (const ev of tick.dueEvents) {
+      window.dispatchEvent(new CustomEvent('vision-input', { detail: { kind: ev.kind, name: ev.name, dir: ev.dir, key: ev.key, down: ev.down } }))
+    }
+    setRecT(tick.recT)
+    setProgress(`${(tick.recT / 1000).toFixed(1)}s / ${(player.durationMs / 1000).toFixed(1)}s`)
+    setPhase(tick.done ? 'done' : 'ready')
+  }, [drawFrame])
+
   const toggleSpeed = useCallback((): void => {
     setSpeed((s) => {
       const next: 0.5 | 1 = s === 1 ? 0.5 : 1
@@ -141,6 +163,18 @@ export function VisionReplayCard(): JSX.Element {
         </button>
         <span className="vision-replay-progress">{progress}</span>
       </div>
+      {phase !== 'idle' && phase !== 'error' && playerRef.current != null && (
+        <input
+          type="range"
+          className="vision-replay-seek"
+          data-action="vision-replay-seek"
+          min={0}
+          max={playerRef.current.durationMs}
+          value={recT}
+          aria-label={t('ai.lab.vision.replay.seek')}
+          onChange={(e) => seekTo(Number(e.target.value))}
+        />
+      )}
       {phase === 'error' && <p className="vision-replay-error">{t('ai.lab.vision.replay.badFile')}</p>}
       <canvas ref={canvasRef} width={CANVAS_W} height={CANVAS_H} style={{ width: CANVAS_W, height: CANVAS_H }} aria-label={t('ai.lab.vision.replay.title')} />
     </div>

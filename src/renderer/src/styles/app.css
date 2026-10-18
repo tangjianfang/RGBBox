@@ -10953,3 +10953,4 @@ input:disabled {
 .vision-first-hint-body { display: flex; flex-direction: column; flex: 1; gap: 2px; }
 .vision-first-hint-body b { font-size: 0.875rem; }
 .vision-first-hint-body span { color: var(--text-muted); font-size: var(--text-caption-size); }
+.vision-replay-seek { accent-color: #67e8f9; width: 100%; }

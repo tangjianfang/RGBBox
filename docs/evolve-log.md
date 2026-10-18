@@ -1,10 +1,10 @@
 # evolve log — RGBBox
 
 - verify: yarn typecheck && yarn test
-- pointer: #5 (next round)
-- rounds done: 4
+- pointer: #6 (next round)
+- rounds done: 5
 - status: active
-- metrics: findings 4 | fixes 5 | regressions 0
+- metrics: findings 4 | fixes 6 | regressions 0
 
 ## Target pool
 
@@ -19,7 +19,7 @@
   - src/main/denoiseProcessor.ts (utility-process entry, tested via denoiseService suites only)
   - src/renderer/src/gl/* (GPU shaders — node+headless-gl harness exists)
 - Tier 4 (backlog):
-  - replay card: scrub/seek slider on the progress readout
+  - [done #5] replay card: scrub/seek slider on the progress readout → R309c
   - settings macro matrix: preset "diff vs current" preview before applying
   - [done #4] deep-bench: remember last report in localStorage for tab re-entry → R309b
 
@@ -43,3 +43,5 @@
 #3 | skeleton direct tests (Tier 2) | findings(0) | actions(1) | result(green+progress, 211 files / 1911 passed / 45 skipped) | diff(~70) | baseline-grew +3: HAND_BONES graph integrity (21 bones, all 21 landmarks connected, no out-of-range) + rect mapping (recorder-ctx stub, one stroke path, 21 arcs, origin/corner math) + malformed-hand no-op; red phase caught MY test's own arithmetic before green — the code was right
 
 #4 | bench report persistence (Tier 4) | findings(0) | actions(1) | result(green+progress, 211 files / 1912 passed / 45 skipped) | diff(~60) | red-first (tab re-entry loses a finished 90s measurement); numbers-only persisted (frames NEVER touch storage — MBs); hydrated view read-only (export hidden, again available); E2E 33/33
+
+#5 | replay seek slider (Tier 4) | findings(0) | actions(1) | result(green+progress, 211 files / 1914 passed / 45 skipped) | diff(~110) | ReplayPlayer.seek red-first (crossed events skipped, backward re-arms, clamps, wall-anchor cleared so scrub never fast-forwards); slider value gated to the 0.1s text cadence (no per-frame re-render); seek-off-end flips done→ready (play resumes from position); packaged probe scrubbed mid-track + AI review clean
