@@ -108,6 +108,27 @@ describe('engine/videoWallFrame', () => {
       expect(pixelAt(out, 0, 0)).toEqual([0, 0, 0])
     })
 
+
+    it('R310: renderStyle rides through with the frame identity', () => {
+      const src = { ...makeFrame(2, 2, () => [1, 2, 3]), renderStyle: 'neon' as const }
+      const layout = buildMatrixLayout(1, 1, { bezel: 0, bezelCompensation: false, fit: 'stretch' })
+      const out = extractWallPanelFrame(src, layout.panels[0], layout)
+      expect(out.renderStyle).toBe('neon')
+    })
+
+    it('R310: a truncated pixel buffer never crashes — reads past the end clamp to black', () => {
+      // defensive lock: a malformed virtualFrame (pixels shorter than cols*rows*3)
+      // must produce a frame, not a throw; out-of-range reads coerce to 0
+      const src = makeFrame(2, 2, () => [200, 100, 50])
+      src.pixels = src.pixels.slice(0, 6) as Uint8ClampedArray // only pixel (0,0) survives
+      const layout = buildMatrixLayout(1, 1, { bezel: 0, bezelCompensation: false, fit: 'stretch' })
+      const out = extractWallPanelFrame(src, layout.panels[0], layout, { outCols: 2, outRows: 2 })
+      expect(out.columns).toBe(2)
+      // output (0,0) samples source (0,0) — the intact pixel; the rest clamp to 0
+      expect([out.pixels[0], out.pixels[1], out.pixels[2]]).toEqual([200, 100, 50])
+      expect([out.pixels[9], out.pixels[10], out.pixels[11]]).toEqual([0, 0, 0])
+    })
+
     it('clamps degenerate output sizes to at least 1×1', () => {
       const src = makeFrame(1, 1, () => [5, 6, 7])
       const layout = buildMatrixLayout(1, 1, { fit: 'stretch' })

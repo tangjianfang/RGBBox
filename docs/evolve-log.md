@@ -1,10 +1,10 @@
 # evolve log — RGBBox
 
 - verify: yarn typecheck && yarn test
-- pointer: #7 (next round)
-- rounds done: 6
+- pointer: #8 (next round)
+- rounds done: 7
 - status: active
-- metrics: findings 4 | fixes 7 | regressions 0
+- metrics: findings 4 | fixes 8 | regressions 0
 
 ## Target pool
 
@@ -15,7 +15,7 @@
   - [done #3] vision/skeleton.ts drawHandSkeleton direct unit test → R309
   - domain/visionReplay.ts ReplayPlayer.durationMs edge (events past last frame) is tested; setSpeed-after-done path untested
 - Tier 3 (module rotation):
-  - src/engine/videoWallFrame.ts (no dedicated suite beyond videoWall)
+  - [done #7] src/engine/videoWallFrame.ts — reviewed clean (math + defenses sound); +2 edge tests → R310
   - src/main/denoiseProcessor.ts (utility-process entry, tested via denoiseService suites only)
   - src/renderer/src/gl/* (GPU shaders — node+headless-gl harness exists)
 - Tier 4 (backlog):
@@ -47,3 +47,5 @@
 #5 | replay seek slider (Tier 4) | findings(0) | actions(1) | result(green+progress, 211 files / 1914 passed / 45 skipped) | diff(~110) | ReplayPlayer.seek red-first (crossed events skipped, backward re-arms, clamps, wall-anchor cleared so scrub never fast-forwards); slider value gated to the 0.1s text cadence (no per-frame re-render); seek-off-end flips done→ready (play resumes from position); packaged probe scrubbed mid-track + AI review clean
 
 #6 | macro preset diff preview (Tier 4) | findings(0) | actions(1) | result(green+progress, 212 files / 1916 passed / 45 skipped) | diff(~120) | macroDiff() domain red-first (changed cells only, both directions, empty=no-op); settings two-step: select→exact-diff preview→apply/cancel (blind preset apply was sight-unseen rewiring); no-op presets confirm directly; packaged probe: 15 diffs listed, nothing stored until apply, AI review clean
+
+#7 | videoWallFrame rotation (Tier 3) | findings(0) | actions(1) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~40) | 87-line module reviewed clean (double-clamped UVs, edge sampling, degenerate sizes — all tested); +2 edge tests: renderStyle passthrough + truncated-pixel-buffer defensive lock (reads past end clamp to black, never throws); red phase = my own sampling-math slip in the test (4×4 first out-pixel samples (1,0) not (0,0)), fixed to 2×2
