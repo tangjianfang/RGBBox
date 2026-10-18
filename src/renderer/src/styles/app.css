@@ -10954,3 +10954,8 @@ input:disabled {
 .vision-first-hint-body b { font-size: 0.875rem; }
 .vision-first-hint-body span { color: var(--text-muted); font-size: var(--text-caption-size); }
 .vision-replay-seek { accent-color: #67e8f9; width: 100%; }
+/* R309d: preset apply preview — exact cell diffs before anything is written. */
+.macro-preview { border: 1px solid var(--border-color); border-radius: 6px; display: flex; flex-direction: column; gap: 6px; margin: 8px 0; padding: 8px 10px; }
+.macro-preview p { font-size: var(--text-caption-size); margin: 0; }
+.macro-preview ul { color: var(--text-muted); font-size: var(--text-caption-size); margin: 0; max-height: 140px; overflow-y: auto; padding-left: 16px; }
+.macro-preview > div:last-child { display: flex; gap: 6px; }

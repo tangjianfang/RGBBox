@@ -7,7 +7,8 @@ import { UI_FONT_SCALE_TIERS } from '../domain/uiFontScale'
 import { UI_THEME_OPTIONS } from '../domain/uiTheme'
 import { clearAllGameData, type GameId } from '../domain/gamesTelemetry'
 import { resetOnboarding } from '../vision/onboarding'
-import { MACRO_PRESETS, buildPresetMap, persistMacroMap, loadMacroMap, validateMacroMap } from '../domain/gestureMacro'
+import { MACRO_PRESETS, buildPresetMap, persistMacroMap, loadMacroMap, validateMacroMap, macroDiff } from '../domain/gestureMacro'
+import type { MacroMap, MacroDiffEntry } from '../domain/gestureMacro'
 import { GESTURE_SCENE_MAP, GESTURES, SCENES, ACTIONS } from '../vision/gestureActions'
 import { USER_VOCAB } from '../vision/hostProtocol'
 
@@ -44,13 +45,24 @@ export function SettingsView(props: SettingsViewProps) {
   const L = lang === 'zh' ? 'zh' : 'en'
   const [macroMap, setMacroMap] = useState(() => loadMacroMap())
   const [macroPreset, setMacroPreset] = useState('default')
+  // R309d: preset selection is a PREVIEW first — the exact cell diffs render
+  // and nothing is written until the user confirms (blind apply rewired
+  // gestures sight-unseen)
+  const [macroPreview, setMacroPreview] = useState<{ id: string; map: MacroMap; diffs: MacroDiffEntry[] } | null>(null)
   const macroConflicts = validateMacroMap(macroMap)
   const MACRO_SCENES = SCENES.filter((s) => s !== 'games')
+  const chooseMacroPreset = (id: string): void => {
+    const map = id === 'default' ? GESTURE_SCENE_MAP : buildPresetMap(id)
+    const diffs = macroDiff(loadMacroMap(), map)
+    setMacroPreview(diffs.length ? { id, map, diffs } : null)
+    if (!diffs.length) applyMacroPreset(id) // no-op apply: confirm directly
+  }
   const applyMacroPreset = (id: string): void => {
     const map = id === 'default' ? GESTURE_SCENE_MAP : buildPresetMap(id)
     if (persistMacroMap(map).length) return // shipped presets always clean
     setMacroMap(map)
     setMacroPreset(id)
+    setMacroPreview(null)
   }
   const editMacroCell = (g: string, s: string, action: string): void => {
     const next = { ...macroMap, [g]: { ...macroMap[g], [s]: { ...macroMap[g][s], action } } }
@@ -217,7 +229,7 @@ export function SettingsView(props: SettingsViewProps) {
               className="settings-select"
               data-setting="macro-preset"
               value={macroPreset}
-              onChange={(e) => applyMacroPreset(e.target.value)}
+              onChange={(e) => chooseMacroPreset(e.target.value)}
             >
               <option value="default">{t('settings.macro.default')}</option>
               {MACRO_PRESETS.map((p) => <option key={p.id} value={p.id}>{p[L]}</option>)}
@@ -228,6 +240,24 @@ export function SettingsView(props: SettingsViewProps) {
             <ul className="macro-conflict-list">
               {macroConflicts.map((c) => <li key={c}>{c}</li>)}
             </ul>
+          )}
+          {macroPreview != null && (
+            <div className="macro-preview" data-field="macro-preview">
+              <p>{t('settings.macro.previewTitle')}（{macroPreview.diffs.length}）</p>
+              <ul>
+                {macroPreview.diffs.map((d) => (
+                  <li key={`${d.gesture}:${d.scene}`} data-diff={`${d.gesture}:${d.scene}`}>
+                    {`${d.gesture} × ${d.scene}: ${d.from} → ${d.to}`}
+                  </li>
+                ))}
+              </ul>
+              <button type="button" className="video-btn" data-action="macro-apply" onClick={() => applyMacroPreset(macroPreview.id)}>
+                {t('settings.macro.apply')}
+              </button>
+              <button type="button" className="video-btn" data-action="macro-cancel" onClick={() => setMacroPreview(null)}>
+                {t('settings.macro.cancel')}
+              </button>
+            </div>
           )}
           <table className="macro-table">
             <thead>

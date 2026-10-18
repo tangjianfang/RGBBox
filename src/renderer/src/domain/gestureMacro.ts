@@ -115,3 +115,20 @@ export function resolveMacro(map: MacroMap, gesture: string, scene: string): { a
   const cell = map[gesture]?.[scene]
   return cell ?? { action: 'none', cooldownMs: 0, guard: 'always' }
 }
+
+/** R309d (evolve #6): what WILL change when one table replaces another —
+ *  per-cell action diffs (cooldown/guard rides along and is not noise worth
+ *  reading). Empty result = the apply is a no-op. */
+export interface MacroDiffEntry { gesture: string; scene: string; from: string; to: string }
+
+export function macroDiff(current: MacroMap, next: MacroMap): MacroDiffEntry[] {
+  const out: MacroDiffEntry[] = []
+  for (const g of GESTURES) {
+    for (const s of SCENES) {
+      const from = current[g]?.[s]?.action ?? 'none'
+      const to = next[g]?.[s]?.action ?? 'none'
+      if (from !== to) out.push({ gesture: g, scene: s, from, to })
+    }
+  }
+  return out
+}

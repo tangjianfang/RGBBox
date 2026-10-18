@@ -1,10 +1,10 @@
 # evolve log — RGBBox
 
 - verify: yarn typecheck && yarn test
-- pointer: #6 (next round)
-- rounds done: 5
+- pointer: #7 (next round)
+- rounds done: 6
 - status: active
-- metrics: findings 4 | fixes 6 | regressions 0
+- metrics: findings 4 | fixes 7 | regressions 0
 
 ## Target pool
 
@@ -20,7 +20,7 @@
   - src/renderer/src/gl/* (GPU shaders — node+headless-gl harness exists)
 - Tier 4 (backlog):
   - [done #5] replay card: scrub/seek slider on the progress readout → R309c
-  - settings macro matrix: preset "diff vs current" preview before applying
+  - [done #6] settings macro matrix: preset diff preview before applying → R309d
   - [done #4] deep-bench: remember last report in localStorage for tab re-entry → R309b
 
 ## Rounds
@@ -45,3 +45,5 @@
 #4 | bench report persistence (Tier 4) | findings(0) | actions(1) | result(green+progress, 211 files / 1912 passed / 45 skipped) | diff(~60) | red-first (tab re-entry loses a finished 90s measurement); numbers-only persisted (frames NEVER touch storage — MBs); hydrated view read-only (export hidden, again available); E2E 33/33
 
 #5 | replay seek slider (Tier 4) | findings(0) | actions(1) | result(green+progress, 211 files / 1914 passed / 45 skipped) | diff(~110) | ReplayPlayer.seek red-first (crossed events skipped, backward re-arms, clamps, wall-anchor cleared so scrub never fast-forwards); slider value gated to the 0.1s text cadence (no per-frame re-render); seek-off-end flips done→ready (play resumes from position); packaged probe scrubbed mid-track + AI review clean
+
+#6 | macro preset diff preview (Tier 4) | findings(0) | actions(1) | result(green+progress, 212 files / 1916 passed / 45 skipped) | diff(~120) | macroDiff() domain red-first (changed cells only, both directions, empty=no-op); settings two-step: select→exact-diff preview→apply/cancel (blind preset apply was sight-unseen rewiring); no-op presets confirm directly; packaged probe: 15 diffs listed, nothing stored until apply, AI review clean

@@ -45,8 +45,17 @@ describe('SettingsView', () => {
     const presetSel = section.querySelector('[data-setting="macro-preset"]') as HTMLSelectElement
     expect(presetSel.options.length).toBe(4)
     fireEvent.change(presetSel, { target: { value: 'party' } })
+    // R309d: applying is TWO-STEP now — the preview shows the exact cell diffs
+    // and nothing is stored until 确认
     const stored = () => JSON.parse(localStorage.getItem('rgbbox:gestureMacros') ?? 'null')
+    expect(stored()).toBeNull()
+    const preview = section.querySelector('[data-field="macro-preview"]') as HTMLElement
+    expect(preview).toBeTruthy()
+    expect(preview.querySelectorAll('[data-diff]').length).toBeGreaterThan(0)
+    expect(preview.textContent).toContain('dir8')
+    fireEvent.click(preview.querySelector('[data-action="macro-apply"]') as HTMLElement)
     expect(stored().dir8.workspace.action).toBe('brightnessStep')
+    expect(section.querySelector('[data-field="macro-preview"]')).toBeNull()
     // shipped preset → zero conflicts
     expect(section.querySelector('[data-field="macro-conflicts"]')!.textContent).toContain('0')
     // editing one cell through the matrix round-trips the same storage
