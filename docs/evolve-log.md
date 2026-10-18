@@ -5,6 +5,7 @@
 - rounds done: 8
 - status: active
 - metrics: findings 11 | fixes 10 | regressions 0
+- checkpoint (2026-10-18, after round #8): 8 rounds green+progress in ONE session; context deep — next session resumes at pointer #9. In-flight: none (all committed). Priority order for #9+: Tier-1 denoise backlog (backpressure > pairing-skew > double-fork), then Tier-3 gl rotation. Palm = epic candidate (user decision).
 
 ## Target pool
 
