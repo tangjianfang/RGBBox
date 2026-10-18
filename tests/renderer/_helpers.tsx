@@ -77,6 +77,7 @@ export function setupRendererMocks() {
     denoiseSendFrames: vi.fn(),
     denoiseStop: vi.fn().mockResolvedValue({ ok: true }),
     onDenoiseFrames: vi.fn().mockReturnValue(() => undefined),
+    onDenoiseFramesError: vi.fn().mockReturnValue(() => undefined),
     audioGetSavedPaths: vi.fn().mockResolvedValue([]),
     audioSavePaths: vi.fn().mockResolvedValue(undefined),
     audioOpenFiles: vi.fn().mockResolvedValue([]),

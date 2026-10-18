@@ -96,6 +96,10 @@ export const ipcChannels = {
   denoiseFrames: 'rgbbox:denoise:frames',
   denoiseStop: 'rgbbox:denoise:stop',
   denoiseFramesOut: 'rgbbox:denoise:frames-out',
+  // R310c: a FAILED batch must reach the renderer with its id — the worklet
+  // resyncs its wet/dry pairing on it (a silent drop left dry permanently
+  // 2 hops ahead = comb-filter skew until manual toggle)
+  denoiseFramesErr: 'rgbbox:denoise:frames-err',
   // Audio Studio file persistence
   audioGetSavedPaths: 'rgbbox:audio:get-saved-paths',
   audioSavePaths: 'rgbbox:audio:save-paths',

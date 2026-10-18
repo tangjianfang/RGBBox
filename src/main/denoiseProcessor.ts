@@ -118,7 +118,9 @@ process.parentPort.on('message', (e: { data: InMsg }) => {
           }
           process.parentPort.postMessage({ type: 'frames', id: msg.id, blocks: outBlocks })
         } catch (err: unknown) {
-          process.parentPort.postMessage({ type: 'error', message: err instanceof Error ? err.message : String(err) })
+          // R310c: the failed batch's id rides the error so the worklet can
+          // resync its wet/dry pairing instead of skewing forever
+          process.parentPort.postMessage({ type: 'error', id: msg.id, message: err instanceof Error ? err.message : String(err) })
         }
       })()).catch(() => { /* R310b inspector hole #1: never poison the chain —
       a rejection here would skip every later batch AND (Node default) kill

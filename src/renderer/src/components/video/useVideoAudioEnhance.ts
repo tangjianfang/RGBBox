@@ -137,9 +137,14 @@ export function useVideoAudioEnhance(videoRef: RefObject<HTMLVideoElement | null
   useEffect(() => {
     // Renderer-side frame pump: worklet → IPC → utility → IPC → worklet
     const off = window.rgbbox.onDenoiseFrames((payload) => {
-      workletRef.current?.port.postMessage({ type: 'frames', blocks: payload.blocks })
+      workletRef.current?.port.postMessage({ type: 'frames', id: payload.id, blocks: payload.blocks })
     })
-    return () => { off() }
+    // R310c: a failed batch arrives with its id — the worklet resyncs its
+    // wet/dry pairing PRECISELY at that batch (silent loss = comb-filter skew)
+    const offErr = window.rgbbox.onDenoiseFramesError((payload) => {
+      workletRef.current?.port.postMessage({ type: 'drop', id: payload.id })
+    })
+    return () => { off(); offErr() }
   }, [])
 
   const enableDenoise = useCallback(async (): Promise<void> => {

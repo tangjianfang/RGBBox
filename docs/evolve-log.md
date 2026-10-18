@@ -1,10 +1,10 @@
 # evolve log — RGBBox
 
 - verify: yarn typecheck && yarn test
-- pointer: #9 (next round)
-- rounds done: 8
+- pointer: #10 (next round)
+- rounds done: 9
 - status: active
-- metrics: findings 11 | fixes 10 | regressions 0
+- metrics: findings 14 | fixes 11 | regressions 0
 - checkpoint (2026-10-18, after round #8): 8 rounds green+progress in ONE session; context deep — next session resumes at pointer #9. In-flight: none (all committed). Priority order for #9+: Tier-1 denoise backlog (backpressure > pairing-skew > double-fork), then Tier-3 gl rotation. Palm = epic candidate (user decision).
 
 ## Target pool
@@ -12,7 +12,7 @@
 - Tier 1 (known defects):
   - [done #1] ai8Client bare fetch — no timeout on short JSON endpoints (hung network pends for minutes; R307 retry waits forever) → R308
   - denoise backpressure (R310b inspector hole #2): unpaced relay + unbounded chain backlog under sustained overload → memory growth + head-of-line block on a hung ORT run; needs queue cap / drop-stale / timeout design
-  - denoise batch-failure pairing skew (hole #3): error replies carry no batch id + worklet pairs wet/dry positionally → one failed batch = permanent ~16ms comb-filter skew until toggle; needs id-tagged errors + renderer reset signaling
+  - [done #9] denoise batch-failure pairing skew (hole #3) → R310c (id-precise resync after a two-pass inspector convergence)
   - denoiseStart double-fork (inspector nit): two concurrent invokes can both pass the session check → leaked child
   - palm gesture has NO engine event — chord-pause/palm cells in the macro table are inert at runtime (documented in PRD T9; needs an event source in gesture_engine/pipeline first — likely epic-sized)
 - Tier 2 (coverage gaps):
@@ -55,3 +55,5 @@
 #7 | videoWallFrame rotation (Tier 3) | findings(0) | actions(1) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~40) | 87-line module reviewed clean (double-clamped UVs, edge sampling, degenerate sizes — all tested); +2 edge tests: renderStyle passthrough + truncated-pixel-buffer defensive lock (reads past end clamp to black, never throws); red phase = my own sampling-math slip in the test (4×4 first out-pixel samples (1,0) not (0,0)), fixed to 2×2
 
 #8 | denoiseProcessor rotation (Tier 3) | findings(7) | actions(2) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~30) | REAL race: fire-and-forget relay × fire-and-forget IIFE → concurrent batches race shared LSTM tensors; serialized via promise chain; inspector verdict: core holds + holes #1 (poisoned chain → process death, FIXED .catch guard) and pre-ready frames killing init (FIXED silent drop); holes #2 (backpressure) #3 (pairing skew) + double-fork nit → Tier-1 backlog (round-sized pieces cannot close honestly)
+
+#9 | denoise pairing-skew (Tier 1, inspector hole #3) | findings(3) | actions(1) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~70) | first cut = inspector prescription (id relay + positional drop); re-inspection REFUTED common-case-only: same-window race + epoch-crossing drop + id-dead-weight; final = worklet pending-id queue, drop located at wet.length+indexOf(id)*BATCH — both races closed BY CONSTRUCTION, cross-epoch id miss = safe no-op

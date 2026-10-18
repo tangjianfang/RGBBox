@@ -313,6 +313,11 @@ const api = {
     ipcRenderer.send(ipcChannels.denoiseFrames, { id, blocks })
   },
   denoiseStop: (): Promise<{ ok: boolean }> => ipcRenderer.invoke(ipcChannels.denoiseStop),
+  onDenoiseFramesError: (callback: (payload: { id: number; message: string }) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { id: number; message: string }): void => callback(payload)
+    ipcRenderer.on(ipcChannels.denoiseFramesErr, handler)
+    return () => ipcRenderer.off(ipcChannels.denoiseFramesErr, handler)
+  },
   onDenoiseFrames: (callback: (payload: { id: number; blocks: Float32Array[] }) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: { id: number; blocks: Float32Array[] }): void => callback(payload)
     ipcRenderer.on(ipcChannels.denoiseFramesOut, handler)

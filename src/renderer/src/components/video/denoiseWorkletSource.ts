@@ -66,6 +66,7 @@ class DtlmRelayProcessor extends AudioWorkletProcessor {
     this.hopFill = 0
     this.batch = []
     this.seq = 1
+    this.pending = []       // R310c: ids of in-flight batches (send order)
     this.wet = []           // processed hops from the utility process
     this.dry = []           // original hops, 1:1 pairing with wet
     this.mixed16 = new Fifo(8192)  // 16k-domain mixed output
@@ -79,7 +80,20 @@ class DtlmRelayProcessor extends AudioWorkletProcessor {
       } else if (m.type === 'strength') {
         this.strength = m.value
       } else if (m.type === 'frames') {
+        const pi = this.pending.indexOf(m.id)
+        if (pi >= 0) this.pending.splice(pi, 1)
         for (const hop of m.blocks) this.wet.push(hop)
+      } else if (m.type === 'drop') {
+        // R310c: a failed batch's hops never come back. Locate that batch's
+        // dry hops by id: dry = [replied-but-unpaired hops (wet.length)] then
+        // [outstanding batches' hops, in send order]. The failed batch's hops
+        // sit at wet.length + indexOf(id)*BATCH. An id NOT in pending (already
+        // replied, or a stale drop from before a reset) is a safe no-op.
+        const pi = this.pending.indexOf(m.id)
+        if (pi >= 0) {
+          this.pending.splice(pi, 1)
+          this.dry.splice(this.wet.length + pi * BATCH, BATCH)
+        }
       }
     }
   }
@@ -90,6 +104,7 @@ class DtlmRelayProcessor extends AudioWorkletProcessor {
     this.window.fill(0)
     this.hopFill = 0
     this.batch = []
+    this.pending = []
     this.wet = []
     this.dry = []
     this.mixed16 = new Fifo(8192)
@@ -125,7 +140,9 @@ class DtlmRelayProcessor extends AudioWorkletProcessor {
         this.dry.push(Float32Array.from(this.hopBuf))
         this.batch.push(Float32Array.from(this.window))
         if (this.batch.length >= BATCH) {
-          this.port.postMessage({ type: 'send', id: this.seq++, blocks: this.batch })
+          const id = this.seq++
+          this.pending.push(id)
+          this.port.postMessage({ type: 'send', id, blocks: this.batch })
           this.batch = []
         }
       }

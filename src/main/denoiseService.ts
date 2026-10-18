@@ -89,9 +89,11 @@ export function registerDenoiseService(modelsDir: string, getWebContents: () => 
       await session.ready
       // Post-'ready' processor messages: relay denoised frames to the renderer.
       session.child.on('message', (msg: ProcessorOutMsg) => {
-        if (msg.type !== 'frames') return
+        // R310c: failed batches relay WITH their id — the worklet resyncs on it
         const wc = getWebContents()
-        if (wc && !wc.isDestroyed()) wc.send(ipcChannels.denoiseFramesOut, { id: msg.id, blocks: msg.blocks })
+        if (!wc || wc.isDestroyed()) return
+        if (msg.type === 'frames') wc.send(ipcChannels.denoiseFramesOut, { id: msg.id, blocks: msg.blocks })
+        else if (msg.type === 'error') wc.send(ipcChannels.denoiseFramesErr, { id: msg.id ?? 0, message: msg.message })
       })
       return { ok: true }
     } catch (err) {
