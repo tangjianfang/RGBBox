@@ -1,10 +1,10 @@
 # evolve log — RGBBox
 
 - verify: yarn typecheck && yarn test
-- pointer: #13 (next round)
-- rounds done: 12
+- pointer: #14 (next round)
+- rounds done: 13
 - status: active
-- metrics: findings 15 | fixes 14 | regressions 0
+- metrics: findings 15 | fixes 15 | regressions 0
 - checkpoint (2026-10-18, after round #10): 10 rounds green+progress, ALL in one session; context deep — next session resumes at pointer #11. In-flight: none (all committed). Done this stretch: denoise triple (serialization R310b / pairing-skew R310c / backpressure R310d — one inspector agent, three adversarial passes, all verdicts hold). Priority for #11+: Tier-1 denoiseStart double-fork (small), overload-UX telemetry; Tier-3 gl rotation; denoiseProcessor test-harness = epic candidate (zero direct coverage); palm event = epic candidate (user decision).
 
 ## Target pool
@@ -19,7 +19,7 @@
   - [done #11] denoiseStart double-fork (inspector nit) → R310e (in-flight share; TDD red=fork×2 reproduced)
   - palm gesture has NO engine event — chord-pause/palm cells in the macro table are inert at runtime (documented in PRD T9; needs an event source in gesture_engine/pipeline first — likely epic-sized)
 - Tier 2 (coverage gaps):
-  - R292 GPU-signature thresholds are per-GPU: droplet-mirror mirror-disk assertion fails under the windows runner's software GL (ubuntu green) — needs per-platform thresholds or a tolerance model (surfaced by nightly first run 2026-10-21)
+  - [done #13] R292 GPU-signature per-renderer thresholds → R310g (isSoftwareGl + 2.0/2.5 ratio floor; nightly re-dispatched GREEN on windows)
   - [done #3] vision/skeleton.ts drawHandSkeleton direct unit test → R309
   - domain/visionReplay.ts ReplayPlayer.durationMs edge (events past last frame) is tested; setSpeed-after-done path untested
 - Tier 3 (module rotation):
@@ -67,3 +67,5 @@
 #11 | denoiseStart double-fork (Tier 1) | findings(1) | actions(1) | result(green+progress, 213 files / 1920 passed / 45 skipped) | diff(~60) | TDD: service-level electron-mock harness (first direct denoiseService tests); RED = fork×2 reproduced exactly as the inspector specified; fix = shared in-flight promise + relay-attached-once + catch kills only its own child. CI context: pushed with GitHub three-tier green (T12/T13/T14 Likely→confirmed this stretch)
 
 #12 | denoise overload telemetry (Tier 1) | findings(1) | actions(1) | result(green+progress, 214 files / 1923 passed / 45 skipped) | diff(~90) | shed stream = telemetry: 10s sliding window, ≥4 sheds → DENOISE_OVERLOAD message on the existing error annotation (zero new UI); batch-error variant; window decay; hang watchdog honestly deferred (false-kill design)
+
+#13 | R292 per-GPU threshold (Tier 2) | findings(1) | actions(1) | result(green+progress, 214 files / 1923 passed / 45 skipped) | diff(~30) | measured 2.08 vs 2.5 under windows software GL (signature holds, magnitude low); glHarness isSoftwareGl() + tiered ratio floor (2.0 software / 2.5 real); nightly re-dispatched verify-chain ✓ on the runner that was red

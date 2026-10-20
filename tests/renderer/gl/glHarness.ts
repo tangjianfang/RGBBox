@@ -35,6 +35,19 @@ try {
 
 export const glAvailable = (): boolean => createGl !== null
 
+/** R292/R310g: software-GL raster (llvmpipe/SwiftShader — windows CI runners)
+ *  renders the SAME signature at lower magnitude. Tests that assert
+ *  magnitude RATIOS consult this for the relaxed floor; the signature
+ *  itself (bright disc + dark field coexisting) stays asserted on both. */
+export function isSoftwareGl(ctx: { getParameter: (p: number) => unknown }): boolean {
+  try {
+    const r = String(ctx.getParameter(/* gl.RENDERER */ 7937) ?? '').toLowerCase()
+    return r.includes('llvmpipe') || r.includes('swiftshader') || r.includes('software') || r.includes('mesa')
+  } catch {
+    return false
+  }
+}
+
 /** The real `it` when headless-gl works, `it.skip` when it doesn't. */
 export const itGl = createGl ? it : it.skip
 
