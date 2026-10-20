@@ -18,6 +18,7 @@
   - denoiseStart double-fork (inspector nit): two concurrent invokes can both pass the session check → leaked child
   - palm gesture has NO engine event — chord-pause/palm cells in the macro table are inert at runtime (documented in PRD T9; needs an event source in gesture_engine/pipeline first — likely epic-sized)
 - Tier 2 (coverage gaps):
+  - R292 GPU-signature thresholds are per-GPU: droplet-mirror mirror-disk assertion fails under the windows runner's software GL (ubuntu green) — needs per-platform thresholds or a tolerance model (surfaced by nightly first run 2026-10-21)
   - [done #3] vision/skeleton.ts drawHandSkeleton direct unit test → R309
   - domain/visionReplay.ts ReplayPlayer.durationMs edge (events past last frame) is tested; setSpeed-after-done path untested
 - Tier 3 (module rotation):
