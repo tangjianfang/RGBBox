@@ -1,10 +1,10 @@
 # evolve log — RGBBox
 
 - verify: yarn typecheck && yarn test
-- pointer: #11 (next round)
-- rounds done: 10
+- pointer: #12 (next round)
+- rounds done: 11
 - status: active
-- metrics: findings 15 | fixes 12 | regressions 0
+- metrics: findings 15 | fixes 13 | regressions 0
 - checkpoint (2026-10-18, after round #10): 10 rounds green+progress, ALL in one session; context deep — next session resumes at pointer #11. In-flight: none (all committed). Done this stretch: denoise triple (serialization R310b / pairing-skew R310c / backpressure R310d — one inspector agent, three adversarial passes, all verdicts hold). Priority for #11+: Tier-1 denoiseStart double-fork (small), overload-UX telemetry; Tier-3 gl rotation; denoiseProcessor test-harness = epic candidate (zero direct coverage); palm event = epic candidate (user decision).
 
 ## Target pool
@@ -15,7 +15,7 @@
   - denoise overload UX: shed/hang invisible to the user (queue-full error stream is the symptom; needs telemetry surface + reply-age watchdog + auto-recovery consideration)
   - denoiseProcessor/drop-path: still zero direct test coverage (needs an ORT-mock harness or worklet-logic extraction — candidate epic)
   - [done #9] denoise batch-failure pairing skew (hole #3) → R310c (id-precise resync after a two-pass inspector convergence)
-  - denoiseStart double-fork (inspector nit): two concurrent invokes can both pass the session check → leaked child
+  - [done #11] denoiseStart double-fork (inspector nit) → R310e (in-flight share; TDD red=fork×2 reproduced)
   - palm gesture has NO engine event — chord-pause/palm cells in the macro table are inert at runtime (documented in PRD T9; needs an event source in gesture_engine/pipeline first — likely epic-sized)
 - Tier 2 (coverage gaps):
   - R292 GPU-signature thresholds are per-GPU: droplet-mirror mirror-disk assertion fails under the windows runner's software GL (ubuntu green) — needs per-platform thresholds or a tolerance model (surfaced by nightly first run 2026-10-21)
@@ -62,3 +62,5 @@
 #9 | denoise pairing-skew (Tier 1, inspector hole #3) | findings(3) | actions(1) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~70) | first cut = inspector prescription (id relay + positional drop); re-inspection REFUTED common-case-only: same-window race + epoch-crossing drop + id-dead-weight; final = worklet pending-id queue, drop located at wet.length+indexOf(id)*BATCH — both races closed BY CONSTRUCTION, cross-epoch id miss = safe no-op
 
 #10 | denoise backpressure (Tier 1, inspector hole #2) | findings(4) | actions(2) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~20) | cap 4 waiting + shed-newest over the R310c id-error path; third-pass verdict HOLDS (no counter leak, chain-safe, id-precise makes shed deterministic); applied its (c)3 one-liner (seq time-offset kills remount id collision); documented policy trade (order-continuity vs T_s-scaled audio age) + hang-no-timeout rationale (only policy consistent with serialization)
+
+#11 | denoiseStart double-fork (Tier 1) | findings(1) | actions(1) | result(green+progress, 213 files / 1920 passed / 45 skipped) | diff(~60) | TDD: service-level electron-mock harness (first direct denoiseService tests); RED = fork×2 reproduced exactly as the inspector specified; fix = shared in-flight promise + relay-attached-once + catch kills only its own child. CI context: pushed with GitHub three-tier green (T12/T13/T14 Likely→confirmed this stretch)

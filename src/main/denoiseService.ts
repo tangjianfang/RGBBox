@@ -33,6 +33,11 @@ interface DenoiseSession {
 }
 
 let session: DenoiseSession | null = null
+// R310e (evolve #11): concurrent denoiseStart invokes share ONE in-flight
+// start — the old check-then-fork let two invokes both pass `if (session)`,
+// fork two children (one leaked forever), and the loser's catch could kill
+// the WINNER's child.
+let startInFlight: Promise<DenoiseStartResult> | null = null
 
 /** Pure: which dtln manifest entries are missing from disk. (tested) */
 export async function findMissingDenoiseModels(
@@ -80,27 +85,40 @@ async function startSession(modelsDir: string): Promise<DenoiseSession> {
  * `getWebContents` is late-bound so a recreated window keeps working.
  */
 export function registerDenoiseService(modelsDir: string, getWebContents: () => WebContents | null): void {
-  ipcMain.handle(ipcChannels.denoiseStart, async (): Promise<DenoiseStartResult> => {
-    try {
-      if (session) return { ok: true }
-      const missing = await findMissingDenoiseModels(modelsDir)
-      if (missing.length > 0) return { ok: false, missing }
-      session = await startSession(modelsDir)
-      await session.ready
-      // Post-'ready' processor messages: relay denoised frames to the renderer.
-      session.child.on('message', (msg: ProcessorOutMsg) => {
-        // R310c: failed batches relay WITH their id — the worklet resyncs on it
-        const wc = getWebContents()
-        if (!wc || wc.isDestroyed()) return
-        if (msg.type === 'frames') wc.send(ipcChannels.denoiseFramesOut, { id: msg.id, blocks: msg.blocks })
-        else if (msg.type === 'error') wc.send(ipcChannels.denoiseFramesErr, { id: msg.id ?? 0, message: msg.message })
-      })
-      return { ok: true }
-    } catch (err) {
-      session?.child.kill()
-      session = null
-      return { ok: false, message: err instanceof Error ? err.message : String(err) }
+  ipcMain.handle(ipcChannels.denoiseStart, (): Promise<DenoiseStartResult> => {
+    if (session) return Promise.resolve({ ok: true })
+    if (!startInFlight) {
+      startInFlight = (async (): Promise<DenoiseStartResult> => {
+        // only THIS attempt's child — the catch must never kill a session it
+        // does not own (startSession's exit listener owns global cleanup)
+        let created: DenoiseSession | null = null
+        try {
+          const missing = await findMissingDenoiseModels(modelsDir)
+          if (missing.length > 0) return { ok: false, missing }
+          created = await startSession(modelsDir)
+          await created.ready
+          // Post-'ready' processor messages: relay denoised frames to the
+          // renderer. Attached EXACTLY ONCE — the shared in-flight promise is
+          // what makes concurrent invokes safe from duplicate relays too.
+          created.child.on('message', (msg: ProcessorOutMsg) => {
+            // R310c: failed batches relay WITH their id — the worklet resyncs on it
+            const wc = getWebContents()
+            if (!wc || wc.isDestroyed()) return
+            if (msg.type === 'frames') wc.send(ipcChannels.denoiseFramesOut, { id: msg.id, blocks: msg.blocks })
+            else if (msg.type === 'error') wc.send(ipcChannels.denoiseFramesErr, { id: msg.id ?? 0, message: msg.message })
+          })
+          session = created
+          return { ok: true }
+        } catch (err) {
+          try { created?.child.kill() } catch { /* already gone */ }
+          if (session?.child === created?.child) session = null
+          return { ok: false, message: err instanceof Error ? err.message : String(err) }
+        } finally {
+          startInFlight = null
+        }
+      })()
     }
+    return startInFlight
   })
 
   // Windows in, hop batches out — pure relay, no inference on this thread.
