@@ -1,10 +1,10 @@
 # evolve log — RGBBox
 
 - verify: yarn typecheck && yarn test
-- pointer: #12 (next round)
-- rounds done: 11
+- pointer: #13 (next round)
+- rounds done: 12
 - status: active
-- metrics: findings 15 | fixes 13 | regressions 0
+- metrics: findings 15 | fixes 14 | regressions 0
 - checkpoint (2026-10-18, after round #10): 10 rounds green+progress, ALL in one session; context deep — next session resumes at pointer #11. In-flight: none (all committed). Done this stretch: denoise triple (serialization R310b / pairing-skew R310c / backpressure R310d — one inspector agent, three adversarial passes, all verdicts hold). Priority for #11+: Tier-1 denoiseStart double-fork (small), overload-UX telemetry; Tier-3 gl rotation; denoiseProcessor test-harness = epic candidate (zero direct coverage); palm event = epic candidate (user decision).
 
 ## Target pool
@@ -12,7 +12,8 @@
 - Tier 1 (known defects):
   - [done #1] ai8Client bare fetch — no timeout on short JSON endpoints (hung network pends for minutes; R307 retry waits forever) → R308
   - [done #10] denoise backpressure (hole #2) → R310d (cap 4 + shed-newest over the proven id-error path)
-  - denoise overload UX: shed/hang invisible to the user (queue-full error stream is the symptom; needs telemetry surface + reply-age watchdog + auto-recovery consideration)
+  - [done #12] denoise overload telemetry → R310f (shed stream surfaces DENOISE_OVERLOAD at ≥4/10s; zero new UI — rides the existing error annotation)
+  - denoise hang watchdog: reply-age detection + auto-recovery still undone (false-kill surface needs design)
   - denoiseProcessor/drop-path: still zero direct test coverage (needs an ORT-mock harness or worklet-logic extraction — candidate epic)
   - [done #9] denoise batch-failure pairing skew (hole #3) → R310c (id-precise resync after a two-pass inspector convergence)
   - [done #11] denoiseStart double-fork (inspector nit) → R310e (in-flight share; TDD red=fork×2 reproduced)
@@ -64,3 +65,5 @@
 #10 | denoise backpressure (Tier 1, inspector hole #2) | findings(4) | actions(2) | result(green+progress, 212 files / 1918 passed / 45 skipped) | diff(~20) | cap 4 waiting + shed-newest over the R310c id-error path; third-pass verdict HOLDS (no counter leak, chain-safe, id-precise makes shed deterministic); applied its (c)3 one-liner (seq time-offset kills remount id collision); documented policy trade (order-continuity vs T_s-scaled audio age) + hang-no-timeout rationale (only policy consistent with serialization)
 
 #11 | denoiseStart double-fork (Tier 1) | findings(1) | actions(1) | result(green+progress, 213 files / 1920 passed / 45 skipped) | diff(~60) | TDD: service-level electron-mock harness (first direct denoiseService tests); RED = fork×2 reproduced exactly as the inspector specified; fix = shared in-flight promise + relay-attached-once + catch kills only its own child. CI context: pushed with GitHub three-tier green (T12/T13/T14 Likely→confirmed this stretch)
+
+#12 | denoise overload telemetry (Tier 1) | findings(1) | actions(1) | result(green+progress, 214 files / 1923 passed / 45 skipped) | diff(~90) | shed stream = telemetry: 10s sliding window, ≥4 sheds → DENOISE_OVERLOAD message on the existing error annotation (zero new UI); batch-error variant; window decay; hang watchdog honestly deferred (false-kill design)

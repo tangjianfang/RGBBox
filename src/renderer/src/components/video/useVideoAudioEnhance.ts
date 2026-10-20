@@ -141,8 +141,21 @@ export function useVideoAudioEnhance(videoRef: RefObject<HTMLVideoElement | null
     })
     // R310c: a failed batch arrives with its id — the worklet resyncs its
     // wet/dry pairing PRECISELY at that batch (silent loss = comb-filter skew)
+    // R310f (evolve #12): the shed stream is also the OVERLOAD/HANG telemetry —
+    // sustained sheds surface to the user instead of audio silently fading
+    let sheds = 0
+    let shedWindow = 0
     const offErr = window.rgbbox.onDenoiseFramesError((payload) => {
       workletRef.current?.port.postMessage({ type: 'drop', id: payload.id })
+      const now = Date.now()
+      if (now - shedWindow > 10_000) { sheds = 0; shedWindow = now }
+      sheds += 1
+      if (sheds === 4) {
+        // ≥4 sheds inside 10s = sustained overload (the processor's cap is 4
+        // waiting batches — one shed already means a full queue; four means it
+        // STAYS full). Message-only: denoising continues at reduced coverage.
+        setDenoiseMessage(payload.message?.includes('queue full') ? 'DENOISE_OVERLOAD' : 'DENOISE_BATCH_ERRORS')
+      }
     })
     return () => { off(); offErr() }
   }, [])
