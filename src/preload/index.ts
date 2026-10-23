@@ -336,7 +336,9 @@ const api = {
 
   // Video Studio file persistence
   // R91.1: entries carry optional resume progress (seconds / epoch ms)
-  videoGetSavedPaths: (): Promise<Array<{ id: string; name: string; path: string; group: string; progress?: number; duration?: number; updatedAt?: number }>> =>
+  // R317d: exists = main-process stat precheck (false → renderer marks missing
+  // and skips auto-restore; cross-machine dead paths stay listed but silent)
+  videoGetSavedPaths: (): Promise<Array<{ id: string; name: string; path: string; group: string; progress?: number; duration?: number; updatedAt?: number; exists?: boolean }>> =>
     ipcRenderer.invoke(ipcChannels.videoGetSavedPaths),
   videoSavePaths: (paths: Array<{ id: string; name: string; path: string; group: string; progress?: number; duration?: number; updatedAt?: number }>): Promise<void> =>
     ipcRenderer.invoke(ipcChannels.videoSavePaths, paths),

@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises'
 import { enqueueJson, preserveBadFile, readJsonSafe, writeJsonAtomic } from './atomicJson'
 
 /**
@@ -30,4 +31,23 @@ export function savePlaylist<T>(path: string, items: T[]): Promise<void> {
     if (!r.ok && r.reason === 'bad') await preserveBadFile(path)
     await writeJsonAtomic(path, items)
   })
+}
+
+/** R317d (REVIEW_2026-10-24 附录04 R-2): 为播放列表条目附 `exists` 预检标记。
+ *  playlist 存绝对路径且 dev/打包共享 userData——条目文件在另一台机器不可达
+ *  时，R94 自动恢复会「打开视频工作站即报错」。主进程读取时逐条 stat，渲染
+ *  层据此把失效条目标 `missing` 并跳过自动恢复（不从持久化清除——数据保留，
+ *  UI 徽标列后续 R-N）。stat 异常（权限/断盘/不存在）一律按 false：误标只
+ *  影响自动播放，不影响列表本身。 */
+export async function annotateExists<T extends { path: string }>(
+  items: T[],
+  statFn: (p: string) => Promise<unknown> = stat,
+): Promise<Array<T & { exists: boolean }>> {
+  return Promise.all(items.map(async (item) => ({
+    ...item,
+    exists: await statFn(item.path).then(
+      () => true,
+      () => false,
+    ),
+  })))
 }

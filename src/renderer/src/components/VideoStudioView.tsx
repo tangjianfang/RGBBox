@@ -68,6 +68,9 @@ interface VideoItem {
   name: string
   url?: string
   group: string
+  /** R317d(REVIEW_2026-10-24 R-2): 主进程 stat 预检不存在（跨机死路径）——
+   *  条目保留在列表，但自动恢复跳过（手动点击仍给可读错误，R168 空态）。 */
+  missing?: boolean
 }
 
 interface VideoGroup {
@@ -1331,7 +1334,9 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     try { saved = localStorage.getItem('rgbbox:videoLastItem') } catch { /* ignore */ }
     if (!saved) return
     const idx = videoPlaylist.findIndex((v) => v.id === saved)
-    if (idx >= 0) playVideoItem(idx)
+    // R317d(REVIEW_2026-10-24 R-2): 失效条目（另一台机器路径不可达）跳过自动
+    // 恢复——旧行为挂载即加载死链 =「打开视频工作站即报错」；数据保留在列表。
+    if (idx >= 0 && !videoPlaylist[idx].missing) playVideoItem(idx)
   }, [mode, videoIsRestored, playerUrl, usingHls, videoPlaylist, playVideoItem])
 
   // Restore video playlist from main process on mount
@@ -1345,6 +1350,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
         const tracks: VideoItem[] = saved.map(e => ({
           id: e.id, name: e.name, group: e.group,
           url: `media://local?p=${encodeURIComponent(e.path)}`,
+          missing: e.exists === false, // R317d: 跨机不可达路径标记
         }))
         const groupNames = [...new Set(tracks.map(t => t.group))]
         setVideoPlaylist(prev => prev.length > 0 ? prev : tracks)

@@ -1,13 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock onnxruntime-node before importing the service (it imports ort at top level)
+// Mock onnxruntime-node before importing the service.
+// R317b: 工厂计数器——服务模块的加载不得触发 ort 加载（懒 require 根修）。
 const sessionFactory = vi.fn()
-vi.mock('onnxruntime-node', () => ({
-  InferenceSession: { create: (...args: unknown[]) => sessionFactory(...args) },
-  Tensor: class {
-    constructor(public type: string, public data: Float32Array | BigInt64Array, public dims: number[]) {}
-  },
-}))
+const ortLoads = vi.hoisted(() => ({ n: 0 }))
+vi.mock('onnxruntime-node', () => {
+  ortLoads.n++
+  return {
+    InferenceSession: { create: (...args: unknown[]) => sessionFactory(...args) },
+    Tensor: class {
+      constructor(public type: string, public data: Float32Array | BigInt64Array, public dims: number[]) {}
+    },
+  }
+})
 
 import {
   initAudioAi, isCached, runVad, runAst, resetAudioAi, VAD_CHUNK, AST_MODEL_BYTES_BUDGET,
@@ -188,5 +193,30 @@ describe('stream session refcount (R90.9)', () => {
     expect(badAst.run.mock.calls.length).toBe(calls)
     expect(next.astError).toBeUndefined() // error is per-attempt, not sticky
     stopStream()
+  })
+})
+
+describe('R317b onnxruntime-node 懒加载（REVIEW_2026-10-24 E-9）', () => {
+  it('服务模块的加载不触发 ort 原生加载——主进程零日志闪退的根修', async () => {
+    // vi.resetModules 不清 mock 工厂缓存,顶层 vi.mock 的计数器在旧码下也不会
+    // 重跑(首版测试因此空转变绿)——必须 reset 后 doMock,对**本次**动态 import
+    // 重新生效:旧码顶层 import ort → 工厂立即执行(loads=1);新码零加载。
+    vi.resetModules()
+    let loads = 0
+    vi.doMock('onnxruntime-node', () => {
+      loads++
+      return {
+        InferenceSession: { create: (...args: unknown[]) => sessionFactory(...args) },
+        Tensor: class {
+          constructor(public type: string, public data: Float32Array | BigInt64Array, public dims: number[]) {}
+        },
+      }
+    })
+    try {
+      await import('../../../src/main/audioAiService')
+      expect(loads).toBe(0)
+    } finally {
+      vi.doUnmock('onnxruntime-node')
+    }
   })
 })

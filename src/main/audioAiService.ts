@@ -11,8 +11,18 @@
 //  - A failed InferenceSession.create must NOT stay cached (sticky rejection).
 //  - disposeAudioAi() releases sessions on app quit (rapidOcrService parity).
 
-import * as ort from 'onnxruntime-node'
+// R317b (REVIEW_2026-10-24 E-9): ort 改懒加载。旧实现顶层 `import * as ort`
+// 在 index.ts:58 initLogger **之前**执行——native .node 加载失败（杀软隔离/
+// 损坏/打包剪裁错配）= 主进程零日志静默闪退（「另一台电脑双击没反应」形态）。
+// 懒 require 把失败面降级为 initAudioAi/getSession 的可捕获错误（sticky-
+// rejection 防护承接）。require 先例：rapidOcrService.ts:61。
+import type * as OrtTypes from 'onnxruntime-node'
 import { astMelSpectrogram } from './audio/melSpectrogram'
+
+let ortModule: typeof OrtTypes | null = null
+async function ORT(): Promise<typeof OrtTypes> {
+  return (ortModule ??= await import('onnxruntime-node'))
+}
 
 /** Silero v5 flattened-graph protocol (16kHz): 512-sample steps - the internal
  *  STFT frames per 512 samples; longer feeds explode the LSTM rank ({...,128,3}
@@ -28,7 +38,7 @@ const MAX_PCM_VAD = 16000 * 30 // 30s
 export const MAX_PCM_AST = 16000 * 10
 
 export type AudioSession = {
-  run: (feeds: Record<string, ort.Tensor>) => Promise<Record<string, { data: Float32Array | BigInt64Array; dims: number[] }>>
+  run: (feeds: Record<string, OrtTypes.Tensor>) => Promise<Record<string, { data: Float32Array | BigInt64Array; dims: number[] }>>
   release?: () => Promise<void>
 }
 
@@ -76,7 +86,7 @@ async function getSession(file: string, cacheKey: 'vadSession' | 'astSession'): 
   if (!url) throw Object.assign(new Error(`AUDIOAI_MODEL_MISSING: ${file}`), { hint: 'not-downloaded' })
   // R90 review fix: an unsettled promise must not be cached — a rejected
   // create (corrupt file) would otherwise fail every call until app restart.
-  return ort.InferenceSession.create(url, { executionProviders: ['cpu'] })
+  return (await ORT()).InferenceSession.create(url, { executionProviders: ['cpu'] })
     .then((created) => {
       s[cacheKey] = Promise.resolve(created as unknown as AudioSession)
       return created as unknown as AudioSession
@@ -109,14 +119,15 @@ export async function runVad(pcm: Float32Array): Promise<{ prob: number; frames:
   assertPcm(pcm, MAX_PCM_VAD)
   requireState()
   const session = await getSession('silero_vad.onnx', 'vadSession')
+  const o = await ORT()
   let stateData = new Float32Array(VAD_STATE[0] * VAD_STATE[1] * VAD_STATE[2])
   let maxProb = 0
   let frames = 0
   for (let off = 0; off + VAD_CHUNK <= pcm.length; off += VAD_CHUNK) {
     const out = await session.run({
-      input: new ort.Tensor('float32', pcm.subarray(off, off + VAD_CHUNK), [1, VAD_CHUNK]),
-      state: new ort.Tensor('float32', stateData, VAD_STATE),
-      sr: new ort.Tensor('int64', BigInt64Array.from([BigInt(16000)]), [1]),
+      input: new o.Tensor('float32', pcm.subarray(off, off + VAD_CHUNK), [1, VAD_CHUNK]),
+      state: new o.Tensor('float32', stateData, VAD_STATE),
+      sr: new o.Tensor('int64', BigInt64Array.from([BigInt(16000)]), [1]),
     } as never)
     const prob = (out.output.data as Float32Array)[0]
     if (prob > maxProb) maxProb = prob
@@ -132,8 +143,9 @@ export async function runAst(pcm: Float32Array): Promise<{ top: Array<{ index: n
   assertPcm(pcm, MAX_PCM_AST)
   requireState()
   const session = await getSession('ast_audioset_int8.onnx', 'astSession')
+  const o = await ORT()
   const mel = astMelSpectrogram(pcm)
-  const tensor = new ort.Tensor('float32', mel, [1, 1024, 128])
+  const tensor = new o.Tensor('float32', mel, [1, 1024, 128])
   const out = await session.run({ input_values: tensor } as never)
   const logits = out.logits.data as Float32Array
   // softmax
@@ -232,12 +244,14 @@ async function feedStreamInner(pcm: Float32Array): Promise<StreamFeedResult> {
   combined.set(pcm, stream.carry.length)
   let pos = 0
   let prob = -1
+  // R317b: 懒加载 ort 句柄(vad 循环与下方 AST 共用)
+  const o = await ORT()
   while (pos + VAD_CHUNK <= combined.length) {
     const vadSession = await getSession('silero_vad.onnx', 'vadSession')
     const out = await vadSession.run({
-      input: new ort.Tensor('float32', combined.subarray(pos, pos + VAD_CHUNK), [1, VAD_CHUNK]),
-      state: new ort.Tensor('float32', stream.vadState, VAD_STATE),
-      sr: new ort.Tensor('int64', BigInt64Array.from([BigInt(16000)]), [1]),
+      input: new o.Tensor('float32', combined.subarray(pos, pos + VAD_CHUNK), [1, VAD_CHUNK]),
+      state: new o.Tensor('float32', stream.vadState, VAD_STATE),
+      sr: new o.Tensor('int64', BigInt64Array.from([BigInt(16000)]), [1]),
     } as never)
     const p = (out.output.data as Float32Array)[0]
     if (p > prob) prob = p
@@ -268,7 +282,7 @@ async function feedStreamInner(pcm: Float32Array): Promise<StreamFeedResult> {
     try {
       const astSession = await getSession('ast_audioset_int8.onnx', 'astSession')
       const mel = astMelSpectrogram(stream.ring)
-      const out = await astSession.run({ input_values: new ort.Tensor('float32', mel, [1, 1024, 128]) } as never)
+      const out = await astSession.run({ input_values: new o.Tensor('float32', mel, [1, 1024, 128]) } as never)
       const logits = out.logits.data as Float32Array
       let maxL = -Infinity
       for (const v of logits) if (v > maxL) maxL = v

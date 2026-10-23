@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadPlaylist, savePlaylist } from '../../src/main/playlistStore'
+import { annotateExists, loadPlaylist, savePlaylist } from '../../src/main/playlistStore'
 
 // ── R267(REVIEW-main-ipc W4): 音视频播放列表持久化防清空 ──────────────────
 // 旧实现在 index.ts 裸 writeFile(audio/video-playlist.json):写一半崩溃即截断,
@@ -87,5 +87,26 @@ describe('main/playlistStore R267', () => {
     const nested = join(dir, 'config', 'video-playlist.json')
     await savePlaylist(nested, [{ id: 'v1', name: 'm.mp4', path: 'C:/m.mp4', group: '默认' }])
     expect(await loadPlaylist<AudioItem>(nested)).toEqual([{ id: 'v1', name: 'm.mp4', path: 'C:/m.mp4', group: '默认' }])
+  })
+})
+
+// ── R317d(REVIEW_2026-10-24 附录04 R-2): playlist 失效条目 exists 预检 ──────
+// playlist 存绝对路径且 dev/打包共享 userData——条目文件在另一台机器不可达时,
+// R94 自动恢复会「打开视频工作站即报错」。主进程读取时逐条 stat 附 exists,
+// 渲染层据此跳过失效条目(不清列表——数据保留)。
+describe('main/playlistStore annotateExists (R317d)', () => {
+  it('存在/缺失/目录/注入 statFn 异常 四分支', async () => {
+    const good = join(dir, 'a.mp4')
+    writeFileSync(good, 'x')
+    const items = [
+      { id: 'v1', name: 'a', path: good, group: 'g' },
+      { id: 'v2', name: 'b', path: join(dir, 'gone.mp4'), group: 'g' },
+      { id: 'v3', name: 'c', path: dir, group: 'g' }, // 目录 stat 成功 → true(可播性由 media:// 层判定)
+    ]
+    const out = await annotateExists(items)
+    expect(out.map((e) => e.exists)).toEqual([true, false, true])
+    expect(out[0]).toMatchObject({ id: 'v1', name: 'a', path: good, group: 'g' })
+    const injected = await annotateExists([{ path: 'x' }], async () => { throw new Error('EACCES') })
+    expect(injected[0].exists).toBe(false)
   })
 })

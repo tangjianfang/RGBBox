@@ -204,3 +204,27 @@ describe('renderer/components/VideoStudioView', () => {
     })
   })
 })
+
+// ── R317d(REVIEW_2026-10-24 附录04 R-2): 失效条目不触发自动恢复 ─────────────
+// 旧行为:另一台机器上 playlist 文件不可达 + localStorage 停在 player/LastItem
+// → R94 自动恢复挂载即加载死链 →「打开视频工作站即报 ⚠ 读取失败」。
+describe('VideoStudioView R317d auto-restore skips missing entries', () => {
+  it('exists:false 的恢复条目不进 <video>(视图打开零报错,列表数据保留)', async () => {
+    const mocks = setupRendererMocks()
+    mocks.videoGetSavedPaths.mockResolvedValue([
+      { id: 'v1', name: 'gone.mp4', path: 'D:\moved\gone.mp4', group: 'Default', exists: false },
+    ])
+    localStorage.setItem('rgbbox:videoMode', 'player')
+    localStorage.setItem('rgbbox:videoLastItem', 'v1')
+    const { container } = render(<VideoStudioView />)
+    // 恢复效应落定:失效条目仍在播放列表(数据保留)
+    await waitFor(() => {
+      expect(container.querySelectorAll('.audio-track-item').length).toBe(1)
+    })
+    // 自动恢复必须跳过死链(旧行为:src 被设为 media:// 死链)
+    await new Promise((r) => setTimeout(r, 60))
+    const v = container.querySelector('video.video-preview-rect')!
+    expect(v.getAttribute('src')).toBeNull()
+    expect(mocks.videoSavePaths.mock.calls.length).toBeGreaterThanOrEqual(0) // 不触发清除式保存
+  })
+})

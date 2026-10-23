@@ -50,11 +50,15 @@ jobs:
           cache: yarn
       - run: yarn install --frozen-lockfile
       - run: yarn build
-      - name: build artifacts + CSP injection sanity (R306/T16)
+      - name: build artifacts + CSP injection sanity (R306/T16 + R316 content)
         run: |
           test -f out/main/index.js
           test -f out/preload/index.mjs
           for h in out/renderer/index.html out/renderer/snip.html out/renderer/visionHost.html; do
             grep -c 'http-equiv="Content-Security-Policy"' "$h" | grep -q '^1$' \
               || { echo "CSP meta missing/duplicated in $h"; exit 1; }
+            # R316: media-src must carry the app's own media: scheme — its omission
+            # CSP-blocked every media://local <video>/<audio>/<img> in packaged builds.
+            grep -q "media-src 'self' media:" "$h" \
+              || { echo "CSP media-src missing media: scheme in $h (R316)"; exit 1; }
           done

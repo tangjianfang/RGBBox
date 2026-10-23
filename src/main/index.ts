@@ -51,7 +51,8 @@ import { Readable } from 'node:stream'
 import { mediaStreamPlan, parseRangeHeader, resolveAppAssetPath, resolveMediaMime } from './mediaProtocol'
 import { allowPermission } from './permissionGate'
 import { registerDenoiseService } from './denoiseService'
-import { loadPlaylist, savePlaylist } from './playlistStore'
+import { createRendererCrashPolicy } from './rendererCrashPolicy'
+import { annotateExists, loadPlaylist, savePlaylist } from './playlistStore'
 import { isMediaPathAllowed } from './mediaAllowlist'
 
 // Initialize file logger — must be done after imports but before app.whenReady
@@ -195,11 +196,22 @@ function createMainWindow(): void {
   // R221.4(04 R-2): 主窗口渲染进程崩溃/无响应观测——原仅 snip 池窗口有
   // render-process-gone 处理,主窗口崩溃=白屏僵尸+零日志(与「无 dump」互为
   // 因果)。此处记录结构化日志并触发一次干净重载(用户可感知恢复,而非僵尸)。
+  // R317c(REVIEW_2026-10-24 E-7): 无条件 reload 在确定性崩溃下=白屏闪烁
+  // crash-loop——改走 60s 滑窗退避策略,≥3 次停止重载并弹错误框指路日志。
+  const rendererCrashPolicy = createRendererCrashPolicy()
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     log.error('Main', `renderer gone: reason=${details.reason} exitCode=${details.exitCode}`)
-    if (details.reason !== 'clean-exit') {
-      try { void mainWindow?.webContents.reload() } catch { /* 窗口可能已销毁 */ }
+    if (details.reason === 'clean-exit') return
+    const verdict = rendererCrashPolicy.record(Date.now())
+    if (verdict.action === 'stop') {
+      log.error('Main', `renderer crash-loop: ${verdict.crashesInWindow} crashes/60s — reload 停用,错误框已弹`)
+      dialog.showErrorBox(
+        'RGBBox',
+        `渲染进程在 60 秒内连续崩溃 ${verdict.crashesInWindow} 次,已停止自动重载。\n\n崩溃转储与日志:\n%APPDATA%\\rgbbox\\logs\n\n重启应用可再次尝试。`,
+      )
+      return
     }
+    try { void mainWindow?.webContents.reload() } catch { /* 窗口可能已销毁 */ }
   })
   mainWindow.webContents.on('unresponsive', () => {
     log.error('Main', 'renderer unresponsive (>30s event loop stall)')
@@ -1468,7 +1480,9 @@ function registerIpc(): void {
   const videoConfigPath = join(app.getPath('userData'), 'config', 'video-playlist.json')
 
   // R267: 裸 writeFile → playlistStore(串行队列 + 原子写 + 坏文件不回空覆盖)
-  ipcMain.handle(ipcChannels.videoGetSavedPaths, () => loadPlaylist(videoConfigPath))
+  // R317d(REVIEW_2026-10-24 R-2): 逐条 stat 附 exists——渲染层跳过另一台机器
+  // 上不可达的失效条目,消灭「打开视频工作站即报错」的数据面路径。
+  ipcMain.handle(ipcChannels.videoGetSavedPaths, async () => annotateExists(await loadPlaylist(videoConfigPath)))
 
   // R91.1: entries may carry resume progress (progress/duration/updatedAt) —
   // stored verbatim alongside the structural fields.

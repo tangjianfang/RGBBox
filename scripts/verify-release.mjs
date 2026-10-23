@@ -26,6 +26,10 @@ const TOTAL_TIMEOUT_MS = 30 * 60 * 1000
 // 保证新鲜。
 
 const LAYERS = [
+  // R311 (REVIEW_2026-10-24): 构建环境层——electron dist/path.txt/zip 缓存
+  // 完整性,红时打印恢复指引。dist:win 类跨机故障(ENOENT rename electron.exe)
+  // 的 fail-fast 前置;不依赖 yarn,直接 node 跑。
+  { id: 'L-1', name: '构建环境', cmd: ['node', 'scripts/lib/checkBuildEnv.mjs'] },
   { id: 'L0', name: '静态类型', cmd: ['yarn', 'typecheck'] },
   { id: 'L1', name: '全量单测', cmd: ['yarn', 'test'] },
   { id: 'L2', name: '构建', cmd: ['yarn', 'build'] },

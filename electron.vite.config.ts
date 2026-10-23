@@ -18,14 +18,21 @@ import type { Plugin } from 'vite'
  * arbitrary user-content images (passive content — script-src stays locked).
  * Everything else stays main-process IPC (generic AI providers, model
  * downloads) and is unaffected by this policy.
+ *
+ * R316 correction (REVIEW_2026-10-24, T16 线第三次 CSP 回归): media-src /
+ * img-src 漏了自有 `media:` scheme——打包版所有 media://local 视频/音频
+ * (VideoStudio/AudioStudio playlist)与胶片栏缩略图被 CSP 拒载,R94 自动
+ * 恢复使其表现为「打开视频工作站即报错」(dev 不注入 CSP 故不受影响)。
+ * R307 教训复用:给一个 scheme 定 CSP 前必须枚举渲染层**全部**消费面——
+ * 这次的漏点是 media 元素出口(video/audio/img)。
  */
 const CSP = [
   "default-src 'self'",
   "script-src 'self' media: 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
+  "img-src 'self' data: blob: https: media:",
   "connect-src 'self' media: blob: https://ai8.rcouyi.com",
-  "media-src 'self' blob:",
+  "media-src 'self' media: blob:",
   "worker-src 'self' blob:",
   "font-src 'self' data:",
   "object-src 'none'",

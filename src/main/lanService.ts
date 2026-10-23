@@ -49,6 +49,12 @@ export class LanService {
   private win: BrowserWindow | null = null
   private role: 'idle' | 'host' | 'guest' = 'idle'
   private beacon: dgram.Socket | null = null
+  /** R317a: 发现监听 socket 与房主广播 socket 分离——旧实现两态共用 `beacon`
+   *  字段,startDiscovery 的 stopDiscovery() 会关掉**房主**广播 socket 而
+   *  beaconTimer 存活,interval 对已关 socket 的 send 是同步 throw
+   *  (ERR_SOCKET_DGRAM_NOT_RUNNING,sock.on('error') 接不住)= 每秒一条
+   *  uncaughtException(2026-10-11 本机 20 连 crash 实证)。 */
+  private discovery: dgram.Socket | null = null
   private beaconTimer: NodeJS.Timeout | null = null
   private room: { name: string; game: LanGame; port: number; seed?: number } | null = null
   private server: net.Server | null = null
@@ -97,12 +103,12 @@ export class LanService {
     sock.bind(LAN_BEACON_PORT, () => {
       try { sock.setBroadcast(true) } catch { /* best-effort */ }
     })
-    this.beacon = sock
+    this.discovery = sock
   }
 
   stopDiscovery(): void {
-    this.beacon?.close()
-    this.beacon = null
+    this.discovery?.close()
+    this.discovery = null
   }
 
   // ── 会话层(FR-LN02/03) ────────────────────────────────────────────────
@@ -112,15 +118,27 @@ export class LanService {
    *  的 port 恒为 0,真实端口经 lanState().room.port 暴露。 */
   host(name: string, game: LanGame, seed?: number): { port: number } {
     this.teardown()
+    // R317a: 世代快照——teardown 已把 epoch 推进;此后任何 teardown 都会使本
+    // 世代失效,晚到的 listen/bind 异步回调据此弃权,不再重建 beacon/房间
+    // (旧行为:teardown 后回调照建 timer+socket=对已死房间的幽灵广播)。
+    const myEpoch = this.epoch
     const server = net.createServer((socket) => this.onPeerSocket(socket))
     this.role = 'host'
     this.server = server
     server.listen(0, '0.0.0.0', () => {
+      if (this.epoch !== myEpoch || this.role !== 'host') {
+        try { server.close() } catch { /* 已关 */ }
+        return
+      }
       const port = (server.address() as net.AddressInfo).port
       this.room = { name, game, port, seed }
       const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true })
       sock.on('error', (err) => console.info('[lan]', 'socket:', String(err)))
       sock.bind(() => {
+        if (this.epoch !== myEpoch || this.role !== 'host') {
+          try { sock.close() } catch { /* 已关 */ }
+          return
+        }
         try { sock.setBroadcast(true) } catch { /* best-effort */ }
         this.beaconTimer = setInterval(() => {
           const payload: LanBeacon = {
@@ -128,8 +146,13 @@ export class LanService {
             n: name, g: game, p: port, c: 1 + this.peers.size,
           }
           const buf = Buffer.from(JSON.stringify(payload), 'utf8')
-          sock.send(buf, LAN_BEACON_PORT, '255.255.255.255')
-          sock.send(buf, LAN_BEACON_PORT, '127.0.0.1') // 本机回环(双实例 E2E)
+          // R317a: 已关 dgram socket 的 send 是**同步 throw**(healthCheck 路径)
+          // ——error 监听器接不住同步异常,interval 回调里=uncaughtException
+          // (2026-10-11 crash 风暴本体)。timer 由 teardown 清,这里是竞态兜底。
+          try {
+            sock.send(buf, LAN_BEACON_PORT, '255.255.255.255')
+            sock.send(buf, LAN_BEACON_PORT, '127.0.0.1') // 本机回环(双实例 E2E)
+          } catch { /* 房间已拆,丢弃本拍广播 */ }
         }, 1000)
       })
       this.beacon = sock
@@ -361,6 +384,10 @@ export class LanService {
     if (this.beaconTimer) clearInterval(this.beaconTimer)
     this.beaconTimer = null
     this.stopDiscovery()
+    // R317a: 房主广播 socket 在此显式关闭——旧实现借道 stopDiscovery 关
+    // `this.beacon`(发现/广播共字段),正是 host 中途开发现炸 beacon 的根源。
+    this.beacon?.close()
+    this.beacon = null
     if (this.beaconTimer) clearInterval(this.beaconTimer)
     for (const peer of this.peers.values()) peer.socket.destroy()
     this.peers.clear()
