@@ -10953,6 +10953,12 @@ input:disabled {
 .vision-first-hint-body { display: flex; flex-direction: column; flex: 1; gap: 2px; }
 .vision-first-hint-body b { font-size: 0.875rem; }
 .vision-first-hint-body span { color: var(--text-muted); font-size: var(--text-caption-size); }
+/* R319: the card's two buttons shipped classless (browser-default grays on a
+ * dark card) — CTA rides the btn-primary fill system, X is a compact ghost. */
+.vision-first-hint-open { background: var(--btn-primary-bg); border: none; border-radius: var(--radius-s); color: var(--btn-primary-fg); cursor: pointer; flex-shrink: 0; font-size: 0.8125rem; font-weight: 600; padding: 6px 12px; transition: background var(--motion-fast) var(--ease-standard); }
+.vision-first-hint-open:active { background: var(--btn-primary-bg-pressed); }
+.vision-first-hint-dismiss { align-items: center; background: transparent; border: 1px solid transparent; border-radius: var(--radius-s); color: var(--text-muted); cursor: pointer; display: flex; flex-shrink: 0; font-size: 0.9rem; height: 28px; justify-content: center; transition: background 150ms ease, color 150ms ease; width: 28px; }
+.vision-first-hint-dismiss:hover { background: var(--border-strong); color: var(--text-primary); }
 .vision-replay-seek { accent-color: #67e8f9; width: 100%; }
 /* R309d: preset apply preview — exact cell diffs before anything is written. */
 .macro-preview { border: 1px solid var(--border-color); border-radius: 6px; display: flex; flex-direction: column; gap: 6px; margin: 8px 0; padding: 8px 10px; }

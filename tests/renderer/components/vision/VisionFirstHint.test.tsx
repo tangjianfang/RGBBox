@@ -33,4 +33,12 @@ describe('components/vision/VisionFirstHint (R306/T19)', () => {
     const c = render(<VisionFirstHint />).container
     expect(c.querySelector('[data-hint="vision"]')).toBeTruthy()
   })
+
+  it('R319: both buttons carry styled classes (shipped classless once — never again)', () => {
+    const c = render(<VisionFirstHint />).container
+    const open = c.querySelector('[data-action="vision-hint-open"]') as HTMLButtonElement
+    const close = c.querySelector('[data-action="vision-hint-dismiss"]') as HTMLButtonElement
+    expect(open.className).toBe('vision-first-hint-open')
+    expect(close.className).toBe('vision-first-hint-dismiss')
+  })
 })

@@ -25,10 +25,10 @@ export function VisionFirstHint({ onOpenVision }: { onOpenVision?: () => void })
         <b>{t('ai.lab.vision.hint.title')}</b>
         <span>{t('ai.lab.vision.hint.body')}</span>
       </div>
-      <button type="button" data-action="vision-hint-open" onClick={() => { onOpenVision?.(); dismiss() }}>
+      <button type="button" className="vision-first-hint-open" data-action="vision-hint-open" onClick={() => { onOpenVision?.(); dismiss() }}>
         {t('ai.lab.vision.hint.open')}
       </button>
-      <button type="button" data-action="vision-hint-dismiss" onClick={dismiss} aria-label={t('ai.lab.vision.hint.dismiss')}>
+      <button type="button" className="vision-first-hint-dismiss" data-action="vision-hint-dismiss" onClick={dismiss} aria-label={t('ai.lab.vision.hint.dismiss')}>
         ✕
       </button>
     </div>
