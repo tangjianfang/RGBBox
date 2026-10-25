@@ -398,3 +398,38 @@ describe('AiLabView AWS Bedrock form (R145)', () => {
     expect(arg.aws).toBeUndefined()
   })
 })
+
+describe('AiLabView Ollama native form (R318)', () => {
+  async function toOllama(container: HTMLElement): Promise<void> {
+    await waitFor(() => expect((container.querySelector('select[data-field="provider"]') as HTMLSelectElement).value).toBe('zhipu'))
+    fireEvent.change(container.querySelector('select[data-field="provider"]') as HTMLSelectElement, { target: { value: 'ollama' } })
+  }
+
+  it('fills beam:cloud + the locked pseudo-protocol baseUrl, and shows the native hint', async () => {
+    const { container } = mount()
+    await toOllama(container)
+    const baseUrl = container.querySelector('[data-field="baseUrl"]') as HTMLInputElement
+    expect(baseUrl.value).toBe('ollama://chat')
+    expect(baseUrl.readOnly).toBe(true) // daemon host comes from OLLAMA_HOST, not this field
+    expect((container.querySelector('[data-field="model"]') as HTMLInputElement).value).toBe('beam:cloud')
+    // free-typed tags still work through the combobox datalist
+    const options = [...(container.querySelector('#ai-model-options') as HTMLDataListElement).options].map((o) => o.value)
+    expect(options[0]).toBe('beam:cloud')
+    expect(options).toContain('gpt-oss:120b')
+    // keyless placeholder + native protocol hint line (i18n is mocked to echo
+    // keys in tests — presence + key identity is the assertion)
+    expect(((container.querySelector('[data-field="apiKey"]') as HTMLInputElement).placeholder)).toBe('ai.lab.ollama.keyHint')
+    expect(container.querySelector('.ai-hint-line')?.textContent).toBe('ai.lab.ollama.hint')
+  })
+
+  it('saves the native profile as-is (no aws payload, no key required)', async () => {
+    const { rgbbox, container } = mount()
+    await toOllama(container)
+    fireEvent.click(container.querySelector('[data-action="save"]') as HTMLElement)
+    await waitFor(() => expect(rgbbox.aiSaveProfile).toHaveBeenCalled())
+    const arg = rgbbox.aiSaveProfile.mock.calls[0][0] as { baseUrl: string; model: string; apiKey: string; aws?: unknown }
+    expect(arg.baseUrl).toBe('ollama://chat')
+    expect(arg.model).toBe('beam:cloud')
+    expect(arg.aws).toBeUndefined()
+  })
+})

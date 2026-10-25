@@ -9,7 +9,15 @@ export interface AiProviderPreset {
   baseUrl: string
   /** Recommended versions, first = preset default. */
   models: string[]
+  /** R318: superseded baseUrls that still reverse-lookup to this preset —
+   *  legacy profiles keep the brand label + fresh model suggestions while
+   *  their stored URL keeps its old wire behavior. */
+  legacyBaseUrls?: string[]
 }
+
+/** R318: Ollama pseudo-protocol marker — profiles carrying it route through
+ *  the NATIVE /api/chat pipeline (main/ollamaProvider), not OpenAI-compat. */
+export const OLLAMA_PROVIDER_BASEURL = 'ollama://chat'
 
 export const AI_PROVIDER_PRESETS: AiProviderPreset[] = [
   {
@@ -43,10 +51,14 @@ export const AI_PROVIDER_PRESETS: AiProviderPreset[] = [
     models: ['qwen3.8-max', 'qwen-plus'],
   },
   {
+    // R318: native /api/chat pipeline — cloud-served models (beam:cloud, the
+    // free flagship MoE from Reflection) are only guaranteed on the native
+    // protocol; first model = the preset default users are pointed at.
     id: 'ollama',
     label: 'Ollama',
-    baseUrl: 'http://localhost:11434/v1',
-    models: ['qwen3.6:35b', 'deepseek-v4:flash'],
+    baseUrl: OLLAMA_PROVIDER_BASEURL,
+    models: ['beam:cloud', 'gpt-oss:120b', 'deepseek-v3:671b', 'qwen3-coder:480b', 'llama4:128x17b', 'deepseek-r1:671b', 'kimi-k3:cloud', 'qwen3.6:35b', 'gpt-oss:20b'],
+    legacyBaseUrls: ['http://localhost:11434/v1'],
   },
   {
     // R118: AI8 direct — apiKey carries the AI8 token (auto-synced from the
@@ -67,10 +79,11 @@ export const AI_PROVIDER_PRESETS: AiProviderPreset[] = [
   { id: 'custom', label: '', baseUrl: '', models: [] },
 ]
 
-/** Reverse-lookup the preset for a stored baseUrl; no match → custom. */
+/** Reverse-lookup the preset for a stored baseUrl; no match → custom.
+ *  R318: legacyBaseUrls keep matching their preset after a baseUrl change. */
 export function matchProviderPreset(baseUrl: string): AiProviderPreset {
   const trimmed = baseUrl.trim()
-  return AI_PROVIDER_PRESETS.find((p) => p.id !== 'custom' && p.baseUrl === trimmed)
+  return AI_PROVIDER_PRESETS.find((p) => p.id !== 'custom' && (p.baseUrl === trimmed || p.legacyBaseUrls?.includes(trimmed)))
     ?? AI_PROVIDER_PRESETS[AI_PROVIDER_PRESETS.length - 1]
 }
 
@@ -79,8 +92,10 @@ export function matchProviderPreset(baseUrl: string): AiProviderPreset {
 export const FALLBACK_MODEL = 'glm-5.3-flash'
 
 /** R88 review fix: local endpoints (Ollama etc.) need no API key — the keyless
- *  preset would be dead otherwise, since chatCompletion gates on apiKey. */
+ *  preset would be dead otherwise, since chatCompletion gates on apiKey.
+ *  R318: the ollama://chat pseudo-protocol rides the local daemon too. */
 export function isKeylessLocal(baseUrl: string): boolean {
+  if (baseUrl.trim() === OLLAMA_PROVIDER_BASEURL) return true
   try {
     const host = new URL(baseUrl.trim()).hostname.toLowerCase()
     return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'

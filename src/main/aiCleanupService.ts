@@ -7,6 +7,7 @@
 
 import { isKeylessLocal } from '../shared/aiProviders'
 import { ai8ChatCompletion, isAi8Settings } from './ai8Provider'
+import { ollamaChatCompletion, isOllamaSettings } from './ollamaProvider'
 import { bedrockChatUrl, signBedrockChat } from './awsSigv4'
 import type { AiChatMessage, AiChatOutcome, AiErrorHint, AwsProfileCreds } from '../shared/types'
 
@@ -137,6 +138,10 @@ export async function chatCompletion(
   // R118: ai8://chat profiles (OCR cleanup / translate / AI Lab chat) route
   // through the site's own protocol instead of the OpenAI-compatible one.
   if (isAi8Settings(s)) return ai8ChatCompletion(messages, s, opts)
+
+  // R318: ollama://chat profiles ride the NATIVE /api/chat protocol — cloud
+  // models (beam:cloud, kimi-k3:cloud) are only guaranteed there.
+  if (isOllamaSettings(s)) return ollamaChatCompletion(messages, s, opts)
 
   const body = {
     model: s.model.trim() || DEFAULT_AI_SETTINGS.model,

@@ -9,8 +9,9 @@ describe('AI_PROVIDER_PRESETS (R88.5)', () => {
     for (const p of AI_PROVIDER_PRESETS) {
       if (p.id === 'custom') continue
       // R118: the ai8 preset uses the `ai8://chat` pseudo-protocol marker that
-      // chatCompletion dispatches on — URL-ish is all we assert
-      expect(p.baseUrl).toMatch(/^(https?:\/\/|ai8:\/\/|bedrock:\/\/)/)
+      // chatCompletion dispatches on — URL-ish is all we assert.
+      // R318: `ollama://chat` joins the pseudo-protocol family (native /api/chat).
+      expect(p.baseUrl).toMatch(/^(https?:\/\/|ai8:\/\/|bedrock:\/\/|ollama:\/\/)/)
       expect(p.models.length).toBeGreaterThan(0)
     }
   })
@@ -28,7 +29,8 @@ describe('matchProviderPreset (R88.5)', () => {
     expect(matchProviderPreset('https://api.openai.com/v1').id).toBe('openai')
     expect(matchProviderPreset('https://api.moonshot.ai/v1').id).toBe('kimi')
     expect(matchProviderPreset('https://dashscope.aliyuncs.com/compatible-mode/v1').id).toBe('qwen')
-    expect(matchProviderPreset('http://localhost:11434/v1').id).toBe('ollama')
+    expect(matchProviderPreset('http://localhost:11434/v1').id).toBe('ollama') // R318: legacy URL still maps
+    expect(matchProviderPreset('ollama://chat').id).toBe('ollama') // R318: native pseudo-protocol
     expect(matchProviderPreset('https://unknown.example.com/v1').id).toBe('custom')
     expect(matchProviderPreset('').id).toBe('custom')
   })
@@ -41,6 +43,7 @@ describe('isKeylessLocal (R88 review fix)', () => {
     expect(isKeylessLocal('https://open.bigmodel.cn/api/paas/v4')).toBe(false)
     expect(isKeylessLocal('not a url')).toBe(false)
     expect(isKeylessLocal('')).toBe(false)
+    expect(isKeylessLocal('ollama://chat')).toBe(true) // R318: rides the local daemon
   })
 })
 
@@ -53,5 +56,17 @@ describe('bedrock preset (R145)', () => {
     expect(p.models).toContain('amazon.nova-pro-v1')
     // round-trips through the reverse lookup (form recognition)
     expect(matchProviderPreset('bedrock://openai').id).toBe('bedrock')
+  })
+})
+
+describe('ollama preset (R318)', () => {
+  it('routes native via the pseudo-protocol and defaults to the free cloud flagship', () => {
+    const p = AI_PROVIDER_PRESETS.find((x) => x.id === 'ollama')!
+    expect(p.baseUrl).toBe('ollama://chat')
+    expect(p.models[0]).toBe('beam:cloud')
+    expect(p.models).toContain('gpt-oss:120b')
+    expect(p.models).toContain('deepseek-v3:671b')
+    expect(p.models).toContain('kimi-k3:cloud')
+    expect(p.legacyBaseUrls).toContain('http://localhost:11434/v1')
   })
 })

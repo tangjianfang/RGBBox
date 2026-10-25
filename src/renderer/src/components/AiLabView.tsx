@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { Eye, EyeOff, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
-import { AI_PROVIDER_PRESETS, FALLBACK_MODEL, isKeylessLocal, matchProviderPreset } from '../../../shared/aiProviders'
+import { AI_PROVIDER_PRESETS, FALLBACK_MODEL, OLLAMA_PROVIDER_BASEURL, isKeylessLocal, matchProviderPreset } from '../../../shared/aiProviders'
 import type { AiChatMessage, AiChatOutcome, AiErrorHint, AiProfile } from '../../../shared/types'
 import { AiLabAudioTab } from './AiLabAudioTab'
 import { AiLabAi8Tab } from './AiLabAi8Tab'
@@ -122,6 +122,10 @@ export function AiLabView(): JSX.Element {
   const activeProfile = profiles.find((p) => p.id === activeId) ?? null
   const provider = matchProviderPreset(cfg.baseUrl)
   const isBedrockForm = provider.id === 'bedrock'
+  /** R318: native /api/chat ollama profiles — the pseudo-protocol baseUrl is
+   *  locked like Bedrock's (the daemon host comes from OLLAMA_HOST, not here).
+   *  Legacy http://localhost:11434/v1 profiles keep an editable field. */
+  const isOllamaNative = cfg.baseUrl.trim() === OLLAMA_PROVIDER_BASEURL
   const hintLine = (hint?: AiErrorHint): string => `${t('ai.lab.status.failed')} (${hint ?? 'unknown'})`
   const activeKeyless = activeProfile !== null && activeProfile.aws === undefined
     && activeProfile.apiKey === '' && !isKeylessLocal(activeProfile.baseUrl)
@@ -379,7 +383,7 @@ export function AiLabView(): JSX.Element {
             </label>
             <label>
               <span>{t('ai.baseUrl')}</span>
-              <input data-field="baseUrl" value={cfg.baseUrl} placeholder="https://…" readOnly={isBedrockForm} onChange={(e) => setCfg({ ...cfg, baseUrl: e.target.value })} />
+              <input data-field="baseUrl" value={cfg.baseUrl} placeholder="https://…" readOnly={isBedrockForm || isOllamaNative} onChange={(e) => setCfg({ ...cfg, baseUrl: e.target.value })} />
             </label>
             <label>
               <span>{t('ai.model')}</span>
@@ -439,7 +443,7 @@ export function AiLabView(): JSX.Element {
                     value={cfg.apiKey}
                     autoComplete="new-password"
                     spellCheck={false}
-                    placeholder={provider.id === 'ai8' ? t('ai.lab.ai8KeyHint') : undefined}
+                    placeholder={provider.id === 'ai8' ? t('ai.lab.ai8KeyHint') : provider.id === 'ollama' ? t('ai.lab.ollama.keyHint') : undefined}
                     onChange={(e) => { setCfg({ ...cfg, apiKey: e.target.value }); setUnreadableIds((ids) => ids.filter((i) => i !== editId)) }}
                   />
                   <button type="button" className="icon-button" data-action="toggle-key" onClick={() => setShowKey((v) => !v)}
@@ -450,6 +454,7 @@ export function AiLabView(): JSX.Element {
                 </span>
               </label>
             )}
+            {isOllamaNative && <p className="ai-hint-line">{t('ai.lab.ollama.hint')}</p>}
             <p className="ai-privacy-note">{t(encryptionAvailable ? 'ai.privacyNote' : 'ai.privacyNotePlain')}</p>
             {unreadableIds.includes(editId) && <p className="ai-hint-line">{t('ai.lab.keyUnreadable')}</p>}
             <div className="ai-config-actions">

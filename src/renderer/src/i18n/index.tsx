@@ -224,6 +224,9 @@ const EN = {
   'ai.lab.aws.sessionToken': 'Session Token (optional)',
   'ai.lab.aws.sessionTokenHint': 'Only for temporary STS credentials',
   'ai.lab.aws.hint': 'Bedrock authenticates with SigV4 — Access Key + Secret (plus a session token for temporary credentials), not a Bearer key.',
+  // R318: Ollama native /api/chat form
+  'ai.lab.ollama.keyHint': 'No API key needed — the local daemon authenticates itself (cloud models ride your ollama signin)',
+  'ai.lab.ollama.hint': 'Native /api/chat protocol. Daemon defaults to 127.0.0.1:11434 (override via OLLAMA_HOST). beam:cloud is the free cloud flagship — run ollama signin once; local models need ollama pull first.',
   'ai.ai8.tokenPlaceholder': 'Paste your ai8.rcouyi.com token (site F12 → userStore → auth.token)',
   'ai.ai8.tokenSave': 'Save',
   'ai.ai8.tokenChange': 'Change token',
@@ -2206,6 +2209,9 @@ const ZH: TranslationTable = {
   'ai.lab.aws.sessionToken': 'Session Token（可选）',
   'ai.lab.aws.sessionTokenHint': '仅临时 STS 凭证需要',
   'ai.lab.aws.hint': 'Bedrock 使用 SigV4 签名认证：填 Access Key + Secret Access Key（临时凭证再加 Session Token），不是 Bearer Key。',
+  // R318: Ollama 原生 /api/chat 表单
+  'ai.lab.ollama.keyHint': '无需 API Key——本地守护进程自带认证（云端模型走你的 ollama signin 登录态）',
+  'ai.lab.ollama.hint': '原生 /api/chat 协议。守护进程默认 127.0.0.1:11434（可用 OLLAMA_HOST 覆盖）。beam:cloud 为免费云端旗舰，需先 ollama signin 登录一次；本地模型需先 ollama pull 下载。',
   'ai.ai8.tokenPlaceholder': '粘贴 ai8.rcouyi.com 的 token（官网 F12 → userStore → auth.token）',
   'ai.ai8.tokenSave': '保存',
   'ai.ai8.tokenChange': '更换 token',
