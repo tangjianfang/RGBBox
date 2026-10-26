@@ -50,7 +50,7 @@ jobs:
           cache: yarn
       - run: yarn install --frozen-lockfile
       - run: yarn build
-      - name: build artifacts + CSP injection sanity (R306/T16 + R316 content)
+      - name: build artifacts + CSP injection sanity (R306/T16 + R316/R320 content)
         run: |
           test -f out/main/index.js
           test -f out/preload/index.mjs
@@ -61,4 +61,11 @@ jobs:
             # CSP-blocked every media://local <video>/<audio>/<img> in packaged builds.
             grep -q "media-src 'self' media:" "$h" \
               || { echo "CSP media-src missing media: scheme in $h (R316)"; exit 1; }
+            # R320: media-src/connect-src must carry http(s) — their omission
+            # rejected the stream box, AI8 video results and hls.js fetches
+            # pre-network ("Media load rejected by URL safety check").
+            grep -q "media-src 'self' media: blob: https: http:" "$h" \
+              || { echo "CSP media-src missing http(s) schemes in $h (R320)"; exit 1; }
+            grep -q "connect-src 'self' media: blob: https: http:" "$h" \
+              || { echo "CSP connect-src missing http(s) schemes in $h (R320)"; exit 1; }
           done

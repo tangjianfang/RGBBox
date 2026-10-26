@@ -1,49 +1,17 @@
 import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
-import type { Plugin } from 'vite'
+
+import { buildProdCspPlugin } from './src/shared/cspPolicy'
 
 /**
- * R306/T16: production-only CSP — injected into every renderer html entry at
- * build time (dev keeps vite HMR unblocked). Locked to self + the app's own
- * media:// protocol (vision bundle + models) + the blob/data URLs the app
- * legitimately produces (workers, canvas exports, recording downloads) +
- * 'wasm-unsafe-eval' for MediaPipe (wasm only — no JS eval is allowed).
- *
- * R307 correction (T16 regression): the AI8 workbench is renderer-direct BY
- * DESIGN ("site CORS is `*`", Ai8Tab header) — the first cut omitted its
- * origin from connect-src and silently killed every AI8 fetch in packaged
- * builds (model lists, chat, draw, login). connect-src now names it
- * explicitly; img-src allows remote https because chat markdown embeds
- * arbitrary user-content images (passive content — script-src stays locked).
- * Everything else stays main-process IPC (generic AI providers, model
- * downloads) and is unaffected by this policy.
- *
- * R316 correction (REVIEW_2026-10-24, T16 线第三次 CSP 回归): media-src /
- * img-src 漏了自有 `media:` scheme——打包版所有 media://local 视频/音频
- * (VideoStudio/AudioStudio playlist)与胶片栏缩略图被 CSP 拒载,R94 自动
- * 恢复使其表现为「打开视频工作站即报错」(dev 不注入 CSP 故不受影响)。
- * R307 教训复用:给一个 scheme 定 CSP 前必须枚举渲染层**全部**消费面——
- * 这次的漏点是 media 元素出口(video/audio/img)。
+ * Production CSP lives in src/shared/cspPolicy.ts since R320 (unit-tested;
+ * history: R306 first cut → R307 connect-src AI8 → R316 media:/img-src
+ * media: → R320 media-src/connect-src http(s:) — the packaged stream box,
+ * AI8 video results and hls.js were rejected pre-network as
+ * "MEDIA_ELEMENT_ERROR: Media load rejected by URL safety check").
  */
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self' media: 'wasm-unsafe-eval'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https: media:",
-  "connect-src 'self' media: blob: https://ai8.rcouyi.com",
-  "media-src 'self' media: blob:",
-  "worker-src 'self' blob:",
-  "font-src 'self' data:",
-  "object-src 'none'",
-].join('; ')
-const prodCspPlugin: Plugin = {
-  name: 'rgbbox-prod-csp',
-  apply: 'build',
-  transformIndexHtml(html) {
-    return html.replace('<head>', `<head>\n    <meta http-equiv="Content-Security-Policy" content="${CSP}">`)
-  },
-}
+const prodCspPlugin = buildProdCspPlugin()
 
 export default defineConfig({
   main: {

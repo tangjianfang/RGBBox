@@ -34,4 +34,27 @@ describe('main/mediaAllowlist (R268)', () => {
     expect(isMediaPathAllowed('C:/Windows/system32/evil.dll', ['D:/x.mp4'], ROOTS)).toBe(false)
     expect(isMediaPathAllowed('C:/ud/config/system.json', [], ROOTS)).toBe(false) // userData 其余仍拒
   })
+
+  // R320⑤: Windows 侧 resolve()/getPath() 产出反斜杠——'\\' 分支是 Windows
+  // 生产路径,'/' 是 mac/linux 生产路径;根与路径的分隔符风格必须同源
+  // (生产端两者都来自 Node path API,同平台必然一致)。
+  const ROOTS_WIN = {
+    userData: 'C:\\ud',
+    home: 'C:\\home',
+    music: 'C:\\music',
+    videos: 'C:\\videos',
+  }
+
+  it('R320: 反斜杠路径(Windows resolve 产物)同规则放行/拦截', () => {
+    expect(isMediaPathAllowed('C:\\videos\\clips\\a.webm', [], ROOTS_WIN)).toBe(true)
+    expect(isMediaPathAllowed('C:\\home\\Downloads\\v.mp4', [], ROOTS_WIN)).toBe(true)
+    expect(isMediaPathAllowed('D:\\我的视频\\custom.mp4', ['D:\\我的视频\\custom.mp4'], ROOTS_WIN)).toBe(true)
+    expect(isMediaPathAllowed('C:\\videos-evil\\x.mp4', [], ROOTS_WIN)).toBe(false) // 前缀伪装(反斜杠)
+  })
+
+  it('R320: 路径恰为根本身也放行(underRoot 的 === 分支)', () => {
+    expect(isMediaPathAllowed('C:/videos', [], ROOTS)).toBe(true)
+    expect(isMediaPathAllowed('C:\\home\\Downloads', [], ROOTS_WIN)).toBe(true)
+    expect(isMediaPathAllowed('C:/videos/', [], ROOTS)).toBe(true) // 根+尾分隔符=startsWith(root+sep) 命中
+  })
 })

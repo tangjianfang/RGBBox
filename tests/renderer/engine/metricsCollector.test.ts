@@ -145,4 +145,41 @@ describe('renderer/engine/metricsCollector', () => {
       expect(collector.snapshot().droppedTicks).toBe(200)
     })
   })
+
+  // R320⑤: R276 加的真实帧率估计此前零测试——renderer-engine 层覆盖率被
+  // recordFrameArrival/estimatedFps 拖到 82.6%/57%,撞破 95% 层门槛。
+  describe('recordFrameArrival / estimatedFps (R276)', () => {
+    it('first arrival only sets the baseline — no rate until a second frame', () => {
+      const collector = new MetricsCollector()
+      collector.recordFrameArrival(1000)
+      expect(collector.estimatedFps).toBe(0)
+    })
+
+    it('second arrival yields the instantaneous interval rate (1000/Δms, rounded)', () => {
+      const collector = new MetricsCollector()
+      collector.recordFrameArrival(1000)
+      collector.recordFrameArrival(1016) // 16ms → 62.5fps
+      expect(collector.estimatedFps).toBe(63)
+    })
+
+    it('subsequent arrivals are EMA-smoothed (0.8 prev + 0.2 instant)', () => {
+      const collector = new MetricsCollector()
+      collector.recordFrameArrival(1000)
+      collector.recordFrameArrival(1016) // instant 62.5 → rate 62.5
+      collector.recordFrameArrival(1036) // 20ms → instant 50; 62.5*0.8 + 50*0.2 = 60
+      expect(collector.estimatedFps).toBe(60)
+    })
+
+    it('non-increasing timestamps do not update the rate but do move the baseline', () => {
+      const collector = new MetricsCollector()
+      collector.recordFrameArrival(1000)
+      collector.recordFrameArrival(1000) // equal — guard rejects, baseline stays 1000
+      expect(collector.estimatedFps).toBe(0)
+      collector.recordFrameArrival(900) // clock went backwards — rejected too
+      expect(collector.estimatedFps).toBe(0)
+      // baseline is now 900 (last assignment wins): 900→916 is a valid 16ms interval
+      collector.recordFrameArrival(916)
+      expect(collector.estimatedFps).toBe(63)
+    })
+  })
 })
