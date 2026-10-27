@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type JSX, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useState, type JSX, type ReactNode } from 'react'
 
 export type Lang = 'zh' | 'en'
 
@@ -3970,11 +3970,27 @@ const I18nContext = createContext<I18nContextValue>({
 
 // ── Provider ───────────────────────────────────────────────────────────────
 
+/**
+ * R321: BCP-47 tag for <html lang>. It was hard-coded "en" in index.html and
+ * never followed the UI language, so Chinese text was shaped/fallen-back as
+ * English — on non-Chinese Windows the browser could pick a Japanese/Korean
+ * face for shared Han glyphs. Kept pure so it can be unit-tested.
+ */
+export function htmlLangFor(lang: Lang): string {
+  return lang === 'zh' ? 'zh-CN' : 'en'
+}
+
 export function I18nProvider({ children }: { children: ReactNode }): JSX.Element {
   const [lang, setLangState] = useState<Lang>(() => {
     const saved = localStorage.getItem('rgbbox:lang') as Lang | null
     return saved === 'en' || saved === 'zh' ? saved : 'zh'
   })
+
+  // R321: keep <html lang> in step with the UI language (layout effect → set
+  // before first paint, no flash of mis-tagged text).
+  useLayoutEffect(() => {
+    document.documentElement.lang = htmlLangFor(lang)
+  }, [lang])
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l)

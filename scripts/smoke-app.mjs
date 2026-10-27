@@ -4,6 +4,7 @@
  * exit 0=全过 1=断言败 2=环境败。失败断言自动截图 .verify-artifacts/。
  */
 import { assertFreshOut, launchElectron, connectRenderer } from './lib/cdp.mjs'
+import { probeFonts, usesOnlyBundledFonts, describeFonts } from './lib/fontProbe.mjs'
 import { mkdirSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 
@@ -40,6 +41,19 @@ for (let i = 0; i < Math.min(railItems.length, 9); i++) {
   check(`nav-${String(i + 2).padStart(2, '0')}`, `视图 ${VIEW_TITLES[i] ?? i} 可进入`, ok, extra)
 }
 await shot('last-view')
+
+// ── 1b. R321 字体随包：界面文字必须用随包字体渲染,不得落到宿主系统字体 ──
+// 删掉 @font-face / 打包漏文件 / 样式表手写系统字体栈,都会让这里变红。
+console.log('\n[字体] 渲染使用随包字体(不依赖系统)')
+await page.locator('.module-rail .rail-item').nth(4).click() // 音频视图:有等宽读数 .audio-value
+await sleep(700)
+await page.evaluate(() => document.fonts.ready)
+const fontSamples = await probeFonts(page, [
+  { label: 'rail 标签', selector: '.module-rail .rail-item:nth-child(2)' },
+  { label: '音频等宽读数', selector: '.audio-value' },
+])
+fontSamples.forEach((r, i) => check(`font-0${i + 1}`, `${r.label} 用随包字体`, usesOnlyBundledFonts(r), describeFonts(r)))
+
 // 回到工作区做交互冒烟
 await page.locator('.module-rail .rail-item').nth(1).click()
 await sleep(700)

@@ -100,11 +100,13 @@ export function assertFreshOut ({ quiet = false } = {}) {
 }
 
 /** Spawn the built app with a CDP port. Electron is killed on process exit. */
-export function launchElectron ({ port = 9281, entry = 'out/main/index.js', userDataDir } = {}) {
+export function launchElectron ({ port = 9281, entry = 'out/main/index.js', userDataDir, extraArgs = [] } = {}) {
   // R281: userDataDir 可选隔离——快照/走查类脚本传临时目录,持久化状态不再
   // 污染真实用户数据(R225「应用」污染 profile / 档案活数据漂移的共同根因)。
+  // R322: extraArgs 可选——像素快照用它固定渲染参数(产品启动参数不受影响)。
   const args = [`--remote-debugging-port=${port}`]
   if (userDataDir) args.push(`--user-data-dir=${userDataDir}`)
+  args.push(...extraArgs)
   args.push(entry)
   const electron = spawn('node_modules/electron/dist/electron.exe', args, { stdio: 'ignore' })
   process.on('exit', () => { try { electron.kill() } catch {} })

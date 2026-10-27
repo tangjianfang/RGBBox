@@ -1,4 +1,5 @@
 /* R148 S1: aggregate entry — vite inlines these at build time. */
+@import './styles/fonts.css';
 @import './styles/tokens.css';
 @import './styles/base.css';
 @import './styles/app.css';

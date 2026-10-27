@@ -7,20 +7,22 @@
   color-scheme: dark;
   color: var(--text-primary); /* R148 S1: consume the semantic token, not a literal */
   background: var(--bg-content);
-  font-family:
-    Inter, "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui,
-    -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-ui);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* ── R148 S2 type ramp + numeric track ─────────────────────────────────
-     Four steps replace the former 12–14px monoculture. The UI font stack
-     prefers the OS-native variable face (Segoe UI Variable on Win11) over
-     the un-bundled Inter fallback chain — zero download, sharper hinting.
-     Telemetry values ride the mono track with tabular figures. */
-  --font-ui: Inter, "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Cascadia Mono", ui-monospace, "SF Mono", Consolas, monospace;
+     Four steps replace the former 12–14px monoculture. Telemetry values ride
+     the mono track with tabular figures.
+     R321: the faces that lead each stack are BUNDLED (styles/fonts.css), so
+     rendering no longer varies with the host's installed fonts — the old
+     "prefer the OS-native face, Inter un-bundled" note described a stack that
+     never matched its own code (Inter led) and made every machine look
+     different. System fonts stay only as per-glyph fallback (emoji, symbols,
+     CJK outside the subset). */
+  --font-ui: Inter, "Noto Sans SC", "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Cascadia Mono", "Noto Sans SC", ui-monospace, "SF Mono", Consolas, monospace;
   /* R160.1: type ramp in rem (N/16 of the former px — pixel-identical at the
      100% scale) so the appearance font-scale tier resizes the whole ramp. */
   --text-display-size: 1.25rem;   --text-display-lh: 1.75rem; --text-display-weight: 600;

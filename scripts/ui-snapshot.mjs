@@ -79,6 +79,22 @@ const VOLATILE_REGION_SELECTORS = [
 ]
 const CANVAS_MASK_ALL = true
 
+// R322: pin the OS-level rendering knobs so the pixels depend on the build, not
+// the host. R321 bundled the fonts (WHICH glyphs); these fix HOW they rasterise:
+//  - force-device-scale-factor=1   per-monitor DPI / Windows scaling (mixed-DPI
+//                                  rigs render at 1.25–1.5x then downsample)
+//  - disable-lcd-text              ClearType sub-pixel AA is a per-user OS setting
+//  - force-color-profile=srgb      monitor ICC profiles must not shift colours
+// Script-side only: the shipped app's launch flags are untouched.
+const SNAPSHOT_RENDER_FLAGS = ['--force-device-scale-factor=1', '--disable-lcd-text', '--force-color-profile=srgb']
+
+// R322: a one-off `page.screenshot: Timeout 30000ms` (audio view, 2026-10-27
+// dist:win gate) could not be reproduced in 12 stress rounds, and the old catch
+// printed only the first line of the error — Playwright's call log, which says
+// what it was waiting for, was thrown away. Retry, and keep the evidence.
+const SHOT_ATTEMPTS = 3
+const SHOT_TIMEOUT_MS = 12000
+
 /** Zero out canvas rects (±2px edge slack) in a PNG in place. */
 function maskBoxes (img, boxes) {
   for (const b of boxes) {
@@ -130,7 +146,7 @@ if (mode === 'compare') mkdirSync(DIFFDIR, { recursive: true })
 // R281: 隔离 userData——街机档案/效果使用态等用户活动数据不再进入快照
 // (两轮漂移事故根因:R225 走查污染 profile、R281 前游戏档案活数据 0.67%)。
 const SNAPSHOT_UDD = join(tmpdir(), `rgbbox-snap-${Date.now()}`)
-launchElectron({ port: PORT, userDataDir: SNAPSHOT_UDD })
+launchElectron({ port: PORT, userDataDir: SNAPSHOT_UDD, extraArgs: SNAPSHOT_RENDER_FLAGS })
 const { page } = await connectRenderer({ port: PORT })
 
 // R222.3(T5): 注入 prefers-reduced-motion:reduce——app.css:8913 已有全局
@@ -164,6 +180,39 @@ await page.waitForSelector('.module-rail', { timeout: 15000 })
 await page.locator('[data-action="vision-hint-dismiss"]').click({ timeout: 4000 }).catch(() => {})
 await sleep(700) // boot fan-out + dashboard settle
 
+/** What the page is doing right now — rAF latency tells "renderer starved" from "no frames produced". */
+async function pageDiagnostics (page) {
+  const probe = page.evaluate(() => new Promise((resolve) => {
+    const t = performance.now()
+    requestAnimationFrame(() => resolve({
+      visibility: document.visibilityState,
+      hasFocus: document.hasFocus(),
+      fonts: document.fonts.status,
+      rafLatencyMs: Math.round(performance.now() - t),
+    }))
+  }))
+  return Promise.race([probe, sleep(4000).then(() => 'evaluate/rAF did not answer within 4s (renderer main thread blocked or no frames)')])
+    .catch((e) => `diagnostics failed: ${String(e.message).split('\n')[0]}`)
+}
+
+/** page.screenshot with retries; every failed attempt logs its full message + page state. */
+async function screenshotWithRetry (page, path, view) {
+  let lastErr
+  for (let attempt = 1; attempt <= SHOT_ATTEMPTS; attempt++) {
+    try {
+      await page.screenshot({ path, timeout: SHOT_TIMEOUT_MS })
+      if (attempt > 1) console.error(`WARN  ${view}: screenshot succeeded on attempt ${attempt}/${SHOT_ATTEMPTS}`)
+      return
+    } catch (err) {
+      lastErr = err
+      console.error(`WARN  ${view}: screenshot attempt ${attempt}/${SHOT_ATTEMPTS} failed\n${err.message}`)
+      console.error(`      page state: ${JSON.stringify(await pageDiagnostics(page))}`)
+      await sleep(500)
+    }
+  }
+  throw lastErr
+}
+
 // Rail order at runtime = ['dashboard', ...CARD_VIEWS] which matches VIEWS
 // exactly (model3d filtered out by the compile-time flag). The aria-labels
 // are translated text, so index-based clicking is the stable handle.
@@ -177,7 +226,8 @@ for (let i = 0; i < VIEWS.length; i++) {
     // R287: diagnostics 的进程 CPU 表行是流式抵达的——rect 抓小了会在
     // 比对时露出未遮罩的行(PID 每启动必变)。沉淀到表满员再截图+抓 rect。
     if (view === 'diagnostics') await sleep(2200)
-    await page.screenshot({ path: `${shotDir}/${view}.png` })
+    await page.evaluate(() => document.fonts.ready) // R322: the bundled fonts (R321) must be applied before the shot
+    await screenshotWithRetry(page, `${shotDir}/${view}.png`, view)
     // Canvas rects in viewport coords (DPR-independent: the shot is CSS-sized).
     // Recorded for every view; consumed only where CANVAS_MASK says so.
     // R163.3: volatile-text rects (async-filled device names) ride the same
@@ -204,7 +254,8 @@ for (let i = 0; i < VIEWS.length; i++) {
     ok++
     console.log(`SHOT  ${view} → ${shotDir}/ (${boxes.canvases.length} canvas + ${boxes.volatile.length} volatile)`)
   } catch (err) {
-    console.error(`FAIL  ${view}: ${err.message.split('\n')[0]}`)
+    // R322: keep the whole message — Playwright's call log lives on lines 2+
+    console.error(`FAIL  ${view}: ${err.message}`)
   }
 }
 console.log(`${ok}/${VIEWS.length} views captured into ${shotDir}/`)
