@@ -238,5 +238,3 @@ export const ipcChannels = {
   avatarClear: 'rgbbox:avatar:clear',
   lanEvent: 'rgbbox:lan:event', // main -> renderer push
 } as const
-
-export type IpcChannel = (typeof ipcChannels)[keyof typeof ipcChannels]

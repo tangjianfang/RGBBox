@@ -15,7 +15,7 @@
  *  可感知的持续脉冲——尖峰置 1,随后按 τ 指数衰减。 */
 export const DRIVE3D_TAU = 180
 
-export interface Drive3DState {
+interface Drive3DState {
   /** 当前脉冲包络 0..1。 */
   pulse: number
   /** 上次喂帧时刻(ms)。 */
@@ -43,7 +43,7 @@ export function feedDrive3D(state: Drive3DState, ad: { beat: number; level: numb
 }
 
 /** 调制两轴:pulse=节拍冲击(速度/色相),energy=响度(亮度/密度)。 */
-export interface Drive3DAmount {
+interface Drive3DAmount {
   pulse: number
   energy: number
 }

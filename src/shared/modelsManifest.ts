@@ -10,7 +10,7 @@
  * `app.getPath('userData')/models/`.
  */
 
-export interface ModelManifestEntry {
+interface ModelManifestEntry {
   /** Unique slug — matches the filename stem */
   name: string
   /** Asset filename */

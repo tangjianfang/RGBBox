@@ -10,9 +10,9 @@ import type { EffectKind } from '../../../shared/types'
  *   3. favorites (newest first)
  *   4. recents (newest first)
  */
-export const CLASSIC_FIVE: EffectKind[] = ['rainbow', 'breathing', 'wave', 'zone-gradient', 'screen-ambient']
+const CLASSIC_FIVE: EffectKind[] = ['rainbow', 'breathing', 'wave', 'zone-gradient', 'screen-ambient']
 
-export const CURATED_CAP = 12
+const CURATED_CAP = 12
 
 export function curatedKinds(args: {
   defaultKinds: EffectKind[]
@@ -41,7 +41,7 @@ export function curatedKinds(args: {
  * stays a bit larger than the curated strip consumes so heavy switching in one
  * session doesn't churn the whole strip every click.
  */
-export const RECENT_CAP = 8
+const RECENT_CAP = 8
 
 export function recordRecentKind(prev: EffectKind[], kind: EffectKind): EffectKind[] {
   if (prev[0] === kind) return prev

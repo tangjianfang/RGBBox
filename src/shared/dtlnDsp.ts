@@ -9,7 +9,7 @@
  * 单测直接覆盖；渲染层 worklet（blob 字符串）实现同算法的镜像副本。
  */
 
-export const DTLN_SAMPLE_RATE = 16000
+const DTLN_SAMPLE_RATE = 16000
 export const DTLN_BLOCK = 512
 export const DTLN_HOP = 128
 export const DTLN_BINS = DTLN_BLOCK / 2 + 1 // 257

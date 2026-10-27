@@ -46,7 +46,7 @@ export function extractSubFrame(
  * Physical aspect ratio (width/height) of a display, used by video-wall content
  * fitting. Falls back to 1 (square) when the display is unknown or degenerate.
  */
-export function displayAspect(displayId: number, topology: DisplayTopology | null): number {
+function displayAspect(displayId: number, topology: DisplayTopology | null): number {
   const display = topology?.displays.find((d) => d.id === displayId)
   if (!display || display.bounds.height <= 0) return 1
   return display.bounds.width / display.bounds.height

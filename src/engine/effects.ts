@@ -196,7 +196,7 @@ const _fireColCacheMap = new Map<string, _FireColCache>()
 // hard cap guards long editing sessions with churny layer ids.
 const GEOMETRY_CACHE_LIMIT = 64
 
-export interface SolarPlanetGeometry {
+interface SolarPlanetGeometry {
   orbitAx: number       // orbit semi-axis x: orbitRadius·(1+eccentricity)
   orbitBy: number       // orbit semi-axis y: orbitRadius·0.72
   planetX: number
@@ -231,7 +231,7 @@ export function getSolarSystemPlanets(layerId: string, t: number, density: numbe
   return planets
 }
 
-export interface ProteinPointGeometry { x: number; y: number; z: number }
+interface ProteinPointGeometry { x: number; y: number; z: number }
 interface _ProteinGeom { t: number; density: number; points: ProteinPointGeometry[] }
 const _proteinGeomMap = new Map<string, _ProteinGeom>()
 
@@ -257,7 +257,7 @@ export function getProteinBackboneGeometry(layerId: string, t: number, density: 
   return points
 }
 
-export interface SpindleGeometry {
+interface SpindleGeometry {
   poleAx: number         // left pole x = -separation
   poleBx: number         // right pole x = +separation
   chromosomes: { x: number; y: number }[]
@@ -286,7 +286,7 @@ export function getSpindleGeometry(layerId: string, t: number, density: number):
   return spindle
 }
 
-export interface VesicleGeometry { x: number; y: number }
+interface VesicleGeometry { x: number; y: number }
 interface _VesicleGeom { t: number; density: number; vesicles: VesicleGeometry[] }
 const _vesicleGeomMap = new Map<string, _VesicleGeom>()
 

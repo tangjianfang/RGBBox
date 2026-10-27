@@ -9,10 +9,14 @@
  *   ③ CPU 卡帧组装 —— ImageData 直写路径的纯数学部分（边缘 AA 权重）。
  */
 
-export type CardPerformanceMode = 'battery' | 'balanced' | 'extreme'
+import type { PerformanceMode } from '../../../shared/types'
+
+// R330: 与 settings.performanceMode 共用 shared/types 的 PerformanceMode 单一真源
+// （组件侧历史名保留为别名；Record<CardPerformanceMode, …> 从此要求新增模式必配 fps 映射）。
+export type CardPerformanceMode = PerformanceMode
 
 /** 三档基础帧率；extreme = 不限（跟随显示器刷新率，即 R301 之前的行为）。 */
-export const CARD_FPS_BY_MODE: Record<CardPerformanceMode, number> = {
+const CARD_FPS_BY_MODE: Record<CardPerformanceMode, number> = {
   battery: 10,
   balanced: 20,
   extreme: Number.POSITIVE_INFINITY
@@ -26,7 +30,7 @@ export function cardFpsForMode(mode: CardPerformanceMode): number {
 export const CARD_COUNT_BUDGET = 12
 
 /** 降帧下限：任何模式下卡片保持可感的活动（2fps 是「还活着」的最低节奏）。 */
-export const CARD_FPS_FLOOR = 2
+const CARD_FPS_FLOOR = 2
 
 /**
  * 自适应有效帧率：`fps = max(FLOOR, base × min(1, budget / visibleCount))`。
@@ -83,12 +87,12 @@ export function resetVisibleCardCount(): void {
 
 export const CARD_GRID_COLS = 48
 export const CARD_GRID_ROWS = 27
-export const CARD_CELL_PX = 5 // 240/48 = 135/27
+const CARD_CELL_PX = 5 // 240/48 = 135/27
 export const CARD_CANVAS_W = CARD_GRID_COLS * CARD_CELL_PX // 240
 export const CARD_CANVAS_H = CARD_GRID_ROWS * CARD_CELL_PX // 135
 
 /** 卡片画布背景色 '#080d11'（旧路径 ctx.fillStyle = '#080d11' 的原值）。 */
-export const CARD_BG_RGB: readonly [number, number, number] = [8, 13, 17]
+const CARD_BG_RGB: readonly [number, number, number] = [8, 13, 17]
 
 /** 轴向覆盖权重：局部坐标 0..4 → [0.75, 1, 1, 1, 0.75]。 */
 const AXIS_WEIGHTS = [0.75, 1, 1, 1, 0.75] as const

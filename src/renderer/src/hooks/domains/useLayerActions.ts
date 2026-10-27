@@ -1,8 +1,6 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react'
 import { effectPresets } from '../../../../shared/defaultProfile'
 import type { EffectKind, EffectLayer, Profile, VideoWallLayout } from '../../../../shared/types'
-import type { QuickDimensionId } from '../../domain/quickDimensions'
-import { applyQuickDimensionParameters, opacityForQuickEnergy } from '../../domain/quickDimensions'
 import { randomizeLayerParameters } from '../../domain/randomizer'
 import type { RandomizerMode } from '../../domain/randomizer'
 import { activeScene, nextLayerId, updateLayer } from '../../domain/profileUtils'
@@ -39,15 +37,6 @@ export function useLayerActions(args: {
   const setLayerParameter = useCallback((name: string, value: number | string | boolean) => {
     if (!selectedLayer) return
     updateSelectedLayer({ parameters: { ...selectedLayer.parameters, [name]: value } })
-  }, [selectedLayer, updateSelectedLayer])
-
-  const applyQuickDimension = useCallback((dimension: QuickDimensionId, option: string) => {
-    if (!selectedLayer) return
-    const patch: Partial<EffectLayer> = {
-      parameters: applyQuickDimensionParameters(selectedLayer.parameters, dimension, option)
-    }
-    if (dimension === 'energy') patch.opacity = opacityForQuickEnergy(option)
-    updateSelectedLayer(patch)
   }, [selectedLayer, updateSelectedLayer])
 
   const toggleLayerEnabled = useCallback((layerId: string) => {
@@ -118,7 +107,7 @@ export function useLayerActions(args: {
   }, [])
 
   return {
-    randomizeSelectedLayer, setSelectedLayerValue, setLayerParameter, applyQuickDimension,
+    randomizeSelectedLayer, setSelectedLayerValue, setLayerParameter,
     toggleLayerEnabled, toggleLinkedDisplays, updateVideoWall, addLayer, deleteLayer,
   }
 }

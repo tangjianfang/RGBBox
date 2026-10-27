@@ -1,7 +1,7 @@
 // R52.5: 纯 TS 音频指标计算（无 DOM/WebAudio 依赖，符合 engine 层约定）。
 // 输入为 AnalyserNode 取出的频域 Uint8Array(0..255) 与时域 Float32Array(-1..1)。
 
-export interface PeakInfo {
+interface PeakInfo {
   freqHz: number
   db: number
 }

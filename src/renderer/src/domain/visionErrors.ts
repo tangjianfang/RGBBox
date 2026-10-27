@@ -10,7 +10,7 @@
 // by system" carries no "NotAllowed").
 
 export type VisionErrorKind = 'denied' | 'no-device' | 'occupied' | 'detached' | 'proto-mismatch' | 'timeout' | 'generic'
-export type VisionErrorCta = 'open-settings' | 'retry' | 'enumerate'
+type VisionErrorCta = 'open-settings' | 'retry' | 'enumerate'
 
 /** kind → the CTA the recovery card offers (single source; kept in sync with classify). */
 export const VISION_ERROR_CTA: Readonly<Record<VisionErrorKind, VisionErrorCta>> = Object.freeze({

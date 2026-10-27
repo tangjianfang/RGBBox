@@ -19,8 +19,8 @@ export const UI_THEME_OPTIONS = [
   { id: 'system' },
 ] as const
 
-export type UiThemeId = (typeof UI_THEME_OPTIONS)[number]['id']
-export type ResolvedTheme = 'dark' | 'light'
+type UiThemeId = (typeof UI_THEME_OPTIONS)[number]['id']
+type ResolvedTheme = 'dark' | 'light'
 
 export const UI_THEME_DEFAULT: UiThemeId = 'dark'
 

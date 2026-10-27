@@ -22,7 +22,7 @@ export interface GameRunRecord {
 }
 
 /** 每作环形缓冲。 */
-export interface GameRunBuffer {
+interface GameRunBuffer {
   runs: GameRunRecord[]
 }
 
@@ -70,7 +70,7 @@ export function recordRun(storage: Pick<Storage, 'getItem' | 'setItem'> | null, 
 
 // ── arcade profile(聚合,纯函数)────────────────────────────────────────────
 
-export interface GameProfileStats {
+interface GameProfileStats {
   /** 累计局数(=buffer 长度,≤20)。 */
   totalRuns: number
   /** 累计时长(秒)。 */

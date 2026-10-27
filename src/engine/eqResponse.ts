@@ -1,7 +1,7 @@
 // R51.5: 纯 TS 频率响应计算（无 DOM/WebAudio 依赖，符合 engine 层约定）。
 // 按 Web Audio BiquadFilterNode 标准二阶节传递函数实现，用于 EQ 曲线图绘制。
 
-export type EqFilterType =
+type EqFilterType =
   | 'peaking' | 'lowshelf' | 'highshelf'
   | 'notch' | 'lowpass' | 'highpass' | 'bandpass'
 
@@ -151,8 +151,6 @@ export function graphicGainsToBands(gains: number[]): EqBand[] {
 export function bandsToGraphicGains(bands: EqBand[]): number[] {
   return EQ_GRAPHIC_FREQS.map((f) => bands.find(b => b.freq === f && b.type === 'peaking')?.gain ?? 0)
 }
-
-export const genId = () => `u-${Math.floor(performance.now() * 1000)}-${Math.floor(Math.random() * 1e6)}`
 
 // 内置预设库（经典 graphic + 参考 parametric，附说明）
 export const EQ_PRESETS: EqPreset[] = [

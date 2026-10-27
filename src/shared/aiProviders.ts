@@ -1,7 +1,7 @@
 // R88.5: mainstream OpenAI-compatible provider presets (verified 2026-09).
 // Pure shared data — model versions iterate by editing this file only.
 
-export interface AiProviderPreset {
+interface AiProviderPreset {
   id: string
   /** Brand name — identical in zh/en, deliberately NOT i18n'd ('' for custom). */
   label: string

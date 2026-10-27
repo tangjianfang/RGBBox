@@ -7,7 +7,7 @@
 // Pure domain — no DOM/timers; the caller feeds its own clock.
 import type { Recording, RecordedEvent, RecordedFrame } from '../vision/demoRecorder'
 
-export interface ReplayTick {
+interface ReplayTick {
   /** recording time mapped so far (ms) */
   recT: number
   frame: RecordedFrame | null

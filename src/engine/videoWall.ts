@@ -20,7 +20,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /** A point in normalized content space. */
-export interface CanvasUv {
+interface CanvasUv {
   u: number
   v: number
 }

@@ -192,8 +192,6 @@ section.panel.map-panel {
 .preview-panel {
   min-height: 0;
 }
-
-.controls-panel,
 .diagnostics-panel {
   min-height: 0;
 }
@@ -541,62 +539,10 @@ section.panel.map-panel {
   width: 46px;
 }
 
-.preset-grid {
-  display: grid;
-  gap: var(--space-2);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-bottom: 18px;
-}
-
 .layer-stack {
   display: grid;
   gap: var(--space-2);
   margin-bottom: 14px;
-}
-
-.layer-button {
-  align-items: center;
-  background: var(--surface-deep);
-  border: 1px solid var(--surface-raised);
-  border-radius: var(--radius-s);
-  color: var(--info-soft-text);
-  display: flex;
-  justify-content: space-between;
-  min-height: 38px;
-  padding: 0 10px;
-}
-
-.layer-button.selected,
-.layer-button:hover {
-  background: var(--surface-raised);
-  border-color: var(--accent);
-}
-
-.layer-button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.layer-button strong {
-  color: var(--accent-bright-text);
-  font-size: var(--text-caption-size);
-}
-
-.preset-button {
-  background: var(--surface-deep);
-  border: 1px solid var(--surface-raised);
-  border-radius: var(--radius-s);
-  color: var(--info-soft-text);
-  min-height: 42px;
-  padding: 0 10px;
-}
-
-.preset-button.selected,
-.preset-button:hover {
-  background: var(--surface-raised);
-  border-color: var(--accent);
-  color: var(--text-primary); /* R148 S5: flips with theme */
 }
 
 .control-line {
@@ -607,14 +553,6 @@ section.panel.map-panel {
      onto three lines; label column 72px broke 灯效渲染风格 mid-word. */
   grid-template-columns: 96px 1fr auto;
   margin: 14px 0;
-}
-
-.parameter-panel {
-  background: var(--surface-deep);
-  border: 1px solid var(--surface-raised);
-  border-radius: var(--radius-l);
-  margin-bottom: 18px;
-  padding: 12px;
 }
 
 .parameter-line,
@@ -942,23 +880,6 @@ input:not([type]):focus {
   border-color: var(--accent);
 }
 
-.layer-enable-dot {
-  border: none;
-  border-radius: 50%;
-  flex-shrink: 0;
-  height: 10px;
-  width: 10px;
-}
-
-.layer-enable-dot.on {
-  background: var(--accent);
-  box-shadow: 0 0 6px var(--accent-glow-50);
-}
-
-.layer-enable-dot.off {
-  background: var(--border-strong);
-}
-
 /* Checkbox replacing the enable dot */
 .layer-checkbox {
   accent-color: var(--accent);
@@ -1010,25 +931,6 @@ input:not([type]):focus {
 .layer-delete-btn:hover {
   background: var(--btn-danger-bg); /* R148 S5: flippable danger fill */
   color: var(--status-error);
-}
-
-.add-layer-btn {
-  align-items: center;
-  background: var(--surface-deep);
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-s);
-  color: var(--text-muted);
-  display: flex;
-  font-size: var(--text-body-size);
-  gap: 6px;
-  justify-content: center;
-  min-height: 34px;
-  padding: 0;
-}
-
-.add-layer-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent-soft-text);
 }
 
 /* ── Audio controls ─────────────────────────────────────────────────────── */
@@ -1329,13 +1231,6 @@ input:not([type]):focus {
   -webkit-mask-image: linear-gradient(to bottom, var(--black) 0, var(--black) calc(100% - 28px), transparent 100%);
 }
 
-.effects-favorites-section {
-  background: var(--surface-deep);
-  border: 1px solid var(--surface-raised);
-  border-radius: var(--radius-l);
-  padding: 14px;
-}
-
 /* ── R164.1 (S1): curated strip + search/tag filter bar ─────────────────── */
 /* ── R164.2 (S2): hover-preview pill + applied toast ────────────────────── */
 /* R304: 主参数带(.primary-params)随感觉台退役——语义盘覆盖其场景。 */
@@ -1553,8 +1448,6 @@ input:not([type]):focus {
 .effects-search::placeholder {
   color: var(--text-muted);
 }
-
-.effects-favorites-row,
 .favorite-effect-strip {
   display: flex;
   flex-wrap: wrap;
@@ -2258,53 +2151,6 @@ input:not([type]):focus {
 
 .swarm-setup {
   background: rgba(4, 8, 12, 0.5);
-}
-
-.swarm-setup-title {
-  color: var(--info-text);
-  font-size: 1.375rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-}
-
-.char-cards {
-  display: flex;
-  gap: var(--space-3);
-}
-
-.char-card {
-  background: var(--surface-deep);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-l);
-  color: var(--info-text);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 172px;
-  padding: 14px;
-  text-align: left;
-  transition: transform 120ms, border-color 120ms, box-shadow 120ms;
-}
-
-.char-card:hover {
-  transform: translateY(-2px);
-}
-
-.char-card.selected {
-  border-color: var(--game-accent, var(--accent));
-  box-shadow: 0 0 16px color-mix(in srgb, var(--game-accent, var(--accent)) 40%, transparent);
-}
-
-.char-card small {
-  color: var(--text-secondary);
-  font-size: var(--text-caption-size);
-  line-height: 1.45;
-}
-
-.char-card em {
-  color: var(--status-success);
-  font-size: var(--text-caption-size);
-  font-style: normal;
 }
 
 .swarm-setup-hint {
@@ -3315,14 +3161,6 @@ input:not([type]):focus {
   color: var(--info-vivid-text);
 }
 
-/* ── Ambient Intelligence Presets ────────────────────────────────────────── */
-
-.ambient-panel {
-  border-bottom: 1px solid var(--surface-raised);
-  margin-bottom: 10px;
-  padding-bottom: 10px;
-}
-
 .ambient-label {
   color: var(--text-faint);
   display: block;
@@ -3330,45 +3168,6 @@ input:not([type]):focus {
   letter-spacing: 0.05em;
   margin-bottom: 6px;
   text-transform: uppercase;
-}
-
-.ambient-preset-row {
-  display: grid;
-  gap: var(--space-1);
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.ambient-preset-btn {
-  align-items: center;
-  background: var(--surface-raised);
-  border: 1px solid var(--surface-raised);
-  border-radius: var(--radius-s);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  font-size: var(--text-caption-size);
-  gap: 3px;
-  padding: 6px 4px;
-  text-align: center;
-  transition: background 120ms, border-color 120ms, color 120ms;
-}
-
-.ambient-preset-btn:hover {
-  background: var(--surface-raised);
-  border-color: var(--status-info);
-  color: var(--info-vivid-text);
-}
-
-.ambient-preset-btn.active {
-  background: var(--surface-raised);
-  border-color: var(--info-vivid-text);
-  color: var(--info-vivid-text);
-}
-
-.ambient-icon {
-  font-size: 1rem;
-  line-height: 1;
 }
 
 /* ── Quick Customization ────────────────────────────────────────────────── */
@@ -3399,28 +3198,6 @@ input:not([type]):focus {
   gap: 5px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 10px;
-}
-
-.quick-profile-btn {
-  background: var(--surface-raised);
-  border: 1px solid var(--surface-raised);
-  border-radius: var(--radius-s);
-  color: var(--text-secondary);
-  font-size: var(--text-caption-size);
-  height: 28px;
-  min-width: 0;
-  overflow: hidden;
-  padding: 0 6px;
-  text-overflow: ellipsis;
-  transition: background 120ms, border-color 120ms, color 120ms;
-  white-space: nowrap;
-}
-
-.quick-profile-btn:hover,
-.quick-profile-btn.active {
-  background: var(--surface-raised);
-  border-color: var(--accent);
-  color: var(--accent-bright-text);
 }
 
 /* R304: 语义 4 档 chips（quick-tune-stack/quick-segment-*）随感觉台退役——
@@ -3560,18 +3337,6 @@ input:not([type]):focus {
   .sampling-toggle {
     grid-column: 1;
   }
-}
-
-
-.profile-selector-row {
-  align-items: center;
-  display: flex;
-  gap: 6px;
-}
-
-.profile-selector-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
 }
 
 .profile-select {
@@ -5770,64 +5535,6 @@ input[type='range'].audio-slider {
   stroke-width: 3px;
 }
 
-/* R75.4/R75.5: snapshot editor modal */
-.video-editor-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--scrim);
-  backdrop-filter: blur(6px);
-}
-
-.video-editor-shell {
-  display: flex;
-  flex-direction: column;
-  width: min(1080px, 92vw);
-  height: min(720px, 88vh);
-  border: 1px solid var(--overlay-medium);
-  border-radius: var(--radius-l);
-  background: var(--surface-deep);
-  overflow: hidden;
-}
-
-.video-editor-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--overlay-soft);
-}
-
-.video-editor-title {
-  font-size: var(--text-body-size);
-  font-weight: 600;
-  color: var(--accent-soft-text);
-  letter-spacing: 0.4px;
-}
-
-.video-editor-actions { display: flex; gap: var(--space-2); }
-.video-editor-body { flex: 1; min-height: 0; position: relative; }
-
-.video-editor-loading {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-secondary);
-  font-size: var(--text-body-size);
-}
-
-.video-editor-hint {
-  padding: 6px 12px;
-  font-size: var(--text-caption-size);
-  color: var(--text-muted);
-  border-top: 1px solid var(--overlay-soft);
-}
-
 .video-editor-toast {
   position: fixed;
   bottom: 28px;
@@ -5842,18 +5549,6 @@ input[type='range'].audio-slider {
   font-size: var(--text-caption-size);
   letter-spacing: 0.3px;
 }
-
-.video-last-shot-btn {
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-s);
-  background: transparent;
-  cursor: pointer;
-  display: block;
-  width: 100%;
-}
-
-.video-last-shot-btn:hover { border-color: var(--accent); }
 
 /* R76: in-place annotator overlay */
 .video-stage { position: relative; }
@@ -6121,15 +5816,6 @@ input[type='range'].audio-slider {
   z-index: 7;
   pointer-events: none;
 }
-
-/* R76.3: last-shot edit button */
-.video-last-shot-row {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.video-last-shot-row .video-btn { flex: 1; justify-content: center; padding: 6px 8px; }
 
 /* R77.1 / R78.4: capture filmstrip —— 限宽根因修复：
    grid/flex 子项的 min-width 默认 auto 会让内容撑开列宽（"无限变长"根因），
@@ -6567,12 +6253,6 @@ input[type='range'].audio-slider {
   height: 14px !important;
   aspect-ratio: 1 !important;
   flex-shrink: 0;
-}
-
-.video-last-shot {
-  width: 100%;
-  border-radius: var(--radius-l);
-  border: 1px solid var(--overlay-soft);
 }
 
 /* ── Audio visualizer in-app fullscreen ───────────────────────────────────── */
@@ -7020,17 +6700,6 @@ input[type='range'].audio-slider {
   font-size: var(--text-caption-size);
   margin: 0;
   text-align: center;
-}
-
-/* ── R74: screensaver threshold row ──────────────────────────────────── */
-.screensaver-threshold select {
-  background: rgba(0, 0, 0, 0.35);
-  color: var(--info-text);
-  border: 1px solid var(--overlay-medium);
-  border-radius: var(--radius-s);
-  font-size: var(--text-caption-size);
-  padding: 2px 4px;
-  cursor: pointer;
 }
 
 .video-player-btn-row {
@@ -7534,15 +7203,6 @@ input[type='range'].video-player-volume {
 .snip-hint-close:hover {
   background: rgba(248, 113, 113, 0.35); color: var(--white);
 }
-
-/* ── R83: AI 整理配置行 ────────────────────────────────────────────── */
-.ai-cfg-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.ai-cfg-row input {
-  width: 130px; padding: 3px 8px; border-radius: var(--radius-s); font-size: var(--text-caption-size);
-  border: 1px solid var(--overlay-medium); background: var(--scrim);
-  color: var(--text-primary);
-}
-.ai-cfg-row input:focus { outline: none; border-color: var(--accent); }
 
 /* ══ R85: settings view ═══════════════════════════════════════════ */
 .settings-view {
@@ -8316,18 +7976,6 @@ input[type='range'].video-player-volume {
 .ai-model-dot[data-state='error'] { background: var(--status-warn-strong); }
 .ai-model-dot[data-state='idle'],
 .ai-model-dot[data-state='checking'] { background: var(--text-faint); }
-.ai-model-name { color: var(--text-primary); flex: 1; }
-.ai-model-state { color: var(--accent); font-size: var(--text-caption-size); }
-.ai-model-refresh {
-  background: transparent;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-s);
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: var(--text-caption-size);
-  padding: 4px 10px;
-}
-.ai-model-refresh:hover { color: var(--text-primary); border-color: var(--border-hover); }
 
 /* ── R144: AI Lab vision capability bench ────────────────────────────── */
 .ai-vision-lab {
@@ -8452,7 +8100,6 @@ input[type='range'].video-player-volume {
 .ai-vision-lab[data-running='0'] [data-action='vision-reset'] { display: none; }
 .vision-cap-table tr.cap-row td:first-child { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
 .cap-how, .cap-where { color: var(--text-secondary); }
-.cap-live { min-width: 110px; white-space: nowrap; }
 .cap-count {
   background: var(--accent);
   border-radius: var(--radius-l);
@@ -8466,7 +8113,6 @@ input[type='range'].video-player-volume {
 .cap-note { color: var(--accent); font-family: var(--font-mono, monospace); font-size: var(--text-caption-size); margin-right: 6px; }
 .cap-active { color: var(--text-faint); font-size: var(--text-caption-size); }
 .cap-active.on { color: var(--status-success); }
-.cap-idle { color: var(--text-faint); }
 .vision-cap-table tr.cap-row.flash td { animation: capFlash 1.2s ease-out; }
 @keyframes capFlash { 0% { background: rgba(74, 222, 128, 0.22); } 100% { background: transparent; } }
 .vision-explore {
@@ -8534,15 +8180,10 @@ input[type='range'].video-player-volume {
   margin: 8px 0 0;
   padding-top: 8px;
 }
-
-/* R90.8 review: input level gauge + AST state line */
-.ai-level { display: flex; flex-direction: column; gap: var(--space-1); }
-.ai-level .ai-prob-bar span { background: var(--status-info); }
 .ai-listen-level { flex: 1; max-width: 90px; }
 
 /* ══ R90.9: single-card pipeline view ══════════════════════════════ */
 .ai-pipeline-card { gap: 14px; }
-.ai-model-badges { display: flex; gap: var(--space-3); }
 .ai-stages { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .ai-stage { align-items: center; color: var(--text-secondary); display: flex; font-size: var(--text-caption-size); gap: 7px; }
 .ai-stage-lamp {
@@ -9528,14 +9169,6 @@ input:disabled {
 }
 .btn-secondary:hover { background: var(--btn-secondary-bg-hover); border-color: var(--border-hover); }
 
-/* Ghost archetype — text-only action */
-.btn-ghost {
-  background: transparent;
-  color: var(--btn-ghost-fg);
-  transition: color var(--motion-fast) var(--ease-standard);
-}
-.btn-ghost:hover { color: var(--btn-ghost-fg-hover); }
-
 /* Danger archetype — destructive confirm */
 .btn-danger {
   background: var(--btn-danger-bg);
@@ -9573,7 +9206,6 @@ input:disabled {
    semantic primitives below during the per-view pass; new motion must use
    these tokens. Respect the OS reduced-motion preference globally. */
 @keyframes fade-in   { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slide-up  { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -10047,13 +9679,6 @@ input:disabled {
 
 @keyframes agent-caret {
   50% { opacity: 0; }
-}
-
-.agent-hint-row {
-  display: flex;
-  gap: 10px;
-  font-size: var(--text-caption-size);
-  color: var(--text-secondary);
 }
 
 /* ── R179: voice model dependency panel + agent tab toggle ────────────────── */
@@ -10897,13 +10522,6 @@ input:disabled {
   z-index: 60;
 }
 .duel-title { margin: 0; font-size: 0.875rem; font-weight: 600; color: var(--text-primary); }
-/* R208(FR-MP01): swarm setup 面板内的双人开关行(流式,非 absolute) */
-.swarm-coop-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: var(--text-caption-size); color: var(--text-secondary); margin: 8px 0 2px; }
-
-/* ── R213: swarm 4P 人数/场景/自动预选/按键配置/头像 ── */
-.swarm-config-rows { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: center; margin: 8px 0 2px; }
-.swarm-config-rows label { display: flex; align-items: center; gap: 6px; font-size: var(--text-caption-size); color: var(--text-secondary); }
-.swarm-config-rows select { padding: 3px 8px; border-radius: var(--radius-s); border: 1px solid var(--surface-raised); background: var(--surface-deep); color: var(--text-primary); font-size: var(--text-caption-size); }
 .swarm-avatars { display: flex; gap: var(--space-3); justify-content: center; margin: 6px 0; }
 .input-config-panel { position: absolute; inset: 0; z-index: 65; display: flex; align-items: center; justify-content: center; background: var(--scrim); }
 .input-config-card { width: min(640px, 92%); max-height: 86%; overflow: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 10px; }

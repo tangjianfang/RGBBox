@@ -4,6 +4,7 @@ import type { EffectKind } from '../../../shared/types'
 
 export type ScheduleBlockId = 'day' | 'evening' | 'night'
 
+// R328: 经 useScheduleDomain 返回类型结构性暴露，须保持导出（不可私有化）。
 export interface ScheduleBlockDefinition {
   id: ScheduleBlockId
   labelKey: 'schedule.day' | 'schedule.evening' | 'schedule.night'
@@ -18,7 +19,7 @@ export const SCHEDULE_BLOCKS: ScheduleBlockDefinition[] = [
   { id: 'night', labelKey: 'schedule.night', timeLabel: '22:00-08:00', startHour: 22, endHour: 8 }
 ]
 
-export const DEFAULT_SCHEDULE_EFFECTS: Record<ScheduleBlockId, EffectKind> = {
+const DEFAULT_SCHEDULE_EFFECTS: Record<ScheduleBlockId, EffectKind> = {
   day: 'screen-ambient',
   evening: 'aurora',
   night: 'breathing'

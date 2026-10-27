@@ -875,7 +875,7 @@ void main() {
 }
 `
 
-export const SHADERS: Record<Effect3DKind, string> = {
+const SHADERS: Record<Effect3DKind, string> = {
   'sphere-pulse': SPHERE_PULSE_FS,
   'warp-portal':  WARP_PORTAL_FS,
   'neon-galaxy':  NEON_GALAXY_FS,

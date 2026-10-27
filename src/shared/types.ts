@@ -209,7 +209,7 @@ export interface DisplayTopology {
   detectedAt: string
 }
 
-export interface SamplingSettings {
+interface SamplingSettings {
   columns: number
   rows: number
   fps: number
@@ -579,7 +579,7 @@ export interface AgentApprovalRequest {
   after?: string
 }
 
-export interface AgentToolCallView {
+interface AgentToolCallView {
   id: string
   name: string
   args: string
@@ -655,6 +655,3 @@ export interface AvatarResult {
   ok: boolean
   error?: string
 }
-
-/** 可用头像席位(P1–P4,与本地双人/双人 LAN 席位口径一致)。 */
-export type AvatarSlot = 1 | 2 | 3 | 4

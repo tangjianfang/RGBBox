@@ -37,7 +37,7 @@ export const WORD_HINTS: Record<string, { zh: string; en: string }> = {
 
 /** R237 lab baseline (docs/QUALITY-MATRIX.md): full synthetic matrix run hit
  *  100% diagonal (162 cells per gesture) against the ≥90% gate. */
-export const LAB_BASELINE = Object.freeze({ recall: 1, cells: 162, gate: 0.9 })
+const LAB_BASELINE = Object.freeze({ recall: 1, cells: 162, gate: 0.9 })
 
 export interface BenchOpts {
   /** prompted attempts per word (default 3) */
@@ -50,7 +50,7 @@ export interface BenchOpts {
   leadMs?: number
 }
 
-export interface BenchPlanStep {
+interface BenchPlanStep {
   word: string
   round: number
   from: number
@@ -87,7 +87,7 @@ export function planBench(opts: BenchOpts = {}): BenchPlan {
   return { steps, marks, totalMs: t - o.restMs, opts: o }
 }
 
-export interface BenchGates {
+interface BenchGates {
   recall: number
   /** prompt-onset → event, reaction-inclusive (default 1000) */
   latencyMaxMs: number
@@ -102,7 +102,7 @@ export const GRACE_MS = 400
  *  extra fires (the user naturally finishes a motion past the prompt) */
 export const SETTLE_MS = 800
 
-export interface WordScore {
+interface WordScore {
   word: string
   windows: number
   hits: number

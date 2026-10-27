@@ -50,7 +50,7 @@ export function parseStoredParameterLocks(raw: string | null): string[] {
   }
 }
 
-export function randomItem<T>(items: readonly T[]): T {
+function randomItem<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)]
 }
 

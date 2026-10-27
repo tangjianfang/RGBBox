@@ -9,12 +9,12 @@
  *   dark  — #11191f = dark --bg-toolbar (shipped overlay color, unchanged)
  *   light — #e9eff2 = light --bg-toolbar; symbols #3f5a66 = light --text-secondary
  */
-export interface TitleBarOverlayColors {
+interface TitleBarOverlayColors {
   color: string
   symbolColor: string
 }
 
-export type TitleBarTheme = 'dark' | 'light'
+type TitleBarTheme = 'dark' | 'light'
 
 export const TITLE_BAR_OVERLAY_COLORS: Record<TitleBarTheme, TitleBarOverlayColors> = {
   dark: { color: '#11191f', symbolColor: '#9cb7c3' },

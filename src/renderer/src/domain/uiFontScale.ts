@@ -12,7 +12,7 @@ export const UI_FONT_SCALE_TIERS = [
   { id: 'xl', factor: 1.3 },
 ] as const
 
-export type UiFontScaleId = (typeof UI_FONT_SCALE_TIERS)[number]['id']
+type UiFontScaleId = (typeof UI_FONT_SCALE_TIERS)[number]['id']
 
 export const UI_FONT_SCALE_DEFAULT: UiFontScaleId = 'md'
 

@@ -5,7 +5,7 @@
 // token with NO `Bearer ` prefix; responses wrap as {code, data, msg} with
 // code=0 ok, code=2 login expired, code=-2 not activated.
 
-export const AI8_BASE = 'https://ai8.rcouyi.com/api'
+const AI8_BASE = 'https://ai8.rcouyi.com/api'
 export const AI8_APP_VERSION = '3.4.1'
 
 export class Ai8Error extends Error {
@@ -39,7 +39,7 @@ export function isDrawLimitError(error: unknown): boolean {
   return error instanceof Ai8Error && /上限|稍后再试/.test(error.message)
 }
 
-export interface Ai8ChatTemplate {
+interface Ai8ChatTemplate {
   defModel?: string
   models: Ai8Model[]
   webSearchOpen?: boolean
@@ -50,7 +50,7 @@ export interface Ai8ChatTemplate {
 // provider), and `meta` is now null. Pure function so tests can pin both the
 // live shape and the legacy flat one (kept for the e2e mock).
 
-export interface Ai8DrawModel {
+interface Ai8DrawModel {
   label: string
   value: string
   /** R125.1: the model's default resolution — first `area[]` option value
@@ -69,7 +69,7 @@ export interface Ai8DrawModelGroup {
   models: Ai8DrawModel[]
 }
 
-export interface Ai8DrawTemplateParsed {
+interface Ai8DrawTemplateParsed {
   groups: Ai8DrawModelGroup[]
   /** First concrete model of the first group — mirrors the site's
    * firstModel (its `_csp_` platform entry resolves to the platform's first
@@ -183,7 +183,7 @@ export function isDrawDone(raw: unknown): boolean {
 // lists are hardcoded in the site's frontend chunks — mirrored here from the
 // production bundles (video-*.js + the 9 provider chunks, 2026-09-17).
 
-export interface Ai8VideoVersion {
+interface Ai8VideoVersion {
   label: string
   value: string
 }
@@ -263,7 +263,7 @@ export const AI8_VIDEO_PROVIDERS: Ai8VideoProvider[] = [
   { id: 'xai', label: 'Grok Imagine', versions: [{ label: 'Grok Imagine', value: 'grok-imagine-video' }] },
 ]
 
-export interface Ai8VideoTemplateParsed {
+interface Ai8VideoTemplateParsed {
   providers: Ai8VideoProvider[]
   /** Beta notice from the template (HTML stripped); '' when absent. */
   notice: string
@@ -297,7 +297,7 @@ export function buildVideoBody({ model, version, prompt }: { model: string; vers
   return { model, action: 'all', isPublic: false, prompt, params: { version } }
 }
 
-export type Ai8SseEvent =
+type Ai8SseEvent =
   | { type: 'meta'; taskId: string }
   | { type: 'delta'; text: string }
   | { type: 'extra'; data: unknown }

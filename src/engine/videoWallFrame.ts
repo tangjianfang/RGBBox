@@ -17,7 +17,7 @@ function clamp01(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value
 }
 
-export interface ExtractWallPanelFrameOptions {
+interface ExtractWallPanelFrameOptions {
   /** Output frame width in cells. Defaults to `floor(virtualFrame.columns / layout.cols)` (min 1). */
   outCols?: number
   /** Output frame height in cells. Defaults to `floor(virtualFrame.rows / layout.rows)` (min 1). */

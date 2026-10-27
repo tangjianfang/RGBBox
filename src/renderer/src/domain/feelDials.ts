@@ -8,9 +8,9 @@
  */
 import type { EffectLayer } from '../../../shared/types'
 
-export type FeelDialId = 'motion' | 'energy' | 'density' | 'palette'
+type FeelDialId = 'motion' | 'energy' | 'density' | 'palette'
 
-export interface FeelDialDef {
+interface FeelDialDef {
   id: FeelDialId
   /** i18n 键（感觉名，全效果统一） */
   labelKey: string

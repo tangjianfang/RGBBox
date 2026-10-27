@@ -224,7 +224,7 @@ const SP0: RgbColor = { r: 0, g: 0, b: 0 }
  * 设计意图,归属删除裁决而非地板强制)。
  * 纯函数:不修改入参,返回提升后的帧(亮帧原样返回引用)。
  */
-export const DARK_FLOOR_LIT = 0.08
+const DARK_FLOOR_LIT = 0.08
 const DARK_FLOOR_MAX_BOOST = 2.3
 
 export function liftDarkFloor(frame: RgbFrame): RgbFrame {

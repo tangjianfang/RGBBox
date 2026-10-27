@@ -56,7 +56,7 @@ export type LanMessage =
 
 /** 游戏指令(双向事件)。FR-LN04:TD 合作——客端→房主(建塔/升级/出售/技能);
  *  三期(FR-LN05):Tetris 对战——双方互发(消行攻击 garbage / 结算 result)。 */
-export type LanCommand =
+type LanCommand =
   | { k: 'build'; kind: string; x: number; y: number }
   | { k: 'select'; id: number }
   | { k: 'upgrade' }
@@ -78,7 +78,7 @@ export function hashWellFormed(h: unknown): boolean {
 }
 
 /** SnapTracker 喂入一帧 snap 后的判定结果(纯数据,调用方据此发消息/上报)。 */
-export interface SnapVerdict {
+interface SnapVerdict {
   /** seq 跳号(丢帧)→ 客端应向房主发 {t:'resync'} 请求补发全量快照。 */
   resync: boolean
   /** 连续 3 帧 seq 连续但 hash 异常 → 告警一次(FR-LN03 hash 漂移检测钩子)。 */

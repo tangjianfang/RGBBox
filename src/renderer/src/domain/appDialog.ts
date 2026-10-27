@@ -10,7 +10,7 @@
  * FIFO 排队：异步路径的 alert 落在 confirm 打开期间时按序展示，不互相顶掉。
  */
 
-export interface AppDialogRequest {
+interface AppDialogRequest {
   /** 对话框正文（已本地化文本）。无标题行——与旧原生弹框内容等价，零新增文案键。 */
   message: string
   /** 危险动作（删除/清空类）——确认按钮走 danger 语义色。 */

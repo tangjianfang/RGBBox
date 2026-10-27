@@ -44,8 +44,6 @@
   --btn-secondary-bg: var(--bg-control);
   --btn-secondary-bg-hover: var(--border-strong);
   --btn-secondary-fg: var(--text-primary);
-  --btn-ghost-fg: var(--text-secondary);
-  --btn-ghost-fg-hover: var(--text-primary);
   --btn-danger-bg: rgba(248, 113, 113, 0.14);
   --btn-danger-fg: var(--status-error);
   --btn-danger-border: rgba(248, 113, 113, 0.4);
@@ -277,8 +275,6 @@
   --btn-secondary-bg: #e8eff2;
   --btn-secondary-bg-hover: #dbe5ea;
   --btn-secondary-fg: var(--text-primary);
-  --btn-ghost-fg: var(--text-secondary);
-  --btn-ghost-fg-hover: var(--text-primary);
   --btn-danger-bg: rgba(185, 28, 28, 0.08);
   --btn-danger-fg: #b91c1c;
   --btn-danger-border: rgba(185, 28, 28, 0.4);
