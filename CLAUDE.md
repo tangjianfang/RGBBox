@@ -11,6 +11,8 @@
 3. **跳过白名单极小**：见 `docs/AI_WORKFLOW.md §2`；任何「行为变更」必须先追加 R-N。
 4. **提交标题格式**：`[PRD-0002] <type>: <subject>`。
 5. **完成时自检**：实施完必须把对应 R-N 状态改为 ✅ 并附证据。
+6. **清理冗余 UI 元素，布局不清就重构**：「冗余」= 无引用 / 不可达 / 重复的组件、样式、文案、i18n 键，发现即清；「布局不清」必须有证据（用户反馈 / UI review 截图），不得凭 agent 主观感觉发起重构。清理与重构都是行为变更，一律走 R-N，**禁止顺手大改**；重构验收 = 全量测试门禁 + 真机/截图视觉复核。
+7. **迭代时兼顾用户、开发、AI Agent 三者体验，不破坏现有功能**：用户 = 视觉/交互/i18n/性能不退化；开发者 = 模块边界（编排层+域 hook、engine 纯 TS）、可测性、类型安全不劣化；AI Agent = 文档与代码不漂移、命令确定性、测试即规格、R-N 可追溯。「不破坏现有功能」是硬约束：行为变更必须 R-N，收尾 `yarn typecheck` + 全量 `yarn test` 全绿 + R-N 置 ✅ 附证据，回归即 ❌ 入 §8 循环修。
 
 ## 启动时必做的检查
 
@@ -53,6 +55,8 @@ yarn dist:dir       # patch 版本号 + dist-clean + build + electron-builder --
 yarn download-models # 拉取 5 个高斯泼溅模型到 renderer assets
 ```
 
+> 其余 scripts（`vision:*` ×6 / `ui:snapshot*` / `probe*` / `dist:7z` / `typecheck:node|web`）见 `package.json`。
+
 **跑单个测试 / 测试集：**
 
 ```bash
@@ -74,12 +78,12 @@ src/preload       contextIsolation=true + 白名单 API，单一根 window.rgbbo
 src/shared        跨进程复用的纯数据：类型 / IPC 通道名常量 / 文件 logger /
                   模型清单；is3DEffect() 等类型守卫在此
 src/engine        纯 TS 特效引擎（Node 不可用也无 DOM 依赖）：
-                  effects.ts（49 CPU 效果 switch）、previewEngine.ts（zone+display
+                  effects.ts（46 个 CPU 效果 case；EffectKind 共 49——另 8 个走 GPU 3D，其中 3 个三体由 R292 迁入）、previewEngine.ts（zone+display
                   slot mask、smoothing）、color.ts、textRenderer.ts（5×7 bitmap）、
                   videoWall.ts（矩阵布局+bezel+旋转+fit 数学）、videoWallFrame.ts
                   （从虚拟画布采样到面板帧）；可独立编译到 Web/WASM
 src/renderer/src  React UI 与 3D 渲染：
-  ├ App.tsx       编排层（~700 行：boot、view 路由、引擎循环接线、
+  ├ App.tsx       编排层（~850 行：boot、view 路由、引擎循环接线、
   │               shell 装配；R147 从 2976 行 God Component 拆出）
   ├ components/   各 view 实现 + 共享 UI（EffectsView / WorkspaceView /
   │               DisplayMap / VideoWallEditor 等；重 view 已 lazy）
@@ -89,12 +93,13 @@ src/renderer/src  React UI 与 3D 渲染：
   ├ workers/      previewEngineWorker.ts（zero-copy buffer + previousFrame 复用）
   ├ engine/       metricsCollector.ts（180-frame 滚动窗口 fps/p95）
   ├ hooks/        useAudioAnalyzer（双通道：status state + ref/subscribe 60Hz）/
-  │               useEngineLoop（tick 全 ref 化）/ domains/（9 个域 hook）/
+  │               useEngineLoop（tick 全 ref 化）/ domains/（10 个域 hook）/
   │               usePersistedState 等
   ├ 3d/           Three.js + @mkkellogg/gaussian-splats-3d + LEDMapper
   └ i18n/         zh + en
 tests/            vitest（默认 environment: node；components/3d 走 happy-dom；
-                  gl 走 node + headless-gl）；覆盖率门槛见 PRD R11.4
+                  gl 走 node + headless-gl）；覆盖率门槛为分层阈值
+                  （vitest.config.ts，R163 起分层；演进史见 PRD R11.4）
 docs/index.html   GitHub Pages 部署的产品展示页（双语；CSS-only 效果预览）
 ```
 
@@ -102,7 +107,7 @@ docs/index.html   GitHub Pages 部署的产品展示页（双语；CSS-only 效�
 
 - **Renderer ↔ Main 通过 preload 桥**：所有 Node 能力只走 `window.rgbbox.*` 白名单；不允许渲染层直连 `electron` / `ipcRenderer`（R5.1）。
 - **Engine 是纯 TS**：不在 engine 层引入 DOM / WebGL / Electron 依赖，方便跨平台复用与单测。
-- **IPC 通道名统一在 `src/shared/ipc.ts`**：用 `as const` + `IpcChannel` 联合类型，避免字符串散落；新通道必须 PR-1 加 R-N。
+- **IPC 通道名统一在 `src/shared/ipc.ts`**：用 `as const` 常量表 `ipcChannels`（通道字符串的唯一来源，R328 已删无人引用的 `IpcChannel` 类型别名）；新通道必须 PR-1 加 R-N。
 - **主进程入口单文件**（`src/main/index.ts`）承载了 IPC、捕获、浮窗、profile、protocol 等多个职责，是历史 P0/P1 集中点——不要"顺手"重构。
 - **Renderer 是编排层 + 域模块**（R147 起）：`App.tsx` 只做 boot/view 路由/引擎接线/shell 装配；功能状态在 `hooks/domains/` 域 hook，纯逻辑在 `domain/`，view 在 `components/`（重 view lazy）。新 view 仍以 `type View` 联合的成员追加，**不引入路由库/store 库**；帧数据一律走 ref 不走 state（`useEngineLoop` 模式）。
 

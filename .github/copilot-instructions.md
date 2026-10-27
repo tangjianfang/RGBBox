@@ -28,6 +28,8 @@ Full rules: [`docs/AI_WORKFLOW.md`](../docs/AI_WORKFLOW.md)
 3. **Commit format**: `[PRD-0002] <type>: <subject>`.
 4. **After implementation**, update R-N status to ✅ with evidence.
 5. **Behavior changes always require an R-N**. See skip-whitelist in `docs/AI_WORKFLOW.md §2`.
+6. **Clean up redundant UI; refactor unclear layouts — but with evidence** / 清理冗余 UI，布局不清就重构：「redundant」= unreferenced / unreachable / duplicated components, styles, copy, i18n keys; "unclear layout" requires evidence (user feedback / UI review screenshots), never an agent's subjective feeling. Cleanup and refactor are behavior changes → R-N, **no drive-by rewrites**; acceptance = full test gates + visual review.
+7. **Balance user / developer / AI-agent experience; never break existing behavior** / 兼顾三方体验，不破坏现有功能：user = visual / interaction / i18n / performance must not regress; developer = module boundaries, testability, type safety; AI agent = docs must not drift from code, deterministic commands, tests-as-spec, R-N traceability. "No regression" is hard-bound: R-N + typecheck + full test suite green + R-N ✅ with evidence; regressions go to §8 and loop until fixed.
 
 ### 不可越界 / Do not cross the line
 
