@@ -11,6 +11,7 @@
 import { existsSync, rmSync, readdirSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { createRequire } from 'node:module'
+import { retryAsync } from './lib/retryAsync.mjs'
 
 const require = createRequire(import.meta.url)
 // Arch enum via the SAME app-builder-lib electron-builder uses — reverse
@@ -103,6 +104,18 @@ export default async function afterPack(context) {
   // rcedit v2 is CJS: require() returns the function directly
   const rcedit = require('rcedit')
   console.log(`[afterPack] embedding icon into ${exePath}`)
-  await rcedit(exePath, { icon: iconPath })
+  // R323: the exe was written moments ago (~223MB); a real-time scanner/indexer
+  // can hold it briefly and rcedit then fails with "Unable to commit changes".
+  // Reproduced on the built artifact: success/fail alternate, a later try works.
+  // Retry ONLY that signature — any other rcedit error (bad icon, corrupt exe)
+  // still fails at once, and the icon must still end up embedded.
+  await retryAsync(() => rcedit(exePath, { icon: iconPath }), {
+    attempts: 8,
+    shouldRetry: (err) => /Unable to commit changes/i.test(err.message),
+    onRetry: ({ attempt, attempts, delayMs }) =>
+      console.warn(`[afterPack] rcedit: ${productName}.exe is busy (Unable to commit changes) — attempt ${attempt + 1}/${attempts} in ${delayMs / 1000}s`),
+    exhaustedHint: `[afterPack] ${exePath} stayed locked: a scanner/indexer or another process is holding it. ` +
+      'Exclude the release\\ folder from real-time scanning (needs admin) or close whatever has the file open, then re-run.',
+  })
   console.log('[afterPack] icon embedded successfully')
 }
