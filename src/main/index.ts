@@ -408,6 +408,10 @@ function registerIpc(): void {
   })
   // R81: global snip hotkey preference (preset whitelist; re-register + persist + rebuild tray label)
   ipcMain.handle(ipcChannels.snipGetHotkey, () => getSnipHotkeyPref())
+  // R333: Image Studio「开始全局截图」入口 — the same startSnip() the tray
+  // menu (index.ts tray label) and the global hotkey call; main stays the
+  // single owner of snip sessions (R112.3 mutual-exclusion gate inside).
+  ipcMain.handle(ipcChannels.snipStart, () => startSnip())
   ipcMain.handle(ipcChannels.snipSetHotkey, (_event, accel: unknown) => {
     const ok = setSnipHotkeyPref(
       typeof accel === 'string' && isPresetSnipHotkey(accel) ? accel : '',

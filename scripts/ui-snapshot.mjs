@@ -24,7 +24,7 @@ const PORT = 9281
 const BASELINE = 'docs/ui-baseline' // trusted, git-tracked (T3: never silently overwritten)
 const CURRENT = 'docs/ui-baseline/current' // gitignored re-run output
 const DIFFDIR = 'docs/ui-baseline/diff' // gitignored diff images
-const VIEWS = ['dashboard', 'workspace', 'effects', 'video', 'audio', 'games', 'diagnostics', 'architecture', 'ai', 'settings']
+const VIEWS = ['dashboard', 'workspace', 'effects', 'video', 'images', 'audio', 'games', 'diagnostics', 'architecture', 'ai', 'settings'] // R333: + images (rail order)
 
 // Per-view diff-rate limits as a *fraction of pixels* allowed to differ.
 // Default 0.1%. R163.3: the former workspace/video 0.2% exceptions are

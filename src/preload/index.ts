@@ -213,6 +213,8 @@ const api = {
   },
   // R81: global snip hotkey preference
   snipGetHotkey: (): Promise<string> => ipcRenderer.invoke(ipcChannels.snipGetHotkey),
+  // R333: start a global snip session from the Image Studio view
+  snipStart: (): Promise<boolean> => ipcRenderer.invoke(ipcChannels.snipStart),
   snipSetHotkey: (accel: string): Promise<{ ok: boolean; hotkey: string }> =>
     ipcRenderer.invoke(ipcChannels.snipSetHotkey, accel),
   // R83: OCR AI-cleanup (OpenAI-compatible chat API)

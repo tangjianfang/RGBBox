@@ -38,6 +38,8 @@ const SHELL_KEYS = [
   'dash.card.engine', 'dash.card.fps', 'dash.card.effect', 'dash.card.overlay', 'dash.card.audio',
   'dash.desc.workspace', 'dash.desc.effects', 'dash.desc.video', 'dash.desc.audio',
   'dash.desc.model3d', 'dash.desc.games', 'dash.desc.diagnostics', 'dash.desc.architecture',
+  // R333: image studio shell keys
+  'nav.images', 'dash.desc.images',
   'menu.settings', 'menu.about', 'menu.login', 'menu.profile', 'menu.logout', 'menu.comingSoon',
   'settings.group.run', 'settings.group.screensaver', 'settings.group.hotkey'
 ] as const

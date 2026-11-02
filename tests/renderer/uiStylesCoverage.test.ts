@@ -35,6 +35,11 @@ const REQUIRED_CLASSES: Record<string, string[]> = {
   'settings/SettingsView gesture macro table (R306, overflow fixed in R331)': [
     'macro-table', 'macro-table-scroll', 'macro-conflict-list', 'macro-preview',
   ],
+  // R333: image studio layout family (buttons/panels/stage surfaces reuse the
+  // existing .video-* utility classes — only the layout containers are new).
+  'components/ImageStudioView image studio layout (R333)': [
+    'images-studio', 'images-layout', 'images-stage',
+  ],
 }
 
 describe('ui styles coverage guard (R319)', () => {

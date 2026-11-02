@@ -6,7 +6,7 @@
  *  CARD_VIEWS in shellModules.ts — this tuple mirrors it (+ settings at the
  *  tail) and an exact-order test keeps the two in lockstep. */
 export const MODULE_VIEWS = [
-  'workspace', 'effects', 'video', 'audio', 'model3d',
+  'workspace', 'effects', 'video', 'images', 'audio', 'model3d',
   'games', 'diagnostics', 'architecture', 'ai', 'settings'
 ] as const
 export type ModuleView = (typeof MODULE_VIEWS)[number]

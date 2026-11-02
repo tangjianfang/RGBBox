@@ -19,14 +19,14 @@ function renderRail(over: { model3dEnabled?: boolean } = {}) {
 describe('ModuleRail', () => {
   it('renders dashboard + card modules (model3d gated) + bottom settings', () => {
     const { container } = renderRail()
-    // dashboard + 9 卡片模块 − model3d + 底部 settings
-    expect(container.querySelectorAll('.rail-item').length).toBe(10)
+    // dashboard + 10 卡片模块（R333 +images）− model3d + 底部 settings
+    expect(container.querySelectorAll('.rail-item').length).toBe(11)
     expect(container.querySelector('.rail-settings')).not.toBeNull()
   })
 
   it('shows the model3d entry when enabled', () => {
     const { container } = renderRail({ model3dEnabled: true })
-    expect(container.querySelectorAll('.rail-item').length).toBe(11)
+    expect(container.querySelectorAll('.rail-item').length).toBe(12)
   })
 
   it('marks the active view', () => {

@@ -4,11 +4,14 @@
  * Capabilities:
  *   • Camera: enumerate / select any webcam, choose resolution & frame-rate,
  *     mirror, live hardware parameter controls (brightness / contrast / zoom …
- *     where supported), still-photo capture and video recording.
+ *     where supported) and video recording.
  *   • Screen / Window / Browser capture: list every display and application
  *     window (via Electron desktopCapturer) and stream it live, with recording.
  *   • Player: load and play mainstream video formats (mp4 / webm / mkv / mov …)
- *     with speed, loop and frame-snapshot controls.
+ *     with speed, loop, trim/clip and subtitle controls.
+ *
+ * R333: the image pipeline (photo / region snip / annotator / filmstrip /
+ * window-handle shots) moved to ImageStudioView — this view is video-only.
  *
  * All preview surfaces are large and the layout is column-based so the live
  * image always gets the dominant share of the viewport.
@@ -16,14 +19,14 @@
 
 import {
   AppWindow, Camera, CameraOff, ChevronDown, ChevronRight, Circle, Download, FileText,
-  Film, FlipHorizontal, FolderOpen, Frame, Image as ImageIcon, Link as LinkIcon, Maximize2,
+  Film, FlipHorizontal, FolderOpen, Link as LinkIcon, Maximize2,
   Minimize2, Monitor, MonitorPlay, Pause, Play, Plus, RefreshCw, Scissors, SkipBack,
   SkipForward, SlidersHorizontal, Sparkles, Square, Trash2, Video, Volume2, VolumeX,
 } from 'lucide-react'
 import Hls from 'hls.js'
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type RefObject } from 'react'
 import { useI18n } from '../i18n'
-import { showAlert, showConfirm } from '../domain/appDialog'
+import { showAlert } from '../domain/appDialog'
 import type { CaptureSource, RgbFrame } from '../../../shared/types'
 import { REC_BITRATE_TIERS, captureConstraintsWithAudio, type RecBitrateTier } from '../domain/recorderOptions'
 import { rgbFrameFromImageData } from '../domain/videoAmbient'
@@ -31,8 +34,6 @@ import { useRecorderDomain } from '../hooks/video/useRecorderDomain'
 import { formatMediaTime } from '../../../shared/timeFormat'
 import { usePreviewZoom } from './video/usePreviewZoom'
 import { PreviewZoomBar } from './video/PreviewZoomBar'
-import { freezeVideoFrame } from './video/frameCapture'
-import { RegionSnipOverlay } from './video/RegionSnipOverlay'
 import { buildPathEntries, ingestRestoredProgress, shouldOfferResume, type ProgressEntry } from './video/playlistProgress'
 import { describeMediaError, formatMediaFailure } from '../domain/mediaError'
 import { MiniPlayerCard } from './video/MiniPlayerCard'
@@ -40,10 +41,6 @@ import { ENHANCE_PRESETS, type EnhancePresetId } from './video/audioEnhance'
 import { useVideoAudioEnhance } from './video/useVideoAudioEnhance'
 import { useSuperres } from './video/useSuperres'
 import { backendLabel } from './video/superres'
-import { AnnotateOverlay } from './video/AnnotateOverlay'
-import { CaptureFilmstrip } from './CaptureFilmstrip'
-import type { CaptureEntry } from '../../../shared/types'
-import type { Rect } from './video/previewTransform'
 
 type Mode = 'camera' | 'screen' | 'player'
 
@@ -84,8 +81,7 @@ interface VideoPlaylistCache {
   playlist: Array<{ id: string; name: string; group: string }>
   groups: VideoGroup[]
   playlistVisible: boolean
-  /** R170: capture filmstrip collapsed? (default expanded) */
-  filmstripVisible: boolean
+  // R170 filmstripVisible 字段随 R333 迁往图片工作站（rgbbox:imagesCache）后删除。
 }
 
 function loadVideoCache(): Partial<VideoPlaylistCache> {
@@ -362,8 +358,6 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
   const [videoPlaylist, setVideoPlaylist] = useState<VideoItem[]>([])
   const [videoGroups, setVideoGroups] = useState<VideoGroup[]>(videoCache.groups || [])
   const [playlistVisible, setPlaylistVisible] = useState(videoCache.playlistVisible ?? true)
-  // R170: capture filmstrip collapse state — persisted alongside the playlist.
-  const [filmstripVisible, setFilmstripVisible] = useState(videoCache.filmstripVisible ?? true)
   const [currentVideoIndex, setCurrentVideoIndex] = useState(-1)
   const [videoIsRestored, setVideoIsRestored] = useState(false)
   const videoFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -425,16 +419,9 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
 
   const filterStyle = useMemo(() => filterCss(filters), [filters])
 
-  // ── Snapshot annotate (R76: in-place annotator replaces R75 modal) ──────
-  const [annotateSource, setAnnotateSource] = useState<HTMLCanvasElement | string | null>(null)
+  // R333: 拍照/框选/标注/胶片栏编排整体迁往 ImageStudioView；editorToast 留下
+  // （录制域 notify 等仍用）。
   const [editorToastMsg, setEditorToastMsg] = useState('')
-
-  // ── Capture cache filmstrip (R77.1) ─────────────────────────────────────
-  const [captures, setCaptures] = useState<CaptureEntry[]>([])
-  const refreshCaptures = useCallback(() => {
-    window.rgbbox.capturesList().then(setCaptures).catch(() => { /* best-effort */ })
-  }, [])
-  useEffect(() => { refreshCaptures() }, [refreshCaptures])
   const editorToastTimerRef = useRef<number | null>(null)
   const editorToast = useCallback((msg: string) => {
     setEditorToastMsg(msg)
@@ -447,70 +434,6 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     notify: editorToast,
     labels: useMemo(() => ({ saved: t('video.recSaved'), fail: t('video.recFail') }), [t]),
   })
-
-  const downloadPng = useCallback((dataUrl: string, prefix: string) => {
-    // R75.2: 纯像素导出，无任何水印
-    const a = document.createElement('a')
-    a.href = dataUrl
-    a.download = `${prefix}-${Date.now()}.png`
-    a.click()
-  }, [])
-
-  // ── Region snip (R75.3): freeze current frame, let the user drag a selection ──
-  const [snipActive, setSnipActive] = useState(false)
-  const [snipFrame, setSnipFrame] = useState<HTMLCanvasElement | null>(null)
-  const startSnip = useCallback(() => {
-    if (snipActive) return
-    const source = mode === 'player' ? playerRef.current : videoRef.current
-    if (!source?.videoWidth) return
-    const frame = freezeVideoFrame(source, filterStyle, mirror && mode === 'camera')
-    if (!frame) return
-    if (mode === 'player') playerRef.current?.pause()
-    setSnipFrame(frame)
-    setSnipActive(true)
-  }, [snipActive, mode, filterStyle, mirror])
-
-  const cancelSnip = useCallback(() => {
-    setSnipActive(false)
-    setSnipFrame(null)
-  }, [])
-
-  const finishSnip = useCallback((sel: Rect) => {
-    const frame = snipFrame
-    cancelSnip()
-    if (!frame) return
-    const out = document.createElement('canvas')
-    out.width = sel.w
-    out.height = sel.h
-    const ctx = out.getContext('2d')
-    if (!ctx) return
-    // R75.2: 裁剪只搬运像素，绝不叠加任何文字/logo（无水印铁律）
-    ctx.drawImage(frame, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h)
-    let dataUrl: string
-    try {
-      dataUrl = out.toDataURL('image/png')
-    } catch {
-      // R92: cross-origin frames (e.g. remote URL without CORS) taint the
-      // canvas — the annotator would hit the same wall on save, so bail here.
-      editorToast(t('video.capture.fail'))
-      return
-    }
-    // R76.3: 框选确认后就地标注（微信流程）；R77.1: 裁剪结果自动入缓存
-    void window.rgbbox.capturesAdd(dataUrl, 'snip').then(refreshCaptures).catch(() => { /* best-effort */ })
-    setAnnotateSource(out)
-  }, [snipFrame, cancelSnip, refreshCaptures, editorToast, t])
-
-  // R75.3: S 快捷键（camera/screen live 模式；player 模式在播放器快捷键 effect 里）
-  useEffect(() => {
-    if (mode === 'player' || !streaming || snipActive) return
-    const onKey = (e: KeyboardEvent): void => {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
-      if (e.key === 's' || e.key === 'S') { e.preventDefault(); startSnip() }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [mode, streaming, snipActive, startSnip])
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   const stopStream = useCallback(() => {
@@ -631,21 +554,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     }
   }, [])
 
-  // R290.2: 按窗口句柄截图——主进程 desktopCapturer 直出原生分辨率 PNG 落
-  // captureStore（不经 getDisplayMedia 流,不占用当前预览源）
-  const snipWindowShot = useCallback(async (s: CaptureSource) => {
-    try {
-      const r = await window.rgbbox.snipCaptureWindow(s.id)
-      if (r.ok) {
-        refreshCaptures()
-        editorToast(`${t('video.snipWindowOk')} · ${s.name}`)
-      } else {
-        editorToast(t(r.code === 'empty' ? 'video.snipWindowEmpty' : 'video.snipWindowFail'))
-      }
-    } catch {
-      editorToast(t('video.snipWindowFail'))
-    }
-  }, [refreshCaptures, editorToast, t])
+  // R290.2 snipWindowShot（按窗口句柄截图）随 R333 迁往 ImageStudioView。
 
   const startScreenCapture = useCallback(async (sourceId: string) => {
     stopStream()
@@ -704,34 +613,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
       .catch(() => { /* unsupported value — ignore */ })
   }, [])
 
-  // ── Photo capture ──────────────────────────────────────────────────────────
-  const capturePhoto = useCallback(() => {
-    const source = mode === 'player' ? playerRef.current : videoRef.current
-    if (!source || !source.videoWidth) return
-    const canvas = document.createElement('canvas')
-    canvas.width = source.videoWidth
-    canvas.height = source.videoHeight
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.filter = filterStyle
-    if (mirror && mode === 'camera') {
-      ctx.translate(canvas.width, 0)
-      ctx.scale(-1, 1)
-    }
-    ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
-    let url: string
-    try {
-      url = canvas.toDataURL('image/png')
-    } catch {
-      // R92: cross-origin frames (e.g. remote URL without CORS) taint the
-      // canvas — tell the user instead of dying silently.
-      editorToast(t('video.capture.fail'))
-      return
-    }
-    // R76.3: 拍照恢复"咔嚓即下载"；R77.1: 自动入拍摄缓存
-    downloadPng(url, 'rgbbox-photo')
-    void window.rgbbox.capturesAdd(url, 'photo').then(refreshCaptures).catch(() => { /* best-effort */ })
-  }, [mode, filterStyle, mirror, downloadPng, refreshCaptures, editorToast, t])
+  // ── Photo capture / region snip（R75/R76 编排）随 R333 整体迁往
+  //    ImageStudioView；此处只留视频域（预览/录制/播放/裁剪）。 ─────────────
 
   // ── Recording 域已迁 hooks/video/useRecorderDomain (R300 第一阶段) ────────
 
@@ -842,14 +725,13 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     }
   }, [mode, stopStream])
 
-  // R91.2: keep-alive hidden — stop live capture (privacy + CPU) and cancel any
-  // pending region snip; the player keeps playing and MiniPlayerCard surfaces.
+  // R91.2: keep-alive hidden — stop live capture (privacy + CPU); the player
+  // keeps playing and MiniPlayerCard surfaces.
   const [miniDismissed, setMiniDismissed] = useState(false)
   useEffect(() => {
     if (visible) return
     stopStream()
-    cancelSnip()
-  }, [visible, stopStream, cancelSnip])
+  }, [visible, stopStream])
   // Dismissal is per playback session: returning to the view or a fresh play
   // re-arms the card for the next switch-away.
   useEffect(() => {
@@ -1059,13 +941,12 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
         case 'ArrowDown': e.preventDefault(); setPlayerVolume(v => Math.max(0, v - 0.1)); break
         case 'm': case 'M': setPlayerMuted(v => !v); break
         case 'f': case 'F': togglePlayerFullscreen(); break
-        // R75.3: S 进入局部截图（框选覆盖层自身的 keydown 在 capture 阶段优先处理 ESC/Enter）
-        case 's': case 'S': startSnip(); break
+        // R75.3 S 截图快捷键随 R333 迁往 ImageStudioView（其舞台持有取帧源）。
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [mode, visible, togglePlayerPlay, playerSeek, togglePlayerFullscreen, startSnip])
+  }, [mode, visible, togglePlayerPlay, playerSeek, togglePlayerFullscreen])
 
   // R70.5: mirror the player URL so the unmount cleanup below can revoke the
   // blob: URL — the functional-setState revoke inside clearPlayerSource never
@@ -1311,7 +1192,6 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
       playlist: videoPlaylist.map(v => ({ id: v.id, name: v.name, group: v.group })),
       groups: videoGroups,
       playlistVisible,
-      filmstripVisible,
     })
     // R91.1: media:// entries only (blob:/remote have no path), progress merged
     const pathEntries = buildPathEntries(videoPlaylist, progressRef.current)
@@ -1319,7 +1199,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     // every video never reached disk, and the stale file resurrected them on
     // the next launch. The main-process handler overwrites unconditionally.
     window.rgbbox.videoSavePaths(pathEntries).catch(() => { /* persistence is best-effort */ })
-  }, [videoIsRestored, videoPlaylist, videoGroups, playlistVisible, filmstripVisible])
+  }, [videoIsRestored, videoPlaylist, videoGroups, playlistVisible])
 
   // R94: on entering the player with no active source, auto-load the last
   // played playlist item (once per app session) — the player no longer opens
@@ -1444,23 +1324,6 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
                       top: playerZoom.contentRect.w > 0 ? playerZoom.contentRect.y : undefined,
                       width: playerZoom.contentRect.w > 0 ? playerZoom.contentRect.w : '100%',
                       height: playerZoom.contentRect.h > 0 ? playerZoom.contentRect.h : '100%',
-                    }}
-                  />
-                )}
-                {/* R75.3: 冻结帧（框选期间画面静止） */}
-                {snipActive && snipFrame && (
-                  <canvas
-                    ref={(el) => {
-                      if (el && el.width !== snipFrame.width) {
-                        el.width = snipFrame.width
-                        el.height = snipFrame.height
-                        el.getContext('2d')?.drawImage(snipFrame, 0, 0)
-                      }
-                    }}
-                    className="video-preview-rect video-snip-freeze"
-                    style={{
-                      left: playerZoom.contentRect.x, top: playerZoom.contentRect.y,
-                      width: playerZoom.contentRect.w, height: playerZoom.contentRect.h,
                     }}
                   />
                 )}
@@ -1624,18 +1487,6 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
                 />
               )}
 
-              {/* R75.3: 屏幕空间框选覆盖层 */}
-              {snipActive && snipFrame && (
-                <RegionSnipOverlay
-                  view={playerZoom.view}
-                  contentRect={playerZoom.contentRect}
-                  nativeSize={{ w: snipFrame.width, h: snipFrame.height }}
-                  wrapSize={playerZoom.containerSize}
-                  onConfirm={finishSnip}
-                  onCancel={cancelSnip}
-                />
-              )}
-
               {/* Subtitle overlay (R71.4: gated on mediaLoaded so a stale last
                   line doesn't hover over the empty-state placeholder) */}
               {mediaLoaded && currentSubText && (
@@ -1762,23 +1613,6 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
                   playsInline
                   muted
                 />
-                {/* R75.3: 冻结帧（进入框选时抓取，覆盖在层内继承同一缩放 transform） */}
-                {snipActive && snipFrame && (
-                  <canvas
-                    ref={(el) => {
-                      if (el && el.width !== snipFrame.width) {
-                        el.width = snipFrame.width
-                        el.height = snipFrame.height
-                        el.getContext('2d')?.drawImage(snipFrame, 0, 0)
-                      }
-                    }}
-                    className="video-preview-rect video-snip-freeze"
-                    style={{
-                      left: liveZoom.contentRect.x, top: liveZoom.contentRect.y,
-                      width: liveZoom.contentRect.w, height: liveZoom.contentRect.h,
-                    }}
-                  />
-                )}
               </div>
 
               {/* Empty-state overlay */}
@@ -1817,51 +1651,11 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
                   disabled={!streaming}
                 />
               )}
-
-              {/* R75.3: 屏幕空间框选覆盖层 */}
-              {snipActive && snipFrame && (
-                <RegionSnipOverlay
-                  view={liveZoom.view}
-                  contentRect={liveZoom.contentRect}
-                  nativeSize={{ w: snipFrame.width, h: snipFrame.height }}
-                  wrapSize={liveZoom.containerSize}
-                  onConfirm={finishSnip}
-                  onCancel={cancelSnip}
-                />
-              )}
             </div>
           )}
 
           {/* Transport controls */}
-          {/* R77.1: 拍摄缓存胶片栏（预览区下方、传输条上方；空列表自动隐藏） */}
-          <CaptureFilmstrip
-            items={captures}
-            collapsed={!filmstripVisible}
-            onToggleCollapsed={() => setFilmstripVisible((v) => !v)}
-            onClearAll={async () => {
-              // R170: destructive — confirm with the count before mass delete.
-              // R302: 应用内 danger 对话框（原 window.confirm 系统白底弹框）。
-              if (!(await showConfirm({ message: t('video.filmstrip.clearAllConfirm').replace('{count}', String(captures.length)), danger: true }))) return
-              void Promise.allSettled(captures.map((it) => window.rgbbox.capturesDelete(it.id)))
-                .then(refreshCaptures)
-                .catch(() => { /* best-effort */ })
-            }}
-            onEdit={(it) => {
-              window.rgbbox.capturesRead(it.id)
-                .then((url) => {
-                  // review-fix: 文件缺失/不可读时给反馈，不再是无声死按钮
-                  if (url) setAnnotateSource(url)
-                  else editorToast(t('video.filmstrip.missing' as never))
-                })
-                .catch(() => editorToast(t('video.filmstrip.missing' as never)))
-            }}
-            onDelete={(id) => {
-              void window.rgbbox.capturesDelete(id).then(refreshCaptures).catch(() => { /* best-effort */ })
-            }}
-            onImport={() => {
-              void window.rgbbox.capturesImport().then(refreshCaptures).catch(() => { /* best-effort */ })
-            }}
-          />
+          {/* R77.1 胶片栏 + R75.3 框选 + R76 标注编排随 R333 迁往 ImageStudioView。 */}
           <div className="video-transport">
             {mode === 'camera' && (
               <>
@@ -1904,12 +1698,11 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
               </>
             )}
 
-            {/* Universal capture buttons (live + player) */}
+            {/* Universal stage buttons (live + player) — photo/snip moved to the
+                Image Studio (R333); ambient + recording stay video-domain. */}
             {(streaming || (mode === 'player' && mediaLoaded)) && (
               <>
                 <span className="video-transport-sep" />
-                <button type="button" className="video-btn" onClick={capturePhoto}><ImageIcon size={15} /> {t('video.photo')}</button>
-                <button type="button" className="video-btn" onClick={startSnip} disabled={snipActive} title={t('video.snip.hint')} aria-label={t('video.snip.hint')}><Frame size={15} /> {t('video.snip.button')}</button>
                 {/* R299 video-ambient:当前画面驱动灯墙(需工作台选「屏幕氛围」效果) */}
                 <button type="button" className={`video-btn ${ambientSync ? 'active' : ''}`} onClick={() => setAmbientSync(v => !v)} title={t('video.ambientHint')} aria-pressed={ambientSync}><MonitorPlay size={15} /> {t('video.ambient')}</button>
                 {mode !== 'player' && (
@@ -1960,24 +1753,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
           )}
 
 
-          {/* R76: in-place annotator（局部截图确认 / 缩略图编辑入口；绝对定位覆盖全舞台） */}
-          {annotateSource !== null && (
-            <AnnotateOverlay
-              source={annotateSource}
-              onClose={() => setAnnotateSource(null)}
-              onSave={(url) => {
-                downloadPng(url, 'rgbbox-annotated')
-                void window.rgbbox.capturesAdd(url, 'annotated').then(refreshCaptures).catch(() => { /* best-effort */ })
-                setAnnotateSource(null)
-                editorToast(t('video.annotate.saved' as never))
-              }}
-              onCopy={(url) => {
-                window.rgbbox.clipboardWriteImage(url)
-                  .then((ok) => editorToast(t((ok ? 'video.annotate.copied' : 'video.annotate.copyFail') as never)))
-                  .catch(() => editorToast(t('video.annotate.copyFail' as never)))
-              }}
-            />
-          )}
+          {/* R76 in-place annotator 挂载随 R333 迁往 ImageStudioView（组件文件不动）。 */}
         </div>
 
         {/* ── Inspector ─────────────────────────────────────────────────── */}
@@ -2066,18 +1842,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
                         {s.name}
                       </span>
                     </button>
-                    {/* R290.2: 窗口源专属——按窗口句柄截一张原生分辨率静态图 */}
-                    {s.type === 'window' && (
-                      <button
-                        type="button"
-                        className="video-source-shot"
-                        aria-label={t('video.snipWindow')}
-                        title={t('video.snipWindow')}
-                        onClick={() => void snipWindowShot(s)}
-                      >
-                        <Camera size={13} />
-                      </button>
-                    )}
+                    {/* R290.2 窗口源截图按钮随 R333 迁往 ImageStudioView 源卡片。 */}
                   </div>
                 ))}
               </div>

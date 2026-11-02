@@ -19,7 +19,7 @@ const TIERS = [
   { id: 'lg', px: '18.4px' },
   { id: 'xl', px: '20.8px' },
 ]
-const VIEWS = ['dashboard', 'workspace', 'effects', 'video', 'audio', 'games', 'diagnostics', 'architecture', 'ai', 'settings'] // R332: + settings
+const VIEWS = ['dashboard', 'workspace', 'effects', 'video', 'images', 'audio', 'games', 'diagnostics', 'architecture', 'ai', 'settings'] // R332: + settings; R333: + images (rail order)
 
 let pass = 0
 let fail = 0

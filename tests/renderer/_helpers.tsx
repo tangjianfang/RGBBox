@@ -116,6 +116,9 @@ export function setupRendererMocks() {
     setUiLocale: vi.fn(),
     snipGetHotkey: vi.fn().mockResolvedValue('Alt+A'),
     snipSetHotkey: vi.fn().mockResolvedValue({ ok: true, hotkey: 'Alt+A' }),
+    // R333: Image Studio — start a global snip session / per-window handle shot
+    snipStart: vi.fn().mockResolvedValue(true),
+    snipCaptureWindow: vi.fn().mockResolvedValue({ ok: true }),
     // R83: OCR AI-cleanup
     aiGetSettings: vi.fn().mockResolvedValue({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-4-flash' }),
     aiSetSettings: vi.fn().mockResolvedValue({ baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-4-flash' }),

@@ -83,12 +83,12 @@ describe('DashboardView (R303 舞台条布局)', () => {
     expect(container.querySelector('.dash-readouts')?.textContent).toContain('—')
   })
 
-  it('模块磁贴：带描述行；model3d 门控 8/9；点击触发 onOpen', () => {
+  it('模块磁贴：带描述行；model3d 门控 9/10；点击触发 onOpen', () => {
     const { container, props } = renderDash()
-    expect(container.querySelectorAll('.dash-tile').length).toBe(8)
+    expect(container.querySelectorAll('.dash-tile').length).toBe(9)
     // R303: dash.desc.* 首次上屏
     const descs = container.querySelectorAll('.dash-tile-desc')
-    expect(descs.length).toBe(8)
+    expect(descs.length).toBe(9)
     const tile = [...container.querySelectorAll('.dash-tile')].find((el) =>
       el.textContent?.includes('nav.workspace')
     ) as HTMLElement
@@ -96,7 +96,7 @@ describe('DashboardView (R303 舞台条布局)', () => {
     fireEvent.click(tile)
     expect(props.onOpen).toHaveBeenCalledWith('workspace')
     const enabled = renderDash({ model3dEnabled: true })
-    expect(enabled.container.querySelectorAll('.dash-tile').length).toBe(9)
+    expect(enabled.container.querySelectorAll('.dash-tile').length).toBe(10)
   })
 
   it('effect=null（profile 未就绪）渲染空舞台不崩溃', () => {

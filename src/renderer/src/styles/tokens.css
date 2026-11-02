@@ -135,6 +135,9 @@
   --tint-orange: #fb923c;
   --tint-fuchsia: #e879f9;
   --tint-cyan: #22d3ee;
+  /* R333: 10th module hue — teal (image studio); kept visually apart from
+     mint (the accent green) and cyan (one step bluer) on the wheel. */
+  --tint-teal: #14b8a6;
   /* content-layer colors (game/AI8 scenes — not chrome semantics) */
   --fx-pink: #f8a0b0;
   --fx-blue: #60a5fa;
@@ -296,6 +299,8 @@
   --tint-orange: #c2410c;
   --tint-fuchsia: #a21caf;
   --tint-cyan: #0e7490;
+  /* R333: teal for light cards — same one-step-down convention as above. */
+  --tint-teal: #0f766e;
   /* overlays / scrims / scrollbar — mirrored lifts */
   --overlay-hair: rgba(15, 23, 32, 0.03);
   --overlay-weak: rgba(15, 23, 32, 0.05);

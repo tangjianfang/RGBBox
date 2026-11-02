@@ -1,9 +1,7 @@
 # I18N-AUDIT — 全量审计报告（R240 / F5 族）
 
-> ⚠️ **historical（2026-10-28）**：本报告为 R240 时点快照，已过期。最新全量扫描（2026-10-28 规则 6/7 审计）证明 i18n 层干净：1867 键双语完全对称、0 死键，见 `docs/reviews/2026-10-28-rule6-rule7-audit.md` §1.1。
-
-> 生成：2026-10-18T10:49:55.324Z（node scripts/i18n-audit.mjs）
-> 语料：zh 1865 键 / en 1865 键
+> 生成：2026-11-02T18:57:12.299Z（node scripts/i18n-audit.mjs）
+> 语料：zh 1862 键 / en 1862 键
 
 | 检查 | 发现 | 处置 |
 |---|---|---|
@@ -12,7 +10,7 @@
 | 空值 | 0 | 必修 |
 | 占位符不一致 | 0 | 必修 |
 | zh=en 同文（非中文） | 15 | 人工复核 |
-| en 超长（>3×zh） | 130 | 人工复核（溢出候选） |
+| en 超长（>3×zh） | 129 | 人工复核（溢出候选） |
 | 重复键 | 0 | 必修 |
 
 ## zh=en 同文（复核：或为刻意的品牌/术语）（15）
@@ -34,7 +32,7 @@
 - video.annotate.engineWinrt
 - ai.apiKey
 
-## en 超长（复核：布局溢出候选）（130）
+## en 超长（复核：布局溢出候选）（129）
 
 - ai.lab.keyUnreadable (46→161)
 - ai.voice.lexiconEmpty (25→92)
@@ -169,7 +167,6 @@
 - audio.export.desc (26→100)
 - audio.viz.projectUnsupportedWaveform (10→41)
 - video.capture.fail (16→54)
-- video.editor.error (15→52)
 - video.annotate.ocrRegion (16→49)
 - snip.hotkeyHint (25→94)
 - video.trimMinDuration (14→45)

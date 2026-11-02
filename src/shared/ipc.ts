@@ -158,6 +158,9 @@ export const ipcChannels = {
   snipFramePainted: 'rgbbox:snip:frame-painted',
   snipFinish: 'rgbbox:snip:finish',
   snipCancel: 'rgbbox:snip:cancel',
+  // R333: renderer-side entry to start a global snip session (Image Studio
+  // button) — same startSnip() the tray menu and the global hotkey call.
+  snipStart: 'rgbbox:snip:start',
   // R290.2: 按窗口句柄截图——sourceId 入参（desktopCapturer 窗口源），
   // 主进程直出原生分辨率 PNG 落 captureStore；{ok,code} 出参（denied 码
   // 不堵死跨平台——macOS ScreenCaptureKit 权限拒也可表达）。

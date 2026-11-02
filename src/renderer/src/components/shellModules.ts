@@ -1,5 +1,5 @@
 import {
-  Bot, Box, Cpu, Gamepad2, Gauge, LayoutGrid, Monitor, Music, Settings, Sparkles, Video
+  Bot, Box, Cpu, Gamepad2, Gauge, Image as ImageIcon, LayoutGrid, Monitor, Music, Settings, Sparkles, Video
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { TranslationKey } from '../i18n'
@@ -13,12 +13,12 @@ export interface ShellModuleMeta {
   /** R151.1: per-module hue for the dashboard tile — carries identity so the
    *  eye can find a module by color before reading the label. Content-layer
    *  color only; the rail keeps the accent interaction semantics. */
-  tint: 'mint' | 'violet' | 'sky' | 'amber' | 'rose' | 'lime' | 'orange' | 'fuchsia' | 'cyan'
+  tint: 'mint' | 'violet' | 'sky' | 'amber' | 'rose' | 'lime' | 'orange' | 'fuchsia' | 'cyan' | 'teal'
 }
 
 /** Views that get a dashboard card — every module view except settings. */
 export const CARD_VIEWS = [
-  'workspace', 'effects', 'video', 'audio', 'model3d',
+  'workspace', 'effects', 'video', 'images', 'audio', 'model3d',
   'games', 'diagnostics', 'architecture', 'ai'
 ] as const
 export type CardView = (typeof CARD_VIEWS)[number]
@@ -30,6 +30,7 @@ export const MODULE_META: Record<CardView, ShellModuleMeta> = {
   workspace:    { view: 'workspace',    labelKey: 'nav.workspace',    descKey: 'dash.desc.workspace',    icon: Monitor,   tint: 'mint' },
   effects:      { view: 'effects',      labelKey: 'nav.effects',      descKey: 'dash.desc.effects',      icon: Sparkles,  tint: 'violet' },
   video:        { view: 'video',        labelKey: 'nav.video',        descKey: 'dash.desc.video',        icon: Video,     tint: 'sky' },
+  images:       { view: 'images',       labelKey: 'nav.images',       descKey: 'dash.desc.images',       icon: ImageIcon, tint: 'teal' },
   audio:        { view: 'audio',        labelKey: 'nav.audio',        descKey: 'dash.desc.audio',        icon: Music,     tint: 'amber' },
   model3d:      { view: 'model3d',      labelKey: 'nav.model3d',      descKey: 'dash.desc.model3d',      icon: Box,       tint: 'cyan' },
   games:        { view: 'games',        labelKey: 'nav.games',        descKey: 'dash.desc.games',        icon: Gamepad2,  tint: 'rose' },

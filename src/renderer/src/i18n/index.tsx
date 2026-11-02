@@ -407,6 +407,7 @@ const EN = {
   'dash.desc.workspace': 'Preview and effect control',
   'dash.desc.effects': 'CPU effect library',
   'dash.desc.video': 'Video studio and wall',
+  'dash.desc.images': 'Snip, annotate, OCR & AI',
   'dash.desc.audio': 'Audio workstation',
   'dash.desc.model3d': '3D model effects',
   'dash.desc.games': 'Built-in mini games',
@@ -1734,6 +1735,8 @@ const EN = {
   'model3d.ground': 'Ground',
   // Video Studio
   'nav.video': 'Video Studio',
+  // R333: Image Studio (snip / annotate / OCR left the Video Studio)
+  'nav.images': 'Image Studio',
   'video.eyebrow': 'Sampling · Trim · Annotate',
   'video.title': 'Video Studio',
   'video.mode.camera': 'Camera',
@@ -1786,16 +1789,8 @@ const EN = {
   // R75.3: region snip
   'video.snip.button': 'Region snip (S)',
   'video.snip.hint': 'Drag to select · Enter save · Esc cancel',
-  // R75.4/R75.5: snapshot editor
-  'video.editor.title': 'Edit capture',
-  'video.editor.copy': 'Copy to clipboard',
-  'video.editor.copied': 'Copied to clipboard',
-  'video.editor.copyFail': 'Copy failed',
-  'video.editor.saved': 'Saved (PNG downloaded)',
-  'video.editor.close': 'Close without saving',
-  'video.editor.loading': 'Loading editor…',
-  'video.editor.error': 'Editor failed to load — the capture was not modified',
-  'video.editor.hint': 'Annotate / crop / rotate, then Save to download. Close = keep original only.',
+  // R75.4/R75.5: snapshot editor — video.editor.* 死键（filerobot 弹窗时代残留，
+  // R77.1 后零消费）随 R333 清理删除。
   // R76: in-place annotator
   'video.annotate.tool.select': 'Select / move',
   'video.annotate.tool.rect': 'Rectangle',
@@ -1816,7 +1811,7 @@ const EN = {
   'video.annotate.saved': 'Saved (PNG downloaded)',
   'video.annotate.copied': 'Copied to clipboard',
   'video.annotate.copyFail': 'Copy failed',
-  'video.lastShotEdit': 'Edit',
+  // video.lastShotEdit 死键随 R333 清理删除（R77.1 删 lastShot 面板后的残留）。
   // R77: capture filmstrip
   'video.filmstrip.edit': 'Edit',
   'video.filmstrip.delete': 'Delete',
@@ -1961,6 +1956,32 @@ const EN = {
   'video.trim.quality.balanced': 'Balanced (WebM)',
   'video.trim.export': 'Export Clip',
   'video.trim.exporting': 'Exporting…',
+  // R333: Image Studio — frame sources, stage, global snip entry. The capture
+  // workflow itself keeps the existing video.photo / video.snip.* /
+  // video.annotate.* / video.filmstrip.* keys (shared components consume them).
+  'images.eyebrow': 'Snip · Annotate · OCR',
+  'images.mode.video': 'Video',
+  'images.mode.camera': 'Camera',
+  'images.mode.screen': 'Screen / Window',
+  'images.panel.source': 'Frame source',
+  'images.video.openFile': 'Open video file…',
+  'images.video.url': 'Video URL (mp4 / webm / m3u8)',
+  'images.video.urlPlaceholder': 'https://…/stream.m3u8 or .mp4, then Enter',
+  'images.video.urlLoad': 'Load',
+  'images.camera.device': 'Camera',
+  'images.camera.none': 'No camera found',
+  'images.camera.start': 'Start',
+  'images.camera.stop': 'Stop',
+  'images.screen.sources': 'Screen / window sources',
+  'images.screen.all': 'All',
+  'images.screen.screen': 'Screen',
+  'images.screen.window': 'Window',
+  'images.screen.loading': 'Loading sources…',
+  'images.screen.empty': 'No sources found',
+  'images.stage.empty': 'Pick a source — video file, URL, camera or screen',
+  'images.stage.notLive': 'Preview is not live',
+  'images.globalSnip': 'Start global snip',
+  'images.hotkeyHint': 'Global snip hotkey: {key}',
   // Diagnostics extras
   'diag.audioBass': 'Active — Bass {bass}%',
   'diag.displayPrimary': '(primary)',
@@ -2372,6 +2393,7 @@ const ZH: TranslationTable = {
   'dash.desc.workspace': '预览与效果控制',
   'dash.desc.effects': 'CPU 特效库',
   'dash.desc.video': '视频工作站与拼接墙',
+  'dash.desc.images': '截图、标注、OCR 与 AI 处理',
   'dash.desc.audio': '音频工作站',
   'dash.desc.model3d': '3D 模型灯效',
   'dash.desc.games': '内置迷你游戏合集',
@@ -3678,6 +3700,7 @@ const ZH: TranslationTable = {
   'model3d.ground': '地面',
   // 视频工作站
   'nav.video': '视频工作站',
+  'nav.images': '图片工作站',
   'video.eyebrow': '采样 · 剪辑 · 标注',
   'video.title': '视频工作站',
   'video.mode.camera': '摄像头',
@@ -3730,16 +3753,7 @@ const ZH: TranslationTable = {
   // R75.3: 局部截图
   'video.snip.button': '局部截图 (S)',
   'video.snip.hint': '拖拽框选 · Enter 保存 · Esc 取消',
-  // R75.4/R75.5: 截图编辑器
-  'video.editor.title': '编辑截图',
-  'video.editor.copy': '复制到剪贴板',
-  'video.editor.copied': '已复制到剪贴板',
-  'video.editor.copyFail': '复制失败',
-  'video.editor.saved': '已保存（PNG 已下载）',
-  'video.editor.close': '关闭（不保存）',
-  'video.editor.loading': '编辑器加载中…',
-  'video.editor.error': '编辑器加载失败——图片未被修改',
-  'video.editor.hint': '标注 / 裁剪 / 旋转后点保存下载；直接关闭则只保留原图。',
+  // R75.4/R75.5: 截图编辑器——video.editor.* 死键随 R333 清理删除（与 EN 表同步）。
   // R76: 就地标注器
   'video.annotate.tool.select': '选择 / 移动',
   'video.annotate.tool.rect': '矩形',
@@ -3760,7 +3774,7 @@ const ZH: TranslationTable = {
   'video.annotate.saved': '已保存（PNG 已下载）',
   'video.annotate.copied': '已复制到剪贴板',
   'video.annotate.copyFail': '复制失败',
-  'video.lastShotEdit': '编辑',
+  // video.lastShotEdit 死键随 R333 清理删除（与 EN 表同步）。
   // R77: 拍摄缓存胶片栏
   'video.filmstrip.edit': '编辑',
   'video.filmstrip.delete': '删除',
@@ -3905,6 +3919,32 @@ const ZH: TranslationTable = {
   'video.trim.quality.balanced': '均衡（WebM）',
   'video.trim.export': '导出片段',
   'video.trim.exporting': '导出中…',
+  // R333: 图片工作站——取帧源 / 舞台 / 全局截图入口。截图流程本身沿用
+  // video.photo / video.snip.* / video.annotate.* / video.filmstrip.* 既有键
+  // （共享组件仍消费），新键一律 images.* 域。
+  'images.eyebrow': '截图 · 标注 · OCR',
+  'images.mode.video': '视频',
+  'images.mode.camera': '相机',
+  'images.mode.screen': '屏幕 / 窗口',
+  'images.panel.source': '取帧源',
+  'images.video.openFile': '打开视频文件…',
+  'images.video.url': '视频 URL（mp4 / webm / m3u8）',
+  'images.video.urlPlaceholder': 'https://…/stream.m3u8 或 .mp4，回车加载',
+  'images.video.urlLoad': '加载',
+  'images.camera.device': '相机',
+  'images.camera.none': '未发现相机',
+  'images.camera.start': '开始',
+  'images.camera.stop': '停止',
+  'images.screen.sources': '屏幕 / 窗口源',
+  'images.screen.all': '全部',
+  'images.screen.screen': '屏幕',
+  'images.screen.window': '窗口',
+  'images.screen.loading': '正在加载源…',
+  'images.screen.empty': '没有可用源',
+  'images.stage.empty': '选择取帧源——视频文件、URL、相机或屏幕',
+  'images.stage.notLive': '预览未开始',
+  'images.globalSnip': '开始全局截图',
+  'images.hotkeyHint': '全局截图热键：{key}',
   // 诊断补充
   'diag.audioBass': '已激活 — 低频 {bass}%',
   'diag.displayPrimary': '（主屏）',

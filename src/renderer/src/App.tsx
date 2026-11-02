@@ -23,6 +23,8 @@ import { ShutdownTimerPanel } from './components/ShutdownTimerPanel'
 const MiniGamesView    = lazy(() => import('./components/MiniGamesView').then((m) => ({ default: m.MiniGamesView })))
 const AudioStudioView  = lazy(() => import('./components/AudioStudioView').then((m) => ({ default: m.AudioStudioView })))
 const VideoStudioView  = lazy(() => import('./components/VideoStudioView').then((m) => ({ default: m.VideoStudioView })))
+// R333: 图片工作站 — snip/annotate/OCR 编排自视频工作站迁出后独立成视图。
+const ImageStudioView  = lazy(() => import('./components/ImageStudioView').then((m) => ({ default: m.ImageStudioView })))
 const ArchitectureView = lazy(() => import('./components/ArchitectureView').then((m) => ({ default: m.ArchitectureView })))
 const AiLabView        = lazy(() => import('./components/AiLabView').then((m) => ({ default: m.AiLabView })))
 const WorkspaceView    = lazy(() => import('./components/WorkspaceView').then((m) => ({ default: m.WorkspaceView })))
@@ -793,6 +795,13 @@ export function App(): JSX.Element {
             <Suspense fallback={null}><VideoStudioView visible={activeView === 'video'} onReturnToVideo={() => setActiveView('video')} ambientFrameRef={videoAmbientFrameRef} ambientGrid={profile ? { columns: profile.sampling.columns, rows: profile.sampling.rows } : undefined} /></Suspense>
             {activeView === 'video' && <AiListenOverlay />}
           </div>
+        )}
+
+        {/* R333: 图片工作站 — 无 keep-alive（无持续播放媒体；胶片栏 mount 时
+            refreshCaptures 天然重取），切走即卸载并停相机/屏幕轨道（域 hook
+            unmount cleanup）。 */}
+        {activeView === 'images' && (
+          <Suspense fallback={null}><ImageStudioView /></Suspense>
         )}
 
         {MODEL3D_VIEW_ENABLED && activeView === 'model3d' && (

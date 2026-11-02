@@ -5991,6 +5991,37 @@ input[type='range'].audio-slider {
   padding: 7px 9px;
 }
 
+/* ── R333: 图片工作站（.images-* 家族）───────────────────────────────────
+   布局复刻 R78.4 的 video 版式：grid 两列 + stage min-width:0 链（grid/flex
+   子项默认 min-width:auto 会撑开列宽）；胶片栏 nowrap 由 CaptureFilmstrip
+   自带；AnnotateOverlay 绝对定位覆盖舞台（.images-stage 是 positioned
+   ancestor）。按钮/面板/舞台面复用 .video-* 通用类，不重复定义。 */
+.images-studio {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.images-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.images-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
 .video-inspector {
   display: flex;
   flex-direction: column;
@@ -7583,6 +7614,7 @@ input[type='range'].video-player-volume {
 .dash-tile-icon[data-tint='orange']   { color: var(--tint-orange); }
 .dash-tile-icon[data-tint='fuchsia']  { color: var(--tint-fuchsia); }
 .dash-tile-icon[data-tint='cyan']     { color: var(--tint-cyan); }
+.dash-tile-icon[data-tint='teal']     { color: var(--tint-teal); }
 .dash-tile:hover .dash-tile-icon { background: var(--border-hover); border-color: var(--border-hover); }
 .dash-tile-label {
   color: var(--text-primary);
