@@ -11,6 +11,8 @@ describe('resolveInitialView (R86 single-view)', () => {
     expect(resolveInitialView('audio', true)).toBe('audio')
     expect(resolveInitialView('settings', true)).toBe('settings')
     expect(resolveInitialView('dashboard', false)).toBe('dashboard')
+    // R333: the images view is always reachable — no feature flag gates it
+    expect(resolveInitialView('images', false)).toBe('images')
   })
   it('model3d falls back when disabled', () => {
     expect(resolveInitialView('model3d', false)).toBe('dashboard')

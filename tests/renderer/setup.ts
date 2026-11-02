@@ -107,6 +107,8 @@ vi.mock('lucide-react', () => {
     'LayoutGrid','Timer','Bot',
     // R183: agent error banner
     'TriangleAlert',
+    // R333 复扫: App 级路由用例切到 video 视图 → AiListenOverlay 图标
+    'BrainCircuit',
 
   ]
   for (const n of NAMES) icons[n] = catchAll

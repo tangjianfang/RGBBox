@@ -11,9 +11,10 @@ import Hls from 'hls.js'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CaptureSource } from '../../../shared/types'
 
-export type ImageSourceMode = 'video' | 'camera' | 'screen'
+// R333 复扫（R328 ①类处置）：仅本文件在用、零外部 importer → 收窄私有。
+type ImageSourceMode = 'video' | 'camera' | 'screen'
 
-export interface DeviceOption {
+interface DeviceOption {
   deviceId: string
   label: string
 }

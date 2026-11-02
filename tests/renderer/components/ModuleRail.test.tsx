@@ -29,6 +29,23 @@ describe('ModuleRail', () => {
     expect(container.querySelectorAll('.rail-item').length).toBe(12)
   })
 
+  // R333: rail display order is pinned — the images module sits right after
+  // video (the migration split them; the order is user-visible navigation
+  // structure, not an implementation detail). model3d enabled keeps images
+  // in place (flag only gates model3d itself, never neighbours).
+  it('renders modules in display order: images right after video, settings last', () => {
+    for (const model3dEnabled of [false, true]) {
+      const { container } = renderRail({ model3dEnabled })
+      const labels = [...container.querySelectorAll('.rail-item')]
+        .map((el) => el.getAttribute('aria-label'))
+      expect(labels).toEqual(model3dEnabled
+        ? ['nav.dashboard', 'nav.workspace', 'nav.effects', 'nav.video', 'nav.images',
+           'nav.audio', 'nav.model3d', 'nav.games', 'nav.diagnostics', 'nav.architecture', 'nav.ai', 'nav.settings']
+        : ['nav.dashboard', 'nav.workspace', 'nav.effects', 'nav.video', 'nav.images',
+           'nav.audio', 'nav.games', 'nav.diagnostics', 'nav.architecture', 'nav.ai', 'nav.settings'])
+    }
+  })
+
   it('marks the active view', () => {
     const { container } = renderRail()
     const first = container.querySelector('.rail-item') as HTMLElement // dashboard
