@@ -66,6 +66,18 @@ describe('SettingsView', () => {
     expect(section.querySelector('[data-cell="pinch:games"]')).toBeNull()
   })
 
+  it('R331: the 8-column macro matrix lives inside a scrollable region (never spills out of its card)', () => {
+    const { container } = render(<SettingsView {...makeProps()} />)
+    const region = container.querySelector('.macro-table-scroll')
+    expect(region).toBeTruthy()
+    expect(region!.getAttribute('role')).toBe('region')
+    // the table rides INSIDE the region — a direct card child can overflow the card
+    expect(region!.querySelector('.macro-table')).toBeTruthy()
+    expect(container.querySelector('.settings-group > .macro-table')).toBeNull()
+    // the full matrix moved along: 6 gestures × 7 scenes (games exempt)
+    expect(region!.querySelectorAll('select.macro-cell').length).toBe(42)
+  })
+
   it('runtime group: engine toggle, powerSaveBlock, autoLaunch callbacks fire', () => {
     const props = makeProps()
     const { container } = render(<SettingsView {...props} />)

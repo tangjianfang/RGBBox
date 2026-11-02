@@ -24,7 +24,7 @@ const PORT = 9281
 const BASELINE = 'docs/ui-baseline' // trusted, git-tracked (T3: never silently overwritten)
 const CURRENT = 'docs/ui-baseline/current' // gitignored re-run output
 const DIFFDIR = 'docs/ui-baseline/diff' // gitignored diff images
-const VIEWS = ['dashboard', 'workspace', 'effects', 'video', 'audio', 'games', 'diagnostics', 'architecture', 'ai']
+const VIEWS = ['dashboard', 'workspace', 'effects', 'video', 'audio', 'games', 'diagnostics', 'architecture', 'ai', 'settings']
 
 // Per-view diff-rate limits as a *fraction of pixels* allowed to differ.
 // Default 0.1%. R163.3: the former workspace/video 0.2% exceptions are
@@ -78,6 +78,37 @@ const VOLATILE_REGION_SELECTORS = [
   '.panel:has(.diag-crash-empty)',
 ]
 const CANVAS_MASK_ALL = true
+
+// R332: panel-level overflow probe — allowlist. Empty on purpose: an entry
+// must come with a written justification (why the spill is intentional).
+// Keys are view names, values are CSS selectors matched against .panel elems.
+const OVERFLOW_ALLOWLIST = {}
+
+/** R332: DOM assertion — nothing may horizontally escape the page or any
+ *  .panel card. The pixel diff only fires on views that CHANGED against a
+ *  baseline; a view that shipped broken from day one (R331: the settings
+ *  macro matrix floating outside its card) has nothing to diverge from.
+ *  Elements that clip or scroll on purpose (overflow-x auto/scroll/hidden/
+ *  clip) own their width and are exempt. Runs BEFORE the shot so an offender
+ *  voids the view in EVERY mode — a baseline must never be cut from an
+ *  overflowing layout. */
+async function overflowOffenders (page, view) {
+  return page.evaluate((allowSelectors) => {
+    const bad = []
+    const se = document.scrollingElement ?? document.documentElement
+    if (se.scrollWidth > se.clientWidth + 1) bad.push(`page +${se.scrollWidth - se.clientWidth}px`)
+    for (const el of document.querySelectorAll('.panel')) {
+      if (allowSelectors.some((sel) => el.matches(sel))) continue
+      const ox = getComputedStyle(el).overflowX
+      if (ox === 'auto' || ox === 'scroll' || ox === 'hidden' || ox === 'clip') continue
+      if (el.scrollWidth > el.clientWidth + 1) {
+        const cls = String(el.className || el.tagName.toLowerCase())
+        bad.push(`${cls.split(/\s+/).slice(0, 2).join('.')} +${el.scrollWidth - el.clientWidth}px`)
+      }
+    }
+    return bad
+  }, OVERFLOW_ALLOWLIST[view] ?? [])
+}
 
 // R322: pin the OS-level rendering knobs so the pixels depend on the build, not
 // the host. R321 bundled the fonts (WHICH glyphs); these fix HOW they rasterise:
@@ -213,9 +244,11 @@ async function screenshotWithRetry (page, path, view) {
   throw lastErr
 }
 
-// Rail order at runtime = ['dashboard', ...CARD_VIEWS] which matches VIEWS
-// exactly (model3d filtered out by the compile-time flag). The aria-labels
-// are translated text, so index-based clicking is the stable handle.
+// Rail order at runtime = ['dashboard', ...CARD_VIEWS] followed by the pinned
+// settings entry (ModuleRail renders .rail-settings after the rail-spacer),
+// which matches VIEWS exactly (model3d filtered out by the compile-time flag;
+// R332 appended settings as index 9). The aria-labels are translated text, so
+// index-based clicking is the stable handle.
 const shotDir = mode === 'update' ? BASELINE : CURRENT
 let ok = 0
 for (let i = 0; i < VIEWS.length; i++) {
@@ -227,6 +260,12 @@ for (let i = 0; i < VIEWS.length; i++) {
     // 比对时露出未遮罩的行(PID 每启动必变)。沉淀到表满员再截图+抓 rect。
     if (view === 'diagnostics') await sleep(2200)
     await page.evaluate(() => document.fonts.ready) // R322: the bundled fonts (R321) must be applied before the shot
+    // R332: gate the layout before spending a shot on it (see overflowOffenders).
+    const offenders = await overflowOffenders(page, view)
+    if (offenders.length > 0) {
+      console.error(`FAIL  ${view}: content escapes its container — ${offenders.join('; ')}`)
+      continue
+    }
     await screenshotWithRetry(page, `${shotDir}/${view}.png`, view)
     // Canvas rects in viewport coords (DPR-independent: the shot is CSS-sized).
     // Recorded for every view; consumed only where CANVAS_MASK says so.
@@ -279,6 +318,13 @@ for (const view of VIEWS) {
   const curP = `${CURRENT}/${view}.png`
   if (!existsSync(baseP)) {
     console.log(`${view.padEnd(12)}  —           —          MISSING BASELINE (run --update-baseline)`)
+    gateOk = false
+    continue
+  }
+  // R332: a view the capture loop voided (overflow probe / shot failure) has
+  // no current shot — fail the row cleanly instead of throwing on read.
+  if (!existsSync(curP)) {
+    console.log(`${view.padEnd(12)}  —           —          NO CAPTURE (view failed above)`)
     gateOk = false
     continue
   }

@@ -259,36 +259,41 @@ export function SettingsView(props: SettingsViewProps) {
               </button>
             </div>
           )}
-          <table className="macro-table">
-            <thead>
-              <tr>
-                <th>{t('settings.macro.col.gesture')}</th>
-                {MACRO_SCENES.map((s) => <th key={s}>{s}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {GESTURES.map((g) => {
-                const label = USER_VOCAB.find((w) => w.id === g)
-                return (
-                  <tr key={g}>
-                    <th scope="row">{label ? label[L] : g}</th>
-                    {MACRO_SCENES.map((s) => (
-                      <td key={s}>
-                        <select
-                          className="settings-select macro-cell"
-                          data-cell={`${g}:${s}`}
-                          value={macroMap[g][s].action}
-                          onChange={(e) => editMacroCell(g, s, e.target.value)}
-                        >
-                          {ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
-                        </select>
-                      </td>
-                    ))}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          {/* R331: the 8-column matrix is wider than any settings card — give it
+              a keyboard-reachable horizontal scroll region instead of letting
+              the table spill out of the card. */}
+          <div className="macro-table-scroll" role="region" aria-label={t('settings.macro.tableRegion')} tabIndex={0}>
+            <table className="macro-table">
+              <thead>
+                <tr>
+                  <th>{t('settings.macro.col.gesture')}</th>
+                  {MACRO_SCENES.map((s) => <th key={s}>{s}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {GESTURES.map((g) => {
+                  const label = USER_VOCAB.find((w) => w.id === g)
+                  return (
+                    <tr key={g}>
+                      <th scope="row">{label ? label[L] : g}</th>
+                      {MACRO_SCENES.map((s) => (
+                        <td key={s}>
+                          <select
+                            className="settings-select macro-cell"
+                            data-cell={`${g}:${s}`}
+                            value={macroMap[g][s].action}
+                            onChange={(e) => editMacroCell(g, s, e.target.value)}
+                          >
+                            {ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+                          </select>
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </section>
       </div>
     </div>

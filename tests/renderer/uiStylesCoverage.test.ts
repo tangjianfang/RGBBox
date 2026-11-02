@@ -27,6 +27,14 @@ const REQUIRED_CLASSES: Record<string, string[]> = {
     'vision-first-hint', 'vision-first-hint-icon', 'vision-first-hint-body',
     'vision-first-hint-open', 'vision-first-hint-dismiss',
   ],
+  // R331 registers the R306 macro matrix family — the overflow fix added
+  // macro-table-scroll, and the whole family joins the guard from now on.
+  // (macro-cell is styled only via the element-qualified compound selector
+  // `.macro-table select.macro-cell`, which hasClassRule's leading boundary
+  // deliberately does not credit — left out rather than bending the matcher.)
+  'settings/SettingsView gesture macro table (R306, overflow fixed in R331)': [
+    'macro-table', 'macro-table-scroll', 'macro-conflict-list', 'macro-preview',
+  ],
 }
 
 describe('ui styles coverage guard (R319)', () => {
