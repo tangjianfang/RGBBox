@@ -31,11 +31,11 @@ await page.waitForSelector('.module-rail', { timeout: 15000 })
 const shot = (name) => page.screenshot({ path: `${ART}/smoke-app-${name}.png` }).catch(() => undefined)
 
 // ── 1. 导航：9 个 rail 项全部可达 ──
-console.log('\n[导航] 9 视图可达')
+console.log('\n[导航] 10 视图可达')
 const railItems = await page.locator('.module-rail .rail-item').all()
 check('nav-01', `rail 项数量 ≥8`, railItems.length >= 8, `got ${railItems.length}`)
-const VIEW_TITLES = ['仪表盘', '工作区', '效果库', '视频', '音频', '迷你游戏', '诊断', '架构', 'AI']
-for (let i = 0; i < Math.min(railItems.length, 9); i++) {
+const VIEW_TITLES = ['仪表盘', '工作区', '效果库', '视频', '图片', '音频', '迷你游戏', '诊断', '架构', 'AI']
+for (let i = 0; i < Math.min(railItems.length, 10); i++) {
   let ok = null; let extra = ''
   try { await railItems[i].click(); await sleep(450); ok = true } catch (e) { ok = false; extra = String(e).slice(0, 80) }
   check(`nav-${String(i + 2).padStart(2, '0')}`, `视图 ${VIEW_TITLES[i] ?? i} 可进入`, ok, extra)
@@ -45,7 +45,7 @@ await shot('last-view')
 // ── 1b. R321 字体随包：界面文字必须用随包字体渲染,不得落到宿主系统字体 ──
 // 删掉 @font-face / 打包漏文件 / 样式表手写系统字体栈,都会让这里变红。
 console.log('\n[字体] 渲染使用随包字体(不依赖系统)')
-await page.locator('.module-rail .rail-item').nth(4).click() // 音频视图:有等宽读数 .audio-value
+await page.locator('.module-rail .rail-item').nth(5).click() // 音频视图:有等宽读数 .audio-value(R335:rail 第 6 项——R333 插入 images 后错位修正)
 await sleep(700)
 await page.evaluate(() => document.fonts.ready)
 const fontSamples = await probeFonts(page, [

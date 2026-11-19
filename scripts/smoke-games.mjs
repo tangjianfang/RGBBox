@@ -33,7 +33,7 @@ await page.evaluate(() => {
 await page.reload()
 await page.waitForSelector('.module-rail', { timeout: 15000 })
 await sleep(700)
-await page.locator('.module-rail .rail-item').nth(5).click()
+await page.locator('.module-rail .rail-item').nth(6).click()
 await sleep(900)
 
 const shot = (n) => page.screenshot({ path: `${ART}/smoke-games-${n}.png` }).catch(() => undefined)
@@ -73,7 +73,7 @@ await sleep(700)
 const p3 = await probe()
 check('sv-05', '中途回 hub 结算为 lost', p3?.phase === 'lost', `phase=${p3?.phase}`)
 await shot('survival')
-await page.locator('.module-rail .rail-item').nth(5).click(); await sleep(600)
+await page.locator('.module-rail .rail-item').nth(6).click(); await sleep(600)
 
 // ═══ 游戏 2：TD（开局→波次推进）═══
 console.log('\n[TD] 开局环')
@@ -98,7 +98,7 @@ check('td-02', 'TD 点击建塔后状态推进(波次/敌数文本变化或塔�
 await shot('td')
 await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => /返回|Back/.test((x.getAttribute('aria-label') || '') + (x.textContent || ''))); if (b) b.click() }).catch(() => undefined)
 await sleep(500)
-await page.locator('.module-rail .rail-item').nth(5).click(); await sleep(500)
+await page.locator('.module-rail .rail-item').nth(6).click(); await sleep(500)
 
 // ═══ 游戏 3：Tetris（开局→键盘命令环——R221.7② won 结算的运行面）═══
 console.log('\n[Tetris] 命令环')
@@ -112,7 +112,7 @@ check('te-01', 'Tetris 开局+键盘命令不炸(画布存活)', teCanvasAlive)
 await shot('tetris')
 await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => /返回|Back/.test((x.getAttribute('aria-label') || '') + (x.textContent || ''))); if (b) b.click() }).catch(() => undefined)
 await sleep(500)
-await page.locator('.module-rail .rail-item').nth(5).click(); await sleep(500)
+await page.locator('.module-rail .rail-item').nth(6).click(); await sleep(500)
 
 // ═══ 游戏 4：Slash（开局→方向斩击）═══
 console.log('\n[Slash] 斩击环')
