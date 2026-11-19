@@ -1676,6 +1676,10 @@ const EN = {
   'video.player.progress': 'Playback position',
   'video.player.back10': 'Back 10 seconds',
   'video.player.fwd10': 'Forward 10 seconds',
+  // R334: episode navigation + auto-advance toggle
+  'video.player.prevEp': 'Previous episode',
+  'video.player.nextEp': 'Next episode',
+  'video.player.autoNext': 'Autoplay next',
   'video.player.pause': 'Pause',
   'video.player.mute': 'Mute',
   'video.player.unmute': 'Unmute',
@@ -3642,6 +3646,10 @@ const ZH: TranslationTable = {
   'video.player.progress': '播放进度',
   'video.player.back10': '快退 10 秒',
   'video.player.fwd10': '快进 10 秒',
+  // R334：上一集/下一集 + 自动连播开关
+  'video.player.prevEp': '上一集',
+  'video.player.nextEp': '下一集',
+  'video.player.autoNext': '自动连播',
   'video.player.pause': '暂停',
   'video.player.mute': '静音',
   'video.player.unmute': '取消静音',

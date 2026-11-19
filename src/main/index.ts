@@ -1505,6 +1505,9 @@ function registerIpc(): void {
     return result.filePaths.map(p => ({ path: p, name: basename(p) }))
   })
 
+  // R334: 递归扫描 + 相对路径分组——folder = '根名/子夹/…'（'/' 分层），
+  // 渲染层按此建树展示与连播；旧数据（无 '/'）= 深度 1 根节点，兼容。
+  // 条目按（相对目录、文件名）数字感知排序，树形列表「所见即所播」。
   ipcMain.handle(ipcChannels.videoOpenFolder, async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: 'Add Video Folder',
@@ -1512,12 +1515,30 @@ function registerIpc(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return []
     const folderPath = result.filePaths[0]
-    const folderName = basename(folderPath)
-    let entries: string[] = []
-    try { entries = await readdir(folderPath) } catch { return [] }
-    return entries
-      .filter(f => /\.(mp4|webm|mkv|mov|avi|flv|ts|m4v|wmv)$/i.test(f))
-      .map(f => ({ path: join(folderPath, f), name: f, folder: folderName }))
+    const rootName = basename(folderPath)
+    const videoRe = /\.(mp4|webm|mkv|mov|avi|flv|ts|m4v|wmv)$/i
+    const collected: Array<{ path: string; name: string; folder: string }> = []
+    const walk = async (rel: string): Promise<void> => {
+      const dir = rel ? join(folderPath, rel) : folderPath
+      let dirents: Array<import('node:fs').Dirent> = []
+      try { dirents = await readdir(dir, { withFileTypes: true }) } catch { return }
+      for (const d of dirents) {
+        if (d.isDirectory()) {
+          await walk(rel ? `${rel}/${d.name}` : d.name)
+        } else if (videoRe.test(d.name)) {
+          collected.push({
+            path: join(dir, d.name),
+            name: d.name,
+            folder: rel ? `${rootName}/${rel}` : rootName,
+          })
+        }
+      }
+    }
+    await walk('')
+    const numeric = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+    collected.sort((a, b) =>
+      numeric.compare(a.folder, b.folder) || numeric.compare(a.name, b.name))
+    return collected
   })
 
   // ── System display list ────────────────────────────────────────────────────

@@ -18,8 +18,9 @@
  */
 
 import {
-  AppWindow, Camera, CameraOff, ChevronDown, ChevronRight, Circle, Download, FileText,
-  Film, FlipHorizontal, FolderOpen, Link as LinkIcon, Maximize2,
+  AppWindow, Camera, CameraOff, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight,
+  Circle, Download, FileText,
+  Film, FlipHorizontal, Folder, FolderOpen, Link as LinkIcon, ListVideo, Maximize2,
   Minimize2, Monitor, MonitorPlay, Pause, Play, Plus, RefreshCw, Scissors, SkipBack,
   SkipForward, SlidersHorizontal, Sparkles, Square, Trash2, Video, Volume2, VolumeX,
 } from 'lucide-react'
@@ -35,6 +36,7 @@ import { formatMediaTime } from '../../../shared/timeFormat'
 import { usePreviewZoom } from './video/usePreviewZoom'
 import { PreviewZoomBar } from './video/PreviewZoomBar'
 import { buildPathEntries, ingestRestoredProgress, shouldOfferResume, type ProgressEntry } from './video/playlistProgress'
+import { buildPlaylistTree, countTreeItems, flattenTreeOrder, stepPlayableIndex, type PlaylistTreeNode } from './video/playlistSequence'
 import { describeMediaError, formatMediaFailure } from '../domain/mediaError'
 import { MiniPlayerCard } from './video/MiniPlayerCard'
 import { ENHANCE_PRESETS, type EnhancePresetId } from './video/audioEnhance'
@@ -274,6 +276,21 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
   const [playerName, setPlayerName] = useState<string>('')
   const [playerRate, setPlayerRate] = useState<number>(1)
   const [playerLoop, setPlayerLoop] = useState<boolean>(false)
+  // R334: 自动连播开关（ended → 播放序列下一集，跨文件夹接续）。默认开，
+  // 持久化 'rgbbox:videoAutoNext'（'off' = 关，其余/无值 = 开）。
+  const [autoNext, setAutoNext] = useState<boolean>(() => {
+    try { return localStorage.getItem('rgbbox:videoAutoNext') !== 'off' } catch { return true }
+  })
+  const toggleAutoNext = useCallback(() => {
+    setAutoNext((v) => {
+      const next = !v
+      try { localStorage.setItem('rgbbox:videoAutoNext', next ? 'on' : 'off') } catch { /* storage unavailable */ }
+      return next
+    })
+  }, [])
+  // R334: 换片后自动起播标记——选中即播 / 连播推进在此置位，新 src 落到
+  // <video> 后由起播 effect 消费（见 playerUrl/usingHls 依赖的 effect）。
+  const autoPlayRef = useRef(false)
   const [streamUrl, setStreamUrl] = useState<string>('')
   const [usingHls, setUsingHls] = useState<boolean>(false)
   const hlsRef = useRef<Hls | null>(null)
@@ -302,6 +319,9 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
   // bogus "0:00" (an Infinity max would fall back to the slider default).
   const [playerLive, setPlayerLive] = useState(false)
   const controlsHideTimerRef = useRef<number | null>(null)
+  // R334: 全屏鼠标活动 → 顶部显示正在播放文件名，5s 无活动自动隐藏。
+  const [playerTitleVisible, setPlayerTitleVisible] = useState(false)
+  const titleTimerRef = useRef<number | null>(null)
   // R71.6: suspends timeupdate write-back while the user drags the seek slider.
   const seekDraggingRef = useRef(false)
   const playerWrapRef = useRef<HTMLDivElement | null>(null)
@@ -654,6 +674,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     clearPlayerSource()
     setStreamError(null)
     setCurrentVideoIndex(-1)
+    autoPlayRef.current = true // R334: 选中文件即播
     setPlayerUrl(URL.createObjectURL(file))
     setPlayerName(file.name)
   }, [clearPlayerSource])
@@ -692,6 +713,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
       setUsingHls(true)
     } else {
       // Direct URL (mp4/webm/ogg…) or platforms with native HLS support.
+      autoPlayRef.current = true // R334: 选中即播（HLS 分支本就 el.play()）
       setPlayerUrl(url)
     }
   }, [clearPlayerSource])
@@ -778,6 +800,9 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
       // R91.1: finished — drop this item's resume point so the next open starts fresh
       const id = activeItemIdRef.current
       if (id && progressRef.current[id]) { delete progressRef.current[id]; persistProgress() }
+      // R334: 自动连播——沿播放序列推进下一可播条目（分组显示序拉平，
+      // 文件夹播完自然接续下一个文件夹；开关关闭时停在片尾）。
+      if (autoNext) goToAdjacentRef.current(1, { autoAdvance: true })
     }
     const onTimeUpdate = () => {
       // R71.6: while the user is dragging the seek slider, its own onChange
@@ -815,7 +840,16 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     }
     // Re-attach when the video source changes so the element ref is fresh
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerUrl, usingHls, persistProgress, noteProgress])
+  }, [playerUrl, usingHls, autoNext, persistProgress, noteProgress])
+
+  // R334: 选中即播 / 连播换片——新源落到 <video> 后自动起播（autoPlayRef 在
+  // playVideoItem / onPlayerFile / loadStreamUrl 置位，此处消费后即清）。
+  useEffect(() => {
+    if (!autoPlayRef.current) return
+    if (!playerUrl && !usingHls) return
+    autoPlayRef.current = false
+    playerRef.current?.play().catch(() => { /* autoplay may defer */ })
+  }, [playerUrl, usingHls])
 
   // Auto-hide player controls overlay after inactivity
   const resetControlsTimer = useCallback(() => {
@@ -838,6 +872,19 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
       resetControlsTimer()
     }
   }, [playerPlaying, resetControlsTimer])
+
+  // R334: 全屏鼠标活动 → 显示正在播放文件名，5s 无活动自动隐藏；离开全屏
+  // 即隐藏。`fullscreen` 状态由 fullscreenchange 驱动（播放器 wrap 或整视图
+  // 原生全屏都会置真；CSS 兜底全屏同享）。
+  const revealPlayerTitle = useCallback(() => {
+    if (!document.fullscreenElement && !fullscreen) return
+    setPlayerTitleVisible(true)
+    if (titleTimerRef.current) window.clearTimeout(titleTimerRef.current)
+    titleTimerRef.current = window.setTimeout(() => setPlayerTitleVisible(false), 5000)
+  }, [fullscreen])
+  useEffect(() => {
+    if (!fullscreen) setPlayerTitleVisible(false)
+  }, [fullscreen])
 
   // Subtitle cue activation
   useEffect(() => {
@@ -902,6 +949,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     }
     if (el) el.currentTime = 0
     setResumePrompt(null)
+    // R334: 选中即播语义——二选一之后无论继续还是从头都直接起播。
+    el?.play().catch(() => { /* autoplay may defer */ })
   }, [resumePrompt, persistProgress])
 
   // Player fullscreen (just the video wrapper)
@@ -966,6 +1015,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
 
     if (controlsHideTimerRef.current) window.clearTimeout(controlsHideTimerRef.current)
     if (editorToastTimerRef.current) window.clearTimeout(editorToastTimerRef.current)
+    // R334: 全屏文件名 chip 的隐藏定时器
+    if (titleTimerRef.current) window.clearTimeout(titleTimerRef.current)
   }, [])
 
   // Built-in fullscreen via the native Fullscreen API on the studio container.
@@ -1014,17 +1065,25 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     }).catch(() => {})
   }, [addVideoFromPaths])
 
-  const playVideoItem = useCallback((index: number) => {
+  /** R334: opts.autoAdvance = 连播推进（静默续播不弹提示条 + 自动起播）；
+   * opts.autoplay = false 显式保持暂停（R94 启动恢复专用——恢复 ≠ 选中）。
+   * 默认（手动选中）：选中即播；唯一例外是带续播进度的条目——等用户在
+   * 提示条上二选一后再起播。 */
+  const playVideoItem = useCallback((index: number, opts?: { autoAdvance?: boolean; autoplay?: boolean }) => {
     const item = videoPlaylist[index]
     if (!item?.url) return
     clearPlayerSource()
     // R91.1: offer to resume when the stored position clears the thresholds
     activeItemIdRef.current = item.id
     const prog = progressRef.current[item.id]
-    if (shouldOfferResume(prog) && prog) {
-      setResumePrompt({ id: item.id, at: prog.t })
-      pendingSeekRef.current = prog.t
+    const resumable = shouldOfferResume(prog) && !!prog
+    if (resumable) pendingSeekRef.current = prog!.t
+    if (resumable && opts?.autoAdvance !== true) {
+      setResumePrompt({ id: item.id, at: prog!.t })
     }
+    // R334: 起播判定——连播推进或无续播悬念的选中即播；带提示条的选中与
+    // 显式 autoplay:false（R94 恢复）保持暂停。
+    autoPlayRef.current = opts?.autoplay !== false && !(resumable && opts?.autoAdvance !== true)
     setPlayerUrl(item.url)
     setPlayerName(item.name)
     setCurrentVideoIndex(index)
@@ -1047,18 +1106,20 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     }
   }, [currentVideoIndex, clearPlayerSource])
 
+  // R334: 删除分组级联子孙（树路径前缀 'A' 覆盖 'A/B'、'A/B/C'）。
   const removeVideoGroup = useCallback((groupName: string) => {
+    const inSubtree = (g: string) => g === groupName || g.startsWith(`${groupName}/`)
     const playingItem = currentVideoIndex >= 0 ? videoPlaylist[currentVideoIndex] : null
-    const playingInGroup = playingItem?.group === groupName
+    const playingInGroup = !!playingItem && inSubtree(playingItem.group)
     // R70.3: shift the playing index down by however many removed items sat
     // before it; playback only stops when the playing item itself is removed.
     // (The old version left a stale index that could point past the end of
     // the shrunken list, silently breaking the highlight and removeVideoItem.)
     const removedBefore = playingItem && !playingInGroup
-      ? videoPlaylist.slice(0, currentVideoIndex).filter(v => v.group === groupName).length
+      ? videoPlaylist.slice(0, currentVideoIndex).filter(v => inSubtree(v.group)).length
       : 0
-    setVideoPlaylist(prev => prev.filter(v => v.group !== groupName))
-    setVideoGroups(prev => prev.filter(g => g.name !== groupName))
+    setVideoPlaylist(prev => prev.filter(v => !inSubtree(v.group)))
+    setVideoGroups(prev => prev.filter(g => !inSubtree(g.name)))
     if (playingInGroup) {
       clearPlayerSource()
       setCurrentVideoIndex(-1)
@@ -1067,9 +1128,62 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     }
   }, [currentVideoIndex, videoPlaylist, clearPlayerSource])
 
+  // R334: upsert——恢复路径在缓存非空时不补齐分组表（既有语义），树节点
+  // 的折叠态查询可能落空；此处对缺失分组直接补「折叠」条目，保证任何
+  // 渲染出来的节点都可折叠。
   const toggleVideoGroupCollapse = useCallback((groupName: string) => {
-    setVideoGroups(prev => prev.map(g => g.name === groupName ? { ...g, collapsed: !g.collapsed } : g))
+    setVideoGroups(prev => {
+      if (!prev.some(g => g.name === groupName)) return [...prev, { name: groupName, collapsed: true }]
+      return prev.map(g => g.name === groupName ? { ...g, collapsed: !g.collapsed } : g)
+    })
   }, [])
+
+  // ── R334: 播放列表树 + 播放序列导航（树形展示 / 自动连播 / 上下集共用） ──
+  // 树 = 条目 group 按 '/' 切层（主进程递归扫描产出 '根/子夹' 路径）；序列 =
+  // 树先序拉平（节点直接条目 → 子节点），文件夹节点播完自然接续下一个
+  // 文件夹的第一个条目；missing / 无 url 条目被跳过（R317d 不阻断链）。
+  const playlistTree = useMemo(() => buildPlaylistTree(videoPlaylist), [videoPlaylist])
+  const playbackOrder = useMemo(() => flattenTreeOrder(playlistTree), [playlistTree])
+  const isPlayableIndex = useCallback(
+    (i: number) => !!videoPlaylist[i]?.url && !videoPlaylist[i].missing,
+    [videoPlaylist],
+  )
+  const nextPlayableIndex = stepPlayableIndex(playbackOrder, currentVideoIndex, 1, isPlayableIndex)
+  const prevPlayableIndex = stepPlayableIndex(playbackOrder, currentVideoIndex, -1, isPlayableIndex)
+  const goToAdjacent = useCallback((dir: 1 | -1, opts?: { autoAdvance?: boolean }) => {
+    const idx = stepPlayableIndex(playbackOrder, currentVideoIndex, dir, isPlayableIndex)
+    if (idx >= 0) playVideoItem(idx, opts)
+  }, [playbackOrder, currentVideoIndex, isPlayableIndex, playVideoItem])
+  // onEnded 的监听 effect 按源绑定（不随序列/索引重绑），经 ref 取最新导航。
+  const goToAdjacentRef = useRef(goToAdjacent)
+  useEffect(() => { goToAdjacentRef.current = goToAdjacent }, [goToAdjacent])
+
+  // ── R334: 打开播放列表自动定位正在播放条目 ─────────────────────────────────
+  // 闭合→展开瞬间：展开其所在分组并滚动到可见（居中）。仅打开瞬间定位，
+  // 列表开着时切集不抢用户的滚动位。
+  const playlistScrollRef = useRef<HTMLDivElement | null>(null)
+  const prevPlaylistVisibleRef = useRef(playlistVisible)
+  useEffect(() => {
+    const wasVisible = prevPlaylistVisibleRef.current
+    prevPlaylistVisibleRef.current = playlistVisible
+    if (!playlistVisible || wasVisible || currentVideoIndex < 0) return
+    const item = playlistRef.current[currentVideoIndex]
+    if (!item) return
+    // 展开条目所在分组及其全部祖先（树路径前缀），条目才可见
+    setVideoGroups(prev => prev.map(g => (
+      g.collapsed && (item.group === g.name || item.group.startsWith(`${g.name}/`))
+        ? { ...g, collapsed: false }
+        : g
+    )))
+    const locate = () => {
+      playlistScrollRef.current
+        ?.querySelector('.audio-track-item.active')
+        ?.scrollIntoView({ block: 'center' })
+    }
+    // setState 更新器在 effect 体之后才执行（React 批处理）——统一等两帧
+    // 再定位：展开提交与「本就展开」两种情形都被覆盖。
+    requestAnimationFrame(() => requestAnimationFrame(locate))
+  }, [playlistVisible, currentVideoIndex])
 
   // ── Trim / Clip ────────────────────────────────────────────────────────────
   const setTrimPoint = useCallback((which: 'start' | 'end') => {
@@ -1216,7 +1330,7 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     const idx = videoPlaylist.findIndex((v) => v.id === saved)
     // R317d(REVIEW_2026-10-24 R-2): 失效条目（另一台机器路径不可达）跳过自动
     // 恢复——旧行为挂载即加载死链 =「打开视频工作站即报错」；数据保留在列表。
-    if (idx >= 0 && !videoPlaylist[idx].missing) playVideoItem(idx)
+    if (idx >= 0 && !videoPlaylist[idx].missing) playVideoItem(idx, { autoplay: false })
   }, [mode, videoIsRestored, playerUrl, usingHls, videoPlaylist, playVideoItem])
 
   // Restore video playlist from main process on mount
@@ -1241,17 +1355,48 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
     return () => { cancelled = true }
   }, [])
 
-  const groupedVideoPlaylist = useMemo(() => {
-    const grouped = new Map<string, VideoItem[]>()
-    videoPlaylist.forEach(v => {
-      const list = grouped.get(v.group) || []
-      list.push(v)
-      grouped.set(v.group, list)
-    })
-    return grouped
-  }, [videoPlaylist])
+  // R334: groupedVideoPlaylist（平铺分组 Map）被 playlistTree 取代（树形渲染）。
 
   const filteredSources = sources.filter((s) => sourceFilter === 'all' || s.type === sourceFilter)
+
+  // R334: 树形播放列表渲染（递归；层级缩进按深度，折叠态按节点完整路径
+  // 存于 videoGroups）。构建器保证每个节点子树至少一个条目，无空节点分支。
+  const renderTreeNode = (node: PlaylistTreeNode, depth: number): JSX.Element => {
+    const collapsed = videoGroups.find(g => g.name === node.path)?.collapsed ?? false
+    const indent = { paddingLeft: depth * 12 }
+    return (
+      <div key={node.path} className="video-playlist-node">
+        <div className="audio-group-header" style={indent} onClick={() => toggleVideoGroupCollapse(node.path)}>
+          {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+          <Folder size={11} />
+          <span className="audio-group-name">{node.name}</span>
+          <span className="audio-group-count">{countTreeItems(node)}</span>
+          <button type="button" className="audio-btn-icon" onClick={(e) => { e.stopPropagation(); removeVideoGroup(node.path) }} title={t('video.playlist.removeGroup')}>
+            <Trash2 size={11} />
+          </button>
+        </div>
+        {!collapsed && (
+          <>
+            {node.indices.map(idx => {
+              const item = videoPlaylist[idx]
+              return (
+                <div
+                  key={item.id}
+                  className={`audio-track-item ${idx === currentVideoIndex ? 'active' : ''}`}
+                  style={indent}
+                  onClick={() => { playVideoItem(idx); setMode('player') }}
+                >
+                  <span className="audio-track-name">{item.name}</span>
+                  <button type="button" className="audio-btn-icon" onClick={(e) => { e.stopPropagation(); removeVideoItem(idx) }}><Trash2 size={11} /></button>
+                </div>
+              )
+            })}
+            {node.children.map(c => renderTreeNode(c, depth + 1))}
+          </>
+        )}
+      </div>
+    )
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1282,8 +1427,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
             <div
               ref={playerWrapRef}
               className="video-player-wrap"
-              onMouseMove={resetControlsTimer}
-              onMouseEnter={resetControlsTimer}
+              onMouseMove={() => { resetControlsTimer(); revealPlayerTitle() }}
+              onMouseEnter={() => { resetControlsTimer(); revealPlayerTitle() }}
               onClick={togglePlayerPlay}
             >
               <div className="video-zoom-layer" style={playerZoom.layerStyle} onDoubleClick={playerZoom.reset}>
@@ -1473,6 +1618,11 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
                 </div>
               )}
 
+              {/* R334: 全屏鼠标活动时显示正在播放文件名（5s 自动隐藏） */}
+              {playerTitleVisible && playerName && (
+                <div className="video-player-title-chip" aria-hidden="true">{playerName}</div>
+              )}
+
               {/* R75.1: zoom control bar — R94: hides with the player controls
                   (same 3s inactivity / mouse-move cadence) instead of pinning
                   over the video forever. */}
@@ -1540,6 +1690,18 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
                     {/* R161.2: aria-label on every icon-only control; loop also
                         exposes aria-pressed; the ±10s titles were hardcoded
                         English — localized with the same keys. */}
+                    {/* R334: 上一集（与 ±10s 的 SkipBack/SkipForward 用
+                        ChevronsLeft/Right 区分图标语义）。 */}
+                    <button
+                      type="button"
+                      className="video-player-btn"
+                      onClick={() => goToAdjacent(-1)}
+                      disabled={prevPlayableIndex < 0}
+                      title={t('video.player.prevEp')}
+                      aria-label={t('video.player.prevEp')}
+                    >
+                      <ChevronsLeft size={14} />
+                    </button>
                     <button type="button" className="video-player-btn" onClick={() => playerSeek(Math.max(0, playerCurrentTime - 10))} title={t('video.player.back10')} aria-label={t('video.player.back10')}>
                       <SkipBack size={14} />
                     </button>
@@ -1548,6 +1710,28 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
                     </button>
                     <button type="button" className="video-player-btn" onClick={() => playerSeek(Math.min(playerDuration, playerCurrentTime + 10))} title={t('video.player.fwd10')} aria-label={t('video.player.fwd10')}>
                       <SkipForward size={14} />
+                    </button>
+                    {/* R334: 下一集 */}
+                    <button
+                      type="button"
+                      className="video-player-btn"
+                      onClick={() => goToAdjacent(1)}
+                      disabled={nextPlayableIndex < 0}
+                      title={t('video.player.nextEp')}
+                      aria-label={t('video.player.nextEp')}
+                    >
+                      <ChevronsRight size={14} />
+                    </button>
+                    {/* R334: 自动连播开关（ended 沿播放序列推进下一集） */}
+                    <button
+                      type="button"
+                      className={`video-player-btn${autoNext ? ' active' : ''}`}
+                      onClick={toggleAutoNext}
+                      title={t('video.player.autoNext')}
+                      aria-label={t('video.player.autoNext')}
+                      aria-pressed={autoNext}
+                    >
+                      <ListVideo size={14} />
                     </button>
                     <button
                       type="button"
@@ -1851,8 +2035,8 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
 
           {mode === 'player' && (
             <>
-              {/* Video Playlist */}
-              <section className="video-panel">
+              {/* Video Playlist — R334: 树形展示 + 面板占 inspector 主高度 */}
+              <section className="video-panel video-playlist-panel">
                 <div className="video-row" style={{ alignItems: 'center' }}>
                   <button
                     type="button"
@@ -1869,37 +2053,9 @@ export function VideoStudioView({ visible = true, onReturnToVideo, ambientFrameR
                   <button type="button" className="video-btn video-btn-icon" onClick={handleAddVideoFolder} title={t('video.playlist.addFolder')} aria-label={t('video.playlist.addFolder')}><FolderOpen size={13} /></button>
                 </div>
                 {playlistVisible && (
-                  <div className="video-playlist-scroll" style={{ maxHeight: 220, overflowY: 'auto' }}>
+                  <div ref={playlistScrollRef} className="video-playlist-scroll">
                     {videoPlaylist.length === 0 && <p className="video-hint">{t('video.playlist.empty')}</p>}
-                    {videoGroups.map(group => {
-                      const items = groupedVideoPlaylist.get(group.name) || []
-                      if (items.length === 0) return null
-                      return (
-                        <div key={group.name} className="audio-group">
-                          <div className="audio-group-header" onClick={() => toggleVideoGroupCollapse(group.name)}>
-                            {group.collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
-                            <span className="audio-group-name">{group.name}</span>
-                            <span className="audio-group-count">{items.length}</span>
-                            <button type="button" className="audio-btn-icon" onClick={(e) => { e.stopPropagation(); removeVideoGroup(group.name) }} title={t('video.playlist.removeGroup')}>
-                              <Trash2 size={11} />
-                            </button>
-                          </div>
-                          {!group.collapsed && items.map(item => {
-                            const globalIdx = videoPlaylist.indexOf(item)
-                            return (
-                              <div
-                                key={item.id}
-                                className={`audio-track-item ${globalIdx === currentVideoIndex ? 'active' : ''}`}
-                                onClick={() => { playVideoItem(globalIdx); setMode('player') }}
-                              >
-                                <span className="audio-track-name">{item.name}</span>
-                                <button type="button" className="audio-btn-icon" onClick={(e) => { e.stopPropagation(); removeVideoItem(globalIdx) }}><Trash2 size={11} /></button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )
-                    })}
+                    {playlistTree.map(node => renderTreeNode(node, 0))}
                   </div>
                 )}
               </section>

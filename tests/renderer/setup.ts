@@ -109,6 +109,8 @@ vi.mock('lucide-react', () => {
     'TriangleAlert',
     // R333 复扫: App 级路由用例切到 video 视图 → AiListenOverlay 图标
     'BrainCircuit',
+    // R334: 视频播放器上下集按钮 / 自动连播开关 / 树形播放列表分组图标
+    'ChevronsLeft','ChevronsRight','ListVideo',
 
   ]
   for (const n of NAMES) icons[n] = catchAll

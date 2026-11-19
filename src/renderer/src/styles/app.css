@@ -6031,6 +6031,59 @@ input[type='range'].audio-slider {
   padding-right: 4px;
 }
 
+/* ── R334: 播放列表主高度布局 + 树形节点 + 全屏文件名 chip ────────────────
+   列表面板 flex:1 占 inspector 剩余高度（随窗口高度自适应），列表区内部
+   滚动；播放器 URL / 裁切 / 滤镜面板自然沉底。树节点复用 audio-group*
+   家族，仅补容器与缩进（缩进量由内联 paddingLeft 按深度给出）。 */
+.video-playlist-panel {
+  flex: 1 1 auto;
+  min-height: 220px;
+}
+
+.video-playlist-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 2px;
+}
+
+.video-playlist-node {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.video-playlist-node .audio-group-header {
+  border-radius: 4px;
+}
+
+/* R334: 全屏鼠标活动时显示正在播放文件名（5s 自动隐藏；pointer-events
+   不挡播放器控制）。 */
+.video-player-title-chip {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(72%, 640px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: var(--text-caption-size);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+  z-index: 3;
+}
+
 .video-panel {
   display: flex;
   flex-direction: column;

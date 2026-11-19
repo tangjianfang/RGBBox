@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { render, cleanup, fireEvent, waitFor, act } from '@testing-library/react'
 import { VideoStudioView } from '../../../src/renderer/src/components/VideoStudioView'
 import { setupRendererMocks } from '../_helpers'
 
@@ -226,5 +226,150 @@ describe('VideoStudioView R317d auto-restore skips missing entries', () => {
     const v = container.querySelector('video.video-preview-rect')!
     expect(v.getAttribute('src')).toBeNull()
     expect(mocks.videoSavePaths.mock.calls.length).toBeGreaterThanOrEqual(0) // 不触发清除式保存
+  })
+})
+
+// ── R334: 自动连播 / 上下集 / 选中即播 / 树形列表 / 全屏文件名 / 打开定位 ────
+describe('VideoStudioView R334 playback & tree playlist', () => {
+  beforeEach(() => {
+    localStorage.removeItem('rgbbox:videoAutoNext')
+    localStorage.removeItem('rgbbox:videoLastItem')
+    localStorage.removeItem('rgbbox:videoMode')
+    // 隔离此前用例持久化的播放列表缓存（videoGroups 初值来自它）
+    localStorage.removeItem('rgbbox-video-playlist-config')
+  })
+
+  const SAVED = [
+    { id: 'a1', name: 'a1.mp4', path: 'C:\\v\\a1.mp4', group: 'FolderA' },
+    { id: 'a2', name: 'a2.mp4', path: 'C:\\v\\a2.mp4', group: 'FolderA' },
+    { id: 'b1', name: 'b1.mp4', path: 'C:\\v\\b1.mp4', group: 'FolderB' },
+  ]
+
+  async function setupPlayer(saved: unknown[] = SAVED) {
+    const mocks = setupRendererMocks()
+    mocks.videoGetSavedPaths.mockResolvedValue(saved)
+    const { container } = render(<VideoStudioView />)
+    fireEvent.click(container.querySelectorAll('.video-mode-btn')[2])
+    await waitFor(() => {
+      expect(container.querySelectorAll('.audio-track-item').length).toBe(saved.length)
+    })
+    return { container }
+  }
+
+  const videoEl = (c: HTMLElement) => c.querySelector('video.video-preview-rect')!
+  const nextBtn = (c: HTMLElement) =>
+    c.querySelector('button[title="video.player.nextEp"]') as HTMLButtonElement
+  const prevBtn = (c: HTMLElement) =>
+    c.querySelector('button[title="video.player.prevEp"]') as HTMLButtonElement
+
+  it('auto-advances on ended, crossing into the next folder', async () => {
+    const { container } = await setupPlayer()
+    fireEvent.click(container.querySelectorAll('.audio-track-item')[0]) // a1
+    await waitFor(() => expect(videoEl(container).getAttribute('src')).toContain('a1.mp4'))
+    videoEl(container).dispatchEvent(new Event('ended'))
+    await waitFor(() => expect(videoEl(container).getAttribute('src')).toContain('a2.mp4'))
+    // 同一文件夹播完 → 下一个文件夹的第一个条目
+    videoEl(container).dispatchEvent(new Event('ended'))
+    await waitFor(() => expect(videoEl(container).getAttribute('src')).toContain('b1.mp4'))
+  })
+
+  it('prev/next episode buttons navigate and disable at the ends', async () => {
+    const { container } = await setupPlayer()
+    fireEvent.click(container.querySelectorAll('.audio-track-item')[0]) // a1
+    await waitFor(() => expect(videoEl(container).getAttribute('src')).toContain('a1.mp4'))
+    expect(prevBtn(container).disabled).toBe(true) // 全局第一集
+    expect(nextBtn(container).disabled).toBe(false)
+    fireEvent.click(nextBtn(container))
+    await waitFor(() => expect(videoEl(container).getAttribute('src')).toContain('a2.mp4'))
+    fireEvent.click(prevBtn(container))
+    await waitFor(() => expect(videoEl(container).getAttribute('src')).toContain('a1.mp4'))
+  })
+
+  it('autoplays on selecting a playlist item (选中即播)', async () => {
+    const { container } = await setupPlayer()
+    // media:// 换 key 会重挂 <video>（R92 crossOrigin 契约）——spy 挂原型才稳
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play')
+      .mockImplementation(() => Promise.resolve())
+    try {
+      fireEvent.click(container.querySelectorAll('.audio-track-item')[0])
+      await waitFor(() => expect(videoEl(container).getAttribute('src')).toContain('a1.mp4'))
+      expect(playSpy).toHaveBeenCalled()
+    } finally {
+      playSpy.mockRestore()
+    }
+  })
+
+  it('auto-advance resumes a half-watched item silently (no prompt bar)', async () => {
+    const saved = [
+      { id: 'a1', name: 'a1.mp4', path: 'C:\\v\\a1.mp4', group: 'FolderA' },
+      { id: 'a2', name: 'a2.mp4', path: 'C:\\v\\a2.mp4', group: 'FolderA', progress: 754, duration: 8597, updatedAt: 1 },
+    ]
+    const { container } = await setupPlayer(saved)
+    fireEvent.click(container.querySelectorAll('.audio-track-item')[0])
+    await waitFor(() => expect(videoEl(container).getAttribute('src')).toContain('a1.mp4'))
+    videoEl(container).dispatchEvent(new Event('ended'))
+    await waitFor(() => expect(videoEl(container).getAttribute('src')).toContain('a2.mp4'))
+    // 连播到达：静默续播（手动点开半途条目才弹提示条——既有用例锁住）
+    expect(container.querySelector('.video-resume-bar')).toBeNull()
+  })
+
+  it('fullscreen mousemove shows the playing filename chip, hides after 5s', async () => {
+    const { container } = await setupPlayer()
+    fireEvent.click(container.querySelectorAll('.audio-track-item')[0])
+    await waitFor(() => expect(videoEl(container).getAttribute('src')).toContain('a1.mp4'))
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get: () => document.body,
+    })
+    vi.useFakeTimers()
+    try {
+      fireEvent.mouseMove(container.querySelector('.video-player-wrap')!)
+      const chip = container.querySelector('.video-player-title-chip')
+      expect(chip).toBeTruthy()
+      expect(chip!.textContent).toBe('a1.mp4')
+      act(() => { vi.advanceTimersByTime(5000) })
+      expect(container.querySelector('.video-player-title-chip')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      Object.defineProperty(document, 'fullscreenElement', {
+        configurable: true,
+        get: () => undefined,
+      })
+    }
+  })
+
+  it('renders the playlist as a tree and re-opens located at the playing item', async () => {
+    const saved = [
+      { id: 'a1', name: 'a1.mp4', path: 'C:\\v\\a1.mp4', group: 'Anime' },
+      { id: 'b1', name: 'b1.mp4', path: 'C:\\v\\b1.mp4', group: 'Anime/S2' },
+      { id: 'm1', name: 'm1.mp4', path: 'C:\\v\\m1.mp4', group: 'Movies' },
+    ]
+    const { container } = await setupPlayer(saved)
+    // 树形渲染：Anime(含 S2 子节点) + Movies；标题 = 节点名而非完整路径
+    const headers = Array.from(container.querySelectorAll('.audio-group-header'))
+    expect(headers.map(h => h.querySelector('.audio-group-name')?.textContent))
+      .toEqual(['Anime', 'S2', 'Movies'])
+    // 子节点按深度缩进；分组计数含子孙（Anime = 2）
+    expect((headers[1] as HTMLElement).style.paddingLeft).toBe('12px')
+    expect(headers[0].querySelector('.audio-group-count')?.textContent).toBe('2')
+
+    // 播放嵌套条目 b1 → 折叠 Anime → 关闭列表 → 重开自动展开祖先并滚动定位
+    fireEvent.click(container.querySelectorAll('.audio-track-item')[1]) // b1
+    await waitFor(() => expect(videoEl(container).getAttribute('src')).toContain('b1.mp4'))
+    fireEvent.click(headers[0]) // 折叠 Anime
+    expect(container.querySelectorAll('.audio-track-item').length).toBe(1) // 只剩 Movies
+    fireEvent.click(container.querySelector('.video-panel-toggle')!) // 关闭列表
+    expect(container.querySelector('.video-playlist-scroll')).toBeNull()
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+    try {
+      fireEvent.click(container.querySelector('.video-panel-toggle')!) // 重开
+      await waitFor(() => {
+        expect(container.querySelectorAll('.audio-track-item').length).toBe(3) // 祖先自动展开
+      })
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled())
+      expect(container.querySelector('.audio-track-item.active')?.textContent).toContain('b1.mp4')
+    } finally {
+      scrollSpy.mockRestore()
+    }
   })
 })

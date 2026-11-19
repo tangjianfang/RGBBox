@@ -40,6 +40,13 @@ const REQUIRED_CLASSES: Record<string, string[]> = {
   'components/ImageStudioView image studio layout (R333)': [
     'images-studio', 'images-layout', 'images-stage',
   ],
+  // R334: video studio playback family — playlist panel takes the inspector's
+  // main height (inner scroll), tree nodes reuse the audio-group* family,
+  // fullscreen filename chip. Buttons reuse .video-player-btn.
+  'components/VideoStudioView R334 playback family (playlist tree + title chip)': [
+    'video-playlist-panel', 'video-playlist-scroll', 'video-playlist-node',
+    'video-player-title-chip',
+  ],
 }
 
 describe('ui styles coverage guard (R319)', () => {
